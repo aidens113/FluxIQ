@@ -10,6 +10,11 @@ import {
   type AutomationStudioSiteResetSpot
 } from "../index.ts";
 
+/** Whether a trial starts with acts of this build still on the site (t775: said under `startedWith.acts`; a trial is never refused for them). */
+function stillOpen(decision: { kind: string; startedWith?: { acts?: unknown } }): boolean {
+  return decision.kind === "admit" && Array.isArray(decision.startedWith?.acts) && decision.startedWith.acts.length > 0;
+}
+
 // The build's ledger as a project's briefs drive it: each brief's own ledger,
 // ids unique across the build, one writer, and a snapshot for the build record.
 
@@ -83,7 +88,7 @@ describe("project site reset ledger", () => {
     second.explored(acted("b", ["modify_existing"]));
     second.placed("act-2", place("T1", "T2"));
     expect(await first.beforeTrial(checks)).toEqual({ kind: "admit" });
-    expect(await second.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-2", stillThere: ["T1"] }] } });
+    expect(await second.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2", stillThere: ["T1"] }] } });
   });
 
   it("writes the snapshot one write at a time, in the order the acts were recorded, and keeps a failed write for the flush", async () => {
@@ -156,7 +161,7 @@ it("rejects duplicate original scopes before project Map normalization without r
     const whole = project.forBrief("whole");
     whole.trialRan([{ step: 1, definitionId: "demo.press", consequences: ["modify_existing"], spot: { scope: origin.scope, subject: "s:document" } }]);
     whole.observed({ state: {}, differs: [], collections: [origin, sibling] }, false);
-    expect((await whole.beforeTrial(back)).kind).toBe(validFirst ? "admit" : "refuse");
+    expect(stillOpen(await whole.beforeTrial(back))).toBe(!(validFirst));
   }
 });
 

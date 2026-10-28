@@ -32,6 +32,7 @@ import { automationStudioProjectBuildDraftRecord } from "./draft-record.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES, automationStudioProjectBuildEndingTold, automationStudioProjectBuildRecordTold } from "../project-build-ending/index.ts";
 import type { AutomationStudioProjectBuildKeptProposals } from "./entry-preparation.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_LOCAL_HOST } from "./local-host.ts";
+import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildRecords } from "./records.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS, AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "./reserve.ts";
@@ -51,8 +52,9 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // Shared once per build: the activity, cancellation root, project database
 // hold and generation lock (all around the call), the binding, instruction
 // authority, provider, loop limits and creation purse (in `draft`), the project
-// ledger, the whole candidate's trial port and judge (`draft.trial`), the build
-// record and one host scheduler per host port. Per brief: everything in
+// ledger, the whole candidate's trial port and judge (`draft.trial`), Core's own
+// look the judged whole run's readings take (`./phase-start.ts`, `look`; t775
+// D5), the build record and one host scheduler per host port. Per brief: everything in
 // `./brief-ports.ts`. Builders are never started through the service's
 // generation entry: its generation lock is not re-entrant.
 //
@@ -273,12 +275,14 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
     maxConsecutiveUnusableDecisions: draft.maxConsecutiveUnusableDecisions, maxIterations, callerEnding: (progress) => draft.ending(progress, accounting()),
     stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounting(), automationStudioCandidateStallCode(progress.issueCodes))
   });
+  // The judged whole run's witnesses are read through Core's own look, where its arrival exists (header, t775 D5).
+  const look = AutomationStudioProjectBuildPhaseStart.look({ binding, environment: project.trialEnvironment, ledger: project.ledger, cancellation: project.cancellation });
   let outcome: Awaited<ReturnType<typeof runAutomationStudioProjectSupervisorLoop>>;
   try {
     outcome = await runAutomationStudioProjectSupervisorLoop({
       ports: {
         build: ref, record: records, instructionDigest: automationStudioProjectDigest("project.instructions.v1", sources), sources, dispatch,
-        proposals: (proposal) => proposals.byRef(proposal), projectLedger: project.ledger, submission: draft.submission,
+        proposals: (proposal) => proposals.byRef(proposal), projectLedger: project.ledger, ...(look ? { look } : {}), submission: draft.submission,
         trial: { candidateId, port: draft.trial }, purse,
         reserve: { calls: AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.calls, unpriced: { ...AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.unpriced } },
         finishing: { ...AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS },

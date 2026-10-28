@@ -10,6 +10,7 @@ export type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
 export { automationStudioStepStateRoute } from "./state-route.ts";
 // Lifecycle handlers at the loop's boundaries (state-aware recovery plan, C3-C7, C11).
 export { automationStudioStepBeforeNext } from "./before-next.ts";
+export { automationStudioStepSaidAlreadyInState } from "./already-done.ts";
 export { automationStudioStepLearnInterruption } from "./incident-repair.ts";
 export { automationStudioStepRetryBeforeRouting } from "./could-not-run-retry.ts";
 export { automationStudioStepLifecycle, automationStudioStepLifecycleRegister, type AutomationStudioStepLifecycleOutcome } from "./lifecycle-dispatch.ts";

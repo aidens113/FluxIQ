@@ -418,9 +418,13 @@ describe("a brief whose builder never reads the input the plan gives it", () => 
   });
 });
 
-it("requires a pre-create baseline through normal project ports and recovers via an actual observation/ref retry", async () => {
+// t775: a trial is no longer refused for want of a reset, so the builder's create is still on the site when it
+// tests; the trial runs and says so under `startedWith`. The build's own undo, which it asks for by naming the act,
+// is still admitted only for that act, made with the ref a complete read issued, and removes exactly its row.
+it("tests with the build's create still on the site, said under startedWith, and the build's own undo removes exactly that row", async () => {
   let at = "source", phase = 0, creates = 0, removals = 0;
   let reference: string | undefined, act: string | undefined;
+  let dirty: JsonObject | undefined;
   const rows = ["s:baseline"];
   const inputs: JsonObject[] = [];
   const plan = {
@@ -453,54 +457,57 @@ it("requires a pre-create baseline through normal project ports and recovers via
     },
     builderFirst: (_key, evidence) => {
       phase++;
-      if (phase === 1) return invoke("create.missing", "example.create", ["create_new"]);
+      if (phase === 1) return invoke("destination", "example.destination");
       if (phase === 2) {
-        expect(lastOf(evidence, "core.run_node")).toMatchObject({ code: "candidate.create_baseline_required" });
-        expect(creates).toBe(0);
-        return invoke("destination", "example.destination");
-      }
-      if (phase === 3) {
         const destinations = lastOf(evidence, "core.run_node")?.resetDestinations as { collections?: Array<{ ref: string }> } | undefined;
         reference = destinations?.collections?.[0]?.ref;
         if (!reference) return { kind: "complete", result: { subflowKey: "keep", revision: 0, digest: "missing-original-receipt" } };
         return invoke("source", "example.source");
       }
-      if (phase === 4) return invoke("create.retry", "example.create", ["create_new"], { resetDestination: reference! });
-      if (phase === 5) return undefined; // the normal builder submits its subflow
+      if (phase === 3) return invoke("create", "example.create", ["create_new"], { resetDestination: reference! });
+      if (phase === 4) return undefined; // the normal builder submits its subflow
       const submitted = lastOf(evidence, "core.submit_subflow")!;
       const candidate = { revision: submitted.revision as number, digest: submitted.digest as string };
-      if (phase === 6) return { kind: "tool_call", callId: "test.dirty", toolId: "core.test_subflow", input: candidate };
-      if (phase === 7) {
-        const dirty = lastOf(evidence, "core.test_subflow")!;
-        expect(dirty.code).toBe("candidate.trial_reset_required");
-        act = (dirty.actsToUndo as JsonObject[])[0]!.act as string;
+      if (phase === 5) return { kind: "tool_call", callId: "test.dirty", toolId: "core.test_subflow", input: candidate };
+      if (phase === 6) {
+        dirty = lastOf(evidence, "core.test_subflow")!;
+        act = ((dirty.startedWith as JsonObject | undefined)?.acts as JsonObject[] | undefined)?.[0]?.act as string | undefined;
+        if (!act) return { kind: "complete", result: { subflowKey: "keep", revision: 0, digest: "no-act-said-on-the-site" } };
         return invoke("undo.destination", "example.destination");
       }
-      if (phase === 8) return invoke("undo", "example.remove", ["delete"], { undoes: act! });
-      if (phase === 9) return { kind: "tool_call", callId: "test.clean", toolId: "core.test_subflow", input: candidate };
+      if (phase === 7) return invoke("undo", "example.remove", ["delete"], { undoes: act! });
+      if (phase === 8) return { kind: "tool_call", callId: "test.clean", toolId: "core.test_subflow", input: candidate };
       return undefined;
     }
   });
   let failed: { diagnostic?: { code?: string; issueCodes?: string[] }; message?: string } | undefined;
   await run.run().catch(error => { failed = error; });
-  if (!reference) throw new Error(JSON.stringify({ phase, failure: failed?.diagnostic, message: failed?.message, inputs: inputs.map(input => input.node), seen: (run.latestSeen.keep ?? []).map(entry => ({ callId: entry.callId, keys: Object.keys(entry.value as object), code: (entry.value as JsonObject).code })) }));
+  if (!reference || !act) throw new Error(JSON.stringify({ phase, failure: failed?.diagnostic, message: failed?.message, inputs: inputs.map(input => input.node), dirty, seen: (run.latestSeen.keep ?? []).map(entry => ({ callId: entry.callId, keys: Object.keys(entry.value as object), code: (entry.value as JsonObject).code })) }));
   expect(reference).toMatch(/^destination-[1-9][0-9]*$/u);
+  // The trial ran with the create on the site, its judge told so, and passed: nothing was refused or undone first.
+  expect(dirty).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act }] } });
+  expect(((dirty!.startedWith as JsonObject).acts as JsonObject[])).toHaveLength(1);
+  // The build's own undo removed exactly the row its create made; the baseline row was never touched.
   expect(creates).toBe(1);
   expect(removals).toBe(1);
   expect(rows).toEqual(["s:baseline"]);
   expect(inputs.every(input => !Object.hasOwn(input, "resetDestination"))).toBe(true);
-  expect(lastOf(run.latestSeen.keep ?? [], "core.test_subflow")).toMatchObject({ verdict: "yes" });
+  const clean = lastOf(run.latestSeen.keep ?? [], "core.test_subflow");
+  expect(clean).toMatchObject({ verdict: "yes" });
+  expect(clean).not.toHaveProperty("startedWith");
 });
 
-// Office rounds 2-4 (t748, C6; `run-mvgf04kw-310fc169`, `run-mvgvyaip-d856e135`): after a press was refused for want of a
-// ref, the builder read the list where its effect shows, which issued the ref, and nothing told it to press again with it;
-// it went back and forth for 9 and 14 turns. That read's answer now names the refused call and the refs just issued. A
-// made-up library: a book's page with no list, and the loans list on a page of its own.
-describe("a press refused for want of a ref", () => {
+// Office rounds 2-4 (t748, C6; `run-mvgf04kw-310fc169`, `run-mvgvyaip-d856e135`): a press was refused for want of a ref
+// until the builder read the list where its effect shows, and a later read then named the refused call. Since t775 a
+// press while exploring is never refused for want of a list read before it (`flow-bootstrap/reset-admission/admission.ts`):
+// a trial is judged by the change from the state just before it. So the press runs at once, a later complete read still
+// issues its ref, and no answer names a refused call. A made-up library: a book's page with no list, and the loans list on
+// a page of its own.
+describe("a press with no list read before it", () => {
   it.each([
-    ["create_new", "candidate.create_baseline_required"],
-    ["modify_existing", "candidate.reset_witness_required"]
-  ] as const)("is named, with the refs a later complete read issued, on that read's answer alone (%s)", async (consequence, code) => {
+    ["create_new"],
+    ["modify_existing"]
+  ] as const)("runs at once, and a later complete read issues its ref naming no refused call (%s)", async (consequence) => {
     let at = "shelf", phase = 0;
     const loans = ["s:dune"];
     const seen: Record<string, JsonObject | undefined> = {};
@@ -525,44 +532,28 @@ describe("a press refused for want of a ref", () => {
       builderFirst: (_key, evidence) => {
         phase++;
         const last = lastOf(evidence, "core.run_node");
-        if (phase === 1) return invoke("press.missing", "example.press");
+        if (phase === 1) return invoke("press", "example.press");
         if (phase === 2) {
-          seen.refused = last;
+          seen.pressed = last;
           return invoke("loans", "example.loans");
         }
         if (phase === 3) {
           seen.read = last;
           return invoke("shelf", "example.shelf");
         }
-        if (phase === 4) {
-          seen.back = last;
-          const ref = ((seen.read?.resetDestinations as JsonObject | undefined)?.collections as JsonObject[] | undefined)?.[0]?.ref as string | undefined;
-          return invoke("press.retry", "example.press", ref === undefined ? {} : { resetDestination: ref });
-        }
-        if (phase === 5) {
-          seen.retried = last;
-          return invoke("loans.again", "example.loans");
-        }
-        if (phase === 6) seen.again = last;
+        if (phase === 4) seen.back = last;
         return { kind: "complete", result: { subflowKey: "lend", revision: 0, digest: "only-the-reads-were-under-test" } };
       }
     });
     await run.run().catch(() => undefined);
 
-    // The refusal itself, and a page that printed no list, carry no such note.
-    expect(seen.refused).toMatchObject({ code });
-    expect(seen.refused).not.toHaveProperty("retryRefused");
-    // The complete read that issued the ref names the refused call and that ref, and says to make the call again with it.
-    expect(seen.read).toMatchObject({ resetDestinations: { collections: [{ ref: "destination-1", count: 1 }] }, retryRefused: { call: "press.missing", refs: [{ ref: "destination-1", count: 1 }] } });
-    const instruction = String((seen.read!.retryRefused as JsonObject).instruction);
-    expect(instruction).toContain("\"press.missing\"");
-    expect(instruction).toContain("destination-1 (1 item)");
-    expect(instruction).toContain("resetDestination");
-    expect(seen.back).toEqual({ ok: true });
-    // Pressed again with the ref, it ran; a later read of the same list is not told again.
-    expect(seen.retried).toEqual({ ok: true });
+    // The press ran on its first call, with no refusal and no code: the domain's own answer, and the loan is on the list.
+    expect(seen.pressed).toEqual({ ok: true });
     expect(loans).toEqual(["s:dune", "s:atlas"]);
-    expect(seen.again).toMatchObject({ resetDestinations: { collections: [{ ref: "destination-1" }] } });
-    expect(seen.again).not.toHaveProperty("retryRefused");
+    // The complete read still issues the list's ref; with nothing refused, it names no call to make again.
+    expect(seen.read).toMatchObject({ resetDestinations: { collections: [{ ref: "destination-1" }] } });
+    expect(seen.read).not.toHaveProperty("retryRefused");
+    // A page that printed no list carries neither.
+    expect(seen.back).toEqual({ ok: true });
   });
 });

@@ -35,16 +35,13 @@ const CONDITIONS: Readonly<Record<AutomationStudioSiteResetFailed, string>> = {
   act_not_listed: "The act named under undoes is not one this build may undo now.",
   undo_spent: "This act's one unasked undo already landed.",
   destination_unissued: "The resetDestination named is a ref this build was never shown.",
-  acts_in_place: "Acts this build made are still on the site.",
-  acts_not_settled: "Reversible acts of this build are not settled.",
-  start_differs: "The site still differs from how this build found it.",
+  starts_in_end_state: "The state a step of this trial is to bring about is already shown, and an act this build made with another step put it there, so the trial could not show this step making it.",
   witness_unreachable: "The only lists that could show this act put back cannot be read again: Core's own look at where they were read does not show them.",
   nothing_to_name: "Nothing read shows where this act's effect would be, and no list can be named for it any more.",
   no_admissible_undo: "No call this build may make can put back what still differs: it is not an item this build added that an undo here may remove, and no control of the act's own can be pressed back to how this build found it.",
   no_baseline: "The act's own control was never read before this build acted at its place, so no read can show it put back as this build found it.",
   value_not_back: "This act's own control was pressed back twice, and a fresh read after each still did not show the value this build found where the act changed it: its value never came back, and no further press here can be shown to bring it back.",
-  acts_unsettleable: "Acts this build made are still on the site, and no call can settle them: nothing that can still be read would show them put back.",
-  no_witness: "Nothing could ever show this press put back: no list it would show in was read complete, no ref names one, its control shows no state of its own, and it repeats no witnessed press this build made while exploring.",
+  no_witness: "Nothing names where this step's change would show: no list it would show in was read complete, no ref names one, its control shows no state of its own, and it repeats no witnessed press this build made while exploring.",
   no_target_identity: "The lasting step has no target identity, so nothing identifies what this build would change or restore.",
   no_destination_original: "No complete original read of the list where this creation would show proves its item absent there."
 };

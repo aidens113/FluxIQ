@@ -42,10 +42,10 @@ const saved = (): AutomationStudioSiteResetLedger => {
 };
 
 describe("a lasting press whose effect shows only as a value its page shows (t772)", () => {
-  it("is witnessed by that value: the trial is refused with words that set it back where it shows, never the list route", async () => {
+  it("is witnessed by that value: the trial runs with it listed, and it says to set it back where it shows, never the list route", async () => {
     const ledger = saved();
     const decision = await ledger.beforeTrial(compare);
-    expect(decision.kind).toBe("refuse");
+    expect(decision).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
     expect(ledger.unsatisfiable()).toEqual([]);
     const settle = settleOf(ledger, "act-1");
     expect(settle).toContain("set it back where it shows");

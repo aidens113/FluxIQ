@@ -6,10 +6,10 @@
 // permission check first with the item its control sits in. The box held one
 // recipe before the build.
 //
-// The supervisor's whole trial is refused while the builder's save is still
-// on the site; a reset brief then undoes exactly that act -- never the recipe
-// that was there before -- and comes back done; only then does the whole trial
-// run, and the Flow is proposed. The act is in the build record.
+// Since t775 (AGENTS.md "Reset as rarely as possible") the supervisor's whole trial runs with the builder's save still on
+// the site, never refused for want of a reset; the acts are said to the model and the judge under `startedWith`. The
+// script then sends a reset brief, which undoes exactly the build's acts -- never the recipe there before -- and comes
+// back done; the next whole trial runs on the site as the build found it, and the Flow is proposed.
 //
 // The second case is the shape a reset could not undo before builders' acts
 // were placed: a shop's "Add to cart", a control in no item, adds a line to the
@@ -19,9 +19,7 @@
 // request already names that act as its task, how it was done and the page it
 // was made on, in place of the person's build instruction (t585).
 //
-// In both, the builder makes its act after its own subflow trial passed: a
-// builder's trial now undoes the build's acts first (t578), so an act made
-// before it would be undone there, not left for the supervisor's whole trial.
+// In both, the builder acts after its own trial passed, so the act is on the site for the first whole trial.
 //
 // The builder's part asks a lasting act, so its subflow declares the step that
 // does it, as a real script must (t597). Its own trial of that step is the
@@ -51,8 +49,8 @@
 // tests its builder's proposal as the judged whole run, with no reset brief
 // between a subflow trial and a whole trial
 // (`project-agents/single-subflow/`, `./project-build-single-subflow.test.ts`).
-// What these cases test -- a whole trial refused until a reset brief undoes the
-// builders' acts, and the reset brief itself -- is a plan of several subflows',
+// What these cases test -- a whole trial with the builders' acts on the site,
+// a reset brief that then undoes them, and the reset brief itself -- is a plan of several subflows',
 // so the task is two parts: one that prepares and acts on nothing (`prepare`),
 // and the one whose builder makes the lasting act (`keep`). Core adds the
 // router-run subflow that calls them in turn.
@@ -146,7 +144,7 @@ const ENDED_REASON = "The saved recipe could not be taken out of the box again."
 
 /**
  * The supervisor's script, the same in both cases: plan, build, assemble, test
- * (refused), reset, test, complete. With `ends`: plan, build, a reset that
+ * (run with the builder's acts on the site, t775), reset, test, complete. With `ends`: plan, build, a reset that
  * undoes nothing, then an honest ending.
  */
 function supervisorDecision(step: number, evidence: readonly Entry[], ends = false): JsonObject {
@@ -263,23 +261,24 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean;
 }
 
 describe("a project build whose builder leaves a lasting act", () => {
-  it("refuses the whole trial until a reset brief undoes exactly the build's act, then runs it and proposes the Flow", async () => {
+  it("runs the whole trial with the builder's acts still on the site, said under startedWith, and a reset brief then undoes exactly the build's acts", async () => {
     const run = await recipeBuild();
     const result = await run.build();
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
 
-    // The first whole trial was refused, naming the builder's acts still on the site: its own trial of the save (t597), and its save.
-    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-1", did: "trial step 3 \"save the recipe\"" }, { act: "act-2", did: "press button" }] });
+    // The first whole trial ran with no reset first (t775), told -- as its judge was -- exactly the builder's acts on the site.
+    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-1", did: "trial step 3 \"save the recipe\"" }, { act: "act-2", did: "press button" }] } });
     // The reset brief came back done, naming nothing it could not undo, and nothing of the build was left in place.
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
     // It pressed only the build's own recipes: the explored save's, on its own item, and the builder's trial's, on the item that
     // trial's own diff showed it put in the box (t598) -- though that trial ran its save inside a called part, whose call's own
     // diff, listed before the part's steps, already showed the recipe (t684). The one saved before the build was never touched.
-    // Only then did the whole trial run, saving its recipe again.
-    expect(run.pressed).toEqual([`run Save ${TRIAL_RECIPE}`, "Save recipe:herb-bread", "Unsave recipe:herb-bread", `Unsave ${TRIAL_RECIPE}`, `run Save ${TRIAL_RECIPE}`]);
+    // The first whole trial's save, of a recipe already in the box, changed nothing; the second, after the reset, saved it again.
+    expect(run.pressed).toEqual([`run Save ${TRIAL_RECIPE}`, "Save recipe:herb-bread", `run Save ${TRIAL_RECIPE}`, "Unsave recipe:herb-bread", `Unsave ${TRIAL_RECIPE}`, `run Save ${TRIAL_RECIPE}`]);
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE]);
-    // The whole trial ran once, after the reset, on the site as the build found it, and saved its recipe: a first answer and its confirmation.
-    expect(run.boxWhenWholeJudged).toEqual([["recipe:lentil-soup", TRIAL_RECIPE], ["recipe:lentil-soup", TRIAL_RECIPE]]);
+    // Each whole trial was judged twice (an answer and its confirmation): first with the builder's acts on, then without.
+    const before = ["recipe:lentil-soup", TRIAL_RECIPE];
+    expect(run.boxWhenWholeJudged).toEqual([[...before, "recipe:herb-bread"], [...before, "recipe:herb-bread"], before, before]);
     const judged = lastOf(run.supervisorSaw[7]!, "core.test_candidate");
     expect(judged).toMatchObject({ verdict: "yes" });
     expect(judged).not.toHaveProperty("startedWith");
@@ -339,13 +338,13 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE, "recipe:herb-bread"]);
   });
 
-  it("undoes a cart line a builder's press on an item-less control added, and keeps the line that was there before", async () => {
+  it("runs the whole trial with a builder's cart line on the site, then a reset undoes exactly that line and keeps the line that was there before", async () => {
     const run = await cartBuild();
     const result = await run.build();
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
 
-    // The native trial changed nothing; only the explored add remains open.
-    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: false, code: "project.trial_reset_required", actsInPlace: [{ act: "act-2", did: "press \"Add to cart\" button" }] });
+    // The whole trial ran with the explored add on the site (t775); the no-op native trial is said apart under cannotUndo.
+    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-2", did: "press \"Add to cart\" button" }], cannotUndo: [{ act: "act-1" }] } });
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
     // The changed act is restored; the no-op trial is separately told as
     // unchanged. Neither is falsely described as a kept, unproved effect.
@@ -359,7 +358,8 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(run.acted).toEqual(["add herb-tea", "remove herb-tea"]);
     expect(run.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
     expect(run.cart).toEqual(["dish-soap"]);
-    expect(run.cartWhenWholeJudged).toEqual([["dish-soap"], ["dish-soap"]]);
+    // The first whole trial was judged with the builder's line on the site; the second, after the reset, without it.
+    expect(run.cartWhenWholeJudged).toEqual([["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"], ["dish-soap"], ["dish-soap"]]);
     // From its first decision the reset was told its task, not the person's: the act, how it was done, and its page.
     const task = run.resetFirstInstructions();
     expect(task).toContain("This brief is a reset, not a build");
@@ -370,7 +370,8 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(stored.lastingActs).toMatchObject([
       { act: "act-1", owner: { role: "builder" }, consequences: ["create_new"], undoable: true },
       { act: "act-2", owner: { role: "builder" }, consequences: ["create_new"], undoable: true },
-      { act: "act-3", owner: { role: "supervisor" }, consequences: ["create_new"], undoable: true }
+      { act: "act-3", owner: { role: "supervisor" }, consequences: ["create_new"], undoable: true },
+      { act: "act-4", owner: { role: "supervisor" }, consequences: ["create_new"], undoable: true }
     ]);
   });
 });
@@ -606,8 +607,11 @@ describe("a project build told where it starts", () => {
     const steps = (feedback.steps as JsonObject[]).filter((step) => step.definitionId !== "builtin.control.start");
     expect(steps[0]).toMatchObject({ definitionId: GO, status: "succeeded" });
     expect(feedback.phaseStart).toMatchObject({ phase: "whole_trial", startHook: "none", arrival: "loaded", standsOn: `the build's start location (${start})` });
-    // The reset's own start told it what was still on the site.
-    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-2" }] } });
+    // The reset's start told it what was on the site: the builder's add, and the first whole trial's own (t775: it ran).
+    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-2" }, { act: "act-3", did: "trial step 5 \"add it to the cart\"" }] } });
+    // Its one undo was the builder's line; the trial's add, which changed nothing, was settled by the reads after it.
+    expect(run.acted).toEqual(["add herb-tea", "remove herb-tea"]);
+    expect(run.cart).toEqual(["dish-soap"]);
   });
 });
 
@@ -643,17 +647,21 @@ describe("a reset brief", () => {
     expect((extra.outsideBrief as JsonObject).note).toContain("outside this reset");
     expect((extra.outsideBrief as JsonObject).note).not.toContain("subflow");
 
-    // Naming cannotUndo reaches the ledgers but cannot restore project effects;
-    // completion remains blocked and no whole trial runs on these leftovers.
+    // Naming cannotUndo reaches the ledgers but cannot restore project effects: the reset stays blocked with the builder's add
+    // and the first whole trial's own (act-3, t775: it ran) to undo; the reset's own add (act-4) is said apart.
     expect(JSON.stringify(run.resetSaw.evidence)).toContain("project.reset_acts_in_place");
     expect(kept.mock.calls.some((call) => JSON.stringify(call[1]) === JSON.stringify(["act-1", "act-2"]))).toBe(true);
-    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked" }], lastingActsInPlace: 1 });
-    expect(run.cartWhenWholeJudged).toEqual([]);
+    const blocked = /2 acts are still to undo: act-2 \(press "Add to cart" button\), act-3 \(trial step 4 "add it to the cart"\)\. .*left on the site, as nothing can check or put it back: act-4 /u;
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked", reason: expect.stringMatching(blocked) }], lastingActsInPlace: 2 });
+    // Only the first whole trial was judged. The next was refused by no reset gate: the cart now lists one line twice, so it
+    // witnesses no add step (`flow-bootstrap/reset-settlement/collection-groups.ts`) and no change could be judged.
+    expect(run.cartWhenWholeJudged).toEqual([["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"]]);
+    expect(lastOf(run.supervisorSaw[7]!, "core.test_candidate")).toMatchObject({ ok: false, code: "candidate.trial_step_unwitnessed", stepsUnwitnessed: [{ step: 4 }] });
     // Both additions remain, with the original line untouched.
-    expect(run.cart.filter((line) => line === "herb-tea")).toHaveLength(2);
+    expect(run.cart).toEqual(["dish-soap", "herb-tea", "herb-tea"]);
   });
 
-  it("refuses an undo of an original item and blocks while the build's own effect remains", async () => {
+  it("refuses an undo of an original item, blocks while the build's own effect remains, and the next whole trial runs with it said", async () => {
     const run = await cartBuild((n) => n === 1
       ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-2" } }
       // Neither this cannotUndo claim nor the refused inverse settles act-2.
@@ -668,8 +676,13 @@ describe("a reset brief", () => {
     // The dish soap the cart held before the build was never touched.
     expect(run.acted).toEqual(["add herb-tea"]);
     expect(run.cart).toEqual(["dish-soap", "herb-tea"]);
-    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked" }], lastingActsInPlace: 1 });
-    expect(run.cartWhenWholeJudged).toEqual([]);
+    // Blocked, with the builder's add and the first whole trial's own add (t775: that trial ran before the reset) still to undo.
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked" }], lastingActsInPlace: 2 });
+    // The next whole trial runs with them said under startedWith (t775), the builder's line by name, never the dish soap's.
+    const next = lastOf(run.supervisorSaw[7]!, "core.test_candidate")!;
+    expect(next).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-2", stillThere: ["line herb-tea"] }, { act: "act-3" }], cannotUndo: [{ act: "act-1" }] } });
+    expect(JSON.stringify(next.startedWith)).not.toContain("dish-soap");
+    expect(run.cartWhenWholeJudged).toEqual([["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"]]);
   });
 });
 
@@ -760,8 +773,11 @@ it("whole-trial collection authority comes from original builder routing, never 
       // A source notification can disappear while the whole-trial create
       // remains in its destination. Actual project routing must retain it.
       project.forBrief("supervisor").placed(acts[0]!.act, { state: {}, location: "source", changed: ["created notice"], lines: { gone: [], added: ["created notice"] } });
-      expect(await project.forBrief("supervisor").beforeTrial({ compare: async () => ({ moved: false, differs: [] }), compareAt: async () => ({ moved: false, differs: [], lines: { gone: [], added: [] } }) })).toMatchObject({ kind: "refuse" });
-      // Still on the site, and still refusing trials: to undo, or, with no ref a read could issue here, one no call can settle (t743).
+      // A trial is no longer refused for acts in place (t775): it runs, and the act is said to it under `startedWith`.
+      const before = await project.forBrief("supervisor").beforeTrial({ compare: async () => ({ moved: false, differs: [] }), compareAt: async () => ({ moved: false, differs: [], lines: { gone: [], added: [] } }) });
+      expect(before).toMatchObject({ kind: "admit" });
+      expect(((before as { startedWith?: { acts?: Array<{ act: string }> } }).startedWith?.acts ?? []).map((act) => act.act)).toContain(acts[0]!.act);
+      // Still on the site: to undo, or, with no ref a read could issue here, one no call can settle (t743).
       const supervisor = project.forBrief("supervisor");
       expect([...supervisor.inPlace(), ...supervisor.unsatisfiable()].map((act) => act.act)).toContain(acts[0]!.act);
       const addControl = { scope: moved[0]!.scope, subject: "s:new" };

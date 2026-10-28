@@ -396,12 +396,17 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
    * attempt reads `route: "success"` with the first attempt's outputs, names
    * that attempt, and the row it was done for when the step runs per row
    * (as a person reads it, "Lin Zhao"). It is no failure.
+   *
+   * Or a press whose control already showed the asked state (`already_in_state`,
+   * t775): it was not pressed, which is no failure and no act done earlier in the
+   * run; the row is named when the step runs per row.
    */
   skipped?:
     /** `notDone`: the step does a lasting act, and the page did not show its effect, so the act was not done (r4b F4, `step-skip/act-not-done.ts`). */
     | { reason: "target_absent"; code: string; notDone?: true }
     | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" }
-    | { reason: "already_done"; code: string; attemptId: string; row?: string };
+    | { reason: "already_done"; code: string; attemptId: string; row?: string }
+    | { reason: "already_in_state"; code: string; row?: string };
   /**
    * Set when the step failed but the state it was recorded to produce already
    * held, so the run went on down `success` rather than repeat an act that had

@@ -47,11 +47,8 @@ const looking = (route: (read: AutomationStudioSiteResetRead) => void, read: () 
   } };
   return { looked, checks };
 };
-const settleOf = (decision: Awaited<ReturnType<AutomationStudioSiteResetLedger["beforeTrial"]>>, act: string): string => {
-  const acts = decision.kind === "refuse" ? decision.evidence.actsToUndo : undefined;
-  const found = Array.isArray(acts) ? acts.find((entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry) && entry.act === act) : undefined;
-  return typeof found === "object" && found !== null && !Array.isArray(found) && typeof found.settle === "string" ? found.settle : "";
-};
+/** What an act still on the site says settles it (t775: the ledger tells it; no refusal carries it any more). */
+const settleOfOpen = (ledger: Pick<AutomationStudioSiteResetLedger, "inPlace">, act: string): string => ledger.inPlace().find((entry) => entry.act === act)?.settle ?? "";
 const LEFT = `trial step 3 "start the draft" on "Start a draft" (${WORDS.leftUnchanged()})`;
 
 describe("a trial act repeats an explored act of any brief of its build (L1 build repeats)", () => {
@@ -88,8 +85,8 @@ describe("a trial act repeats an explored act of any brief of its build (L1 buil
     const first = looking(route, elsewhere);
     const refused = await briefB.beforeTrial(first.checks);
     expect(first.looked).toEqual([]);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_in_place", actsToUndo: [{ act: "act-2" }] } });
-    expect(settleOf(refused, "act-2")).toContain("name that list's ref");
+    expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }] } });
+    expect(settleOfOpen(briefB, "act-2")).toContain("name that list's ref");
     expect(briefB.unsatisfiable()).toEqual([]);
     // A look under `undoes` names the list for A's press, after B's trial: B's act repeats it and shares that list.
     briefA.explored(look("look.box", "act-1", "destination-1"));
@@ -113,9 +110,9 @@ describe("a trial act repeats an explored act of any brief of its build (L1 buil
       // `elsewhere` changes destination-2 alone.
       const { looked, checks } = looking(routing(project, briefB), elsewhere);
       const refused = await briefB.beforeTrial(checks);
-      expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
-      expect(settleOf(refused, "act-2")).toContain("name that list's ref");
-      expect(settleOf(refused, "act-2")).not.toContain("undo this act there");
+      expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }] } });
+      expect(settleOfOpen(briefB, "act-2")).toContain("name that list's ref");
+      expect(settleOfOpen(briefB, "act-2")).not.toContain("undo this act there");
       // Core looks at nothing for it: it has no witness of its own.
       expect(looked).toEqual([]);
       expect(briefB.standing("act-2")).toBe("in_place");

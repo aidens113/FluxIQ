@@ -103,6 +103,15 @@
 // for") is kept, and so is one naming a row no condition left a copy of. And
 // "wrongly" is a word for wrong, as "wrong" is.
 //
+// **A total is not the change a trial was asked for (t775).** A trial is
+// judged against the site's state just before it (user, 2026-10-27): a list
+// that held 9 before a part asking to add 1 and 10 after it has had 1 added.
+// A sentence stating a count of what a change part asks for other than its
+// own, where every place that part's change shows changed by exactly what it
+// asks (`record.siteChange`, `../site-change/count-claim.ts`), is a refuted
+// claim, Core's change line its finding; a sentence that also says something
+// else is left to the claims above.
+//
 // The reading is wholly refuted when at least one sentence's claims are
 // refuted and no sentence stands. A reading that names nothing Core can check,
 // or anything Core cannot refute, is not: the no stands as before. Core never
@@ -110,6 +119,7 @@
 // no still refuted is taken as unsure.
 
 import type { AutomationStudioResultRepairDirective } from "../contracts/index.ts";
+import { automationStudioResultChangeCountClaim } from "../site-change/index.ts";
 import { automationStudioResultAdviceConditions, automationStudioResultAdviceSteps } from "./advice-condition.ts";
 import { automationStudioResultConditionReferences } from "./condition-references.ts";
 import { automationStudioResultWithoutConditionWording } from "./condition-wording.ts";
@@ -212,6 +222,8 @@ function weighed(sentence: string, record: AutomationStudioResultNoRecord, advis
     // A stored row a clause says is kept, beside rows called missing: about what the row is (header, t659).
     excludedKind === undefined ? automationStudioResultKeptRowClaim(sentence, record) : undefined,
     automationStudioResultCountClaim(sentence, named, record),
+    // A count of what a change part asks for, where the trial's change is exactly what it asks (header, t775).
+    automationStudioResultChangeCountClaim(sentence, record.siteChange),
     automationStudioResultValueClaim(sentence, named),
     record.other?.(sentence),
     // The rows it names, whatever its words (`./row-reference-claim.ts`, t631).

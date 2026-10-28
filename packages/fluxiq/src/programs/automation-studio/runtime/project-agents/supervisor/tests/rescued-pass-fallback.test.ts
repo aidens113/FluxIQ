@@ -5,18 +5,20 @@
 // no later whole test answered yes, and the model's honest ending ended the
 // build with no Flow, because only the latest assembly's rescued pass was read.
 // Here the same shape on the fixture's lending library: the build completes on
-// the passing revision, its own Flow handed to the caller after the reset rule
-// held (`../state.ts`, `../completion.ts`, `../supervisor-loop.ts`); a later
-// outright pass replaces that fallback; a pass of either kind is a fallback, and
-// a completion naming it completes on it; a guard end while the latest
-// assembly's own outright pass stands completes on that pass (coordinator,
-// t637); and the person's cancel still ends without a Flow.
+// the passing revision, its own Flow handed to the caller (`../state.ts`,
+// `../completion.ts`, `../supervisor-loop.ts`); a later outright pass replaces
+// that fallback; a pass of either kind is a fallback, and a completion naming it
+// completes on it; a guard end while the latest assembly's own outright pass
+// stands completes on that pass (coordinator, t637); and the person's cancel
+// still ends without a Flow. Since t775 (user, 2026-10-27: reset as rarely as
+// possible) no completion or ending waits for a reset, and Core sends none of
+// its own: what the last trial left stays on the site and is named.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
-import { FIND, assembled, brief, call, complete, dispatch, end, reset, supervise, test, type Entry, type Step } from "./supervisor-script.ts";
+import { FIND, assembled, brief, call, complete, dispatch, end, supervise, test, type Entry, type Step } from "./supervisor-script.ts";
 
 const ONE_PART = planInput([subflow("main", ["p1"])], taskSpecInput([["p1", FIND, []]]));
 
@@ -58,15 +60,16 @@ const built = (later: "yes" | "unsure", extra: Parameters<typeof project>[0] = {
 const REASON = "The re-assembled Flow never passed, so the build ends here.";
 
 describe("a rescued pass whose repair came back done and whose re-assembly never passed", () => {
-  it("is completed on when the model ends honestly: the caller gets revision 1's Flow, after the reset rule held", async () => {
-    const run = await supervise([...UP_TO_REASSEMBLY, end("partial", REASON), dispatch([reset()], "Put the target back before ending."), end("partial", REASON)], built("unsure"));
+  it("is completed on when the model ends honestly: the caller gets revision 1's Flow, with what revision 2's trial left named", async () => {
+    const run = await supervise([...UP_TO_REASSEMBLY, end("partial", REASON)], built("unsure"));
 
     // The repair came back done and changed the subflow: revision 2 was assembled and tested, and never answered yes.
     expect(run.trials.map((tried) => tried.revision)).toEqual([1, 2]);
-    expect(run.feedback.map((entry) => entry.code)).toEqual(["candidate.trial_slow_down_unhandled", "project.completion_reset_first"]);
-    // The reset rule held first: the act revision 2's trial left was undone before the build completed.
-    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"], ["reset"]]);
-    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([]);
+    // The honest ending completes at once: no hold for a reset (t775).
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["candidate.trial_slow_down_unhandled"]);
+    // No reset brief: the start hook took back revision 1's act before revision 2's trial, whose own act is still on the site.
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"]]);
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([expect.objectContaining({ act: "act-2", owner: "supervisor" })]);
 
     const first = run.trials[0]!;
     expect(run.outcome).toMatchObject({ status: "candidate", trial: { verdict: "yes", revision: 1 }, reliesOnRecovery: { revision: 1, why: "ended", endedWith: { outcome: "partial", reason: REASON }, setAside: { revision: 2 } } });
@@ -76,23 +79,23 @@ describe("a rescued pass whose repair came back done and whose re-assembly never
     expect(told).toContain("relies on the run's own recovery");
     expect(told).toContain("the Flow assembled from it (revision 2) never passed its whole test, so the build completes on revision 1, the last that passed. The supervisor then ended the build.");
     expect(told).not.toContain(REASON);
-    expect(told).not.toContain("Still on the target");
+    expect(told).toMatch(/The supervisor then ended the build\. Still on the target from this build: .+\.$/u);
     // A completion, not an ending.
     expect(run.view?.record.ending).toBeUndefined();
   });
 
-  it("is completed on when a guard stalls the loop, after Core's own reset brief", async () => {
+  it("is completed on when a guard stalls the loop, with no reset brief of Core's though its purse could pay one", async () => {
     const misshapen: Step = () => ({ kind: "complete", result: { ended: "partial", reason: REASON, revision: 2 } });
     const run = await supervise([...UP_TO_REASSEMBLY, misshapen, misshapen, misshapen, misshapen, misshapen, misshapen], built("unsure", { purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) }), { propagateDecisionErrors: true });
-    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"], ["reset"]]);
-    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([]);
+    // t775: Core sends no cleanup reset before completing; revision 2's trial act stays on the site.
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"]]);
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([expect.objectContaining({ act: "act-2", owner: "supervisor" })]);
     expect(run.outcome).toMatchObject({ status: "candidate", candidate: { revision: 1 }, trial: { verdict: "yes", revision: 1 }, reliesOnRecovery: { revision: 1, why: "stalled", setAside: { revision: 2 } } });
-    expect(run.outcome.reliesOnRecovery!.told).toContain("so the build completes on revision 1, the last that passed. The build then stopped making progress.");
+    expect(run.outcome.reliesOnRecovery!.told).toMatch(/so the build completes on revision 1, the last that passed\. The build then stopped making progress\. Still on the target from this build: .+\.$/u);
     expect(run.view?.record.ending).toBeUndefined();
   });
 
-  it("names what no reset undid after the person's words when no reset could be sent", async () => {
-    // No purse: Core cannot size its reset brief, so the act stays and is named.
+  it("names what is still on the target after the person's words when a guard stalls the loop", async () => {
     const misshapen: Step = () => ({ kind: "complete", result: { ended: "partial", reason: REASON, revision: 2 } });
     const run = await supervise([...UP_TO_REASSEMBLY, misshapen, misshapen, misshapen, misshapen, misshapen, misshapen], built("unsure"), { propagateDecisionErrors: true });
     expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"]]);
@@ -137,15 +140,17 @@ describe("a later revision that passes its whole test outright", () => {
     });
     const run = await supervise([
       ...UP_TO_REASSEMBLY, dispatch([brief("main", ["p1"])], "Build the subflow again to read the list as well."), call(IDS.assemble), test,
-      end("partial", REASON), dispatch([reset()], "Put the target back before ending."), end("partial", REASON)
+      end("partial", REASON)
     ], made);
     expect(run.trials.map((tried) => tried.revision)).toEqual([1, 2, 3]);
-    expect(run.feedback.map((entry) => entry.code)).toEqual(["candidate.trial_slow_down_unhandled", "project.completion_reset_first"]);
-    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([]);
+    // The ending completes on revision 2 at once: no hold for a reset (t775); revision 3's trial act stays and is named.
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["candidate.trial_slow_down_unhandled"]);
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"], ["build"]]);
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([expect.objectContaining({ act: "act-3", owner: "supervisor" })]);
     const second = run.trials[1]!;
     expect(run.outcome).toMatchObject({ status: "candidate", candidate: { revision: 2, digest: second.digest }, trial: { verdict: "yes", revision: 2 } });
     expect(run.outcome.completedOnPass).toMatchObject({ revision: 2, why: "ended", setAside: { revision: 3 }, endedWith: { outcome: "partial", reason: REASON } });
-    expect(run.outcome.completedOnPass!.told).toBe("Revision 3 never passed its whole test, so the build completes on revision 2, the last that passed. The supervisor then ended the build.");
+    expect(run.outcome.completedOnPass!.told).toMatch(/^Revision 3 never passed its whole test, so the build completes on revision 2, the last that passed\. The supervisor then ended the build\. Still on the target from this build: .+\.$/u);
     // No recovery to rely on, so none is said.
     expect(run.outcome).not.toHaveProperty("reliesOnRecovery");
     expect(run.view?.record.ending).toBeUndefined();
@@ -153,11 +158,12 @@ describe("a later revision that passes its whole test outright", () => {
 });
 
 describe("a completion naming the build's fallback (coordinator, t637)", () => {
-  it("completes on the fallback, after the reset rule held, rather than being refused as not the latest", async () => {
+  it("completes on the fallback at once, rather than being refused as not the latest or held for a reset", async () => {
     const namesFirst: Step = (evidence) => ({ kind: "complete", result: { revision: 1, digest: firstDigest(evidence) } });
-    const run = await supervise([...UP_TO_REASSEMBLY, namesFirst, dispatch([reset()], "Put the target back before completing."), namesFirst], built("unsure"));
-    expect(run.feedback.map((entry) => entry.code)).toEqual(["candidate.trial_slow_down_unhandled", "project.completion_reset_first"]);
-    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([]);
+    const run = await supervise([...UP_TO_REASSEMBLY, namesFirst], built("unsure"));
+    expect(run.feedback.map((entry) => entry.code)).toEqual(["candidate.trial_slow_down_unhandled"]);
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"]]);
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([expect.objectContaining({ act: "act-2", owner: "supervisor" })]);
     expect(run.outcome).toMatchObject({ status: "candidate", candidate: { revision: 1 }, trial: { verdict: "yes", revision: 1 }, reliesOnRecovery: { revision: 1, why: "completed", setAside: { revision: 2 } } });
     expect(run.outcome.reliesOnRecovery!.told).toContain("so the build completes on revision 1, the last that passed. The supervisor then completed on it.");
     expect(run.view?.record.ending).toBeUndefined();
@@ -165,7 +171,7 @@ describe("a completion naming the build's fallback (coordinator, t637)", () => {
 
   it("still refuses a completion naming any other revision that is not the latest", async () => {
     const stale: Step = () => ({ kind: "complete", result: { revision: 7, digest: "f".repeat(64) } });
-    const run = await supervise([...UP_TO_REASSEMBLY, stale, end("partial", REASON), dispatch([reset()], "Put the target back before ending."), end("partial", REASON)], built("unsure"));
+    const run = await supervise([...UP_TO_REASSEMBLY, stale, end("partial", REASON)], built("unsure"));
     expect(run.feedback[1]).toMatchObject({ code: "project.completion_not_latest", complete: { revision: 2 } });
     expect(run.outcome).toMatchObject({ status: "candidate", candidate: { revision: 1 } });
   });
@@ -173,7 +179,7 @@ describe("a completion naming the build's fallback (coordinator, t637)", () => {
 
 describe("the fallback's own revision tested again", () => {
   it("is dropped when that test no longer passes, so the ending is recorded with no Flow", async () => {
-    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), call(IDS.assemble), test, test, end("partial", REASON), dispatch([reset()], "Put the target back before ending."), end("partial", REASON)], built("unsure"));
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), call(IDS.assemble), test, test, end("partial", REASON)], built("unsure"));
     expect(run.trials.map((tried) => tried.revision)).toEqual([1, 1]);
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome).not.toHaveProperty("reliesOnRecovery");
@@ -188,18 +194,19 @@ describe("a guard end while the latest assembly's own whole test passed outright
   const misshapen: Step = () => ({ kind: "complete", result: { ended: "partial", reason: REASON, revision: 1 } });
   const purse = () => new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 });
 
-  it("completes on that revision when a stall ends the loop, after Core's reset", async () => {
+  it("completes on that revision when a stall ends the loop, naming its trial's act still on the target", async () => {
     const run = await supervise([...PASSED, misshapen, misshapen, misshapen, misshapen, misshapen, misshapen], project({ trialActs: true, purse: purse() }), { propagateDecisionErrors: true });
-    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["reset"]]);
-    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([]);
+    // t775: Core sends no cleanup reset before completing; the passing trial's act stays on the site and is named.
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"]]);
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([expect.objectContaining({ act: "act-1", owner: "supervisor" })]);
     expect(run.outcome).toMatchObject({ status: "candidate", candidate: { revision: 1 }, trial: { verdict: "yes", revision: 1 }, completedOnPass: { revision: 1, why: "stalled" } });
     expect(run.outcome.completedOnPass).not.toHaveProperty("setAside");
-    expect(run.outcome.completedOnPass!.told).toBe("The supervisor stopped before completing, so the build completes on revision 1, which passed its whole test. The build then stopped making progress.");
+    expect(run.outcome.completedOnPass!.told).toMatch(/^The supervisor stopped before completing, so the build completes on revision 1, which passed its whole test\. The build then stopped making progress\. Still on the target from this build: .+\.$/u);
     expect(run.outcome).not.toHaveProperty("reliesOnRecovery");
     expect(run.view?.record.ending).toBeUndefined();
   });
 
-  it("completes on that revision when the time limit ends the loop, after Core's reset inside the bound", async () => {
+  it("completes on that revision inside the bound when the time limit ends the loop, naming its trial's act still on the target", async () => {
     const made = project({ trialActs: true, purse: purse() });
     const real = made.ports.dispatch;
     let sent = 0;
@@ -214,10 +221,11 @@ describe("a guard end while the latest assembly's own whole test passed outright
     const run = await supervise([...PASSED, dispatch([brief("main", ["p1"])], "Build the subflow again."), call(IDS.assemble)], made, { timeLimit: { maxMs: 1_200, endingMs: 600 } });
     expect(Date.now() - startedAt).toBeLessThan(1_200);
     expect(run.outcome.timedOut).toBe(true);
-    expect(run.dispatched.map((request) => request.briefs.map((brief) => brief.kind))).toEqual([["build"], ["build"], ["reset"]]);
-    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([]);
+    // t775: Core sends no cleanup reset before completing; the passing trial's act stays on the site and is named.
+    expect(run.dispatched.map((request) => request.briefs.map((brief) => brief.kind))).toEqual([["build"], ["build"]]);
+    expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([expect.objectContaining({ act: "act-1", owner: "supervisor" })]);
     expect(run.outcome).toMatchObject({ status: "candidate", candidate: { revision: 1 }, trial: { verdict: "yes", revision: 1 }, completedOnPass: { revision: 1, why: "time" } });
-    expect(run.outcome.completedOnPass!.told).toBe("The supervisor stopped before completing, so the build completes on revision 1, which passed its whole test. The build then reached its time limit.");
+    expect(run.outcome.completedOnPass!.told).toMatch(/^The supervisor stopped before completing, so the build completes on revision 1, which passed its whole test\. The build then reached its time limit\. Still on the target from this build: .+\.$/u);
     expect(run.view?.record.ending).toBeUndefined();
   });
 

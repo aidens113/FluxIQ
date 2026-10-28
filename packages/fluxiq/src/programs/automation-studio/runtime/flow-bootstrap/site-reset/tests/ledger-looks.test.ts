@@ -54,7 +54,7 @@ describe("a look under `undoes` is never an undo (L1 build repeats)", () => {
     ledger.observed(minePage({ "s:atlas": "v:on" }));
     // A look under `undoes`, and the list still shows the change: the act is still the model's to undo.
     ledger.explored(navigation("go.mine", "act-1"));
-    expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }] } });
+    expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
     expect(ledger.target("act-1", { effect: "mutate", consequences: ["modify_existing"], control: ROW })).toEqual({ kind: "admit", on: "own", allowed: [] });
     ledger.explored(press("unsave.row", ["modify_existing"], ROW, { undoes: "act-1", on: "own" }));
     ledger.observed(minePage());

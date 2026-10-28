@@ -85,18 +85,12 @@ describe("a subflow trial after a builder's act left the site changed and the ta
     expect(trials.records()).toMatchObject([{ start: { status: "reset" }, execution: "not_run" }]);
   });
 
-  it("without a hook: the trial is refused until the builder's act is undone, then runs on the loaded start page", async () => {
+  it("without a hook: the trial runs with the builder's act still in place, said under startedWith, on the loaded start page (t775)", async () => {
     const { f, state, gate, receipt } = site({ hook: false });
-    const refused = await gate.test(receipt);
-    expect(refused).toMatchObject({ resultCode: "candidate.trial_reset_required", resultReason: "retry_allowed", evidence: { actsToUndo: [{ act: "act-1", stillThere: ["line added by the builder"] }] } });
-    expect(f.sessions).toEqual([]);
-    expect(state.ran).toEqual([]);
-    // The builder undoes its act through the site's own control; the tab stays where the undo left it.
-    state.lines = [];
-    state.tab = "https://site.test/cart";
     const ran = await gate.test(receipt);
-    expect(ran.evidence, JSON.stringify(ran.evidence)).toMatchObject({ verdict: "yes", entryPrepared: true });
-    expect(ran.evidence).not.toHaveProperty("startedWith");
+    expect(ran.evidence, JSON.stringify(ran.evidence)).toMatchObject({ verdict: "yes", entryPrepared: true, startedWith: { acts: [{ act: "act-1", stillThere: ["line added by the builder"] }] } });
+    expect(ran.resultCode).not.toBe("candidate.trial_reset_required");
+    expect(f.sessions.length).toBeGreaterThan(0);
     expect(state.ran.map((step) => step.node)).toEqual([GO.id, PRESS.id, PRESS.id]);
     expect(state.ran.every((step) => step.on === START)).toBe(true);
   });

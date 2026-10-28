@@ -18,7 +18,8 @@ const STAR: AutomationStudioSiteResetSpot = { ...PIN, place: "pl:star", state: "
 const COPY: AutomationStudioSiteResetSpot = { item: "i:untitled", page: "s:wall-page", scope: "p:unread", resource: SITE };
 
 const declared = (control: AutomationStudioSiteResetSpot, consequences: AutomationStudioActionConsequence[] = ["modify_existing"], effect: AutomationStudioActionEffect = "mutate") => ({ effect, consequences, control: { name: "Pin to my wall", kind: "button", ...control } });
-const input = (control: AutomationStudioSiteResetSpot, consequences?: AutomationStudioActionConsequence[], extra: Partial<AutomationStudioSiteResetAdmissionInput> = {}): AutomationStudioSiteResetAdmissionInput => ({ declared: declared(control, consequences), door: "exploration", ...extra });
+// The witness rules refuse at the step door only (t775): the exploration door admits a press with no witness (below).
+const input = (control: AutomationStudioSiteResetSpot, consequences?: AutomationStudioActionConsequence[], extra: Partial<AutomationStudioSiteResetAdmissionInput> = {}): AutomationStudioSiteResetAdmissionInput => ({ declared: declared(control, consequences), door: "step", ...extra });
 
 /** Nothing read, nothing issued, nothing explored; `destination-1` alone is issued where a test says so. */
 const port = (over: Partial<AutomationStudioSiteResetAdmissionKnown> = {}): AutomationStudioSiteResetAdmissionKnown => ({
@@ -62,9 +63,9 @@ describe("rule 2: a reference no receipt printed", () => {
 
 describe("rule 3: an unscoped press keeps the legacy policy", () => {
   it("admits a press naming no subject, page or scope with the legacy witness", () => {
-    expect(admission(input({}), port())).toEqual({ kind: "admit", witness: { via: "legacy" } });
-    expect(admission(input({ item: "i:new", resource: SITE }, ["create_new"]), port())).toEqual({ kind: "admit", witness: { via: "legacy" } });
-    expect(admission(input({ resource: SITE, place: "pl:x", state: "st:on" }, ["delete"]), port())).toEqual({ kind: "admit", witness: { via: "legacy" } });
+    expect(admission(input({}, undefined, { door: "exploration" }), port())).toEqual({ kind: "admit", witness: { via: "legacy" } });
+    expect(admission(input({ item: "i:new", resource: SITE }, ["create_new"], { door: "exploration" }), port())).toEqual({ kind: "admit", witness: { via: "legacy" } });
+    expect(admission(input({ resource: SITE, place: "pl:x", state: "st:on" }, ["delete"], { door: "exploration" }), port())).toEqual({ kind: "admit", witness: { via: "legacy" } });
   });
 });
 
@@ -94,15 +95,21 @@ describe("rule 4: an identified creation", () => {
   it("is refused with nothing, met on another page even with no original at all, never by no call", () => {
     const verdict = admission(input(PIN, ["create_new"]), port());
     expect(verdict).toMatchObject(CREATE);
-    expect(instruction(verdict)).toBe(WORDS.createBaselineRequired([], []));
+    expect(instruction(verdict)).toBe(WORDS.stepWitnessRequired([]));
   });
 
-  it("names the refs read on this page apart from those read elsewhere (t748, C5)", () => {
+  it("names every ref already issued, with where it was read (t748, C5)", () => {
     const known = port({ issuedRefs: () => [{ ref: "destination-1", count: 1, location: "loc:hall" }, { ref: "destination-2", count: 3 }], here: () => ["destination-2"] });
     const said = instruction(admission(input(PIN, ["create_new"]), known));
-    expect(said).toContain("Lists read complete on this page: destination-2 (3 items).");
-    expect(said).toContain("Lists read complete elsewhere: destination-1 (1 item at loc:hall)");
+    expect(said).toContain("destination-1 (1 item at loc:hall), destination-2 (3 items)");
     expect(said).not.toMatch(REALISTIC);
+  });
+
+  it("admits at the exploration door, with no witness, what the step door refuses for want of one (t775)", () => {
+    for (const consequences of [["create_new"], ["modify_existing"], ["delete"]] as AutomationStudioActionConsequence[][]) {
+      expect(admission(input(PIN, consequences), port())).toMatchObject({ kind: "refused" });
+      expect(admission(input(PIN, consequences, { door: "exploration" }), port())).toEqual({ kind: "admit" });
+    }
   });
 
   it("is identified by its page where it sits in no item; an untitled one in an item is not (rule 5)", () => {
@@ -154,7 +161,7 @@ describe("rule 5: any other reversible scoped press", () => {
   it("is refused with none, naming the refs already issued, in generic words", () => {
     const verdict = admission(input(PIN), port(issuedOne()));
     expect(verdict).toMatchObject(WITNESS);
-    expect(instruction(verdict)).toBe(WORDS.witnessRequired([{ ref: "destination-1", count: 2, location: "loc:wall" }]));
+    expect(instruction(verdict)).toBe(WORDS.stepWitnessRequired([{ ref: "destination-1", count: 2, location: "loc:wall" }]));
     expect(instruction(verdict)).toContain("destination-1 (2 items at loc:wall)");
     expect(instruction(verdict)).not.toMatch(REALISTIC);
     // A delete and a mixed reversible press are held to it too.

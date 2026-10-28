@@ -19,6 +19,7 @@
 // candidate from `flow-bootstrap/candidate/index.ts`; `runtime/index.ts`
 // publishes it.
 export * from "./action-permissions.ts";
+export * from "./explored-toggles.ts";
 export * from "./adaptation.ts";
 export * from "./answerability/index.ts";
 export * from "./authoring/index.ts";
@@ -36,5 +37,6 @@ export * from "./plan.ts";
 export * from "./reachability/index.ts";
 export * from "./review-projection.ts";
 export * from "./start-location.ts";
+export * from "./trial-change/index.ts";
 export * from "./unfinished-build/index.ts";
 export * from "./verification/index.ts";

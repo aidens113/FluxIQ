@@ -116,12 +116,12 @@ const HOW_TO_WORK = [
   "4. Read each return. Done carries a proposal. Partial or blocked carries the builder's reason: send a changed brief, change the plan with project.amend_plan, or end honestly.",
   "5. Once every subflow is done, call project.assemble. Core joins the proposals into one Flow: the subflow the router runs calls the others in order, each input taken from the earlier output of the same name. "
     + "With one subflow there is nothing to assemble: its builder's test already ran the whole Flow from its start and was the judged whole test, so once its brief comes back done, complete with the complete object that answer carries.",
-  "6. Test that exact Flow with core.test_candidate. If this build left lasting acts on the target, first dispatch a reset brief, which puts the target back the way the build found it. "
-    + "With one subflow there is no such test or reset to send: its builder put the target back before its own test.",
+  "6. Test that exact Flow with core.test_candidate. It runs on the target as it stands: what this build already did there stays, its judge is told it, and it is judged by what it changed from the state just before it. "
+    + "With one subflow there is no such test to send: its builder's own test was the judged whole test.",
   "7. Complete with the complete object project.assemble returned, and only after its test answered yes. If the task cannot be finished, complete with ended (blocked or partial) and your reason, once a brief has come back blocked or partial or a whole test has not passed. "
     + "While this build can still pay for a brief, first give each subflow that came back blocked or partial one changed brief: a repair naming the trial that failed, or a changed plan with project.amend_plan and a brief under it. "
     + "Sending the same brief again does not count. Skip a subflow whose return says nothing more can be done: its allowance was spent, the build was stopped, only the person could let it go on, or something the build did can no longer be checked or put back, so no test can run. "
-    + "Before you end, if this build left lasting acts on the target, dispatch a reset brief first; Core adds whatever is still left to your reason, so the person knows. "
+    + "Core adds whatever this build left on the target to your reason, so the person knows; send a reset brief only where the person asked for the target to be put back. "
     + "The person who asked for the Flow reads your reason as it is: write it for them in plain words, saying what could not be done and why, as they would see it on the target. Never put codes, tool or subflow names, or this build's own terms (brief, builder, proposal, assembly, port, lasting act) in it."
 ].join("\n");
 
@@ -167,7 +167,7 @@ const ASSEMBLE = "Join the plan and every subflow's latest done proposal into on
   + "Assembling again makes a new revision that needs its own test.";
 
 const TEST_CANDIDATE = "Run the assembled Flow once, from its start with no model, and have its judge say whether that run did what the person asked. Pass exactly the complete object the latest project.assemble returned. "
-  + "Before it runs, every lasting act this build left on the target must be undone: if this answers project.trial_reset_required, dispatch a reset brief, then test again. "
+  + "It runs on the target as it stands, and is judged by what it changed from the state just before it. If this answers project.trial_starts_in_end_state, dispatch a reset brief to undo just the acts it lists, then test again. "
   + "Complete only after a yes for that exact revision. After a no, change a subflow with a new brief or change the plan, assemble again, and test the new revision.";
 
 /** Every string the supervisor is told, by where it is told. */
@@ -232,7 +232,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     afterRecoveryRepairShort: "The repair of the whole test that passed only on the run's own recovery came back without the change, so that test still stands. "
       + "Complete with the complete object under wholeTestStands: Core completes on that test and tells the person the Flow relies on the run's own recovery. Or send a changed repair brief, if what came back says what to change.",
     afterRepairUnchanged: "A brief came back done with a proposal that does exactly what the one before it did (changedNothing), so the build has not moved and whatever failed before still stands. "
-      + "Do not brief that subflow again: test the latest assembled Flow again if its last test may be repeated, change the plan with project.amend_plan if the work is split wrong, or end honestly, with a reset brief first if this build left lasting acts on the target.",
+      + "Do not brief that subflow again: test the latest assembled Flow again if its last test may be repeated, change the plan with project.amend_plan if the work is split wrong, or end honestly.",
     afterAssemble: "Test this exact Flow next with core.test_candidate, passing the complete object above. Do not complete until its test answered yes.",
     /**
      * After a done return of a plan of one subflow, when its builder's own test -- the judged whole test of the Flow
@@ -274,12 +274,9 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     dispatchFailed: "The briefs could not be run, so no return came back. Try again, or end honestly if it keeps failing.",
     assembleRefused: "The Flow could not be assembled: every listed issue names the subflow and why. Send the briefs it needs, or change the plan, then assemble again.",
     composedRefused: "The assembled Flow was refused, as listed. Change the subflow an issue names with a new brief, or change the plan, then assemble again.",
-    resetRequired: "Lasting acts this build made are still on the target, so the whole test would not start where the build started. Dispatch a reset brief (kind reset, no parts, no permitted acts) with project.dispatch, then test again.",
-    /** Said after `resetRequired` when the refusal also lists acts no call can settle (`./whole-trial.ts`, t743). */
-    resetRequiredUnsettleable: "Each act under actsUnsettleable can no longer be checked or put back, so no reset undoes it, and no test can run while it is on the target: once the reset is back, end honestly with ended and your reason; Core names what is left.",
-    /** A whole test refused only for acts no call can settle (`./whole-trial.ts`, t743): no reset or test can help. */
-    trialUnsettleable: "Something this build did, listed under actsUnsettleable, can no longer be checked or put back, so no reset undoes it and no test can run while it is on the target. "
-      + "Do not test again or send a reset for it. End honestly now with ended and your reason; Core names what is left after your words.",
+    /** The one refusal left before a whole test (`./whole-trial.ts`, t775): an asked end state another step of this build already made. */
+    startsInEndState: "A step of this Flow is to bring something to a state the person asked for, and the target already shows that state, put there by an act this build made with a different step, listed under actsToUndo with the brief that made it. "
+      + "A test on it could not show the step making the change. Dispatch a reset brief (kind reset, no parts, no permitted acts) with project.dispatch to undo just those acts, then test again.",
     /** After the figures of a whole test the build's working time left cannot cover (`./whole-trial.ts`, G2): no test ran. */
     outOfTime: "Testing again is refused the same way, so do not test again, and do not change the Flow to make it quicker now. End honestly now with ended and your reason: "
       + "the latest assembled Flow is kept as a draft, and the person is told what its last finished whole test answered. If the latest assembled Flow's whole test answered yes, complete with its complete object instead.",
@@ -298,7 +295,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
       + "That test may be repeated: test the latest assembled Flow again with core.test_candidate, with the same complete object. If it fails the same way, change the plan with project.amend_plan or end honestly.",
     repairUnchangedAssemble: "No brief was sent: each listed subflow's latest brief came back with a proposal that does exactly what the one before it did, so another would change nothing. Nothing is assembled yet: send the briefs still needed, call project.assemble and test the Flow, or end honestly.",
     repairUnchangedEnd: "No brief was sent: each listed subflow's latest brief came back with a proposal that does exactly what the one before it did, and the plan and the latest whole test stand as they did then, so another brief would change nothing, and that test cannot be repeated. "
-      + "Change the plan with project.amend_plan if the work is split wrong, or end honestly with ended and your reason, with a reset brief first if this build left lasting acts on the target."
+      + "Change the plan with project.amend_plan if the work is split wrong, or end honestly with ended and your reason."
   }),
   /** What each issue a dispatch's own checks find says, beside its code and path (`./dispatch-tool.ts`, t595). */
   issues: Object.freeze({
@@ -367,7 +364,6 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
       + "Before ending, send each one changed brief with project.dispatch: a repair whose failingReceipt is a trial that return listed, saying what failed and what to do instead, or, where its return listed no trial or the plan is at fault, change the plan with project.amend_plan and send a brief under it. "
       + "Sending the same brief again does not count. If that changed brief also comes back blocked or partial, end again: this holds each subflow's ending once.",
     endedTooSoon: "No brief has come back blocked or partial and no whole test has failed, so nothing stops this build yet. Keep going: send briefs, assemble and test.",
-    resetFirst: "This build's lasting acts are still on the target, as listed. Before ending, dispatch a reset brief (kind reset, no parts) with project.dispatch to undo them, then end again. If the reset cannot undo them, end anyway: Core names what is left in your reason.",
     /** A whole test that passed only on the run's own recovery, before its repair was tried (`./completion.ts`, t603). */
     recoveryRepairFirst: "The whole test passed, but its run recovered by itself where the site asked it to slow down (slowDown), and this Flow has no step that does that, so it cannot complete yet. "
       + "Send a repair brief with project.dispatch for the subflow that holds each step slowDown names, its failingReceipt the wholeTest here copied whole; then assemble and test again. "

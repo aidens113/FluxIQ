@@ -33,8 +33,8 @@ const acted = (callId: string, name: string, consequences: AutomationStudioActio
 const aim = (consequences: AutomationStudioActionConsequence[], control: AutomationStudioSiteResetSpot) => ({ effect: "mutate" as const, consequences, control });
 const compare = async () => ({ moved: false, differs: [] });
 const apart = (call: string, did: string): AutomationStudioSiteResetUnsettleableAct[] => [{ act: "act-1", call, did, reason: "gate_unsatisfiable", failed: "no_admissible_undo" }];
-/** The trial refusal when only acts no call can settle remain: the honest exit. */
-const honestExit = (acts: AutomationStudioSiteResetUnsettleableAct[]) => ({ kind: "refuse", moved: false, evidence: { ok: false, code: "candidate.trial_reset_required", failed: "acts_unsettleable", canMeet: "no_call", condition: WORDS.condition("acts_unsettleable", "no_call"), instruction: WORDS.unsettleable(false), actsToUndo: [], actsUnsettleable: acts } });
+/** What a trial starts with when only acts no call can settle remain (t775): they are listed on the site, and the trial runs. */
+const honestExit = (acts: AutomationStudioSiteResetUnsettleableAct[]) => ({ kind: "admit", startedWith: { acts, instruction: WORDS.startedWith(false) } });
 /** A ledger that read the reading list complete, was shown its ref, and pressed `name` once. */
 const after = (call: string, name: string, consequences: AutomationStudioActionConsequence[], spot: AutomationStudioSiteResetSpot, now: Row[], named = true): AutomationStudioSiteResetLedger => {
   const ledger = new AutomationStudioSiteResetLedger();

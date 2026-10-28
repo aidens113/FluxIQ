@@ -18,6 +18,13 @@ describe("the run detail's skipped record", () => {
       .toEqual({ reason: "already_done", code: "executor.act.already_done", attemptId: "confirm.attempt.3" });
   });
 
+  it("keeps an attempt the page already showed in its asked state as its own reason, with its row, never as an absent target", () => {
+    expect(automationStudioRunDetailSkipped({ ...attempt(), skipped: { reason: "already_in_state", code: "executor.act.already_in_state", row: "Lin Zhao" } }))
+      .toEqual({ reason: "already_in_state", code: "executor.act.already_in_state", row: "Lin Zhao" });
+    expect(automationStudioRunDetailSkipped({ ...attempt(), skipped: { reason: "already_in_state", code: "executor.act.already_in_state" } }))
+      .toEqual({ reason: "already_in_state", code: "executor.act.already_in_state" });
+  });
+
   it("keeps a state route and a step that was not shown as they were", () => {
     expect(automationStudioRunDetailSkipped({ ...attempt(), skipped: { reason: "state_routed", code: "web.target.not_found", toNodeId: "node.next", direction: "forward" } }))
       .toEqual({ reason: "state_routed", code: "web.target.not_found", toNodeId: "node.next", direction: "forward" });

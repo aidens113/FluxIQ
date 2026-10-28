@@ -37,11 +37,8 @@ const looking = (ledger: AutomationStudioSiteResetLedger, reads: Record<string, 
   } };
   return { looked, checks };
 };
-const settleOf = (decision: Awaited<ReturnType<AutomationStudioSiteResetLedger["beforeTrial"]>>, key: "actsToUndo" | "actsToRestore", act: string): string => {
-  const acts = decision.kind === "refuse" ? decision.evidence[key] : undefined;
-  const found = Array.isArray(acts) ? acts.find((entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry) && entry.act === act) : undefined;
-  return typeof found === "object" && found !== null && !Array.isArray(found) && typeof found.settle === "string" ? found.settle : "";
-};
+/** What an act still on the site says settles it (t775: the ledger tells it; no trial refusal carries it any more). */
+const settleOfOpen = (ledger: Pick<AutomationStudioSiteResetLedger, "inPlace">, act: string): string => ledger.inPlace().find((entry) => entry.act === act)?.settle ?? "";
 
 /** The recipe box as the build found it: two lists of one page. */
 const box = () => [list("p:cards", ["s:soup", "s:stew"]), list("p:saved", ["s:pie"])];
@@ -97,9 +94,10 @@ describe("shape B: undos that worked settle at the first ask, without dirty-tria
   };
 
   it("without a look of its own the witness is stale, and the act says exactly which list to read again", async () => {
-    const refused = await setUp().beforeTrial(compare);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
-    expect(settleOf(refused, "actsToUndo", "act-1")).toBe("Read destination-1 at loc:box completely again.");
+    const ledger = setUp();
+    const refused = await ledger.beforeTrial(compare);
+    expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.anything()]) } });
+    expect(settleOfOpen(ledger, "act-1")).toBe("Read destination-1 at loc:box completely again.");
   });
 
   it("looks at each stale place once itself, and admits at the first ask", async () => {
@@ -174,12 +172,12 @@ describe("shape E: the trial's own act, and the retest after a settling look (of
     const elsewhere = () => boxPage([list("p:cards", ["s:soup", "s:stew"]), list("p:saved", ["s:pie", "s:tart"])]);
     ledger.observed(elsewhere());
     const refused = await ledger.beforeTrial(compare);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2" }] } });
-    expect(settleOf(refused, "actsToUndo", "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes (lists read complete before this act: destination-1 (2 items at loc:box), destination-2 (1 item at loc:box))");
-    expect(settleOf(refused, "actsToUndo", "act-2")).not.toContain("undo this act there");
+    expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }] } });
+    expect(settleOfOpen(ledger, "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes (lists read complete before this act: destination-1 (2 items at loc:box), destination-2 (1 item at loc:box))");
+    expect(settleOfOpen(ledger, "act-2")).not.toContain("undo this act there");
     const kept = await ledger.beforeTrial(compare, ["act-2"]);
-    expect(kept).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved", actsToRestore: [{ act: "act-2" }] } });
-    expect(settleOf(kept, "actsToRestore", "act-2")).toContain("resetDestination");
+    expect(kept).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }] } });
+    expect(settleOfOpen(ledger, "act-2")).toContain("resetDestination");
     expect(ledger.claim("act-2")).toMatchObject({ kind: "undo" });
     ledger.explored(look("look.box", "act-2", "destination-1"));
     // The list it names holds, though another of the page still differs.
@@ -203,9 +201,9 @@ describe("shape F: lists the domain cannot vouch complete issue no ref (job r2)"
     const refused = await ledger.beforeTrial(compare);
     // Sealed with no ref issued (rerun round 2): no read can issue one, so it is `gate_unsatisfiable` (t743), out of actsToUndo.
     // The permission wrapper now refuses such a press before the seal (`reset-witness.test.ts`); an act after the seal still lands here.
-    const unsettleable = { kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", canMeet: "no_call", actsToUndo: [], actsUnsettleable: [{ act: "act-1", reason: "gate_unsatisfiable", failed: "nothing_to_name" }] } };
+    const unsettleable = { kind: "admit", startedWith: { acts: [{ act: "act-1", reason: "gate_unsatisfiable", failed: "nothing_to_name" }] } };
     expect(refused).toMatchObject(unsettleable);
-    expect(settleOf(refused, "actsToUndo", "act-1")).toBe("");
+    expect(settleOfOpen(ledger, "act-1")).toBe("");
     expect(await ledger.beforeTrial(compare, ["act-1"])).toMatchObject(unsettleable);
     // Possibly left, closed as no call can settle it: never `in_place` beside being listed apart (t772 w7).
     expect(ledger.standing("act-1")).toBe("unsettleable");
@@ -264,7 +262,7 @@ describe("shape G: a toggle pressed in a dialog, pressed back on the item's own 
     // The press landed, but the site kept the state.
     ledger.observed(post("st:on"));
     const refused = await ledger.beforeTrial(compare);
-    expect(settleOf(refused, "actsToUndo", "act-1")).toBe("Its control at loc:post still shows the state this act set: press that same control back once, naming this act under undoes.");
+    expect(settleOfOpen(ledger, "act-1")).toBe("Its control at loc:post still shows the state this act set: press that same control back once, naming this act under undoes.");
   });
 
   // L1 d7 (photo, headed proof `l1-d6-spec-scripts.md`): in a single-subflow plan the judged run's acts are recorded by the
@@ -276,12 +274,12 @@ describe("shape G: a toggle pressed in a dialog, pressed back on the item's own 
     const ledger = new AutomationStudioSiteResetLedger();
     expect(ledger.trialRan([trialStep("st:off", "st:on")], "trial.1").map((act) => act.act)).toEqual(["act-1"]);
     const refused = await ledger.beforeTrial(compare);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
+    expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.anything()]) } });
     // The step's own diff is no read of its place (t751 R2): whatever put it back since, the page is to be read first.
-    expect(settleOf(refused, "actsToUndo", "act-1")).toBe("Read the page at loc:post again so its control's state can be seen.");
+    expect(settleOfOpen(ledger, "act-1")).toBe("Read the page at loc:post again so its control's state can be seen.");
     // The model reads that page: it still shows the state the act set, so it is to press the same control back under undoes.
     ledger.observed(post("st:on"));
-    expect(settleOf(await ledger.beforeTrial(compare), "actsToUndo", "act-1")).toBe("Its control at loc:post still shows the state this act set: press that same control back once, naming this act under undoes.");
+    expect((await ledger.beforeTrial(compare), settleOfOpen(ledger, "act-1"))).toBe("Its control at loc:post still shows the state this act set: press that same control back once, naming this act under undoes.");
     expect(ledger.target("act-1", aim([], { ...OWN_PAGE, state: "st:on" }))).toEqual({ kind: "admit", on: "own", allowed: ["modify_existing"] });
     pressBack(ledger);
     ledger.observed(post("st:off"));
@@ -311,7 +309,7 @@ describe("invariants no shape may weaken", () => {
       // Stale: the only complete read of it predates the act; a trial or a later lasting press makes any earlier read so.
       if (defect === "stale") ledger.trialRan([], "trial.1");
       const refused = await ledger.beforeTrial(compare);
-      expect(settleOf(refused, "actsToUndo", "act-1")).toBe("Read destination-1 at loc:box completely again.");
+      expect(settleOfOpen(ledger, "act-1")).toBe("Read destination-1 at loc:box completely again.");
       ledger.observed(boxPage());
       expect(ledger.standing("act-1")).toBe("unchanged");
     }
@@ -322,11 +320,11 @@ describe("invariants no shape may weaken", () => {
     // A list read complete whose ref was never shown: a ref can still be issued, so the act is to name one (t743).
     ledger.observed(page("p:other-page", "loc:other", [list("p:other", ["s:held-a"], "g:other")]));
     ledger.explored(press("pin", ["modify_existing"], { subject: "s:atlas", page: "s:atlas", resource: SITE }));
-    expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
+    expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.anything()]) } });
     for (let ask = 0; ask < 3; ask += 1) {
       const refused = await ledger.beforeTrial(compare, ["act-1"]);
-      expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved", instruction: WORDS.unprovedReset() } });
-      expect(settleOf(refused, "actsToRestore", "act-1")).toMatch(/^Nothing read shows where its effect would be/u);
+      expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
+      expect(settleOfOpen(ledger, "act-1")).toMatch(/^Nothing read shows where its effect would be/u);
     }
     expect(ledger.standing("act-1")).toBe("in_place");
   });
@@ -341,7 +339,7 @@ describe("invariants no shape may weaken", () => {
     ledger.observed(page("p:card", "loc:card", undefined, controls("st:on")));
     // A trial makes every read stale: the site's own revert is not seen yet, so nothing settles.
     ledger.trialRan([], "trial.1");
-    expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
+    expect(await ledger.beforeTrial(compare)).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
     // It shows the state it had before, with nothing pressed: a fresh read of its place at the start settles it.
     ledger.observed(page("p:card", "loc:card", undefined, controls("st:off")));
     expect(await ledger.beforeTrial(compare)).toEqual({ kind: "admit" });
@@ -359,10 +357,10 @@ describe("invariants no shape may weaken", () => {
     };
     const ledger = pinned();
     const refused = await ledger.beforeTrial(compare);
-    expect(settleOf(refused, "actsToUndo", "act-1")).toBe("Read destination-1 at loc:box completely again; read the page at loc:box again so its control's state can be seen.");
+    expect(settleOfOpen(ledger, "act-1")).toBe("Read destination-1 at loc:box completely again; read the page at loc:box again so its control's state can be seen.");
     // Core's own look reads the page: the lists are as found, the control flipped.
     const { checks } = looking(ledger, { "loc:box": page("p:box-page", "loc:box", box(), { "pl:pin": { "st:on": 1 } }) });
-    expect(settleOf(await ledger.beforeTrial(checks), "actsToUndo", "act-1")).toBe("Its control at loc:box still shows the state this act set: press that same control back once, naming this act under undoes.");
+    expect((await ledger.beforeTrial(checks), settleOfOpen(ledger, "act-1"))).toBe("Its control at loc:box still shows the state this act set: press that same control back once, naming this act under undoes.");
     // A read of its page reporting no controls at all reads the press as showing none: the lists alone decide.
     const blind = pinned();
     blind.observed(boxPage());

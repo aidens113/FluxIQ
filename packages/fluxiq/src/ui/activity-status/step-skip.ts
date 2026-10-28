@@ -18,7 +18,7 @@ export type ActivityStepSkip = NonNullable<NonNullable<ClientGatewayActivity["de
 
 // A record over the contract's union, so a reason Core adds or drops fails the
 // typecheck here instead of being silently read.
-const REASONS: Record<ActivityStepSkip["reason"], true> = { already_done: true, optional_absent: true, state_routed: true };
+const REASONS: Record<ActivityStepSkip["reason"], true> = { already_done: true, already_in_state: true, optional_absent: true, state_routed: true };
 
 /**
  * The skip `event`'s step row reports, or `undefined` when the row is not a

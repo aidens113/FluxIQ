@@ -43,7 +43,11 @@
 // the leftOutOnlyByThis sentence names leftOutCells, each left-out row's own
 // cells, and the defects sentence asks a row by Core's id or its whole label
 // and, for a row a read left out, the column and that row's own value in it
-// that makes it asked for. With
+// that makes it asked for; and in t775 (a trial judged against the site's
+// state just before it and the change asked for, user 2026-10-27) both by
+// nine sentences after the startedWith sentence: how to read
+// resultSummary.siteChange and siteChangeFindings, and that each typed part is
+// judged by the change between before and after. With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.
@@ -134,6 +138,41 @@ describe("a verification's system message, on a list that goes on past what was 
     for (const name of Object.keys(CASES).filter((key) => !key.startsWith("loop_verification"))) {
       expect(automationStudioDeepSeekSystemPrompt(CASES[name]!)).not.toContain("an end the page itself marks");
     }
+  });
+});
+
+// t775 (user, 2026-10-27): a trial is judged against the site's state just
+// before it and the change the task asks for, so the judges are told how to
+// read the trial's siteChange and judge each typed part by its change.
+describe("a verification's system message, on judging a trial by its change (t775)", () => {
+  const STARTED = "and the request is met when what it asks for holds at the end, these included.";
+  const SITE = "resultSummary.siteChange, where present, is what Core read of the site just before this run and just after it, at each place a lasting step's change shows:";
+  const BY_CHANGE = "Judge each part with an effect by the change between before and after, never by the state after alone.";
+  const CHANGE_MET = "A part asking for a change is met when after differs from before by what it asks, whatever was there before:";
+  const END_STATE = "A part asking for an end state is met when after shows that state; where before already showed it, its proof says whether this run counts:";
+  const UNCHANGED = "What the task says to leave as it is, and every place no act of this run was attributed to, is met when before equals after, even where its state is not what the task would want:";
+  const ALREADY = "An act listed already_in_state did not act: it is neither credit for a change nor a failure, but a step that targeted a row the task says to leave alone is a defect even though nothing changed on that row.";
+  const FINDINGS = "resultSummary.siteChangeFindings, where present, are Core's own findings over that change: result.change_not_seen,";
+  const SAID = [SITE, BY_CHANGE, CHANGE_MET, END_STATE, UNCHANGED, ALREADY, FINDINGS];
+
+  it("says each once, right after the startedWith sentence, to both verifications and to no other task", () => {
+    for (const name of ["loop_verification", "loop_verification_build_test"]) {
+      const prompt = automationStudioDeepSeekSystemPrompt(CASES[name]!);
+      for (const said of SAID) expect(prompt.split(said), `${name}: ${said.slice(0, 40)}`).toHaveLength(2);
+      expect(prompt).toContain(`${STARTED} ${SITE}`);
+      expect(prompt).toContain("attributed to it. resultSummary.flowShape[].changed, where present,");
+    }
+    for (const name of Object.keys(CASES).filter((key) => !key.startsWith("loop_verification"))) {
+      expect(automationStudioDeepSeekSystemPrompt(CASES[name]!)).not.toContain("siteChange");
+    }
+  });
+
+  it("teaches nothing a Lab scenario could be passed by: its examples are a library's holds on books", () => {
+    const prompt = automationStudioDeepSeekSystemPrompt(CASES.loop_verification!);
+    const said = prompt.slice(prompt.indexOf(SITE), prompt.indexOf("resultSummary.flowShape[].changed, where present,"));
+    expect(said.length).toBeGreaterThan(1000);
+    expect(said).not.toMatch(/[$€£]|price|cart|shop|stor(?:e|es|ed)|likes?|sav(?:e|es|ed)|jobs?|checkout|address|auction|classified|social|compan|professional|listing|rating|sponsor|friend|follow|connect|accept|bid|photo|feed|post/iu);
+    expect(said).toContain("holds on books");
   });
 });
 

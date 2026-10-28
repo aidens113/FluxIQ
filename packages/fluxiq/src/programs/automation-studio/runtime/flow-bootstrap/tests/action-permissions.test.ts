@@ -20,7 +20,7 @@ import { AutomationStudioSiteResetLedger, automationStudioSiteResetPlacedCall } 
 const CHECKOUT: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Continue to checkout", kind: "button" }, verb: "press" };
 const PLACE: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" };
 
-it.each(["core.run_node", "custom.press"])("requires a project control original before any effect through %s", async (toolId) => {
+it.each(["core.run_node", "custom.press"])("runs a project control press at the exploration door with no original read yet, and still refuses an unidentified control, through %s", async (toolId) => {
   const ledger = new AutomationStudioSiteResetLedger({ owner: "builder" });
   let effects = 0;
   const control = { name: "Star", kind: "button", resource: "r:card", subject: "s:card", place: "pl:star", state: "st:off" };
@@ -34,18 +34,20 @@ it.each(["core.run_node", "custom.press"])("requires a project control original 
     }
   });
   const run = () => permissions.executeTool({ callId: "star", toolId, value: { node: "demo.star", consequences: ["modify_existing"] } });
-  const missingOriginal = await run();
-  expect(missingOriginal).toMatchObject({ resultCode: "candidate.reset_witness_required", evidence: { canMeet: "this_page", instruction: expect.stringContaining("This build has no proven original counts for this control.") }, effectApplied: false });
-  expect(JSON.stringify(missingOriginal)).not.toContain("build acted");
-  expect(effects).toBe(0);
+  // t775: no original read is needed to press while exploring; the press runs and the ledger records the act.
+  const noOriginalYet = await run();
+  expect(noOriginalYet).toMatchObject({ effectApplied: true, evidence: { ok: true } });
+  expect(JSON.stringify(noOriginalYet)).not.toContain("candidate.reset_witness_required");
+  expect(effects).toBe(1);
+  // A control that names no target is still refused before any effect.
   target = { name: "Unidentified", kind: "button" };
   expect(await run()).toMatchObject({ resultCode: "candidate.reset_target_unidentified", effectApplied: false });
-  expect(effects).toBe(0);
-  expect(ledger.inPlace()).toEqual([]);
+  expect(effects).toBe(1);
+  // Once the original counts are read, the same control runs again, with its place as the witness.
   ledger.observed({ state: {}, differs: [], resource: "r:card", scope: "p:card", controls: { "pl:star": { "st:off": 1 } } });
   target = control;
   expect(await run()).toMatchObject({ effectApplied: true });
-  expect(effects).toBe(1);
+  expect(effects).toBe(2);
 });
 
 it("keeps explicit standalone custom-tool legacy compatibility", async () => {
@@ -100,7 +102,8 @@ it("captures, records and settles a project custom effect whose raw args omit co
   expect(await run("star")).toMatchObject({ effectApplied: true });
   expect(effects).toBe(1);
   expect(ledger.inPlace()).toMatchObject([{ act: "act-1" }]);
-  expect(await ledger.beforeTrial({ compare: async () => ({ moved: false }) })).toMatchObject({ kind: "refuse" });
+  // t775: the act in place no longer refuses the trial; it is told to the judge as what the trial starts with.
+  expect(await ledger.beforeTrial({ compare: async () => ({ moved: false }) })).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
   expect(await run("undo", { undoes: "act-1" })).toMatchObject({ effectApplied: true });
   expect(effects).toBe(2);
   expect(state).toBe("st:off");
@@ -109,7 +112,7 @@ it("captures, records and settles a project custom effect whose raw args omit co
   expect(raw.every((value) => !Object.hasOwn(value, "consequences") && !Object.hasOwn(value, "undoes"))).toBe(true);
 });
 
-it("refuses an identified exploratory creation before execution when no original destination was observed", async () => {
+it("runs an identified exploratory creation when no original destination was observed, since the exploration door needs no witness", async () => {
   const ledger = new AutomationStudioSiteResetLedger();
   let executed = 0;
   const permissions = automationStudioFlowBootstrapActionPermissions({
@@ -121,9 +124,9 @@ it("refuses an identified exploratory creation before execution when no original
     }
   });
   const result = await permissions.executeTool({ callId: "create", toolId: "core.run_node", value: { node: "example.create", parameters: {}, consequences: ["create_new"] } });
-  expect(executed).toBe(0);
-  expect(result).toMatchObject({ evidence: { code: "candidate.create_baseline_required" }, effectApplied: false, targetsUnchanged: true });
-  expect(ledger.inPlace()).toEqual([]);
+  expect(executed).toBe(1);
+  expect(result).toMatchObject({ evidence: { ok: true }, effectApplied: true });
+  expect(JSON.stringify(result)).not.toContain("candidate.create_baseline_required");
   expect(permissions.signal.aborted).toBe(false);
   expect(permissions.request()).toBeUndefined();
 });
@@ -147,23 +150,27 @@ it("recovers through observed original authority and an issued ref, strips it, a
     }
   });
   const run = (callId: string, extra: JsonObject = {}) => permissions.executeTool({ callId, toolId: "core.run_node", value: { node: "example.create", parameters: {}, consequences: callId === "observe" ? [] : ["create_new"], ...extra } });
-  expect(await run("missing")).toMatchObject({ resultCode: "candidate.create_baseline_required" });
-  expect(creates).toBe(0);
-  expect(own.inPlace()).toEqual([]);
+  // t775: with no original destination observed yet the exploration door still lets the creation run (witness unresolved).
+  expect(await run("missing")).toMatchObject({ effectApplied: true, evidence: { ok: true } });
+  expect(creates).toBe(1);
   await run("observe");
   const ref = calls.destinationReceipts!()[0]!.ref;
   expect(ref).toBe("destination-1");
   expect(await run("create", { resetDestination: ref })).toMatchObject({ evidence: { ok: true } });
-  expect(creates).toBe(1);
+  expect(creates).toBe(2);
   expect(inputs.every(input => !Object.hasOwn(input, "resetDestination"))).toBe(true);
   expect(permissions.signal.aborted).toBe(false);
   expect(permissions.request()).toBeUndefined();
   calls.observed(read(["s:original", "s:document"]));
-  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "refuse" });
-  expect(await run("undo", { undoes: "act-1", consequences: ["delete"] })).toMatchObject({ evidence: { ok: true } });
+  // The new document is still there: the trial is admitted and told what it starts with, never refused for it.
+  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.objectContaining({ call: "create" })]) } });
+  expect(await run("undo", { undoes: "act-2", consequences: ["delete"] })).toMatchObject({ evidence: { ok: true } });
   expect(removals).toBe(1);
   calls.observed(read(["s:original"]));
-  expect(await own.beforeTrial(async () => ({ moved: false }))).toEqual({ kind: "admit" });
+  // Only the first creation, which no witness could settle, is still on the site, and the trial is told it; the undone one is not listed.
+  const last = await own.beforeTrial(async () => ({ moved: false }));
+  expect(last).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1", call: "missing" }] } });
+  expect(JSON.stringify(last)).not.toContain("act-2");
 });
 
 it("hands the ledger the destination a creation was admitted against, so an unchanged destination lets the trial run (F1)", async () => {
@@ -190,7 +197,7 @@ it("hands the ledger the destination a creation was admitted against, so an unch
   expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1", call: "open" }] } });
 });
 
-it("refuses an unwitnessed press unrun before and after the first lasting act, since the admission has no seal (rerun round 2, t751)", async () => {
+it("runs an unwitnessed press at the exploration door before and after the first lasting act, and no act seals the lists against it (t775, was t751)", async () => {
   const own = new AutomationStudioSiteResetLedger();
   const told: Array<string | undefined> = [];
   const read = { state: {}, differs: [], resource: "r:one", scope: "p:saved-page", collections: [{ scope: "p:saved", group: "g:saved", subjects: ["s:original"], states: { "s:original": "v:original" } }] };
@@ -210,20 +217,23 @@ it("refuses an unwitnessed press unrun before and after the first lasting act, s
   });
   own.observed(read);
   const ref = own.destinationReceipts()[0]!.ref;
-  // Before the seal, a reversible press that nothing could ever settle is refused unrun and recorded nowhere.
-  expect(await permissions.executeTool({ callId: "save-unwitnessed", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } })).toMatchObject({ evidence: { ok: false, code: "candidate.reset_witness_required" } });
-  expect(told).toEqual([]);
-  // Named by its ref, the first press lands.
+  // A reversible press with no witness runs while exploring, and is recorded with none.
+  const unwitnessed = await permissions.executeTool({ callId: "save-unwitnessed", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } });
+  expect(unwitnessed).toMatchObject({ effectApplied: true, evidence: { ok: true } });
+  expect(JSON.stringify(unwitnessed)).not.toContain("candidate.reset_witness_required");
+  expect(told).toEqual([undefined]);
+  // Named by its ref, the next press lands too.
   await permissions.executeTool({ callId: "save", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"], resetDestination: ref } });
-  // After it, a press naming no ref that repeats nothing explored is still refused unrun and recorded nowhere: nothing is admitted unwitnessed once an act has landed (t751, R3 door 1).
-  expect(await permissions.executeTool({ callId: "pin-other", toolId: "core.run_node", value: { node: "example.pin", parameters: {}, consequences: ["modify_existing"] } })).toMatchObject({ evidence: { ok: false, code: "candidate.reset_witness_required" } });
-  expect(told).toEqual([ref]);
+  // After a lasting act has landed, a press naming no ref that repeats nothing witnessed still runs: a witnessless act seals no list.
+  expect(await permissions.executeTool({ callId: "pin-other", toolId: "core.run_node", value: { node: "example.pin", parameters: {}, consequences: ["modify_existing"] } })).toMatchObject({ effectApplied: true, evidence: { ok: true } });
+  expect(told).toEqual([undefined, ref, undefined]);
   own.observed(read);
-  // Only the witnessed act is on the site, and its list reads as it did before it: the trial is admitted.
-  expect(await own.beforeTrial(async () => ({ moved: false }))).toMatchObject({ kind: "admit" });
+  // The trial is admitted either way; the presses nothing could witness are told to it as on the site.
+  const trial = await own.beforeTrial(async () => ({ moved: false }));
+  expect(trial).toMatchObject({ kind: "admit", startedWith: { acts: expect.arrayContaining([expect.objectContaining({ call: "save-unwitnessed" }), expect.objectContaining({ call: "pin-other" })]) } });
   // The same press again, naming no ref, repeats the witnessed act and shares its witness, so it runs.
   expect(await permissions.executeTool({ callId: "save-again", toolId: "core.run_node", value: { node: "example.save", parameters: {}, consequences: ["modify_existing"] } })).toMatchObject({ evidence: { ok: true } });
-  expect(told).toEqual([ref, undefined]);
+  expect(told).toEqual([undefined, ref, undefined, undefined]);
 });
 
 it("refuses a look under undoes that names a ref no receipt printed, before it runs (rerun round 2)", async () => {

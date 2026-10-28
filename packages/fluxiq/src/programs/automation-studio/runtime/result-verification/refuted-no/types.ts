@@ -1,7 +1,7 @@
 // The shapes a no is weighed in against Core's own record of the result it
 // judged (`./weigh.ts`, t607).
 
-import type { AutomationStudioResultNarrowingStep } from "../contracts/index.ts";
+import type { AutomationStudioResultNarrowingStep, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestPhrases } from "../request-rows/index.ts";
 
 /** A row the result holds: its label (its first text column), and each text cell by column. */
@@ -158,6 +158,13 @@ export type AutomationStudioResultNoRecord = {
    * blaming such a step is weighed against. Absent where no read names one.
    */
   narrowing?: { steps: AutomationStudioResultNoNarrowingStep[]; readNodeIds: string[] } | undefined;
+  /**
+   * A build trial's change as Core read it just before and just after the
+   * trial (`AutomationStudioRunResultSummary.siteChange`, t775): what a no's
+   * absolute count of what a change part asks for is held to
+   * (`../site-change/count-claim.ts`). Absent on any other summary.
+   */
+  siteChange?: NonNullable<AutomationStudioRunResultSummary["siteChange"]> | undefined;
   /** A claim Core's agreement checks itself (pages, order): whether this sentence makes one, and whether the record refutes it. */
   other?: ((sentence: string) => AutomationStudioResultNoClaim | undefined) | undefined;
 };

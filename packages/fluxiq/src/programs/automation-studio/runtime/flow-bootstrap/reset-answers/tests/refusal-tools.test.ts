@@ -127,10 +127,11 @@ function meetableSites(): Site[] {
 describe("every refusal some call can meet names a tool the builder is offered (t751 R5)", () => {
   it("the scan finds the refusal sites it must, in each directory that builds them", () => {
     const sites = meetableSites();
-    for (const file of ["site-reset/trial-policy.ts", "site-reset/undo-admission.ts", "site-reset/undo-claims.ts", "site-reset/ledger.ts", "site-reset/project-reset.ts", "site-reset/create-baselines.ts", "reset-admission/admission.ts"]) {
+    // t775: the trial policy refuses nothing; the one trial refusal left is the ledger's (`startsInEndState`).
+    for (const file of ["site-reset/undo-admission.ts", "site-reset/undo-claims.ts", "site-reset/ledger.ts", "site-reset/project-reset.ts", "site-reset/create-baselines.ts", "reset-admission/admission.ts"]) {
       expect(sites.some((site) => site.file.replaceAll("\\", "/") === file), file).toBe(true);
     }
-    expect(sites.flatMap((site) => site.words.map((entry) => entry.name))).toEqual(expect.arrayContaining(["resetRequired", "unprovedUndo", "witnessRequired", "createBaselineRequired", "stepWitnessRequired", "alreadyBack", "destinationUnissued", "unknownAct", "unprovedReset", "startDiffers"]));
+    expect(sites.flatMap((site) => site.words.map((entry) => entry.name))).toEqual(expect.arrayContaining(["startsInEndState", "unprovedUndo", "stepWitnessRequired", "alreadyBack", "destinationUnissued", "unknownAct"]));
   });
 
   it("each such site builds its instruction from the words, and every words function it names names an offered tool", () => {

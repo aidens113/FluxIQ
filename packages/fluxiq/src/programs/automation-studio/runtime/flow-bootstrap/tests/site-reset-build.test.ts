@@ -183,28 +183,33 @@ async function run(steps: Step[], options: { hook?: boolean; gap?: boolean; rowT
 
 const undoRecords = (records: readonly AutomationStudioActionDeclarationRecord[]) => records.filter((record) => record.undoes !== undefined);
 
-describe("a candidate build puts the site back before each trial, through the real ledger, wrapper and loop", () => {
-  it("refuses the first test while the explored add is in place, and runs no trial", async () => {
+describe("a candidate build runs each trial on the site as it stands and undoes only what the model targets, through the real ledger, wrapper and loop", () => {
+  it("runs the first test with the explored add in place, and names it under startedWith.acts for the judge", async () => {
     const { seen, asked, state } = await run([add("call.add"), submit("call.submit"), test("call.test"), submit("call.again")]);
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({
-      ok: false, code: "candidate.trial_reset_required",
-      actsToUndo: [{ act: "act-1", did: "press \"Add\" button", call: "call.add", stillThere: ["line added-1"] }]
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)!;
+    expect(ran).toMatchObject({
+      verdict: "unsure", trialRunId: "trial.1",
+      startedWith: { acts: [{ act: "act-1", did: "press \"Add\" button", call: "call.add", stillThere: ["line added-1"] }] }
     });
-    expect(asked).toHaveLength(0);
-    expect(state.site.lines).toEqual(["before", "added-1"]);
+    expect(ran.code).toBeUndefined();
+    expect(asked).toHaveLength(1);
+    expect(state.site.lines).toEqual(["before", "added-1", "trial-1"]);
   });
 
   it("removes the line the act created by naming it: the domain never sees `undoes`, the delete is not asked about, and the trial then runs", async () => {
     const { seen, asked, state, wrapper } = await run([add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo", "added-1", "act-1"), test("call.test.2"), submit("call.again")]);
-    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before"] });
+    // The first test ran with the add in place; the undo then removes just that line (the first trial's own line stays).
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ trialRunId: "trial.1", startedWith: { acts: [{ act: "act-1" }] } });
+    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before", "trial-1"] });
     expect(state.inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
     expect(wrapper.request()).toBeUndefined();
     expect(undoRecords(wrapper.declarations())).toEqual([expect.objectContaining({ consequences: ["delete"], permitted: true, undoes: "act-1", control: { name: "Remove", kind: "button" } })]);
+    // The undone act is no longer in place: the second trial starts only with the first trial's own step.
     const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)!;
-    expect(ran).toMatchObject({ verdict: "unsure", trialRunId: "trial.1" });
-    expect(ran.startedWith).toBeUndefined();
-    expect(ran.leftOnSite).toEqual([{ act: "act-2", did: "trial step 1 \"Inspect\"" }]);
-    expect(asked).toHaveLength(1);
+    expect(ran).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { acts: [{ act: "act-2" }] } });
+    expect(JSON.stringify(ran.startedWith)).not.toContain("act-1");
+    expect(ran.leftOnSite).toEqual([{ act: "act-2", did: "trial step 1 \"Inspect\"" }, { act: "act-3", did: "trial step 1 \"Inspect\"" }]);
+    expect(asked).toHaveLength(2);
   });
 
   // Lane B round 10 (`run-mv5tusj4-b7ee0630`): the reset removed the line the cart held before the build began, twice,
@@ -219,10 +224,11 @@ describe("a candidate build puts the site back before each trial, through the re
     expect(state.acted).not.toContain("demo.remove");
     expect(wrapper.request()).toBeUndefined();
     expect(undoRecords(wrapper.declarations())).toEqual([]);
-    // The act is kept at that first refusal: the next test runs the trial with it in place, and says so.
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }] } });
-    expect(asked).toHaveLength(1);
-    expect(state.site.lines).toEqual(["before", "added-1", "trial-1"]);
+    // The first test ran with the act in place; the refusal keeps it, so the next trial says it is one nothing undid.
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { acts: [{ act: "act-1" }] } });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    expect(asked).toHaveLength(2);
+    expect(state.site.lines).toEqual(["before", "added-1", "trial-1", "trial-2"]);
   });
 
   it("removes the added line unasked once, then refuses the earlier line named under the same act, and asks about it named under none", async () => {
@@ -230,11 +236,11 @@ describe("a candidate build puts the site back before each trial, through the re
       add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo", "added-1", "act-1"), remove("call.undo.again", "before", "act-1"),
       remove("call.remove.before", "before"), submit("call.again")
     ]);
-    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before"] });
+    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before", "trial-1"] });
     expect(latestOf("core.run_node", seen[5]!)).toMatchObject({ ok: false, code: "candidate.undo_already_done", act: "act-1", undoneBy: "call.undo" });
     expect(latestOf("core.run_node", seen[6]!)).toMatchObject({ ok: false, code: "permission_required", missing: ["delete"], requestId: "permission-request:1" });
     expect(wrapper.request()).toMatchObject({ missing: ["delete"] });
-    expect(state.site.lines).toEqual(["before"]);
+    expect(state.site.lines).toEqual(["before", "trial-1"]);
   });
 
   it("refuses unrun a removal under an act that only changed something on a control in no item, and keeps that act", async () => {
@@ -258,33 +264,32 @@ describe("a candidate build puts the site back before each trial, through the re
   it("keeps a trial's own act when the model aims its undo at a line it cannot be tied to, and runs the next trial with it", async () => {
     const { seen, asked, state } = await run([
       add("call.add"), submit("call.submit"), test("call.test.1"), remove("call.undo.1", "added-1", "act-1"), test("call.test.2"),
-      test("call.test.3"), remove("call.undo.2", "trial-1", "act-2"), test("call.test.4"), submit("call.again")
+      remove("call.undo.2", "trial-1", "act-2"), test("call.test.3"), submit("call.again")
     ]);
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ trialRunId: "trial.1" });
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[6]!)).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-2", did: "trial step 1 \"Inspect\"" }] });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ trialRunId: "trial.2", startedWith: { acts: [{ act: "act-2", did: "trial step 1 \"Inspect\"" }] } });
     // A trial's act has no item of its own Core can tie a control to: refused unrun, and kept.
-    expect(latestOf("core.run_node", seen[7]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-2" });
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[8]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { cannotUndo: [{ act: "act-2" }] } });
-    expect(asked).toHaveLength(2);
-    expect(state.site.lines).toEqual(["before", "trial-1", "trial-2"]);
+    expect(latestOf("core.run_node", seen[6]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-2" });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[7]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.3", startedWith: { cannotUndo: [{ act: "act-2" }] } });
+    expect(asked).toHaveLength(3);
+    expect(state.site.lines).toEqual(["before", "trial-1", "trial-2", "trial-3"]);
   });
 
   // Lane D round 10 (`run-mv5tusge-1400ddf7`, `run-mv5upw4g-2482be12`): requests confirmed while exploring; no control
   // takes a confirmation back, and the model aimed Delete and Confirm at another request's row under `undoes`.
-  it("lane D: two confirms no control reverses; an undo on another row is refused unrun, and the trial runs with both kept", async () => {
+  it("lane D: two confirms no control reverses; the first trial runs with both in place, an undo on another row is refused unrun, and the next trial runs with both kept", async () => {
     const { seen, asked, state, wrapper, outcome } = await run([
       confirm("call.confirm.1", "amara"), confirm("call.confirm.2", "lin"), submit("call.submit"), test("call.test.1"),
       decline("call.undo.tom", "tom", ["delete"], "act-1"), decline("call.undo.marta", "marta", [], "act-2"),
       test("call.test.2"), submit("call.again")
     ]);
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)).toMatchObject({ code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }, { act: "act-2" }] });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { acts: [{ act: "act-1" }, { act: "act-2" }] } });
     expect(latestOf("core.run_node", seen[5]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1" });
     // Declaring nothing lasting does not make another row's control an undo either.
     expect(latestOf("core.run_node", seen[6]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-2" });
     expect(state.site.requests).toEqual({ tom: "pending", amara: "accepted", lin: "accepted", marta: "pending" });
     expect(wrapper.request()).toBeUndefined();
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[7]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }] } });
-    expect(asked).toHaveLength(1);
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[7]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }] } });
+    expect(asked).toHaveLength(2);
     // The build went on: every scripted decision was asked for, and nothing ended it on the refusals.
     expect(seen).toHaveLength(8);
     expect(outcome).toMatchObject({ loop: { code: "llm_evidence_loop.iteration_limit" } });
@@ -302,8 +307,9 @@ describe("a candidate build puts the site back before each trial, through the re
     expect(String(refused.instruction)).not.toContain("kept and not asked for again");
     expect(wrapper.request()?.missing).toEqual(["delete"]);
     expect(state.site.requests.amara).toBe("accepted");
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1" }] } });
-    expect(asked).toHaveLength(1);
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { acts: [{ act: "act-1" }] } });
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    expect(asked).toHaveLength(2);
   });
 
   // Lane D round 10 (`run-mv5tusge-1400ddf7`): with the Lab's fixture reset, the gate still asked the model to undo,
@@ -332,15 +338,15 @@ describe("a candidate build puts the site back before each trial, through the re
       const { seen, asked, state, wrapper } = await run([
         addElsewhere("call.add"), submit("call.submit"), test("call.test.1"), removeAs("call.undo.soap", "before", consequences, "act-1"), test("call.test.2"), submit("call.again")
       ], { rowTokens: false });
-      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }] });
+      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { acts: [{ act: "act-1" }] } });
       expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1", cannotUndo: [{ act: "act-1" }] });
       expect(state.acted).not.toContain("demo.remove");
       expect(wrapper.request()).toBeUndefined();
       expect(undoRecords(wrapper.declarations())).toEqual([]);
       // No positively identified reverse: the act is kept, the trial runs with it, and the line from before is there.
-      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }] } });
-      expect(asked).toHaveLength(1);
-      expect(state.site.lines).toEqual(["before", "trial-1"]);
+      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+      expect(asked).toHaveLength(2);
+      expect(state.site.lines).toEqual(["before", "trial-1", "trial-2"]);
     }
   });
 
@@ -350,21 +356,21 @@ describe("a candidate build puts the site back before each trial, through the re
     ], { rowTokens: false });
     expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1" });
     expect(state.acted).not.toContain("demo.remove");
-    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }] } });
-    expect(state.site.lines).toEqual(["before", "added-1", "trial-1"]);
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ trialRunId: "trial.2", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    expect(state.site.lines).toEqual(["before", "added-1", "trial-1", "trial-2"]);
   });
 
-  it("a two-line cart with row tokens: the reset removes only the line the act added, and the trial starts clean", async () => {
+  it("a two-line cart with row tokens: the undo removes only the line the act added, and the next trial no longer starts with that act", async () => {
     const { seen, asked, state, wrapper } = await run([
       add("call.add"), submit("call.submit"), test("call.test.1"), removeAs("call.undo", "added-1", ["modify_existing"], "act-1"), test("call.test.2"), submit("call.again")
     ]);
-    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before"] });
+    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before", "trial-1"] });
     expect(wrapper.request()).toBeUndefined();
     const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)!;
-    expect(ran).toMatchObject({ verdict: "unsure", trialRunId: "trial.1" });
-    expect(ran.startedWith).toBeUndefined();
-    expect(asked).toHaveLength(1);
-    expect(state.site.lines).toEqual(["before", "trial-1"]);
+    expect(ran).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { acts: [{ act: "act-2" }] } });
+    expect(JSON.stringify(ran.startedWith)).not.toContain("act-1");
+    expect(asked).toHaveLength(2);
+    expect(state.site.lines).toEqual(["before", "trial-1", "trial-2"]);
   });
 
   // Lane B round 11 (`run-mv5yaapd-ad19eaae`): after the hook, a look on each act's own page still saw a rotating

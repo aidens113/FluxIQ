@@ -81,9 +81,9 @@
 // still offers no tools: its schema then holds completion and amendments
 // only, which is what makes it finish.
 //
-// **A candidate's wrap-up runs the undos its trial demands (t741).** A trial
-// refused `trial_reset_required` will not run until the build undoes its own
-// acts, and an undo is a `core.run_node` naming the act under `undoes`. The
+// **A candidate's wrap-up runs a targeted undo (t741, t775).** A trial
+// refused `trial_starts_in_end_state` will not run until the build undoes the
+// one act it names, and an undo is a `core.run_node` naming the act under `undoes`. The
 // wrap-up judged only the tool id, so it withheld every `core.run_node`, the
 // undo with it: photo `run-mvgobp8h-b99ede98` (0150-0158) had its undos
 // answered `not_offered`, its trial refused again, and never tried its last
@@ -241,7 +241,7 @@ function candidateFinalInstruction(tools: AutomationStudioLlmEvidenceFinishingTo
   return `The budget counts one decision left; submitting, testing and completing are still offered while the budget permits. If the latest submission is untested, test its exact revision and digest now with ${tools.test}. Complete only after that exact revision's trial answers yes, or no trial runner is available. Never complete an untested revision when a trial runner is available.`;
 }
 function candidateWrapUpInstruction(tools: AutomationStudioLlmEvidenceFinishingTools): string {
-  return `Only a few decisions are left, so only ${tools.submit}, ${tools.test} and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs. If a trial is refused as candidate.trial_step_unwitnessed, nothing can give that step a witness now, because exploring is withheld: end blocked, naming that step. If your latest Flow is not submitted, submit the whole candidate now with ${tools.submit}; test that exact revision with ${tools.test}; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.`;
+  return `Only a few decisions are left, so only ${tools.submit}, ${tools.test} and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. A call that names one of this build's own lasting acts under undoes still runs. If a trial is refused as candidate.trial_step_unwitnessed, the step's change has no place named where it shows, and exploring is withheld now: end blocked, naming that step and where its change would show. If your latest Flow is not submitted, submit the whole candidate now with ${tools.submit}; test that exact revision with ${tools.test}; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.`;
 }
 
 /** Decisions left from which the loop wraps up: a candidate's wrap-up starts earlier, since it has a submission and a trial to make before it completes. */

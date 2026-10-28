@@ -50,7 +50,8 @@ describe("the project ledger's acts in the build record", () => {
     const calls = AutomationStudioProjectBuildActsRecord.of(project).calls(owner);
     const ref = calls.destinationReceipts!()[0]!.ref;
     const declaration = { effect: "mutate" as const, consequences: ["create_new" as const], control: { name: null, kind: null, resource: "r:one", subject: "s:document", scope: "p:source" } };
-    expect(calls.createBaseline!(declaration, undefined)).toMatchObject({ kind: "refused" });
+    // t775: the exploration door admits a press with no witness.
+    expect(calls.createBaseline!(declaration, undefined)).toEqual({ kind: "admit" });
     expect(calls.createBaseline!(declaration, ref)).toEqual({ kind: "admit" });
     expect(project.snapshot().acts).toEqual([]);
   });

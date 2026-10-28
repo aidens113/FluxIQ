@@ -1,30 +1,38 @@
 // @fluxiq-test-group real-sql
-// A builder's subflow trial puts the site back first, through the actual
-// service (t578; A8 bigbox debug, cause A and fix 2): a scripted model plays
-// the supervisor and two builders over a stub shop with no start hook. The
-// cart held dish soap before the build.
+// A builder's subflow trial after the build's acts, through the actual
+// service (t578; A8 bigbox debug, cause A and fix 2; t775): a scripted model
+// plays the supervisor and two builders over a stub shop with no start hook.
+// The cart held dish soap before the build.
 //
-// 1. Builder "first" adds oat milk and leaves the tab on another page. Its
-//    first trial is refused until that act is undone; it undoes it through the
-//    site's own control, naming the act under `undoes`, and its next trial
-//    starts by loading the build's start page. After the yes it adds rye
-//    bread, and completes.
-// 2. A reset removes the first builder's trial and explored additions before
-//    the second builder's entry may replay its predecessor. Builder "second"
-//    adds jam; its first trial is refused naming its entry's oat milk and its
-//    own jam. It undoes both, the entry act routed to its owning ledger. Its next trial
-//    begins with the tab on the product page the undos were checked on, and
-//    its run loads the start page itself, on the site as the build found it.
+// Since t775 (AGENTS.md "Reset as rarely as possible; judge the change") a
+// trial is never refused for want of a reset: it runs on the site as it
+// stands, and the build's acts there are said to the model and the judge under
+// `startedWith`. An undo the build asks for, naming the act under `undoes`,
+// still undoes exactly that act and never what was there before.
+//
+// 1. Builder "first" adds honey while exploring and leaves the tab on another
+//    page. Its trial runs with the honey still in the cart, said under
+//    startedWith, and starts by loading the build's start page. After the yes
+//    it adds rye bread, and completes.
+// 2. A reset the supervisor sends before the second builder's entry replays
+//    its predecessor removes the first builder's explored and trial additions,
+//    never the dish soap. Builder "second" adds butter, then undoes its
+//    entry's oat milk and its own butter, the entry act routed to its owning
+//    ledger. Its trial begins with the tab on the product page the undos were
+//    checked on, nothing of the build said, and its run loads the start page
+//    itself.
 // 3. Each part asks a lasting act, so each subflow adds its own product, the
 //    act declared as a real script must (t597). Every run of it -- a trial,
-//    the second's entry -- leaves that add too, named as a trial step. Such an
-//    act retains the real admission's resource-bound collection witness even
-//    without a host diff. The ending's reset restores the original cart too;
-//    naming cannotUndo never admits a repeated project act on leftovers.
+//    the second's entry -- leaves that add too, named as a trial step. Each
+//    builder explores with a product its own script does not add, so the cart
+//    never lists one line twice (a list showing duplicate rows witnesses
+//    nothing, `flow-bootstrap/reset-settlement/collection-groups.ts`). Core
+//    sends no reset of its own before the ending, so the second trial's adds
+//    are left on the site, said as left.
 //
 // Every run -- both trials and the entry -- loads the start page first, through
 // the domain's arrival node, which declares a fixed output action as the web
-// domain's does. The supervisor's whole trial is covered beside this, unchanged
+// domain's does. The supervisor's whole trial is covered beside this
 // (`./project-build-reset.test.ts`).
 //
 // **Nothing here waits on the wall clock (t644).** Under load this build took
@@ -98,9 +106,9 @@ function builderDecision(subflowKey: string, evidence: readonly Entry[]): JsonOb
   const submit = { callId: "submit", decided: () => ({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: script(subflowKey) }) };
   const test = (callId: string, cannotUndo?: string[]) => ({ callId, decided: () => ({ kind: "tool_call", callId, toolId: "core.test_subflow", input: { revision: submitted!.revision as number, digest: submitted!.digest as string, ...(cannotUndo ? { cannotUndo } : {}) } }) });
   const steps = subflowKey === "first"
-    ? [run("go.product", GO, { to: PRODUCT }, []), run("add.oat", ADD, { product: "oat-milk" }, ["create_new"]), run("go.away", GO, { to: ELSEWHERE }, []), submit, test("test.1"), run("undo.oat", REMOVE, { line: "oat-milk" }, ["delete"], "act-1"), test("test.2"),
+    ? [run("go.product", GO, { to: PRODUCT }, []), run("add.honey", ADD, { product: "honey" }, ["create_new"]), run("go.away", GO, { to: ELSEWHERE }, []), submit, test("test.1"),
       run("go.product.2", GO, { to: PRODUCT }, []), run("add.rye", ADD, { product: "rye-bread" }, ["create_new"])]
-    : [run("go.product", GO, { to: PRODUCT }, []), run("add.jam", ADD, { product: "jam" }, ["create_new"]), submit, test("test.1"), run("undo.entry", REMOVE, { line: "oat-milk" }, ["delete"], "act-4"), run("undo.jam", REMOVE, { line: "jam" }, ["delete"], "act-5"), test("test.2")];
+    : [run("go.product", GO, { to: PRODUCT }, []), run("add.butter", ADD, { product: "butter" }, ["create_new"]), submit, run("undo.entry", REMOVE, { line: "oat-milk" }, ["delete"], "act-4"), run("undo.butter", REMOVE, { line: "butter" }, ["delete"], "act-5"), test("test.1")];
   const next = steps.find((step) => !evidence.some((entry) => entry.callId === step.callId));
   if (next) return next.decided();
   return { kind: "complete", result: { subflowKey, revision: submitted!.revision as number, digest: submitted!.digest as string } };
@@ -215,7 +223,7 @@ async function twoBuilders() {
     }
     const properties = (loop.completionSchema.properties ?? {}) as JsonObject;
     if (properties.subflowKey === undefined) {
-      const reversals = [{ line: "oat-milk", act: "act-2" }, { line: "rye-bread", act: "act-3" }, undefined, { line: "oat-milk", act: "act-6" }, { line: "jam", act: "act-7" }];
+      const reversals = [{ line: "honey", act: "act-1" }, { line: "oat-milk", act: "act-2" }, { line: "rye-bread", act: "act-3" }];
       const reversal = reversals[resetCalls++];
       if (reversal) return decision({ kind: "tool_call", callId: `reset.${reversal.act}`, toolId: "core.run_node", input: { node: REMOVE, parameters: { line: reversal.line }, consequences: ["delete"], undoes: reversal.act } });
       return decision({ kind: "complete", result: { summary: "The build's cart additions were removed through their own controls." } });
@@ -246,38 +254,48 @@ async function twoBuilders() {
   };
 }
 
-describe("a builder's subflow trial after the build's acts (t578)", () => {
-  it("undoes every act of the build, across builders, before each trial, and starts each run on the loaded start page", async () => {
+describe("a builder's subflow trial after the build's acts (t578, t775)", () => {
+  it("runs each trial on the site as it stands, with the build's acts said; undoes the build asks for remove exactly its own acts, across builders; and each run starts on the loaded start page", async () => {
     const run = await twoBuilders();
     await run.build().catch(() => undefined);
     const { happened, acted, site, inputs } = run.domain;
 
-    // Builder "first": its trial is refused while its own add is on the site, then runs once it is undone.
+    // Builder "first": its trial ran with its own honey still in the cart (t775), never refused for it; the act is said under
+    // startedWith, by its line, and after the run both it and the trial's own add are said as left on the site.
     const first = run.seen.first;
-    expect(byCall(first, "test.1"), JSON.stringify(first?.map((entry) => entry.callId))).toMatchObject({ ok: false, code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }] });
-    expect(byCall(first, "undo.oat")).toMatchObject({ ok: true });
-    expect(byCall(first, "test.2")).toMatchObject({ ok: true, verdict: "yes", entryPrepared: true, leftOnSite: [{ act: "act-2" }] });
+    const firstTrial = byCall(first, "test.1");
+    expect(firstTrial, JSON.stringify(first?.map((entry) => entry.callId))).toMatchObject({ ok: true, verdict: "yes", entryPrepared: true, startedWith: { acts: [{ act: "act-1", call: "add.honey", stillThere: ["line honey"] }] }, leftOnSite: [{ act: "act-1" }, { act: "act-2" }] });
+    expect((firstTrial!.startedWith as JsonObject).acts).toHaveLength(1);
+    expect(firstTrial).not.toHaveProperty("code");
     // Each run's first act is loading the start page: the trials' and the entry's alike.
     expect(firstOfRun(happened, "trial of first"), JSON.stringify(happened)).toEqual({ ranOn: expect.any(String), first: `run loads ${START}`, ended: "succeeded" });
 
-    // Builder "second": its entry, prepared from the start page, then its trial refused naming both builders' acts.
+    // The supervisor's reset, asked for before the dependent entry replays its predecessor, removed exactly the first builder's
+    // acts -- its honey, its trial's oat milk, its rye bread -- and never the dish soap, before that entry ran.
+    expect(acted.slice(0, 6)).toEqual(["add honey", "run add oat-milk", "add rye-bread", "remove honey", "remove oat-milk", "remove rye-bread"]);
+    expect(happened.findIndex((line) => line.startsWith("entry for second"))).toBeGreaterThan(happened.indexOf("builder remove rye-bread"));
+
+    // Builder "second": its entry, prepared from the start page, after the first's trial.
     expect(firstOfRun(happened, "entry for second"), JSON.stringify({ happened, seen: run.seen })).toEqual({ ranOn: expect.any(String), first: `run loads ${START}`, ended: "succeeded" });
     expect(happened.findIndex((line) => line.startsWith("entry for second"))).toBeGreaterThan(happened.indexOf("trial of first succeeded"));
+    // It asked to undo its entry's oat milk and its own butter by naming each act: both admitted and landed, the entry's act
+    // routed to the ledger that owns it.
     const second = run.seen.second;
-    expect(byCall(second, "test.1"), JSON.stringify(second?.map((item) => item.callId))).toMatchObject({ ok: false, code: "candidate.trial_reset_required" });
-    // The first builder's trial and exploration were restored before entry;
-    // only the new entry's add and this builder's jam remain to undo.
-    expect((byCall(second, "test.1")!.actsToUndo as JsonObject[]).map((act) => act.act).sort()).toEqual(["act-4", "act-5"]);
-    expect(byCall(second, "undo.entry")).toMatchObject({ ok: true });
-    expect(byCall(second, "undo.jam")).toMatchObject({ ok: true });
-    expect(byCall(second, "test.2")).toMatchObject({ ok: true, verdict: "yes" });
+    expect(byCall(second, "undo.entry"), JSON.stringify(second?.map((item) => item.callId))).toMatchObject({ ok: true, cart: ["dish-soap", "butter"] });
+    expect(byCall(second, "undo.butter")).toMatchObject({ ok: true, cart: ["dish-soap"], resetSettlement: { settled: "act-5", actsStillOpen: [] } });
+    // Its trial then started with nothing of the build on the site, so nothing is said under startedWith.
+    const secondTrial = byCall(second, "test.1");
+    expect(secondTrial).toMatchObject({ ok: true, verdict: "yes", entryPrepared: true });
+    expect(secondTrial).not.toHaveProperty("startedWith");
     // The tab still showed the product page the undos were checked on when the trial began; the run loaded the start page itself.
     expect(firstOfRun(happened, "trial of second")).toEqual({ ranOn: PRODUCT, first: `run loads ${START}`, ended: "succeeded" });
 
-    // Both trials and exploration are reversed through the site's controls.
-    // The line there before the build is never touched or adopted by a reset.
-    expect(acted).toEqual(["add oat-milk", "remove oat-milk", "run add oat-milk", "add rye-bread", "remove oat-milk", "remove rye-bread", "run add oat-milk", "add jam", "remove oat-milk", "remove jam", "run add oat-milk", "run add jam", "remove oat-milk", "remove jam"]);
-    expect(site.cart).toEqual(["dish-soap"]);
+    // Every removal was of a line this build added. Core sends no reset of its own before the ending (t775): the second trial's
+    // run -- its predecessor's oat milk and its own jam -- is left on the site, said as left by that trial. The line there before
+    // the build is never touched or adopted by a reset.
+    expect(acted).toEqual(["add honey", "run add oat-milk", "add rye-bread", "remove honey", "remove oat-milk", "remove rye-bread", "run add oat-milk", "add butter", "remove oat-milk", "remove butter", "run add oat-milk", "run add jam"]);
+    expect(secondTrial).toMatchObject({ leftOnSite: [{ act: "act-6" }, { act: "act-7" }] });
+    expect(site.cart).toEqual(["dish-soap", "oat-milk", "jam"]);
     // The domain never saw `undoes`.
     expect(inputs.every((value) => !Object.prototype.hasOwnProperty.call(value, "undoes"))).toBe(true);
   });

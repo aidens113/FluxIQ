@@ -92,6 +92,11 @@
 // instead of getting a Flow:
 // `assertAutomationStudioBootstrapPermissionRequestAnswered` is what stops an
 // unanswered one reaching a replay, where there is no gate.
+//
+// **Which explored presses the domain answered as a toggle (t775).** Every call
+// that ran is also told to the build's record of toggles
+// (`./explored-toggles.ts`), which a submission reads to make a step on the
+// same control safe to run again (`./script-statements/toggle-idempotent.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import {
@@ -126,6 +131,7 @@ import {
   type AutomationStudioSiteResetTarget
 } from "./site-reset/contracts.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
+import { AutomationStudioExploredToggles } from "./explored-toggles.ts";
 import { automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetWitness, type AutomationStudioSiteResetWitnessStamp } from "./reset-admission/index.ts";
 
 /**
@@ -201,6 +207,8 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
   instructedLastingActs(acts: readonly { id: string; quote: string; kind?: AutomationStudioInstructedActKind | undefined; source?: { clause: string; object: string } | undefined }[]): Promise<ReadonlySet<string>>;
   /** The request the latest refusal carried, or `undefined` when none stands. Stored with a build that finished anyway. */
   request(): AutomationStudioActionPermissionRequest | undefined;
+  /** Every explored press the domain answered as a toggle, for the build's submissions to read (header, t775). */
+  exploredToggles: AutomationStudioExploredToggles;
   /** What every action put to the gate declared about itself, in the order it was asked. */
   declarations(): readonly AutomationStudioActionDeclarationRecord[];
   /**
@@ -230,6 +238,8 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
 export function automationStudioFlowBootstrapActionPermissions(input: {
   /** Project-builder exploration only; other authoring and finalized run paths are unchanged. */
   requireCreateBaseline?: boolean;
+  /** The record of explored toggles to write into; a project build shares one across its briefs (t775). Absent, this gate keeps its own. */
+  exploredToggles?: AutomationStudioExploredToggles | undefined;
   /** The consequences the build was permitted. Absent permits nothing. */
   permittedConsequences: readonly string[] | undefined;
   /** The instructions the build carries out: the reason any action was wanted. */
@@ -311,6 +321,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       return await check(declaration);
     };
   };
+  // The presses the domain answered as a toggle (header, t775).
+  const exploredToggles = input.exploredToggles ?? new AutomationStudioExploredToggles();
   // The read, once, with any act it left unanswered said once in the thread.
   let unansweredSaid = false;
   const read = async (): Promise<readonly AutomationStudioInstructedConsequence[]> => {
@@ -339,6 +351,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         };
         const execution = await input.executeTool({ ...call, permission });
         gate.observe(execution);
+        exploredToggles.explored(call, execution);
         if (unproved) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "candidate.create_baseline_unavailable", instruction: "This lasting action was not run because this project's original-state preflight is unavailable. End honestly naming the unavailable precondition; no new permission is required." }, effectApplied: false, targetsUnchanged: true, resultCode: "candidate.create_baseline_unavailable" };
         // Recoverable. The domain has already turned a refusal nobody granted
         // into evidence the model can read and route around, and the request it
@@ -392,6 +405,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       };
       const execution = await input.executeTool({ ...call, value, permission });
       gate.observe(execution);
+      // An undo puts a control back: its toggle answer is the reverse of the state a step asks for, so it never ties a step (t775).
+      if (!undo) exploredToggles.explored({ ...call, value }, execution);
       if (createRefusal) return { kind: "llm_evidence_tool_execution", evidence: createRefusal.evidence, effectApplied: false, targetsUnchanged: true, resultCode: createRefusal.evidence.code };
       siteReset.explored({
         callId: call.callId,
@@ -451,6 +466,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       }).map((act) => act.id));
     },
     request: () => gate.request,
+    exploredToggles,
     declarations: () => gate.declarations,
     crossCheck: async () => {
       // Undo records are the build putting the site back (t462): a build that

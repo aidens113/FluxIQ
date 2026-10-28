@@ -52,15 +52,22 @@
 
 import type { AutomationStudioResultTaskChecklist, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
+/** The change a part asks for (t775): a `change` is judged by the difference from the state before the run, an `end_state` by the state after it. */
+export type AutomationStudioBuildTestTaskEffect =
+  | { kind: "change"; direction: "adds" | "removes"; count: number | "each_match"; what: string }
+  | { kind: "end_state"; state: string };
+
 /** What the instructions ask, part by part, and what they do not ask: the build's own reading, never the request. */
 export type AutomationStudioBuildTestTaskChecklist = {
   /**
    * Each part: its id, the instructions' own words for it, the facts true once it is done and the lasting acts it needs,
    * and the answer it asks for where its task spec declares one (t757): what a yes is held to (`../requested-output/`).
    */
-  parts: ReadonlyArray<{ id: string; words: string; goalFacts: readonly string[]; lastingActs: readonly string[]; answer?: { kind: "records"; columns: readonly string[] } | undefined }>;
+  parts: ReadonlyArray<{ id: string; words: string; goalFacts: readonly string[]; lastingActs: readonly string[]; answer?: { kind: "records"; columns: readonly string[] } | undefined; effect?: AutomationStudioBuildTestTaskEffect | undefined }>;
   /** What the instructions do not ask for. */
   notAsked: readonly string[];
+  /** Things that must show no change, judged relative to the state before the run (t775). */
+  unchanged?: readonly string[] | undefined;
   /** A subflow trial's only: the task's other parts, each another subflow's work, by id and the instructions' own words (header, t594). */
   outOfScope?: ReadonlyArray<{ id: string; words: string }> | undefined;
   /** A subflow trial's only: the earlier subflows Core ran in it to prepare its entry, by key, and every step of theirs, by nodeId (header, t599). */
@@ -89,6 +96,10 @@ const ENTRY = "Before this subflow, this trial ran the subflows entry.subflows n
 const POSSIBLY_LASTING = "possiblyLasting holds, by nodeId, steps of this subflow that declared no lasting act yet changed their own page where they acted, so Core recorded each as possibly lasting. "
   + "Such a step's own consequences label is no proof it left nothing: judge it by what it changed, as a step that may have made a lasting act, against asked and outOfScope.";
 
+/** Said when a part types the change it asks for, or the task names what must stay as it is (t775, `../site-change/`). */
+const EFFECT = "A part carrying effect asks for a change (adds or removes count of what) or an end state, and unchanged names what must show no change; "
+  + "each is judged by what changed between just before the run and just after it (resultSummary.siteChange, where present), never by the state after alone.";
+
 /** Said when a part declares the answer it asks for (t757, `../requested-output/`). */
 const ANSWER = "A part carrying answer asks for records (answer.kind), with the columns answer.columns names, in the instructions' order. "
   + "Such a part is done only when the run's recordSets hold those records, or when its reads show a list read to its end with nothing in it matching; a value a step only read and handed on is not a record.";
@@ -99,14 +110,18 @@ export function automationStudioBuildTestSummaryWithTaskChecklist(summary: Autom
   const entry = checklist.entry?.steps.length ? checklist.entry : undefined;
   const possiblyLasting = checklist.possiblyLasting ?? [];
   const answers = checklist.parts.some((part) => part.answer !== undefined);
-  const said = [SUPPLEMENTARY, ...(answers ? [ANSWER] : []), ...(outOfScope.length ? [entry ? OUT_OF_SCOPE_WITH_ENTRY : OUT_OF_SCOPE] : []), ...(entry ? [ENTRY] : []), ...(possiblyLasting.length ? [POSSIBLY_LASTING] : [])];
+  const unchanged = checklist.unchanged ?? [];
+  const effects = unchanged.length > 0 || checklist.parts.some((part) => part.effect !== undefined);
+  const said = [SUPPLEMENTARY, ...(answers ? [ANSWER] : []), ...(effects ? [EFFECT] : []), ...(outOfScope.length ? [entry ? OUT_OF_SCOPE_WITH_ENTRY : OUT_OF_SCOPE] : []), ...(entry ? [ENTRY] : []), ...(possiblyLasting.length ? [POSSIBLY_LASTING] : [])];
   const taskChecklist: AutomationStudioResultTaskChecklist = {
     supplementary: said.join(" "),
     asked: checklist.parts.map((part) => ({
       part: part.id, words: part.words, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs],
-      ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns] } } : {})
+      ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns] } } : {}),
+      ...(part.effect ? { effect: { ...part.effect } } : {})
     })),
-    notAsked: [...checklist.notAsked]
+    notAsked: [...checklist.notAsked],
+    ...(unchanged.length ? { unchanged: [...unchanged] } : {})
   };
   if (outOfScope.length) taskChecklist.outOfScope = outOfScope.map((part) => ({ part: part.id, words: part.words }));
   if (entry) taskChecklist.entry = { subflows: [...entry.subflows], steps: [...entry.steps] };

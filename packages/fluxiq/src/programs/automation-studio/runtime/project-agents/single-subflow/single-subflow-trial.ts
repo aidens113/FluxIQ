@@ -48,9 +48,10 @@ import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.
 //   is put back after it: a refused judge call fails as the trial reports it,
 //   never as a thrown refusal the builder's gate would read as a failed port.
 //
-// The builder's gate has put the site back first (its project reset, and the
-// start hook ahead of it); the whole gate then checks every ledger again
-// before it runs, as it always does. Its answer comes back to the builder as a
+// The builder's gate has asked its project reset first (the start hook ahead
+// of it, and its readings of the trial's change, t775); the whole gate then
+// asks every ledger again before it runs, as it always does: only a start
+// already in an asked end state by another step's act is refused there. Its answer comes back to the builder as a
 // subflow trial of the proposal under test: its verdict, its run id, its
 // feedback with the whole test's revision, digest and the `complete` object
 // beside it. Its acts are not carried: the whole trial port records them
@@ -144,8 +145,8 @@ const WORDS = Object.freeze({
   assembleRefused: "Core could not join your subflow into the whole Flow, as listed under issues, so nothing ran. Change your subflow for what they name, submit it with core.submit_subflow, then test the new revision.",
   composedRefused: "Core joined your subflow into the whole Flow, and that Flow was refused, as listed under refusal, so nothing ran. Change your subflow for what it names, submit it with core.submit_subflow, then test the new revision.",
   judgedNo: "Your subflow joins into a whole Flow that was already tried and judged no (refusal has what the judge said), so it was not tried again. Change your subflow to answer that, submit it with core.submit_subflow, then test the new revision.",
-  resetRequired: "Before the whole Flow could run, lasting acts this build made were still on the site, as listed under actsToUndo, so nothing ran. Undo each with the site's own controls, then test the same revision and digest again. "
-    + "An act the site offers no control to undo goes under cannotUndo when you test again, and the test then runs with it already done; name only an act you tried to undo and could not.",
+  startsInEndState: "Before the whole Flow could run, Core found the state a step of it is to bring about already shown, put there by an act this build made with a different step, listed under actsToUndo, so nothing ran. "
+    + "Undo just that act with the site's own controls, leaving everything else as it is, then test the same revision and digest again.",
   unaffordable: "Core did not start this test: neither this brief's money nor the money kept for judging the build's whole run can pay its two judge calls, so nothing ran and no judge was asked (refusal has the figures). "
     + "Testing again is refused the same way, so do not test again or change your subflow for it: end the brief partial and say so.",
   outOfTime: "Nothing ran and no judge was asked. Testing again is refused the same way, so do not test again or change your subflow for it: end the brief partial and say so. "
@@ -157,8 +158,8 @@ const WORDS = Object.freeze({
 const UNAFFORDABLE = "candidate.trial_unaffordable";
 /** The supervisor's code for a test the build's working time left cannot cover (`../supervisor/whole-trial.ts`, G2). */
 const OUT_OF_TIME = "project.trial_out_of_time";
-/** The supervisor's code for acts still on the site before a whole test (`../supervisor/whole-trial.ts`). */
-const RESET_REQUIRED = "project.trial_reset_required";
+/** The supervisor's code for a whole test whose asked end state another step of this build already made (`../supervisor/whole-trial.ts`, t775). */
+const STARTS_IN_END_STATE = "project.trial_starts_in_end_state";
 /** The controller's code for a composed Flow the judge already refuted (`flow-bootstrap/candidate/unchanged-submission.ts`). */
 const UNCHANGED_AFTER_NO = "candidate.unchanged_after_no";
 
@@ -283,10 +284,9 @@ function withRowCheck(trial: AutomationStudioSubflowTrialResult, evidence: JsonO
 /** A whole test that did not run, in the builder's terms (header): never a verdict. */
 function refusalOf(evidence: JsonObject): AutomationStudioProjectDispatchWholeTrialAnswer {
   const code = typeof evidence.code === "string" ? evidence.code : "project.whole_trial_not_run";
-  if (code === RESET_REQUIRED) {
-    const acts = list(evidence.actsInPlace).flatMap((entry) => (isObject(entry) && typeof entry.act === "string" ? [{ act: entry.act, did: typeof entry.did === "string" ? entry.did : "an act" }] : []));
-    const cannotUndo = list(evidence.cannotUndo);
-    return refused("candidate.trial_reset_required", WORDS.resetRequired, { actsToUndo: acts, ...(cannotUndo.length ? { cannotUndo: structuredClone(cannotUndo) } : {}) }, true);
+  if (code === STARTS_IN_END_STATE) {
+    const acts = list(evidence.actsToUndo).flatMap((entry) => (isObject(entry) && typeof entry.act === "string" ? [{ act: entry.act, did: typeof entry.did === "string" ? entry.did : "an act" }] : []));
+    return refused("candidate.trial_starts_in_end_state", WORDS.startsInEndState, { actsToUndo: acts }, true);
   }
   const { instruction: _instruction, ok: _ok, ...said } = evidence;
   // The time left, as the supervisor's refusal said it, then the builder's way on (header, G2).

@@ -58,14 +58,4 @@ describe("a supervisor a guard stopped, beside it", () => {
   // Completions with nothing assembled, refused until the no-progress guard stalls the loop.
   const unassembled = () => ({ kind: "complete", result: { revision: 1, digest: "a".repeat(64) } });
 
-  it("still sends Core's reset brief before its ending", async () => {
-    const built = project({ ledger: {}, purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) });
-    await expect(supervise([call(IDS.writePlan, TWO_PART), dispatch(BUILDS), unassembled, unassembled, unassembled], built, { maxStepsWithoutProgress: 2, propagateDecisionErrors: true })).rejects.toThrow("stalled");
-
-    expect(kinds(built)).toEqual([["build", "build"], ["reset"]]);
-    expect(built.ledger.snapshot().acts.every((act) => !act.inPlace)).toBe(true);
-    const view = await built.record.read(BUILD);
-    expect(view?.record.ending?.reason).toContain("The supervisor stopped before a whole trial passed");
-    expect(view?.record.ending?.reason).not.toContain("provider");
-  });
 });

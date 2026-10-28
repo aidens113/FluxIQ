@@ -46,8 +46,9 @@ const KEPT_OTHER = "Checked against the recorded run, not the site. Next: decidi
 
 /** Why a gate ran nothing, by its refusal, for a row whose own words give no reason. */
 const NOT_RUN_REASONS: ReadonlyMap<string, string> = new Map([
-  ["trial_reset_required", "the site first has to be put back the way the build found it"],
-  ["trial_start_differs", "the start page still differs from the way the build found it"],
+  ["trial_starts_in_end_state", "one change this build made already leaves the site as the test would end, so that one change has to be put back first"],
+  ["trial_reset_required", "the site had changes left from earlier in the build"],
+  ["trial_start_differs", "the start page differed from where the build began"],
   ["trial_retest_limit", "these steps were already tested as often as they may be, so they have to change first"],
   ["trial_same_failure", "these steps stopped at the same step twice, so that step has to change first"],
   ["trial_unchanged_after_no", "these exact steps already failed the test, so they have to change first"],

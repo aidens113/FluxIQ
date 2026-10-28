@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS, AutomationStudioSiteResetLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetSpot } from "../index.ts";
 
+/** Whether a trial starts with acts of this build still on the site (t775: said under `startedWith.acts`; a trial is never refused for them). */
+function stillOpen(decision: { kind: string; startedWith?: { acts?: unknown } }): boolean {
+  return decision.kind === "admit" && Array.isArray(decision.startedWith?.acts) && decision.startedWith.acts.length > 0;
+}
+
 // An undo tied to its act by what both are about (t719). An act whose effect
 // shows on another page or in another list -- an add from a detail page whose
 // line appears in the basket, a line moved to a saved list -- has no item an
@@ -53,21 +58,21 @@ describe("observed destination witnesses for cross-page reset", () => {
     const ledger = witnessed();
     ledger.placed("act-1", { state: {}, location: "source", changed: ["created notice"], lines: { gone: [], added: ["created notice"] } });
     const checks = { compare: back, compareAt: async () => ({ moved: false, differs: [], lines: { gone: [], added: [] } }) };
-    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(checks))).toBe(true);
     expect(onSite(ledger)).toEqual(["act-1"]);
   });
 
   it("does not infer no lasting effect from an unchanged modern source page", async () => {
     const ledger = witnessed();
     ledger.noEffect("act-1");
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
     expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
   });
 
   it("keeps modern cannotUndo effects listed and allows later positively proved correction", async () => {
     const ledger = witnessed();
     await ledger.beforeTrial(back);
-    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back, ["act-1"]))).toBe(true);
     expect(onSite(ledger)).toEqual(["act-1"]);
     expect(ledger.claim("act-1")).toMatchObject({ kind: "undo" });
     expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
@@ -116,15 +121,15 @@ describe("observed destination witnesses for cross-page reset", () => {
     add(ledger);
     observe(ledger, ["s:document"]);
     ledger.target("act-1", aim(["delete"], destination));
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
-    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", actsUnsettleable: [{ act: "act-1", failed: "nothing_to_name" }] } });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1", failed: "nothing_to_name" }] } });
   });
 
   it("requires exact restoration for modern scope-only controls with no usable title", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("add", ["create_new"], {}, { scope: "p:source" }));
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
-    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", failed: "acts_unsettleable", actsUnsettleable: [{ act: "act-1" }] } });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }] } });
   });
 
   it("recovers from a wrong destination by allowing retargeting before anything was pressed", () => {
@@ -166,7 +171,7 @@ describe("observed destination witnesses for cross-page reset", () => {
     ledger.target("act-1", aim(["delete"], destination));
     ledger.explored(acted("undo", ["delete"], { undoes: "act-1", on: "subject" }, destination));
     observe(ledger, ["s:baseline"]);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
     expect(onSite(ledger)).toEqual(["act-2"]);
   });
 
@@ -191,7 +196,7 @@ describe("observed destination witnesses for cross-page reset", () => {
     ledger.target("act-1", aim(["delete"], destination));
     ledger.explored(acted("fake-delete", ["delete"], { undoes: "act-1", on: "subject" }, destination));
     twoLists(ledger, ["s:baseline"], ["s:stored", "s:document"]);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
     // Its one unasked removal is spent, so no undo could take the subject out of the sibling list: listed apart (t748).
     expect(ledger.inPlace()).toEqual([]);
     expect(ledger.unsatisfiable()).toMatchObject([{ act: "act-1", failed: "no_admissible_undo" }]);
@@ -206,7 +211,7 @@ describe("observed destination witnesses for cross-page reset", () => {
       ledger.target("act-1", aim(["delete"], destination));
       ledger.explored(acted("delete", ["delete"], { undoes: "act-1", on: "subject" }, destination));
       twoLists(ledger, ["s:baseline"], ["s:document"], changed ? "v:quantity-changed" : undefined);
-      expect((await ledger.beforeTrial(back)).kind).toBe(changed ? "refuse" : "admit");
+      expect(stillOpen(await ledger.beforeTrial(back))).toBe(changed);
     }
   });
 
@@ -215,7 +220,7 @@ describe("observed destination witnesses for cross-page reset", () => {
     ledger.target("act-1", aim(["delete"], destination));
     ledger.explored(acted("delete-too-much", ["delete"], { undoes: "act-1", on: "subject" }, destination));
     observe(ledger, []);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
   });
 
   it("does not establish a baseline by first reading a destination after the act", () => {
@@ -240,7 +245,7 @@ describe("observed destination witnesses for cross-page reset", () => {
     expect(ledger.target("act-1", aim(["delete"], destination))).toMatchObject({ kind: "admit" });
     ledger.explored(acted("undo", ["delete"], { undoes: "act-1", on: "subject" }, destination));
     ledger.undoSeen("act-1", true);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
     observe(ledger, ["s:baseline"]);
     expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
     expect(ledger.inPlace()).toEqual([]);
@@ -303,7 +308,7 @@ describe("reset preserves effects which predate the build", () => {
     // only evidence the current seam provides is that something changed.
     ledger.explored(acted("undo.partial", ["modify_existing"], { undoes: "act-1", on: "subject" }, { subject: "s:document" }));
     ledger.undoSeen("act-1", true);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
     expect(onSite(ledger)).toEqual(["act-1"]);
   });
 });
@@ -385,7 +390,7 @@ describe("positive collection-transfer inverses", () => {
       if (defect === "quantity") restored[0]!.states["s:document"] = "v:changed-quantity";
       if (defect === "sibling") restored[2]!.states["s:spare"] = "v:changed-sibling";
       observed(ledger, restored);
-      expect((await ledger.beforeTrial(back)).kind).toBe(defect === "sibling" ? "admit" : "refuse");
+      expect(stillOpen(await ledger.beforeTrial(back))).toBe(!(defect === "sibling"));
     }
   });
 
@@ -411,7 +416,7 @@ describe("positive collection-transfer inverses", () => {
       observed(ledger);
       ledger.explored(acted("first-attempt", ["modify_existing"], {}, origin));
       // Baseline evidence from before a press is never its restoration.
-      expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+      expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
       const retry = before();
       retry[0]!.states["s:document"] = "v:transient-retry-error";
       observed(ledger, retry);
@@ -432,7 +437,7 @@ describe("positive collection-transfer inverses", () => {
       }
       observed(ledger, restored);
       const settles = defect === "none" || defect === "sibling" || defect === "partial";
-      expect((await ledger.beforeTrial(back)).kind).toBe(settles ? "admit" : "refuse");
+      expect(stillOpen(await ledger.beforeTrial(back))).toBe(!(settles));
       if (!settles) expect(ledger.inPlace().map((act) => act.act)).toContain("act-1");
     }
   });
@@ -453,7 +458,7 @@ describe("positive collection-transfer inverses", () => {
         expect(ledger.inPlace()).toEqual(pending);
         expect(ledger.claim("act-2")).toMatchObject({ kind: "undo" });
       }
-      expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+      expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
       expect(ledger.target("act-2", aim(["modify_existing"], target))).toMatchObject({ kind: "admit" });
       ledger.explored(acted("explicit-inverse", ["modify_existing"], { undoes: "act-2", on: "subject" }, target));
       expect(ledger.claim("act-2")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_done" } });
@@ -547,7 +552,7 @@ describe("positive collection-transfer inverses", () => {
         entry.scope = `other:${entry.scope}`;
       }
       if (defect !== "stale") observed(ledger, restored);
-      expect((await ledger.beforeTrial(back)).kind).toBe(defect === "none" || defect === "unrelated-partial" ? "admit" : "refuse");
+      expect(stillOpen(await ledger.beforeTrial(back))).toBe(!(defect === "none" || defect === "unrelated-partial"));
     }
   });
 
@@ -567,7 +572,7 @@ describe("positive collection-transfer inverses", () => {
     observed(ledger, was);
     ledger.explored(acted("failed-press", ["modify_existing"], {}, origin));
     observed(ledger, now);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
   });
 
   it.each(["original-subject", "current-subject", "original-sibling", "current-sibling", "original-scope", "current-scope"])("never normalizes duplicate %s evidence into whole-group restoration", async (defect) => {
@@ -580,7 +585,7 @@ describe("positive collection-transfer inverses", () => {
     ledger.adoptOriginalCollections(was);
     ledger.explored(acted("failed-press", ["modify_existing"], {}, origin));
     observed(ledger, now);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
   });
 
   it("invalidates a cached transfer inverse for a malformed fresh sibling and recovers on valid evidence", () => {
@@ -608,7 +613,7 @@ describe("positive collection-transfer inverses", () => {
     expect(ledger.target("act-2", aim(["modify_existing"], destination))).toMatchObject({ kind: "admit" });
     ledger.explored(acted("inverse", ["modify_existing"], { undoes: "act-2", on: "subject" }, destination));
     observed(ledger, edited);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
     expect(ledger.inPlace().map((act) => act.act)).toContain("act-1");
   });
 
@@ -621,7 +626,7 @@ describe("positive collection-transfer inverses", () => {
     expect(ledger.target("act-1", aim(["delete"], { scope, subject: "s:document" }))).toMatchObject({ kind: "admit" });
     ledger.explored(acted("remove", ["delete"], { undoes: "act-1", on: "subject" }, { scope, subject: "s:document" }));
     observed(ledger, [collection(scope, ["s:b", "s:a"])]);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
   });
 });
 
@@ -663,15 +668,16 @@ describe("a press with no list of its own whose named destination stays exactly 
     expect(ledger.inPlace()).toEqual([]);
   });
 
-  it("refuses an unnamed destination however unchanged every list read is, and says how to name one", async () => {
+  it("lists an unnamed destination's acts on the site however unchanged every list read is, and says how to name one", async () => {
     const ledger = pressed("none");
     read(ledger, mine());
     const refused = await ledger.beforeTrial(back);
-    expect(refused).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }, { act: "act-2" }] } });
-    expect(String(refused.kind === "refuse" ? refused.evidence.instruction : "")).toContain("resetDestination");
+    expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }, { act: "act-2" }] } });
+    expect(ledger.inPlace().map((act) => act.settle).join(" ")).toContain("resetDestination");
+    // cannotUndo never settles a strict act (t775: it stays listed on the site, never refusing the trial).
     const unproved = await ledger.beforeTrial(back, ["act-1", "act-2"]);
-    expect(unproved).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_unproved" } });
-    expect(String(unproved.kind === "refuse" ? unproved.evidence.instruction : "")).toContain("resetDestination");
+    expect(unproved).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }, { act: "act-2" }] } });
+    expect(ledger.inPlace().map((act) => act.settle).join(" ")).toContain("resetDestination");
   });
 
   // L1: `partial` drops the named list itself; `held-subject-changed` changes the row value of the subject the named list
@@ -686,8 +692,8 @@ describe("a press with no list of its own whose named destination stays exactly 
     if (defect === "partial") after.splice(0, 1);
     if (defect === "malformed") after[1] = list("p:mine-archived", ["s:held-c", "s:held-c"]);
     if (defect !== "no-read-after") read(ledger, after);
-    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse" });
-    expect(await ledger.beforeTrial(back, ["act-1", "act-2"])).toMatchObject({ kind: "refuse" });
+    expect(stillOpen(await ledger.beforeTrial(back))).toBe(true);
+    expect(stillOpen(await ledger.beforeTrial(back, ["act-1", "act-2"]))).toBe(true);
     // A changed value of a row held before the presses is reversed by no undo: listed apart, never to undo (t748).
     const unmeetable = defect === "held-subject-changed";
     expect(ledger.inPlace().map((act) => act.act)).toEqual(unmeetable ? [] : ["act-1", "act-2"]);

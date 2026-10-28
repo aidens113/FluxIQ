@@ -22,6 +22,7 @@ import { attemptWithHostExpectationEvaluation } from "../transition-comparison.t
 import { automationStudioClearedLayersOf } from "./cleared-layers.ts";
 import { automationStudioResultPathOutputs } from "./result-path-outputs.ts";
 import { automationStudioAttemptWithRecordedEffect } from "./recorded-effect.ts";
+import { automationStudioAttemptAlreadyInState } from "./already-in-state.ts";
 import { automationStudioNodeAttemptFailure } from "./failure.ts";
 import { automationStudioCallSubflow } from "../frames/index.ts";
 import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID, controlFlowNodes } from "../../../nodes/control-flow/index.ts";
@@ -214,7 +215,9 @@ export class AutomationStudioNodeAttemptExecution {
 
   // Host state is captured first, so the expectation evaluator is asked about the
   // snapshot the attempt actually ended on. A lasting step judged by no expected
-  // state is then held to its recorded effect (`./recorded-effect.ts`, t476).
+  // state is then held to its recorded effect (`./recorded-effect.ts`, t476),
+  // unless the domain found the page already in the state it asks for and
+  // pressed nothing (`./already-in-state.ts`, t775).
   private static async finishAttempt(
     flow: AutomationStudioFlowDocument,
     node: AutomationStudioFlowNode,
@@ -224,7 +227,7 @@ export class AutomationStudioNodeAttemptExecution {
     hostCapabilities: string[],
     runState: AutomationStudioRunState
   ): Promise<AutomationStudioNodeAttemptTrace> {
-    const enriched = await enrichAttemptWithHostState(node, attempt, options, beforeAction, hostCapabilities, runState);
+    const enriched = await enrichAttemptWithHostState(node, automationStudioAttemptAlreadyInState(attempt), options, beforeAction, hostCapabilities, runState);
     const judged = await attemptWithHostExpectationEvaluation(node, enriched, options);
     return await automationStudioAttemptWithRecordedEffect(flow, node, judged, options);
   }

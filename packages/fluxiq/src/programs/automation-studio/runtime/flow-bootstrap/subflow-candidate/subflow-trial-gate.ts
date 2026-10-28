@@ -18,14 +18,16 @@
 // trial whose entry was not prepared (a predecessor did not run to its end)
 // says so: its verdict is about the predecessors, not this subflow.
 //
-// **The site is put back first, as the whole gate puts it back** (t578; user,
-// 2026-10-12; A8 bigbox debug, fix 2). Given a reset (`../site-reset/`, the
-// brief's own ledger and start check), a trial runs only once this build's
-// lasting acts are undone, by the same ledger and policy the whole-candidate
-// gate asks (`../candidate/trial-gate.ts`): a refusal is not a trial, answers
-// `retry_allowed`, and names the acts to undo; an act the site cannot undo
-// goes under `cannotUndo` and the trial runs with it, the judge told so under
-// `startedWith`. When the port can run the deployment's start hook ahead of
+// **A trial is judged by its change, as the whole gate judges it** (t578;
+// t775, user 2026-10-27). Given a reset (`../site-reset/`, the brief's own
+// ledger and start check), a live trial runs with this build's acts on the
+// site, said under `startedWith`, and its witnesses read just before it and
+// again after its end view (`../trial-change/`, the request's `siteChange`),
+// with the brief's parts and their typed effects (`scope.parts[].effect`); the
+// one refusal left names just an act of this build that already shows a step's
+// asked end state (`candidate.trial_starts_in_end_state`), as the
+// whole-candidate gate does (`../candidate/trial-gate.ts`): a refusal is not a
+// trial and answers `retry_allowed`. When the port can run the deployment's start hook ahead of
 // the check (`prepareStart`, `../../service/subflow-trial/port.ts`), it runs
 // first and the reset is told the site was just put back, so every act counts
 // undone and the model is asked for nothing (t475, t479); what the hook took
@@ -265,6 +267,7 @@ import {
 import type { AutomationStudioResultKeptEveryRow } from "../../result-verification/contracts/index.ts";
 import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as OFFLINE_WORDS } from "../offline-first/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import { automationStudioTrialChangeSteps, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowTrialOfflineFirstCheck } from "./subflow-trial-offline-first.ts";
 import { automationStudioSubflowTrialResultRead } from "./subflow-trial-result.ts";
@@ -338,7 +341,7 @@ const UNAFFORDABLE_INSTRUCTION = "Core did not start this trial: the money this 
   + "Testing again is refused the same way while that stands, so do not test again, and do not spend calls changing the subflow for a trial that cannot run.";
 
 /** The tool's description, by whether a test is the judged whole run (header, t679). Generic words. */
-const RESET_WORDS = "Before a trial, put the site back the way this build found it: if this answers candidate.trial_reset_required, undo the acts it lists, then test again; an act the site offers no control to undo goes under cannotUndo, and the trial runs with it already done.";
+const RESET_WORDS = "The trial runs on the site as it stands: what this build already did there stays, the judge is told it, and the trial is judged by what it changed from the state just before it. If this answers candidate.trial_starts_in_end_state, undo just the act it lists, then test again.";
 const SUBFLOW_DESCRIPTION = "Ask Core to try your latest submitted subflow once, on its own with no model: from the start page, it runs the subflows before this one to reach its entry, runs this subflow with its inputs, and judges it against its parts and success check. Give that proposal's revision and digest exactly. The answer is a partial verdict (yes, no, unsure, not_judged or execution_failed) with feedback; it counts for this brief only. The run acts on the site like the saved subflow would. "
   + `${RESET_WORDS} Complete only after a yes for that exact revision and digest. If it answers subflow.trial_unavailable, no trial can run here.`;
 const WHOLE_DESCRIPTION = "Ask Core to test your latest submitted subflow as the whole Flow: the plan is your one subflow, so Core joins it into the whole Flow and runs that once from its start with no model, and the judge says whether the run did what the person asked. This test is the build's judged run: a yes completes this brief, and the supervisor completes the Flow on it. "
@@ -431,7 +434,7 @@ export class AutomationStudioSubflowTrialGate {
   readonly tool: AutomationStudioLlmEvidenceTool;
   private static readonly toolInput: JsonObject = {
     inputSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" },
-      cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Only after candidate.trial_reset_required listed them: the acts the site offers no control to undo. The trial then runs with them already done, and the judge is told." } },
+      cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Only after a refusal listed them under actsToUndo: the acts the site offers no control to undo. They stay on the site, and the judge is told." } },
     required: ["revision", "digest"], additionalProperties: false }
   };
   /** Each trial's answer as kept, with the kept conditions as of that trial (header, t641): what `standing` hands the submission controller. */
@@ -526,8 +529,12 @@ export class AutomationStudioSubflowTrialGate {
     signal.throwIfAborted();
     // The check is timed as its own reset step, so a trial's window no longer hides it (header, t737).
     const siteReset = siteless ? undefined : this.input.reset;
+    // The trial's steps and the brief's parts, for its readings and the one targeted refusal (header, t775): the entry's steps serve no part.
+    const own = this.input.scope.parts.map((part) => part.partId);
+    const steps = [...automationStudioTrialChangeSteps(port.admissionPredecessors?.(this.input.scope) ?? []), ...automationStudioTrialChangeSteps(latest.subflows, () => own)].map((step, index) => ({ ...step, step: index + 1 }));
+    const change = { steps, parts: this.input.scope.parts.map((part) => ({ id: part.partId, ...(part.effect ? { effect: structuredClone(part.effect) } : {}) })) };
     const reset = siteReset && await automationStudioLlmStepLogReset({ stage: "site_check", trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
-      () => siteReset.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, prepared === "reset" ? { startReset: true } : undefined), (decision) => decision.kind);
+      () => siteReset.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, { ...(prepared === "reset" ? { startReset: true } : {}), change }), (decision) => decision.kind);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
@@ -535,7 +542,7 @@ export class AutomationStudioSubflowTrialGate {
     const absorbedActs = reset?.kind === "admit" ? reset.absorbedByStartReset ?? [] : [];
     const absorbed = absorbedActs.map(namedAct);
     this.trials.set(key(latest), tried + 1);
-    const asked = kept?.asked ?? await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : [], this.adviceFor(latest));
+    const asked = kept?.asked ?? await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : [], this.adviceFor(latest), reset?.kind === "admit" ? reset.change : undefined);
     // Not a trial: the port did not run it, and says why in the builder's terms (header, t679).
     if (asked.notRun) {
       this.trials.set(key(latest), tried);
@@ -667,11 +674,11 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
-  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = []): Promise<ReturnType<typeof automationStudioSubflowTrialResultRead>> {
+  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = [], change?: AutomationStudioTrialChangeSession): Promise<ReturnType<typeof automationStudioSubflowTrialResultRead>> {
     const identity = this.identity();
     let raw: unknown;
     try {
-      raw = await port(this.request(latest, signal, startedWith, earlierAdvice));
+      raw = await port({ ...this.request(latest, signal, startedWith, earlierAdvice), ...(change ? { siteChange: (acts, actsSignal) => change.finish(acts, actsSignal) } : {}) });
     } catch (error) {
       if (signal.aborted) throw error;
       // The port's own error text may carry page or account detail, so the model is told only its kind (header, lane 3).

@@ -43,13 +43,15 @@ describe("the seal is per group (t751 R1)", () => {
     expect(refs(ledger)).toEqual(["destination-3"]);
   });
 
-  it("an act whose effect location is unknown seals every group: a legacy unscoped press, or a scoped one with no witness", () => {
-    for (const spot of [{}, { subject: "s:jam", page: "s:jam", resource: SITE }] as AutomationStudioSiteResetSpot[]) {
-      const ledger = boxed();
-      ledger.explored(press("mark", ["modify_existing"], spot));
-      ledger.observed(shelfPage());
-      expect(refs(ledger)).toEqual([]);
-    }
+  it("a legacy unscoped press seals every group; a scoped one with no witness seals none, so a later read still issues a ref (t775)", () => {
+    const legacy = boxed();
+    legacy.explored(press("mark", ["modify_existing"], {}));
+    legacy.observed(shelfPage());
+    expect(refs(legacy)).toEqual([]);
+    const scoped = boxed();
+    scoped.explored(press("mark", ["modify_existing"], { subject: "s:jam", page: "s:jam", resource: SITE }));
+    scoped.observed(shelfPage());
+    expect(refs(scoped)).not.toEqual([]);
   });
 
   it("a group an act counts among its witnesses takes no new original in the ledger's observations", () => {
@@ -89,7 +91,8 @@ describe("the exploration door reads the build's explored acts (t751 R3)", () =>
     expect(ledger.createBaseline(declared, undefined)).toEqual({ kind: "admit" });
     const unwitnessed = boxed();
     unwitnessed.explored(press("start-draft", ["create_new"], DRAFT));
-    expect(unwitnessed.createBaseline(declared, undefined)).toMatchObject({ kind: "refused", evidence: { code: "candidate.create_baseline_required" } });
+    // t775: the exploration door admits it with no witness; the step door still gives it no stamp.
+    expect(unwitnessed.createBaseline(declared, undefined)).toEqual({ kind: "admit" });
   });
 });
 

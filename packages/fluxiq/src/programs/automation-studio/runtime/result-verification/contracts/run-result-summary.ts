@@ -1,4 +1,5 @@
 import type { JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioTrialChangeFinding, AutomationStudioTrialSiteChange } from "../../flow-bootstrap/trial-change/index.ts";
 import type { AutomationStudioResultRecordSetSummary } from "../record-set-summary.ts";
 import type { AutomationStudioBuildTestAccount } from "./build-test.ts";
 import type { AutomationStudioResultEarlierAdvice } from "./earlier-advice.ts";
@@ -131,6 +132,28 @@ export type AutomationStudioRunResultSummary = {
    * judged (run `run-mux6pndp-16feb842`: "2 · $28.96" read as the two packs).
    */
   startView?: AutomationStudioResultEndView;
+  /**
+   * A build's trial only (t775, `../../flow-bootstrap/trial-change/`): what
+   * Core read at each place a lasting step's change shows, just before the
+   * trial and just after it, what each act did (`already_in_state` apart: it
+   * did not act), the build's acts left in place at its start, and what that
+   * proves of each task part with a typed effect. The judge reads each such
+   * part by the change, never by the state after alone, and the agreement
+   * takes no yes over a part the change does not prove
+   * (`../site-change/held.ts`). Screened before it is set
+   * (`../../service/candidate-trial/summary.ts`); never on a finished run's
+   * summary or an offline trial's. Before `earlierAdvice`, which stays last.
+   */
+  siteChange?: AutomationStudioTrialSiteChange;
+  /**
+   * Core's own closed findings over `siteChange`
+   * (`automationStudioTrialChangeFindings`): a part asking for a change that
+   * no place shows (`result.change_not_seen`), a place that changed with no
+   * act of the trial attributed to it (`result.unasked_change`). Information
+   * for the judge, as Core's other findings on the summary are; never a
+   * verdict. Absent when there are none.
+   */
+  siteChangeFindings?: AutomationStudioTrialChangeFinding[];
   /**
    * A build test only (t752, `./earlier-advice.ts`): each earlier judged trial
    * of this build's advice, oldest first, at most three, with whether this

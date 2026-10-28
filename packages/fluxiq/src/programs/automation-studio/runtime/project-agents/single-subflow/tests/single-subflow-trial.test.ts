@@ -26,6 +26,21 @@ const completeOnDispatch: Step = (evidence) => ({ kind: "complete", result: last
 const answersOf = (seen: ReadonlyArray<{ toolId: string; value: unknown }>, toolId: string) => seen.filter((entry) => entry.toolId === toolId).map((entry) => entry.value as JsonObject);
 
 describe("a single-subflow plan's builder test", () => {
+  it("runs the whole test with an act of the brief still on the site, refusing nothing and sending no reset brief (t775)", async () => {
+    const built = singleBuild({
+      testsPerScript: 1,
+      beforeTest: async (sent, ledger) => {
+        ledger.forBrief(sent.briefId).trialRan([{ step: 1, definitionId: "web.output.dom-click", label: "press renew", consequences: ["create_new"] }], "explored-1");
+      }
+    });
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), completeOnDispatch], built);
+    expect(refusalOf(built.answers[0])).toBeUndefined();
+    expect(built.answers[0]).toMatchObject({ trial: { verdict: "yes" } });
+    expect(run.trials).toHaveLength(1);
+    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"]]);
+    expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
+  });
+
   it("assembles exactly the proposal under test, records the whole trial's receipt, and is completed on with no assembly or second test", async () => {
     const built = singleBuild();
     const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), completeOnDispatch], built);
@@ -61,52 +76,8 @@ describe("a single-subflow plan's builder test", () => {
     expect(answered.complete).toBeUndefined();
   });
 
-  it("answers acts still on the site as a refusal in a builder's terms, and runs once they are undone", async () => {
-    let acted = 0;
-    const built = singleBuild({
-      // The builder's first test meets an act of its brief still in place; it undoes it before testing the same revision again.
-      testsPerScript: 2,
-      beforeTest: async (sent, ledger) => {
-        acted += 1;
-        if (acted === 1) ledger.forBrief(sent.briefId).trialRan([{ step: 1, definitionId: "web.output.dom-click", label: "press renew", consequences: ["create_new"] }], "explored-1");
-        else {
-          // Its undo, then its own gate's reset finding it gone, as a builder's test does before it asks the port.
-          for (const act of ledger.snapshot().acts.filter((entry) => entry.inPlace)) ledger.forBrief(act.owner).explored({ callId: `undo-${act.act}`, toolId: "core.run_node", undoes: act.act, landed: true, on: "own", declared: { permitted: true, effect: "mutate", consequences: [], control: { name: "Undo renew", kind: "button" }, verb: "click" } });
-          await ledger.forBrief(sent.briefId).beforeTrial({ compare: async () => ({ moved: false }) });
-        }
-      }
-    });
-    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), completeOnDispatch], built);
-    const first = refusalOf(built.answers[0]);
-    expect(first).toMatchObject({ code: "candidate.trial_reset_required", retry: true, detail: { actsToUndo: [{ act: "act-1" }] } });
-    expect(first!.instruction).toContain("Undo each with the site's own controls");
-    expect(first!.instruction).toContain("goes under cannotUndo when you test again");
-    expect(first!.instruction).not.toContain("project.dispatch");
-    // No trial ran for the refusal, and the next test ran once the act was undone.
-    expect(run.trials).toHaveLength(1);
-    expect(built.answers[1]).toMatchObject({ trial: { verdict: "yes" } });
-    expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
-  });
 
   // The whole test's repeated refusal holds only while acts are still to undo (`../../supervisor/whole-trial.ts`).
-  it("runs once the builder names an act it could not undo under cannotUndo in its own test, with no reset brief", async () => {
-    let acted = 0;
-    const built = singleBuild({
-      testsPerScript: 2,
-      beforeTest: async (sent, ledger) => {
-        acted += 1;
-        if (acted === 1) ledger.forBrief(sent.briefId).trialRan([{ step: 1, definitionId: "web.output.dom-click", label: "press renew", consequences: ["create_new"] }], "explored-1");
-        // Its own gate's reset, told the act the site offers no control to undo, as a builder's test passes cannotUndo.
-        else await ledger.forBrief(sent.briefId).beforeTrial({ compare: async () => ({ moved: false }) }, ["act-1"]);
-      }
-    });
-    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([BUILD_ONE]), completeOnDispatch], built);
-    expect(refusalOf(built.answers[0])).toMatchObject({ code: "candidate.trial_reset_required" });
-    expect(built.answers[1]).toMatchObject({ trial: { verdict: "yes" } });
-    expect(run.trials).toHaveLength(1);
-    expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"]]);
-    expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
-  });
 
   it("offers no whole test for a plan of several subflows", async () => {
     const built = singleBuild();

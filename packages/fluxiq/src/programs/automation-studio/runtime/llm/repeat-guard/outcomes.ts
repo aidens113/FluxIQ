@@ -289,8 +289,8 @@ const PRECONDITIONS: readonly AutomationStudioLlmEvidencePrecondition[] = [
     changesState: true
   },
   {
-    // `trial_reset_required` / `trial_reset_unproved` / `trial_start_differs`: the trial waits on what this build has done since, a look included (header, office r2).
-    names: /^(?:trial[_-]?reset[_-]?required|trial[_-]?reset[_-]?unproved|trial[_-]?start[_-]?differs)$/iu,
+    // `trial_starts_in_end_state` (t775) and the retired `trial_reset_required` / `trial_reset_unproved` / `trial_start_differs`: the trial waits on what this build has done since, a look included (header, office r2).
+    names: /^(?:trial[_-]?starts[_-]?in[_-]?end[_-]?state|trial[_-]?reset[_-]?required|trial[_-]?reset[_-]?unproved|trial[_-]?start[_-]?differs)$/iu,
     met: (call) => !call.refused,
     changesState: false
   }

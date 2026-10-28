@@ -45,7 +45,8 @@ export function automationStudioProjectDispatchScope(record: AutomationStudioPro
   const parts = brief.parts.map((partId, index) => {
     const part = spec.parts.find((candidate) => candidate.id === partId);
     if (!part) throw new AutomationStudioProjectRecordRefusal("project.brief_part_not_carried", `brief.parts.${index}`);
-    return { partId, sourceId: part.quote.sourceId, text: part.quote.text, lastingActs: [...part.lastingActs] };
+    // Its typed effect too, so a subflow trial is judged by the change its part asks for (t775).
+    return { partId, sourceId: part.quote.sourceId, text: part.quote.text, lastingActs: [...part.lastingActs], ...(part.effect ? { effect: structuredClone(part.effect) } : {}) };
   });
   const scope: AutomationStudioSubflowScope = {
     buildId: record.buildId,

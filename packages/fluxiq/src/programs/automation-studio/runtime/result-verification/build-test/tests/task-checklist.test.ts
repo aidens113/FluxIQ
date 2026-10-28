@@ -132,6 +132,24 @@ describe("the build-test judge with a checklist", () => {
     expect(none.supplementary).not.toContain("possiblyLasting");
   });
 
+  // t775: a part's typed effect and what must stay as it is are judged by the change from before the run.
+  it("carries each part's typed effect and what must stay unchanged, saying each is judged by the change; a checklist with neither is unchanged", () => {
+    const whole = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), CHECKLIST) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
+    const typed: AutomationStudioBuildTestTaskChecklist = {
+      ...CHECKLIST,
+      parts: [CHECKLIST.parts[0]!, { ...CHECKLIST.parts[1]!, effect: { kind: "change", direction: "adds", count: 2, what: "volume record" } }],
+      unchanged: ["Other volumes' records"]
+    };
+    const section = (automationStudioBuildTestSummaryWithTaskChecklist(summary(), typed) as unknown as { taskChecklist: Record<string, unknown> }).taskChecklist;
+    expect(Object.keys(section)).toEqual(["supplementary", "asked", "notAsked", "unchanged"]);
+    expect((section.asked as Array<Record<string, unknown>>)[1]?.effect).toEqual({ kind: "change", direction: "adds", count: 2, what: "volume record" });
+    expect((section.asked as Array<Record<string, unknown>>)[0]).not.toHaveProperty("effect");
+    expect(section.unchanged).toEqual(["Other volumes' records"]);
+    expect(String(section.supplementary).startsWith(String(whole.supplementary))).toBe(true);
+    expect(section.supplementary).toContain("never by the state after alone");
+    expect(whole.supplementary).not.toContain("effect");
+  });
+
   it("leaves the given summary untouched", () => {
     const given = summary();
     const before = JSON.stringify(given);

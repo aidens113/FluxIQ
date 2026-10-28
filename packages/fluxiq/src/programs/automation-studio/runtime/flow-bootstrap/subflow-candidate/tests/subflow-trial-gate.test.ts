@@ -108,7 +108,7 @@ describe("the subflow trial gate", () => {
       const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port, reset });
       const ran = await gate.test(receipt);
       expect(order).toEqual([`hook ${scope.briefId} 2`, "reset", "trial", "trialRan 1 trial.1"]);
-      expect(told).toEqual([{ startReset: true }]);
+      expect(told).toMatchObject([{ startReset: true, change: { steps: expect.any(Array), parts: [{ id: "p1" }] } }]);
       expect(asked[0]!.startedWith).toBeUndefined();
       expect(ran.evidence).toMatchObject({ verdict: "yes", absorbedByStartReset: [{ act: "act-1", did: "press \"Add\" button", call: "call.4" }], leftOnSite: [{ act: "act-2", did: "trial step 2 custom.press" }] });
     });

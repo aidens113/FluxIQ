@@ -27,8 +27,10 @@ const WHY: Readonly<Record<string, string>> = Object.freeze({
   "undo_refused": "putting that back was not allowed, so it was not done",
   "create_baseline_required": "the page the site is checked against was not named first, so it was not done",
   "create_baseline_unavailable": "the page the site is checked against could not be read, so it was not done",
-  "trial_reset_required": "the site first has to be put back the way the build found it",
-  "trial_reset_unproved": "the site could not be shown to be back the way the build found it",
+  "trial_starts_in_end_state": "one change this build made already leaves the site as the test would end, so that one change has to be put back first",
+  "toggle_not_idempotent": "a step that switches something on and off would end differently each time it ran, so it was not accepted",
+  "trial_reset_required": "the site had changes left from earlier in the build",
+  "trial_reset_unproved": "the site could not be shown to be back where the build began",
   "reset_witness_required": "the list that shows the site is back was not read first, so it was not done",
   "reset_destination_unissued": "the list that shows the site is back was not read first, so it was not done",
   "reset_target_unidentified": "FluxIQ could not tell which item to put back, so it was not done"

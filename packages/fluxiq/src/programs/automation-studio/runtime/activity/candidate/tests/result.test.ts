@@ -3,6 +3,7 @@
 // revision, a digest, a run id, a node id, a code or a handle (t362).
 import { describe, expect, it } from "vitest";
 import { automationStudioActivityCandidateResult } from "../index.ts";
+import { automationStudioActivityRunRefused } from "../run-refused.ts";
 
 const INTERNAL = /core\.|revision|digest|\bcandidate\b|trial_|run\.|web\.|flow_bootstrap|\bt\d{2,}\b|[0-9a-f]{16,}/iu;
 const ran = (evidence: Record<string, unknown>, resultCode?: string) => ({ kind: "llm_evidence_tool_execution", evidence, effectApplied: false, ...(resultCode ? { resultCode } : {}) });
@@ -78,11 +79,23 @@ describe("testing a candidate's whole Flow, in words", () => {
     ["candidate.trial_unchanged_after_no", "these exact steps already failed the test, so they have to change first"],
     ["candidate.trial_same_failure", "these steps stopped at the same step twice, so that step has to change first"],
     ["candidate.trial_retest_limit", "these steps were already tested as often as they may be, so they have to change first"],
-    ["candidate.trial_reset_required", "the site first has to be put back the way the build found it"],
-    ["candidate.trial_start_differs", "the start page still differs from the way the build found it"],
+    ["candidate.trial_starts_in_end_state", "one change this build made already leaves the site as the test would end, so that one change has to be put back first"],
+    ["candidate.trial_step_unwitnessed", "a step that changes something has not said where its change shows"],
+    ["candidate.trial_reset_required", "the site had changes left from earlier in the build"],
+    ["candidate.trial_start_differs", "the start page differed from where the build began"],
     ["candidate.trial_new_refusal", "the test couldn't start"]
   ])("a test the gate refused (%s) is declined: %s", (code, words) => {
     expect(said(test({ ok: false, code, instruction: "Call core.test_candidate with revision 3 and digest abc", latestRevision: 3 }, code))).toEqual({ status: "failed", part: "Declined", words, outcome: "not done" });
+  });
+
+  it("tells a toggle refused at submission in plain words, and claims no reset before every trial (t775)", () => {
+    const gate = (code: string) => automationStudioActivityRunRefused("core.run_node", { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, evidence: { ok: false, code } });
+    expect(gate("candidate.toggle_not_idempotent")).toMatchObject({ status: "failed", part: "Declined", outcome: "not done" });
+    expect(gate("candidate.toggle_not_idempotent")!.words).toContain("switches something on and off");
+    expect(gate("candidate.trial_starts_in_end_state")!.words).toContain("one change this build made");
+    for (const code of ["candidate.trial_reset_required", "candidate.trial_reset_unproved"]) {
+      expect(gate(code)!.words, code).not.toContain("put back the way the build found it");
+    }
   });
 
   it("says nothing of any other tool or an answer of another shape", () => {

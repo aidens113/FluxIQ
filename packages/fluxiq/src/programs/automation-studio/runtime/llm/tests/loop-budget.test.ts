@@ -303,6 +303,9 @@ describe("a candidate's wrap-up words (t772)", () => {
     expect(said).toContain("candidate.trial_step_unwitnessed");
     expect(said).toContain("end blocked");
     expect(said).toContain("naming that step");
+    expect(said).toContain("where its change would show");
+    expect(said).not.toContain("to undo it before a trial");
+    expect(said).not.toContain("give that step a witness");
   });
 });
 
@@ -400,7 +403,7 @@ describe("a discovery-only loop's own finishing tools (t537)", () => {
       const said = automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true);
       expect(automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, true, AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS)).toEqual(said);
     }
-    expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true).value.instruction)).toBe("Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs. If a trial is refused as candidate.trial_step_unwitnessed, nothing can give that step a witness now, because exploring is withheld: end blocked, naming that step. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.");
+    expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true).value.instruction)).toBe("Only a few decisions are left, so only core.submit_candidate, core.test_candidate and completing run now: every other tool is still listed, but a call to one is answered without running and spends a decision. A call that names one of this build's own lasting acts under undoes still runs. If a trial is refused as candidate.trial_step_unwitnessed, the step's change has no place named where it shows, and exploring is withheld now: end blocked, naming that step and where its change would show. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.");
   });
 
   it("names the loop's own tools in its budget words", () => {
@@ -467,7 +470,7 @@ describe("an undo in a candidate's wrap-up (t741)", () => {
   it("tells the candidate that an undo naming its act still runs", () => {
     const said = String(automationStudioLlmEvidenceBudgetEntry(2, left(4), undefined, true, builder).value.instruction);
     expect(said).toContain("only core.submit_subflow, core.test_subflow and completing run now");
-    expect(said).toContain("A call that names one of this build's own lasting acts under undoes, to undo it before a trial, still runs.");
+    expect(said).toContain("A call that names one of this build's own lasting acts under undoes still runs.");
     expect(String(automationStudioLlmEvidenceBudgetEntry(2, left(3), undefined, false).value.instruction)).not.toContain("undoes");
   });
 

@@ -1,6 +1,7 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { automationStudioProjectDigest } from "./digest.ts";
 import type { AutomationStudioProjectInstructionSource } from "./instruction-source.ts";
+import type { AutomationStudioProjectTaskEffect } from "./task-effect.ts";
 import { automationStudioProjectJsonShape as shape, type AutomationStudioProjectParse } from "./json-shape.ts";
 
 // The task spec: what the person asked for, split into parts, each grounded in
@@ -46,6 +47,15 @@ import { automationStudioProjectJsonShape as shape, type AutomationStudioProject
 // (`../../result-verification/requested-output/`). Absent, the part asks for an
 // act, or a read nobody owes records for, as every part did before; a spec
 // digested before the field existed keeps its digest.
+//
+// **A part says what change it asks for (t775).** A judge told only "the shelf holds the book" cannot tell a run that
+// added it from one that found it there, and a reset that undoes everything hides the difference. So a part may declare
+// `effect`: a `change` (adds or removes `count` of `what`, judged by the difference from the state before the run) or
+// an `end_state` (judged by the state after it); and the spec may list `unchanged`, things that must show no change
+// relative to the state before the run. Both are typed data the supervisor writes, never read out of the request's
+// words. An effect must fit the part's lasting acts (`project.plan_effect_invalid`): adds needs create_new or
+// modify_existing, removes needs delete or modify_existing, end_state needs modify_existing. Absent, a
+// part declares none and a spec digested before the fields existed keeps its digest.
 
 export type AutomationStudioProjectTaskPart = {
   id: string;
@@ -54,6 +64,8 @@ export type AutomationStudioProjectTaskPart = {
   lastingActs: AutomationStudioActionConsequence[];
   /** The answer the part asks for, where it is records (header, t757). Absent, none is owed. */
   answer?: AutomationStudioProjectTaskAnswer;
+  /** The change the part asks for (header, t775). Absent, none is declared. */
+  effect?: AutomationStudioProjectTaskEffect;
 };
 
 /** A part's declared answer (header, t757): records, with the columns the request names, in its order. */
@@ -62,17 +74,20 @@ export type AutomationStudioProjectTaskAnswer = { kind: "records"; columns: stri
 export type AutomationStudioProjectTaskSpec = {
   parts: AutomationStudioProjectTaskPart[];
   notAsked: string[];
+  /** Things that must show no change, judged relative to the state before a run (header, t775). */
+  unchanged?: string[];
   digest: string;
 };
 
 const VERSION = "project.task_spec.v1";
-const LIMITS = { parts: 50, quote: 4000, facts: 50, fact: 500, notAsked: 50, columns: 50, column: 200 } as const;
+const LIMITS = { parts: 50, quote: 4000, facts: 50, fact: 500, notAsked: 50, columns: 50, column: 200, effectText: 200, unchanged: 20 } as const;
+const EFFECT_COUNT_MAX = 1000;
 const ANSWER_KINDS = ["records"] as const;
 
 export const automationStudioProjectTaskSpec = Object.freeze({
   /** The digest of a spec's content; the `digest` field is excluded. */
   digest(spec: Omit<AutomationStudioProjectTaskSpec, "digest">): string {
-    return automationStudioProjectDigest(VERSION, { parts: spec.parts, notAsked: spec.notAsked });
+    return automationStudioProjectDigest(VERSION, { parts: spec.parts, notAsked: spec.notAsked, unchanged: spec.unchanged });
   },
 
   /** Reads a spec and refuses one whose digest is not the digest of what it says. */
@@ -186,19 +201,20 @@ function freeSpan(text: string, quote: string, held: ReadonlyArray<readonly [num
 }
 
 function read(value: unknown): AutomationStudioProjectTaskSpec {
-  const fields = shape.object(value, "taskSpec", ["parts", "notAsked", "digest"]);
+  const fields = shape.object(value, "taskSpec", ["parts", "notAsked", "digest"], ["unchanged"]);
   const rawParts = shape.array(fields.parts, "taskSpec.parts", LIMITS.parts);
   if (!rawParts.length) return shape.refuse("project.task_spec_empty", "taskSpec.parts");
   const parts = rawParts.map((part, index) => readPart(part, `taskSpec.parts.${index}`));
   if (new Set(parts.map((part) => part.id)).size !== parts.length) return shape.refuse("project.duplicate_part", "taskSpec.parts");
   const notAsked = shape.array(fields.notAsked, "taskSpec.notAsked", LIMITS.notAsked).map((item, index) => shape.text(item, `taskSpec.notAsked.${index}`, LIMITS.fact));
+  const unchanged = fields.unchanged === undefined ? undefined : readUnchanged(fields.unchanged);
   const digest = shape.digest(fields.digest, "taskSpec.digest");
-  if (digest !== automationStudioProjectTaskSpec.digest({ parts, notAsked })) return shape.refuse("project.task_spec_digest_mismatch", "taskSpec.digest");
-  return { parts, notAsked, digest };
+  if (digest !== automationStudioProjectTaskSpec.digest({ parts, notAsked, ...(unchanged ? { unchanged } : {}) })) return shape.refuse("project.task_spec_digest_mismatch", "taskSpec.digest");
+  return { parts, notAsked, ...(unchanged ? { unchanged } : {}), digest };
 }
 
 function readPart(value: unknown, path: string): AutomationStudioProjectTaskPart {
-  const fields = shape.object(value, path, ["id", "quote", "goalFacts", "lastingActs"], ["answer"]);
+  const fields = shape.object(value, path, ["id", "quote", "goalFacts", "lastingActs"], ["answer", "effect"]);
   const quote = shape.object(fields.quote, `${path}.quote`, ["sourceId", "text"]);
   const lastingActs = shape.array(fields.lastingActs, `${path}.lastingActs`, AUTOMATION_STUDIO_ACTION_CONSEQUENCES.length)
     .map((act, index) => shape.oneOf(act, `${path}.lastingActs.${index}`, AUTOMATION_STUDIO_ACTION_CONSEQUENCES));
@@ -208,7 +224,8 @@ function readPart(value: unknown, path: string): AutomationStudioProjectTaskPart
     quote: { sourceId: shape.id(quote.sourceId, `${path}.quote.sourceId`), text: shape.text(quote.text, `${path}.quote.text`, LIMITS.quote) },
     goalFacts: shape.array(fields.goalFacts, `${path}.goalFacts`, LIMITS.facts).map((fact, index) => shape.text(fact, `${path}.goalFacts.${index}`, LIMITS.fact)),
     lastingActs,
-    ...(fields.answer !== undefined ? { answer: readAnswer(fields.answer, `${path}.answer`) } : {})
+    ...(fields.answer !== undefined ? { answer: readAnswer(fields.answer, `${path}.answer`) } : {}),
+    ...(fields.effect !== undefined ? { effect: readEffect(fields.effect, `${path}.effect`, lastingActs) } : {})
   };
 }
 
@@ -219,4 +236,37 @@ function readAnswer(value: unknown, path: string): AutomationStudioProjectTaskAn
   const columns = shape.array(fields.columns, `${path}.columns`, LIMITS.columns).map((column, index) => shape.text(column, `${path}.columns.${index}`, LIMITS.column));
   if (new Set(columns).size !== columns.length) return shape.refuse("project.duplicate", `${path}.columns`);
   return { kind, columns };
+}
+
+const EFFECT_INVALID = "project.plan_effect_invalid";
+
+/** What `unchanged` lists (header, t775): distinct, non-empty things, at most `LIMITS.unchanged`. */
+function readUnchanged(value: unknown): string[] {
+  const items = shape.array(value, "taskSpec.unchanged", LIMITS.unchanged).map((item, index) => shape.text(item, `taskSpec.unchanged.${index}`, LIMITS.effectText));
+  if (new Set(items).size !== items.length) return shape.refuse("project.duplicate", "taskSpec.unchanged");
+  return items;
+}
+
+/** A part's declared effect (header, t775): a known shape that fits the part's lasting acts. */
+function readEffect(value: unknown, path: string, acts: readonly AutomationStudioActionConsequence[]): AutomationStudioProjectTaskEffect {
+  const raw = shape.object(value, path, ["kind"], ["direction", "count", "what", "state"]);
+  const kind = shape.oneOf(raw.kind, `${path}.kind`, ["change", "end_state"] as const);
+  const allow = (...needed: AutomationStudioActionConsequence[]) => needed.some((act) => acts.includes(act));
+  const text = (field: unknown, at: string): string => {
+    if (typeof field !== "string" || !field.trim() || field.trim().length > LIMITS.effectText) return shape.refuse(EFFECT_INVALID, at);
+    return field.trim();
+  };
+  if (kind === "end_state") {
+    for (const key of ["direction", "count", "what"]) if (raw[key] !== undefined) return shape.refuse("project.unknown_field", `${path}.${key}`);
+    const state = text(raw.state, `${path}.state`);
+    if (!allow("modify_existing")) return shape.refuse(EFFECT_INVALID, path);
+    return { kind, state };
+  }
+  if (raw.state !== undefined) return shape.refuse("project.unknown_field", `${path}.state`);
+  const direction = shape.oneOf(raw.direction, `${path}.direction`, ["adds", "removes"] as const);
+  const count = raw.count;
+  if (count !== "each_match" && !(typeof count === "number" && Number.isInteger(count) && count >= 1 && count <= EFFECT_COUNT_MAX)) return shape.refuse(EFFECT_INVALID, `${path}.count`);
+  const what = text(raw.what, `${path}.what`);
+  if (!(direction === "adds" ? allow("create_new", "modify_existing") : allow("delete", "modify_existing"))) return shape.refuse(EFFECT_INVALID, path);
+  return { kind, direction, count, what };
 }
