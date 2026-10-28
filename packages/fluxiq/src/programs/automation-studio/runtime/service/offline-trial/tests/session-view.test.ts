@@ -6,8 +6,9 @@
 // the trace recorded some is inconclusive (`missing_transition`), never a
 // fail, and an inconclusive result never marks its assertion violated.
 import { afterEach, describe, expect, it } from "vitest";
-import { ClientGatewayTraceMemoryStore, type ClientGatewayClientHello, type ClientGatewayTraceEvent } from "../../../../../../client-gateway/index.ts";
+import type { ClientGatewayClientHello } from "../../../../../../client-gateway/index.ts";
 import { candidateOf, offlineHarness, runOffline, type OfflineHarness } from "./offline-harness.ts";
+import { withoutClaims } from "./without-claims.ts";
 
 let harness: OfflineHarness | undefined;
 
@@ -26,24 +27,6 @@ const SERVING: ClientGatewayClientHello = {
 
 /** A view that serves nothing: what the matcher used to attach by default. */
 const SERVES_NOTHING: ClientGatewayClientHello = { clientType: "custom" };
-
-function isClaimRecord(event: ClientGatewayTraceEvent): boolean {
-  return event.kind === "lifecycle" && event.messageType === "session.claimed";
-}
-
-/** A copy of `traceId` (which holds no artifact) in a fresh store without its claim records, numbered again, its last sequence lowered to match: a trace captured before they existed. */
-async function withoutClaims(source: ClientGatewayTraceMemoryStore, traceId: string): Promise<ClientGatewayTraceMemoryStore> {
-  const copy = new ClientGatewayTraceMemoryStore();
-  const events = await source.readEventRange(traceId, 1, Number.MAX_SAFE_INTEGER);
-  expect(events.some(isClaimRecord)).toBe(true);
-  const kept = events.filter((event) => !isClaimRecord(event)).map((event, index) => ({ ...event, sequence: index + 1 }));
-  expect(await source.listArtifacts(traceId)).toEqual([]);
-  await copy.appendEvents(traceId, kept);
-  const manifest = await source.readManifest(traceId);
-  if (manifest === undefined) throw new Error("the recorded trace has no manifest");
-  await copy.writeManifest({ ...manifest, completeness: { ...manifest.completeness, lastSequence: kept.length } });
-  return copy;
-}
 
 async function recorded() {
   harness = await offlineHarness();

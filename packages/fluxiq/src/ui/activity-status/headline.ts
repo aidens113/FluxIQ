@@ -36,10 +36,16 @@
 //   is a wait on the person, so it shows at once and never fades, and it
 //   clears when Core says the run continues ("Continuing from step N") or the
 //   run ends.
-// - **A test.** While a candidate build test-runs the Flow it submitted, once
-//   from its start (`candidate-trial.ts`), the work reads "Testing your Flow",
+// - **A test.** While a build test-runs its Flow, or a part of it, on the site
+//   (`candidate-trial.ts`), the work reads "Testing your Flow on the site",
 //   whatever its run reports: a trial repairs nothing, so a step that fails in
 //   it is never "Fixing your Flow" (lane A round 4, `run-muyrpbnk-fef374e7`).
+//   Only steps on the site head it: a test refused before it ran never does
+//   (t769 b13, round 6).
+// - **Checking against the recorded run.** While Core checks the Flow against
+//   the recording of the build's last live test before touching the site
+//   (`steady/recorded-check.ts`), the work reads "Checking your Flow against
+//   the recorded run": nothing of it runs on the site (t769 b13).
 // - **Getting the page ready.** While Core runs the parts before a part once
 //   to put the page where that part begins (`steady/page-preparation.ts`), the
 //   work reads "Getting the page ready": it is neither a test nor a repair
@@ -50,7 +56,7 @@
 
 import type { ActivityDisplay } from "./activity-display.ts";
 import type { ActivityHostWords } from "./host-words.ts";
-import { ACTIVITY_PAGE_PREPARATION_WORDS } from "./steady/index.ts";
+import { ACTIVITY_PAGE_PREPARATION_WORDS, ACTIVITY_RECORDED_CHECK_HEADLINE } from "./steady/index.ts";
 
 /** What the person is being waited on for. */
 export type ActivityWaitReason = "answer" | "check" | "paused";
@@ -60,8 +66,10 @@ export type ActivityHeadlineSituation = {
   readonly stopped?: boolean;
   /** Core is repairing the Flow in this unit of work. */
   readonly repairing?: boolean;
-  /** A candidate build is test-running the Flow it submitted; outweighs `repairing`. */
+  /** A build is test-running its Flow, or a part of it, on the site; outweighs `repairing`. */
   readonly testing?: boolean;
+  /** A build's test is being checked against the recorded run, not the site; outweighs `testing`. */
+  readonly checkingRecording?: boolean;
   /** Core is running the parts before a part only to get the page ready for it; outweighs the rest of the work. */
   readonly preparing?: boolean;
   /** A project build's reset brief is putting the site back; outweighs `repairing`. */
@@ -89,7 +97,7 @@ const FAILED: Readonly<Record<ActivityDisplay["subjectKind"], string>> = Object.
 const PAUSED = "Paused: your turn on the page";
 
 const REPAIRING = "Fixing your Flow";
-const TESTING = "Testing your Flow";
+const TESTING = "Testing your Flow on the site";
 const RESETTING = "Putting the site back";
 /** Only a run's failed repair: a build that fails in its repair says the build failed. */
 const REPAIR_FAILED = "Couldn't fix your Flow";
@@ -104,6 +112,7 @@ export function activityHeadline(kind: ActivityDisplay["subjectKind"], outcome: 
   if (outcome === "done") return DONE[kind];
   if (outcome === "failed") return kind === "run" && situation.repairing && !situation.testing ? REPAIR_FAILED : FAILED[kind];
   if (situation.preparing) return ACTIVITY_PAGE_PREPARATION_WORDS;
+  if (situation.checkingRecording) return ACTIVITY_RECORDED_CHECK_HEADLINE;
   if (situation.testing) return TESTING;
   if (situation.resetting) return RESETTING;
   return situation.repairing ? REPAIRING : WORKING[kind];

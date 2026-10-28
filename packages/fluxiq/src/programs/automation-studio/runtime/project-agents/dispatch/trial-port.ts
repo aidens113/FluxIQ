@@ -33,6 +33,11 @@ import type { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.
 // `./run-brief.ts`), and the latest three handed to a later brief's gate as it
 // is made (`earlierTrials`), as standing nos are.
 
+// **A trial kept from the recording is listed, remembered and heard as any is (trace plan P6, t769).** The port's
+// `offlineFirst` and `environmentKind` are handed to the gate as they are (an offline port stays offline to it).
+// A trial the gate keeps from `offlineFirst` never reaches the port, so `weighed` is told an answer the port did not
+// give; it is listed as that brief's trial (`receipts.kept`), remembered and made the spend's last trial.
+
 export function automationStudioProjectDispatchTrialPort(input: {
   /** The brief's own port, from its ports factory. */
   port: AutomationStudioSubflowTrialPreparingPort;
@@ -48,13 +53,20 @@ export function automationStudioProjectDispatchTrialPort(input: {
 }): AutomationStudioSubflowTrialPreparingPort {
   const { port, receipts, spend, standingNos, scope } = input;
   const listed = receipts.wrap(port);
+  // The trial the port last answered, until the gate's answer for it is told.
+  let answered: AutomationStudioSubflowTrialResult | undefined;
   const asked: AutomationStudioSubflowTrialPreparingPort = async (request) => {
+    answered = undefined;
     const result = await listed(request);
+    answered = result;
     const ref = receipts.list().at(-1);
     if (ref) input.remember(ref, result);
     spend.trial = structuredClone(result);
     return result;
   };
+  // An offline port stays offline to the gate (F3), and its offline-first check reaches the gate unchanged (trace plan P6).
+  if (port.environmentKind) Object.assign(asked, { environmentKind: port.environmentKind });
+  if (port.offlineFirst) Object.assign(asked, { offlineFirst: port.offlineFirst });
   if (port.prepareStart) asked.prepareStart = port.prepareStart;
   if (port.admissionPredecessors) asked.admissionPredecessors = port.admissionPredecessors;
   // The gate's row check for a yes over a flagged read, answered by the brief's own port (t692).
@@ -67,8 +79,12 @@ export function automationStudioProjectDispatchTrialPort(input: {
   if (advised.length) asked.earlierTrials = structuredClone(advised);
   asked.weighed = (trial) => {
     const { answer } = trial;
-    const ref = receipts.weighed(answer);
+    const heardFromPort = answered !== undefined && answered.identity?.briefId === answer.identity.briefId && answered.revision === answer.revision && answered.digest === answer.digest;
+    answered = undefined;
+    // An answer the port did not give is a trial the gate kept from the recording.
+    const ref = heardFromPort ? receipts.weighed(answer) : receipts.kept(answer);
     if (ref) input.remember(ref, answer);
+    if (!heardFromPort) spend.trial = structuredClone(answer);
     const heard = spend.trial;
     if (heard && heard.identity?.briefId === answer.identity.briefId && heard.revision === answer.revision && heard.digest === answer.digest) spend.trial = structuredClone(answer);
     if (trial.standingNo !== undefined) standingNos.stood(scope, trial.standingNo);

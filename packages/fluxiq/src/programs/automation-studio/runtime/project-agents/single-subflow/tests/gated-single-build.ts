@@ -25,7 +25,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../ll
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectSubflowBrief } from "../../contracts/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "../../supervisor/index.ts";
 import { BUILD, project } from "../../supervisor/tests/supervisor-fixture.ts";
-import { AutomationStudioProjectWholeTestPort } from "../whole-test-port.ts";
+import { AutomationStudioProjectWholeTestPort, type AutomationStudioProjectWholeTestTried } from "../whole-test-port.ts";
 
 /** A list read whose fields, conditions and paging are one object, as a domain's list read takes them. */
 const READ_LIST: AutomationStudioNodeDefinition = {
@@ -46,6 +46,8 @@ export function gatedSingleBuild(options: {
   standingNo?: (candidate: Readonly<AutomationStudioFlowCandidate>, verdict: string) => unknown;
   /** Each whole trial's verdict and feedback from a caller's own judge, by its number; the fixture's when absent (header). */
   judged?: (attempt: number) => Promise<Pick<AutomationStudioCandidateTrialResult, "verdict" | "feedback">>;
+  /** Told each trial's proposal with the verdict its gate kept, as the build's proposals are (`../whole-test-port.ts`). */
+  tried?: AutomationStudioProjectWholeTestTried;
 }) {
   const built = project(options.trial ? { trial: options.trial } : {});
   const registry: AutomationStudioNodeRegistry = refusalTestRegistry([READ_LIST]);
@@ -77,7 +79,7 @@ export function gatedSingleBuild(options: {
       built.dispatched.push({ briefs: [structuredClone(brief)], signal: request.signal });
       const scope = await scopeOf(brief);
       const controller = new AutomationStudioSubflowScopedSubmissionController({ scope, siblings: [], submission });
-      const port = new AutomationStudioProjectWholeTestPort(request.wholeTrial, undefined, (listed) => listed).port;
+      const port = new AutomationStudioProjectWholeTestPort(request.wholeTrial, undefined, (listed) => listed, options.tried).port;
       const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => controller.latest(), port, whole: true });
       const accepted: AutomationStudioSubflowProposal[] = [];
       gates.push({ gate, scope, accepted });

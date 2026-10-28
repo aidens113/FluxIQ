@@ -30,6 +30,7 @@ export * from "./extend.ts";
 export * from "./generation-failure/index.ts";
 export * from "./incomplete-draft/index.ts";
 export * from "./instructed-acts/index.ts";
+export * from "./offline-first/index.ts";
 export * from "./person-needed.ts";
 export * from "./plan.ts";
 export * from "./reachability/index.ts";

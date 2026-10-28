@@ -248,7 +248,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const { binding } = project;
   let running = true;
   const judge = { provider: draft.harness.provider, timeoutMs: draft.harness.timeoutMs, signal: draft.loop.signal };
-  const subflowTrials = automationStudioProjectBuildSubflowTrials({ ref, environment: project.trialEnvironment, binding, judge, records, proposals, leases: automationStudioProjectHostLeaseScope(host).scheduler, running: () => running });
+  const subflowTrials = automationStudioProjectBuildSubflowTrials({ ref, environment: project.trialEnvironment, binding, judge, records, proposals, leases: automationStudioProjectHostLeaseScope(host).scheduler, running: () => running, phase: project.repair ? "repair" : "test" });
   const decisions = new AutomationStudioProjectBuildDecisions(draft, () => [draft.trialSpend?.(), subflowTrials.spent()]);
   const acts = AutomationStudioProjectBuildActsRecord.of(project.ledger);
   acts.bind(records, ref);

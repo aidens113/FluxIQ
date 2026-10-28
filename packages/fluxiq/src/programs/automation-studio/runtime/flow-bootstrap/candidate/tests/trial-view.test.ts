@@ -35,6 +35,13 @@ describe("the page a trial left", () => {
     expect(executeTool).not.toHaveBeenCalled();
   });
 
+  it("is not looked at after a test answered from the recording of the last live test, which ran nothing on the site (t769)", async () => {
+    const executeTool = vi.fn();
+    const recorded: AutomationStudioLlmEvidenceToolExecutionResult = { ...trial(true), evidence: { ok: false, verdict: "no", checkedAgainst: "recorded_run" } };
+    expect(await automationStudioCandidateTrialView({ answer: recorded, tools: [look], executeTool, callId: "test.7" })).toEqual(recorded);
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
   it("says to look again when the look failed or was refused, and lets the build's stop through", async () => {
     const threw = await automationStudioCandidateTrialView({ answer: trial(true), tools: [look], executeTool: async () => { throw new Error("capture failed"); }, callId: "test.4" });
     expect(threw.evidence).not.toHaveProperty("pageAfterTrial");

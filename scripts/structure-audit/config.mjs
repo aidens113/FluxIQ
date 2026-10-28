@@ -162,7 +162,8 @@ export const CONFIG = {
   // text a model reads: the model-facing words, the system prompt and domain
   // instructions, stage and diagnosis instructions, the node descriptions
   // `core.describe_nodes` returns, the Flow catalogue and script format, the
-  // supervisor's instructions and guidance, and the conversation prompt. `to`
+  // supervisor's instructions and guidance, the conversation prompt, and the
+  // trial gates' offline-first words and contract (P6, t769). `to`
   // is everything that holds or replays a recorded gateway trace.
   reachBoundaries: [
     {
@@ -177,6 +178,7 @@ export const CONFIG = {
         "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog.ts",
         "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog-names.ts",
         "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/flow-script-format.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/offline-first/",
         "packages/fluxiq/src/programs/automation-studio/runtime/project-agents/supervisor/system-instructions.ts",
         "packages/fluxiq/src/programs/automation-studio/runtime/project-agents/supervisor/guidance.ts",
         "packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/prompt.ts"

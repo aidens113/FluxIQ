@@ -93,6 +93,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import { automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../gateway-trace/index.ts";
 import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT, withAutomationStudioGatewayTraceTrial } from "../../gateway-trace/wiring/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialKeptEveryRowRead, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
@@ -166,7 +167,12 @@ async function trialIn(environment: AutomationStudioRunEnvironment, request: Aut
   // The trial's episode opens only now, around its own run: the start above stays in the build's trace (header, P3).
   const context = (runId: string) => ({ schema: AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT.subflowTrial, value: { kind: "subflow_trial", runId, buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, revision: proposal.revision, digest: proposal.digest, start: start.status } });
   return await withAutomationStudioGatewayTraceTrial({ projectId: ports.projectId, flowId: ports.flowId, prefix: "subflow-trial", newRunId: ports.newRunId, environment, context },
-    async (traced) => await runIn(environment, request, ports, { start, predecessors, identity }, traced?.() ?? ports.newRunId?.() ?? environment.newRunId("subflow-trial")));
+    async (traced) => {
+      // The trace this run is captured in, read inside the episode it opened; none without tracing (t769).
+      const traceId = AutomationStudioGatewayTraceInstallation.current()?.current()?.traceId;
+      const outcome = await runIn(environment, request, ports, { start, predecessors, identity }, traced?.() ?? ports.newRunId?.() ?? environment.newRunId("subflow-trial"));
+      return traceId === undefined ? outcome : { ...outcome, record: { ...outcome.record, traceId } };
+    });
 }
 
 /** The partial trial's own run from its start, under `runId`: its session, the detached run, its end and its judgement (header). */

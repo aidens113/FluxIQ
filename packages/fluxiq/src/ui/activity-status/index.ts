@@ -26,7 +26,7 @@ export { notTriedOutcome } from "./not-tried.ts";
 export { ACTIVITY_DETAIL_INTERVAL_MS, ACTIVITY_HEADLINE_DWELL_MS, ActivityPacer, type ActivityPacerOptions } from "./pacer.ts";
 export { activityAgent, projectCard, type ActivityAgent, type ActivityProjectCard } from "./project/index.ts";
 export { RunRetry, type RetryState } from "./run-retry.ts";
-export { ACTIVITY_PAGE_PREPARATION_WORDS, activitySaidOnce } from "./steady/index.ts";
+export { ACTIVITY_PAGE_PREPARATION_WORDS, ACTIVITY_RECORDED_CHECK_WORDS, activitySaidOnce } from "./steady/index.ts";
 export { stepRecovery, type ActivityStepRecovery } from "./step-recovery.ts";
 export { stepSkip, type ActivityStepSkip } from "./step-skip.ts";
 export { SupervisorEnding, type SupervisorEndingWords } from "./supervisor-ending.ts";

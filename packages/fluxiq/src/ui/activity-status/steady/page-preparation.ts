@@ -14,9 +14,11 @@
 // `activity/step/started.ts`). The preparation lasts from its first such row
 // until the build goes back to its own work (the next decision, a tool row),
 // a step that is not a preparation's starts (the test), a supervisor's card
-// opens or closes a brief, or the unit settles.
+// opens or closes a brief, or the unit settles (`./aside-end.ts`); a step
+// passed over inside it keeps it (t769 b13).
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { activityAsideEnds } from "./aside-end.ts";
 
 /** Core's words opening every row of a step run to get the page ready; the headline while it lasts. */
 export const ACTIVITY_PAGE_PREPARATION_WORDS = "Getting the page ready";
@@ -52,7 +54,7 @@ export class PagePreparation {
       return { preparing: true, startedNow, line: action ? `${action.charAt(0).toUpperCase()}${action.slice(1)}` : null };
     }
     if (!this.open) return OUTSIDE;
-    if (endsPreparation(event)) {
+    if (activityAsideEnds(event)) {
       this.open = false;
       return OUTSIDE;
     }
@@ -60,12 +62,3 @@ export class PagePreparation {
   }
 }
 
-/** The build doing something other than getting the page ready: deciding, calling a tool, a test's step, a brief's card, settling. */
-function endsPreparation(event: ClientGatewayActivity): boolean {
-  if (event.final === true || event.phase === "failed" || event.phase === "done") return true;
-  if (event.step !== undefined) return true;
-  const detail = event.detail;
-  if (detail === undefined) return event.phase === "thinking";
-  if (detail.kind === "note" && (detail.project?.kind === "brief" || detail.project?.kind === "return")) return true;
-  return (detail.kind === "thought" && detail.status === "started") || detail.kind === "tool";
-}

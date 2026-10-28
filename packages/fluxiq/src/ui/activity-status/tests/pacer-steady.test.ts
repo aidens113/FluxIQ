@@ -89,7 +89,7 @@ test("getting the page ready before a test is neither a test nor a repair, and s
   h.pacer.accept(event({ phase: "repairing", label: "Recovering from a failed step: Clicking “Go”", detail: { kind: "step", title: "Clicking “Go”", status: "failed", ref: "n2" } }));
   h.clock.advance(5_000);
   expect(h.shown.map((entry) => entry.display.step).filter((step) => step !== null), "no count while the page is got ready").toEqual([]);
-  expect(h.headlines()).not.toContain("Testing your Flow");
+  expect(h.headlines()).not.toContain("Testing your Flow on the site");
   expect(h.headlines()).not.toContain("Fixing your Flow");
   h.pacer.accept(event({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } }));
   h.clock.advance(5_000);

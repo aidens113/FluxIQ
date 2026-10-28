@@ -2,7 +2,8 @@
 // (traces and offline trials, P2, D9-D11): the host wiring
 // (`programs/_shared/runtime.ts`), the service's build and run entries, the
 // trial ports, the persisted store over the service's own pool (and a
-// project's store by the service, P5), and the recorded candidate start hook.
+// project's store by the service, P5), the recorded candidate start hook, and
+// the live session view offline-first trials in builds fall back on (P6).
 // Kept out of `../index.ts`, which the HTTP handlers and the parking port
 // read, so they do not load all of this.
 export { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT } from "./context-schemas.ts";
@@ -15,6 +16,7 @@ export { AutomationStudioGatewayTraceServicePools } from "./service-pools.ts";
 export { automationStudioGatewayTraceServiceStore } from "./service-store.ts";
 export { bindAutomationStudioGatewayTraceRun } from "./run-bind.ts";
 export { createAutomationStudioGatewayTraceHost } from "./host.ts";
+export { automationStudioOfflineTrialSessionView } from "./offline-trial-session-view.ts";
 export type * from "./types.ts";
 export { withAutomationStudioGatewayTraceBuildActivity } from "./build-activity.ts";
 export { withAutomationStudioGatewayTraceRunActivity } from "./run-activity.ts";
