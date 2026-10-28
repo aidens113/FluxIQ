@@ -444,6 +444,8 @@ Nothing here reads the request's words. The judge's summary also lists the
 single value each step returned (`returned`, from `outputs.value`), labelled as
 handed on and not a stored record (`result-verification/returned-values.ts`).
 
+**The declaration is switched on (t764).** The plan tool takes `answer` on a part, and the supervisor's guidance tells it to declare one for a part whose result is rows of values; the judge's checklist copies it, a changed `answer` counts as a change to the part in an amendment (its carried proposal is dropped), and the project build's promotion sends the declared parts and columns with the proposal (`requestedOutput` on its trial), which apply saves on the Flow's judged-trial record (`flow-version/judged-build-trial/`). A finished run's check reads them through the `requestedOutput` port (`result-verification/run-outcome.ts`) and passes them to `verify`; a Flow saved without a declaration is judged as before.
+
 **The whole verification is bounded**
 (`runtime/result-verification/deadline.ts`). Resolving the provider, reading the
 instructions and the run detail, and both calls run inside one deadline —

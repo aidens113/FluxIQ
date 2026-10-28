@@ -126,3 +126,33 @@ describe("which run the record speaks for", () => {
     expect(automationStudioRanJudgedVersions(unnumbered, unnumbered)).toBe(false);
   });
 });
+
+// t764: the answers the build declared are saved with the Flow's judged trial.
+describe("the requested output a judged trial carries", () => {
+  const OWED = { parts: [{ part: "p1", columns: ["title", "year"] }, { part: "p2", columns: [] }] };
+
+  it("is recorded from the proposal's trial event, written on the metadata and read back whole", async () => {
+    const { trial } = await applied({ ...YES, requestedOutput: OWED });
+    expect(trial?.requestedOutput).toEqual(OWED);
+    const metadata = automationStudioMetadataWithJudgedBuildTrial({ keep: 1 }, trial);
+    expect(automationStudioFlowJudgedBuildTrialFromMetadata(metadata)?.requestedOutput).toEqual(OWED);
+  });
+
+  it("is absent where the proposal declares none or declares a malformed one, and the trial still stands", async () => {
+    for (const requestedOutput of [undefined, { parts: [] }, { parts: [{ part: "p1", columns: [3] }] }, { parts: [{ columns: [] }] }, "p1"]) {
+      const { trial } = await applied({ ...YES, ...(requestedOutput === undefined ? {} : { requestedOutput }) } as JsonObject);
+      expect(trial).toBeDefined();
+      expect(trial).not.toHaveProperty("requestedOutput");
+    }
+  });
+
+  it("reads back as absent from a damaged metadata record, keeping the trial", async () => {
+    const { trial } = await applied({ ...YES, requestedOutput: OWED });
+    const metadata = automationStudioMetadataWithJudgedBuildTrial(undefined, trial);
+    const stored = metadata[AUTOMATION_STUDIO_FLOW_JUDGED_BUILD_TRIAL_METADATA_KEY] as JsonObject;
+    const damaged = { ...metadata, [AUTOMATION_STUDIO_FLOW_JUDGED_BUILD_TRIAL_METADATA_KEY]: { ...stored, requestedOutput: { parts: [{ part: "p1" }] } } };
+    const read = automationStudioFlowJudgedBuildTrialFromMetadata(damaged);
+    expect(read?.trialRunId).toBe("trial.nursery-1");
+    expect(read).not.toHaveProperty("requestedOutput");
+  });
+});

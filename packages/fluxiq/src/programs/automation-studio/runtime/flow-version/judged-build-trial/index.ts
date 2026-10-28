@@ -7,3 +7,4 @@ export * from "./contracts.ts";
 export * from "./from-metadata.ts";
 export * from "./metadata-with.ts";
 export * from "./ran-judged-versions.ts";
+export * from "./requested-output.ts";

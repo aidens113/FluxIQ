@@ -89,7 +89,7 @@ import {
   type AutomationStudioResultRepairOutcome
 } from "../recovery/refuted-result/index.ts";
 import { automationStudioResultCalledNodes, type AutomationStudioResultCalledGraphSource } from "./called-nodes.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts/index.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRequestedOutput, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts/index.ts";
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
 import {
@@ -245,6 +245,14 @@ export type AutomationStudioResultVerificationPorts = {
    * stored the same rows. Absent, a double no refutes as it always did.
    */
   judgedBuildTrial?: AutomationStudioResultJudgedBuildTrialPort | undefined;
+  /**
+   * The answers the Flow's build declared its parts owe, saved with the
+   * promoted Flow (t764): passed to the check as `requestedOutput`, so a run
+   * that stored none of the records it owes is not passed on a model's yes
+   * (`./requested-output/`, t757). Absent, or naming none, the run is judged as
+   * it always was.
+   */
+  requestedOutput?: ((scope: { projectId: string; flowId: string }) => Promise<AutomationStudioResultRequestedOutput | undefined>) | undefined;
 };
 
 export type AutomationStudioRuntimeSessionVerificationInput = {
@@ -591,6 +599,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     schemaVersion: "automation-studio.result-verification.v1", performed: false,
     code: input.runPurse.diagnostic!.code, reason: input.runPurse.diagnostic!.message
   } }, instructionDigest);
+  const requestedOutput = await input.ports.requestedOutput?.({ projectId: input.projectId, flowId: session.flowId });
   const verified = await verifyAutomationStudioRunResult({
     projectId: input.projectId,
     flowId: session.flowId,
@@ -598,6 +607,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.subflowId ? { subflowId: input.subflowId } : {}),
     summary,
     instructions,
+    ...(requestedOutput ? { requestedOutput } : {}),
     ...(runDetail ? { runDetail } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {}),
     ...(resolved ? { provider: resolved.provider } : {}),

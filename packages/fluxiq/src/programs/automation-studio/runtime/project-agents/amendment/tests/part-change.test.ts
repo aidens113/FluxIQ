@@ -26,3 +26,16 @@ describe("one part compared across two plans", () => {
     expect(change(spec(FIND, []), { ...spec(FIND, []), parts: [] }, "p1")).toEqual({ change: "changed", what: "it is a new part" });
   });
 });
+
+describe("a part's declared answer (t764)", () => {
+  const answered = (columns: string[] | undefined): AutomationStudioProjectTaskSpec => {
+    const base = spec(FIND, ["three titles are found"]);
+    return columns ? { ...base, parts: [{ ...base.parts[0]!, answer: { kind: "records", columns } }] } : base;
+  };
+
+  it("counts a changed answer as a change to the part, and an unchanged one as the same", () => {
+    expect(change(answered(["title", "year"]), answered(["title", "year"]), "p1")).toEqual({ change: "same" });
+    expect(change(answered(["title", "year"]), answered(["title"]), "p1")).toEqual({ change: "changed", what: "its declared answer changed" });
+    expect(change(answered(["title"]), answered(undefined), "p1")).toEqual({ change: "changed", what: "its declared answer changed" });
+  });
+});
