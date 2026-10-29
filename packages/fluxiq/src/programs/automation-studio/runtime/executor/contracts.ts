@@ -1,15 +1,10 @@
-import type {
-  AutomationStudioFailureRecord,
-  AutomationStudioRecordProcessing,
-  AutomationStudioRecordSchema,
-  AutomationStudioRecordWriteMode,
-  AutomationStudioRunDatasetSummary
-} from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord, AutomationStudioRecordProcessing, AutomationStudioRecordSchema, AutomationStudioRecordWriteMode, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunHandlerExecutionRecord } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
+import type { AutomationStudioTargetReacquireRecord } from "./target-reacquire/index.ts";
 import type { AutomationStudioAskKind, AutomationStudioParkedRun, AutomationStudioParkingPort } from "../parking/index.ts";
 import type { AutomationStudioRunControlGate } from "../run-control/index.ts";
 import type { AutomationStudioRecordedState } from "./recorded-state.ts";
@@ -475,6 +470,8 @@ export type AutomationStudioNodeAttemptTrace = {
     /** A retry after an attempt that certainly changed nothing; the ordinary retry budget and lasting-effect safety gates still apply. */
     repress?: true;
   };
+  /** A stale target found again from its source step (t786): on the attempt after the re-acquire, or the synthesized gone attempt. */
+  reacquire?: AutomationStudioTargetReacquireRecord;
   /**
    * The pace this node's start was held to (`pacing/pace-keeper.ts`):
    * `inForceMs` the least time between two starts of it in this run, and

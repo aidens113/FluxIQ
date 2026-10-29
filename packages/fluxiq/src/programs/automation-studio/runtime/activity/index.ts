@@ -38,7 +38,7 @@ export {
 export { withAutomationStudioRunActivity } from "./run.ts";
 export { automationStudioActivityRunScope } from "./run-scope.ts";
 export { runWithAutomationStudioActivity } from "./scope.ts";
-export { automationStudioActivityStepAnnounced, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepInterference, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityStepRecovery, emitAutomationStudioActivityStepSkipped } from "./step/index.ts";
+export { automationStudioActivityStepAnnounced, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepInterference, emitAutomationStudioActivityStepReacquire, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityStepRecovery, emitAutomationStudioActivityStepSkipped } from "./step/index.ts";
 export { emitAutomationStudioActivityThought } from "./thought.ts";
 export {
   automationStudioActivityAction,

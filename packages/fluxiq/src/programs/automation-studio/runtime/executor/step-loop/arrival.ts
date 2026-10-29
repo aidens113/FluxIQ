@@ -4,6 +4,7 @@ import { automationStudioAwaitNodeReadiness, type AutomationStudioReadinessOutco
 import { automationStudioRunWait } from "../pacing/index.ts";
 import { automationStudioRecordedState, type AutomationStudioRecordedState } from "../recorded-state.ts";
 import { automationStudioNodeRetryPolicy, type AutomationStudioNodeRetryPolicy } from "../retry-policy.ts";
+import { automationStudioStepReacquire, type AutomationStudioStepReacquired } from "../target-reacquire/index.ts";
 import { automationStudioStepAlreadyDone } from "./already-done.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
 import { automationStudioStepLifecycle } from "./lifecycle-dispatch.ts";
@@ -16,8 +17,10 @@ type Region = NonNullable<AutomationStudioGraphExecutionOptions["regionRuntime"]
 /**
  * Arrives at a node for one attempt: the region's capability and timeout
  * checks, the arrival count, the completed-act ledger (C5, t411), the node's
- * pace, its On Before handlers (C3, C6 step 1) and its readiness gate, in
- * that order. What the attempt is stamped with comes back as `arrived`; a
+ * pace, its On Before handlers (C3, C6 step 1), its readiness gate and, on the
+ * attempt a stale target is looked for again before, its re-acquire (t786,
+ * `../target-reacquire/step-reacquire.ts`), in that order. What the attempt is
+ * stamped with comes back as `arrived`; a
  * region that cannot run the node, a Core stop a handler met, or a run
  * cancelled while it waited, ends the run; an On Before handler that routed to
  * a checkpoint moves it there (`next`), and so does a lasting act the run
@@ -35,6 +38,7 @@ export async function automationStudioStepArrival(
   recordedState: AutomationStudioRecordedState;
   paced: AutomationStudioNodeAttemptTrace["pace"];
   readiness: AutomationStudioReadinessOutcome | undefined;
+  reacquired: AutomationStudioStepReacquired | undefined;
 }> {
   const { options, runState, now } = ctx;
   if (regionId && !ctx.regionStartedAt.has(regionId)) ctx.regionStartedAt.set(regionId, now());
@@ -75,5 +79,11 @@ export async function automationStudioStepArrival(
   if (options.signal?.aborted) {
     return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", node.id, "Run cancelled.") };
   }
-  return { kind: "arrived", remainingMs, retryPolicy, recordedState, paced, readiness };
+  // Immediately before the attempt it comes before, once per arrival; it spends no attempt.
+  const reacquired = await automationStudioStepReacquire(ctx, node, retryPolicy);
+  if (reacquired) await options.commandRun?.checkpoint();
+  if (options.signal?.aborted) {
+    return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", node.id, "Run cancelled.") };
+  }
+  return { kind: "arrived", remainingMs, retryPolicy, recordedState, paced, readiness, reacquired };
 }

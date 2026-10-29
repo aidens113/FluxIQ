@@ -12,6 +12,7 @@ import {
   type AutomationStudioRepairUnit,
   type AutomationStudioRunRepair
 } from "../lifecycle-run/index.ts";
+import { AUTOMATION_STUDIO_TARGET_GONE_CODE } from "../target-reacquire/index.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
 import { automationStudioStepLifecycleRegister } from "./lifecycle-dispatch.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
@@ -167,13 +168,16 @@ export function automationStudioStepRepairWillAsk(ctx: AutomationStudioStepLoopC
 /**
  * Whether the run may ask at all: never inside a handler body (the handler is
  * the unit there), never once cancelled or paused, never on a permission gate,
- * and never past a lasting act whose outcome is uncertain anywhere in the run.
+ * never for an item found gone (`executor.target.gone`, t786: no change to the
+ * step can bring it back), and never past a lasting act whose outcome is
+ * uncertain anywhere in the run.
  */
 function mayAsk(ctx: AutomationStudioStepLoopContext, invocation: AutomationStudioInvocationOptions, failure: TrueFailure): boolean {
   const { options } = ctx;
   if (options.signal?.aborted || options.runControl?.heldBy?.()) return false;
   if (invocation.run.stack.some((frame) => frame.cursor.phase === "handler")) return false;
   if (failure.fault?.actUncertain) return false;
+  if (ctx.attempts[failure.attemptIndex]?.failure?.code === AUTOMATION_STUDIO_TARGET_GONE_CODE) return false;
   const category = failure.fault?.category ?? ctx.attempts[failure.attemptIndex]?.failure?.category;
   if (category && PERMISSION_CATEGORIES.has(category)) return false;
   return !runAttempts(ctx, invocation).some(endedUncertain);

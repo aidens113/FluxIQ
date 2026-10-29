@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../model/index.ts";
 import type { AutomationNodeExpectationEvaluation, AutomationNodeExpectationEvaluationContext, AutomationNodeExpectationEvaluator } from "../nodes/index.ts";
 import type { AutomationStudioFactCondition, AutomationStudioFactTruth } from "./executor/lifecycle/index.ts";
+import type { AutomationStudioSourcePlaceAnswer, AutomationStudioSourcePlaceRequest, AutomationStudioTargetReacquireAnswer, AutomationStudioTargetReacquireRequest } from "./executor/target-reacquire/index.ts";
 import type { AutomationStudioHostResourcePort } from "./project-agents/host-resources/index.ts";
 
 export type AutomationStudioHostRuntimeCapability =
@@ -203,6 +204,21 @@ export type AutomationStudioHostRuntimeBoundary = {
    * `unknown`, never as `not_landed`.
    */
   actLanded?(input: AutomationStudioHostActLandedInput): AutomationStudioHostActLanding | Promise<AutomationStudioHostActLanding>;
+  /**
+   * Finds again the item a stale step was bound to, among its source step's
+   * fresh answer (t786): by the item's identity in the host's medium, never by
+   * its old position or handle. Core asks it after the step's second failed
+   * retry on a target failure that never acted, with the source re-run
+   * read-only. A missing method, a throw or a malformed answer is read as
+   * `unmatched`: the step spends its remaining retries as before.
+   */
+  reacquireTarget?(request: AutomationStudioTargetReacquireRequest): AutomationStudioTargetReacquireAnswer | Promise<AutomationStudioTargetReacquireAnswer>;
+  /**
+   * Before that re-run: whether the page is still where the source step ran,
+   * going back there when it moved and the host can (a navigation, never a
+   * lasting act). A missing method reads as `same_place`; a throw as `unavailable`.
+   */
+  returnToSourcePlace?(request: AutomationStudioSourcePlaceRequest): AutomationStudioSourcePlaceAnswer | Promise<AutomationStudioSourcePlaceAnswer>;
 };
 
 /** What the host is asked about an act whose answer was lost: the node that made it, the attempt, and how long it may wait. */

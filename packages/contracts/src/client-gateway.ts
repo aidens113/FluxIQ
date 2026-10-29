@@ -337,11 +337,16 @@ export type ClientGatewayActivityResolution = (typeof CLIENT_GATEWAY_ACTIVITY_RE
  * - `interference`: the client closed a layer the page put over itself (a
  *   notice, a promotion, a consent banner) by its dismiss control while the
  *   step ran. Its `subject` is Core's own words by layer kind, never the
- *   control's words or other page text.
+ *   control's words or other page text;
+ * - `reacquire`: a step whose target came from an earlier step (a read list's
+ *   row, another node's answer) lost it when the page changed, so that earlier
+ *   step was re-run and the same item found again by its identity (`succeeded`),
+ *   or found gone (`failed`), t786. Its `subject` is Core's own words, naming
+ *   the source step by its authored label at most, never page text.
  *
  * Additive: a client that does not know a kind reads the row as a plain step.
  */
-export const CLIENT_GATEWAY_ACTIVITY_RECOVERY_KINDS = Object.freeze(["handler", "entry", "route", "alternative", "interference"] as const);
+export const CLIENT_GATEWAY_ACTIVITY_RECOVERY_KINDS = Object.freeze(["handler", "entry", "route", "alternative", "interference", "reacquire"] as const);
 export type ClientGatewayActivityRecoveryKind = (typeof CLIENT_GATEWAY_ACTIVITY_RECOVERY_KINDS)[number];
 
 /** How a recovery ended: it moved the run on, it failed, or a guard or budget refused it before it ran. */
