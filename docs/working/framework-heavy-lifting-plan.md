@@ -763,6 +763,7 @@ Shared for every wave-2 brief: read only; no source edits, git, builds, model ca
 ### 2026-10-29 - P0 and the check's library build (t793, t794)
 - Agent: lead; detail and validation in the paired downstream document's ledger.
 - Changed: P0 replaced the scenario-shaped examples in the model-facing judge, run-node, evidence, processed-out and repair text, and the downstream `scripts/check/model-text.mjs` now fails on any realistic scenario's fixture word in Core's model-facing literals. t794 made the root `check` build `contracts`, `fluxiq` and `client-gateway-websocket` first, with a registry test.
+- Validation: lead-run, quoted in full downstream: `node scripts/check/model-text.mjs` -> "model-text: ok (209 scenario tokens, 376 model-facing Core files, 11720 string literals)"; `node --test scripts/build-cache/tests/registry.test.mjs` -> "# pass 10 / # fail 0"; `pnpm check` -> exit 0.
 - Outcome: Accepted.
 
 ### 2026-10-29 - Per-pass act ledger and `not_run` proof (t796)
