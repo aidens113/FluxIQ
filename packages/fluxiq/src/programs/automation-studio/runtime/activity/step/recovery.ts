@@ -7,7 +7,8 @@ const FALLBACK_SUBJECT: Readonly<Record<ClientGatewayActivityRecovery["kind"], s
   entry: "Another starting point",
   route: "Another place in the Flow",
   alternative: "Another way",
-  interference: "Closed a notice the page put in the way"
+  interference: "Closed a notice the page put in the way",
+  reacquire: "Found the same item again"
 });
 
 /** Core's live line for each outcome. */

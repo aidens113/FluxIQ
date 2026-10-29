@@ -102,7 +102,8 @@ function said(acts: readonly AutomationStudioActivityLeftAct[]): AutomationStudi
 }
 
 /** What is said when the build knows of nothing it left (header). */
-const NOTHING_LEFT = "The build left no change on the site that it knows of.";
+export const AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT = "The build left no change on the site that it knows of.";
+const NOTHING_LEFT = AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT;
 
 /**
  * What a build left on the target, for the person (header): the acts it knows

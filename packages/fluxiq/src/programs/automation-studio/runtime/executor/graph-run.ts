@@ -388,11 +388,13 @@ async function executeAutomationStudioGraph(
         currentNode = arrived.node;
         continue;
       }
-      const { remainingMs, retryPolicy, recordedState, paced, readiness } = arrived;
+      const { remainingMs, retryPolicy, recordedState, paced, readiness, reacquired } = arrived;
+      // An item its stale target came from, found gone: the attempt is synthesized, nothing is dispatched (`target-reacquire/`, t786).
+      const gone = reacquired?.gone;
       const node: AutomationStudioFlowNode = currentNode;
       const stepNumber = stepNumbers.numberOf(node.id);
       if (stepNumber !== undefined && automationStudioActivityStepAnnounced(node, attempts)) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: node.id, label: node.label, definitionId: node.definitionId, parameters: node.parameterValues, pass: loopWords.passOf(node.id, attempts) });
-      let notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(node, `${node.id}.attempt.${ctx.nextAttemptNumber()}`, now()) : undefined;
+      let notShown: AutomationStudioNodeAttemptTrace | undefined = !gone && readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(node, `${node.id}.attempt.${ctx.nextAttemptNumber()}`, now()) : undefined;
       // On Retry before safe state routing; a handler that cleared the way lets the node run now (`step-loop/could-not-run-retry.ts`).
       const cleared: AutomationStudioStepLifecycleOutcome | undefined = notShown ? (await automationStudioStepRetryBeforeRouting(ctx, { node, attempt: notShown, attemptIndex: undefined, retryPolicy }))?.outcome : undefined;
       if (cleared?.kind === "return") return cleared.trace;
@@ -402,16 +404,18 @@ async function executeAutomationStudioGraph(
       }
       if (cleared && cleared.kind !== "pass") notShown = undefined;
       const routing: AutomationStudioStateRouteDecision | undefined = notShown ? await decideAutomationStudioStateRoute({ flow: ctx.flow, node, attempt: notShown, attempts, options, guard: ctx.routeGuard }) : undefined;
-      if (!notShown || routing?.kind === "none") runState.pace.started(node, now());
-      const executed = notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
-        ? await executeAutomationStudioNode(ctx.flow, node, values, options, ctx.nextAttemptNumber(), withholding, runState)
+      if (!gone && (!notShown || routing?.kind === "none")) runState.pace.started(node, now());
+      // A stale target found again from its source is laid over its binding for this node's remaining attempts.
+      const nodeValues = ctx.arrival.overlay ? { ...values, ...ctx.arrival.overlay } : values;
+      const executed = gone ?? (notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
+        ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState)
         : await executeWithRegionTimeout(
-          (signal) => executeAutomationStudioNode(ctx.flow, node, values, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState),
+          (signal) => executeAutomationStudioNode(ctx.flow, node, nodeValues, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState),
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
           () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } }), options.commandRun, options.startTimer
-        );
+        ));
       // A required command whose outcome stayed unknown latched the run, so no checkpoint is asked before it stops (`step-loop/uncertain-stop.ts`).
       const outcomeUnknown = executed.failure?.code === AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN.code;
       if (!outcomeUnknown) await options.commandRun?.checkpoint();
@@ -422,6 +426,7 @@ async function executeAutomationStudioGraph(
         ...(readiness ? { readiness } : {}),
         ...(Object.keys(recordedState).length ? { recordedState } : {}),
         ...(ctx.pendingRetry ? { retry: ctx.pendingRetry } : {}),
+        ...(reacquired ? { reacquire: reacquired.record } : {}),
         ...(paced ? { pace: paced } : {}),
         ...(routing?.kind === "none" ? { stateRouting: routing.record } : {}),
         ...(lifecycle.pending ? { lifecycle: lifecycle.pending } : {}),
@@ -461,8 +466,8 @@ async function executeAutomationStudioGraph(
       const asked = await automationStudioStepAskOrPark(ctx, { node, attempt, attemptIndex, stepIndex: step, remainingMs });
       if (asked.kind === "return") return asked.trace;
       let routeOverride = asked.routeOverride;
-      // A step that cannot run continues where the page is (`step-loop/state-route.ts`).
-      if (routeOverride === undefined && automationStudioCouldNotRun(attempt)) {
+      // A step that cannot run continues where the page is (`step-loop/state-route.ts`); an item found gone goes straight to its failure path.
+      if (routeOverride === undefined && automationStudioCouldNotRun(attempt) && !gone) {
         const routed = await automationStudioStepStateRoute(ctx, { node, attempt, attemptIndex, regionId, routing, retryPolicy });
         if (routed.kind === "return") return routed.trace;
         if (routed.kind === "retry") continue;

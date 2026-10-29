@@ -27,19 +27,29 @@
 // producer proved never reached the page (`effect: "unacted"`: a target not
 // found yet, a press the page turned away as too fast) is repeated, because
 // nothing happened to repeat.
+//
+// **A stale target is found again, once (t786).** A caller that knows where the
+// node's target came from passes `reacquire`. It is asked once, immediately
+// before the attempt `automationStudioReacquireBeforeAttempt` names (attempt 4
+// of 4), when the attempt before it failed on its target without acting
+// (`automationStudioStaleTargetFailure`, the predicate a graph run asks). It
+// spends no attempt: `found` hands the dispatch the remaining attempts use,
+// `gone` ends the node with the answer it gives, and `unmatched` or
+// `unavailable` change nothing.
 
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import { automationStudioAssessAttemptFault, automationStudioBoundedRetryWaitMs, automationStudioFaultNotLanded, automationStudioRunEffectCheck, type AutomationStudioFaultAssessment, type AutomationStudioLastingActCheck } from "../defensive/index.ts";
 import { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioRetryBackoffMs } from "../retry-policy.ts";
+import { automationStudioReacquireBeforeAttempt, automationStudioStaleTargetFailure } from "../target-reacquire/index.ts";
 
 /** What one attempt answered: success, or a failure with the producer's record when it gave one. */
 export type AutomationStudioNodeRetryReading = { ok: true } | { ok: false; failure?: AutomationStudioFailureRecord };
 
 /** The node run with its retries, and the account of what the retries absorbed. */
 export type AutomationStudioNodeRetryOutcome<T> = {
-  /** The last attempt's own answer, never one synthesized here. */
+  /** The last attempt's own answer, never one synthesized here (a gone item's is the one its `reacquire` gave). */
   result: T;
   /** How many times the node was dispatched, the first attempt included. */
   attempts: number;
@@ -54,7 +64,20 @@ export type AutomationStudioNodeRetryOutcome<T> = {
    * nothing showed whether it did, so it was not made again. Absent otherwise.
    */
   lastingAct?: "landed" | "uncertain";
+  /** What a re-acquire of a stale target came to, when one was asked (t786). */
+  reacquire?: "found" | "gone" | "unmatched" | "unavailable";
 };
+
+/**
+ * A caller's re-acquire of a stale target (t786), asked once, after the second
+ * failed retry on a target failure that never acted: `found` gives the
+ * dispatch the remaining retries use; `gone` gives the answer the node ends
+ * with, no retry spent; `unmatched` and `unavailable` leave the retries as they were.
+ */
+export type AutomationStudioNodeRetryReacquire<T> =
+  | { outcome: "found"; dispatch(attempt: number): Promise<T> }
+  | { outcome: "gone"; result: T }
+  | { outcome: "unmatched" | "unavailable" };
 
 /**
  * The effect check, the one hook a graph run uses too (C8): defined with the
@@ -88,6 +111,13 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
    */
   checkEffect?: AutomationStudioLastingActCheck<T> | undefined;
   signal?: AbortSignal | undefined;
+  /**
+   * Finds the node's stale target again from the step that found it (t786),
+   * asked at most once, before attempt `attempt` (the one about to run), with
+   * the failure of the attempt before it. A throw reads as `unavailable`.
+   * Without one, the retries run as before.
+   */
+  reacquire?: ((input: { failure: AutomationStudioFailureRecord; attempt: number; signal?: AbortSignal | undefined }) => Promise<AutomationStudioNodeRetryReacquire<T>>) | undefined;
   /** How the loop waits; a real, unreferenced timer by default. */
   delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
   now?: () => number;
@@ -99,22 +129,28 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
   let waitedMs = 0;
   // Whether this attempt retries a confirmed no-effect attempt, as a graph run marks it.
   let repress = false;
+  // The dispatch the attempts use: the caller's, or the one a re-acquire found the fresh target with.
+  let dispatch = input.dispatch;
+  let reacquire: AutomationStudioNodeRetryOutcome<T>["reacquire"];
+  const reacquireBefore = automationStudioReacquireBeforeAttempt(policy.maxAttempts);
+  const ended = (result: T, attempts: number, extra: Pick<AutomationStudioNodeRetryOutcome<T>, "lastingAct"> = {}): AutomationStudioNodeRetryOutcome<T> => ({ result, attempts, waitedMs, faults, ...extra, ...(reacquire ? { reacquire } : {}) });
   for (let attempt = 1; ; attempt += 1) {
     const startedAt = now();
-    const result = await input.dispatch(attempt);
+    const result = await dispatch(attempt);
     const reading = input.read(result);
-    if (reading.ok || !reading.failure) return { result, attempts: attempt, waitedMs, faults };
-    const assessed = automationStudioAssessAttemptFault(failedAttempt(input.node, attempt, startedAt, reading.failure, repress), input.node, now());
+    if (reading.ok || !reading.failure) return ended(result, attempt);
+    const traced = failedAttempt(input.node, attempt, startedAt, reading.failure, repress);
+    const assessed = automationStudioAssessAttemptFault(traced, input.node, now());
     repress = reading.failure.certainNoEffect === true;
     // A lasting act whose failure left its effect unknown is checked, never blindly repeated (t359).
     const settled = assessed?.actUncertain ? await automationStudioRunEffectCheck(input.checkEffect, result, attempt) : undefined;
     if (assessed && (settled === "landed" || settled === "unknown")) {
       faults.push(assessed);
-      return { result, attempts: attempt, waitedMs, faults, lastingAct: settled === "landed" ? "landed" : "uncertain" };
+      return ended(result, attempt, { lastingAct: settled === "landed" ? "landed" : "uncertain" });
     }
     const fault = assessed && settled === "not_landed" ? automationStudioFaultNotLanded(assessed) : assessed;
     if (fault) faults.push(fault);
-    if (fault?.disposition !== "retry" || attempt >= policy.maxAttempts || input.signal?.aborted) return { result, attempts: attempt, waitedMs, faults };
+    if (fault?.disposition !== "retry" || attempt >= policy.maxAttempts || input.signal?.aborted) return ended(result, attempt);
     const wait = automationStudioBoundedRetryWaitMs({
       backoffMs: automationStudioRetryBackoffMs(policy, attempt + 1),
       ...(fault.hintedWaitMs === undefined ? {} : { hintedWaitMs: fault.hintedWaitMs }),
@@ -123,7 +159,29 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
     });
     if (wait.waitMs > 0) await delay(wait.waitMs, input.signal);
     waitedMs += wait.waitMs;
-    if (input.signal?.aborted) return { result, attempts: attempt, waitedMs, faults };
+    if (input.signal?.aborted) return ended(result, attempt);
+    // Immediately before the attempt it comes before, once, on a target lost without acting (t786).
+    if (!input.reacquire || reacquire || attempt + 1 !== reacquireBefore || !automationStudioStaleTargetFailure(traced)) continue;
+    const found = await askReacquire(input.reacquire, { failure: reading.failure, attempt: attempt + 1, signal: input.signal });
+    reacquire = found.outcome;
+    if (found.outcome === "gone") return ended(found.result, attempt);
+    if (found.outcome === "found") dispatch = found.dispatch;
+  }
+}
+
+/** What a caller's re-acquire is asked with. */
+type ReacquireAsked = { failure: AutomationStudioFailureRecord; attempt: number; signal?: AbortSignal | undefined };
+
+/** The caller's re-acquire, asked once; one that throws could not look again (`unavailable`). */
+async function askReacquire<T>(
+  reacquire: (input: ReacquireAsked) => Promise<AutomationStudioNodeRetryReacquire<T>>,
+  input: ReacquireAsked
+): Promise<AutomationStudioNodeRetryReacquire<T>> {
+  try {
+    return await reacquire(input);
+  } catch {
+    // The caller's own failure text may quote the page, so only the fact that it failed is kept.
+    return { outcome: "unavailable" };
   }
 }
 

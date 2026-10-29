@@ -45,7 +45,7 @@ export type AutomationStudioFlowCandidateSubmission =
    * record of where the targets were learned, beside the candidate rather than
    * in it: it is outside the digest and the stored draft, and grants nothing.
    */
-  | { ok: true; candidate: AutomationStudioFlowCandidate; handleViews: AutomationStudioFlowBootstrapPlanHandleView[] }
+  | { ok: true; candidate: AutomationStudioFlowCandidate; handleViews: AutomationStudioFlowBootstrapPlanHandleView[]; advice?: string[] }
   | { ok: false; revision: number; check: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: false }>["check"] };
 
 /**

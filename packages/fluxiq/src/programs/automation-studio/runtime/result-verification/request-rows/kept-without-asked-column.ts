@@ -41,6 +41,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestRowsKept } from "./types.ts";
 // The leaf, not the barrel (`summary-reads.ts`).
+import { automationStudioStoredListItems } from "../stored-list/index.ts";
 import { automationStudioResultReadWorkingSets } from "../read-account/working-sets.ts";
 
 /** How many rows in each ten may lack a column for them to be flagged, at least one (header). */
@@ -73,8 +74,8 @@ export function automationStudioResultKeptWithoutAskedColumn(summary: Automation
 function answerColumns(summary: AutomationStudioRunResultSummary, set: AutomationStudioResultRecordSetSummary): string[] {
   for (const step of summary.flowShape) {
     const output = Object.values(step.parameters ?? {}).find((value): value is JsonObject => isObject(value) && value.datasetId === set.datasetId);
-    const columns = output && isObject(output.process) ? output.process.columns : undefined;
-    if (Array.isArray(columns) && columns.length && columns.every((column) => typeof column === "string")) {
+    const columns = output && isObject(output.process) ? automationStudioStoredListItems(output.process.columns) : undefined;
+    if (columns && columns.length && columns.every((column) => typeof column === "string")) {
       return (columns as string[]).filter((column) => set.columns.includes(column));
     }
   }
