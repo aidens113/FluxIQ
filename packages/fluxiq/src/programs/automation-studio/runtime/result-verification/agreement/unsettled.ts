@@ -1,7 +1,7 @@
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
 import type { AutomationStudioResultNoRecord, AutomationStudioResultNoWeighed } from "../refuted-no/index.ts";
 import type { AutomationStudioRequestWording } from "../request-rows/index.ts";
-import { markedAdvice } from "./exclusion-words.ts";
+import { listedValuesAdvice, markedAdvice } from "./exclusion-words.ts";
 import { refutedLabelled } from "./refuted-labelled.ts";
 import { unconfirmedReading } from "./unconfirmed-reading.ts";
 import { unstatedExclusion } from "./unstated-exclusion.ts";
@@ -43,7 +43,9 @@ export function unsettled(
   const read = unconfirmedReading(first) ?? unconfirmedReading(second);
   // A split's no whose advice adds an exclusion the request never states, marked so (header, t515).
   const unstated = basis === "model_disagreed" ? unstatedExclusion(first, second, weigh.wording, weigh.record) : undefined;
-  const marked = read && unstated ? { ...read, advice: markedAdvice(unstated, read.advice ?? "", weigh.reasked === unstated.call) } : read;
+  const exclusionMarked = read && unstated ? { ...read, advice: markedAdvice(unstated, read.advice ?? "", weigh.reasked === unstated.call) } : read;
+  // Advice listing literal values the request never says gets a note, kept whole (t785, `./exclusion-words.ts`).
+  const marked = exclusionMarked?.advice ? { ...exclusionMarked, advice: listedValuesAdvice(exclusionMarked.advice, weigh.wording) } : exclusionMarked;
   const reading = marked && weigh.refuted ? refutedLabelled(marked, weigh.refuted) : marked;
   const answered = basis === "model_disagreed" ? answeredReadingOf(first) ?? answeredReadingOf(second) : undefined;
   return { schemaVersion: first.schemaVersion, verdict: "unsure", basis, code, reason, observation: first.observation, verdicts, calls: 2, ...(reading ? { unconfirmedReading: reading } : {}), ...(answered ? { answeredReading: answered } : {}) };

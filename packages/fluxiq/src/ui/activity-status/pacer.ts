@@ -132,6 +132,7 @@ import { activityWording } from "./wording.ts";
 import type { TrialState } from "./candidate-trial.ts";
 import type { ActivityClock, ActivityTimer } from "./clock.ts";
 import { endingKindOf } from "./ending-kind.ts";
+import { endsOnDoubt } from "./doubted-ending.ts";
 import { activityHeadline } from "./headline.ts";
 import type { ActivityHostWords } from "./host-words.ts";
 import { RunRetry, type RetryState } from "./run-retry.ts";
@@ -444,6 +445,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
   const working = outcome === null;
   const headline = activityHeadline(subjectKind, outcome, words, {
     stopped: event.stopped === true,
+    doubted: outcome === "failed" && endsOnDoubt(event.label, event.detail?.text),
     // A run pressing a failed step again is not a repair (D12), and nor is
     // anything a candidate trial's run, getting the page ready, or checking
     // against the recorded run reports.

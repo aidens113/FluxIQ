@@ -1,3 +1,4 @@
+import { activityActionCheckSubject } from "./check-subject.ts";
 import { activityActionCheckWhy } from "./check-why.ts";
 import { ACTIVITY_ACTION_CONTROL_NOUNS } from "./control-nouns.ts";
 import { activityActionFailureReason } from "./failure-reason.ts";
@@ -519,7 +520,7 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const tested = skipped ?? (outcome === "done" && record.resultCode && !refusal ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null);
   const result = resultOf(event, detail, kind, outcome, record);
   const resent = kind === "draft" && resentName !== undefined && refusal?.rerun === true;
-  const name = resent ? resentName : PUTTING_BACK.test(detail.title.trim()) ? PUT_BACK_NAME : act.verb === undefined ? undefined : ACTIVITY_ACTION_VERB_NAMES[act.verb];
+  const name = kind === "result_check" ? activityActionCheckSubject(detail.text) : resent ? resentName : PUTTING_BACK.test(detail.title.trim()) ? PUT_BACK_NAME : act.verb === undefined ? undefined : ACTIVITY_ACTION_VERB_NAMES[act.verb];
   const target = resent ? null : kind === "draft" && refusal?.rerun ? "run the step again" : targetOf(event, detail, kind, testing);
   return {
     kind,

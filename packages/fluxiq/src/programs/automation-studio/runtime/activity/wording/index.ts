@@ -11,7 +11,7 @@ export { automationStudioActivityFailureCodeWords } from "./failure-code-words.t
 export { automationStudioActivityHumanLabel } from "./human-label.ts";
 export { automationStudioActivityIssueWords, type AutomationStudioActivityIssue } from "./issue-words.ts";
 export { automationStudioActivityIssuesOf } from "./issues-of.ts";
-export { automationStudioActivityLeftTold, type AutomationStudioActivityLeftAct } from "./left-told.ts";
+export { AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT, automationStudioActivityLeftTold, type AutomationStudioActivityLeftAct } from "./left-told.ts";
 export { automationStudioActivityPersonWords } from "./person-words.ts";
 export { automationStudioActivityReasonText } from "./reason-text.ts";
 export { automationStudioActivityRecoveryChoice, type AutomationStudioRecoveryNext } from "./recovery-choice.ts";

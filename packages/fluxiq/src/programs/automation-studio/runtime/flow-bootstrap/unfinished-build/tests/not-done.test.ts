@@ -15,6 +15,7 @@ import {
   automationStudioFlowBootstrapProgressAndTestSaid,
   automationStudioFlowBootstrapProgressSaid,
   automationStudioFlowBootstrapRepairingJudgedSaid,
+  automationStudioFlowBootstrapStopAnnouncementSaid,
   automationStudioFlowBootstrapStopSaid,
   automationStudioFlowBootstrapTestSaid,
   automationStudioFlowBootstrapUnsettledForBuild
@@ -313,5 +314,19 @@ describe("the stop as a person reads it", () => {
     for (const code of ["llm_output.bad", "llm_evidence_loop.already_answered", "llm_evidence_loop.draft_amendment_undone", "llm_evidence_loop.repeat_refused"]) {
       expect(automationStudioFlowBootstrapBlockedSaid([code])).not.toMatch(internal);
     }
+  });
+});
+
+// t785: the "Testing the Flow so far" row names a result repair's stop as the repair's, not the build's.
+describe("the stop announcement", () => {
+  it("keeps a build's words as they were", () => {
+    expect(automationStudioFlowBootstrapStopAnnouncementSaid({ resultRepair: false, reason: "too many attempts in a row went nowhere" }))
+      .toBe("The build stopped before the Flow was finished: too many attempts in a row went nowhere. Running the Flow as far as it got from its start, to judge what it does and what is left.");
+  });
+
+  it("says a result repair stopped, and that the saved Flow is unchanged", () => {
+    const text = automationStudioFlowBootstrapStopAnnouncementSaid({ resultRepair: true, reason: "too many attempts in a row went nowhere" });
+    expect(text).toBe("The repair stopped before it was finished: too many attempts in a row went nowhere. The saved Flow is unchanged. Running what the repair has so far from the start, to judge what it does and what is left.");
+    expect(text).not.toContain("The build stopped");
   });
 });

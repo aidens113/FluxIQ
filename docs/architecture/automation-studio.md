@@ -983,6 +983,53 @@ every failure is swallowed. Each deterministic ladder rung leaves the candidate
 list once it has run, so an already-consumed deterministic answer does not
 suppress escalation forever.
 
+**Stale target re-acquire** (the user's rule of 2026-10-28, t786;
+`runtime/executor/target-reacquire/`). A step whose target came from an
+earlier step finds it again from that step instead of spending its last retry
+on a stale binding. Its lineage is derived from the graph each time
+(`automationStudioTargetLineage`, never stored): `row` when a For Each pass
+hands it the row (an `item` edge, or a binding onto `item` inside the loop's
+body; the innermost loop wins) of a list another node answered, `output` when
+a parameter is bound to another node's output (`$node.<key>.<output>`, an
+element-target parameter first). Immediately before the attempt
+`automationStudioReacquireBeforeAttempt` names (attempt 4 of 4, the last of a
+Flow with fewer), once per arrival, and only after an attempt that lost its
+target without acting (`automationStudioStaleTargetFailure`: a missing,
+ambiguous, stale, detached or renumbered target; never an `ambiguous` effect,
+an effect check that answered `landed` or `unknown`, or an act the
+completed-act ledger holds), the graph run (`step-loop/arrival.ts`):
+
+- asks the host's `returnToSourcePlace` whether the page is still where the
+  source ran (missing: `same_place`; a throw: `unavailable`);
+- re-runs the source once, internally, and only when it states it reads
+  (`automationStudioReacquireSourceReadOnly`: `effect: "observe"`, nothing
+  marks it acting, no declared consequence). The re-run is not an attempt of
+  the run: it is not traced, announced, numbered, saved to a dataset or
+  counted toward the node's attempts, and it writes nothing into the run's
+  values, variables or loop places;
+- offers the host's `reacquireTarget` the stale value and the fresh
+  candidates (the whole fresh list for a row, never For Each's
+  `stopAfter` slice), which answers `found`, `gone` or `unmatched` by the
+  item's identity in its medium, never its position or handle.
+
+`found` rebinds the rest of the pass's row (`item`, `<loop>.item`) or lays the
+fresh value over the bound path for this node's remaining attempts, and the
+attempt that follows -- the retry the policy already had -- runs on it.
+`gone` synthesizes that attempt without dispatching, failed under
+`executor.target.gone` (`AUTOMATION_STUDIO_TARGET_GONE_CODE`, not retryable,
+unacted): it skips state routing, takes the normal failure path (On Fail, the
+failed route, the continuation), and no in-run repair is asked for it.
+`unmatched` (a throw or a malformed answer included) and `unavailable` (a
+source that acts, no matcher, no stale value, an unreachable place, a failed
+or empty re-run -- never proof the item is gone) leave the attempt on its old
+binding. The attempt carries `reacquire` (`AutomationStudioTargetReacquireRecord`),
+and the chat gets one `reacquire` recovery row: succeeded on `found`, failed on
+`gone`, in Core's words naming the source step by its label at most. Outside
+a graph, `automationStudioDispatchWithNodeRetries` takes the caller's
+`reacquire` callback under the same predicate and attempt: `found` swaps the
+dispatch for the remaining attempts, `gone` ends with the caller's answer, and
+the outcome says which (`reacquire`).
+
 **Waits, retry waits and pace** (since t378; `runtime/executor/pacing/`).
 Retry waits, pace waits and Wait pauses share one wait,
 `automationStudioRunWait`, which ends at once when the run is aborted.
