@@ -85,8 +85,10 @@ describe.each(TRIALS)("$trial: two yeses over an exact answer whose text test le
   });
 
   it("still holds a yes that never quotes the request beside the text test: the condition must be the request's", async () => {
-    // Each condition on a line of its own, so no quote beside another condition is lent to the shelf test's.
-    const unquoted = { ...AUDIOBOOKS_YES, observed: AUDIOBOOKS_YES.observed.replace("carries out \"my branch has on the shelf today\"", "is fine").replace(/ (?=Condition \d)/gu, "\n") };
+    // Every condition in one line (t790, `run-mvswh11y-9d462629`): the quotes beside the shelf test's sentence,
+    // each another condition's, are lent to it no more.
+    const unquoted = { ...AUDIOBOOKS_YES, observed: AUDIOBOOKS_YES.observed.replace("carries out \"my branch has on the shelf today\"", "is fine") };
+    expect(unquoted.observed).not.toContain("\n");
     const { provider } = answering(unquoted);
     const verdict = await judge(provider)({ summary: audiobooksRunSummary(), taskChecklist, budget: { maxCostUsd: 0.2 } });
     expect(verdict.verdict).not.toBe("yes");

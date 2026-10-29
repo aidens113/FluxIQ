@@ -47,6 +47,14 @@
 // wording writes -- or, for a presence test (t599) or a text test (t624), the
 // one column its wording names, and no number, since neither bounds anything.
 //
+// **But never a column of the answer (t790).** Debug of
+// `run-mvswh11y-9d462629` (D3, F1): a negated text test of `name`, the
+// answer's first column, was named by every reply that listed the answer's
+// columns ("name, price, rating and url"), so a sentence quoting the request
+// for anything else accounted for it. A tested column that is one of a stored
+// record set's `columns` names no condition; `condition N`, and a bound's
+// numbers, still do.
+//
 // **Not the reads that prepared a subflow trial's entry (t599).** A8 social
 // `run-mv8ic6mk-09bf12ff`: a subflow trial runs its predecessors inside it, so
 // the summary carries their reads too, and every yes over the target was held
@@ -143,12 +151,14 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
     reads.push(read({ step: step.step }, rows, rows, conditions));
   }
   const storedLabels = unique(stored.map((row) => row.label));
+  // The answer's columns name no settled condition (header, t790).
+  const answerColumns = new Set(recordSets.flatMap((set) => set.columns));
   for (const account of summary.reads ?? []) {
     if (entrySteps.has(account.nodeId)) continue;
     const conditions = (account.conditions ?? []).flatMap((entry, index) => {
       if (!entry.leftOutOnlyByThis?.length) return [];
       const number = entry.number ?? index + 1;
-      const settled = entry.leftOutSettled?.length ? { labels: entry.leftOutSettled.map(automationStudioRequestRowLabel), names: boundNames(number, entry.leftOutSettled, entry.condition, entry.settledKind ?? "bound"), kind: entry.settledKind ?? "bound" } : undefined;
+      const settled = entry.leftOutSettled?.length ? { labels: entry.leftOutSettled.map(automationStudioRequestRowLabel), names: boundNames(number, entry.leftOutSettled, entry.condition, entry.settledKind ?? "bound", answerColumns), kind: entry.settledKind ?? "bound" } : undefined;
       return [condition(automationStudioResultConditionName(number, entry.condition), entry.leftOutOnlyByThis, entry.testedLabel === true, settled)];
     });
     const leftOut = new Set(conditions.flatMap((entry) => entry.labels));
@@ -201,19 +211,20 @@ function condition(name: string, rows: string[], testedLabel: boolean, settled?:
 
 /**
  * The word runs a sentence names a settled condition by: `condition N`, its
- * column (whole, and split where it joins words in camel case), and each number
- * its wording writes -- the bound a quote of the request states. A presence
- * test's or a text test's column is read from its wording where no row says
- * it, and its wording gives no number: it bounds nothing, and a number in a
- * text test's text is part of what it looks for (header, t624).
+ * column (whole, and split where it joins words in camel case) unless it is
+ * one of `answerColumns` (header, t790), and each number its wording writes --
+ * the bound a quote of the request states. A presence test's or a text test's
+ * column is read from its wording where no row says it, and its wording gives
+ * no number: it bounds nothing, and a number in a text test's text is part of
+ * what it looks for (header, t624).
  */
-function boundNames(number: number, settledRows: readonly string[], wording: string | undefined, kind: "bound" | "presence" | "text"): string[][] {
+function boundNames(number: number, settledRows: readonly string[], wording: string | undefined, kind: "bound" | "presence" | "text", answerColumns: ReadonlySet<string>): string[][] {
   const names = [wordsOf(`condition ${number}`)];
   const presence = PRESENCE_WORDING.exec(wording ?? "")?.[1];
   // Whether the condition bounds a number is the kind Core settled it by, not a re-reading of its wording.
   const unbounded = kind !== "bound";
   const column = TESTED_COLUMN.exec(AutomationStudioRequestRowId.unsaid(settledRows[0] ?? ""))?.[1] ?? presence ?? TEXT_WORDING.exec(wording ?? "")?.[1];
-  if (column) names.push(wordsOf(column), wordsOf(column.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")));
+  if (column && !answerColumns.has(column)) names.push(wordsOf(column), wordsOf(column.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")));
   if (!unbounded) for (const word of wordsOf(wording ?? "")) if (/^\p{N}+$/u.test(word)) names.push([word]);
   const said = new Set<string>();
   return names.filter((name) => {

@@ -55,6 +55,11 @@
 // (`run-mv6qrbgx-06151cdb`) was wrongly given, so an issue whose code is in
 // `AUTHORED_CODES` keeps its message and carries `field` and `valid` beside it.
 //
+// **A condition refused for its date bound says how to write one (t790).** Run
+// `run-mvswewhy-e4e469d4` could write no date bound at all; one that names no
+// one date is now refused with Core's own sentence, so the refusal's message
+// is sent (`record_output.process_invalid_condition` in `AUTHORED_CODES`).
+//
 // **A word under the wrong key is answered with its line (t514).** Social gate
 // run `run-mv6v2jh4-69244ffb` wrote `state: absent` on a wait step and was
 // refused a bare `bootstrap.handle_unresolved` at the step's parameters; it
@@ -267,7 +272,12 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   // never a value a condition compares.
   "record_output.process_unknown_field",
   "record_output.process_excluded_field",
-  "record_output.process_where_column_dropped"
+  "record_output.process_where_column_dropped",
+  // A condition refused (t790, run `run-mvswewhy-e4e469d4`): where for a date
+  // bound that names no one date, Core's sentence names only the field ids the
+  // model wrote and how to write a bound, never the bound; otherwise its fixed
+  // fallback sentence, which quotes nothing (`./record-output-contract.ts`).
+  "record_output.process_invalid_condition"
 ]);
 
 const ROUTE_CODES: ReadonlySet<string> = new Set([

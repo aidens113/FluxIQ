@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { automationStudioResultVerificationAgreement } from "../../agreement/index.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
-import { automationStudioResultNoRecord, automationStudioResultRefutedReading } from "../index.ts";
+import { automationStudioResultCountClaim, automationStudioResultNoRecord, automationStudioResultRefutedReading, type AutomationStudioResultNoNamedRows, type AutomationStudioResultNoRecord } from "../index.ts";
 import {
   PLANTS_FIRST_NO, PLANTS_PROMOTED_ONLY, PLANTS_REQUEST_TEXT, PLANTS_SECOND_NO, PLANTS_STORED, plantsRunSummary, plantsWording
 } from "../../request-rows/tests/promoted-copies-fixture.ts";
@@ -123,5 +123,27 @@ describe("a no whose only complaint is a row Core settled against the request's 
   it("stands where a row the grant names is one no condition left a copy of, or it says nothing of the rows being in the result", () => {
     expect(beside(`Condition 1 left out 5 rows, but ${PLANTS_STORED[1]!.name as string} is also in the result.`)).toBe(false);
     expect(beside(`Condition 1 left out 5 rows, but ${COPIES} look like houseplants.`)).toBe(false);
+  });
+});
+
+// A count of items a read saw is not a claim about stored rows (t790, `run-mvswh11y-9d462629` D2/F3): "the read saw only
+// 20 items and kept 15" refuted a correct no wholly. A library catalogue: no task, site, item or answer of any realistic
+// scenario.
+const NO_NAMED_ROWS: AutomationStudioResultNoNamedRows = { stored: [], leftOut: [], unmatched: false };
+function countRecord(storedCount: number): AutomationStudioResultNoRecord {
+  return { stored: [], leftOut: [], pools: [], storedCount, duplicatesRemoved: 0, duplicatesCounted: true, nodeIds: [] };
+}
+
+describe("a count of items a read saw", () => {
+  it("is not a claim about the stored rows", () => {
+    for (const sentence of ["The read saw only 20 items and kept 15.", "The catalogue page shows only 20 items, of which 15 were kept.", "Only 20 items were seen on the page."]) {
+      expect(automationStudioResultCountClaim(sentence, NO_NAMED_ROWS, countRecord(15)), sentence).toBeUndefined();
+    }
+  });
+
+  it("still refutes a stated stored count that differs", () => {
+    expect(automationStudioResultCountClaim("Only 20 rows were stored.", NO_NAMED_ROWS, countRecord(15))).toMatchObject({ refuted: true });
+    expect(automationStudioResultCountClaim("Only 20 items were stored.", NO_NAMED_ROWS, countRecord(15))).toMatchObject({ refuted: true });
+    expect(automationStudioResultCountClaim("Only 15 rows were stored.", NO_NAMED_ROWS, countRecord(15))).toBeUndefined();
   });
 });

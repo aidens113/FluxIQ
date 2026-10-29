@@ -1,10 +1,14 @@
 // A judge's `changed` advice that proposes a list of literal values the request
 // never says gets a note, and keeps its own words (t785, F3). Clubs, made up.
+// The values a noted advice listed are read back for the trial's mark
+// suggestion (t790, run `run-mvswewhy-e4e469d4`), only where the note is: a
+// library's loans, made up.
 import { describe, expect, it } from "vitest";
 import { automationStudioRequestRowWords, type AutomationStudioRequestWording } from "../../request-rows/index.ts";
 import { agree } from "../agree.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
+import { automationStudioResultNotedListedValues } from "../../listed-values/index.ts";
 import { listedValuesAdvice } from "../exclusion-words.ts";
 
 /** A wording that says what the request text says, word for word. */
@@ -33,6 +37,16 @@ describe("advice listing values the request does not say", () => {
   it("is not noted without a list, or without a request to hold it to", () => {
     expect(listedValuesAdvice("Keep rows whose club is A Club.", wordingOf("posts in clubs I belong to"))).toBe("Keep rows whose club is A Club.");
     expect(listedValuesAdvice(ADVICE, undefined)).toBe(ADVICE);
+  });
+});
+
+describe("the values a noted advice listed (t790)", () => {
+  it("are read back where Core's note is, and are none where it is not", () => {
+    // A library's loans, made up.
+    const advice = "Keep only rows whose branch is one of Elm Street Branch, Harbour Branch.";
+    expect(automationStudioResultNotedListedValues(listedValuesAdvice(advice, wordingOf("the books I have on loan")))).toEqual(["Elm Street Branch", "Harbour Branch"]);
+    expect(automationStudioResultNotedListedValues(listedValuesAdvice(advice, wordingOf("loans from Elm Street Branch or Harbour Branch")))).toEqual([]);
+    expect(automationStudioResultNotedListedValues(advice)).toEqual([]);
   });
 });
 

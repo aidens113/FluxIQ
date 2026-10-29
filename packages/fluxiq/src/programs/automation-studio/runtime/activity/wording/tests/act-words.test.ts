@@ -66,4 +66,15 @@ describe("acts of the build in a person's words", () => {
       expect(automationStudioActivityActsSaid([{ did: `trial step 4 "${label}" on "Feed"` }])[0], label).toMatchObject({ passing: false });
     }
   });
+
+  // t790 `run-mvswewhy-e4e469d4`: "ran the step "close the chat window if it shows", which changed the page and might have
+  // left something behind". Closing a window is no lasting change; removing a saved address is.
+  it("treats a trial step that closes or declines something optional as passing, and one that removes data as not", () => {
+    for (const label of ["close the chat window if it shows", "dismiss the banner", "decline the optional cookies", "not now"]) {
+      expect(automationStudioActivityActsSaid([{ did: `trial step 2 "${label}" on "Close"` }])[0], label).toMatchObject({ verb: "ran the step", passing: true });
+    }
+    for (const label of ["remove the saved address", "decline"]) {
+      expect(automationStudioActivityActsSaid([{ did: `trial step 2 "${label}" on "Remove"` }])[0], label).toMatchObject({ passing: false });
+    }
+  });
 });

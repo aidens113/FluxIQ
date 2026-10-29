@@ -1,3 +1,14 @@
+// Core's words for advice that adds an exclusion the request never states
+// (t515), and the note on advice listing values the request never says (t785).
+//
+// **The listed values, for the trial's mark suggestion (t790).** Run
+// `run-mvswewhy-e4e469d4`: the builder saw the note and kept the list. The
+// trial feedback now suggests, beside the note, a per-row mark to test instead
+// (`../../service/candidate-trial/row-mark.ts`), reading the noted values back
+// (`../listed-values/`). So the note and the reading of a list are that
+// directory's, shared, and the two never disagree about what was listed. The
+// note's words are unchanged.
+import { AUTOMATION_STUDIO_RESULT_LISTED_VALUES_NOTE, automationStudioResultAdviceListedValues } from "../listed-values/index.ts";
 import type { AutomationStudioRequestWording } from "../request-rows/index.ts";
 
 /**
@@ -29,10 +40,8 @@ export function markedAdvice(unstated: { call: 1 | 2; exclusions: readonly strin
   return `Judge call ${unstated.call} (Core's check: this advice adds an exclusion the request never states, ${quotedExclusions(unstated.exclusions)}, and a request excludes only what its own words state, so do not add it unless the request's words say so${again}): ${advice}`;
 }
 
-/** Where an advice lists values: after these words, up to the end of the sentence. */
-const LIST_LEAD = /\b(?:one of|any of|among|either)\s*:?\s+([^.;\n]+)/giu;
-const QUOTED = /["“]([^"”]{1,80})["”]/gu;
-const LISTED_NOTE = "Core's note: this advice lists values the request does not say. These values are what the page shows today; where each row itself shows what makes it one the request asks for, test that instead of listing today's values. This is advice to weigh, not a rule.";
+/** Core's note on a list of values the request does not say, word for word (`../listed-values/note.ts`). */
+const LISTED_NOTE = AUTOMATION_STUDIO_RESULT_LISTED_VALUES_NOTE;
 
 /**
  * A judge's `changed` advice, with a note appended where it proposes a list of
@@ -40,19 +49,12 @@ const LISTED_NOTE = "Core's note: this advice lists values the request does not 
  * whose advice became the condition). As `markedAdvice` labels advice that adds
  * an unstated exclusion: the advice stays in its own words, never dropped, and a
  * request that says its values gets no note. Two values at least make a list; a
- * value is a quoted text or an item after "one of", "any of", "among" or "either".
+ * value is a quoted text or an item after "one of", "any of", "among" or "either"
+ * (`../listed-values/advice-values.ts`).
  */
 export function listedValuesAdvice(advice: string, wording: AutomationStudioRequestWording | undefined): string {
   if (!wording || !advice) return advice;
-  const listed = new Set<string>();
-  for (const found of advice.matchAll(LIST_LEAD)) {
-    for (const item of found[1]!.split(/,|\bor\b|\band\b/iu)) {
-      const value = item.replace(/^[\s"“'‘]+|[\s"”'’]+$/gu, "");
-      if (value) listed.add(value);
-    }
-  }
-  for (const found of advice.matchAll(QUOTED)) listed.add(found[1]!.trim());
-  const values = [...listed];
+  const values = automationStudioResultAdviceListedValues(advice);
   if (values.length < 2 || !values.some((value) => !wording.says(value))) return advice;
   return `${advice} (${LISTED_NOTE})`;
 }
