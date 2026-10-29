@@ -1,0 +1,10 @@
+.account-link-page { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.account-link-card { width: 100%; max-width: 420px; display: grid; gap: 14px; }
+.account-link-brand { margin: 0; font-weight: 600; letter-spacing: 0.04em; }
+.account-link-card h1 { margin: 0; font-size: 1.5rem; }
+.account-link-form { display: grid; gap: 12px; }
+.account-link-form label { display: grid; gap: 4px; font-size: 0.9rem; }
+.account-link-form input { padding: 8px 10px; font: inherit; }
+.account-link-form button { padding: 9px 12px; font: inherit; cursor: pointer; }
+.account-link-hint, .account-link-note { margin: 0; font-size: 0.85rem; opacity: 0.8; }
+.account-link-message { margin: 0; }

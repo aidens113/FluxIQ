@@ -76,8 +76,13 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
         // never what may be done. With no unlocked session the Flow runs
         // deterministically, exactly as it did before, rather than being
         // refused. A person's own session passes through unchanged.
+        // `actorSessionId` is the session each model call tries first, not the
+        // one that pays for the whole run: every call resolves the person's live
+        // unlock again (`runtime/llm/session-key-provider.ts`), so a sign-out of
+        // that session mid-run falls back to another unlock of theirs, and with
+        // none the call fails with `secrets.locked`.
         const caller = service.conversations.callerFor(request.actor);
-        if (!caller.keyLocked) llmExecution = { actorUserId: caller.userId, actorSessionId: caller.sessionId, intent };
+        if (!caller.keyLocked) llmExecution = { actorUserId: caller.userId, actorSessionId: caller.preferredSessionId ?? caller.sessionId, intent };
         pairedCaller = caller.paired;
       }
       // What the person allowed the run's actions to do. Absent is nothing; a

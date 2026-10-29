@@ -12,6 +12,7 @@ import type { RecordEnvelope, Repository } from "../../../database-manager/index
 import type { IdentityCredentialChange, IdentityCredentialChangeSubscriber, UserCredential } from "../../types.ts";
 import { IdentityAccessService } from "../service.ts";
 import { digestSessionId } from "../session-digest.ts";
+import { IdentityTwoFactorResetError } from "../two-factor-reset-error.ts";
 
 const WEAK: ScryptParameters = { N: 2 ** 10, r: 8, p: 1, keyLength: 32 };
 const LEGACY_N = 2 ** 14;
@@ -295,6 +296,74 @@ describe("IdentityAccessService sessions", () => {
   });
 });
 
+// A revoke tells listeners the raw session id (in memory only), so Secret Keys
+// drops that session's unlock (hosted plan, Model Calls; H0-S5).
+describe("IdentityAccessService session revocation", () => {
+  it("tells option and subscribed listeners the raw id a revoke named, until unsubscribed", async () => {
+    const fromOption: string[] = [];
+    const subscribed: string[] = [];
+    const identity = new IdentityAccessService({ passwordKdf: countingKdf().passwordKdf, sessionRevocationSubscribers: [(sessionId) => { fromOption.push(sessionId); }] });
+    const unsubscribe = identity.subscribeSessionRevocation(async (sessionId) => { subscribed.push(sessionId); });
+    const first = await identity.createSession("admin");
+    const second = await identity.createSession("admin");
+    await expect(identity.revokeSession(first.id)).resolves.toBe(true);
+    unsubscribe();
+    await expect(identity.revokeSession(second.id)).resolves.toBe(true);
+    expect(fromOption).toEqual([first.id, second.id]);
+    expect(subscribed).toEqual([first.id]);
+  });
+
+  it("revokes every session of one user, stored here or by another instance, and announces the raw ids it saw", async () => {
+    const repository = new MemoryIdentityRepository();
+    const revoked: string[] = [];
+    const identity = new IdentityAccessService({ repository, passwordKdf: countingKdf().passwordKdf, sessionRevocationSubscribers: [(sessionId) => { revoked.push(sessionId); }] });
+    await identity.upsertUser({ id: "user.two", username: "user-two", displayName: "User Two", roleId: "viewer", password: PASSWORD });
+    const here = await identity.createSession("user.two");
+    const elsewhere = await createService(repository).createSession("user.two");
+    const other = await identity.createSession("admin");
+
+    await expect(identity.revokeUserSessions("user.two")).resolves.toBe(2);
+
+    await expect(identity.validateSession(here.id)).resolves.toBeNull();
+    await expect(createService(repository).validateSession(elsewhere.id)).resolves.toBeNull();
+    await expect(identity.validateSession(other.id)).resolves.not.toBeNull();
+    // The other instance's raw id never reached this one, so only the session minted here is announced.
+    expect(revoked).toEqual([here.id]);
+    expect(JSON.stringify([...repository.records.entries()])).not.toContain(here.id);
+  });
+
+  it("deletes a user with their credential and sessions, and refuses the final enabled administrator", async () => {
+    const repository = new MemoryIdentityRepository();
+    const revoked: string[] = [];
+    const identity = new IdentityAccessService({ repository, passwordKdf: countingKdf().passwordKdf, sessionRevocationSubscribers: [(sessionId) => { revoked.push(sessionId); }] });
+    await identity.upsertUser({ id: "user.two", username: "user-two", displayName: "User Two", roleId: "viewer", password: PASSWORD });
+    const login = await identity.authenticate({ username: "user-two", password: PASSWORD });
+
+    await expect(identity.deleteUser("user.two")).resolves.toBe(true);
+
+    expect(revoked).toEqual([login.session.id]);
+    expect([...repository.records.keys()].filter((id) => id.includes("user.two"))).toEqual([]);
+    const restarted = createService(repository);
+    await expect(restarted.validateSession(login.session.id)).resolves.toBeNull();
+    await expect(restarted.authenticate({ username: "user-two", password: PASSWORD })).rejects.toThrow(INVALID);
+    await expect(identity.deleteUser("user.unknown")).resolves.toBe(false);
+    await expect(identity.deleteUser("admin")).rejects.toThrow("At least one enabled administrator is required");
+    expect((await identity.snapshot()).users.map((user) => user.id)).toEqual(["admin"]);
+  });
+
+  it("runs every listener and reports a failing one, with the session still revoked", async () => {
+    const reached: string[] = [];
+    const identity = new IdentityAccessService({
+      passwordKdf: countingKdf().passwordKdf,
+      sessionRevocationSubscribers: [() => { throw new Error("listener down"); }, (sessionId) => { reached.push(sessionId); }]
+    });
+    const session = await identity.createSession("admin");
+    await expect(identity.revokeSession(session.id)).rejects.toBeInstanceOf(AggregateError);
+    expect(reached).toEqual([session.id]);
+    await expect(identity.validateSession(session.id)).resolves.toBeNull();
+  });
+});
+
 describe("IdentityAccessService vault unlock", () => {
   it("refuses a vault unlock that omits a credential the account has configured", async () => {
     const identity = createService(new MemoryIdentityRepository());
@@ -468,6 +537,90 @@ describe("IdentityAccessService credential-change port", () => {
     expect(changes[0]).toMatchObject({ userId: "user.two", actorUserId: "user.one", newPassword: NEW_PASSWORD });
     expect(changes[0]?.currentPassword).toBeUndefined();
     await expect(createService(repository).authenticate({ username: "user-two", password: NEW_PASSWORD })).resolves.toMatchObject({ user: { id: "user.two" } });
+  });
+});
+
+describe("IdentityAccessService resetPassword", () => {
+  it("replaces a credential sealed before a restart without the old password, where setPassword still refuses", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD, pin: PIN });
+    const restarted = createService(repository);
+
+    await expect(restarted.setPassword("user.one", NEW_PASSWORD)).rejects.toThrow("Credential recheck required");
+    await restarted.resetPassword("user.one", NEW_PASSWORD);
+
+    // The seal could not be opened, so the PIN went with it, as in an administrator's reset.
+    const login = await restarted.authenticate({ username: "user-one", password: NEW_PASSWORD });
+    expect(login.user).toMatchObject({ pinConfigured: false, passwordConfigured: true });
+    await expect(restarted.authenticate({ username: "user-one", password: PASSWORD })).rejects.toThrow(INVALID);
+    const again = createService(repository);
+    await expect(again.authenticate({ username: "user-one", password: NEW_PASSWORD })).resolves.toMatchObject({ user: { id: "user.one" } });
+    await expect(again.authenticate({ username: "user-one", password: PASSWORD })).rejects.toThrow(INVALID);
+    expect(JSON.stringify([...repository.records.values()])).not.toContain(NEW_PASSWORD);
+  });
+
+  it("refuses, changing nothing, a sealed credential of an account with two-factor sign-in", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD, totpEnabled: true });
+    const events: string[] = [];
+    const restarted = createService(repository, countingKdf().passwordKdf, [{
+      prepare: async () => void events.push("prepare"),
+      commit: async () => void events.push("commit"),
+      abort: async () => void events.push("abort")
+    }]);
+    const stored = JSON.stringify([...repository.records.values()]);
+
+    await expect(restarted.resetPassword("user.one", NEW_PASSWORD)).rejects.toMatchObject({ code: IdentityTwoFactorResetError.code });
+
+    expect(events).toEqual([]);
+    expect(JSON.stringify([...repository.records.values()])).toBe(stored);
+    await expect(restarted.authenticate({ username: "user-one", password: NEW_PASSWORD })).rejects.toThrow(INVALID);
+    await expect(restarted.authenticate({ username: "user-one", password: PASSWORD })).resolves.toMatchObject({ user: { id: "user.one", totpEnabled: true } });
+  });
+
+  it("keeps the PIN of a credential unlocked in this process", async () => {
+    const repository = new MemoryIdentityRepository();
+    const identity = createService(repository);
+    await identity.upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD, pin: PIN });
+
+    await identity.resetPassword("user.one", NEW_PASSWORD);
+
+    const login = await identity.authenticate({ username: "user-one", password: NEW_PASSWORD });
+    await expect(identity.authorizeSessionPin({ sessionId: login.session.id, pin: PIN })).resolves.toMatchObject({ id: "user.one" });
+  });
+
+  it("announces the change with no actor and no current password, and refuses a disabled or unknown user before preparing", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    const seeding = createService(repository);
+    await seeding.upsertUser({ id: "user.two", username: "user-two", displayName: "User Two", roleId: "viewer", password: PASSWORD });
+    await seeding.updateUser({ id: "user.two", enabled: false });
+    const changes: IdentityCredentialChange[] = [];
+    const events: string[] = [];
+    const identity = createService(repository, countingKdf().passwordKdf, [{
+      prepare: async (change) => {
+        changes.push(change);
+        events.push("prepare");
+      },
+      commit: async () => {
+        events.push("commit");
+      },
+      abort: async () => {
+        events.push("abort");
+      }
+    }]);
+
+    await identity.resetPassword("user.one", NEW_PASSWORD);
+    expect(events).toEqual(["prepare", "commit"]);
+    expect(changes[0]).toMatchObject({ userId: "user.one", newPassword: NEW_PASSWORD });
+    expect(changes[0]?.actorUserId).toBeUndefined();
+    expect(changes[0]?.currentPassword).toBeUndefined();
+
+    await expect(identity.resetPassword("user.two", NEW_PASSWORD)).rejects.toThrow();
+    await expect(identity.resetPassword("user.none", NEW_PASSWORD)).rejects.toThrow();
+    // Refused before any subscriber is asked to prepare.
+    expect(events).toEqual(["prepare", "commit"]);
+    await expect(createService(repository).authenticate({ username: "user-two", password: NEW_PASSWORD })).rejects.toThrow(INVALID);
   });
 });
 

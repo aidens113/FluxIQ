@@ -15,9 +15,15 @@ import {
   type CredentialKey,
   type SealedCredentialRecord
 } from "./credential-seal.ts";
+import { holdCredentialKey } from "./hold-credential-key.ts";
+import { IdentityLastAdministratorError } from "./last-administrator-error.ts";
 import { defaultRoles } from "./roles.ts";
+import { restoreEntry } from "./restore-entry.ts";
 import { runCredentialChange } from "./run-credential-change.ts";
 import { digestSessionId } from "./session-digest.ts";
+import { IdentityTwoFactorResetError } from "./two-factor-reset-error.ts";
+import { withCredentialStatus } from "./with-credential-status.ts";
+import { deleteStoredSessions, IdentitySessionRevocations, resolveSessionRevocation } from "./sessions/index.ts";
 import {
   credentialMetadata,
   identityRecord,
@@ -32,6 +38,9 @@ import type {
   IdentityAccessSnapshot,
   IdentityCredentialChange,
   IdentityCredentialChangeSubscriber,
+  IdentitySessionRevocationListener,
+  IdentitySessionRevoker,
+  IdentitySessionTarget,
   Role,
   Session,
   User,
@@ -64,6 +73,8 @@ export class IdentityAccessService {
   private readonly repository: Repository | undefined;
   private readonly kdf: CredentialKdf;
   private readonly credentialChangeSubscribers: readonly IdentityCredentialChangeSubscriber[];
+  /** Raw ids of the sessions this process saw, in memory only, and who is told when one is revoked. */
+  private readonly revocations: IdentitySessionRevocations;
   private loading: Promise<void> | undefined;
 
   constructor(options: IdentityAccessServiceOptions = {}) {
@@ -74,6 +85,12 @@ export class IdentityAccessService {
     this.repository = options.repository;
     this.kdf = createCredentialKdf(options.passwordKdf);
     this.credentialChangeSubscribers = [...(options.credentialChangeSubscribers ?? [])];
+    this.revocations = new IdentitySessionRevocations(options.sessionRevocationSubscribers);
+  }
+
+  /** Tells `listener` the raw id of every session revoked from now on (see `IdentitySessionRevocationListener`); returns its unsubscribe. */
+  subscribeSessionRevocation(listener: IdentitySessionRevocationListener): () => void {
+    return this.revocations.subscribe(listener);
   }
 
   async upsertRole(role: Role): Promise<Role> {
@@ -101,7 +118,7 @@ export class IdentityAccessService {
     const now = params.nowMs ?? Date.now();
     const id = params.id ?? randomUUID();
     const existing = this.users.get(id);
-    // Credentials of an existing account change only through setPassword, setPasswordAuthorized, setPin, and
+    // Credentials of an existing account change only through setPassword, setPasswordAuthorized, resetPassword, setPin, and
     // setPinAuthorized, so the credential-change port and its subscribers are never bypassed.
     if (existing && (params.password || params.pin)) {
       throw new Error("An existing account's password or PIN cannot be changed here; use a password or PIN change");
@@ -138,7 +155,7 @@ export class IdentityAccessService {
     const removesFinalAdmin = existing.enabled && existing.roleId === "admin"
       && (params.enabled === false || (params.roleId !== undefined && params.roleId !== "admin"))
       && ![...this.users.values()].some((user) => user.id !== existing.id && user.enabled && user.roleId === "admin");
-    if (removesFinalAdmin) throw new Error("At least one enabled administrator is required");
+    if (removesFinalAdmin) throw new IdentityLastAdministratorError();
     const next: User = {
       ...existing,
       username: params.username ?? existing.username,
@@ -152,9 +169,43 @@ export class IdentityAccessService {
     return next;
   }
 
+  /** Removes an account, its credential and its sessions (announced as revoked); false if unknown; refuses the final enabled admin, as `updateUser` does. */
+  async deleteUser(userId: string): Promise<boolean> {
+    await this.load();
+    const existing = this.users.get(userId);
+    if (!existing) return false;
+    const finalAdmin = existing.enabled && existing.roleId === "admin" && ![...this.users.values()].some((user) => user.id !== userId && user.enabled && user.roleId === "admin");
+    if (finalAdmin) throw new IdentityLastAdministratorError();
+    this.users.delete(userId);
+    this.credentials.delete(userId);
+    this.credentialMetadata.delete(userId);
+    this.encryptedCredentials.delete(userId);
+    this.credentialKeys.get(userId)?.key.fill(0);
+    this.credentialKeys.delete(userId);
+    for (const id of [`credential:${userId}`, `user:${userId}`]) await this.repository?.delete(id, {});
+    await this.revokeUserSessions(userId);
+    return true;
+  }
+
   async setPassword(userId: string, password: string): Promise<UserCredential> {
     await this.load();
     return this.changePassword({ changeId: randomUUID(), userId, actorUserId: undefined, currentPassword: undefined, newPassword: password }, false);
+  }
+
+  /**
+   * Sets a password on an authority the caller checked (a welcome or reset
+   * link, or an authorised operator), with no recheck of the old credential. A sealed credential not
+   * unlocked here is replaced as an administrator's reset replaces it (PIN
+   * cleared), except one with two-factor sign-in, refused unchanged with
+   * `IdentityTwoFactorResetError`: a link must never turn two-factor off.
+   * Runs through the credential-change port with no actor or current password.
+   */
+  async resetPassword(userId: string, password: string): Promise<UserCredential> {
+    await this.load();
+    const user = this.requireUser(userId);
+    const sealedOnly = !this.credentials.has(userId) && this.encryptedCredentials.has(userId);
+    if (sealedOnly && (user.totpEnabled || this.credentialMetadata.get(userId)?.totpConfigured)) throw new IdentityTwoFactorResetError();
+    return this.changePassword({ changeId: randomUUID(), userId, actorUserId: undefined, currentPassword: undefined, newPassword: password }, true);
   }
 
   async setPasswordAuthorized(params: {
@@ -285,7 +336,7 @@ export class IdentityAccessService {
     const session = await this.createSession(user.id, params.ttlMs, params.nowMs);
     const role = this.roles.get(user.roleId);
     if (!role) throw new Error(`Unknown role: ${user.roleId}`);
-    return { session, user: this.userWithCredentialStatus(user), role };
+    return { session, user: withCredentialStatus(user, this.credentials.get(user.id), this.credentialMetadata.get(user.id)), role };
   }
 
   /**
@@ -309,6 +360,7 @@ export class IdentityAccessService {
     };
     const digest = digestSessionId(session.id);
     this.sessions.set(digest, { digest, userId, expiresAtMs: session.expiresAtMs });
+    this.revocations.remember(digest, session.id, session.expiresAtMs, nowMs);
     await this.persist();
     return session;
   }
@@ -327,7 +379,8 @@ export class IdentityAccessService {
     if (!user || !user.enabled) return null;
     const role = this.roles.get(user.roleId);
     if (!role) return null;
-    return { session: { id: sessionId, userId: stored.userId, expiresAtMs: stored.expiresAtMs }, user: this.userWithCredentialStatus(user), role };
+    this.revocations.remember(digest, sessionId, stored.expiresAtMs, nowMs);
+    return { session: { id: sessionId, userId: stored.userId, expiresAtMs: stored.expiresAtMs }, user: withCredentialStatus(user, this.credentials.get(user.id), this.credentialMetadata.get(user.id)), role };
   }
 
   async authorizeSessionCredentials(params: { sessionId: string | undefined; password: string | undefined; pin: string | undefined; totp: string | undefined }): Promise<User> {
@@ -378,14 +431,25 @@ export class IdentityAccessService {
     return actor;
   }
 
-  async revokeSession(sessionId: string): Promise<boolean> {
+  /** Revokes one session by raw id or (administrators) digest, for its own user or an administrator (`resolveSessionRevocation`); listeners are told the raw id. */
+  async revokeSession(target: IdentitySessionTarget, revoker?: IdentitySessionRevoker): Promise<boolean> {
     await this.load();
-    const digest = digestSessionId(sessionId);
-    const held = this.sessions.delete(digest);
-    // Deleted from the store as well; otherwise the next reload would bring the session back.
-    const stored = (await this.repository?.delete(`session:${digest}`, {})) ?? false;
+    const revocation = resolveSessionRevocation(this.sessions, target, revoker);
+    const removed = await deleteStoredSessions(this.sessions, this.repository, [revocation.digest]);
     await this.persist();
-    return held || stored;
+    await this.revocations.revoked([revocation.digest], revocation.revoker, revocation.presented);
+    return removed > 0;
+  }
+
+  /** Revokes every session of `userId`, stored here or by another process, and tells listeners each raw id this process saw. */
+  async revokeUserSessions(userId: string): Promise<number> {
+    await this.load();
+    await this.reloadFromStore();
+    const digests = [...this.sessions.values()].filter((session) => session.userId === userId).map((session) => session.digest);
+    const removed = await deleteStoredSessions(this.sessions, this.repository, digests);
+    await this.persist();
+    await this.revocations.revoked(digests, { userId, administrator: false });
+    return removed;
   }
 
   async unlockVault(params: { userId: string; password?: string; pin?: string; totp?: string; nowMs?: number }): Promise<VaultStatus> {
@@ -437,7 +501,7 @@ export class IdentityAccessService {
       .filter((session) => session.expiresAtMs > nowMs)
       .map((session) => ({ id: session.digest, userId: session.userId, expiresAtMs: session.expiresAtMs }));
     return {
-      users: [...this.users.values()].map((user) => this.userWithCredentialStatus(user)).sort((left, right) => left.username.localeCompare(right.username)),
+      users: [...this.users.values()].map((user) => withCredentialStatus(user, this.credentials.get(user.id), this.credentialMetadata.get(user.id))).sort((left, right) => left.username.localeCompare(right.username)),
       roles: [...this.roles.values()].sort((left, right) => left.id.localeCompare(right.id)),
       sessions,
       vault: this.vault
@@ -546,16 +610,6 @@ export class IdentityAccessService {
     const user = this.users.get(userId);
     if (!user || !user.enabled) throw new Error(`Unknown or disabled user: ${userId}`);
     return user;
-  }
-
-  private userWithCredentialStatus(user: User): User {
-    const credential = this.credentials.get(user.id);
-    const metadata = this.credentialMetadata.get(user.id);
-    return {
-      ...user,
-      passwordConfigured: Boolean(credential?.passwordHash) || Boolean(metadata?.passwordConfigured),
-      pinConfigured: Boolean(credential?.pinHash) || Boolean(metadata?.pinConfigured)
-    };
   }
 
   private requireCredential(userId: string): UserCredential {
@@ -738,16 +792,4 @@ export class IdentityAccessService {
     await this.setCredentialHash(user.id, "passwordHash", "admin");
     return true;
   }
-}
-
-/** Holds a credential key for a user, zeroing the key it replaces. */
-function holdCredentialKey(keys: Map<string, CredentialKey>, userId: string, key: CredentialKey): void {
-  const previous = keys.get(userId);
-  if (previous && previous.key !== key.key) previous.key.fill(0);
-  keys.set(userId, key);
-}
-
-function restoreEntry<T>(entries: Map<string, T>, id: string, value: T | undefined): void {
-  if (value === undefined) entries.delete(id);
-  else entries.set(id, value);
 }

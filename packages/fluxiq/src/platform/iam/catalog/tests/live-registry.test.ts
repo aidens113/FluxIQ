@@ -9,6 +9,7 @@ import {
   renderIamActionCatalogModule,
   renderReadOnlyActionsModule
 } from "../index.ts";
+import { withLfLineEndings } from "./generated-text.ts";
 
 const REGENERATE = "set FLUXIQ_REGENERATE_IAM_CATALOG=1 and run `pnpm exec vitest run src/platform/iam/catalog` in packages/fluxiq to regenerate";
 const readOnlyPath = new URL("../generated/read-only-actions.generated.ts", import.meta.url);
@@ -42,11 +43,11 @@ describe("live program registry", () => {
       writeFileSync(destructivePath, destructive);
       writeFileSync(catalogPath, catalogModule);
     }
-    expect(readFileSync(readOnlyPath, "utf8"), `read-only-actions.generated.ts drifted: ${REGENERATE}`).toBe(readOnly);
-    expect(readFileSync(destructivePath, "utf8"), `destructive-actions.generated.ts drifted: ${REGENERATE}`).toBe(destructive);
+    expect(withLfLineEndings(readFileSync(readOnlyPath, "utf8")), `read-only-actions.generated.ts drifted: ${REGENERATE}`).toBe(withLfLineEndings(readOnly));
+    expect(withLfLineEndings(readFileSync(destructivePath, "utf8")), `destructive-actions.generated.ts drifted: ${REGENERATE}`).toBe(withLfLineEndings(destructive));
   });
 
   it("keeps the generated action catalog in the contracts package current", () => {
-    expect(readFileSync(catalogPath, "utf8"), `actions.generated.ts drifted: ${REGENERATE}`).toBe(catalogModule);
+    expect(withLfLineEndings(readFileSync(catalogPath, "utf8")), `actions.generated.ts drifted: ${REGENERATE}`).toBe(withLfLineEndings(catalogModule));
   });
 });

@@ -7,7 +7,8 @@ import type {
   SecretKeyRecord,
   SecretKeyScope,
   SecretKeySummary,
-  SecretKeysSnapshot
+  SecretKeysSnapshot,
+  SecretKeyUnlockRevoker
 } from "../types.ts";
 import { CredentialChanges, type OpenedRecordSeal, type SecretKeyCredentialChange, type SecretKeyCredentialChangeInput } from "./credential-changes.ts";
 import { HeldKeys, type HeldRevealAuthorization, type HeldSessionUnlock, type SecretRevealAuthorizationMetadata } from "./held-keys.ts";
@@ -306,7 +307,9 @@ export class SecretKeysService {
     const nowMs = input.nowMs ?? this.now();
     const unlock = this.heldKeys.session(input.sessionId);
     if (!unlock || unlock.userId !== input.userId || unlock.expiresAtMs <= nowMs) {
-      this.heldKeys.revokeSession(input.sessionId);
+      // Only the caller's own expired unlock is dropped here: naming another
+      // user's session id must not lock that user's keys.
+      if (unlock && unlock.userId === input.userId) this.heldKeys.revokeSession(input.sessionId);
       throw new Error("Secret key session unlock is unavailable");
     }
     const existing = this.store.require(input.id);
@@ -416,8 +419,18 @@ export class SecretKeysService {
     return best?.sessionId ?? null;
   }
 
-  revokeSessionUnlock(sessionId: string): void {
+  /**
+   * Drops `sessionId`'s unlock, and every reveal authorization drawn from it,
+   * for `revoker`: the user the unlock belongs to, or an administrator. Knowing
+   * a session id is not enough: anyone else is refused and the unlock is kept.
+   * False when no unlock is held for that id.
+   */
+  revokeSessionUnlock(sessionId: string, revoker: SecretKeyUnlockRevoker): boolean {
+    const held = this.heldKeys.session(sessionId);
+    if (!held) return false;
+    if (!revoker.administrator && held.userId !== revoker.userId) throw new Error("Only the session's own user or an administrator can lock its secret keys");
     this.heldKeys.revokeSession(sessionId);
+    return true;
   }
 
   /** Revokes every held key and forgets in-flight credential changes; their stored pending seals are settled at the next unlock or reveal. */

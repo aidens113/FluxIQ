@@ -133,7 +133,7 @@ describe("SecretKeysService", () => {
     });
     const authorizationKey = (service as any).heldKeys.authorization(authorization.authorizationId).decryptionKey as Buffer;
     expect(authorizationKey).not.toBe(sessionKey);
-    service.revokeSessionUnlock("session.one");
+    service.revokeSessionUnlock("session.one", { userId: "user.one", administrator: false });
     expect(service.activeSessionUnlockCount()).toBe(0);
     expect(service.activeRevealAuthorizationCount()).toBe(0);
     expect([...sessionKey].every((byte) => byte === 0)).toBe(true);

@@ -124,6 +124,15 @@ describe("provisioning errors", () => {
     expect(PLATFORM_PROVISIONING_ERROR_STATUS).toMatchObject({ email_taken: 409, weak_password: 422, not_found: 404, disabled: 409, forbidden_policy: 403 });
   });
 
+  it("has a code for the last administrator, one for a sealed two-factor account and one for an unexpected failure", () => {
+    expect(PLATFORM_PROVISIONING_ERROR_STATUS).toMatchObject({ last_administrator: 409, two_factor: 409, internal_error: 500 });
+    expect(platformProvisioningResponseSchema(PLATFORM_PROVISIONING_OPERATIONS.setPassword.result).safeParse({ ok: false, error: { code: "two_factor", message: "An administrator must reset this account." } }).success).toBe(true);
+    const schema = platformProvisioningResponseSchema(PLATFORM_PROVISIONING_OPERATIONS.disableAccount.result);
+    expect(schema.safeParse({ ok: false, error: { code: "last_administrator", message: "The last enabled administrator cannot be disabled." } }).success).toBe(true);
+    expect(schema.safeParse({ ok: false, error: { code: "internal_error", message: "The provisioning request could not be completed." } }).success).toBe(true);
+    expect(schema.safeParse({ ok: false, error: { code: "server_error", message: "Not a contract code." } }).success).toBe(false);
+  });
+
   it("wraps results and errors in one envelope", () => {
     const schema = platformProvisioningResponseSchema(PLATFORM_PROVISIONING_OPERATIONS.getAccount.result);
     expect(schema.safeParse({ ok: true, result: VALID_RESULTS.getAccount }).success).toBe(true);
