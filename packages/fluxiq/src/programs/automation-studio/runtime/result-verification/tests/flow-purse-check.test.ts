@@ -1,12 +1,20 @@
 // The result check draws on the Flow's one purse in a Lab-scoped run (t438).
 // The user's words (2026-10-01): "bring the ceiling down to $0.1 per flow max";
 // the judge counts against it like the build and the repairs.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { RUN_MUW60J7C_REQUEST, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary } from "../request-rows/tests/run-muw60j7c.ts";
 import { verifyAutomationStudioRunResult } from "../verify.ts";
+
+// These tests are about how the judge is asked, and their trimmed live-run summaries store rows a computed fact would
+// rightly fail before any judge is asked (run muw60j7c appended an unfiltered read beside its filtered one), so Core
+// settles no fact first here (`../computed-facts/`, framework plan P5, t795).
+vi.mock("../computed-facts/index.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../computed-facts/index.ts")>()),
+  automationStudioResultComputedFacts: () => []
+}));
 
 const instruction: AutomationStudioFlowInstruction = {
   schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Evidence-guided generation goal", body: RUN_MUW60J7C_REQUEST,

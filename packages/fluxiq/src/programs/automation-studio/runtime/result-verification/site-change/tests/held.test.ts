@@ -71,3 +71,29 @@ describe("two yeses on a trial whose change proves an end state only as already_
     expect(outcome).toMatchObject({ verdict: "unsure", code: "core.result.change_not_proven" });
   });
 });
+
+// t796's per-pass proof (framework plan P5): a part's requested act did not
+// run on a pass. The proof type on this branch does not carry it yet, so the
+// trial's change is hand-built in t796's shape.
+describe("two yeses on a trial whose part's requested act did not run on a pass (t796)", () => {
+  const base = libraryHoldsChange("carried");
+  const withProof = (extra: Record<string, unknown>) => libraryHoldsSummary({ ...base, proofs: [{ ...base.proofs[0]!, ...extra } as unknown as (typeof base.proofs)[number], base.proofs[1]!] });
+
+  it("are a Core no over a part whose proof is not_run, naming the step and why, and fail the run", () => {
+    const agreed = twoYeses(withProof({ proof: "not_run", notRun: [{ nodeId: "node.hold", label: "Place hold", passes: "every", reason: "unreached" }] }));
+    expect(agreed).toMatchObject({ verdict: "does_not_answer", basis: "core_observation", code: "core.result.computed_fact_failed", verdicts: ["answers", "answers"], calls: 2 });
+    expect(agreed.reason).toContain('the step "Place hold" did not run on any pass: the run ended or failed before reaching it');
+    expect(agreed.repair?.judgement?.defects).toEqual([expect.objectContaining({ kind: "act_missing", step: "Place hold" })]);
+    expect(automationStudioResultVerificationFailsRun(agreed)).toBe(true);
+  });
+
+  it("are a Core no over a shown part whose act missed some of its passes", () => {
+    const agreed = twoYeses(withProof({ proof: "shown", notRun: [{ nodeId: "node.hold", label: "Place hold", passes: [2], of: 3, reason: "guarded", after: "Open the book" }] }));
+    expect(agreed).toMatchObject({ verdict: "does_not_answer", code: "core.result.computed_fact_failed" });
+    expect(agreed.reason).toContain('did not run on pass 2 of 3: a guard routed past it, as it runs only after "Open the book"');
+  });
+
+  it("stand where every pass ran its act", () => {
+    expect(twoYeses(withProof({ proof: "shown", notRun: [] }))).toMatchObject({ verdict: "answers" });
+  });
+});

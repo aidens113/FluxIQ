@@ -26,12 +26,12 @@
 // presence test that keeps the rows lacking a value, or a negated text test,
 // tests the request's own words where the request says what it leaves out --
 // the value Core read on the row, or the condition's text -- right after an
-// exclusion cue, and nowhere else (`./request-exclusion-test.ts`). A presence
+// exclusion cue, and nowhere else (`../asked-words/request-exclusion-test.ts`). A presence
 // test's text is the row's own witness, so it is read only where the caller
 // gives one (`witness`); a negated text test's is the condition's own.
 
 import { automationStudioRequestRowWords, type AutomationStudioRequestRowWord } from "../request-rows/index.ts";
-import { automationStudioResultRequestExclusionTest } from "./request-exclusion-test.ts";
+import { automationStudioResultRequestExclusionTest } from "../asked-words/index.ts";
 
 /** A positive text test as its account words it: subject, relation, then its quoted text or list of text. */
 const TEXT_TEST = /^(.+?) (not )?(contains|equals|startsWith|endsWith|matches) ((?:\[|").*)$/su;

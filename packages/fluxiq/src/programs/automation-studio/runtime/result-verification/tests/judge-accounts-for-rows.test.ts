@@ -11,7 +11,7 @@
 // out, which Core had measured, were each asked a quote, and labels sharing
 // ten-word starts could not be named; Core now settles those rows and gives a
 // row a judge must still name a short id.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../build-test/index.ts";
@@ -33,6 +33,14 @@ import {
 import { RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT, runMv6bg8d8RunSummary } from "../request-rows/tests/run-mv6bg8d8.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
 import { verifyAutomationStudioRunResult } from "../verify.ts";
+
+// These tests are about how the judge is asked, and their trimmed live-run summaries store rows a computed fact would
+// rightly fail before any judge is asked (run muw60j7c appended an unfiltered read beside its filtered one), so Core
+// settles no fact first here (`../computed-facts/`, framework plan P5, t795).
+vi.mock("../computed-facts/index.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../computed-facts/index.ts")>()),
+  automationStudioResultComputedFacts: () => []
+}));
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
 const FINDING = AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.leftOutNamingTheItem;

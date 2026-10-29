@@ -63,6 +63,8 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   calls: readonly [Verification, Verification];
   record: AutomationStudioResultNoRecord | undefined;
   summary: AutomationStudioRunResultSummary;
+  /** The request's text, as `../verify.ts` builds it: what a kept row's defect is read against where the request asks for every result (`../located-defects/`, framework plan P5, F3). */
+  requestText?: string | undefined;
   ask: (recheck: string, call: 1 | 2) => Promise<Verification>;
   agree: (first: Verification, second: Verification) => Verification;
 }): Promise<Verification> {
@@ -75,7 +77,7 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   const nos = ([1, 2] as const).filter((call) => modelNo(calls[call - 1]!));
   const others = ([1, 2] as const).filter((call) => !nos.includes(call));
   if (double ? nos.length !== 2 : nos.length !== 1 || !others.every((call) => modelYes(calls[call - 1]!))) return settled;
-  const weigh = (verification: Verification) => supportOf(verification, record, summary);
+  const weigh = (verification: Verification) => supportOf(verification, record, summary, input.requestText);
   const before = new Map(nos.map((call) => [call, { verification: calls[call - 1]!, ...weigh(calls[call - 1]!) }]));
   if ([...before.values()].some((one) => one.supported)) return settled;
   const asked: AutomationStudioResultVerdict[] = [];
@@ -155,13 +157,13 @@ function modelYes(verification: Verification): boolean {
  * words for each it does not. A no Core made itself, refusing a yes over rows
  * it found, stands on Core's own finding.
  */
-function supportOf(verification: Verification, record: AutomationStudioResultNoRecord, summary: AutomationStudioRunResultSummary): { supported: boolean; findings: string[] } {
+function supportOf(verification: Verification, record: AutomationStudioResultNoRecord, summary: AutomationStudioRunResultSummary, requestText: string | undefined): { supported: boolean; findings: string[] } {
   if ((verification.repair?.findings ?? []).some((finding) => CORE_LOCATED.has(finding.code))) return { supported: true, findings: [] };
   // Persisted legacy diagnoses may omit this optional list and keep the existing prose-weighing rules. Current negative replies cannot reach here without a list: the task-specific harness decoder rejects omission.
   const defects = verification.repair?.judgement?.defects;
   if (defects === undefined) return { supported: true, findings: [] };
   if (!defects.length) return { supported: false, findings: ["It listed no defect."] };
-  const found = automationStudioResultDefectsLocated(defects, { record, summary });
+  const found = automationStudioResultDefectsLocated(defects, { record, summary, requestText });
   return { supported: found.located.length > 0, findings: found.findings };
 }
 

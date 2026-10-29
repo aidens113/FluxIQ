@@ -13,6 +13,14 @@ import {
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK, verifyAutomationStudioRunResult } from "../verify.ts";
 
+// These tests are about how the judge is asked, so Core settles no fact first: the run's summary here keeps only the
+// columns and rows its checks need, which a computed fact would rightly fail before any judge is asked
+// (`../computed-facts/`, `./computed-facts-route/tests/verify-computed-facts.test.ts`, framework plan P5).
+vi.mock("../computed-facts/index.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../computed-facts/index.ts")>()),
+  automationStudioResultComputedFacts: () => []
+}));
+
 const instruction: AutomationStudioFlowInstruction = {
   schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Goal", body: RUN_MUW60J7C_REQUEST,
   scope: { kind: "flow", projectId: "project-1", flowId: "flow-1" }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1

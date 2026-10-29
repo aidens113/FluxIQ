@@ -4,13 +4,21 @@
 // stored result, and advised fixing that condition. Core's check said so
 // (`../../../result-verification/request-rows/checked-rows.ts`), but nothing
 // read it: the re-author got the advice unmarked and threw away the answer.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { verifyAutomationStudioRunResult } from "../../../result-verification/index.ts";
 import { RUN_MUW60J7C_FILTERED_READ, RUN_MUW60J7C_REQUEST, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary } from "../../../result-verification/request-rows/tests/run-muw60j7c.ts";
 import { automationStudioReauthorBrief } from "../brief.ts";
 import { automationStudioResultRepairHistoryEntry } from "../history.ts";
+
+// These tests are about how the brief carries the judge's reading and Core's check of the rows, so Core settles no fact first: the run's
+// summary here is trimmed from a live run and stores a row twice, which a computed fact would rightly fail before any judge is asked
+// (`../../../result-verification/computed-facts/`, framework plan P5).
+vi.mock("../../../result-verification/computed-facts/index.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../result-verification/computed-facts/index.ts")>()),
+  automationStudioResultComputedFacts: () => []
+}));
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
 
