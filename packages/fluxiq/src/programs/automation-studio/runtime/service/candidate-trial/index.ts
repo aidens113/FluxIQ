@@ -8,6 +8,8 @@ export * from "./way-outs.ts";
 export * from "./target-on-page.ts";
 export * from "./executed-steps.ts";
 export * from "./landed-acts.ts";
+export * from "./act-ledger.ts";
+export * from "./not-run.ts";
 export * from "./feedback.ts";
 export * from "./learned-paces.ts";
 export * from "./run.ts";

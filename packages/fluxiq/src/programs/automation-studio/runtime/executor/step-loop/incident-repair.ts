@@ -94,7 +94,7 @@ export async function automationStudioStepRepairIncident(
  * no failure ever reaches the ladder or `repairIncident`, and until now the
  * Flow learned nothing: the next run met the layer by the same luck. So each
  * layer the attempt says was closed, with a name and a way out the domain can
- * press, is put to `options.learnInterruption` once per step and name in the
+ * press, is put to `options.learnInterruption` once per part and name in the
  * run. An overlay is held exactly as a repair's is: the frame runs the graph
  * with the learned handler for the rest of the frame, the attempt carries the
  * repair, and the run lists it among its kept repairs (`trace.repairs`), which
@@ -111,7 +111,7 @@ export async function automationStudioStepLearnInterruption(ctx: AutomationStudi
   for (const layer of ctx.attempts[attemptIndex]?.clearedLayers ?? []) {
     if (options.signal?.aborted || options.runControl?.heldBy?.()) return;
     if (!learnable(layer)) continue;
-    const key = `interruption:${invocation.frame.graphFlowId}/${node.id}:${layer.name}`;
+    const key = `interruption:${invocation.frame.graphFlowId}:${layer.name}`;
     if (invocation.run.lifecycle.repairs.has(key)) continue;
     const answer = await learn(ctx, invocation, ctx.attempts[attemptIndex]!, layer);
     const kept = answer.kind === "overlay" ? answer.graph.nodes.find((candidate) => candidate.id === node.id) : undefined;

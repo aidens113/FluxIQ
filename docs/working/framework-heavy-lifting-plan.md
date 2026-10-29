@@ -1,9 +1,9 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Plan written 2026-10-28 (mode 1); nothing implemented; P0 (scenario-shaped model text) is the first unit.
+Status detail: Executing since 2026-10-29: P0 (t793) and the per-pass act ledger (t796) merged; P5 (t795) and P4 (t797) in flight; P1 next.
 Created: 2026-10-28
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
 Scope: Every responsibility Core's model-facing loop leaves to the model, classified as semantic (model), computable or enforceable by Core for any client environment, or client-specific; with the generic contract each client would supply.
 Paired document: ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan.md (web-specific parts)
@@ -11,7 +11,12 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Mode 1 plan, complete as a plan; nothing implemented.** The audit ran 2026-10-28 at the user's direction: make
+**Mode 2, executing (2026-10-29).** P0 (t793, scenario-free model text with a downstream check) and the per-pass act
+ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`) are merged; P5 (t795) and P4 (t797) are in flight, and P1 starts
+after them because it shares their files. t796 gave trial proofs `not_run`; t795 makes it a Core no in `held.ts`.
+The rest of this section is the plan as written.
+
+The audit ran 2026-10-28 at the user's direction: make
 Core do the heavy lifting the build model now carries, for any client environment (web, desktop, mobile, API). Eleven
 reports were synthesised into this document. The synthesis, the contradictions it resolved and the source it checked
 are in [reports/fhl-synthesis.md](framework-heavy-lifting-plan/reports/fhl-synthesis.md). The web-specific half (which
@@ -754,6 +759,18 @@ Shared for every wave-2 brief: read only; no source edits, git, builds, model ca
 - Area: the Core-to-client contract: client-gateway/, runtime/adapters.ts, contracts.ts, environment, io-bridge, panel-capabilities, fingerprinting/, plus how the downstream web domain implements it; where Core holds client concepts it should not.
 
 ## Work Ledger
+
+### 2026-10-29 - P0 and the check's library build (t793, t794)
+- Agent: lead; detail and validation in the paired downstream document's ledger.
+- Changed: P0 replaced the scenario-shaped examples in the model-facing judge, run-node, evidence, processed-out and repair text, and the downstream `scripts/check/model-text.mjs` now fails on any realistic scenario's fixture word in Core's model-facing literals. t794 made the root `check` build `contracts`, `fluxiq` and `client-gateway-websocket` first, with a registry test.
+- Validation: lead-run, quoted in full downstream: `node scripts/check/model-text.mjs` -> "model-text: ok (209 scenario tokens, 376 model-facing Core files, 11720 string literals)"; `node --test scripts/build-cache/tests/registry.test.mjs` -> "# pass 10 / # fail 0"; `pnpm check` -> exit 0.
+- Outcome: Accepted.
+
+### 2026-10-29 - Per-pass act ledger and `not_run` proof (t796)
+- Agent: supervisor (brief t796-ledger) with six workers; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t796-ledger.md`
+- Changed: `flow-bootstrap/instructed-acts/optional-act-steps.ts` refuses a requested act behind `optional:`, `only after:` or an optional step's `on success:`, matched by words or by the part's `lastingActs` class (`candidate/submission.ts`, `subflow-candidate/scoped-submission.ts`); `service/candidate-trial/act-ledger.ts` and `not-run.ts` record each pass's lasting and guarded steps, and `trial-change/proof.ts` proves a part `not_run` (with `notRun: [{nodeId, label, reason, after?, passes, of?}]`) when none of its acting steps ran, wired on the candidate and subflow trial paths; `layer-handlers/explored.ts` and `runtime-session/interruption-handler.ts` scope a cleared layer's handler to the subflow; `script-statements/repeat-order.ts` and `nodes/control-flow/for-each.ts` (`order`) sort a page-order listing's rows before `stopAfter`, and `listing-order-in-repeat.ts` admits a sort written on the listing; `project-build-ending/record-told.ts` names steps that never ran and each leftover's page.
+- Validation: lead-run under the heavy-check lock -> touched dirs "Tests 7622 passed | 2 skipped", real-sql passed, prompt contracts "45 passed", `pnpm check` exit 0, docs current, structure passed; downstream headed site-reset suite "32 passed (35.0m)" (detail downstream).
+- Outcome: Accepted. Hand-off: t795 makes `not_run` a Core no in `result-verification/site-change/held.ts` and defines it in the judge text.
 
 ## Open Questions
 

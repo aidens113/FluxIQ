@@ -75,7 +75,7 @@ const PASSING = /^(?:type(?: text)?|fill|clear|key|press key|scroll|hover|focus|
  * "go to the reels page", "find the newest posts"): it saves nothing by itself, so it is never listed as something that
  * may have stayed (t774: "ran the step 'show more of the feed' ... might have left something behind").
  */
-const TRIAL_ONLY_MOVES = /^(?:scroll|go to|go back|open the (?:\w+ )?page|navigate|show|see|load|view|next|back|read|look|find|search|browse|collect|get|list)(?![\p{L}\p{N}])/iu;
+const TRIAL_ONLY_MOVES = /^(?:scroll|go to|go back|open the (?:\w+ )?page|open(?![\p{L}\p{N}])(?!.*\b(?:and|then)\b)|navigate|show|see|load|view|next|back|read|look|find|search|browse|collect|get|list)(?![\p{L}\p{N}])/iu;
 /**
  * A trial step labelled for dismissing, closing, hiding or skipping something, or declining something optional ("close the
  * chat window if it shows", "decline the optional cookies", "not now"): closing a window is no lasting site change (t790,
@@ -85,7 +85,7 @@ const TRIAL_DISMISSES = /^(?:(?:close|dismiss|hide|skip)(?![\p{L}\p{N}])|(?:decl
 /** Verbs that press a control. */
 const PRESSING = /^(?:click|press|tap|double click)$/u;
 /** A link: pressing one goes to another page, which saves nothing by itself (t753). */
-const LINK = /^(?:a|link)$/iu;
+const LINK = /^(?:a|link|tab)$/iu;
 /**
  * A control that dismisses, closes or declines something optional, or moves
  * to another page (t753): pressing it saves nothing on the site by itself. A

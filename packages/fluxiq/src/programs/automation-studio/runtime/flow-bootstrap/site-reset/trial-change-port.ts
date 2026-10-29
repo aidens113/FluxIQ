@@ -145,7 +145,10 @@ export class AutomationStudioSiteResetTrialChange {
       const settledUnchanged = act.settled === "unchanged";
       if (!settledUnchanged && standing !== "in_place" && standing !== "unsettleable" && standing !== "kept" && standing !== "irreversible") return [];
       const did = settledUnchanged ? `${act.did} (${WORDS.settledAs("unchanged", act.unread)})` : act.did;
-      return [{ did, ...(act.place?.location ? { where: act.place.location } : {}) }];
+      // `place` is kept only where the act changed something its reads could name (`./ledger.ts`, `placed`); an act made where
+      // nothing differed, as in a dialog over the page, is placed by where its control was read (t796).
+      const where = act.place?.location || act.controlOriginal?.location || (act.spot?.place !== undefined ? this.readLog.locationOf({ kind: "control", place: act.spot.place }) : undefined);
+      return [{ did, ...(where ? { where } : {}) }];
     });
   }
 

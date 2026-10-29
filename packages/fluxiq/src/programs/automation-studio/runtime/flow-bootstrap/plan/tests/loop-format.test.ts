@@ -121,6 +121,16 @@ describe("the Flow script loop format", () => {
     expect(sentence).not.toMatch(/shop|store|cart|basket|feed|social|post|photo|\blike|heart|saved item|job|address|newest|friend|request/iu);
   });
 
+  // t796 (`run-mvtdn37t-e1e4d0a7`): Core hands a For Each over a page-order listing the listing's own sort
+  // (`../../script-statements/repeat-order.ts`), so the sentence no longer says nothing reorders such a listing's rows.
+  it("says Core orders a repeat's rows by the listing's sort, unreadable rows last, before repeat most", () => {
+    const sentence = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT.split("\n").find((line) => line.includes("`extractList.sort:"))!;
+    expect(sentence).toContain("Core hands the repeat its rows in that order, rows the sort cannot read last, before `repeat most` takes the first of them, whatever order the page shows them in.");
+    expect(sentence).toContain("never stand for an order with a where that copies a value out of an answer");
+    expect(sentence).toContain("To save only the rows the repeat acts on, give the listing a limit of the same N.");
+    expect(sentence).not.toContain("nothing reorders them");
+  });
+
   it("carries extractList.sort into the listing step's request, as it carries extractList.where", () => {
     const script = [
       "flow: Mark the two oldest unpaid invoices as reviewed",

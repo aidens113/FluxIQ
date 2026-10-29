@@ -7,7 +7,9 @@
 // token order, the same labels before and after), and a change is counts plus
 // the domain's readable lines from the after reading. Every free text is cut to
 // 200 characters, lines to 20 per side, witnesses, acts and acts left from
-// earlier to fixed counts, and every cut is marked.
+// earlier to fixed counts, and every cut is marked. A proof's `notRun` (t796,
+// `./proof.ts`) keeps at most 10 steps, each label cut as any text and its
+// passes to 60.
 
 import { automationStudioTrialDelta } from "./delta.ts";
 import type {
@@ -27,6 +29,8 @@ const LINES_CAP = 20;
 const WITNESSES_CAP = 30;
 const ACTS_CAP = 60;
 const LEFT_CAP = 20;
+const NOT_RUN_CAP = 10;
+const PASSES_CAP = 60;
 
 type Witness = AutomationStudioTrialWitness;
 type Reading = AutomationStudioTrialReading;
@@ -46,7 +50,10 @@ export function automationStudioTrialSiteChangePacket(input: {
     ...(left.length > LEFT_CAP ? { leftFromEarlier: left.length - LEFT_CAP } : {})
   };
   const proofs: AutomationStudioTrialSiteChange["proofs"] = [];
-  for (const { part, effect, proof, steps } of input.proofs) if (effect && proof !== "none") proofs.push({ part, effect: boundedEffect(effect), proof, steps: [...steps] });
+  for (const { part, effect, proof, steps, notRun } of input.proofs) {
+    if (!effect || proof === "none") continue;
+    proofs.push({ part, effect: boundedEffect(effect), proof, steps: [...steps], ...(notRun?.length ? { notRun: notRun.slice(0, NOT_RUN_CAP).map(boundedNotRun) } : {}) });
+  }
   return {
     witnesses: input.witnesses.slice(0, WITNESSES_CAP).map((witness) => witnessEntry(witness, input.readings[witness.id] ?? {})),
     acts: input.acts.slice(0, ACTS_CAP).map(({ step, pass, row, outcome, witness, parts }) => ({ step, ...(pass ? { pass: { number: pass.number, of: pass.of } } : {}), ...(row !== undefined ? { row: bounded(row) } : {}), outcome, ...(witness !== undefined ? { witness } : {}), parts: [...parts] })),
@@ -112,6 +119,10 @@ function readableLines(lines: Reading["lines"]): AutomationStudioTrialSiteLines 
 
 function boundedEffect(effect: NonNullable<AutomationStudioTrialPartProof["effect"]>): NonNullable<AutomationStudioTrialPartProof["effect"]> {
   return effect.kind === "change" ? { kind: "change", direction: effect.direction, count: effect.count, what: bounded(effect.what) } : { kind: "end_state", state: bounded(effect.state) };
+}
+
+function boundedNotRun(entry: NonNullable<AutomationStudioTrialPartProof["notRun"]>[number]): NonNullable<AutomationStudioTrialPartProof["notRun"]>[number] {
+  return { nodeId: entry.nodeId, label: bounded(entry.label), reason: entry.reason, ...(entry.after !== undefined ? { after: bounded(entry.after) } : {}), passes: entry.passes.slice(0, PASSES_CAP), ...(entry.of !== undefined ? { of: entry.of } : {}) };
 }
 
 function bounded(text: string): string {

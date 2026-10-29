@@ -79,7 +79,9 @@
 // already in the asked state (`./landed-acts.ts`) -- and the packet and Core's
 // findings go into the judge's summary (`./summary.ts`). A read that fails
 // leaves the trial not judged, its evidence unreadable; an offline trial has
-// none.
+// none. With them go the steps the trial never ran on some passes, from its act
+// ledger (`./act-ledger.ts`, `./not-run.ts`, t796), so a part whose act step a
+// guard went past on every pass is proved `not_run`, never `no_change`.
 //
 // **Earlier judged trials' advice reaches the judge (t752).** A revision made
 // exactly the change an earlier no's judge advised, and its judges, told
@@ -102,6 +104,8 @@ import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdi
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
 import { automationStudioCandidateTrialAlreadyInState, automationStudioCandidateTrialLandedActs } from "./landed-acts.ts";
+import { automationStudioTrialActLedger } from "./act-ledger.ts";
+import { automationStudioTrialNotRun } from "./not-run.ts";
 import { automationStudioTrialChangeAfterRead } from "../../flow-bootstrap/trial-change/index.ts";
 import { automationStudioTrialLearnedPaces } from "./learned-paces.ts";
 import { automationStudioCandidateTrialSummary } from "./summary.ts";
@@ -217,7 +221,7 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
       ...(ports.readEndView ? { readEndView: () => ports.readEndView!({ runId }) } : {}), actionAttempts: ports.actionAttempts?.(ended),
       observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}),
       ...(request.earlierAdvice?.length ? { earlierAdvice: request.earlierAdvice } : {}),
-      ...(request.siteChange ? { siteChangeRead: automationStudioTrialChangeAfterRead({ signal: request.signal, siteChange: request.siteChange }, acts, automationStudioCandidateTrialAlreadyInState(executed.trace, frames.graph)) } : {}) });
+      ...(request.siteChange ? { siteChangeRead: automationStudioTrialChangeAfterRead({ signal: request.signal, siteChange: request.siteChange }, acts, automationStudioCandidateTrialAlreadyInState(executed.trace, frames.graph), automationStudioTrialNotRun(automationStudioTrialActLedger(executed.trace, frames.graph))) } : {}) });
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";

@@ -68,7 +68,7 @@ import { normaliseAuthoringNodeParameters } from "./normalise.ts";
 import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, authoringWrittenValue, isJsonObject } from "./values.ts";
 import { routeAutomationStudioFlowScriptRepeats } from "./draft-routing.ts";
 import {
-  automationStudioFlowBootstrapSubflowRequires,
+  automationStudioFlowBootstrapSubflowRequires, automationStudioFlowPlanRepeatOrder,
   automationStudioFlowScriptAdjacentListRepeats, automationStudioFlowScriptCalledParts,
   automationStudioFlowScriptCallStep,
   automationStudioFlowScriptEntryPoints,
@@ -264,7 +264,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     own.forEach((id) => requires.add(id));
     if (own.length) subflow.metadata = { ...subflow.metadata, requires: own };
   }
-  const plan: AutomationStudioFlowBootstrapPlan = {
+  const plan =automationStudioFlowPlanRepeatOrder({ registry: input.registry, resolution: input.resolution, plan: {
     schemaVersion: "0.1",
     router: {
       name: bounded(input.summary, NAME_LIMIT),
@@ -273,7 +273,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     },
     subflows,
     ...(requires.size ? { metadata: { requires: [...requires].sort() } } : {})
-  };
+  } });
   // A refused script still yields the plan its steps got as far as, under a
   // name nothing builds from. It is what the refusal's feedback reads the node
   // definition out of, so `bootstrap.unknown_parameter` can answer with the

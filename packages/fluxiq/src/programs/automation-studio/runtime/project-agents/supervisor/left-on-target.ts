@@ -102,8 +102,9 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     const claim = ledger.forBrief(owner).claim(act);
     return claim.kind === "refused" && claim.evidence.code === "candidate.undo_act_kept";
   };
-  const acts: Array<AutomationStudioProjectSupervisorLeftOnTarget["acts"][number] & { line: string; stays?: AutomationStudioActivityLeftAct["stays"]; seen?: boolean }> = [];
+  const acts: Array<AutomationStudioProjectSupervisorLeftOnTarget["acts"][number] & { line: string; stays?: AutomationStudioActivityLeftAct["stays"]; seen?: boolean; on?: string }> = [];
   const snapshot = ledger.snapshot().acts;
+  const wheres = whereActsWereMade(ledger, snapshot);
   // Each brief's acts no call can settle, never in place (header, t743).
   const unsettleable = new Set([...new Set(snapshot.map((act) => act.owner))].flatMap((owner) => ledger.forBrief(owner).unsatisfiable().map((act) => act.act)));
   for (const act of snapshot) {
@@ -115,6 +116,10 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     else if (unsettleable.has(act.act)) acts.push({ ...named, undoable: false, unsettleable: true, line: `${act.did} (it can no longer be checked or put back; it may still be there)`, ...(ledger.forBrief(act.owner).changeSeen(act.act) === false ? { seen: false } : { stays: "kept" as const }) });
     else if (kept(act.act, act.owner)) acts.push({ ...named, undoable: false, line: `${act.did} (the build could not undo it; it may still be there)`, stays: "kept" });
   }
+  for (const act of acts) {
+    const where = wheres.get(act.act);
+    if (where !== undefined) act.on = where;
+  }
   const lines = acts.map((act) => act.line);
   const possibly = possiblyLeft(ledger);
   const named = possibly.slice(-MAX_POSSIBLY_NAMED);
@@ -124,7 +129,7 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     named.length ? `Possibly still on the target, though nothing checked: ${named.map((act) => act.did).join("; ")}${leftOut ? `; and ${leftOut} earlier such ${leftOut === 1 ? "press" : "presses"}` : ""}.` : ""
   ].filter((sentence) => sentence);
   const note = sentences.length ? sentences.join(" ") : undefined;
-  const told = automationStudioActivityLeftTold(acts.map((act) => ({ did: act.did, ...(act.stays ? { stays: act.stays } : {}), ...(act.seen === false ? { seen: false } : {}) })), possibly);
+  const told = automationStudioActivityLeftTold(acts.map((act) => ({ did: act.did, ...(act.on !== undefined ? { on: act.on } : {}), ...(act.stays ? { stays: act.stays } : {}), ...(act.seen === false ? { seen: false } : {}) })), possibly);
   // A build that ends with a Flow no longer cleans up (t775): the person is told, in generic words, which of its own acts remain; nothing extra when none do (t785).
   const announce = () => {
     if (told === AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT) return;
@@ -140,7 +145,28 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     const own = note ? automationStudioProjectBuildReasonNothingChanged(said) : said;
     return fitted ? `${saidWithin(own, MAX_REASON - fitted.length - 1)} ${fitted}`.trim() : saidWithin(own, MAX_REASON);
   };
-  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), unsettleable: acts.some((act) => act.unsettleable === true), possibly, undoable: acts.some((act) => act.undoable), note, told, readings, reason, announce };
+  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, on: _on, ...act }) => act), unsettleable: acts.some((act) => act.unsettleable === true), possibly, undoable: acts.some((act) => act.undoable), note, told, readings, reason, announce };
+}
+
+/**
+ * Where each act left was made (header, t796): each brief's ledger says, in the order it holds its acts, the page of every
+ * act of the build still on the site (`trialChange().leftFromEarlier()`). The same words made twice -- one press of one
+ * control on two pages -- are matched in that order, so two holds left on two books are told as two.
+ */
+function whereActsWereMade(ledger: AutomationStudioProjectSupervisorPorts["projectLedger"], snapshot: ReadonlyArray<{ act: string; did: string; owner: string }>): Map<string, string> {
+  const made = new Map<string, string>();
+  for (const owner of new Set(snapshot.map((act) => act.owner))) {
+    const held = ledger.forBrief(owner).trialChange().leftFromEarlier();
+    const used = new Set<number>();
+    for (const act of snapshot.filter((entry) => entry.owner === owner)) {
+      const at = held.findIndex((entry, index) => !used.has(index) && (entry.did === act.did || entry.did.startsWith(`${act.did} (`)));
+      if (at < 0) continue;
+      used.add(at);
+      const where = held[at]!.where;
+      if (where !== undefined) made.set(act.act, where);
+    }
+  }
+  return made;
 }
 
 /** `said` within `max`: whole, else up to the last sentence end that fits, else cut at a word's end with "…" (header, t741 B5). */

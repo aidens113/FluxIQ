@@ -267,3 +267,17 @@ describe("an ending reason that claims nothing changed (t791, fix 5b)", () => {
     expect(left.reason("It stopped. Nothing was changed on the account.")).toBe("It stopped. Nothing was changed on the account.");
   });
 });
+
+// t796: two holds left on books the task did not ask for were told without saying which books. Core holds where each act was made.
+describe("an ending that names where each act was made", () => {
+  it("tells two identical presses apart by the page each was made on", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    const brief = ledger.forBrief("brief-1");
+    for (const [call, location] of [["hold-1", "/library/book/12"], ["hold-2", "/library/book/31"]] as const) {
+      brief.explored({ callId: call, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences: ["create_new"], control: { name: "Hold", kind: "button" }, verb: "press" } });
+      brief.placed(brief.actOf(call)!, { state: {}, location, changed: ["a hold"] });
+    }
+    const { left } = leftOn(ledger);
+    expect(left.told).toBe("The build clicked “Hold” on the page “/library/book/12” and clicked “Hold” on the page “/library/book/31”, and nothing read afterwards could show whether they changed anything; check them if you need the site exactly as it was.");
+  });
+});

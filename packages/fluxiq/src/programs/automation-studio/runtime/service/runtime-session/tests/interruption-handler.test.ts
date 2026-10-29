@@ -15,7 +15,7 @@ describe("the handler proposed for a closed layer", () => {
     expect(patch).toMatchObject({
       kind: "add_handler",
       event: "before",
-      scope: { kind: "nodes", nodeIds: ["read"] },
+      scope: { kind: "subflow", inherit: false },
       when: [{ fact: "dialog", op: "visible", value: "Join the reading club" }],
       completionCheck: [{ fact: "dialog", op: "absent", value: "Join the reading club" }],
       steps: [{ definitionId: "test.output.press", parameters: { target: { handle: "t7" } } }],

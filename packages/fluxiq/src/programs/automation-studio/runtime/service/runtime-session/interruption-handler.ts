@@ -11,11 +11,14 @@
 // the defence pressed, which the domain names by a handle.
 //
 // So the branch is an `add_handler` (C4), the kind an in-run repair writes for
-// an interruption, scoped to the step the layer was met at, in the one shape a
+// an interruption, scoped to the layer rather than the step (P6, t796): a
+// subflow-wide handler that waits for the layer by its name, so the part holds
+// one handler per layer and it answers the layer at every step the site covers
+// with it, not only the one it was first met at, in the one shape a
 // build also gives a layer its exploration cleared
 // (`../../flow-bootstrap/layer-handlers/patch.ts`, t787):
 //
-// - `before` that step, `when` a dialog by that name is visible: the guard. No
+// - `before` each step of the part, `when` a dialog by that name is visible: the guard. No
 //   wait is written (supervisor, 2026-10-13): a wait would slow every run for a
 //   layer that may never come, and the defence stays the backup for one that
 //   opens after the guard was read.
@@ -26,7 +29,7 @@
 // - `resume`: the step then runs as it would have.
 //
 // Nothing is proposed for a layer with no name or no way out the domain can
-// press, or when the step already has a handler waiting for that layer.
+// press, or when the part already has a handler waiting for that layer.
 
 import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
 import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../../nodes/control-flow/index.ts";
@@ -57,16 +60,16 @@ export function automationStudioInterruptionHandlerPatch(input: {
   const gone: AutomationStudioFactCondition = { fact: LAYER_FACT, op: "absent", value: name };
   const pressed = layer.controlName ?? layer.control;
   return automationStudioLayerHandlerPatch({
-    scope: { kind: "nodes", nodeIds: [nodeId] },
+    scope: { kind: "subflow", inherit: false },
     shown,
     gone,
     press: { definitionId: layer.wayOutDefinitionId, label: `Close "${quoted(name)}"`, parameters: { target: { handle: input.handle } } },
-    reason: `The page put "${quoted(name)}" in the way of this step and the run closed it by "${quoted(pressed)}". When it is there again, the Flow closes it the same way and carries on.`,
+    reason: `The page put "${quoted(name)}" in the way of a step and the run closed it by "${quoted(pressed)}". When it is there again, the Flow closes it the same way and carries on.`,
     metadata: { learnedFrom: "defence_close", layerKind: layer.kind }
   });
 }
 
-/** Whether a handler of the graph already waits for a dialog by `name` before or around `nodeId`. */
+/** Whether a handler of the graph already waits for a dialog by `name` at `nodeId`: any registration naming the layer whose scope reaches that step. */
 function alreadyHandled(graph: Pick<AutomationStudioFlowDocument, "nodes">, nodeId: string, name: string): boolean {
   return graph.nodes.some((node) => {
     if (node.definitionId !== AUTOMATION_STUDIO_HANDLER_DEFINITION_ID) return false;
