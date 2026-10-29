@@ -168,3 +168,45 @@ describe("a trial's feedback over a read Core flagged (t692)", () => {
     expect(automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "yes", spent: SPENT }, summary, trialRunId: "trial.1", start: "reset" }).feedback).not.toHaveProperty("firstAskConfirmed");
   });
 });
+
+// t800 (K1): a date condition never keeps a row whose value states no date it can read, and a trial's read feedback
+// now says how many of the rows it alone left out were undated, as a count. A permit office's applications, made up.
+const dateGraph = (where: unknown[]) => ({
+  nodes: [{ id: "s2", definitionId: "web.output.dom-extract_list", label: "read the applications", parameterValues: { extractList: { handle: "extraction.1", where } } }]
+}) as unknown as AutomationStudioFlowArtifact;
+
+const dateRead = (observations: NonNullable<AutomationStudioResultReadAccount["conditions"]>): AutomationStudioResultReadAccount => ({
+  nodeId: "s2", definitionId: "web.output.dom-extract_list", pagesRead: 1, truncated: false, itemsSeen: 6, kept: 2, conditions: observations
+});
+
+const withinCondition = {
+  number: 1,
+  condition: "filed within \"7 days\" as a date",
+  rejected: 4,
+  alone: 4,
+  leftOutOnlyByThis: ["Fence permit", "Shed permit", "Porch permit", "Deck permit"],
+  leftOutObservations: [
+    { source: "field" as const, state: "present" as const, value: "Date pending", page: 1, item: 2 },
+    { source: "field" as const, state: "absent" as const, page: 1, item: 3 },
+    { source: "field" as const, state: "present" as const, value: "3 weeks ago", page: 1, item: 4 },
+    null
+  ]
+};
+
+describe("a trial's read with a date condition", () => {
+  it("says how many rows the condition alone left out undated, counted, never named", () => {
+    const [feedback] = automationStudioTrialReadsFeedback([dateRead([withinCondition])], dateGraph([{ field: "filed", within: "7 days" }]));
+    expect(feedback!.conditions).toEqual([{ condition: "condition 1 (filed within \"7 days\" as a date)", rejected: 4, rejectedByItself: 4, undatedByItself: 2 }]);
+    expect(feedback!.said).toContain("Of the rows condition 1 (filed within \"7 days\" as a date) left out by itself, 2 state no date it can read, and a date condition never keeps such a row.");
+    expect(JSON.stringify(feedback)).not.toContain("Date pending");
+  });
+
+  it("says nothing of dates for a condition that compares none, or whose witnesses all read a date", () => {
+    const [text] = automationStudioTrialReadsFeedback([dateRead([{ ...withinCondition, condition: "filed contains \"2026\"" }])], dateGraph([{ field: "filed", contains: "2026" }]));
+    expect(text!.conditions).toEqual([{ condition: "condition 1 (filed contains \"2026\")", rejected: 4, rejectedByItself: 4 }]);
+    expect(text!.said).not.toContain("no date");
+    const dated = { ...withinCondition, leftOutObservations: [{ source: "field" as const, state: "present" as const, value: "3 weeks ago", page: 1, item: 4 }] };
+    const [allDated] = automationStudioTrialReadsFeedback([dateRead([dated])], dateGraph([{ field: "filed", atLeast: "7 days ago" }]));
+    expect(allDated!.said).not.toContain("no date");
+  });
+});

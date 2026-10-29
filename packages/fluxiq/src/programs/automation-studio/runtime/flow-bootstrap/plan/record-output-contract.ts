@@ -44,7 +44,8 @@ import {
   AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS,
   AUTOMATION_STUDIO_RECORD_SORT_ORDERS,
   AUTOMATION_STUDIO_RECORD_SORT_TYPES,
-  readAutomationStudioRecordConditionDateBound
+  readAutomationStudioRecordConditionDateBound,
+  readAutomationStudioRecordConditionWithin
 } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
@@ -147,9 +148,9 @@ function dateBoundRefusal(code: string, value: JsonValue | undefined): string | 
   const unread = unique(value.process.where.filter(isPlainObject).filter((condition) => AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS.some((key) => {
     const bound = condition[key];
     return typeof bound === "string" && readAutomationStudioRecordConditionDateBound(bound) === undefined;
-  })).map((condition) => condition.field).filter((id): id is string => typeof id === "string" && FIELD_ID.test(id)));
+  }) || (condition.within !== undefined && (typeof condition.within !== "string" || readAutomationStudioRecordConditionWithin(condition.within) === undefined))).map((condition) => condition.field).filter((id): id is string => typeof id === "string" && FIELD_ID.test(id)));
   if (!unread.length) return undefined;
-  return `process.where compares ${quoted(unread)} with a date bound that names no one date. Write each bound as one date with its year, as 2026-10-01, 1 October 2026 or Oct 1, 2026, with as: "date": a date with no year, a relative date such as 3 days ago or today, and a day and month that could each be the other, as 02/03/2026, name none.`;
+  return `process.where compares ${quoted(unread)} with a date bound that names no one date. Write each bound as one date with its year, as 2026-10-01, 1 October 2026 or Oct 1, 2026, with as: "date", or relative to the run as today, yesterday, now or <n> minutes, hours, days or weeks ago, and a within as <n> minutes, hours, days or weeks: a date with no year, any other relative date, and a day and month that could each be the other, as 02/03/2026, name none.`;
 }
 
 /** A field id a sentence may name: identifier characters only. */
@@ -268,9 +269,9 @@ function processingText(): string {
   return [
     "process is optional, with only dedupe, where, sort, limit, columns, minRows; every member is optional.",
     "dedupe: false | {by:[fieldId,...]}; by is a nonempty list of distinct stored field ids. Absent dedupe uses the whole row (selected columns when columns is set); false keeps duplicates.",
-    `where: [{field:fieldId, is?:${AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES.join("|")}, ${bounds}?:number|date text, as?:date, equals?:string|number|nonempty list, ${texts}?:string|nonempty string list, not?:boolean}].`,
+    `where: [{field:fieldId, is?:${AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES.join("|")}, ${bounds}?:number|date text, within?:text, as?:date, equals?:string|number|nonempty list, ${texts}?:string|nonempty string list, not?:boolean}].`,
     "Every comparison in a condition must hold; a value list means any; not inverts the condition. No comparison means presence; absent cannot accompany a comparison. Numbers must be finite, text nonblank, matches a valid regex.",
-    "A date bound is a date written with its year, as 2026-10-01 or 1 October 2026, with as:date; it compares the date the value states, a bound with no time is its whole day, and a row stating no readable date is never kept. One condition's bounds are all numbers or all dates.",
+    "A date bound is a date written with its year, as 2026-10-01 or 1 October 2026, or today|yesterday|now|<n> <unit> ago, with as:date; within:\"<n> minutes|hours|days|weeks\" keeps dates from n units before the run's now to it. It compares the date the value states, a bound with no time is its whole day, and a row stating no readable date is never kept. One condition's bounds are all numbers or all dates.",
     `sort: [{field:fieldId, order:${AUTOMATION_STUDIO_RECORD_SORT_ORDERS.join("|")}, as?:${AUTOMATION_STUDIO_RECORD_SORT_TYPES.join("|")}}]; at most ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.maxSortKeys} keys; absent as means auto.`,
     `limit: integer 1-${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.limitCeiling}. columns: nonempty list of distinct stored field ids, in answer order.`,
     `minRows: nonnegative integer, default ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault}; a shortfall is reported, never a failure.`,

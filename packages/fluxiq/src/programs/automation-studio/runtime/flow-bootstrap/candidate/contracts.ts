@@ -138,6 +138,12 @@ export type AutomationStudioCandidateTrialResult = {
   verdict: AutomationStudioCandidateTrialVerdict;
   /** Bounded JSON for the model: what the trial did and why the verdict, never exploration evidence. */
   feedback: JsonObject;
+  /**
+   * The rows Core holds of each read of the judged trial (the stored sample rows and the rows a condition alone left out), one list per read,
+   * column id to text (t800). Beside the feedback and never in it: the model is shown none of them, only what `rowMark` says. Read by the
+   * listed-values advice at a submission to name the field that separates kept from left-out rows. Absent where the trial held none.
+   */
+  sampleRows?: Array<Record<string, string>>[];
   trialRunId?: string;
   /** The trial's lasting acts that landed, whatever its verdict (t462), each with where its step sat and what it made (L1). Absent when it made none or ran nothing. */
   acts?: Array<AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace>;

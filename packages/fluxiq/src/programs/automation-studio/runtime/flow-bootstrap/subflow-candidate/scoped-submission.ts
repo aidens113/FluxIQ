@@ -158,6 +158,7 @@ import {
 import type { AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapInterface, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
 import type { AutomationStudioExploredToggle } from "../script-statements/index.ts";
+import { authoringScopePartOf, type AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { automationStudioNodeSideEffectClass } from "../../executor/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialResult } from "./contracts.ts";
@@ -213,6 +214,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
   private readonly byInnerRevision = new Map<number, AutomationStudioSubflowProposal>();
   /** The key the submission being checked wrote each subflow under, by the key its proposal gives it (header, t792). */
   private written: ReadonlyMap<string, string> = new Map();
+  /** Which part a step serves, for the record-output defaults (K5, t800). */
+  private readonly partOf: AuthoringPartOfStep | undefined;
   /** How a refusal's revisions and digests read on this brief's numbering (`./submission-numbering.ts`, t741). */
   private readonly numbering = {
     revision: (inner: number): number => this.byInnerRevision.get(inner)?.revision ?? inner + this.offset,
@@ -242,7 +245,9 @@ export class AutomationStudioSubflowScopedSubmissionController {
     // The build's toggles, each trial node also under the probe's keys (header, t792).
     const toggles = input.submission.exploredToggles;
     const probeToggles = toggles ? { exploredToggles: { list: () => underProbeKeys(toggles.list(), this.written) } } : {};
-    this.inner = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, ...probeToggles, instructionText: this.instructionText, refusalTools: SUBFLOW_TOOLS, askedConsequences: [...new Set(this.scope.parts.flatMap((part) => part.lastingActs ?? []))] });
+    // A record output this brief leaves half written is filled from the one part that owes records (K5, t800); none or several: as before.
+    this.partOf = input.submission.partOf ?? authoringScopePartOf(this.scope.parts.map((part) => ({ id: part.partId, words: part.text, columns: part.answer?.columns })));
+    this.inner = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, ...probeToggles, ...(this.partOf ? { partOf: this.partOf } : {}), instructionText: this.instructionText, refusalTools: SUBFLOW_TOOLS, askedConsequences: [...new Set(this.scope.parts.flatMap((part) => part.lastingActs ?? []))] });
   }
 
   /** The latest valid proposal, or none once a refusal cleared it. */
@@ -302,7 +307,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
       probe = { ...result, flow: callable.probe };
       unneeded = callable.unneeded;
     }
-    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: probe, registry: this.input.submission.registry, resolution: this.input.submission.resolution, instructionText: this.instructionText });
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: probe, registry: this.input.submission.registry, resolution: this.input.submission.resolution, instructionText: this.instructionText, partOf: this.partOf });
     // A submission that cannot be read is refused by the probe's own checks, with every issue named.
     if (!accepted.ok) return { issues, probe };
     const read = this.planIssues(accepted.plan, result);

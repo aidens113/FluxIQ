@@ -31,6 +31,10 @@ export type AutomationStudioRecordConditionType = (typeof AUTOMATION_STUDIO_RECO
  * no time of day means its whole day, so `atLeast` and `atMost` together keep
  * the days between them, both included. A value stating no date the bound can
  * read fails the condition whatever `not` says: it is never kept as matching.
+ *
+ * Relative to the run (t800, K1): a date bound may be `today`, `yesterday`,
+ * `now` or `<n> <unit> ago` (`date-bound.ts`), and `within: "7 days"` keeps the
+ * rows dated from 7 days before the run's `now` up to it (`date-within.ts`).
  */
 export type AutomationStudioRecordCondition = {
   /** A stored field id of the schema. */
@@ -40,6 +44,8 @@ export type AutomationStudioRecordCondition = {
   atMost?: AutomationStudioRecordConditionBound;
   lessThan?: AutomationStudioRecordConditionBound;
   greaterThan?: AutomationStudioRecordConditionBound;
+  /** `"<n> <unit>"`, a unit of `AUTOMATION_STUDIO_RECORD_CONDITION_WITHIN_UNITS`: the value's date lies in the last `n` units up to the run's `now` (t800). */
+  within?: string;
   /**
    * What the bounds compare, where a caller says it. A bound written as text is
    * a date bound with or without it, and the canonical condition
@@ -125,7 +131,7 @@ export type AutomationStudioRecordProcessingLeftOutRow = { field: string; label:
 export type AutomationStudioRecordProcessingConditionAccount = {
   /** The stored field the condition tests. */
   field: string;
-  /** The condition as written, in words (`condition-text.ts`). */
+  /** The condition as written, in words (`condition/text.ts`). */
   condition: string;
   rejected: number;
   alone: number;

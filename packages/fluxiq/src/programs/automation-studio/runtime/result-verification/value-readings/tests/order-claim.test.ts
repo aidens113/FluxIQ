@@ -41,9 +41,10 @@ describe("an order claim against the kept rows' own dates", () => {
     expect(automationStudioResultOrderClaimContradicted("Result is not newest first.", sets, NOW)).toBe(true);
   });
 
-  it("does not read a bare 1d or 1w, which the date reader takes as no date", () => {
+  it("reads a bare 1d, 4d or 1w as an age, so ages that run newest first contradict a claim that they do not", () => {
+    // Until t800 the date reader took a compact age as no date, and the claim stood unchecked.
     const sets = [loans([{ title: "A", loaned: "1d" }, { title: "B", loaned: "4d" }, { title: "C", loaned: "1w" }])];
-    expect(automationStudioResultOrderClaimContradicted("Result is not newest first.", sets, NOW)).toBe(false);
+    expect(automationStudioResultOrderClaimContradicted("Result is not newest first.", sets, NOW)).toBe(true);
   });
 
   it("does not contradict a claim of the other way, which the dates do not run", () => {
