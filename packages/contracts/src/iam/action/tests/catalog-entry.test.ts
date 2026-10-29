@@ -7,7 +7,7 @@ const createProject: IamActionCatalogEntry = {
   action: "studio:CreateProject",
   accessLevel: "Write",
   resourceTypes: ["*"],
-  source: { kind: "endpoint", programId: "automation-studio", endpoint: "create-project" },
+  sources: [{ kind: "endpoint", programId: "automation-studio", endpoint: "create-project" }],
   destructive: false,
   description: "Create a project in the workspace."
 };
@@ -16,7 +16,7 @@ const readFlow: IamActionCatalogEntry = {
   action: "studio:GetFlow",
   accessLevel: "Read",
   resourceTypes: ["project/flow"],
-  source: { kind: "endpoint", programId: "automation-studio", endpoint: "get-flow" },
+  sources: [{ kind: "endpoint", programId: "automation-studio", endpoint: "get-flow" }],
   destructive: false,
   description: "Read one Flow."
 };
@@ -25,7 +25,7 @@ const routeEntry: IamActionCatalogEntry = {
   action: "gateway:ListBrowsers",
   accessLevel: "List",
   resourceTypes: ["browser"],
-  source: { kind: "route", method: "GET", path: "/api/account/browsers" },
+  sources: [{ kind: "route", method: "GET", path: "/api/account/browsers" }],
   destructive: false,
   description: "List the account's connected clients."
 };
@@ -48,8 +48,18 @@ describe("IAM action catalog entries", () => {
   it("refuses an unknown access level, field or source", () => {
     expect(iamActionCatalogEntrySchema.safeParse({ ...readFlow, accessLevel: "Tagging" }).success).toBe(false);
     expect(iamActionCatalogEntrySchema.safeParse({ ...readFlow, extra: true }).success).toBe(false);
-    expect(iamActionCatalogEntrySchema.safeParse({ ...routeEntry, source: { kind: "route", method: "TRACE", path: "/api/x" } }).success).toBe(false);
-    expect(iamActionCatalogEntrySchema.safeParse({ ...routeEntry, source: { kind: "route", method: "GET", path: "api/x" } }).success).toBe(false);
+    expect(iamActionCatalogEntrySchema.safeParse({ ...routeEntry, sources: [{ kind: "route", method: "TRACE", path: "/api/x" }] }).success).toBe(false);
+    expect(iamActionCatalogEntrySchema.safeParse({ ...routeEntry, sources: [{ kind: "route", method: "GET", path: "api/x" }] }).success).toBe(false);
+  });
+
+  it("accepts several sources and refuses none or more than 16", () => {
+    const [first] = createProject.sources;
+    const withSources = (count: number) => ({ ...createProject, sources: Array.from({ length: count }, () => first) });
+    expect(iamActionCatalogEntrySchema.safeParse(withSources(16)).success).toBe(true);
+    expect(iamActionCatalogEntrySchema.safeParse(withSources(17)).success).toBe(false);
+    expect(iamActionCatalogEntrySchema.safeParse(withSources(0)).success).toBe(false);
+    const { sources: _omitted, ...withoutSources } = createProject;
+    expect(iamActionCatalogEntrySchema.safeParse(withoutSources).success).toBe(false);
   });
 
   it("refuses a catalog that names an action twice", () => {

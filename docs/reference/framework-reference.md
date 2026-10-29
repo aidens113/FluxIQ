@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4251
+- Public declarations: 4253
 - Class: 145
 - Interface: 10
-- Object: 554
+- Object: 555
 - Type: 2267
 - Type Alias: 1
-- Value: 1274
+- Value: 1275
 
 ## Public Declarations
 
@@ -4021,6 +4021,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `RevokeSessionRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `rewriteAutomationNodeStatePaths` | Value | `packages/fluxiq/src/programs/automation-studio/nodes/parameter-bindings.ts` | - |
 | `Role` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
+| `ROLE_POLICY_NAMES` | Object | `packages/fluxiq/src/programs/identity-access/runtime/roles.ts` | The predefined IAM identity policies each role is replaced by (hosted production plan, Permissions, "Predefined policies"), as data: the names are the contract's (`IAM_PREDEFINED_POLICIES` in `@fluxiq/contracts/iam`), and the policies themselves are the platform's (`platform/iam/predefined/`), which this program does not import. - `admin` -> `FluxIQAdministratorAccess`, `viewer` -> `FluxIQReadOnlyAccess`: the parity test (`platform/iam/parity/`) proves each allows exactly what the role's permissions allow today. - `user` -> `FluxIQUserAccess`, the own-data rule. No `user` role exists today (`defaultRoles` is unchanged); the entry is the mapping a `user` membership takes when IAM is switched on. |
+| `rolePolicyNames` | Value | `packages/fluxiq/src/programs/identity-access/runtime/roles.ts` | - |
 | `rollbackFluxIQStorageMigration` | Value | `packages/fluxiq/src/framework/storage-migration.ts` | - |
 | `rotateAutomationStudioContentAddressKey` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/content-address/rotate-key.ts` | - |
 | `RotateSecretKeyRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
