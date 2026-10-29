@@ -18,7 +18,9 @@ export type IamRecordEnvelope = {
 /**
  * The persistence port the IAM store needs. Structural, so the database
  * manager's `Repository` is assignable to it without this directory importing
- * `programs/`.
+ * `programs/`. `list(scope)` returns that scope's rows only. A repository may
+ * store its own kind over the envelope's and normalise the scope it returns
+ * (`SQLiteRepository` does both), so the store relies on neither.
  */
 export type IamRecordRepository = {
   list(scope?: IamRecordScope): Promise<IamRecordEnvelope[]>;

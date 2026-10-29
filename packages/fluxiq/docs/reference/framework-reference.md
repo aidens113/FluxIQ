@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4253
-- Class: 145
+- Public declarations: 4266
+- Class: 148
 - Interface: 10
 - Object: 555
-- Type: 2267
+- Type: 2276
 - Type Alias: 1
-- Value: 1275
+- Value: 1276
 
 ## Public Declarations
 
@@ -2784,10 +2784,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioScreenedNodeParameters` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/repair-context/parameter-screen.ts` | - |
 | `AutomationStudioScreenedParameters` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/repair-context/parameter-screen.ts` | The parameters a step ran with, as the repair is shown them. |
 | `automationStudioSecretNamedKey` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/loop-limits/secret-named-key.ts` | - |
+| `AutomationStudioSecretsLockedError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/secrets-locked-error.ts` | - |
 | `AutomationStudioService` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts` | - |
 | `AutomationStudioServiceOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts` | - |
 | `automationStudioServiceWholeTrialPorts` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/service/trial-ports/service-ports.ts` | - |
 | `AutomationStudioServiceWholeTrialPortsInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/trial-ports/service-ports.ts` | What the trial ports are made for: the build's Flow, its instructions and start, and the judge every trial asks. |
+| `AutomationStudioSessionKeyOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/session-key.ts` | What a call adds to the caller: the Flow's own key, and the host the locked sentence names. |
 | `AutomationStudioSessionKeyPorts` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/session-key.ts` | The Secret Keys operations releasing a person's key needs. |
 | `AutomationStudioSnapshot` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/project.ts` | - |
 | `AutomationStudioSoakEvidence` | Type | `packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts` | - |
@@ -3325,6 +3327,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CreateIdentityUserRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `createIoPolicyEffectDispatcher` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/io-policy.ts` | - |
 | `createPassingAutomationStudioScaleCertificationFixture` | Value | `packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts` | - |
+| `createPasswordIdentityProvider` | Value | `packages/fluxiq/src/programs/identity-access/runtime/providers/password.ts` | - |
 | `createPublishedFlowSnapshot` | Value | `packages/fluxiq/src/programs/automation-studio/model/composites.ts` | - |
 | `createRecord` | Value | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts` | - |
 | `CreateRecordingFlowProposalsResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/proposals/types.ts` | - |
@@ -3667,6 +3670,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `IdentityAccessViewState` | Type | `packages/fluxiq/src/programs/identity-access/ui/contracts.ts` | - |
 | `IdentityCredentialChange` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A password change announced to credential-change subscribers, such as a program that re-seals data under the new password. `currentPassword` is set only for a self-service change, where the account's own current password was proven for it; an administrator's reset of another account carries none, so data sealed under the old password cannot be recovered. |
 | `IdentityCredentialChangeSubscriber` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | The credential-change port. Every subscriber `prepare`s before the credential is written, and a `prepare` that throws refuses the change. After the write each subscriber is sent `commit`; when a `prepare` or the write fails, each subscriber asked to prepare is sent `abort` instead. |
+| `IdentityLastAdministratorError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/last-administrator-error.ts` | The refusal to disable, delete or demote the last enabled administrator (`updateUser`, `deleteUser`). Its `code` is what a caller outside this program matches on -- platform provisioning answers it as `last_administrator` -- so it never parses the message. |
+| `IdentityProvider` | Type | `packages/fluxiq/src/programs/identity-access/runtime/providers/identity-provider.ts` | One way of proving a person's identity, taking that provider's own credentials. |
+| `IdentityProviderId` | Type | `packages/fluxiq/src/programs/identity-access/runtime/providers/identity-provider.ts` | The providers Core knows: `password` now, `oidc` in H2. |
+| `IdentityProviderSignIn` | Type | `packages/fluxiq/src/programs/identity-access/runtime/providers/identity-provider.ts` | A signed-in person: the session minted for them, their account and their role. |
+| `IdentitySessionRevocationListener` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | Told the raw id of each panel session revoked -- by a sign-out, an administrator's revoke, `revokeUserSessions` or `deleteUser` -- and who revoked it, so a program holding state per session drops it: Secret Keys' unlocks are keyed by that id, and it drops one only for that unlock's own user or an administrator. The id is the cookie's bearer value; it is handed over in memory only and must never be stored or logged. A listener that fails is reported by the revoke after every other listener has run; the session stays revoked. |
+| `IdentitySessionRevoker` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | Who revokes a panel session. `userId` is the user asking, or for a revoke with no named revoker (a sign-out presenting its own cookie, `revokeUserSessions`, `deleteUser`) the session's own user, null when it is unknown. `administrator` is true only for a caller whose permission check admitted `identity.manage`. |
+| `IdentitySessionTarget` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A session to revoke: its raw id, or (administrators only) the digest the panel lists it by. |
+| `IdentityTwoFactorResetError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/two-factor-reset-error.ts` | The refusal of `resetPassword` (a welcome or reset link, or an operator's reset) for an account with two-factor sign-in whose credential is sealed and not unlocked in this process. The authenticator secret is inside the seal, so the reset could only go ahead by turning two-factor off, and a link or an operator command alone must never do that. Nothing is changed; a signed-in administrator resets such an account (`setPasswordAuthorized`). Its `code` is what platform provisioning matches on (answered as `two_factor`), never the message. |
 | `ingestAutomationStudioTrialEvidenceResult` | Value | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/derived-provenance.ts` | - |
 | `initializeFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `initialNodeStatePhases` | Object | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts` | - |
@@ -3814,6 +3825,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `parseAutomationStudioPermittedConsequences` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/consequences.ts` | - |
 | `parseAutomationStudioRecordOutput` | Value | `packages/contracts/src/record-sets/parse-output.ts` | - |
 | `parseConstrainedFlowModule` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/source.ts` | - |
+| `PasswordIdentityCredentials` | Type | `packages/fluxiq/src/programs/identity-access/runtime/providers/password.ts` | What the password provider takes: the `authenticate` input, without the test-only clock. |
 | `pathSize` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `Permission` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
 | `personFacingTextFaults` | Value | `packages/fluxiq/src/ui/person-facing/text-faults.ts` | - |
@@ -4018,7 +4030,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ReviewFlowAdaptationInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/adaptation-projections/contracts.ts` | - |
 | `ReviewFlowAdaptationRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/adaptation.ts` | - |
 | `RevokeClientTrustRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/client.ts` | - |
-| `RevokeSessionRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
+| `RevokeSessionRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | Exactly one of the two: `sessionId`, a raw session id, or `sessionDigest`, the digest the snapshot lists a session by, so an administrator can revoke another user's session without any raw id leaving the server. |
 | `rewriteAutomationNodeStatePaths` | Value | `packages/fluxiq/src/programs/automation-studio/nodes/parameter-bindings.ts` | - |
 | `Role` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
 | `ROLE_POLICY_NAMES` | Object | `packages/fluxiq/src/programs/identity-access/runtime/roles.ts` | The predefined IAM identity policies each role is replaced by (hosted production plan, Permissions, "Predefined policies"), as data: the names are the contract's (`IAM_PREDEFINED_POLICIES` in `@fluxiq/contracts/iam`), and the policies themselves are the platform's (`platform/iam/predefined/`), which this program does not import. - `admin` -> `FluxIQAdministratorAccess`, `viewer` -> `FluxIQReadOnlyAccess`: the parity test (`platform/iam/parity/`) proves each allows exactly what the role's permissions allow today. - `user` -> `FluxIQUserAccess`, the own-data rule. No `user` role exists today (`defaultRoles` is unchanged); the entry is the mapping a `user` membership takes when IAM is switched on. |
@@ -4106,6 +4118,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SecretKeysSnapshot` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
 | `SecretKeysSnapshotResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
 | `SecretKeySummary` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
+| `SecretKeyUnlockRevoker` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | Who asks for a session's unlock to be dropped (`revokeSessionUnlock`): the user asking (null when nobody vouches for one), and whether they are an administrator. `administrator` is true only when the caller's own permission check admitted them (`identity.manage`), never because they hold a session id. |
 | `SecretRevealAuthorizationMetadata` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/held-keys.ts` | - |
 | `selectActionContextStateCheckpointIds` | Value | `packages/fluxiq/src/programs/automation-studio/normalization/default-normalizer.ts` | - |
 | `selectActionContextStateEntryIds` | Value | `packages/fluxiq/src/programs/automation-studio/normalization/default-normalizer.ts` | - |

@@ -68,11 +68,11 @@ describe("SecretKeysService.unlockedSessionFor", () => {
     const service = await serviceWithKey();
     await unlock(service, "session.late", "user.one", 9000);
     await unlock(service, "session.early", "user.one", 4000);
-    service.revokeSessionUnlock("session.late");
+    service.revokeSessionUnlock("session.late", { userId: "user.one", administrator: false });
     expect(service.unlockedSessionFor("user.one")).toBe("session.early");
     expect(service.activeSessionUnlockCount()).toBe(1);
     expect(service.activeRevealAuthorizationCount()).toBe(0);
-    service.revokeSessionUnlock("session.early");
+    service.revokeSessionUnlock("session.early", { userId: "user.one", administrator: false });
     expect(service.unlockedSessionFor("user.one")).toBeNull();
   });
 });

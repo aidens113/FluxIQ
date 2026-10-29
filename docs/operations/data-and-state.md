@@ -281,8 +281,8 @@ call with the session id the server trusts, so a client cannot name someone
 else's session as the one being re-proved.
 
 An existing account's credentials change only through a password change
-(`setPassword`, `setPasswordAuthorized`) or a PIN change (`setPin`,
-`setPinAuthorized`); `upsertUser` refuses a password or PIN for an existing
+(`setPassword`, `setPasswordAuthorized`, `resetPassword`) or a PIN change
+(`setPin`, `setPinAuthorized`); `upsertUser` refuses a password or PIN for an existing
 account. A password change runs through the Identity Access credential-change
 port: subscribers prepare, the credential is written, then they commit. A
 subscriber that fails to prepare refuses the change. Once the credential is
@@ -293,6 +293,20 @@ subscribes Secret Keys, so a user who changes their own password can still read
 their Secret Keys with the new one. An administrator's reset of another account
 has no current password to open that account's keys with, so those keys stay
 sealed under the old password and cannot be read with the new one.
+
+`setPassword` needs the account's credential unlocked in this process, so after
+a restart it refuses a sealed one ("Credential recheck required"). Platform
+provisioning uses `resetPassword` instead, for the welcome and reset links and
+for its `setPassword` operation (the offline operator command). The checked link,
+or the authorised and audited operation, is the authority, so no old credential
+is asked for. A sealed
+credential is then replaced as an administrator's reset replaces it (PIN
+cleared), and keys sealed under the old password stay sealed. It refuses
+(`IdentityTwoFactorResetError`, changing nothing) an account with two-factor
+sign-in whose credential is sealed, because the authenticator secret is inside
+the seal and a link must never turn two-factor off. A
+signed-in user changing their own password still goes through
+`setPasswordAuthorized`, which rechecks.
 
 Database Manager treats the `identity.users` store as sensitive because it can
 contain encrypted credential records. It also treats `secret.keys` as sensitive

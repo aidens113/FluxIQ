@@ -93,10 +93,39 @@ export type IdentityCredentialChangeSubscriber = {
   abort(change: IdentityCredentialChange): Promise<void>;
 };
 
+/**
+ * Who revokes a panel session. `userId` is the user asking, or for a revoke
+ * with no named revoker (a sign-out presenting its own cookie,
+ * `revokeUserSessions`, `deleteUser`) the session's own user, null when it is
+ * unknown. `administrator` is true only for a caller whose permission check
+ * admitted `identity.manage`.
+ */
+export type IdentitySessionRevoker = {
+  userId: string | null;
+  administrator: boolean;
+};
+
+/** A session to revoke: its raw id, or (administrators only) the digest the panel lists it by. */
+export type IdentitySessionTarget = string | { digest: string };
+
+/**
+ * Told the raw id of each panel session revoked -- by a sign-out, an
+ * administrator's revoke, `revokeUserSessions` or `deleteUser` -- and who
+ * revoked it, so a program holding state per session drops it: Secret Keys'
+ * unlocks are keyed by that id, and it drops one only for that unlock's own
+ * user or an administrator. The id is the cookie's bearer value; it is handed
+ * over in memory only and must never be stored or logged. A listener that
+ * fails is reported by the revoke after every other listener has run; the
+ * session stays revoked.
+ */
+export type IdentitySessionRevocationListener = (sessionId: string, revoker: IdentitySessionRevoker) => void | Promise<void>;
+
 export type IdentityAccessServiceOptions = {
   repository?: Repository | undefined;
   roles?: Role[] | undefined;
   /** Test-only KDF injection; `createGlobalProgramRuntime` passes none. */
   passwordKdf?: PasswordKdfOptions | undefined;
   credentialChangeSubscribers?: readonly IdentityCredentialChangeSubscriber[] | undefined;
+  /** Listeners told of every session revoked; more can join later with `subscribeSessionRevocation`. */
+  sessionRevocationSubscribers?: readonly IdentitySessionRevocationListener[] | undefined;
 };
