@@ -8,8 +8,10 @@
 // that act's lists and control. Steps that name the same list group or the
 // same control place share one witness. A witness's `steps` start empty: the
 // trial's own acts are attributed to it when they are known (`./session.ts`),
-// so a list that changed with no act of the trial at it is said unasked. Pure,
-// given the port.
+// so a list that changed with no act of the trial at it is said unasked. These
+// are the witnesses read before the trial; a stamp names one control place at
+// most, so a looped step's passes at other items get their own witnesses once
+// the acts are known (`./pass-witnesses.ts`, t787). Pure, given the port.
 
 import type { AutomationStudioTrialChangeLedgerPort, AutomationStudioTrialChangeStep, AutomationStudioTrialWitness, AutomationStudioTrialWitnessPlace, AutomationStudioTrialWitnessSet } from "./contracts.ts";
 

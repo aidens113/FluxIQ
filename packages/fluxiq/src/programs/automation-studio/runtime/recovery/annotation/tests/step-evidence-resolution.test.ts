@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../../action-permissions/index.ts";
+import type { AutomationStudioFactCondition } from "../../../executor/lifecycle/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmExploredEvidenceSlot, AutomationStudioRuntimePatch } from "../../../llm/index.ts";
 import { automationStudioRecoveryStepResolution } from "../step-evidence-resolution.ts";
 
@@ -138,10 +139,36 @@ describe("a repair's steps, resolved before they are overlaid", () => {
     const resolved = { selector: "#from-failure", element: { tagName: "button", accessibleName: "Close", classNames: ["close"], fingerprinted: true } };
     expect(result.patch.steps).toEqual([{ definitionId: "test.press", parameters: resolved }]);
     expect(result.patch.when).toEqual([{ fact: "visible", op: "visible", target: resolved }]);
-    expect(result.patch.completionCheck).toEqual([{ fact: "visible", op: "absent", target: resolved }, { fact: "page.clear", op: "exists" }]);
+    // A fact about a control names the kind its op asks, as a build's does (t787); one about the page stands as written.
+    expect(result.patch.completionCheck).toEqual([{ fact: "absent", op: "absent", target: resolved }, { fact: "page.clear", op: "exists" }]);
     // A fact's target is asked about as the build asks about one.
     expect(asked.filter((entry) => entry.nodeDefinitionId === "fluxiq.fact.target")).toHaveLength(2);
     expect(JSON.stringify(result.patch)).not.toMatch(/"handles?":/u);
+  });
+
+  // t787: a model writes a condition's `fact` as a label; a host reads a kind there, answered `unknown`, and the handler never ran.
+  it("names, in a fact about a control, the kind its op asks, and refuses a comparison that never says what it compares", async () => {
+    const handler = (when: AutomationStudioFactCondition[]): AutomationStudioRuntimePatch => ({
+      kind: "add_handler", event: "before", scope: { kind: "nodes", nodeIds: ["read"] }, when, steps: [{ definitionId: "test.press", parameters: { target: { handle: "t2" } } }], then: { kind: "resume" }, consequences: [], reason: "r"
+    });
+    const on = { handles: { target: "t2" } };
+    const kept = await resolver({ resolve: domain() })(handler([
+      { fact: "the notice over the list", op: "visible", target: on },
+      { fact: "notice", op: "count", value: 1, target: on },
+      { fact: "text", op: "contains", value: "Session", target: on }
+    ]));
+    if (!kept.ok || kept.patch.kind !== "add_handler") throw new Error(JSON.stringify(kept));
+    expect(kept.patch.when.map(({ fact, op }) => [fact, op])).toEqual([["visible", "visible"], ["count", "count"], ["text", "contains"]]);
+
+    const asked: Asked[] = [];
+    const refused = await resolver({ resolve: domain(asked) })(handler([{ fact: "the notice's words", op: "contains", value: "Session", target: on }]));
+    expect(refused).toEqual({
+      ok: false, code: "step_unresolved",
+      reason: "The fix's situation compares something it describes only in its own words, which the run cannot read, so the fix was not used. A condition that compares names what it reads: text for a control's shown words, value for a field's value.",
+      issueCodes: ["recovery.fact_kind_unread"]
+    });
+    // Refused before the domain is asked about its target.
+    expect(asked).toEqual([]);
   });
 
   it("refuses a fact naming more than one control, or one the packet never gave", async () => {

@@ -10,13 +10,14 @@ type Proof = NonNullable<AutomationStudioRunResultSummary["siteChange"]>["proofs
 /** What each proof that is no proof says, in Core's words. */
 const NOT_PROOF: Readonly<Partial<Record<Proof["proof"], string>>> = Object.freeze({
   no_change: "it asks for a change, and every place that change shows read the same before and after this trial",
-  already_in_end_state: "the state it asks for already held before this trial began, and no step of this build was seen making that change"
+  already_in_end_state: "the state it asks for already held before this trial began, and no step of this build was seen making that change",
+  contradicted: "it asks to add, and a place this part's change shows went back to how it was before this trial, so the trial undid what it asks for"
 });
 
 /**
  * `verification` as it stands, or, where it is a yes and the judged summary's
- * `siteChange` proves some part with a typed effect only as `no_change` or
- * `already_in_end_state`, or shows a change part's change at a
+ * `siteChange` proves some part with a typed effect only as `no_change`,
+ * `already_in_end_state` or `contradicted`, or shows a change part's change at a
  * place as a whole move other than the count it asks
  * (`./count-differs.ts`) (`./index.ts`), that yes not taken:
  * `unsure`, unconfirmed, the reason naming each such part and its proof. Never

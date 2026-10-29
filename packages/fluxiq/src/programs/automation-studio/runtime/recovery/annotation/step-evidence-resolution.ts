@@ -31,7 +31,10 @@
 // **A fact names one control.** A fact target's `handles` with more than one
 // entry is not one control and is refused; one with one is resolved as the
 // build resolves a fact's target (`AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID`),
-// and the domain's answer becomes the fact's target.
+// and the domain's answer becomes the fact's target. Its `fact` is first held to
+// the kind a build's condition names (`./patch-fact-kind.ts`, t787): a model
+// writes it as a label, and a host reads no kind in a label, so the handler it
+// guarded never ran.
 //
 // **Only by handle (t432; user, 2026-10-10).** The model names a control by the
 // handle the evidence printed and nothing else, so every step and fact here is
@@ -60,6 +63,7 @@ import {
   type AutomationStudioRuntimePatchStep
 } from "../../llm/index.ts";
 import { isJsonRecord } from "../../service/index.ts";
+import { automationStudioRecoveryPatchFactKind } from "./patch-fact-kind.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
 
 /** A patch with every step and fact target as the domain resolved it, or why not. */
@@ -172,6 +176,9 @@ async function resolveFacts(context: Context, facts: readonly AutomationStudioFa
     const handles = Object.values(target.handles);
     // A fact is about one control (header).
     if (handles.length !== 1 || typeof handles[0] !== "string") return unresolved(where, [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.malformed]);
+    // What it reads, named as a build's condition names it, or refused when no host could read it (`./patch-fact-kind.ts`).
+    const kinded = automationStudioRecoveryPatchFactKind(fact);
+    if ("refused" in kinded) return unreadable(where);
     const routed = route(context, { target: { handle: handles[0] } });
     if ("refused" in routed) return unresolved(where, [routed.refused]);
     const node: AutomationStudioFlowBootstrapNode = { key: "fact", definitionId: AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, definitionVersion: "1.0.0", parameters: routed.parameters, consequences: [] };
@@ -180,7 +187,7 @@ async function resolveFacts(context: Context, facts: readonly AutomationStudioFa
     if ("ok" in answer) return unresolved(where, answer.issueCodes);
     // The resolution refuses an `unchanged` answer for a node naming a handle, so this is the domain's.
     if (!answer.parameters) return unresolved(where, [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved]);
-    resolved.push({ ...fact, target: answer.parameters });
+    resolved.push({ ...kinded.condition, target: answer.parameters });
   }
   return resolved;
 }
@@ -255,6 +262,23 @@ function setHandle(parameters: JsonObject, path: ReadonlyArray<string | number>,
 /** A fact naming its control by anything but a handle (header): Core's own code, no domain asked. */
 function notAHandle(where: string): Refused {
   return unresolved(where, [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.notAHandle]);
+}
+
+/** Core's code for a comparison about a control that does not say what it compares. */
+const FACT_KIND_UNREAD = "recovery.fact_kind_unread";
+
+/**
+ * A comparison about a control that names what it compares only in its own
+ * words (`./patch-fact-kind.ts`): no host could read it, so its handler would
+ * never run. The sentence says what a condition that compares names instead.
+ */
+function unreadable(where: string): Refused {
+  return {
+    ok: false,
+    code: "step_unresolved",
+    reason: `The fix's ${where} compares something it describes only in its own words, which the run cannot read, so the fix was not used. A condition that compares names what it reads: text for a control's shown words, value for a field's value.`,
+    issueCodes: [FACT_KIND_UNREAD]
+  };
 }
 
 /** A code, Core's or a domain's (`<domain>.handle.not_a_handle:<position>`), saying a control was named by something other than a handle. */

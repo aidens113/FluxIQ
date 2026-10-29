@@ -6,13 +6,25 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode, AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
+import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
+import type { AutomationStudioFactCondition } from "../../../executor/lifecycle/index.ts";
 import type { AutomationStudioIncidentRepair } from "../../../executor/lifecycle-run/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../../../recovery/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
 import { bindAutomationStudioInRunRepair } from "../in-run-repair.ts";
-import { AutomationStudioLlmRunPurse, AutomationStudioLlmRunBudgetLedger } from "../../../llm/index.ts";
-import { IN_RUN_REPAIR_FLOW_ID, IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_RUN_ID, inRunRepairHandlerPatch, inRunRepairRequest, inRunRepairWorld, type InRunRepairWorld } from "./in-run-repair-fixture.ts";
+import { AutomationStudioLlmRunPurse, AutomationStudioLlmRunBudgetLedger, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioRuntimePatch } from "../../../llm/index.ts";
+import {
+  IN_RUN_REPAIR_FLOW_ID,
+  IN_RUN_REPAIR_PROJECT_ID,
+  IN_RUN_REPAIR_RUN_ID,
+  IN_RUN_REPAIR_SUBFLOW_ID,
+  inRunRepairGraph,
+  inRunRepairHandlerPatch,
+  inRunRepairRequest,
+  inRunRepairWorld,
+  type InRunRepairWorld
+} from "./in-run-repair-fixture.ts";
 
 function bind(world: InRunRepairWorld) {
   return bindAutomationStudioInRunRepair({ context: world.context, graphOptions: world.graphOptions, ports: world.ports, runId: IN_RUN_REPAIR_RUN_ID });
@@ -206,6 +218,78 @@ describe("the in-run repair a run session supplies", () => {
     bind(world);
 
     expect(await repair(world)).toEqual({ kind: "none", reason: "The fix did not say what it would lastingly do, so it was not used." });
+  });
+});
+
+// t787 (debug run-mvskptb1, fix 2): an in-run handler's conditions wrote `fact` as a description, where a host reads a kind
+// (`visible`, `absent`, `text` ...); the host answered `unknown`, so the handler never ran. The host here reads facts that way, its
+// domain resolves t5 (the layer) as a fact's target and t6 (its close control) as a step's, and `described` writes as that model did.
+describe("an in-run handler held to what the run can read", () => {
+  const press = (elementId: JsonObject[string]): JsonObject => ({ outputId: "activate-element", parameters: { elementId } });
+  const handlerPatch = (when: AutomationStudioFactCondition[], completionCheck: AutomationStudioFactCondition[]): AutomationStudioRuntimePatch => ({
+    kind: "add_handler", reason: "A layer covers the step; close it with its own control, then take the step again.", event: "before", scope: { kind: "nodes", nodeIds: ["act"] },
+    when, completionCheck, steps: [{ definitionId: "builtin.policy.action", parameters: press({ handle: "t6" }) }], then: { kind: "resume" }, consequences: []
+  });
+  const resolving: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]> = async ({ parameters }) => {
+    const text = JSON.stringify(parameters);
+    if (text.includes('{"handle":"t5"}')) return { status: "resolved", parameters: { selector: "#layer" } };
+    if (text.includes('{"handle":"t6"}')) return { status: "resolved", parameters: JSON.parse(text.replace('{"handle":"t6"}', '"close"')) as JsonObject };
+    return text.includes('"handle"') ? { status: "refused", issueCodes: ["test.handle.unknown"] } : { status: "unchanged" };
+  };
+  /** A page whose layer covers `act` until `close` is pressed, and whose host reads a fact by the kind it names, as a domain does. */
+  function layerPage() {
+    const state = { layer: true, presses: [] as string[] };
+    const read = ({ fact, target }: AutomationStudioFactCondition): "true" | "false" | "unknown" => {
+      if (target?.selector !== "#layer" || !["visible", "exists", "absent"].includes(fact)) return "unknown";
+      return (fact === "absent") !== state.layer ? "true" : "false";
+    };
+    const covered = { status: "failed", route: "failed", message: "A layer covers the step.", failure: { category: "unexpected_state", code: "test.target.covered", retryable: false, stage: "execution", effect: "unacted" } } as const;
+    const options: AutomationStudioGraphExecutionOptions = {
+      delay: async () => undefined, now: () => 1_000, currentSubflowId: IN_RUN_REPAIR_SUBFLOW_ID,
+      hostRuntime: { capabilities: ["fact-evaluation"], factEvaluator: (conditions) => conditions.map((condition) => ({ result: read(condition), capturedAt: 1_000 })) },
+      effectDispatcher: (effect) => {
+        const id = /"elementId":"([^"]+)"/u.exec(JSON.stringify(effect.payload ?? null))?.[1] ?? "?";
+        state.presses.push(id);
+        if (id === "close") state.layer = false;
+        return state.layer ? covered : { status: "success", route: "success", outputs: { ok: true } };
+      }
+    };
+    return { state, options };
+  }
+  function layerGraph(): AutomationStudioFlowDocument {
+    const graph = inRunRepairGraph();
+    const act: AutomationStudioFlowNode = { id: "act", definitionId: "builtin.policy.action", parameterValues: press("act"), metadata: { onFailure: "stop" } };
+    const edge = (from: string, to: string) => ({ id: `${from}.${to}`, sourceNodeId: from, sourcePortId: "success", targetNodeId: to, targetPortId: "in" });
+    return { ...graph, nodes: [{ id: "start", definitionId: "builtin.control.start" }, act, graph.nodes[2]!], edges: [edge("start", "act"), edge("act", "end")] };
+  }
+  const resolvingIn = (world: InRunRepairWorld): InRunRepairWorld => ({ ...world, ports: { ...world.ports, llmEvidenceRuntime: { ...world.ports.llmEvidenceRuntime!, resolvePlanNodeParameters: resolving } } });
+  const layerWorld = (patch: AutomationStudioRuntimePatch): InRunRepairWorld => resolvingIn(inRunRepairWorld({ scripts: [{ patches: [patch] }] }));
+  const described = (op: "visible" | "absent"): AutomationStudioFactCondition => ({ fact: "layer covering the step's control", op, target: { handles: { element: "t5" } } });
+
+  it("an add_handler before the failed step whose layer is visible runs before the re-attempt", async () => {
+    const world = layerWorld(handlerPatch([described("visible")], [described("absent")]));
+    bind(world);
+    const { state, options } = layerPage();
+    const trace = await runAutomationStudioGraph(layerGraph(), { ...world.graphOptions, ...options });
+    expect(trace.status).toBe("succeeded");
+    // The failed attempt, the handler's press of the layer's own control, the re-attempt that lands; saved as the host reads it.
+    expect(state.presses).toEqual(["act", "close", "act"]);
+    const handler = `node.runtime-patch.${IN_RUN_REPAIR_RUN_ID}.handler-act`;
+    expect(trace.attempts.map((attempt) => [attempt.nodeId, attempt.status])).toEqual([["start", "succeeded"], ["act", "failed"], [`${handler}.step-1`, "succeeded"], [`${handler}.end`, "succeeded"], ["act", "succeeded"], ["end", "succeeded"]]);
+    expect(trace.handlerExecutions?.map((record) => [record.event, record.nodeId, record.disposition.kind])).toEqual([["before", "act", "resume"]]);
+    const [adaptation] = [...world.adaptations.values()];
+    expect(JSON.stringify(adaptation?.patch)).toContain(JSON.stringify([{ fact: "visible", op: "visible", target: { selector: "#layer" } }]));
+  });
+
+  it("refuses at apply a handler whose condition compares something it names only in its own words, and records why", async () => {
+    const compared: AutomationStudioFactCondition = { fact: "the words on the layer", op: "contains", value: "expires", target: { handles: { element: "t5" } } };
+    const world = layerWorld(handlerPatch([compared], [described("absent")]));
+    const context = bind(world);
+    const answer = await repair(world, inRunRepairRequest({ nodeId: "act", graph: layerGraph() }));
+    const reason = "The fix's situation compares something it describes only in its own words, which the run cannot read, so the fix was not used. A condition that compares names what it reads: text for a control's shown words, value for a field's value.";
+    expect(answer).toEqual({ kind: "none", reason });
+    expect(context.inRunRepairs?.receipts()).toEqual([expect.objectContaining({ outcome: "none", code: "step_unresolved", reason, issueCodes: ["recovery.fact_kind_unread"] })]);
+    expect(world.adaptations.size).toBe(0);
   });
 });
 

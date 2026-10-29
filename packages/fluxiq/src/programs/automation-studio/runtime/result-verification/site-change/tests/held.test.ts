@@ -42,6 +42,15 @@ describe("two yeses on a trial whose change proves an end state only as already_
     expect(twoYeses(libraryHoldsSummary(proofs("unproven")))).toMatchObject({ verdict: "answers" });
   });
 
+  it("are not taken where a part is contradicted: the trial undid what it asks for", () => {
+    const base = libraryHoldsChange("carried");
+    const summary = libraryHoldsSummary({ ...base, proofs: [{ ...base.proofs[0]!, proof: "contradicted" }, base.proofs[1]!] });
+    const agreed = twoYeses(summary);
+    expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", code: "core.result.change_not_proven" });
+    expect(agreed.reason).toContain(`part "p1" (contradicted: it asks to add, and a place this part's change shows went back to how it was before this trial, so the trial undid what it asks for)`);
+    expect(automationStudioResultVerificationFailsRun(agreed)).toBe(false);
+  });
+
   it("leaves a no, an unsure and a summary with no siteChange exactly as they were", () => {
     const summary = libraryHoldsSummary(libraryHoldsChange("already_in_end_state"));
     const double = automationStudioResultVerificationAgreement({ first: no(summary), second: no(summary), confirmAnswer: true });

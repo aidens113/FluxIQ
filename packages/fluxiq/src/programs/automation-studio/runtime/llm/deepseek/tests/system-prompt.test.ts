@@ -47,7 +47,9 @@
 // state just before it and the change asked for, user 2026-10-27) both by
 // nine sentences after the startedWith sentence: how to read
 // resultSummary.siteChange and siteChangeFindings, and that each typed part is
-// judged by the change between before and after. With
+// judged by the change between before and after; and in t787 both by one
+// sentence, after the already_in_end_state clause: a part asking to add is
+// contradicted when the run put a control back to how it was before. With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.

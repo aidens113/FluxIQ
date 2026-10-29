@@ -202,6 +202,7 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
   // What the run learned to slow down for is kept with the trial, for a promotion of it to keep (`./promotion.ts`).
   const learned = automationStudioTrialLearnedPaces(executed.trace, executed.graph, executed.candidateGraphs), paced = learned.length ? { learnedPaces: learned } : {};
   // The lasting acts the run left on the site, whatever its verdict, for the build to undo before its next trial (t462).
+  ports.exploredToggles?.trial(frames.attempts);
   const acts = automationStudioCandidateTrialLandedActs(executed.trace, frames.graph);
   if (executed.receipt.status !== "succeeded") {
     const code = executed.code ?? `candidate.trial_${executed.receipt.status}`;

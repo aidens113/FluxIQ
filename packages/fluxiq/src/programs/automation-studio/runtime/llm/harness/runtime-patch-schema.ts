@@ -172,7 +172,7 @@ const FACT_CONDITION_SCHEMA = {
   additionalProperties: false,
   required: ["fact", "op"],
   properties: {
-    fact: { type: "string", minLength: 1, maxLength: BOUNDS.maxFactLength, description: "What the host observes, in the host's own terms, as the evidence shows it." },
+    fact: { type: "string", minLength: 1, maxLength: BOUNDS.maxFactLength, description: "The kind of check, as one word and never a description: for a control named in target, the op itself (exists, absent, visible, enabled, count), or text or value when the op compares its shown words or a field's value." },
     op: { enum: [...AUTOMATION_STUDIO_FACT_CONDITION_OPS] },
     value: {
       oneOf: [
