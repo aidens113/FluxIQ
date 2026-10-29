@@ -34,9 +34,32 @@ export function automationStudioActivityRunEnding(record: Fields | null | undefi
   const repair = fields(record?.resultRepair);
   const rows = rowCount(repair, verification);
   const refuted = verification.verdict === "does_not_answer";
+  const found = refuted ? coreFound(verification, rows) : undefined;
+  if (found) return found;
   if (refuted && doubtOnly(verification, repair, fields(record?.resultReauthor))) return doubted(rows);
   const repaired = repairEnding(repair, fields(record?.resultReauthor));
   return `${judged(rows, refuted)}${repaired ? `, and ${repaired}` : ""}.`;
+}
+
+/** The code of a no Core reached from its own computed facts, with no judge asked (`result-verification/computed-facts/computed-no.ts`). */
+const COMPUTED_FACT_FAILED = "core.result.computed_fact_failed";
+/** The most of Core's sentence the ending says, so "Run failed: " and it fit a status line. */
+const MAX_FOUND = 110;
+
+/**
+ * The ending for a no Core reached itself: what Core found, in its own sentence
+ * (the verification's observation is the failing facts' sentences). Nothing was
+ * being fixed, so no repair is spoken of ("the fix didn't finish" told a person
+ * a fix had been tried). Undefined for any other verification.
+ */
+function coreFound(verification: Fields, rows: number | undefined): string | undefined {
+  if (verification.basis !== "core_observation" || verification.code !== COMPUTED_FACT_FAILED) return undefined;
+  const said = automationStudioActivityReasonText(verification.observation, MAX_FOUND)?.replace(/\.$/u, "");
+  if (!said) return undefined;
+  // A person knows the product as FluxIQ: Core's own sentence ("Core counted …") is said in its name.
+  const finding = /^Core\b/u.test(said) ? said.replace(/^Core\b/u, "FluxIQ")
+    : `FluxIQ found that ${/^[A-Z][a-z]/u.test(said) ? said[0]!.toLowerCase() + said.slice(1) : said}`;
+  return rows === undefined ? `${finding}.` : `it saved ${rows} ${rows === 1 ? "row" : "rows"}, but ${finding}.`;
 }
 
 /**
