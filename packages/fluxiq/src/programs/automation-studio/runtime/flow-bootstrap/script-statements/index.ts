@@ -40,6 +40,8 @@ export * from "./handler-blocks.ts";
 // listing that sorts or limits only its saved answer. `./loop-body.ts`, which it shares with the
 // replace check, is left out like `./statement-refusal.ts`: it is how both read, not what they offer.
 export * from "./listing-order-in-repeat.ts";
+// t800: the loop-body reader is shared with `../repeat-where/`, which moved out of this directory for its file limit.
+export * from "./loop-body.ts";
 // t796: a lowering on a built plan, the assembler's -- each For Each over a page-order listing is given
 // the listing's own sort as its order. `./listing-repeat-sort.ts`, which it shares with the check above,
 // is left out like `./loop-body.ts`.

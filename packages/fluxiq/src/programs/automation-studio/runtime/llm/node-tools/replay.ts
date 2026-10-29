@@ -77,7 +77,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import { automationStudioFlowBootstrapAssembledRecordOutput } from "../../flow-bootstrap/authoring/index.ts";
+import { automationStudioFlowBootstrapAssembledRecordOutput, type AuthoringPartOfStep } from "../../flow-bootstrap/authoring/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
@@ -172,11 +172,15 @@ export function automationStudioNodeReplayResetCall(from: JsonObject): JsonObjec
  * `pass`, on a step a test repeats, is the row and the resolved parameters.
  * `definition`, the definition of the node the step ran, gives a read that ran
  * with no record output the one its Flow node holds (see the header).
+ * `partOf`, when the caller knows the plan part each step serves, derives the
+ * record output as assembly does from it (`../../flow-bootstrap/record-defaults`),
+ * so the test and the Flow agree; absent, nothing changes.
  */
 export function automationStudioNodeReplayStepCall(
   step: AutomationStudioFlowDraftStep,
   pass: AutomationStudioNodeReplayPass = {},
-  definition?: AutomationStudioNodeDefinition
+  definition?: AutomationStudioNodeDefinition,
+  partOf?: AuthoringPartOfStep
 ): JsonObject | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   const ranWith = step.scheduledCandidate !== undefined ? scheduled?.input : step.ranWith;
@@ -184,7 +188,7 @@ export function automationStudioNodeReplayStepCall(
   return {
     ...ranWith,
     ...passed(pass),
-    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition),
+    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition, partOf),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "step",
     ...(scheduled ? scheduled.from === undefined ? {} : { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
     ...(scheduled || step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
@@ -205,7 +209,8 @@ export function automationStudioNodeReplayStepCall(
 export function automationStudioNodeReplayVerifyCall(
   step: AutomationStudioFlowDraftStep,
   pass: AutomationStudioNodeReplayPass = {},
-  definition?: AutomationStudioNodeDefinition
+  definition?: AutomationStudioNodeDefinition,
+  partOf?: AuthoringPartOfStep
 ): JsonObject | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   const ranWith = step.scheduledCandidate !== undefined ? scheduled?.input : step.ranWith;
@@ -213,7 +218,7 @@ export function automationStudioNodeReplayVerifyCall(
   return {
     ...ranWith,
     ...passed(pass),
-    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition),
+    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition, partOf),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify",
     ...(scheduled ? scheduled.from === undefined ? {} : { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
     ...recordedEffect(step)
@@ -243,7 +248,7 @@ function passed(pass: AutomationStudioNodeReplayPass): JsonObject {
  * a call to another node, no parameters, or a record output assembly leaves as it is.
  * Never the step's own object: the call is a copy, and the draft keeps what ran.
  */
-function assembledRecordOutput(step: AutomationStudioFlowDraftStep, call: JsonObject, definition: AutomationStudioNodeDefinition | undefined): JsonObject {
+function assembledRecordOutput(step: AutomationStudioFlowDraftStep, call: JsonObject, definition: AutomationStudioNodeDefinition | undefined, partOf: AuthoringPartOfStep | undefined): JsonObject {
   const parameters = call.parameters;
   if (!definition || !isObject(parameters)) return {};
   const node = typeof call.node === "string" ? call.node : step.actionId;
@@ -260,6 +265,7 @@ function assembledRecordOutput(step: AutomationStudioFlowDraftStep, call: JsonOb
       // What assembly names this step by (`../../flow-bootstrap/authoring/assemble.ts`).
       fallbackName: written.description || definition.label,
       stepId: automationStudioFlowDraftStepId(step),
+      part: partOf?.(automationStudioFlowDraftStepId(step)),
       path: `replay.parameters.${parameter.id}`
     });
     if (!isObject(assembled.value) || JSON.stringify(assembled.value) === JSON.stringify(sent[parameter.id])) continue;

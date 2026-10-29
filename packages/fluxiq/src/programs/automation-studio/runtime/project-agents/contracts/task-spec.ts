@@ -48,6 +48,16 @@ import { automationStudioProjectJsonShape as shape, type AutomationStudioProject
 // act, or a read nobody owes records for, as every part did before; a spec
 // digested before the field existed keeps its digest.
 //
+// **And how many rows, where the request says (framework plan K2).** A judge
+// asked whether "the 5 newest" holds 5 decides a count Core can measure. So an
+// answer may declare `rows`: `{count}` for exactly that many, or `{atLeast}`,
+// `{atMost}` or both for a range, each a whole number from 1 to
+// `ROWS_MAX`, `atLeast` no more than `atMost`, never `count` beside either.
+// Core holds the stored rows to it (`../../result-verification/computed-facts/count.ts`).
+// Optional: absent, the count is judged as before, and a spec digested before
+// the field existed keeps its digest. Anything else is refused
+// `project.answer_rows_invalid` at the path of what is wrong.
+//
 // **A part says what change it asks for (t775).** A judge told only "the shelf holds the book" cannot tell a run that
 // added it from one that found it there, and a reset that undoes everything hides the difference. So a part may declare
 // `effect`: a `change` (adds or removes `count` of `what`, judged by the difference from the state before the run) or
@@ -68,8 +78,11 @@ export type AutomationStudioProjectTaskPart = {
   effect?: AutomationStudioProjectTaskEffect;
 };
 
-/** A part's declared answer (header, t757): records, with the columns the request names, in its order. */
-export type AutomationStudioProjectTaskAnswer = { kind: "records"; columns: string[] };
+/** A part's declared answer (header, t757): records, with the columns the request names, in its order, and how many rows where it says (header, K2). */
+export type AutomationStudioProjectTaskAnswer = { kind: "records"; columns: string[]; rows?: AutomationStudioProjectTaskAnswerRows };
+
+/** How many rows a part's answer asks for (header, K2): exactly `count`, or at least `atLeast` and at most `atMost`. */
+export type AutomationStudioProjectTaskAnswerRows = { count?: number; atLeast?: number; atMost?: number };
 
 export type AutomationStudioProjectTaskSpec = {
   parts: AutomationStudioProjectTaskPart[];
@@ -83,6 +96,9 @@ const VERSION = "project.task_spec.v1";
 const LIMITS = { parts: 50, quote: 4000, facts: 50, fact: 500, notAsked: 50, columns: 50, column: 200, effectText: 200, unchanged: 20 } as const;
 const EFFECT_COUNT_MAX = 1000;
 const ANSWER_KINDS = ["records"] as const;
+/** The most rows an answer may declare (header, K2). */
+const ROWS_MAX = 10_000;
+const ROWS_INVALID = "project.answer_rows_invalid";
 
 export const automationStudioProjectTaskSpec = Object.freeze({
   /** The digest of a spec's content; the `digest` field is excluded. */
@@ -231,11 +247,29 @@ function readPart(value: unknown, path: string): AutomationStudioProjectTaskPart
 
 /** A part's declared answer (header, t757): a known kind and distinct column names. */
 function readAnswer(value: unknown, path: string): AutomationStudioProjectTaskAnswer {
-  const fields = shape.object(value, path, ["kind", "columns"]);
+  const fields = shape.object(value, path, ["kind", "columns"], ["rows"]);
   const kind = shape.oneOf(fields.kind, `${path}.kind`, ANSWER_KINDS);
   const columns = shape.array(fields.columns, `${path}.columns`, LIMITS.columns).map((column, index) => shape.text(column, `${path}.columns.${index}`, LIMITS.column));
   if (new Set(columns).size !== columns.length) return shape.refuse("project.duplicate", `${path}.columns`);
-  return { kind, columns };
+  return { kind, columns, ...(fields.rows !== undefined ? { rows: readRows(fields.rows, `${path}.rows`) } : {}) };
+}
+
+/** An answer's declared rows (header, K2): exactly a count, or a range, of whole numbers from 1 to `ROWS_MAX`, as written. */
+function readRows(value: unknown, path: string): AutomationStudioProjectTaskAnswerRows {
+  const fields = shape.object(value, path, [], ["count", "atLeast", "atMost"]);
+  const read = (key: "count" | "atLeast" | "atMost"): number | undefined => {
+    const field = fields[key];
+    if (field === undefined) return undefined;
+    if (typeof field !== "number" || !Number.isSafeInteger(field) || field < 1 || field > ROWS_MAX) return shape.refuse(ROWS_INVALID, `${path}.${key}`);
+    return field;
+  };
+  const count = read("count");
+  const atLeast = read("atLeast");
+  const atMost = read("atMost");
+  if (count === undefined && atLeast === undefined && atMost === undefined) return shape.refuse(ROWS_INVALID, path);
+  if (count !== undefined && (atLeast !== undefined || atMost !== undefined)) return shape.refuse(ROWS_INVALID, path);
+  if (atLeast !== undefined && atMost !== undefined && atLeast > atMost) return shape.refuse(ROWS_INVALID, path);
+  return { ...(count !== undefined ? { count } : {}), ...(atLeast !== undefined ? { atLeast } : {}), ...(atMost !== undefined ? { atMost } : {}) };
 }
 
 const EFFECT_INVALID = "project.plan_effect_invalid";

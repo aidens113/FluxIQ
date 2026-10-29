@@ -134,6 +134,22 @@
 // settled yes becomes `unsure` with Core's finding (`./requested-output/`). A
 // first yes so held is not asked again to confirm it: no answer could change
 // what the run stored.
+//
+// **A fact Core computed that fails is a Core no, and no judge is asked
+// (framework plan P5).** After Core's own counts, and before a provider is
+// even resolved, Core computes what it can settle of the result from its own
+// record (`./computed-facts/`). Any fact that `fails` is the answer: verdict
+// `does_not_answer`, basis `core_observation`, code
+// `core.result.computed_fact_failed`, the facts' own sentences as its reason
+// and observation, and a repair directive built as every refutation's is
+// (`./repair-directive.ts`), carrying the located defects where a judge's
+// located no carries its own (`repair.judgement.defects`), the sentences as
+// Core's findings and as its `checked` lines -- what the failure record's
+// `expected` and a build test's no hand on (`./build-test/judge.ts`). The
+// facts that hold are said to the judge, on its copy only, as
+// `summary.computedFacts`, before `earlierAdvice` so the cached prefix is
+// unchanged. A computed pass is never a yes: the judge is still asked, and
+// only its yes passes.
 
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowInstruction, AutomationStudioFlowIntervention, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import {
@@ -144,7 +160,14 @@ import {
   type AutomationStudioLlmRunBudgetLedger,
   type AutomationStudioLlmTokenLimits
 } from "../llm/index.ts";
-import type { AutomationStudioResultRequestedOutput, AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "./contracts/index.ts";
+import type {
+  AutomationStudioResultComputedFact,
+  AutomationStudioResultRequestedOutput,
+  AutomationStudioResultVerification,
+  AutomationStudioResultVerificationOutcome,
+  AutomationStudioRunResultSummary
+} from "./contracts/index.ts";
+import { automationStudioResultComputedFacts, automationStudioResultComputedNo } from "./computed-facts/index.ts";
 import {
   automationStudioResultVerificationAgreement,
   automationStudioResultVerificationAskAgain,
@@ -249,6 +272,18 @@ export const AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK = 2;
 export async function verifyAutomationStudioRunResult(request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> {
   const core = automationStudioResultCoreObservation(request.summary);
   if (core) return { outcome: { ...core, performed: true }, interventions: [] };
+  // The summary and the request's text: Core's record a no's every reason is weighed against (t607, `./refuted-no/`).
+  const requestText = request.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n");
+  // What Core settles of the result before any judge is asked (header, framework plan P5): a fact that fails is a Core no.
+  const facts = automationStudioResultComputedFacts({ summary: request.summary, instructions: request.instructions, requestText, requestedOutput: request.requestedOutput });
+  const failing = facts.filter((fact) => fact.status === "fails");
+  if (failing.length) {
+    emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
+    return said({ outcome: { ...automationStudioResultComputedNo(request.summary, failing), performed: true }, interventions: [] });
+  }
+  // The facts that hold, said to the judge as settled, on its copy only (header): a computed pass is never a yes.
+  const holding = facts.filter((fact) => fact.status === "holds");
+  const judgedRequest: AutomationStudioResultVerificationRequest = holding.length ? { ...request, summary: summaryWithComputedFacts(request.summary, holding) } : request;
   const provider = request.provider;
   if (!provider) {
     return {
@@ -266,7 +301,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   const interventions: AutomationStudioFlowIntervention[] = [];
   // How the yes was reached, recorded as the calls are made (`./first-ask/`, t677).
   const trail: CheckTrail = { interventions, verdictChanged: false, reasks: 0 };
-  const first = await askCheck(request, provider, 1, trail);
+  const first = await askCheck(judgedRequest, provider, 1, trail);
   // What the run owes by the build's declaration, and the yes held where it stored none of it (header, t757).
   const owed = automationStudioResultRequestedOutputOwed(request.summary, request.requestedOutput);
   const held = (outcome: ReturnType<typeof automationStudioResultVerificationAgreement>) => automationStudioResultRequestedOutputHeld(outcome, request.summary, owed);
@@ -277,11 +312,9 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   }
   // A first yes a build test confirms is asked the converse question, never the same one again (header, t691).
   const converse = screenedRecheck(automationStudioResultVerificationConfirmingAsk(first, request.summary, { confirmAnswer }), request.deniedEvidenceKeys);
-  const second = await askCheck(converse ? { ...request, summary: { ...request.summary, recheck: converse } } : request, provider, 2, trail);
+  const second = await askCheck(converse ? { ...judgedRequest, summary: { ...judgedRequest.summary, recheck: converse } } : judgedRequest, provider, 2, trail);
   // The request as the judges read it: a split's no whose advice excludes by words it never states is marked and asked again (t515, `./agreement.ts`).
   const wording = automationStudioRequestWording(request.instructions, request.summary);
-  // The summary and the request's text: Core's record a no's every reason is weighed against (t607, `./refuted-no/`).
-  const requestText = request.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n");
   const input = { first, second, confirmAnswer, reads: request.summary.reads, recordSets: request.summary.recordSets, wording, summary: request.summary, requestText };
   const settled = automationStudioResultVerificationAgreement(input);
   // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503); so is a split's no
@@ -291,7 +324,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   const current: [typeof first, typeof first] = [first, second];
   const ask = async (recheck: string, call: 1 | 2) => {
     trail.reasks += 1;
-    const answer = await askCheck({ ...request, summary: { ...request.summary, recheck } }, provider, call, trail, true);
+    const answer = await askCheck({ ...judgedRequest, summary: { ...judgedRequest.summary, recheck } }, provider, call, trail, true);
     if (answer.basis === "model") current[call - 1] = answer;
     return answer;
   };
@@ -305,7 +338,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   // Last, where still nothing was asked again, a split's no is asked once to name its defect, quoting the request (t725, `./agreement/reask-split-no.ts`).
   const split = await automationStudioResultVerificationReaskSplitNo({ settled: narrowed, first, second, ask, agree });
   // Last of all, each no naming no defect Core finds in its record is asked once more to list each (header, t752).
-  const outcome = held(await automationStudioResultVerificationReaskUnsupportedNo({ settled: split, calls: current, record: automationStudioResultVerificationNoRecord(input), summary: request.summary, ask, agree }));
+  const outcome = held(await automationStudioResultVerificationReaskUnsupportedNo({ settled: split, calls: current, record: automationStudioResultVerificationNoRecord(input), summary: request.summary, requestText, ask, agree }));
   const confirmed = automationStudioResultFirstAskConfirmed({ confirmAnswer, outcome, first, second, verdictChanged: trail.verdictChanged, reasks: trail.reasks, secondAsked: converse ? "converse" : "same" });
   return said({ outcome: { ...outcome, performed: true, ...(confirmed ? { firstAskConfirmed: true as const } : {}) }, interventions });
 }
@@ -361,6 +394,20 @@ function said(report: AutomationStudioResultVerificationReport): AutomationStudi
   const words = automationStudioResultCheckActivity(report.outcome);
   emitAutomationStudioActivity({ phase: "verifying", label: words.label, detail: { kind: "check", title: "Result check", status: words.status, ...(words.text ? { text: words.text } : {}) } });
   return report;
+}
+
+/**
+ * The judge's copy of the summary with the facts that hold, each by its kind
+ * and Core's sentence (header): placed just before `earlierAdvice`, every
+ * other field where it was, so everything before it is unchanged; last where
+ * there is no earlier advice.
+ */
+function summaryWithComputedFacts(summary: AutomationStudioRunResultSummary, holding: readonly AutomationStudioResultComputedFact[]): AutomationStudioRunResultSummary {
+  const computedFacts = holding.map((fact) => ({ kind: fact.kind, status: fact.status, said: fact.said }));
+  const entries = Object.entries(summary).filter(([key]) => key !== "computedFacts");
+  const at = entries.findIndex(([key]) => key === "earlierAdvice");
+  entries.splice(at < 0 ? entries.length : at, 0, ["computedFacts", computedFacts]);
+  return Object.fromEntries(entries) as AutomationStudioRunResultSummary;
 }
 
 /**

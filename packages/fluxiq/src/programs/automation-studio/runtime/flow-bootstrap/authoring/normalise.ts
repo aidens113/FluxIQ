@@ -19,6 +19,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { isAutomationNodeParameterStateBinding, type AutomationNodeParameter, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { automationStudioMatchWrittenParameterName, type AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { automationStudioFlowBootstrapAssembledRecordOutput } from "./assembled-record-output.ts";
+import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
 import { authoringError } from "./issue.ts";
 import { authoringCoreDerivedKey, authoringKey } from "./keys.ts";
@@ -46,6 +47,8 @@ export function normaliseAuthoringNodeParameters(input: {
    * or empty, every record output is read exactly as before.
    */
   namedColumns?: readonly string[] | undefined;
+  /** Which plan part a step serves (`./part/answer.ts`); absent, no output is derived from one. */
+  partOf?: AuthoringPartOfStep | undefined;
 }): { parameters: JsonObject; issues: AutomationStudioFlowBootstrapIssue[]; consequences?: string[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const parameters: JsonObject = {};
@@ -116,6 +119,7 @@ export function normaliseAuthoringNodeParameters(input: {
       fallbackName: input.fallbackName,
       stepId: input.stepId,
       namedColumns: input.namedColumns,
+      part: input.stepId === undefined ? undefined : input.partOf?.(input.stepId),
       path: `${input.path}.parameters.${parameter.id}`
     });
     if (read.value !== undefined) parameters[parameter.id] = read.value;

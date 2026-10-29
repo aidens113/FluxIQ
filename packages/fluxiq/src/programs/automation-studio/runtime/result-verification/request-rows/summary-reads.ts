@@ -99,6 +99,35 @@
 // are: its rows are not stored, not `inResult`, never a holder that
 // `automationStudioRequestRowsStoredBy` names, and its processing conditions
 // are not the result's. A row only it holds is a left-out row like any other.
+//
+// **And the rows two or more conditions left out together (t655).** Debug of
+// `run-mvtdoyf3-47ffaac1` (F1 a): a read's conditions 3 and 4 both rejected one
+// row, so neither's `leftOutOnlyByThis` named it, and nothing here read the
+// read's `leftOutTogether`: three yeses that named the row with a reason of
+// their own were taken. Each such set is now one left-out group of its read,
+// named `conditions 3 and 4 (<wording 3>; <wording 4>)` (a build test's by its
+// fields), its rows by label, and never settled, since no one condition's
+// value is the reason; it is held to the request's words as any condition's
+// rows are (`unquoted-rows.ts`), and weighed against the request's own
+// exclusions (`../computed-facts/left-out-accounted.ts`). Only those two ask
+// for the groups (`together`): every other reader -- the check of a no, the
+// flags, the no's record in `../refuted-no/` -- reads a read as before, and
+// the no's record names such rows on its own (t665). Each condition carries how its sender says
+// it (`tests`, the wording, or a build test's field) and, for a run's, the
+// value Core's read found on each row (`witnesses`), and each read every
+// condition it has, rows or none: what `../asked-words/condition-words.ts` reads the words a
+// condition tests by from.
+//
+// **A group of settled conditions carries each of them (t795 w1b).** Social
+// runs `run-mvskodlp-9966d618` and `run-mvswewhy-e4e469d4`: correct yeses that
+// quoted the request for each condition were held for the rows those
+// conditions left out together, since a group was never settled. Where a
+// member of a run's group is a condition Core settles -- its own rows, those
+// it alone left out, carry `settled` -- the group carries each such member
+// (`settledMembers`): its name, the word runs it is named by and its kind, as
+// its own `settled` says, and its wording. The group itself stays unsettled
+// (`settled` absent), for every reader but the yes guard. A build test's group
+// never carries them: a test's condition is never settled.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
@@ -107,7 +136,7 @@ import type { AutomationStudioResultProcessingCondition } from "../processing-ac
 import { automationStudioResultConditionName } from "../read-account/condition-name.ts";
 import { automationStudioResultReadWorkingSets } from "../read-account/working-sets.ts";
 import { AutomationStudioRequestRowId } from "./row-id.ts";
-import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsRead, AutomationStudioRequestRowsStored } from "./types.ts";
+import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsRead, AutomationStudioRequestRowsSettledMember, AutomationStudioRequestRowsStored, AutomationStudioRequestRowsTest } from "./types.ts";
 import { automationStudioRequestRowWords } from "./words.ts";
 
 /** How a processing condition is named among a read's conditions (header): where the Flow writes it. */
@@ -125,9 +154,13 @@ const TEXT_WORDING = /^([\p{L}\p{N}_.$@-]{1,64})(?: \(read .*\))? (?:not )?(?:co
 /**
  * Every list read a summary holds rows for, and a run's stored rows. The
  * reads and record sets of a subflow trial's entry are left out (header)
- * unless `withEntry` asks for them.
+ * unless `withEntry` asks for them; the rows two or more conditions left out
+ * together are a group of their read only where `together` asks for them
+ * (header, F1 a).
  */
-export function automationStudioRequestRowsReads(summary: AutomationStudioRunResultSummary, withEntry = false): { reads: AutomationStudioRequestRowsRead[]; stored: AutomationStudioRequestRowsStored[] } {
+export function automationStudioRequestRowsReads(
+  summary: AutomationStudioRunResultSummary, withEntry = false, options: { together?: boolean } = {}
+): { reads: AutomationStudioRequestRowsRead[]; stored: AutomationStudioRequestRowsStored[] } {
   const entrySteps = new Set(withEntry ? [] : summary.taskChecklist?.entry?.steps ?? []);
   // A record set only the entry's steps collected is the entry's too.
   const entrySet = (set: AutomationStudioResultRecordSetSummary): boolean => entrySteps.size > 0 && (set.processing?.passes.length ?? 0) > 0 && set.processing!.passes.every((pass) => entrySteps.has(pass.node));
@@ -145,35 +178,61 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
         if (!isObject(entry) || typeof entry.condition !== "string") return [];
         const rows = strings(entry.rows);
         const name = typeof entry.number === "number" ? automationStudioResultConditionName(entry.number, entry.condition) : `condition "${entry.condition}"`;
-        return [condition(name, rows, rows.length > 0 && rows.every((row) => !TESTED_VALUE.test(row)))];
+        const test: AutomationStudioRequestRowsTest = { ...(typeof entry.number === "number" ? { number: entry.number } : {}), field: entry.condition };
+        return [condition(name, rows, rows.length > 0 && rows.every((row) => !TESTED_VALUE.test(row)), undefined, { tests: [test] })];
       })
       : [];
-    reads.push(read({ step: step.step }, rows, rows, conditions));
+    // The rows two or more conditions left out together, one group each (header, F1 a).
+    const together = options.together && Array.isArray(sent.leftOutTogether) ? sent.leftOutTogether.flatMap((entry) => {
+      if (!isObject(entry) || !Array.isArray(entry.numbers) || !Array.isArray(entry.conditions) || entry.numbers.length !== entry.conditions.length) return [];
+      const numbers = entry.numbers;
+      const tests = entry.conditions.flatMap((field, at): AutomationStudioRequestRowsTest[] => typeof field === "string" && typeof numbers[at] === "number" ? [{ number: numbers[at], field }] : []);
+      const rows = strings(entry.rows);
+      return tests.length >= 2 && tests.length === entry.conditions.length && rows.length ? [togetherCondition(tests, rows)] : [];
+    }) : [];
+    const tests = [...conditions, ...together].flatMap((entry) => entry.tests ?? []);
+    reads.push(read({ step: step.step }, rows, rows, [...conditions, ...together], uniqueTests(tests)));
   }
   const storedLabels = unique(stored.map((row) => row.label));
   // The answer's columns name no settled condition (header, t790).
   const answerColumns = new Set(recordSets.flatMap((set) => set.columns));
   for (const account of summary.reads ?? []) {
     if (entrySteps.has(account.nodeId)) continue;
-    const conditions = (account.conditions ?? []).flatMap((entry, index) => {
+    // Every condition of the read, rows or none, as its account words it (header, F1).
+    const tests = (account.conditions ?? []).map((entry, index): AutomationStudioRequestRowsTest => ({ number: entry.number ?? index + 1, ...(entry.condition ? { wording: entry.condition } : {}) }));
+    // Each condition Core settles, by its number: what a group of them carries (header, t795 w1b).
+    const settledOf = new Map<number, AutomationStudioRequestRowsSettledMember>();
+    const alone = (account.conditions ?? []).flatMap((entry, index) => {
       if (!entry.leftOutOnlyByThis?.length) return [];
       const number = entry.number ?? index + 1;
       const settled = entry.leftOutSettled?.length ? { labels: entry.leftOutSettled.map(automationStudioRequestRowLabel), names: boundNames(number, entry.leftOutSettled, entry.condition, entry.settledKind ?? "bound", answerColumns), kind: entry.settledKind ?? "bound" } : undefined;
-      return [condition(automationStudioResultConditionName(number, entry.condition), entry.leftOutOnlyByThis, entry.testedLabel === true, settled)];
+      const witnesses = witnessesOf(entry.leftOutObservations, entry.leftOutOnlyByThis.length);
+      const name = automationStudioResultConditionName(number, entry.condition);
+      if (settled) settledOf.set(number, { condition: name, names: settled.names, kind: settled.kind, test: tests[index]! });
+      return [condition(name, entry.leftOutOnlyByThis, entry.testedLabel === true, settled, { tests: [tests[index]!], ...(witnesses ? { witnesses } : {}) })];
     });
+    // The rows two or more conditions left out together, one group each (header, F1 a), with its members where Core settles each (t795 w1b).
+    const together = (options.together ? account.leftOutTogether ?? [] : []).flatMap((set) => {
+      const members = set.conditions.map((number) => tests.find((test) => test.number === number) ?? { number });
+      const settledMembers = set.conditions.flatMap((number) => settledOf.get(number) ?? []);
+      return members.length >= 2 && set.rows.length ? [togetherCondition(members, set.rows, settledMembers.length ? settledMembers : undefined)] : [];
+    });
+    const conditions = [...alone, ...together];
     const leftOut = new Set(conditions.flatMap((entry) => entry.labels));
-    reads.push(read({ nodeId: account.nodeId }, storedLabels.filter((label) => !leftOut.has(label)), storedLabels, conditions));
+    reads.push(read({ nodeId: account.nodeId }, storedLabels.filter((label) => !leftOut.has(label)), storedLabels, conditions, tests));
   }
   for (const set of recordSets) {
     const conditions = processingConditions(set.processing?.conditions);
     if (!conditions.length) continue;
     const nodes = (set.processing?.passes ?? []).map((pass) => pass.node);
     const collecting = reads.find((candidate) => candidate.nodeId !== undefined && nodes.includes(candidate.nodeId));
+    const tests = (set.processing?.conditions ?? []).map((entry, index): AutomationStudioRequestRowsTest => ({ number: entry.number ?? index + 1, ...(entry.condition ? { wording: entry.condition } : {}) }));
     if (collecting) {
       collecting.conditions.push(...conditions);
       collecting.labels = unique([...collecting.labels, ...conditions.flatMap((entry) => entry.labels)]);
+      collecting.tests = [...(collecting.tests ?? []), ...tests];
     } else {
-      reads.push(read({ nodeId: nodes[0] ?? set.datasetId }, automationStudioRequestRowsStoredOf(set).map((row) => row.label), storedLabels, conditions));
+      reads.push(read({ nodeId: nodes[0] ?? set.datasetId }, automationStudioRequestRowsStoredOf(set).map((row) => row.label), storedLabels, conditions, tests));
     }
   }
   // The left-out rows another read stored, never this read's own copy (header, t691).
@@ -192,7 +251,8 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
 /** A record set's processing conditions that left rows out alone, each named where the Flow writes it (header). */
 function processingConditions(conditions: readonly AutomationStudioResultProcessingCondition[] | undefined): AutomationStudioRequestRowsCondition[] {
   return (conditions ?? []).flatMap((entry, index) =>
-    entry.leftOutOnlyByThis?.length ? [condition(`${PROCESSING_CONDITION} ${automationStudioResultConditionName(entry.number ?? index + 1, entry.condition)}`, entry.leftOutOnlyByThis, entry.testedLabel === true)] : []);
+    entry.leftOutOnlyByThis?.length ? [condition(`${PROCESSING_CONDITION} ${automationStudioResultConditionName(entry.number ?? index + 1, entry.condition)}`, entry.leftOutOnlyByThis, entry.testedLabel === true, undefined,
+      { tests: [{ number: entry.number ?? index + 1, ...(entry.condition ? { wording: entry.condition } : {}) }] })] : []);
 }
 
 /** A left-out row's label: the row as given, less Core's id said before it (header) and the tested value said after it. */
@@ -201,12 +261,47 @@ export function automationStudioRequestRowLabel(row: string): string {
   return TESTED_VALUE.exec(unsaid)?.[1] ?? unsaid;
 }
 
-function read(at: { step: number } | { nodeId: string }, kept: string[], inResult: string[], conditions: AutomationStudioRequestRowsCondition[]): AutomationStudioRequestRowsRead {
-  return { ...at, kept: unique(kept), inResult: unique(inResult), conditions, labels: unique([...kept, ...inResult, ...conditions.flatMap((entry) => entry.labels)]) };
+function read(at: { step: number } | { nodeId: string }, kept: string[], inResult: string[], conditions: AutomationStudioRequestRowsCondition[], tests: AutomationStudioRequestRowsTest[] = []): AutomationStudioRequestRowsRead {
+  return { ...at, kept: unique(kept), inResult: unique(inResult), conditions, labels: unique([...kept, ...inResult, ...conditions.flatMap((entry) => entry.labels)]), ...(tests.length ? { tests } : {}) };
 }
 
-function condition(name: string, rows: string[], testedLabel: boolean, settled?: AutomationStudioRequestRowsCondition["settled"]): AutomationStudioRequestRowsCondition {
-  return { condition: name, rows, labels: rows.map(automationStudioRequestRowLabel), testedLabel, ...(settled ? { settled } : {}) };
+function condition(
+  name: string, rows: string[], testedLabel: boolean, settled?: AutomationStudioRequestRowsCondition["settled"],
+  said: Pick<AutomationStudioRequestRowsCondition, "tests" | "witnesses"> = {}
+): AutomationStudioRequestRowsCondition {
+  return { condition: name, rows, labels: rows.map(automationStudioRequestRowLabel), testedLabel, ...(settled ? { settled } : {}), ...said };
+}
+
+/**
+ * The rows two or more conditions left out together, as one group (header,
+ * F1 a): named `conditions 3 and 4 (<wording 3>; <wording 4>)`, each by its
+ * wording or field, their rows by label, never settled and never a test of the
+ * label, since no one condition's value is the reason -- but carrying each
+ * member where Core settles every one (header, t795 w1b).
+ */
+function togetherCondition(tests: AutomationStudioRequestRowsTest[], rows: readonly string[], settledMembers?: AutomationStudioRequestRowsSettledMember[]): AutomationStudioRequestRowsCondition {
+  const numbers = tests.map((test) => `${test.number ?? "?"}`);
+  const listed = numbers.length > 1 ? `${numbers.slice(0, -1).join(", ")} and ${numbers.at(-1)}` : numbers.join("");
+  const name = `conditions ${listed} (${tests.map((test) => test.wording ?? test.field ?? "wording withheld").join("; ")})`;
+  return { condition: name, rows: [...rows], labels: rows.map(automationStudioRequestRowLabel), testedLabel: false, together: true, tests, ...(settledMembers ? { settledMembers } : {}) };
+}
+
+/** Per row, the value a condition's witness found on it, where it found one; nothing where the witnesses do not line up with the rows. */
+function witnessesOf(observations: ReadonlyArray<{ state: string; value?: string } | null> | undefined, rows: number): Array<string | undefined> | undefined {
+  if (!observations || observations.length !== rows) return undefined;
+  const values = observations.map((observation) => observation?.state === "present" && typeof observation.value === "string" ? observation.value : undefined);
+  return values.some((value) => value !== undefined) ? values : undefined;
+}
+
+/** Each test once, by its number and how it is said. */
+function uniqueTests(tests: readonly AutomationStudioRequestRowsTest[]): AutomationStudioRequestRowsTest[] {
+  const seen = new Set<string>();
+  return tests.filter((test) => {
+    const key = `${test.number ?? ""}\n${test.wording ?? ""}\n${test.field ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**

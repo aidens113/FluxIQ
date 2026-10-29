@@ -7,9 +7,12 @@
 //
 // **A date bound (t790, run `run-mvswewhy-e4e469d4`).** A bound written as text
 // is a date bound and must name one date on its own
-// (`date-bound.ts`): its year written, nothing relative, no day and
-// month that read either way. One that does not is refused here, at plan time,
-// never run as a filter that keeps nothing. A condition's bounds are all
+// (`date-bound.ts`): its year written, or a word relative to the run's `now`
+// (`today`, `yesterday`, `now`, `<n> <unit> ago`, t800), and no day and month
+// that read either way. A `within` names one whole number of one unit
+// (`date-within.ts`, t800) and is a date comparison like a date bound. One that
+// does not is refused here, at plan time, never run as a filter that keeps
+// nothing. A condition's bounds are all
 // numbers or all dates, and `as` must name that kind. The canonical condition
 // carries no `as`: a bound written as text is what marks a date bound, so `as`
 // says what the bounds already say and is dropped, as `not: false` is -- the
@@ -18,7 +21,8 @@
 
 import { isPlainRecord } from "../is-plain-record.ts";
 import { readAutomationStudioRecordConditionDateBound } from "./date-bound.ts";
-import { automationStudioRecordConditionPattern } from "./condition-holds.ts";
+import { readAutomationStudioRecordConditionWithin } from "./date-within.ts";
+import { automationStudioRecordConditionPattern } from "./condition/index.ts";
 import {
   AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
   AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES,
@@ -31,6 +35,7 @@ const CONDITION_KEYS: ReadonlySet<string> = new Set([
   "field",
   "is",
   ...AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
+  "within",
   "as",
   "equals",
   ...AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS,
@@ -59,6 +64,12 @@ export function parseAutomationStudioRecordCondition(value: unknown): Automation
     } else if (typeof bound === "number" && Number.isFinite(bound)) kinds.add("number");
     else return null;
     condition[key] = bound;
+    compares = true;
+  }
+  if (value.within !== undefined) {
+    if (typeof value.within !== "string" || readAutomationStudioRecordConditionWithin(value.within) === undefined) return null;
+    condition.within = value.within;
+    kinds.add("date");
     compares = true;
   }
   // One kind of bound, and `as` naming that kind (header, t790).

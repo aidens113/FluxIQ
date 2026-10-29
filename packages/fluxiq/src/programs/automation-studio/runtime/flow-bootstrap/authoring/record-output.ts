@@ -28,6 +28,8 @@ import {
 import { automationStudioFlowBootstrapSuppliedRecordsPath, type AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { authoringDatasetId, authoringFieldId, authoringKey } from "./keys.ts";
 import { authoringError, authoringWarning } from "./issue.ts";
+import type { AuthoringPartAnswer } from "../record-defaults/index.ts";
+import { authoringPartProcessDefaults, authoringProcessFieldIds } from "../record-defaults/index.ts";
 import { isJsonObject } from "./values.ts";
 
 const KEY_SYNONYMS: ReadonlyMap<string, string> = new Map([
@@ -83,6 +85,20 @@ export function normaliseAuthoringRecordOutput(input: {
    * output was written here, not by the model, so its list is named for the step.
    */
   labelFromFallback?: boolean | undefined;
+  /**
+   * The plan part the step serves (K5). What the model left out is derived from
+   * it: the dataset id from the part's id, the label from its words, and the
+   * processing its answer implies (`./part/process-defaults.ts`). Absent, or for
+   * anything the model wrote, nothing changes.
+   */
+  part?: AuthoringPartAnswer | undefined;
+  /**
+   * The field keys the step reads. A schema declared here from `columns` also
+   * keeps each of these the written `process` sorts by or tests and `columns`
+   * left out, so the value it orders or bounds by is stored (CC3,
+   * `../record-defaults/process-fields.ts`). Absent, the schema is the columns.
+   */
+  readableFields?: readonly string[] | undefined;
   path: string;
 }): {
   value: JsonValue | undefined;
@@ -104,17 +120,22 @@ export function normaliseAuthoringRecordOutput(input: {
     if (output[canonical] === undefined) output[canonical] = value;
   }
   const fallbackLabel = input.labelFromFallback ? listLabel(input.fallbackName) : undefined;
-  const label = typeof output.label === "string" ? output.label : fallbackLabel;
+  const partLabel = input.part?.label === undefined ? undefined : listLabel(input.part.label);
+  const label = typeof output.label === "string" ? output.label : partLabel ?? fallbackLabel;
   if (label !== undefined) output.label = label;
   const datasetId = typeof output.datasetId === "string" ? authoringDatasetId(output.datasetId) : undefined;
-  output.datasetId = datasetId ?? derivedDatasetId(label ?? input.fallbackName, input.stepId);
+  output.datasetId = datasetId ?? derivedDatasetId(input.part?.id ?? label ?? input.fallbackName, input.stepId);
   const schemaDerived = fieldList(output.schema) === undefined;
-  const schema = normaliseSchema(output.schema, input.columns);
+  const schema = normaliseSchema(output.schema, schemaDerived ? withProcessFields(input.columns, output.process, input.readableFields) : input.columns);
   if (!schema) {
     issues.push(authoringError("record_schema.not_derivable", "A record output named a dataset but no columns to save in it.", input.path));
     return { value: output, issues };
   }
   output.schema = schema;
+  if (input.part) {
+    const process = authoringPartProcessDefaults({ process: output.process, schema, part: input.part });
+    if (process) output.process = process;
+  }
   output.writeMode = WRITE_MODE_SYNONYMS.get(authoringKey(String(output.writeMode ?? ""))) ?? AUTOMATION_STUDIO_RECORD_WRITE_MODES[0];
   const supplied = automationStudioFlowBootstrapSuppliedRecordsPath(input.definition);
   if (supplied !== undefined) delete output.recordsPath;
@@ -126,6 +147,18 @@ export function normaliseAuthoringRecordOutput(input: {
   }
   if (label === undefined) delete output.label;
   return { value: output, issues, ...(schemaDerived ? { schemaDerived: true as const } : {}) };
+}
+
+/** The declared columns, then each readable field the processing names that they leave out. */
+function withProcessFields(
+  columns: readonly (string | { id: string; label: string })[],
+  process: JsonValue | undefined,
+  readable: readonly string[] | undefined
+): readonly (string | { id: string; label: string })[] {
+  if (!readable?.length || !columns.length) return columns;
+  const held = new Set(columns.map((column) => typeof column === "string" ? column : column.id));
+  const extra = authoringProcessFieldIds(process).filter((id) => readable.includes(id) && !held.has(id));
+  return extra.length ? [...columns, ...extra] : columns;
 }
 
 /** A schema written as a schema, a field list, a column map or a comma-separated line. */

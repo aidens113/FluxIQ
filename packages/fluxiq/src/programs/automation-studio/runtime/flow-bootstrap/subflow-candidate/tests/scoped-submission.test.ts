@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioSubflowScopedSubmissionController, AUTOMATION_STUDIO_SUBFLOW_SCOPE_REFUSED_CODE, type AutomationStudioSubflowScope } from "../index.ts";
 import { parseAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../../plan/index.ts";
+import { authoringScopePartOf } from "../../record-defaults/index.ts";
 import { OPEN, SIBLINGS, callPart, part, script, testScope, testSubmission } from "./subflow-fixture.ts";
 
 const interfaceOf = { inputs: [{ id: "query", name: "query", valueType: { kind: "unknown" as const }, required: true as const }], outputs: [{ id: "count", name: "count", valueType: { kind: "unknown" as const } }] };
@@ -363,5 +364,33 @@ describe("a subflow builder's scoped submission", () => {
 
   it("refuses a scope whose own key is a sibling's", () => {
     expect(() => new AutomationStudioSubflowScopedSubmissionController({ scope: testScope({ subflowKey: "checkout" }), siblings: [...SIBLINGS], submission: testSubmission() })).toThrow("subflow.scope_invalid");
+  });
+});
+
+// The build's test and the saved Flow read the same plan part (K5).
+const READ_LIST = ["step: read the rows", "  node: web.dom.extract_list", `  extractList: ${JSON.stringify({ item: "li.entry", fields: { title: ".t", price: ".p", link: "a@href" } })}`];
+
+async function readOutput(partOf: ReturnType<typeof authoringScopePartOf>): Promise<JsonObject | undefined> {
+  const scoped = new AutomationStudioSubflowScopedSubmissionController({
+    scope: testScope(), siblings: [...SIBLINGS], submission: { ...testSubmission(), ...(partOf ? { partOf } : {}) }
+  });
+  const answer = await scoped.submit(script([...OPEN, ...READ_LIST, ...callPart(), ...part()]));
+  expect(answer.ok, JSON.stringify(answer)).toBe(true);
+  if (!answer.ok) return undefined;
+  const node = answer.proposal.subflows.flatMap((entry) => entry.nodes).find((each) => each.definitionId === "web.output.dom-extract_list");
+  return node?.parameters?.recordOutput as JsonObject | undefined;
+}
+
+describe("a scoped submission reads the part its scope serves", () => {
+  it("declares the part's columns for a read that wrote no schema", async () => {
+    const output = await readOutput(authoringScopePartOf([{ id: "p1", words: "Find the listings", columns: ["title", "price"] }]));
+    expect(((output?.schema as JsonObject).fields as JsonObject[]).map((field) => field.id)).toEqual(["title", "price"]);
+    expect(output?.label).toBeDefined();
+  });
+
+  it("with no part is byte-identical to a submission given no resolver", async () => {
+    const none = await readOutput(authoringScopePartOf([{ id: "p1", words: "Find the listings" }]));
+    const bare = await readOutput(undefined);
+    expect(JSON.stringify(none)).toBe(JSON.stringify(bare));
   });
 });

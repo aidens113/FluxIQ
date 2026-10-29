@@ -244,6 +244,17 @@ repeats a lasting act whose earlier attempt may have landed. Core owns the gener
 mechanism (source-step lineage, re-run, rebinding, accounting); the web domain owns
 how a web target is matched again.
 
+**Build the whole Flow first; test it whole only when it should work** (user,
+2026-09-30 and 2026-10-02, reaffirmed 2026-10-29 after watching a build re-test its
+whole part after every one-step change): a build explores the live page and authors
+the draft in real time, and its first run from the start is the test it asks for
+once it believes the Flow works. When that test fails, the repair works live on the
+failing step from the page the test left, and checks its fix by running from that
+step on, never by re-running every earlier step. The Flow runs from its start again,
+judged, only when the repair believes the whole Flow now works; a finished Flow still
+needs one judged whole run on the Flow as it finally stands. Core enforces this in
+the build loop, not only in the model's instructions.
+
 ## Validation
 
 Before the final response for a code change, run the relevant checks and

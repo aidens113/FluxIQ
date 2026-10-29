@@ -11,6 +11,7 @@ import { automationStudioInstructedActOptionalScriptIssues } from "../instructed
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import { automationStudioResultKeptConditionsDropped, type AutomationStudioResultKeptConditionDrop, type AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapIssue, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../plan/index.ts";
+import { AutomationStudioCandidateNumericTextHint } from "../numeric-text/index.ts";
 import { automationStudioFlowPlanListedValuesAdvice, automationStudioFlowPlanToggleSteps, automationStudioFlowScriptWayOutIssues, type AutomationStudioExploredToggle } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
@@ -36,6 +37,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
   private readonly keptRefused = new Set<string>();
   /** The one-time hints for a dropped step that chose the request's own words (t666, `./kept-step-hint.ts`). */
   private readonly keptSteps = new AutomationStudioCandidateKeptStepHint();
+  /** Numbers or dates tested by their characters, each refused once (t800, `../numeric-text/hint.ts`). */
+  private readonly numericText = new AutomationStudioCandidateNumericTextHint();
   /** The current revision's Flow as the script reader reads it (`submissionText`), to tell an unchanged resubmission (t464). */
   private currentText: string | undefined;
   private readonly originalSource: AutomationStudioCandidateOriginalSourceBinding | undefined;
@@ -272,6 +275,12 @@ export class AutomationStudioFlowCandidateSubmissionController {
       this.current = standing;
       return { ok: false, revision, check: hinted };
     }
+    // A text test of numbers or dates by characters: refused once, sent again accepted (t800, `../numeric-text/hint.ts`).
+    const numeric = holdKept ? this.numericText.hint({ plan: plan.plan, standing }) : undefined;
+    if (numeric) {
+      this.current = standing;
+      return { ok: false, revision, check: numeric };
+    }
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest, baseDependencyDigest: this.input.baseDependencyDigest,
       status: "draft", summary: verdict.summary, buildPlan: plan,
@@ -285,7 +294,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     // Advice, never a refusal: a condition listing values the request never says (t785, `../script-statements/listed-values-advice.ts`).
     // And each step with no witness, said now rather than after its trial (t791 fix 2, `../reset-admission/unwitnessed-advice.ts`).
-    const advice = [...automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText), ...automationStudioCandidateUnwitnessedAdvice(plan.plan, this.input.permissionFor)];
+    const advice = [...automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText, this.sampleRowsOf(history)), ...automationStudioCandidateUnwitnessedAdvice(plan.plan, this.input.permissionFor)];
     return { ok: true, candidate, handleViews, ...(advice.length ? { advice } : {}) };
   }
 
@@ -299,6 +308,16 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const validation = validateAutomationStudioFlowBootstrapPlan({ plan, registry: this.input.registry, resolution: this.input.resolution, ...(this.input.size ? { size: this.input.size } : {}) });
     if (!validation.ok || !validation.validated) return { issues: validation.issues.filter((issue) => issue.severity === "error") };
     return { buildPlan: { ...buildPlan, plan: validation.validated.plan, risk: validation.validated.risk, subflows: validation.validated.subflows } };
+  }
+
+  /** The rows Core held of the latest accepted revision's judged trial that kept any (t800, `sampleRows` of the trial result); none without one. */
+  private sampleRowsOf(history: AutomationStudioFlowCandidateSubmissionHistory): Array<Record<string, string>>[] {
+    if (!history.trialOf) return [];
+    for (const earlier of [...this.accepted].reverse()) {
+      const rows = history.trialOf(earlier)?.sampleRows;
+      if (rows?.length) return rows;
+    }
+    return [];
   }
 
   /**
