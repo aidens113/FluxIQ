@@ -1,8 +1,8 @@
 // The act's side of each path on which an undo of it may be admitted (t750):
-// what the act must be for `./undo-admission.ts` to admit an undo on that path,
+// what the act must be for `./admission.ts` to admit an undo on that path,
 // whatever control the undo would act on. The one source of these gates. The
 // admission checks a path's gate here, then the control's own conditions;
-// `./undo-reach.ts` reads the same gates to say which paths an act still has
+// `./reach.ts` reads the same gates to say which paths an act still has
 // when it decides that no undo could ever put back what the act's lists show
 // (t748, `no_admissible_undo`). Before t750 the reach copied them and a test
 // pinned the admission's lines; a gate widened or narrowed here now changes
@@ -10,8 +10,8 @@
 // reach can read it.
 //
 // What stays in each caller: the control's conditions and the classes an undo
-// declares (`./undo-admission.ts`, with the named condition each one fails),
-// and the reads that rule a path out for good (`./undo-reach.ts`). The own
+// declares (`./admission.ts`, with the named condition each one fails),
+// and the reads that rule a path out for good (`./reach.ts`). The own
 // toggle is the ledger's (`toggle`), not an act field, and is read by each.
 // What an act was about, which the `subject` paths match on, is the
 // settlement's (`../reset-settlement/act-subjects.ts`): both callers read it
@@ -19,7 +19,7 @@
 
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioSiteResetOriginal } from "../reset-settlement/index.ts";
-import type { AutomationStudioSiteResetSpot } from "./contracts.ts";
+import type { AutomationStudioSiteResetSpot } from "../site-reset/index.ts";
 
 /** What the gates read of one act: the fields both the admission's act and the ledger's act carry. */
 type Act = {

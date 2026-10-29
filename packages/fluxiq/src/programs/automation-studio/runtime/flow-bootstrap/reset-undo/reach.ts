@@ -6,14 +6,14 @@
 // listed an act apart as `gate_unsatisfiable` only when its witnesses were
 // lists Core cannot read again or nothing could be named for it. This rule adds
 // the third case, `no_admissible_undo`, which the ledger asks for each open
-// reason the settlement judge leaves to it (`./ledger.ts`, `unmet`;
+// reason the settlement judge leaves to it (`../site-reset/ledger.ts`, `unmet`;
 // `../reset-settlement/judge.ts`, `more`).
 //
 // **A list that still differs (`undo`).** Read off the ledger's own state:
 // each list group of the act's that differs on a fresh complete read, with
 // its relevant scopes (`differing`), the originals read before the act, and
-// the latest reads. The admission paths of `./undo-admission.ts` fall in two
-// kinds, each read through the act gates both share (`./undo-paths.ts`, t750:
+// the latest reads. The admission paths of `./admission.ts` fall in two
+// kinds, each read through the act gates both share (`./paths.ts`, t750:
 // one source, so a path's gate cannot drift between the two), and what an act
 // was about through the settlement's own (`../reset-settlement/act-subjects.ts`):
 //
@@ -30,12 +30,13 @@
 //   can still name: any list with a receipt can be named on a look under
 //   `undoes`) for a strict act that created or changed something (t743). An
 //   act removes at most one subject this way: once it lands the act is spent,
-//   and a spent act is refused before any admission (`./undo-claims.ts`).
+//   and a spent act is refused before any admission (`./claims.ts`).
 //
 // **A list read in place after an undo is not judged (t772 R1, rerun round 6
 // `run-mvrj7qg9-b6dc94f6`).** Many sites draw a removal only on the list's next
-// load. A differing list whose latest read was made in place after an undo
-// landed on an act it witnesses (`../reset-settlement/observations.ts`,
+// load. A differing list whose latest read was made in place after an undo of
+// any act of the ledger landed (t797 P4 item 2: not only of an act the list
+// witnesses; `../reset-settlement/observations.ts`,
 // `readInPlace`, handed here by `differing`) says nothing yet, so nothing is
 // listed apart on it, as for a list the reads could not name; the settlement
 // asks for it to be loaded again (`reload`). And a subject a spent act's landed
@@ -52,15 +53,24 @@
 // is shown, or the subjects new there outnumber what the acts able to remove
 // them could remove one each (a matching), no undo could ever settle the act.
 //
-// **An own control that answered a third state (`toggle`).** Only an answered
-// call can say it: the act's own control at its place declared a state that is
-// neither the one the build found nor the one the act set
-// (`control_state_differs`, `no_call`). The undo claims mark the act at once
-// (`pressBackRefused`), so the refusal that says so already lists it apart;
-// a press back admitted later clears it.
+// **An own control that answered a third state (`toggle`).** The settlement
+// asks for a press back (`toggle`) only while a fresh read shows the act's own
+// control in the state the act set; a read showing any other state closes the
+// act itself (`control_other`, `../reset-settlement/judge.ts`, t797). What only
+// an answered call can say is left here: the act's own control at its place
+// declared a state that is neither the one the build found nor the one the act
+// set (`control_state_differs`, `no_call`), on a page the ledger's reads have
+// not shown so. The undo claims mark the act at once (`pressBackRefused`), so
+// the refusal that says so already lists it apart; a press back admitted later
+// clears it.
+//
+// **One answer (t797 P4 item 3).** What this rule says of an act is the
+// ledger's one verdict on it (`../reset-ledger/answers.ts`, `unsatisfiable`):
+// every refusal of an undo of an act listed apart says no call can meet it
+// (`../reset-answers/agreeing.ts`), never that another call here can.
 //
 // **A value its own control cannot set back (`value`, t772).** A value act is
-// set back by a press on its own control (`./undo-admission.ts`); where that
+// set back by a press on its own control (`./admission.ts`); where that
 // control carries no tokens a press on it is told apart by, no press can ever
 // be admitted, so it fails `no_admissible_undo` at once.
 //
@@ -69,8 +79,8 @@
 // Only undo calls under `undoes` count; a call without it is a new act.
 
 import { automationStudioSiteResetActSubjects as actSubjects, type AutomationStudioSiteResetObservations, type AutomationStudioSiteResetOpenReason, type AutomationStudioSiteResetOriginal } from "../reset-settlement/index.ts";
-import type { AutomationStudioSiteResetLedgerAct as Act } from "./ledger-act.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "./undo-paths.ts";
+import type { AutomationStudioSiteResetLedgerAct as Act } from "../reset-ledger/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "./paths.ts";
 
 type Scope = { scope: string; group: string };
 /** One subject a differing list holds now that its original did not: what a removal must take away. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_SITE_RESET_CAN_MEET, AUTOMATION_STUDIO_SITE_RESET_FAILED, automationStudioSiteResetConditionWords, automationStudioSiteResetRefusal, type AutomationStudioSiteResetFailed } from "../index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_CAN_MEET, AUTOMATION_STUDIO_SITE_RESET_FAILED, AUTOMATION_STUDIO_SITE_RESET_LISTED_APART, automationStudioSiteResetAnswerAgreeing, automationStudioSiteResetConditionWords, automationStudioSiteResetRefusal, type AutomationStudioSiteResetFailed } from "../index.ts";
 
 /** The condition words, as `../../site-reset/words.ts` says them through `condition`. */
 const WORDS = { condition: automationStudioSiteResetConditionWords };
@@ -57,24 +57,33 @@ describe("the condition words", () => {
   });
 });
 
-// t772 R2 (rerun round 6 `run-mvrj7qg9-b6dc94f6`, cause 2): one answer never says both that another call can meet its
-// act's condition and that no call can settle that act.
-describe("a refusal whose own act a call can still meet", () => {
+// t772 R2 (rerun round 6 `run-mvrj7qg9-b6dc94f6`, cause 2), t797 P4 item 3: one answer never says both that another call
+// can meet its act's condition and that no call can settle that act. The ledger's verdict is the one answer: where it lists
+// the refusal's own act apart, the refusal says no call can meet it, and never lists that act to undo.
+describe("a refusal whose own act the ledger lists apart", () => {
   const unsettleable = (act: string) => ({ act, did: `press "Reserve" button (${act})`, reason: "gate_unsatisfiable", failed: "no_admissible_undo" });
 
-  it("never lists its own act under actsUnsettleable, and lists it to undo instead", () => {
+  it("says no call can meet it, in the condition's own words, and keeps the act listed apart, never to undo", () => {
     for (const canMeet of ["this_page", "another_page"] as const) {
-      const answer = automationStudioSiteResetRefusal("candidate.undo_unproved", { act: "act-2", failed: "undeclared_press", canMeet, instruction: "Declare it.", actsToUndo: [{ act: "act-3", did: "x" }], actsUnsettleable: [unsettleable("act-2"), unsettleable("act-9")] });
-      expect(answer.actsUnsettleable.map((entry) => entry.act)).toEqual(["act-9"]);
-      expect(answer.actsToUndo.map((entry) => entry.act)).toEqual(["act-3", "act-2"]);
+      const answer = automationStudioSiteResetRefusal("candidate.undo_unproved", { act: "act-2", failed: "undeclared_press", canMeet, instruction: "Declare it.", actsToUndo: [{ act: "act-3", did: "x" }, { act: "act-2", did: "y" }], actsUnsettleable: [unsettleable("act-2"), unsettleable("act-9")] });
+      expect(answer.canMeet).toBe("no_call");
+      expect(answer.condition).toBe(automationStudioSiteResetConditionWords("undeclared_press", "no_call"));
+      expect(answer.instruction).toBe(AUTOMATION_STUDIO_SITE_RESET_LISTED_APART);
+      expect(answer.actsUnsettleable.map((entry) => entry.act)).toEqual(["act-2", "act-9"]);
+      expect(answer.actsToUndo.map((entry) => entry.act)).toEqual(["act-3"]);
     }
-    const alone = automationStudioSiteResetRefusal("candidate.undo_unproved", { act: "act-2", failed: "undeclared_press", canMeet: "this_page", instruction: "Declare it.", actsToUndo: [], actsUnsettleable: [unsettleable("act-2")] });
-    expect(alone).not.toHaveProperty("actsUnsettleable");
-    expect(alone.actsToUndo).toEqual([{ act: "act-2", did: `press "Reserve" button (act-2)` }]);
   });
 
-  it("keeps it listed apart where no call can meet the refusal's condition", () => {
-    const answer = automationStudioSiteResetRefusal("candidate.undo_already_done", { act: "act-2", failed: "undo_spent", canMeet: "no_call", instruction: "x", actsToUndo: [], actsUnsettleable: [unsettleable("act-2")] });
-    expect(answer.actsUnsettleable.map((entry) => entry.act)).toEqual(["act-2"]);
+  it("agrees with the ledger on an answer the ledger listed acts apart beside after building it", () => {
+    const built = automationStudioSiteResetRefusal("candidate.undo_already_back", { act: "act-2", failed: "already_back", canMeet: "this_page", instruction: "Look.", actsToUndo: [] });
+    const listed = automationStudioSiteResetAnswerAgreeing({ ...built, actsUnsettleable: [unsettleable("act-2")] });
+    expect(listed).toMatchObject({ canMeet: "no_call", condition: automationStudioSiteResetConditionWords("already_back", "no_call"), instruction: AUTOMATION_STUDIO_SITE_RESET_LISTED_APART, actsToUndo: [], actsUnsettleable: [{ act: "act-2" }] });
+  });
+
+  it("leaves an answer alone where its own act is not listed apart, or no call can meet it already", () => {
+    const meetable = automationStudioSiteResetRefusal("candidate.undo_unproved", { act: "act-2", failed: "undeclared_press", canMeet: "this_page", instruction: "Declare it.", actsToUndo: [{ act: "act-2", did: "y" }], actsUnsettleable: [unsettleable("act-9")] });
+    expect(meetable).toMatchObject({ canMeet: "this_page", instruction: "Declare it.", actsToUndo: [{ act: "act-2" }], actsUnsettleable: [{ act: "act-9" }] });
+    const closed = automationStudioSiteResetRefusal("candidate.undo_already_done", { act: "act-2", failed: "undo_spent", canMeet: "no_call", instruction: "x", actsToUndo: [], actsUnsettleable: [unsettleable("act-2")] });
+    expect(closed).toMatchObject({ canMeet: "no_call", instruction: "x", actsUnsettleable: [{ act: "act-2" }] });
   });
 });

@@ -13,7 +13,7 @@ import {
 // undo was refused until the repeat guard ended the brief). t743 made an act
 // `gate_unsatisfiable` only for a list Core cannot read again or nothing left
 // to name; an act whose list still differs in a way no admission path of
-// `../undo-admission.ts` can reverse stayed listed to undo. It is now listed
+// `../../reset-undo/admission.ts` can reverse stayed listed to undo. It is now listed
 // apart with `no_admissible_undo`, out of the acts to undo, with trials refused
 // and the honest exit offered; an act an undo can still put back is unchanged.
 // Made-up fixtures: a library's reading list and a book's star, opaque tokens.
@@ -73,7 +73,7 @@ describe("an act whose differing list no undo can put back is gate_unsatisfiable
     expect(ledger.inPlace()).toEqual([]);
   });
 
-  it("an own control that answered a third state: the refusal that says so lists the act apart at once", async () => {
+  it("an own control a fresh read shows in a third state, or that answered one: listed apart at once", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     const card = (state: string) => ledger.observed({ state: {}, differs: [], resource: SITE, scope: "p:book", location: "loc:book", controls: { "pl:star": { [state]: 1 } } });
     const STATELESS: AutomationStudioSiteResetSpot = { subject: "s:atlas", page: "s:atlas", resource: SITE, place: "pl:star" };
@@ -83,10 +83,13 @@ describe("an act whose differing list no undo can put back is gate_unsatisfiable
     card("st:on");
     expect(ledger.inPlace().map((entry) => entry.act)).toEqual(["act-1"]);
     card("st:half");
-    // A press back that names no state of its own says nothing of the control: refused as before, still listed.
-    expect(ledger.target("act-1", aim(["modify_existing"], STATELESS))).toMatchObject({ kind: "refused", evidence: { failed: "control_state_differs", actsToUndo: [{ act: "act-1" }] } });
-    expect(ledger.unsatisfiable()).toEqual([]);
+    // A fresh read shows its own control in a third state: no press back is admitted from it, so none is asked for (t797 P4
+    // item 4): listed apart from that read, before any press.
     const acts = apart("star", "press \"Star\" button");
+    expect(ledger.unsatisfiable()).toEqual(acts);
+    expect(ledger.inPlace()).toEqual([]);
+    // A press back that names no state of its own: refused, met by no call, the act listed apart as the ledger lists it.
+    expect(ledger.target("act-1", aim(["modify_existing"], STATELESS))).toMatchObject({ kind: "refused", evidence: { failed: "control_state_differs", canMeet: "no_call", actsToUndo: [], actsUnsettleable: acts } });
     expect(ledger.target("act-1", aim(["modify_existing"], { ...STAR, state: "st:half" }))).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unproved", failed: "control_state_differs", canMeet: "no_call", actsToUndo: [], actsUnsettleable: acts } });
     expect(ledger.unsatisfiable()).toEqual(acts);
     expect(ledger.inPlace()).toEqual([]);

@@ -197,6 +197,33 @@ export type AutomationStudioSiteResetRead = {
    * `controls`, not here.
    */
   values?: Record<string, string>;
+  /**
+   * The client's own reading of what the call just before this read did (CC4, P4), raw: Core parses it tolerantly into the
+   * act's `effect` (`./act-places.ts`, `AutomationStudioSiteResetEffect`) and drops whatever is malformed. Absent: Core
+   * derives what it can from `controls`, as before.
+   */
+  effect?: unknown;
+};
+
+/**
+ * What a press did, as the client read it (CC4, P4), every member optional and domain-neutral: Core compares its tokens for
+ * equality and never interprets them. Absent, or every member malformed, it is today's behaviour.
+ *
+ * - `class`: `observe` (changed nothing), `state` (changed a state a control or value shows) or `commit` (changed what the
+ *   site keeps). Kept for the lasting floor (P8); undo pairing does not read it.
+ * - `places`: each witness the press changed, by the client's opaque place token, with the token it showed just before
+ *   (`before`) and just after (`after`). A later press that names no act under `undoes` and shows exactly the opposite delta
+ *   at the same places, on the same resource, is that act's undo (`../reset-undo/claims.ts`, `pairOf`).
+ * - `placeChanged`: the press left the page it was made on. Kept; undo pairing does not read it.
+ * - `inverse`: what reverses the act -- the registered `action` (an operation id) pressed on the `control` (a place token, as
+ *   `spot.place`), leaving it at `toState` where given -- which narrows the pairing to that press; or `irreversible`: the act
+ *   is never paired with an undo.
+ */
+export type AutomationStudioSiteResetEffect = {
+  class?: "observe" | "state" | "commit";
+  places?: Array<{ place: string; before: string; after: string }>;
+  placeChanged?: boolean;
+  inverse?: { action: string; control: string; toState?: string } | { kind: "irreversible" };
 };
 
 /** A read, or why there is none: the domain has no `startState`, it answered nothing usable, or reading failed (kept on the start check as `failure`). */
@@ -225,6 +252,8 @@ export type AutomationStudioSiteResetPlace = {
   created?: string[];
   /** The shown values the act replaced on its page, from the reads just before and after it (`./act-places.ts`, t772). */
   values?: AutomationStudioSiteResetValueWitness;
+  /** What its press did, as the client read it on the read just after it (CC4, `AutomationStudioSiteResetEffect`), parsed; absent where it gave none. */
+  effect?: AutomationStudioSiteResetEffect;
 };
 
 /** What the reset may ask of the target before a trial (`./start-check.ts`). */

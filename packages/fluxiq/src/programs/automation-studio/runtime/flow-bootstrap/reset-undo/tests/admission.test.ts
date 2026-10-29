@@ -7,7 +7,7 @@ import {
   type AutomationStudioSiteResetExplored,
   type AutomationStudioSiteResetRead,
   type AutomationStudioSiteResetSpot
-} from "../index.ts";
+} from "../../site-reset/index.ts";
 import type { AutomationStudioSiteResetCanMeet, AutomationStudioSiteResetFailed } from "../../reset-answers/index.ts";
 
 // t743 (rerun round 4, job `run-mvgw1854-5d10955b`, photo `run-mvgw7320-de416190`):
@@ -33,7 +33,9 @@ const UNPROVED = "candidate.undo_unproved";
 
 describe("a subject deletion names the condition it failed", () => {
   const LIST = { scope: "p:documents", subject: "s:document" };
-  const observe = (ledger: AutomationStudioSiteResetLedger, subjects: string[]) => ledger.observed({ state: {}, location: "loc:documents", differs: [], scope: LIST.scope, subjects, collections: [{ scope: LIST.scope, group: "g:page", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) }] });
+  // Read on a resource, as every web read is, so the list has a receipt and the act is still to undo: with none, it is listed
+  // apart (`nothing_to_name`), and every refusal of it says so, met by no call (t797 P4 item 3).
+  const observe = (ledger: AutomationStudioSiteResetLedger, subjects: string[]) => ledger.observed({ state: {}, location: "loc:documents", differs: [], resource: "r:documents", scope: LIST.scope, subjects, collections: [{ scope: LIST.scope, group: "g:page", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) }] });
   const made = (before: string[] | undefined, after: string[], consequences: AutomationStudioActionConsequence[] = ["create_new"]) => {
     const ledger = new AutomationStudioSiteResetLedger();
     if (before) observe(ledger, before);
@@ -164,7 +166,7 @@ describe("its own toggle's place (photo r4 0151)", () => {
   });
 
   it("neither state: control_state_differs; another class while showing the act's state: consequence_not_inverse", () => {
-    // Its last open condition, met by no call: the refusal itself lists the act apart (t748, `../undo-reach.ts`).
+    // Its last open condition, met by no call: the refusal itself lists the act apart (t748, `../reach.ts`).
     const third = toggled();
     expect(third.target("act-1", aim([], { ...MARK, state: "st:third" }))).toMatchObject({ kind: "refused", evidence: { code: UNPROVED, act: "act-1", failed: "control_state_differs", canMeet: "no_call", condition: WORDS.condition("control_state_differs", "no_call"), actsToUndo: [], actsUnsettleable: [{ act: "act-1", failed: "no_admissible_undo" }] } });
     refusedFor(toggled(), "act-1", aim(["delete"], { ...MARK, state: "st:on" }), { code: UNPROVED, failed: "consequence_not_inverse", canMeet: "this_page" });

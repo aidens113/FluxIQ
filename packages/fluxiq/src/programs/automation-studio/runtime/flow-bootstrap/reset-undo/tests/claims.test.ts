@@ -6,7 +6,7 @@ import {
   type AutomationStudioSiteResetExplored,
   type AutomationStudioSiteResetRead,
   type AutomationStudioSiteResetSpot
-} from "../index.ts";
+} from "../../site-reset/index.ts";
 
 // Which list may witness an act (t772 w3): a look under `undoes` that names a list attaches it to the act only when
 // the list was read on the act's own resource, or the act already named it. A list read on an unrelated page could never

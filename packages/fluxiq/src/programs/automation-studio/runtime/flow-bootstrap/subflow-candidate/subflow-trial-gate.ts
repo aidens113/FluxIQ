@@ -248,7 +248,7 @@ import {
   automationStudioCandidateNotShownInstruction,
   automationStudioCandidateRecordContradictsPart,
   automationStudioCandidateRetestAdvised,
-  automationStudioCandidateStartedWithSaid,
+  automationStudioCandidateStartedWithSaid, automationStudioTrialDefaultsBeforeTrial,
   automationStudioCandidateTrialOffline,
   automationStudioCandidateTrialStop as Stop,
   type AutomationStudioCandidateEarlierAdviceTrial,
@@ -433,7 +433,7 @@ export class AutomationStudioSubflowTrialGate {
   readonly tool: AutomationStudioLlmEvidenceTool;
   private static readonly toolInput: JsonObject = {
     inputSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" },
-      cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Only after a refusal listed them under actsToUndo: the acts the site offers no control to undo. They stay on the site, and the judge is told." } },
+      cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Optional; leave it out. Core defaults it to the acts a reset listed apart as ones no call can settle. Give it only to name, among the acts a reset listed, those the site offers no control to undo. They stay on the site, and the judge is told." } },
     required: ["revision", "digest"], additionalProperties: false }
   };
   /** Each trial's answer as kept, with the kept conditions as of that trial (header, t641): what `standing` hands the submission controller. */
@@ -490,7 +490,7 @@ export class AutomationStudioSubflowTrialGate {
     const cannotUndo = value.cannotUndo;
     if (!Number.isSafeInteger(revision) || typeof digest !== "string" || Object.keys(value).some((key) => key !== "revision" && key !== "digest" && key !== "cannotUndo")
       || (cannotUndo !== undefined && !(Array.isArray(cannotUndo) && cannotUndo.length <= 50 && cannotUndo.every((act) => typeof act === "string")))) {
-      return refused("subflow.trial_input_invalid", `Call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with exactly the latest proposal's revision (an integer) and digest (a string), as core.submit_subflow returned them, and optionally cannotUndo: the act ids a reset listed that the site cannot undo.`);
+      return refused("subflow.trial_input_invalid", `Call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with exactly the latest proposal's revision (an integer) and digest (a string), as core.submit_subflow returned them, and, only to narrow what Core defaults, cannotUndo: the act ids a reset listed that the site cannot undo.`);
     }
     const port = this.input.port;
     if (!port) return refused("subflow.trial_unavailable", "No subflow trial runner is available here. Complete with the latest subflowKey, revision and digest; the proposal stays untried.");
@@ -534,7 +534,7 @@ export class AutomationStudioSubflowTrialGate {
     const steps = [...automationStudioTrialChangeSteps(port.admissionPredecessors?.(this.input.scope) ?? []), ...automationStudioTrialChangeSteps(latest.subflows, () => own)].map((step, index) => ({ ...step, step: index + 1 }));
     const change = { steps, parts: this.input.scope.parts.map((part) => ({ id: part.partId, ...(part.effect ? { effect: structuredClone(part.effect) } : {}) })) };
     const reset = siteReset && await automationStudioLlmStepLogReset({ stage: "site_check", trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
-      () => siteReset.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, { ...(prepared === "reset" ? { startReset: true } : {}), change }), (decision) => decision.kind);
+      () => automationStudioTrialDefaultsBeforeTrial(siteReset, signal, cannotUndo, { ...(prepared === "reset" ? { startReset: true } : {}), change }), (decision) => decision.kind);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };

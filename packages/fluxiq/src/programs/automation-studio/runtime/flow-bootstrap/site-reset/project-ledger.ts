@@ -23,7 +23,7 @@
 // - **A snapshot for the build record**: every act with its owner, whether
 //   its brief still has it to undo (`inPlace`), and whether it is left on the
 //   site as its brief's settlement answers it (`left`, t772 w7,
-//   `./leftover.ts`): `no` once settled, `possibly` with the condition it
+//   `../reset-ledger/leftover.ts`): `no` once settled, `possibly` with the condition it
 //   failed (`failed`) once closed as one no call can settle.
 // - **A brief's ledger records possibly lasting acts** (t593, `./ledger.ts`):
 //   a press with an effect that declared no lasting class. The snapshot marks
@@ -50,7 +50,7 @@ import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts"
 import { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
 import { AutomationStudioSiteResetStepGaps, automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetStepReachAnswer } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetRead, AutomationStudioSiteResetUnsettleableAct } from "./contracts.ts";
-import type { AutomationStudioSiteResetLeftover } from "./leftover.ts";
+import type { AutomationStudioSiteResetLeftover } from "../reset-ledger/index.ts";
 import { AutomationStudioSiteResetReach, automationStudioSiteResetInvalidCollectionGroups, type AutomationStudioSiteResetIssuedRef } from "../reset-settlement/index.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
 
@@ -157,7 +157,7 @@ export class AutomationStudioSiteResetProjectLedger {
   snapshot(): AutomationStudioSiteResetProjectSnapshot {
     return {
       acts: this.acts.map((act) => {
-        // Its own brief's one answer, which that brief's acts to undo and acts listed apart read too (`./leftover.ts`).
+        // Its own brief's one answer, which that brief's acts to undo and acts listed apart read too (`../reset-ledger/leftover.ts`).
         const left = this.briefs.get(act.owner)?.leftover(act.act);
         return { ...structuredClone(act), inPlace: left?.standing === "in_place", left: left?.left ?? "yes", ...(left?.standing === "unsettleable" ? { failed: left.failed } : {}) };
       }),

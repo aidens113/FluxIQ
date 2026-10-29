@@ -67,7 +67,11 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * act's own page shows after it that no read had seen is one the act
    * created, and only such an item may be removed by an undo without asking.
    * A domain also leaves out of `lines` what it knows is not state, such as
-   * which element has focus.
+   * which element has focus. `effect` (CC4, P4) is the client's own record of
+   * what the call just before this read did -- the places it changed with
+   * their before and after tokens, and the call that reverses it -- which Core
+   * parses tolerantly (`../../flow-bootstrap/site-reset/act-places.ts`) to pair
+   * an undo with its act; absent, Core pairs from `controls` alone.
    */
   startState?(input: {
     projectId: string;
@@ -76,7 +80,7 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     start?: JsonObject;
     permission: AutomationStudioActionPermissionCheck;
     signal?: AbortSignal;
-  }): Promise<{ state: JsonObject; differs: string[]; location?: string; lines?: { gone: string[]; added: string[] }; items?: string[]; subjects?: string[]; scope?: string; resource?: string; collections?: Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }>; controls?: Record<string, Record<string, number>>; values?: Record<string, string> } | undefined>;
+  }): Promise<{ state: JsonObject; differs: string[]; location?: string; lines?: { gone: string[]; added: string[] }; items?: string[]; subjects?: string[]; scope?: string; resource?: string; collections?: Array<{ scope: string; group: string; subjects: string[]; states: Record<string, string> }>; controls?: Record<string, Record<string, number>>; values?: Record<string, string>; effect?: unknown } | undefined>;
   observeResult?(input: {
     projectId: string;
     flowId: string;
