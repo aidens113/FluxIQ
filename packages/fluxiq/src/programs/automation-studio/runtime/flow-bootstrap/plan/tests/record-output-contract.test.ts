@@ -279,7 +279,8 @@ describe("a date bound in a record output's processing", () => {
   });
 
   it("is refused where it names no one date, with Core's sentence naming the field and not the bound", () => {
-    for (const bound of ["Nov 9", "5 days ago", "04/07/2026"]) {
+    // "5 days ago" named none until t800 (K1), which reads a bound relative to the run's now.
+    for (const bound of ["Nov 9", "5 months ago", "04/07/2026"]) {
       const value = loans([{ field: "due", atLeast: bound, as: "date" }]);
       expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, value), bound).toEqual(["record_output.process_invalid_condition"]);
       const message = automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_condition", value)!;
@@ -288,5 +289,16 @@ describe("a date bound in a record output's processing", () => {
       expect(message).not.toContain(bound);
     }
     expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_condition", loans([{ field: "due", contains: "" }]))).toBeUndefined();
+    // A within that names no span is refused with the same sentence (t800).
+    const within = loans([{ field: "due", within: "3 months" }]);
+    expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, within)).toEqual(["record_output.process_invalid_condition"]);
+    expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_condition", within)).toContain("a within as <n> minutes, hours, days or weeks");
+  });
+
+  it("is accepted relative to the run, and as a within (t800)", () => {
+    for (const condition of [{ field: "due", atLeast: "7 days ago" }, { field: "due", atMost: "today", as: "date" }, { field: "due", within: "2 weeks" }]) {
+      expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, loans([condition])), JSON.stringify(condition)).toEqual([]);
+    }
+    expect(automationStudioFlowBootstrapRecordOutputContract(extractList).text).toContain("within:\"<n> minutes|hours|days|weeks\"");
   });
 });

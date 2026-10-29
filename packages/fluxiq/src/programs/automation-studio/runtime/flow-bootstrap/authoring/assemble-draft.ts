@@ -67,6 +67,7 @@ import type { AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from 
 import { authoringDraftBindingIssues, authoringPlanGraph } from "./draft-bindings.ts";
 import { routeAutomationStudioFlowDraftSteps, type AutomationStudioFlowDraftRoutedStep } from "./draft-routing.ts";
 import { authoringError } from "./issue.ts";
+import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 
 /** One draft step as a written step, in the caller's own vocabulary. */
 export type AutomationStudioFlowDraftWrittenStep = {
@@ -103,6 +104,8 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
    * declared none (`./instruction-record-columns.ts`); absent, nothing is.
    */
   instructionText?: string | undefined;
+  /** Which plan part a step serves (`./part/answer.ts`); a record output the model left parts out of is derived from it. */
+  partOf?: AuthoringPartOfStep | undefined;
   /**
    * The route signatures the build recorded for a step: the page it started
    * on and the page it left (`../../route-state/build-routing.ts`). Each plan
@@ -166,7 +169,7 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
   }
   const script: AutomationStudioFlowScript = { summary: input.summary, blocks: [{ name: input.summary, steps, line: 1 }] };
   const namedColumns = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
-  const assembled = assembleAutomationStudioFlowScriptPlan({ script, registry: input.registry, resolution: input.resolution, summary: input.summary, namedColumns });
+  const assembled = assembleAutomationStudioFlowScriptPlan({ script, registry: input.registry, resolution: input.resolution, summary: input.summary, namedColumns, partOf: input.partOf });
   // What the steps' bindings say about the graph they became: a row read
   // outside a loop over a list, an input an output would overwrite
   // (`./draft-bindings.ts`). The plan's node `s<n>` is the n-th step it was

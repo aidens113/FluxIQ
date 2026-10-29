@@ -255,7 +255,7 @@ export class AutomationStudioProjectRunDatasetStore {
     const now = nonNegativeInteger(options.now ?? Date.now(), "Run dataset timestamp");
     const datasets = await this.lease.database.all<{ dataset_id: string }>("select dataset_id from run_datasets where run_id = ? order by dataset_id", [run]);
     for (const dataset of datasets) {
-      await this.lease.database.transaction((sql) => processDataset(sql, run, dataset.dataset_id, now));
+      await this.lease.database.transaction((sql) => processDataset(sql, run, dataset.dataset_id, now, options.now !== undefined));
     }
     return runDatasetSummariesForRun(this.lease.database, run);
   }
@@ -452,7 +452,7 @@ async function insertRows(sql: AutomationStudioSqlExecutor, table: RowsTable, ru
   }
 }
 
-async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, datasetId: string, now: number): Promise<void> {
+async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, datasetId: string, now: number, nowGiven: boolean): Promise<void> {
   const dataset = await sql.get<RunDatasetDetailRow>(`select ${DETAIL_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
   if (!dataset) return;
   // Every row has its batch; the left join keeps a row whose batch is missing rather than drop it from the answer.
@@ -462,7 +462,9 @@ async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, d
      where r.run_id = ? and r.dataset_id = ? order by r.ordinal`,
     [runId, datasetId]
   );
-  const answer = answerOf(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, processDeclaration(dataset.process_json), now);
+  // Relative dates are judged at the run's own start, the instant its page reads used, so processing again later (a repair re-run) keeps the same rows. A `now` the caller gives wins.
+  const started = nowGiven ? undefined : await sql.get<{ started_at_ms: number | null }>("select started_at_ms from runtime_runs where run_id = ?", [runId]);
+  const answer = answerOf(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, processDeclaration(dataset.process_json), started?.started_at_ms ?? now);
   await sql.run("delete from run_dataset_answer_rows where run_id = ? and dataset_id = ?", [runId, datasetId]);
   await insertRows(sql, "run_dataset_answer_rows", runId, datasetId, answer.rows);
   await sql.run("update run_datasets set processing_json = ?, processed_at_ms = ? where run_id = ? and dataset_id = ?", [JSON.stringify(answer.account), now, runId, datasetId]);

@@ -350,12 +350,20 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
  * say so with an example on a kind of site no realistic scenario is (a library's
  * loans), that a bound states its year, and that a row whose date cannot be
  * read is never kept.
+ *
+ * **Relative to the run (t800, K1).** A bound may also be `today`,
+ * `yesterday`, `now` or `<n> <unit> ago`, read against the run's `now`, and
+ * `within: "<n> <unit>"` keeps the rows dated in the last n units up to it
+ * (`date-bound.ts`, `date-within.ts`). One line says `within`, with an example
+ * on another kind of site no realistic scenario is (a permit office's
+ * applications), and that a day the request names is still a dated bound.
  */
 export const AUTOMATION_STUDIO_FLOW_CONDITION_RULES = [
   "Presence: is: \"present\" or \"absent\", for a column only some items have.",
   "Number: atLeast, atMost, lessThan, greaterThan, or equals with a number, compare the number the value states: the first number written ($49 is 49, 3.7 out of 5 is 3.7), or the total of a combined count it recognises; a value stating no number fails.",
   "A quantity -- a count, price, rating or amount -- is always compared with a bound, never a text test: a pattern reads characters, not the number, and misses the same count written another way.",
-  "Date: the same bounds with a date written as text and \"as\": \"date\" compare the date the value states (\"Tuesday 6 October 2026 at 09:00\", \"6 Oct 2026\", \"2026-10-06\", \"Oct 6, 2026\", or \"3 days ago\" from now): {\"field\": \"due\", \"atLeast\": \"2026-10-01\", \"as\": \"date\"} keeps loans due on or after 1 October 2026, and atLeast with atMost keeps the days between, both included. Write each bound as one date with its year; a bound with no time of day is its whole day. A row whose value states no date it can read is never kept. A date is always compared with a date bound, never a pattern: a pattern reads characters and misses the days it does not spell.",
+  "Date: the same bounds with a date written as text and \"as\": \"date\" compare the date the value states (\"Tuesday 6 October 2026 at 09:00\", \"6 Oct 2026\", \"2026-10-06\", \"Oct 6, 2026\", or \"3 days ago\" from now): {\"field\": \"due\", \"atLeast\": \"2026-10-01\", \"as\": \"date\"} keeps loans due on or after 1 October 2026, and atLeast with atMost keeps the days between, both included. Write each bound as one date with its year, or relative to the run as today, yesterday, now or \"<n> <unit> ago\"; a bound with no time of day is its whole day. A row whose value states no date it can read is never kept. A date is always compared with a date bound, never a pattern: a pattern reads characters and misses the days it does not spell.",
+  "Within: within: \"<n> <unit>\" (minutes, hours, days or weeks) keeps the rows dated from n units before the run's now up to it: {\"field\": \"filed\", \"within\": \"7 days\"} keeps applications filed in the last 7 days. A day the request names is a bound with its year, never a within.",
   "Text: contains, startsWith, endsWith, equals with text, or matches for a regex, ignoring case; one value or a list meaning any. not: true keeps what the condition rejects."
 ].join(" ");
 
