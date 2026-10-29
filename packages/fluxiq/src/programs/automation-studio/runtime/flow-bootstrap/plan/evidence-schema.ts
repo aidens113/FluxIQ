@@ -112,7 +112,7 @@ export function automationStudioEvidenceFlowBootstrapDraftCompletionSchema(
     description: "Finish. The Flow is the steps you added to your draft -- it is already written, so there is nothing to write here but one sentence saying what it does. Finish only when every act on the draft's acts checklist is done; correct the draft with amend_draft before you finish, and run and add any step it still needs."
       + " A step that ran is not settled: what it returned is what the Flow returns, every time. Read the instruction once more against each step's own parameters -- a page it never went on to, rows it was asked to leave out, a column it was asked for -- and rerun that step through amend_draft carrying them."
       + " Too wide an answer still finishes; an empty one does not, so where you are unsure ask for more and let it be narrowed later."
-      + " Where the instruction asks for something to be done -- saved, added to a cart or list, a coupon collected, a store, filter or setting changed, a page opened to read from, something booked, bought, sent, posted, created or confirmed -- the Flow must contain a step that does it, and acts says which.",
+      + " Where the instruction asks for something to be done -- saved, added to a list or queue, a label applied, a branch, filter or setting changed, a page opened to read from, something reserved, renewed, sent, filed, created or confirmed -- the Flow must contain a step that does it, and acts says which.",
     properties: {
       summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength, description: "One sentence about what the Flow does." },
       // Why the model names the step rather than Core finding it
