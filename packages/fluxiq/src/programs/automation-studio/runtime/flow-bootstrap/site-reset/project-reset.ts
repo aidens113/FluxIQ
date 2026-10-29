@@ -47,19 +47,33 @@
 // Above capacity 1 briefs run on separate host resources, and another brief's
 // act is not on this site; the web domain declares capacity 1.
 //
-// **No unwitnessed step runs (t751 R3).** Before a trial runs its steps --
-// before the start hook and before any baseline moves -- its door asks
-// `admit`: every reversible lasting step (lasting classes all among
-// create_new, modify_existing and delete) must carry a witness stamp its node
-// took at submission that still resolves (`./project-ledger.ts`,
-// `stepWitnessResolves`), or the trial is refused unrun,
-// `candidate.trial_step_unwitnessed`, naming each such step and how its witness
-// is made while exploring. Only a project build's reset asks; a standalone
-// ledger has no `admit`.
+// **An unwitnessed step runs, and its gap is said (t791 fix 4; replaces t751
+// R3, "no unwitnessed step runs", whose reason -- every later trial was
+// refused -- t775 removed).** Before a trial runs its steps -- before the start
+// hook and before any baseline moves -- its door asks `admit` which reversible
+// lasting steps (lasting classes all among create_new, modify_existing and
+// delete) carry no witness stamp its node took at submission that still
+// resolves (`./project-ledger.ts`, `stepWitnessResolves`). None of them refuses
+// the trial: `admit` always admits, and where there are such steps it notes
+// them under `unwitnessed` with the builder's words
+// (`./unwitnessed-step-words.ts`), which a trial gate copies into its answer.
+// The trial then runs and is judged by its end view and each step's done-when
+// check. Its acts are recorded as on the site as any trial act is (`trialRan`;
+// an act with no witness seals nothing, t775), and `beforeTrial` finishes its
+// readings with those steps said to the judge as unread and the parts they
+// serve `unproven` (`../trial-change/unwitnessed-session.ts`), with or without
+// a look, and even where no other step has a witness. The one refusal left is
+// still `candidate.trial_starts_in_end_state`. Only a project build's reset
+// asks; a standalone ledger has no `admit`.
+//
+// **Each such step is told what it can do in its own tab (t791 fix 2).** A ref is
+// read in one tab and shows a press's change only for a press in that tab, so a
+// step is offered the refs read in its own tab and no others, and where no call
+// there can make a witness it is told so (`../reset-admission/step-gaps.ts`, `stepReach`, found by
+// its node as the step door noted it at submission, `../reset-admission/trial-steps.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
 import type {
   AutomationStudioSiteResetChecks,
   AutomationStudioSiteResetComparison,
@@ -70,16 +84,17 @@ import type {
   AutomationStudioSiteResetTrialStep
 } from "./contracts.ts";
 import type { AutomationStudioSiteResetLedger } from "./ledger.ts";
-import { automationStudioTrialChangeBegin, type AutomationStudioTrialChangeAsk, type AutomationStudioTrialChangeLedgerPort, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
+import { automationStudioTrialChangeBegin, automationStudioTrialChangeUnwitnessedSession, type AutomationStudioTrialChangeAsk, type AutomationStudioTrialChangeLedgerPort, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "./project-ledger.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
+import type { AutomationStudioSiteResetStepReachAnswer } from "../reset-admission/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNWITNESSED_STEP_WORDS as UNWITNESSED_WORDS } from "./unwitnessed-step-words.ts";
 
-/** The classes the site's own controls can reverse: a step declaring only these needs a witness (header). */
-const REVERSIBLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create_new", "modify_existing", "delete"]);
+/** The classes the site's own controls can reverse: a step declaring only these has its gap said where it has no witness (header). */
+const REVERSIBLE: ReadonlySet<string> = new Set<AutomationStudioActionConsequence>(["create_new", "modify_existing", "delete"]);
 
 export function automationStudioSiteResetProjectReset(input: {
-  /** The build's ledger; `stepWitnessResolves` and `issuedRefs` answer `admit` (header), absent where a caller holds a narrower port, and then every reversible step is refused. */
-  project: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief"> & Partial<Pick<AutomationStudioSiteResetProjectLedger, "stepWitnessResolves" | "issuedRefs">>;
+  /** The build's ledger; `stepWitnessResolves` and `stepReach` answer `admit` (header), absent where a caller holds a narrower port, and then every reversible step is noted unwitnessed. */
+  project: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief"> & Partial<Pick<AutomationStudioSiteResetProjectLedger, "stepWitnessResolves" | "stepReach">>;
   /** The phase's own brief's ledger, which its trials' acts go into; absent for the supervisor, which records none. */
   own?: AutomationStudioSiteResetLedger | undefined;
   /** The start check, under the signal of the trial or phase being prepared. */
@@ -89,6 +104,7 @@ export function automationStudioSiteResetProjectReset(input: {
   /** The own brief's ledger, then every other one that recorded an act, in the order their first act was recorded. */
   const ledgers = (): AutomationStudioSiteResetLedger[] => [...new Set([...(own ? [own] : []), ...project.snapshot().acts.map((act) => project.forBrief(act.owner))])];
   const session = (ask: AutomationStudioTrialChangeAsk, look: NonNullable<AutomationStudioSiteResetChecks["lookAt"]>) => sessionOver(ledgers(), ask, look);
+  const resolves = (witness: unknown): boolean => project.stepWitnessResolves?.(witness) === true;
   return {
     async beforeTrial(signal, cannotUndo, options) {
       const base = input.checks(signal);
@@ -116,8 +132,11 @@ export function automationStudioSiteResetProjectReset(input: {
         decisions.push(await ledger.beforeTrial(checks, cannotUndo, rest));
       }
       // The trial's before readings, once, for the whole build (header, t775); its looks move the target, so it goes back to the start after them.
-      const change = ask && lookAt ? await session(ask, lookAt) : undefined;
-      if (change) await base.compare();
+      const read = ask && lookAt ? await session(ask, lookAt) : undefined;
+      if (read) await base.compare();
+      // The steps with no witness, said to the judge as unread whether or not anything else was read (header, t791).
+      const gap = ask ? unwitnessed(ask.steps, resolves).map((step) => step.step) : [];
+      const change = ask && gap.length ? automationStudioTrialChangeUnwitnessedSession({ session: read, steps: ask.steps, parts: ask.parts, unwitnessed: gap, leftFromEarlier: () => ledgers().flatMap((ledger) => ledger.trialChange().leftFromEarlier()) }) : read;
       const joinedDecision = joined(decisions);
       return change && joinedDecision.kind === "admit" ? { ...joinedDecision, change } : joinedDecision;
     },
@@ -127,17 +146,23 @@ export function automationStudioSiteResetProjectReset(input: {
       return left;
     },
     admit(steps) {
-      return admitted(steps, (witness) => project.stepWitnessResolves?.(witness) === true, () => project.issuedRefs?.() ?? []);
+      return admitted(steps, resolves, (step) => project.stepReach?.(step));
     }
   };
 }
 
-/** Every reversible lasting step with a stamp that still resolves, or the refusal naming each one without (header). */
-function admitted(steps: readonly AutomationStudioSiteResetTrialStep[], resolves: (witness: unknown) => boolean, issued: () => Parameters<typeof WORDS.stepWitnessRequired>[0]): AutomationStudioSiteResetStepAdmission {
-  const unwitnessed = steps.filter((step) => step.consequences.length > 0 && step.consequences.every((consequence) => REVERSIBLE.has(consequence)) && !resolves(step.witness));
-  if (!unwitnessed.length) return { kind: "admit" };
-  const stepsUnwitnessed = unwitnessed.map((step) => ({ step: step.step, ...(step.label !== undefined ? { label: step.label } : {}) }));
-  return { kind: "refuse", moved: false, evidence: refusal("candidate.trial_step_unwitnessed", { failed: "no_witness", canMeet: "another_page", stepsUnwitnessed, instruction: WORDS.stepWitnessRequired(issued()) }) };
+/** The trial's admission (header): always admitted, noting under `unwitnessed` each reversible lasting step whose stamp is missing or no longer resolves. */
+function admitted(steps: readonly AutomationStudioSiteResetTrialStep[], resolves: (witness: unknown) => boolean, reach: (step: AutomationStudioSiteResetTrialStep) => AutomationStudioSiteResetStepReachAnswer | undefined): AutomationStudioSiteResetStepAdmission {
+  const found = unwitnessed(steps, resolves);
+  if (!found.length) return { kind: "admit" };
+  // Each step in its own tab (header, t791 fix 2): a step the step door never saw is offered no ref, since none is known to be read in its tab.
+  const gap = found.map((step) => ({ step: step.step, ...(step.label !== undefined ? { label: step.label } : {}), ...(reach(step) ?? { canMeet: "another_page" as const, issued: [] }) }));
+  return { kind: "admit", unwitnessed: { steps: gap.map(({ step, label }) => ({ step, ...(label !== undefined ? { label } : {}) })), instruction: UNWITNESSED_WORDS.ran(gap) } };
+}
+
+/** The reversible lasting steps among `steps` with no stamp that still resolves (header). */
+function unwitnessed<S extends { consequences: readonly string[]; witness?: unknown }>(steps: readonly S[], resolves: (witness: unknown) => boolean): S[] {
+  return steps.filter((step) => step.consequences.length > 0 && step.consequences.every((consequence) => REVERSIBLE.has(consequence)) && !resolves(step.witness));
 }
 
 /** Refusals of several ledgers as one: the first's evidence, naming every act each named (header). */

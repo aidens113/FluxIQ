@@ -130,9 +130,11 @@ import {
   type AutomationStudioSiteResetCalls,
   type AutomationStudioSiteResetClaim,
   type AutomationStudioSiteResetDeclared,
+  type AutomationStudioSiteResetExplored,
   type AutomationStudioSiteResetSpot,
   type AutomationStudioSiteResetTarget
 } from "./site-reset/contracts.ts";
+import type { AutomationStudioPlanStepGaps, AutomationStudioSiteResetStepAsk, AutomationStudioSiteResetStepGap } from "./reset-admission/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
 import { AutomationStudioExploredToggles } from "./explored-toggles.ts";
 import { AutomationStudioExploredInterruptions } from "./explored-interruptions.ts";
@@ -158,7 +160,7 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
    * is told the reset witness stamp of each reversible lasting declaration the domain puts to it (t751, R3 door 2;
    * `stepWitness`), or `undefined` where the build's site reset found none or has no step admission.
    */
-  planStep: (step: { definitionId: string; ref: string; witnessed?: ((stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void) | undefined }) => AutomationStudioActionPermissionCheck;
+  planStep: ((step: { definitionId: string; ref: string; witnessed?: ((stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void) | undefined }) => AutomationStudioActionPermissionCheck) & AutomationStudioPlanStepGaps;
   /**
    * Aborted when a *plan* step is refused, which is the refusal the loop cannot
    * see. The evidence loop runs under it. An exploration refusal leaves it
@@ -329,6 +331,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       return await check(declaration);
     };
   };
+  // The plan steps with no witness, by node (`planStep`, t791 fix 2): what a submission says of them beside its accepted revision.
+  const stepGaps = new Map<string, AutomationStudioSiteResetStepGap>();
   // The presses the domain answered as a toggle (header, t775).
   const exploredToggles = input.exploredToggles ?? new AutomationStudioExploredToggles();
   // The presses the domain answered as clearing a layer over the page (header, t787).
@@ -421,7 +425,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       // Nor does it close a layer that got in the way: it puts back what this build did (t787).
       if (!undo) exploredInterruptions.explored({ ...call, value }, execution);
       if (createRefusal) return { kind: "llm_evidence_tool_execution", evidence: createRefusal.evidence, effectApplied: false, targetsUnchanged: true, resultCode: createRefusal.evidence.code };
-      siteReset.explored({
+      const exploredCall: AutomationStudioSiteResetExplored = {
         callId: call.callId,
         toolId: call.toolId,
         ...(typeof value.node === "string" ? { operation: value.node } : {}),
@@ -431,7 +435,8 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         // The destination the call named, for its act or the act it undoes, for the ledger to keep (`./site-reset/ledger.ts`, F1).
         ...(typeof call.value.resetDestination === "string" ? { resetDestination: call.value.resetDestination } : {}),
         landed: landed(execution)
-      });
+      };
+      siteReset.explored(exploredCall);
       if (target?.kind === "refused") {
         return { kind: "llm_evidence_tool_execution", evidence: target.evidence, effectApplied: false, targetsUnchanged: true, resultCode: target.evidence.code };
       }
@@ -440,9 +445,11 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         const code = "candidate.undo_refused";
         return { ...execution, evidence: { ok: false, code, act: undo.act, instruction: AUTOMATION_STUDIO_SITE_RESET_WORDS.undoRefused(), ...(execution.evidence !== undefined ? { refusal: execution.evidence } : {}) }, resultCode: code };
       }
+      // A press that named a ref showing nothing of its change: the ledger's note beside the answer (t791 fix 3, `./site-reset/press-notes.ts`).
+      if (exploredCall.note && isExecutionResult(execution)) return { ...execution, evidence: isRecord(execution.evidence) ? { ...execution.evidence, resetDestinationUnreached: exploredCall.note } : { resetDestinationUnreached: exploredCall.note, evidence: execution.evidence } };
       return execution;
     },
-    planStep: (step) => {
+    planStep: Object.assign((step: Parameters<AutomationStudioFlowBootstrapActionPermissions["planStep"]>[0]): AutomationStudioActionPermissionCheck => {
       const check = asking({ kind: "flow_step", id: step.definitionId, ref: step.ref });
       return async (declaration) => {
         const decision = await check(declaration);
@@ -452,11 +459,18 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         // The step's witness, from the one admission, for the resolver to stamp; never a refusal (t751, R3 door 2).
         else if (step.witnessed) {
           const read = readAutomationStudioActionDeclaration(declaration);
-          if (reversibleLasting(read)) step.witnessed(stepWitness(input.siteReset, { effect: read.effect, consequences: read.consequences, control: { name: null, kind: null, ...placeOf(read) } }, step.definitionId));
+          if (reversibleLasting(read)) {
+            const ask: AutomationStudioSiteResetStepAsk = { ref: step.ref };
+            const stamp = stepWitness(input.siteReset, { effect: read.effect, consequences: read.consequences, control: { name: null, kind: null, ...placeOf(read) } }, step.definitionId, ask);
+            step.witnessed(stamp);
+            // A step with no stamp is noted for its submission; one stamped, or asked again, is not (header of `stepGaps`).
+            if (stamp === undefined && ask.gap) stepGaps.set(step.ref, ask.gap);
+            else stepGaps.delete(step.ref);
+          }
         }
         return decision;
       };
-    },
+    }, { gaps: (): ReadonlyMap<string, AutomationStudioSiteResetStepGap> => stepGaps }),
     signal: planRefused.signal,
     instructed: () => gate.instructed,
     instructedLastingActs: async (acts) => {
@@ -558,17 +572,22 @@ function reversibleLasting(read: AutomationStudioReadActionDeclaration): boolean
  * and answers nothing. Its answer is read whichever form it takes -- a stamp, or the admission's verdict -- and only a
  * valid stamp comes back.
  */
-type StepAdmitting = { admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string): unknown };
+type StepAdmitting = { admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string, ask?: AutomationStudioSiteResetStepAsk): unknown };
 
 /** The stamp the build's site reset admits a plan step's declaration with, or `undefined` (`StepAdmitting`). */
-function stepWitness(siteReset: AutomationStudioSiteResetCalls | undefined, declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string): AutomationStudioSiteResetWitnessStamp | undefined {
+function stepWitness(siteReset: AutomationStudioSiteResetCalls | undefined, declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string, ask?: AutomationStudioSiteResetStepAsk): AutomationStudioSiteResetWitnessStamp | undefined {
   const admit = (siteReset as (AutomationStudioSiteResetCalls & StepAdmitting) | undefined)?.admitStep;
   if (typeof admit !== "function") return undefined;
-  const answer: unknown = admit.call(siteReset, declared, definitionId);
+  const answer: unknown = admit.call(siteReset, declared, definitionId, ask);
   if (automationStudioSiteResetWitnessStampValid(answer)) return answer;
   const witness = answer !== null && typeof answer === "object" && (answer as { kind?: unknown }).kind === "admit" ? (answer as { witness?: AutomationStudioSiteResetWitness }).witness : undefined;
   const stamp = witness === undefined ? undefined : witness.via === "destination" ? { via: witness.via, ref: witness.ref } : witness.via === "repeats" ? { via: witness.via, act: witness.act } : { via: witness.via };
   return automationStudioSiteResetWitnessStampValid(stamp) ? stamp : undefined;
+}
+
+/** A JSON object, as opposed to a list, a scalar or nothing. */
+function isRecord(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /** An evidence tool's own answer, as opposed to bare JSON. */

@@ -290,8 +290,8 @@ toggle and the skip record.
   `candidate.trial_start_differs`, `project.trial_reset_required` and
   `project.completion_reset_first`; at exploration, `candidate.create_baseline_required`
   and `candidate.reset_witness_required`. Acts in place at a trial's start are
-  reported as `leftFromEarlier` instead. What stays: `candidate.trial_step_unwitnessed`
-  (a lasting step must name where its change shows), undo admission, settlement,
+  reported as `leftFromEarlier` instead. `candidate.trial_step_unwitnessed`
+  retired too (t791, below). What stays: undo admission, settlement,
   `undoes` and the `lookFirst` port, used only by targeted resets and "Put it
   back". Offline trials carry no `siteChange`: their acts never happened.
 - **The Lab's acceptance is separate.** The in-build judged run is Core's
@@ -324,6 +324,17 @@ reset-settlement's):
   trial's trace by `service/candidate-trial/landed-acts.ts`) become acts too.
   An act that moved money or sent something cannot be undone and is never asked
   for.
+- **Page destinations (t791).** A complete read of a page in one tab that
+  carries no list the client reports as a collection, an empty state included,
+  still becomes a page original when the client reports the page's scope and
+  item subjects (`site-reset/page-collection.ts`), and its receipt is printed
+  with `page: true`. It witnesses only an identified creation naming that ref in
+  the same tab, with the creation's subject absent from the page; after a trial
+  the page is read again, and a subject that appeared, or a change in the page's
+  shown values, reads as `changed`. Refs are per tab: a ref read in another tab
+  is never offered for a step and never witnesses a press, and a successful
+  exploration press naming one carries `resetDestinationUnreached` saying the
+  press has no witness.
 - **One witness admission (t751).** `flow-bootstrap/reset-admission/` serves
   exploration and plan submission. A reversible press needs an issued original
   destination, its own complete list, its control's state, or a witnessed
@@ -332,7 +343,9 @@ reset-settlement's):
   owners. An act seals only its witness groups: a first read after that group
   was touched never becomes original authority, while an unrelated group can
   still issue a ref. Existing brief ledgers receive shared originals immediately.
-  A missing witness refuses unrun; an unidentified project press ends honestly
+  At the step door a missing witness answers no stamp, with `canMeet` honest
+  (t791): only refs read in the step's own tab are offered, and `no_call` is
+  said where no call in that tab can make one; an unidentified project press ends honestly
   with `no_target_identity`, met by no call. Standalone legacy exploration keeps
   its compatibility policy.
 - **Project exploration also requires retained originals.** A declared control
@@ -349,9 +362,15 @@ reset-settlement's):
   stamps admitted reversible steps with `resetWitness`; model-written stamps
   are refused or stripped. The candidate and subflow gates, their predecessor
   steps, and phase entry preparation check stamps before any start hook or
-  baseline moves. A missing stamp refuses unrun as
-  `candidate.trial_step_unwitnessed`, naming the step and the exploration call
-  that can provide its witness. Stamps survive assembly and reach landed acts.
+  baseline moves. A missing stamp no longer refuses the trial (t791): the
+  trial runs and is judged by its end view and each step's done-when check; the
+  admission answers `admit` with an `unwitnessed` note naming the steps and how a
+  witness is made in their own tab (or that none can be), which the builder's
+  trial answer carries, and the judge's packet states the gap as
+  `siteChange.unwitnessed` with those steps' parts `unproven`. Submission names
+  the same steps as a note on the accepted submission. Only
+  `candidate.trial_starts_in_end_state` still refuses a trial unrun. Stamps
+  survive assembly and reach landed acts.
   Own-list admission uses that list's immutable destination receipt. A control
   stamp names a `control-N` receipt held by this build, retaining the original
   counts read before any build press at that resource and place. Submission's

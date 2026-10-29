@@ -8,14 +8,14 @@
 // its own and its location's: a newer read at that location that no longer
 // holds the list says the list could not be read there now. `seq` orders every
 // read, so a reader can tell whether a look it asked for landed. Opaque tokens
-// only; nothing here reaches a model.
+// only; nothing here reaches a model. A page read whole (t791) is one of the
+// read's lists, kept with the digest of the values it shows (`values`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioSiteResetCollection } from "../reset-settlement/index.ts";
-import type { AutomationStudioTrialLoggedRead, AutomationStudioTrialWitnessPlace } from "./contracts.ts";
+import type { AutomationStudioTrialCollection, AutomationStudioTrialLoggedRead, AutomationStudioTrialWitnessPlace } from "./contracts.ts";
 
 /** What a read carries that the log keeps (site-reset's `AutomationStudioSiteResetRead`). */
-type Read = { state: JsonObject; location?: string | undefined; lines?: { gone: string[]; added: string[] } | undefined; collections?: readonly AutomationStudioSiteResetCollection[] | undefined; controls?: Readonly<Record<string, Readonly<Record<string, number>>>> | undefined };
+type Read = { state: JsonObject; location?: string | undefined; lines?: { gone: string[]; added: string[] } | undefined; collections?: readonly AutomationStudioTrialCollection[] | undefined; controls?: Readonly<Record<string, Readonly<Record<string, number>>>> | undefined };
 
 /** The bounded log (header): at most this many locations, groups and places each are kept, the oldest dropped first. */
 const CAP = 500;
@@ -36,7 +36,7 @@ export class AutomationStudioTrialChangeReadLog {
       state: structuredClone(read.state), clock, seq: this.count,
       ...(read.location ? { location: read.location } : {}),
       ...(read.lines ? { lines: { gone: [...read.lines.gone], added: [...read.lines.added] } } : {}),
-      ...(read.collections ? { collections: read.collections.map((entry) => ({ scope: entry.scope, group: entry.group, subjects: [...entry.subjects], states: { ...entry.states } })) } : {}),
+      ...(read.collections ? { collections: read.collections.map((entry) => ({ scope: entry.scope, group: entry.group, subjects: [...entry.subjects], states: { ...entry.states }, ...(typeof entry.values === "string" ? { values: entry.values } : {}) })) } : {}),
       ...(read.controls ? { controls: Object.fromEntries(Object.entries(read.controls).map(([place, counts]) => [place, { ...counts }])) } : {})
     };
     if (read.location) kept(this.byLocation, read.location, logged);

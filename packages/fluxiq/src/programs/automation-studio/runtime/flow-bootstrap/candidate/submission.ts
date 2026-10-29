@@ -21,6 +21,7 @@ import { changedPaths } from "./changed-paths.ts";
 import { keptConditionRefusal } from "./kept-condition-refusal.ts";
 import { partOutputPortIssues } from "./part-output-port-issues.ts";
 import { submissionText } from "./submission-text.ts";
+import { automationStudioCandidateUnwitnessedAdvice } from "../reset-admission/index.ts";
 import type { AutomationStudioExploredInterruption } from "../explored-interruptions.ts";
 import { automationStudioCandidateExploredLayerHandlers } from "../layer-handlers/index.ts";
 
@@ -275,7 +276,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
     this.currentText = text;
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     // Advice, never a refusal: a condition listing values the request never says (t785, `../script-statements/listed-values-advice.ts`).
-    const advice = automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText);
+    // And each step with no witness, said now rather than after its trial (t791 fix 2, `../reset-admission/unwitnessed-advice.ts`).
+    const advice = [...automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText), ...automationStudioCandidateUnwitnessedAdvice(plan.plan, this.input.permissionFor)];
     return { ok: true, candidate, handleViews, ...(advice.length ? { advice } : {}) };
   }
 

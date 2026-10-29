@@ -167,7 +167,7 @@ async function build(input: {
 }
 
 describe("a dependent builder's entry", () => {
-  it("refuses an unwitnessed submitted step before preparing its trial", async () => {
+  it("runs an unwitnessed submitted step's trial, saying the gap (t791 fix 4: no longer refused)", async () => {
     let hooks = 0;
     const plan = {
       taskSpec: { parts: [
@@ -187,8 +187,10 @@ describe("a dependent builder's entry", () => {
       }
     });
     await run.run().catch(() => undefined);
-    expect(lastOf(run.latestSeen.first ?? [], "core.test_subflow")).toMatchObject({ ok: false, code: "candidate.trial_step_unwitnessed" });
-    expect(hooks).toBe(1); // Only the builder's opening; no trial preparation.
+    const tested = lastOf(run.latestSeen.first ?? [], "core.test_subflow");
+    expect(tested).toMatchObject({ ok: true, verdict: "yes", unwitnessed: { steps: [{ step: 1, label: "save it" }] } });
+    expect(tested).not.toHaveProperty("code");
+    expect(hooks).toBe(2); // The builder's opening, then its trial's preparation.
   });
 
   it("runs the predecessor's passing proposal before the builder's first look, which looks in place and says so", async () => {

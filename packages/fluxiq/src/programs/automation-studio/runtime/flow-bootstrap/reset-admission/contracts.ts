@@ -44,6 +44,9 @@ export type AutomationStudioSiteResetAdmissionExplored = {
  *   its issued ref or its own scope, with its subject absent there; any other act's only by an issued ref -- with its ref;
  * - `original(scope, resource)`: the list `scope` as an original of `resource` in a group still valid;
  * - `issuedRefs()`: every ref the model was shown, in order;
+ * - `issuedRefsIn(resource)`: those read in that resource (tab) only, none for an unknown one -- the only refs a step's
+ *   refusal may offer, since a ref read in another tab can never witness a press in this one (t791 fix 2); absent, `issuedRefs()`;
+ * - `sealed()`: no further read can become an original (absent, false);
  * - `here()`: the refs of the latest read, so a creation's refusal can say which lists were read on this page;
  * - `explored()`: the acts this build explored, every brief's in a project build.
  */
@@ -55,6 +58,8 @@ export type AutomationStudioSiteResetAdmissionKnown = {
   controlOriginal?: (control: AutomationStudioSiteResetAdmissionDeclared["control"]) => boolean;
   controlOriginalCanBeRead?: (control: AutomationStudioSiteResetAdmissionDeclared["control"]) => boolean;
   issuedRefs(): readonly AutomationStudioSiteResetIssuedRef[];
+  issuedRefsIn?(resource: string | undefined): readonly AutomationStudioSiteResetIssuedRef[];
+  sealed?(): boolean;
   here(): readonly string[];
   explored(): ReadonlyArray<AutomationStudioSiteResetAdmissionExplored>;
 };

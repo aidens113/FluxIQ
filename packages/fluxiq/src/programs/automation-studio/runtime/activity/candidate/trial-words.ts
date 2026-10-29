@@ -15,11 +15,17 @@ import { automationStudioActivityCandidateOfflineWords } from "./offline-words.t
  * `failed` is true for every verdict but yes: the card of a test the judge
  * refused, could not confirm or could not run must not read "Done". `declined`
  * is true when the gate ran nothing.
+ *
+ * A trial that ran a step whose change Core could not read (`unwitnessed` in
+ * the gate's answer, t791 fix 4) says so after its steps: that step was judged
+ * by how the page ended. `candidate.trial_step_unwitnessed` is no longer
+ * answered (such a trial runs), and keeps its words for builds recorded before.
  */
 
 /** Why the gate ran nothing, by its refusal code. */
 const NOT_RUN: Readonly<Record<string, string>> = Object.freeze({
   "candidate.trial_input_invalid": "only the latest saved steps can be tested",
+  // Retired (t791): kept for builds recorded before.
   "candidate.trial_step_unwitnessed": "a step that changes something has not said where its change shows",
   "candidate.trial_stale_revision": "only the latest saved steps can be tested",
   "candidate.trial_unavailable": "no test can run here, so the Flow is kept as an untested draft",
@@ -120,7 +126,8 @@ function liveTrialWords(result: { resultCode?: unknown; evidence?: unknown }): {
   }
   const feedback = objectOf(evidence.feedback) ?? {};
   const steps = stepsSaid(feedback);
-  const after = (head: string): string => (steps ? `${head}: ${steps}` : head);
+  const gap = uncheckedSaid(evidence.unwitnessed);
+  const after = (head: string): string => [steps ? `${head}: ${steps}` : head, gap].filter(Boolean).join("; ");
   if (verdict === "yes") return { failed: false, declined: false, words: after("the test passed and the Flow did what you asked") };
   if (verdict === "no") return { failed: true, declined: false, words: after("the Flow ran, but it didn't do what you asked") };
   if (verdict === "unsure" || verdict === "not_judged") return { failed: true, declined: false, unconfirmed: true, words: after("the Flow ran, but whether it did what you asked couldn't be confirmed") };
@@ -129,4 +136,18 @@ function liveTrialWords(result: { resultCode?: unknown; evidence?: unknown }): {
   const anyFailed = Array.isArray(feedback.steps) && feedback.steps.some((step) => objectOf(step)?.status === "failed");
   const stopped = steps === undefined ? NO_STEP[code] ?? "the Flow didn't get to its first step" : anyFailed ? steps : `the Flow stopped before its end: ${steps}`;
   return { failed: true, declined: false, words: evidence.failedStep !== undefined ? `${stopped}; it stopped there in two tests, so that step has to change` : stopped };
+}
+
+/**
+ * What a trial that ran says of its steps whose change Core could not read (header, t791): each by its label, at most
+ * `MAX_NAMED` (their numbers are the plan's, not the run's this card counts), and how they were judged.
+ */
+function uncheckedSaid(note: unknown): string | undefined {
+  const steps = Array.isArray(objectOf(note)?.steps) ? (objectOf(note)!.steps as unknown[]).map(objectOf).filter((step): step is Record<string, unknown> => step !== undefined) : [];
+  if (!steps.length) return undefined;
+  const labels = steps.slice(0, MAX_NAMED).map((step) => automationStudioActivityHumanLabel(typeof step.label === "string" ? step.label.split(/\s+/u).filter((word) => !HANDLE.test(word)).join(" ") : undefined, MAX_NAME));
+  const named = labels.every((label) => label !== undefined) ? labels.map((label) => `“${label}”`).join(" and ") : undefined;
+  const more = steps.length > MAX_NAMED ? ` and ${steps.length - MAX_NAMED} more` : "";
+  const what = named ? `what ${named}${more} changed` : steps.length === 1 ? "what one step changed" : `what ${steps.length} steps changed`;
+  return `${what} on the site couldn't be checked, so ${steps.length === 1 ? "it was" : "they were"} judged by how the page ended`;
 }

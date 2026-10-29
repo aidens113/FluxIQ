@@ -75,7 +75,7 @@ export type AutomationStudioProjectSupervisorPorts = {
   projectLedger: Pick<AutomationStudioSiteResetProjectLedger, "snapshot" | "forBrief">;
   look?: ((signal: AbortSignal | undefined) => NonNullable<AutomationStudioSiteResetChecks["lookAt"]>) | undefined;
   kept?: ((kept: AutomationStudioProjectSupervisorKept) => void) | undefined;
-  leftAtEnding?: ((left: { note: string | undefined; told?: string }) => void) | undefined;
+  leftAtEnding?: ((left: { note: string | undefined; told?: string; readings?: Array<{ added: string[]; gone: string[] }> }) => void) | undefined;
   submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0];
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort } | undefined;
   purse?: AutomationStudioLlmBuildPurse | undefined;

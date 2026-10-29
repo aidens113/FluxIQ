@@ -1,4 +1,4 @@
-import { automationStudioActivityEndedReason, automationStudioActivityTimeLimitTold, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop, type AutomationStudioActivityTimeLimitTried } from "../../activity/index.ts";
+import { automationStudioActivityEndedReason, automationStudioActivityHub, automationStudioActivityTimeLimitTold, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop, type AutomationStudioActivityTimeLimitTried } from "../../activity/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
   AutomationStudioFlowBootstrapGenerationError,
@@ -29,7 +29,7 @@ import { automationStudioProjectBuildBriefCalls } from "./brief-calls.ts";
 import { automationStudioProjectBuildBriefPorts } from "./brief-ports.ts";
 import { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
 import { automationStudioProjectBuildDraftRecord } from "./draft-record.ts";
-import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES, automationStudioProjectBuildEndingTold, automationStudioProjectBuildRecordTold } from "../project-build-ending/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES, automationStudioProjectBuildEndingTold, automationStudioProjectBuildRecordTold, automationStudioProjectBuildTestsRefused } from "../project-build-ending/index.ts";
 import type { AutomationStudioProjectBuildKeptProposals } from "./entry-preparation.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_LOCAL_HOST } from "./local-host.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
@@ -235,7 +235,12 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   // What the plan in force kept of earlier plans' proposals, as the supervisor tells it (header).
   let kept: AutomationStudioProjectSupervisorKept | undefined;
   // What the supervisor's ending left on the target, in Core's words, as it named it (header).
-  let left: { note: string | undefined; told?: string } | undefined;
+  let left: { note: string | undefined; told?: string; readings?: Array<{ added: string[]; gone: string[] }> } | undefined;
+  // The tests Core refused to run, counted off their cards as they are published, for the ending (header, t791).
+  const refusedTests = automationStudioProjectBuildTestsRefused();
+  const stopCounting = automationStudioActivityHub.subscribe((event) => {
+    if (event.subject.projectId === projectId) refusedTests.observe(event);
+  });
   const proposals: AutomationStudioProjectBuildProposals & AutomationStudioProjectBuildKeptProposals = Object.assign(new AutomationStudioProjectBuildProposals(), {
     keptUnder: (subflowKey: string, madeUnder: string, planDigest: string) => kept?.planDigest === planDigest && kept.madeUnder.get(subflowKey) === madeUnder
   });
@@ -302,8 +307,9 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   } catch (error) {
     // A stall a guard ended the loop on is thrown on once its ending is recorded (t586): the person reads that ending (header).
     if (!(error instanceof AutomationStudioFlowBootstrapGenerationError) || draft.loop.signal?.aborted) throw error;
-    throw toldEnding(error, (await records.read(ref))?.record.ending, left, undefined, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false, wholeRuns: wholeRuns(draft) }));
+    throw toldEnding(error, (await records.read(ref))?.record.ending, left, undefined, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false, wholeRuns: wholeRuns(draft), refused: refusedTests.told() }));
   } finally {
+    stopCounting();
     running = false;
   }
   const spent = accounting();
@@ -320,7 +326,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
       : new AutomationStudioFlowBootstrapGenerationError({ ...flowBootstrapPhaseFailure("post_provider_validation", spent, "flow_bootstrap.post_provider_validation_failed").diagnostic, issueCodes: [...(outcome.timedOut ? [TIME_LIMIT_CODE] : []), `project.build_${outcome.ending?.outcome ?? "blocked"}`] });
     const timedOut = outcome.timedOut ? timeLimitWords(partSubflows((await records.read(ref))?.record.plans.at(-1)?.plan.partOf), trials) : undefined;
     // What Core recorded of its tests is said beside the supervisor's reason (header, t738).
-    throw toldEnding(failure, outcome.ending, left, timedOut, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false, wholeRuns: wholeRuns(draft) }));
+    throw toldEnding(failure, outcome.ending, left, timedOut, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false, wholeRuns: wholeRuns(draft), refused: refusedTests.told() }));
   }
   const current = await draft.currentBinding();
   if (current.executionDigest !== candidate.baseDependencyDigest || current.settingsRevision !== draft.baseSettingsRevision) throw new Error("FLOW_BOOTSTRAP_STALE: Flow or settings changed during candidate generation.");
@@ -348,7 +354,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const ended = outcome.status === "ended" ? outcome.ending : undefined;
   if (ended && (ended.outcome === "partial" || ended.outcome === "blocked")) {
     const title = ENDED_WORDS[ended.outcome];
-    const { text } = automationStudioProjectBuildEndingTold({ reason: ended.reason, left, record: automationStudioProjectBuildRecordTold({ parts: trials, assembled: true, whole: trial, wholeRuns: wholeRuns(draft) }) });
+    const { text } = automationStudioProjectBuildEndingTold({ reason: ended.reason, left, readings: left?.readings, record: automationStudioProjectBuildRecordTold({ parts: trials, assembled: true, whole: trial, wholeRuns: wholeRuns(draft), refused: refusedTests.told() }) });
     emitAutomationStudioActivity({ phase: "building", label: title, detail: { kind: "note", title, text, status: "failed" } });
     return { record, trial: withCodes([TOLD_CODE]) };
   }
@@ -408,7 +414,7 @@ function timeLimitWords(subflows: readonly string[], trials: ReadonlyMap<string,
  * its own has Core's note of what is left after its message, and any other is
  * shown the ending's kind and that note as a chat row before it is thrown.
  */
-function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding | undefined, left: { note: string | undefined; told?: string } | undefined, timedOut?: { title: string; tested: string }, record?: string): Error {
+function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding | undefined, left: { note: string | undefined; told?: string; readings?: Array<{ added: string[]; gone: string[] }> } | undefined, timedOut?: { title: string; tested: string }, record?: string): Error {
   if (!recorded || (recorded.outcome !== "partial" && recorded.outcome !== "blocked") || !(failure instanceof AutomationStudioFlowBootstrapGenerationError)) return failure;
   const { diagnostic } = failure;
   if (PERSON_CODES.has(diagnostic.code)) return failure;
@@ -424,7 +430,7 @@ function toldEnding(failure: Error, recorded: AutomationStudioProjectBuildEnding
   // The time limit is said as the time limit, with what was tested and is left (header, t601).
   const title = timedOut?.title ?? ENDED_WORDS[recorded.outcome];
   // The one account (header, t753): why the supervisor ended it, then Core's record of its tests, then what is left.
-  const said = timedOut ? undefined : automationStudioProjectBuildEndingTold({ reason: recorded.reason, left, record });
+  const said = timedOut ? undefined : automationStudioProjectBuildEndingTold({ reason: recorded.reason, left, record, readings: left?.readings });
   const why = said?.why;
   // The failure carries why too, beside the supervisor's ending it explains, for the build's last status line (header, t649).
   const ended = why === undefined ? undefined : why.length <= MAX_DIAGNOSTIC_ENDED_BECAUSE ? why.trim() : automationStudioActivityEndedReason(why, MAX_DIAGNOSTIC_ENDED_BECAUSE);

@@ -16,7 +16,9 @@
 //    and Core's ledger note, which the build record keeps after the model's
 //    words, cut from its end;
 // 2. Core's record of its tests (`./record-told.ts`);
-// 3. what is left on the site, in a person's words
+// 3. what Core last read of the pages the build acted on (t791), where a claim of the site's state those readings
+//    contradict is left out of the reason (`./reason-contradicted.ts`, `./readings-told.ts`);
+// 4. what is left on the site, in a person's words
 //    (`activity/wording/left-told.ts`), or that nothing is.
 //
 // The row's title says what happened; the commands that hand the result back
@@ -24,6 +26,10 @@
 // (`./codes.ts`, `conversations/commands/`).
 
 import { automationStudioActivityEndedReason } from "../../activity/index.ts";
+import type { AutomationStudioProjectBuildReading } from "./reading.ts";
+import { automationStudioProjectBuildReadingsTold } from "./readings-told.ts";
+import { automationStudioProjectBuildReasonNothingChanged } from "./reason-nothing-changed.ts";
+import { automationStudioProjectBuildReasonContradicted } from "./reason-contradicted.ts";
 import { automationStudioProjectBuildReasonChecked } from "./reason-checked.ts";
 import { automationStudioProjectBuildReasonUnrepeated } from "./reason-unrepeated.ts";
 
@@ -42,13 +48,20 @@ export function automationStudioProjectBuildEndingTold(input: {
   reason: string;
   left: { note: string | undefined; told?: string } | undefined;
   record?: string | undefined;
+  /** What Core last read of the pages the build acted on (header, t791). */
+  readings?: readonly AutomationStudioProjectBuildReading[] | undefined;
 }): { why: string | undefined; text: string; left: string } {
   const { left, record } = input;
+  const readings = input.readings ?? [];
   // Core's note goes after the model's words in the record: cut, and said last in a person's words (header).
   const own = left?.note && input.reason.endsWith(left.note) ? input.reason.slice(0, -left.note.length) : input.reason;
-  const checked = automationStudioProjectBuildReasonUnrepeated(record ? automationStudioProjectBuildReasonChecked(own, /\bstored (?:\d+ rows?|no rows)\b/u.test(record)) : own);
+  // A claim of the site's state that Core's own readings contradict gives way to the readings (t791).
+  // A claim that nothing changed gives way where the ledger holds an act left on the site (t791, fix 5b).
+  const owned = left?.note !== undefined ? automationStudioProjectBuildReasonNothingChanged(own) : own;
+  const uncontradicted = readings.length ? automationStudioProjectBuildReasonContradicted(owned, readings) : owned;
+  const checked = automationStudioProjectBuildReasonUnrepeated(record ? automationStudioProjectBuildReasonChecked(uncontradicted, /\bstored (?:\d+ rows?|no rows)\b/u.test(record)) : uncontradicted);
   const why = checked ? automationStudioActivityEndedReason(checked, MAX_ENDED_REASON) : undefined;
   const leftSaid = left?.note !== undefined ? left.told ?? left.note : NOTHING_LEFT;
-  const sentences = [why ? (/[.!?…]$/u.test(why) ? why : `${why}.`) : "", record ?? "", leftSaid].filter((sentence) => sentence);
+  const sentences = [why ? (/[.!?…]$/u.test(why) ? why : `${why}.`) : "", record ?? "", automationStudioProjectBuildReadingsTold(readings) ?? "", leftSaid].filter((sentence) => sentence);
   return { why: why || undefined, text: sentences.join(" "), left: leftSaid };
 }

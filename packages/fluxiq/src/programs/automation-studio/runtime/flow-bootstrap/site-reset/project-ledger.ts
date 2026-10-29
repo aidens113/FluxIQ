@@ -48,7 +48,7 @@
 
 import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
 import { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
-import { automationStudioSiteResetWitnessStampValid } from "../reset-admission/index.ts";
+import { AutomationStudioSiteResetStepGaps, automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetStepReachAnswer } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetRead, AutomationStudioSiteResetUnsettleableAct } from "./contracts.ts";
 import type { AutomationStudioSiteResetLeftover } from "./leftover.ts";
 import { AutomationStudioSiteResetReach, automationStudioSiteResetInvalidCollectionGroups, type AutomationStudioSiteResetIssuedRef } from "../reset-settlement/index.ts";
@@ -76,6 +76,7 @@ export type AutomationStudioSiteResetProjectLedgerOptions = {
 export class AutomationStudioSiteResetProjectLedger {
   private readonly controlWitnesses = new AutomationStudioSiteResetControlWitnesses();
   private readonly createBaselines = new AutomationStudioSiteResetCreateBaselines();
+  private readonly stepGaps = new AutomationStudioSiteResetStepGaps(this.createBaselines);
   /** The lists Core cannot read again, for every brief of the build (header). */
   private readonly reach = new AutomationStudioSiteResetReach();
   private readonly briefs = new Map<string, AutomationStudioSiteResetLedger>();
@@ -115,7 +116,9 @@ export class AutomationStudioSiteResetProjectLedger {
   }
 
   /** Immutable original evidence, per group (header): a group an act touched, or every group once one is sealed, takes none. */
-  observed(read: AutomationStudioSiteResetRead): void {
+  observed(given: AutomationStudioSiteResetRead): void {
+    // A page read whole is one of its lists, as every brief's ledger reads it (`./ledger.ts`, t791).
+    const read = this.createBaselines.paged(given);
     this.controlWitnesses.observed(read);
     this.createBaselines.observed(read);
     const collections = read.collections ?? [];
@@ -140,6 +143,14 @@ export class AutomationStudioSiteResetProjectLedger {
     if (witness.via === "destination") return this.createBaselines.retained(witness.ref) !== undefined;
     if (witness.via === "repeats") return [...this.briefs.values()].some((brief) => brief.exploredActs().some((act) => act.id === witness.act && act.witnessed && act.destinations.length > 0));
     return true;
+  }
+
+  /**
+   * Where a trial's step with no witness stands in its own tab (t791 fix 2, `../reset-admission/step-gaps.ts`): whether a call there can make one, and
+   * the refs read in that tab only. None where the step door was never asked about its node.
+   */
+  stepReach(step: { definitionId?: string | undefined; ref?: string | undefined }): AutomationStudioSiteResetStepReachAnswer | undefined {
+    return this.stepGaps.ofNode(step.definitionId, step.ref);
   }
 
   /** Every act of the build in the order recorded, with its owner, whether its brief still has it to undo, and whether it is left (header, t772 w7). */

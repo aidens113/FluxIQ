@@ -18,17 +18,15 @@
 // trial whose entry was not prepared (a predecessor did not run to its end)
 // says so: its verdict is about the predecessors, not this subflow.
 //
-// **A trial is judged by its change, as the whole gate judges it** (t578;
-// t775, user 2026-10-27). Given a reset (`../site-reset/`, the brief's own
-// ledger and start check), a live trial runs with this build's acts on the
-// site, said under `startedWith`, and its witnesses read just before it and
-// again after its end view (`../trial-change/`, the request's `siteChange`),
-// with the brief's parts and their typed effects (`scope.parts[].effect`); the
-// one refusal left names just an act of this build that already shows a step's
-// asked end state (`candidate.trial_starts_in_end_state`), as the
-// whole-candidate gate does (`../candidate/trial-gate.ts`): a refusal is not a
-// trial and answers `retry_allowed`. A yes its own readings contradict is a no
-// before any row check sees it (t787, `../trial-change/contradicted.ts`). When the port can run the deployment's start hook ahead of
+// **A trial is judged by its change, as the whole gate judges it** (t578; t775, user 2026-10-27). Given a reset
+// (`../site-reset/`, the brief's own ledger and start check), a live trial runs with this build's acts on the site, said
+// under `startedWith`, and its witnesses read just before it and again after its end view (`../trial-change/`, the
+// request's `siteChange`), with the brief's parts and their typed effects (`scope.parts[].effect`); the one refusal left
+// names just an act of this build that already shows a step's asked end state (`candidate.trial_starts_in_end_state`), as
+// the whole-candidate gate does (`../candidate/trial-gate.ts`): a refusal is not a trial and answers `retry_allowed`. A
+// lasting step with no witness never keeps a trial from running: the reset's admission notes it, said under `unwitnessed`
+// (t791 fix 4). A yes its own readings contradict is a no before any row check sees it (t787,
+// `../trial-change/contradicted.ts`). When the port can run the deployment's start hook ahead of
 // the check (`prepareStart`, `../../service/subflow-trial/port.ts`), it runs
 // first and the reset is told the site was just put back, so every act counts
 // undone and the model is asked for nothing (t475, t479); what the hook took
@@ -525,6 +523,7 @@ export class AutomationStudioSubflowTrialGate {
     const siteless = offline || kept !== undefined;
     const admission = kept ? undefined : this.input.reset?.admit?.(automationStudioSiteResetTrialSteps([...(port.admissionPredecessors?.(this.input.scope) ?? []), ...latest.subflows]));
     if (admission?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: admission.evidence, effectApplied: false, targetsUnchanged: true, resultCode: admission.evidence.code, resultReason: RETEST_REASON };
+    const unwitnessed = !siteless && admission?.kind === "admit" ? admission.unwitnessed : undefined;
     // The deployment's start hook first, so the check after it finds the site put back (header).
     const prepared = !siteless && this.input.reset && port.prepareStart ? await port.prepareStart({ scope: structuredClone(this.input.scope), revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
@@ -595,6 +594,7 @@ export class AutomationStudioSubflowTrialGate {
       instruction: `${kept ? `${kept.said} ` : recorded ? `${OFFLINE_WORDS.kept} ` : ""}${offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(repeatedStep) : instructionFor(answer, retestsLeft > 0, this.input.whole === true)}`,
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
+      ...(unwitnessed ? { unwitnessed } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {}),
       // Checked against the recording, or the offline check's note for a trial run live (header, P6).

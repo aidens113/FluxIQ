@@ -88,6 +88,9 @@
 // trial has no reset and no readings.
 // A yes the trial's own readings contradict is kept as a no (t787 fix 4,
 // `../trial-change/contradicted.ts`): no judge's answer makes it a pass.
+// A lasting step with no witness never keeps a trial from running (t791 fix 4,
+// `../site-reset/project-reset.ts`): the reset's admission notes it, and the
+// answer says so under `unwitnessed` (`../trial-change/unwitnessed-steps.ts`).
 //
 // **A start hook runs before the reset check (t475).** When the trial port has
 // one (`prepareStart`), it runs first, and the reset is told the site was just
@@ -451,6 +454,8 @@ export class AutomationStudioFlowCandidateTrialGate {
     const offSite = offline || kept !== undefined;
     const admission = kept ? undefined : this.input.reset?.admit?.(automationStudioSiteResetTrialSteps(latest.buildPlan?.plan?.subflows ?? []));
     if (admission?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: admission.evidence, effectApplied: false, targetsUnchanged: true, resultCode: admission.evidence.code, resultReason: RETEST_REASON };
+    // Steps with no witness run, and are said (header, t791).
+    const unwitnessed = admission?.kind === "admit" ? admission.unwitnessed : undefined;
     // The deployment's start hook first, so the check after it finds the site put back (header).
     const prepared = !offSite && this.input.reset && trial.port.prepareStart ? await trial.port.prepareStart({ revision: latest.revision, digest: latest.digest, signal }) : "none";
     signal.throwIfAborted();
@@ -513,6 +518,7 @@ export class AutomationStudioFlowCandidateTrialGate {
       // Whether Core's record contradicts what kept an unsure from a yes: the fact its instruction rests on (header, t641).
       ...(answer.verdict === "unsure" && retestsLeft > 0 && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
+      ...(unwitnessed && !offSite ? { unwitnessed } : {}),
       ...(absorbed.length ? { absorbedByStartReset: absorbed } : {}),
       ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {}),
       ...first?.evidence

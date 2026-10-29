@@ -80,6 +80,14 @@ const CANDIDATE = /\bcandidate(s?)('s)?(?:\s+(?:flow|plan|script)s?\b)?/giu;
 /** A draft step's own number: "Step 8", "steps 3 and 4", which the person's Flow numbers its own way. */
 const STEP_NUMBER = /\b([Ss])tep(s?)\s+\d+(?:\s*(?:,|and|or|to|-|–)\s*\d+)*\b/gu;
 
+/**
+ * Core's own words for where a change shows (t791), which a model repeats in the reason the chat shows: "a witnessed
+ * destination", "that reset ref", "resetDestination", "destination-1", "the witness stamp". Each is the place where
+ * the change shows, with the article before it kept ("a witnessed destination" is "a place where the change shows").
+ * "destination" alone, and "ref" alone, are ordinary words and are left.
+ */
+const CHANGE_PLACE = /(?:\b(the|an?|that|this|its|their|each|every|which|another|any)\s+)?\b(?:witnessed\s+destinations?|(?:reset\s+)?destination[\s-]+\d+|(?:reset|destination)\s+(?:refs?|references?)|resetDestinations?|witness\s+stamps?)\b/giu;
+
 /** `said` in the case `found` opens with. */
 function cased(found: string, said: string): string {
   return /^\p{Lu}/u.test(found) ? `${said.charAt(0).toUpperCase()}${said.slice(1)}` : said;
@@ -127,6 +135,12 @@ export function automationStudioActivityPersonWords(text: string): string {
     .replace(LIST_HANDLE, (found: string) => cased(found, "list"))
     .replace(MODIFIED_EXTRACTION, (found: string, noun: string, plural: string, many: string, kind: string | undefined) => `${cased(found, noun.toLowerCase())}${plural}${kind ? `-reading${kind}` : ` read${many}`}`)
     .replace(CONTROL_HANDLE, (found: string, control: string, plural: string) => `${control}${plural}`)
+    .replace(CHANGE_PLACE, (found: string, article: string | undefined) => {
+      const many = /s$/iu.test(found.trim());
+      const noun = many ? "places where the change shows" : "place where the change shows";
+      const word = article === undefined ? (many ? noun : `the ${noun}`) : `${article.toLowerCase() === "an" ? "a" : article.toLowerCase()} ${noun}`;
+      return cased(found, word);
+    })
     .replace(HANDLE_ID, (found: string) => cased(found, "control"))
     .replace(HANDLE_NOUN, (found: string, which: string, plural: string) => `${which} control${plural}`)
     .replace(RESUBMIT, (found: string, ending: string, object: string | undefined) => cased(found, `${SEND[ending.toLowerCase()]!} ${object ?? "it"} again`))

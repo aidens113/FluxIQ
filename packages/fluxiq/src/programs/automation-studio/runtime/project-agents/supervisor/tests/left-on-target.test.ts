@@ -205,3 +205,65 @@ describe("announcing what a finished build left", () => {
     expect(JSON.stringify(rows[0]!.detail)).not.toContain("The build left no change");
   });
 });
+
+// t791: the pages an ending's acts are still on, as Core last read them. A library catalogue stands in for the site.
+describe("an ending's readings of the pages its acts are on", () => {
+  type Lines = { added: string[]; gone: string[] };
+  type Place = { kind: string; group?: string; location?: string };
+
+  /** The real ledger, with each brief's latest reads and acts' pages replaced by a stub's. */
+  function withReads(real: AutomationStudioSiteResetProjectLedger, pages: Record<string, Array<{ where?: string }>>, reads: Record<string, Lines>) {
+    const asked: Array<string | undefined> = [];
+    const stub = {
+      snapshot: () => real.snapshot(),
+      forBrief: (brief: string) => Object.assign(Object.create(real.forBrief(brief)) as object, {
+        trialChange: () => ({
+          leftFromEarlier: () => (pages[brief] ?? []).map((page) => ({ did: "x", ...page })),
+          latest: (place: Place) => {
+            asked.push(place.location);
+            const lines = place.location ? reads[place.location] : undefined;
+            return lines ? { reading: { source: "latest_read", lines }, fresh: true, seq: 1 } : undefined;
+          }
+        })
+      })
+    } as unknown as AutomationStudioSiteResetProjectLedger;
+    return { stub, asked };
+  }
+
+  it("reads each page once, at the page where an act in place was made", () => {
+    const real = new AutomationStudioSiteResetProjectLedger();
+    real.forBrief("brief-1").explored(pressed("hold", "Place hold", ["create_new"]));
+    real.forBrief("brief-2").explored(pressed("search", "Save search", ["create_new"]));
+    const { stub, asked } = withReads(real, { "brief-1": [{ where: "/catalogue/item" }], "brief-2": [{ where: "/catalogue/item" }, { where: "/searches" }] }, { "/catalogue/item": { added: ["Hold placed"], gone: [] }, "/searches": { added: [], gone: [] } });
+    expect(leftOn(stub).left.readings).toEqual([{ added: ["Hold placed"], gone: [] }]);
+    expect(asked).toEqual(["/catalogue/item", "/searches"]);
+  });
+
+  it("gives nothing for an act with no known page or a page never read, and tells the build what it read", () => {
+    const real = new AutomationStudioSiteResetProjectLedger();
+    real.forBrief("brief-1").explored(pressed("hold", "Place hold", ["create_new"]));
+    const { stub } = withReads(real, { "brief-1": [{}, { where: "/never-read" }] }, {});
+    expect(leftOn(stub).left.readings).toEqual([]);
+    const told: unknown[] = [];
+    const { stub: read } = withReads(real, { "brief-1": [{ where: "/catalogue/item" }] }, { "/catalogue/item": { added: ["Hold placed"], gone: ["Place a hold"] } });
+    automationStudioProjectSupervisorLeftOnTarget({ projectLedger: read, leftAtEnding: (left) => told.push(left.readings) }).reason("The hold failed.");
+    expect(told).toEqual([[{ added: ["Hold placed"], gone: ["Place a hold"] }]]);
+  });
+});
+
+describe("an ending reason that claims nothing changed (t791, fix 5b)", () => {
+  it("drops the claim where the ledger holds an act left in place, and names the act", () => {
+    const ledger = new AutomationStudioSiteResetProjectLedger();
+    ledger.forBrief("brief-1").explored(pressed("hold", "Place hold", ["create_new" satisfies AutomationStudioActionConsequence]));
+    const { left } = leftOn(ledger);
+    const reason = left.reason("The renewal page never opened. Nothing was changed on the account.");
+    expect(reason).toContain("The renewal page never opened.");
+    expect(reason).not.toMatch(/nothing was changed/iu);
+    expect(reason).toContain("Place hold");
+  });
+
+  it("leaves the model's words alone when nothing is left", () => {
+    const { left } = leftOn(new AutomationStudioSiteResetProjectLedger());
+    expect(left.reason("It stopped. Nothing was changed on the account.")).toBe("It stopped. Nothing was changed on the account.");
+  });
+});

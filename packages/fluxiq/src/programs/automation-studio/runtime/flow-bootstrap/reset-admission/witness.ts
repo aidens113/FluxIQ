@@ -5,7 +5,8 @@
 //
 // - `destination`: a list named for the act by an issued ref (or, for an
 //   identified creation, its own scope), an original of its resource with the
-//   creation's subject absent;
+//   creation's subject absent; for an identified creation, also a page read
+//   whole (t791, `../site-reset/page-collection.ts`), by its issued ref only;
 // - `own_list`: the list its control sits in, read complete as an original of
 //   its resource;
 // - `control`: its own control's place, where the press declares exactly

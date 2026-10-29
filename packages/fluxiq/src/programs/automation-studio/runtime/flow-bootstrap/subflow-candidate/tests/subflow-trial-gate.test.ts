@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioFlowCandidate } from "../../candidate/index.ts";
-import type { AutomationStudioSiteResetDecision, AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
+import { AutomationStudioSiteResetProjectLedger, automationStudioSiteResetProjectReset, type AutomationStudioSiteResetDecision, type AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPreparingPort, type AutomationStudioSubflowTrialRequest, type AutomationStudioSubflowTrialResult } from "../index.ts";
 import { testScope } from "./subflow-fixture.ts";
 
@@ -111,6 +111,24 @@ describe("the subflow trial gate", () => {
       expect(told).toMatchObject([{ startReset: true, change: { steps: expect.any(Array), parts: [{ id: "p1" }] } }]);
       expect(asked[0]!.startedWith).toBeUndefined();
       expect(ran.evidence).toMatchObject({ verdict: "yes", absorbedByStartReset: [{ act: "act-1", did: "press \"Add\" button", call: "call.4" }], leftOnSite: [{ act: "act-2", did: "trial step 2 custom.press" }] });
+    });
+
+    it("runs a step with no witness through the build's reset, its answer and its judge's packet saying the gap (t791 fix 4)", async () => {
+      // A forum brief: follow the author, a reversible press no place was named for.
+      const followScope = testScope({ predecessors: [], parts: [{ partId: "p1", sourceId: "instruction.1", text: "Follow the author", effect: { kind: "end_state", state: "following the author" } }] });
+      const following = { ...proposal, subflows: [{ key: followScope.subflowKey, nodes: [{ key: "n1", definitionId: "forum.follow", definitionVersion: "1", label: "follow the author", consequences: ["modify_existing"] }] }] } as unknown as AutomationStudioSubflowProposal;
+      const read: { siteChange?: unknown } = {};
+      const port: AutomationStudioSubflowTrialPreparingPort = async (request) => {
+        read.siteChange = (await request.siteChange?.([{ step: 1, definitionId: "forum.follow", outcome: "changed" }]))?.siteChange;
+        return answer(request);
+      };
+      const project = new AutomationStudioSiteResetProjectLedger();
+      const reset = automationStudioSiteResetProjectReset({ project, own: project.forBrief(followScope.briefId), checks: () => ({ compare: async () => ({ moved: false }) }) });
+      const gate = new AutomationStudioSubflowTrialGate({ scope: followScope, latest: () => structuredClone(following), port, reset });
+      const ran = await gate.test(receipt);
+      expect(ran.resultCode).toBe("subflow.trial_yes");
+      expect(ran.evidence).toMatchObject({ ok: true, verdict: "yes", unwitnessed: { steps: [{ step: 1, label: "follow the author" }] } });
+      expect(read.siteChange).toMatchObject({ witnesses: [], proofs: [{ part: "p1", proof: "unproven", steps: [1] }], unwitnessed: { steps: [{ label: "follow the author", ranAs: [1] }], parts: ["p1"] } });
     });
 
     it("runs no trial while the reset refuses: the model is told what to undo, the refusal counts no trial and may be met by testing again", async () => {

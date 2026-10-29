@@ -16,9 +16,9 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
-import type { AutomationStudioSiteResetAdmissionDeclared, AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
+import type { AutomationStudioSiteResetAdmissionDeclared, AutomationStudioSiteResetStepAsk, AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetCollection, AutomationStudioSiteResetUnmet, AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
-import type { AutomationStudioTrialChangeAsk, AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
+import type { AutomationStudioTrialChangeAsk, AutomationStudioTrialChangeSession, AutomationStudioTrialUnwitnessed } from "../trial-change/index.ts";
 
 // The `undoes` key moved to `../reset-settlement/undoes-key.ts` (t743), which the settle words say it from; it stays
 // exported here for the callers that import this file directly (`../action-permissions.ts`).
@@ -112,13 +112,16 @@ export type AutomationStudioSiteResetExplored = {
   on?: Extract<AutomationStudioSiteResetTarget, { kind: "admit" }>["on"];
   /** The `resetDestination` ref the call named: where its own act's effect would show or, under `undoes`, the named act's; the ledger keeps it (F1). */
   resetDestination?: string;
+  /** An out slot the ledger fills (t791 fix 3, `./press-notes.ts`): Core's note about this call's press, which the permission wrapper puts beside the tool's answer. */
+  note?: JsonObject;
 };
 
 /** The ledger, as the build's permission wrapper sees it. */
 export type AutomationStudioSiteResetCalls = {
   /** A builder-only recoverable precondition, independent of lasting-act permission. */
   createBaseline?(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: JsonObject & { code: string } };
-  destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number }>;
+  /** The refs the latest read printed; `page` marks a page read whole, not a list on it (`./create-baselines.ts`, t791). */
+  destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number; page?: true }>;
   /** `resetDestination`: the ref the same call names, refused before it runs when no receipt printed it (rerun round 2); callers forward it. */
   claim(undoes: unknown, resetDestination?: unknown): AutomationStudioSiteResetClaim;
   /** Asked, for an undo, of each action the domain puts to the gate, before it acts (t475). */
@@ -127,9 +130,12 @@ export type AutomationStudioSiteResetCalls = {
   /**
    * The step door of the one admission (t751 R3, `../reset-admission/admission.ts`): asked of a lasting plan step's declaration
    * at submission (`operation`: the step's registered definition), it answers the witness stamp its node carries, or none
-   * where the step has no witness or needs none. It never refuses: a trial refuses a reversible step whose stamp is missing.
+   * where the step has no witness or needs none. It never refuses: a trial of a step whose stamp is missing runs, judged by its
+   * end view (t791 fix 4). `ask`: the step's node (`ref`, `<subflow>.<node>`) and an out slot: where the answer is no stamp the
+   * ledger fills `gap` with whether a call in the step's own tab can make a witness (t791 fix 2, `../reset-admission/step-gaps.ts`), and the
+   * builder's words for it; the submission says them as a note on the accepted revision.
    */
-  admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string): AutomationStudioSiteResetWitnessStamp | undefined;
+  admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string, ask?: AutomationStudioSiteResetStepAsk): AutomationStudioSiteResetWitnessStamp | undefined;
 };
 
 /**
@@ -172,7 +178,7 @@ export type AutomationStudioSiteResetRead = {
   lines?: AutomationStudioSiteResetLines;
   /** The opaque tokens of the items -- rows, cards -- on the page, in the same form a declaration's `control.item` takes (t475). */
   items?: string[];
-  /** All subjects on this observed scope, including singleton and hidden records. */
+  /** All subjects on this observed scope, including singleton and hidden records. With `scope` and `resource`, the read is also a reading of the whole page (`./page-collection.ts`, t791); none is an empty page. */
   subjects?: string[];
   /** Positively complete, resource-bound collection inventories; only these can witness absence. */
   collections?: AutomationStudioSiteResetCollection[];
@@ -347,19 +353,25 @@ export type AutomationStudioSiteResetTrialReset = {
   /** Restarts the reset phase and answers the acts now on the site, the trial's own among them (`leftOnSite`). */
   trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId?: string): AutomationStudioSiteResetNamedAct[];
   /**
-   * Asked before a trial runs its steps, before the start hook and before any baseline moves (t751 R3): every reversible
-   * lasting step needs a witness stamp that still resolves, or the trial is refused unrun. A project build's reset only
-   * (`./project-reset.ts`); absent, nothing is asked.
+   * Asked before a trial runs its steps, before the start hook and before any baseline moves (t751 R3; t791 fix 4: it no
+   * longer refuses). It always admits, and notes under `unwitnessed` each reversible lasting step whose witness stamp is missing
+   * or no longer resolves, with whether a call in that step's own tab can make one: the trial runs and is judged by its end
+   * view and done-when checks. A project build's reset only (`./project-reset.ts`); absent, nothing is asked.
    */
   admit?(steps: readonly AutomationStudioSiteResetTrialStep[]): AutomationStudioSiteResetStepAdmission;
 };
 
-/** One step a trial will run, as its trial door hands it to `admit`: its number and label, its lasting classes, and its node's witness stamp, unread. */
-export type AutomationStudioSiteResetTrialStep = { step: number; label?: string; consequences: readonly AutomationStudioActionConsequence[]; witness?: unknown };
+/**
+ * One step a trial will run, as its trial door hands it to `admit`: its number and label, its lasting classes, and its node's
+ * witness stamp, unread. `definitionId` and `ref` (`<subflow>.<node>`) name its node, by which the step door's note of the
+ * tab it acts in is found (t791 fix 2); absent, that tab is unknown.
+ */
+export type AutomationStudioSiteResetTrialStep = { step: number; label?: string; consequences: readonly AutomationStudioActionConsequence[]; witness?: unknown; definitionId?: string; ref?: string };
 
 /**
- * The answer to `admit`: run the trial, or refuse it unrun (`candidate.trial_step_unwitnessed`, `no_witness`, met on another
- * page), naming under `stepsUnwitnessed` each reversible step whose stamp is missing or no longer resolves. A refusal is not
- * a trial, and nothing moved.
+ * The answer to `admit`: run the trial (t791 fix 4). `unwitnessed`: each reversible step whose stamp is missing or no longer
+ * resolves, and the builder's words for them, which a trial gate copies into its answer; the trial is judged by its end view
+ * and each step's done-when check. The `refuse` branch is a reset's own, kept for a reset that has reason to refuse a trial
+ * unrun; a project build's never answers it.
  */
-export type AutomationStudioSiteResetStepAdmission = { kind: "admit" } | { kind: "refuse"; evidence: JsonObject & { code: string }; moved: false };
+export type AutomationStudioSiteResetStepAdmission = { kind: "admit"; unwitnessed?: AutomationStudioTrialUnwitnessed } | { kind: "refuse"; evidence: JsonObject & { code: string }; moved: false };

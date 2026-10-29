@@ -26,6 +26,11 @@
 //    own scope names with the subject absent, else by a witnessed explored act
 //    it repeats; otherwise, at the step door, refused `create_baseline_required`,
 //    met on another page (the exploration door admits it with no witness, t775).
+//    That original may be a page read whole (t791): a page of the same resource
+//    that holds no list the domain vouches for, an empty state included, whose
+//    ref the creation names with its subject absent there
+//    (`../site-reset/page-collection.ts`). A page ref read in another resource
+//    witnesses nothing.
 // 5. Any other reversible scoped press is witnessed by the destination an
 //    issued ref names, the list its control sits in, its own control's place
 //    (exactly modify_existing, with a state there and actual pre-act original
@@ -39,10 +44,12 @@
 // press while exploring needs no list read before it: where rules 4 and 5 find
 // no witness, the exploration door admits it with none (the ledger records the
 // act, which is then said as on the site, never asked back). The step door
-// still answers no stamp there, and a trial of such a step is refused
-// `candidate.trial_step_unwitnessed` until the step names where its change
-// shows (`../site-reset/project-reset.ts`). A plan step can carry no
-// `resetDestination`, so it is told how its witness is made while exploring.
+// still answers no stamp there; a trial of such a step runs all the same and is
+// judged by its end view and done-when check, its gap said to the builder and
+// the judge (t791 fix 4, `../site-reset/project-reset.ts`). A plan step can
+// carry no `resetDestination`, so it is told how its witness is made while
+// exploring, offered only the refs read in its own tab, and told `no_call`
+// where no call in that tab can make one (t791 fix 2, `./step-reach.ts`).
 // Which issued list a creation names is never judged here (t748, C5).
 // Pure.
 
@@ -52,6 +59,7 @@ import { automationStudioSiteResetTrialRepeats as repeats } from "../reset-settl
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../site-reset/words.ts";
 import type { AutomationStudioSiteResetAdmissionInput, AutomationStudioSiteResetAdmissionKnown, AutomationStudioSiteResetAdmissionVerdict } from "./contracts.ts";
 import { automationStudioSiteResetIdentifiedCreate as identifiedCreate } from "./identified-create.ts";
+import { automationStudioSiteResetStepReach as stepReach } from "./step-reach.ts";
 
 /** The classes the site's own controls can reverse. */
 const REVERSIBLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create_new", "modify_existing", "delete"]);
@@ -74,7 +82,7 @@ export function automationStudioSiteResetAdmission(input: AutomationStudioSiteRe
     const repeated = known.unissued(reference) ? undefined : repeatedAct(input, known);
     if (repeated) return { kind: "admit", witness: { via: "repeats", act: repeated } };
     if (door === "exploration") return { kind: "admit" };
-    return refused("candidate.create_baseline_required", "no_destination_original", "another_page", WORDS.stepWitnessRequired(known.issuedRefs()));
+    return unwitnessed(input, known, "candidate.create_baseline_required", "no_destination_original");
   }
   const own = control.scope !== undefined && control.resource !== undefined ? known.original(control.scope, control.resource) : undefined;
   if (own) return { kind: "admit", witness: { via: "own_list", scope: own.scope, group: own.group } };
@@ -85,7 +93,15 @@ export function automationStudioSiteResetAdmission(input: AutomationStudioSiteRe
   const repeated = repeatedAct(input, known);
   if (repeated) return { kind: "admit", witness: { via: "repeats", act: repeated } };
   if (door === "exploration") return { kind: "admit" };
-  return refused("candidate.reset_witness_required", "no_witness", "another_page", WORDS.stepWitnessRequired(known.issuedRefs()));
+  return unwitnessed(input, known, "candidate.reset_witness_required", "no_witness");
+}
+
+/** The step door's refusal for want of a witness: only the refs read in the control's own tab are offered, and `no_call` is said where no call there can make one (header). */
+function unwitnessed(input: AutomationStudioSiteResetAdmissionInput, known: AutomationStudioSiteResetAdmissionKnown, code: `candidate.${string}`, failed: AutomationStudioSiteResetFailed): AutomationStudioSiteResetAdmissionVerdict {
+  const { control } = input.declared;
+  const issuedHere = known.issuedRefsIn ? known.issuedRefsIn(control.resource) : known.issuedRefs();
+  const canMeet = stepReach({ resource: control.resource, identified: control.subject !== undefined || control.page !== undefined || control.scope !== undefined, issuedHere, sealed: known.sealed?.() === true });
+  return refused(code, failed, canMeet, canMeet === "no_call" ? WORDS.stepWitnessUnreachable() : WORDS.stepWitnessRequired(issuedHere));
 }
 
 /** The id of the first witnessed explored act this action repeats, or none. */
