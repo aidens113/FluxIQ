@@ -50,3 +50,29 @@ describe("a toggle step in a resolved plan", () => {
     expect(nodesOf(result)).toEqual([{ target: { selector: "#a" } }]);
   });
 });
+
+describe("a toggle step tied to its own node's trial (t787)", () => {
+  const trialPress = (extra: Partial<AutomationStudioExploredToggle> = {}): AutomationStudioExploredToggle => ({ node: "domain.demo.press", handles: [], trialNodes: ["node.bootstrap.b1.primary.a"], signature: { state: "s.on" }, ...extra });
+
+  it("gives ensureState to a step whose only matching press came from a trial pass of the same node, and to no other step", () => {
+    const result = automationStudioFlowPlanToggleSteps({
+      plan: plan([
+        { key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" } } },
+        { key: "b", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" } } },
+        { key: "aa", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" } } }
+      ]),
+      explored: [trialPress()]
+    });
+    expect(result.issues).toEqual([]);
+    expect(nodesOf(result)).toEqual([
+      { target: { selector: "$row.link" }, ensureState: { state: "s.on" } },
+      { target: { selector: "$row.link" } },
+      { target: { selector: "$row.link" } }
+    ]);
+  });
+
+  it("refuses such a step when the trial's answer named a node that sets the state", () => {
+    const result = automationStudioFlowPlanToggleSteps({ plan: plan([{ key: "a", consequences: ["modify_existing"] }]), explored: [trialPress({ idempotentWith: "domain.demo.set_state" })] });
+    expect(result.issues).toMatchObject([{ code: "candidate.toggle_not_idempotent", path: "plan.subflows.0.nodes.0" }]);
+  });
+});

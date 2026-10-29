@@ -17,8 +17,17 @@
 // the domain resolved it (`draft.ranWith.parameters.target`), so a step written
 // later can be tied to the press by either. Anything malformed is not recorded,
 // never refused: a press without a toggle answer is an ordinary press.
+//
+// A trial pass is a press too (t787): a step the build submitted that the domain
+// answered as a toggle while a trial ran it is recorded from the trial's own
+// attempts (`trial`), under the trial node's id (`trialNodes`), so a later
+// revision of the same step is tied to it though its handle was never pressed
+// while exploring. The answer is read where the domain puts it on an executed
+// attempt: its outputs' `toggle`, or the action result kept under `result`. An
+// attempt skipped as already in its state pressed nothing and says nothing.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
 import type { AutomationStudioExploredToggle } from "./script-statements/index.ts";
 
 /** The tool an exploration press is run through (`../llm/node-tools/run-node.ts`). */
@@ -54,6 +63,26 @@ export class AutomationStudioExploredToggles {
       ...(idempotentWith ? { idempotentWith } : {})
     });
     if (this.records.length > MAX_RECORDS) this.records.shift();
+  }
+
+  /** Records each succeeded, unskipped attempt of a trial whose outputs carry a well-formed `toggle` (header, t787); the same node and signature twice is kept once. */
+  trial(attempts: readonly AutomationStudioNodeAttemptTrace[]): void {
+    for (const attempt of attempts) {
+      if (attempt.status !== "succeeded" || attempt.skipped) continue;
+      const toggle = objectOf(attempt.outputs.toggle) ?? objectOf(objectOf(attempt.outputs.result)?.toggle);
+      const signature = objectOf(toggle?.signature);
+      if (!toggle || !signature || !Object.keys(signature).length || JSON.stringify(signature).length > MAX_SIGNATURE_CHARS) continue;
+      if (this.records.some((record) => record.trialNodes?.includes(attempt.nodeId) && JSON.stringify(record.signature) === JSON.stringify(signature))) continue;
+      const idempotentWith = typeof toggle.idempotentWith === "string" && NODE_ID.test(toggle.idempotentWith) ? toggle.idempotentWith : undefined;
+      this.records.push({
+        node: attempt.definitionId,
+        handles: [],
+        trialNodes: [attempt.nodeId],
+        signature: structuredClone(signature),
+        ...(idempotentWith ? { idempotentWith } : {})
+      });
+      if (this.records.length > MAX_RECORDS) this.records.shift();
+    }
   }
 
   /** Every recorded press, oldest first, each its own copy. */

@@ -124,6 +124,12 @@ export type AutomationStudioCandidateTrialPorts = {
   graphOptions(input: { runId: string; signal: AbortSignal }): AutomationStudioGraphExecutionOptions;
   processDatasets(runId: string): Promise<void>;
   recordSets(runId: string): Promise<AutomationStudioResultRecordSetInput[]>;
+  /**
+   * The build's record of explored toggles (`../../flow-bootstrap/explored-toggles.ts`, t787): each
+   * trial's attempts are told to it, so a step the domain answered as a toggle in a trial is
+   * made safe to repeat in the next revision. Absent, nothing is recorded.
+   */
+  exploredToggles?: { trial(attempts: readonly AutomationStudioNodeAttemptTrace[]): void } | undefined;
   readEndView?: ((input: { runId: string }) => Promise<AutomationStudioResultEndView | undefined>) | undefined;
   actionAttempts?: ((session: AutomationStudioRuntimeSession) => readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined) | undefined;
   observedStateKeys?: readonly string[] | undefined;

@@ -14,13 +14,14 @@ import type { AutomationStudioSiteResetCollection } from "../reset-settlement/in
 
 /**
  * One reading of a witness's place, before or after a trial: where it came
- * from (the ledger's latest read while still current, a look Core took, or
- * the end view's read), its location, the complete list groups it carried, its
+ * from (the ledger's latest read while still current, a look Core took, the
+ * end view's read, or the acting step's own diff, read just before and just
+ * after that step: t787), its location, the complete list groups it carried, its
  * controls (place -> state token -> count), and, on an after reading, the
  * domain's readable differences from the before reading.
  */
 export type AutomationStudioTrialReading = {
-  source: "latest_read" | "core_look" | "end_view";
+  source: "latest_read" | "core_look" | "end_view" | "step_diff";
   location?: string;
   collections?: AutomationStudioSiteResetCollection[];
   controls?: Record<string, Record<string, number>>;
@@ -48,14 +49,14 @@ export type AutomationStudioTrialActOutcome = {
   parts: string[];
 };
 
-/** One witness's delta from before to after. `unread` when either side carried no reading of it. List subjects and control state tokens stay opaque here; the packet reduces them to counts. */
+/** One witness's delta from before to after. `unread` when either side carried no reading of it. List subjects and control state tokens stay opaque here; the packet reduces them to counts. A changed control is `returned` where every state it changed ended at the build's recorded start for its place (`./delta.ts`, t787). */
 export type AutomationStudioTrialDelta =
   | { witness: string; kind: "list" | "control"; status: "unread" }
   | { witness: string; kind: "list"; status: "changed" | "unchanged"; added: string[]; removed: string[]; changed: string[]; unchanged: string[] }
-  | { witness: string; kind: "control"; status: "changed" | "unchanged"; before: Record<string, number>; after: Record<string, number> };
+  | { witness: string; kind: "control"; status: "changed" | "unchanged"; before: Record<string, number>; after: Record<string, number>; returned?: true };
 
-/** What the trial proves of one part: `none` (the part has no typed effect), `shown`, `no_change`, `already_in_end_state`, `carried` (the end state held before, and the same step was seen making it earlier in the build), or `unproven`. */
-export type AutomationStudioTrialProof = "none" | "shown" | "no_change" | "already_in_end_state" | "carried" | "unproven";
+/** What the trial proves of one part: `none` (the part has no typed effect), `shown`, `no_change`, `already_in_end_state`, `carried` (the end state held before, and the same step was seen making it earlier in the build), `unproven`, or `contradicted` (a part asking to add, one of whose controls the trial put back to the build's start: t787), which is never a yes. */
+export type AutomationStudioTrialProof = "none" | "shown" | "no_change" | "already_in_end_state" | "carried" | "unproven" | "contradicted";
 
 /** One part's proof, with its effect and the trial steps whose acts serve it. */
 export type AutomationStudioTrialPartProof = { part: string; effect?: AutomationStudioTrialPartEffect; proof: AutomationStudioTrialProof; steps: number[] };
@@ -63,7 +64,8 @@ export type AutomationStudioTrialPartProof = { part: string; effect?: Automation
 /** Core's closed mechanical findings over a trial's change. */
 export type AutomationStudioTrialChangeFinding =
   | { code: "result.change_not_seen"; part: string }
-  | { code: "result.unasked_change"; witness: string; where?: string };
+  | { code: "result.unasked_change"; witness: string; where?: string }
+  | { code: "result.change_contradicted"; part: string; witness: string };
 
 /** An act of this build in place at the trial's start, in the words of what it did. */
 export type AutomationStudioTrialLeftAct = { did: string; where?: string };
@@ -121,6 +123,12 @@ export type AutomationStudioTrialChangeLedgerPort = {
   leftFromEarlier(): AutomationStudioTrialLeftAct[];
   /** Whether an earlier act of the same step definition (and the same control or repeated act, where the stamp names one) was seen to change the site in this build. */
   carried(step: Pick<AutomationStudioTrialChangeStep, "definitionId" | "witness">): boolean;
+  /**
+   * The counts a control place showed at the build's start, where the build read them (the control tracker's `start`,
+   * `../reset-settlement/control-tracker.ts`); none where it never did. A changed control that ends there was put back,
+   * which a part asking to add can never be (`./proof.ts`, t787). Absent on a port that keeps no starts.
+   */
+  start?(place: string): Readonly<Record<string, number>> | undefined;
 };
 
 /** Core's own look at a location (the start check's `lookAt`): its read reaches the ledger; `start`, where given, is the before state the domain words its lines against. */
@@ -136,7 +144,7 @@ export type AutomationStudioTrialWitnessSet = {
   byDefinition: Record<string, { witnesses: string[]; parts: string[] }>;
 };
 
-/** One act a live trial made or passed over, as the trial port reports it: the step's number as the trial's feedback numbers it, its definition and stamp, and what it did. */
+/** One act a live trial made or passed over, as the trial port reports it: the step's number as the trial's feedback numbers it, its definition and stamp, what it did, and, for a landed act whose own diff read its control, that control's place, page location and counts just before and just after it (t787: each pass of a loop at its own item). */
 export type AutomationStudioTrialChangeAct = {
   step: number;
   definitionId: string;
@@ -144,7 +152,11 @@ export type AutomationStudioTrialChangeAct = {
   pass?: { number: number; of: number } | undefined;
   row?: string | undefined;
   outcome: AutomationStudioTrialActOutcome["outcome"];
+  control?: AutomationStudioTrialActControl | undefined;
 };
+
+/** The control one landed act pressed, read by the act's own diff: its opaque place, its page's location where known, and the place's counts on each side. */
+export type AutomationStudioTrialActControl = { place: string; location?: string; before: Record<string, number>; after: Record<string, number> };
 
 /** The judge's packet and Core's findings over it. */
 export type AutomationStudioTrialChangeOutcome = { siteChange: AutomationStudioTrialSiteChange; findings: AutomationStudioTrialChangeFinding[] };

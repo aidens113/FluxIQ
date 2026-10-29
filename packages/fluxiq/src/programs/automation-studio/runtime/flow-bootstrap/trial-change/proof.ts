@@ -7,6 +7,13 @@
 //   `unproven` while any witness is unread (the change may be where nothing was
 //   read), and `no_change` only when every witness was read and none changed.
 //   A part with no witness at all is `unproven`.
+// - `change` asking to add (t787): `contradicted` when any of its control
+//   witnesses changed and was `returned` (`./delta.ts`): every state it moved
+//   ended where the build found it, so the trial took back what an earlier act
+//   had added. That is the opposite of the part's direction, whatever its
+//   other witnesses show, and is never a yes (`./contradicted.ts`). A part
+//   asking to remove is not read so: going back is what it asks. Lists carry
+//   no direction here; the judge reads them from their counts and lines.
 // - `end_state`: `shown` when any witness changed; otherwise `unproven` while
 //   any is unread; when every witness was read unchanged and one of them is a
 //   control (the place the state itself shows), the state held before the
@@ -34,6 +41,7 @@ export function automationStudioTrialPartProof(input: {
   const steps = [...new Set(acts.filter((act) => act.parts.includes(part.id)).map((act) => act.step))].sort((left, right) => left - right);
   if (!part.effect) return { part: part.id, proof: "none", steps };
   const base = { part: part.id, effect: part.effect, steps };
+  if (part.effect.kind === "change" && part.effect.direction === "adds" && deltas.some((delta) => delta.kind === "control" && delta.status === "changed" && delta.returned === true)) return { ...base, proof: "contradicted" };
   if (deltas.some((delta) => delta.status === "changed")) return { ...base, proof: "shown" };
   if (!deltas.length || deltas.some((delta) => delta.status === "unread")) return { ...base, proof: "unproven" };
   if (part.effect.kind === "change") return { ...base, proof: "no_change" };

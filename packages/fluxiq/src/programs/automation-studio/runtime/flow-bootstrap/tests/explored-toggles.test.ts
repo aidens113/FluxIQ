@@ -63,3 +63,25 @@ describe("the explored toggles record", () => {
     expect(gate().exploredToggles.list()).toEqual([]);
   });
 });
+
+describe("the explored toggles record from a trial (t787)", () => {
+  const attempt = (extra: Record<string, unknown> = {}) => ({
+    attemptId: "a1", nodeId: "node.bootstrap.b1.primary.s6", definitionId: "domain.demo.press", startedAt: 0, status: "succeeded",
+    inputs: {}, outputs: { toggle: { signature: { state: "s.on" } } }, effects: [], ...extra
+  }) as unknown as Parameters<AutomationStudioExploredToggles["trial"]>[0][number];
+
+  it("records the toggle a trial pass's attempt answered, under the trial node, once however many passes", () => {
+    const toggles = new AutomationStudioExploredToggles();
+    toggles.trial([attempt(), attempt({ attemptId: "a2" }), attempt({ attemptId: "a3", outputs: { result: { toggle: { signature: { state: "s.on" }, idempotentWith: "domain.demo.set_state" } } }, nodeId: "node.bootstrap.b1.primary.s7" })]);
+    expect(toggles.list()).toEqual([
+      { node: "domain.demo.press", handles: [], trialNodes: ["node.bootstrap.b1.primary.s6"], signature: { state: "s.on" } },
+      { node: "domain.demo.press", handles: [], trialNodes: ["node.bootstrap.b1.primary.s7"], signature: { state: "s.on" }, idempotentWith: "domain.demo.set_state" }
+    ]);
+  });
+
+  it("records nothing for a failed or skipped attempt or one with no well-formed toggle answer", () => {
+    const toggles = new AutomationStudioExploredToggles();
+    toggles.trial([attempt({ status: "failed" }), attempt({ skipped: { reason: "already_in_state", code: "x" } }), attempt({ outputs: {} }), attempt({ outputs: { toggle: { signature: {} } } })]);
+    expect(toggles.list()).toEqual([]);
+  });
+});

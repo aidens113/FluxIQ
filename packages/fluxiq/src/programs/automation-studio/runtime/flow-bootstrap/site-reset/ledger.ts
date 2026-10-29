@@ -333,7 +333,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       toggle: (act) => this.judge.toggleOf(act),
       pressed: (place) => this.pressedUnder(place)
     });
-    this.change = new AutomationStudioSiteResetTrialChange({ acts: () => this.acts, clock: () => this.clock, createBaselines: this.createBaselines, controlWitnesses: this.controlWitnesses, explored: () => this.buildExplored(), standing: (act) => this.leftOf(act).standing, groups: (act) => this.witnessGroups(act) });
+    this.change = new AutomationStudioSiteResetTrialChange({ acts: () => this.acts, clock: () => this.clock, createBaselines: this.createBaselines, controlWitnesses: this.controlWitnesses, explored: () => this.buildExplored(), standing: (act) => this.leftOf(act).standing, groups: (act) => this.witnessGroups(act), controlStart: (place) => this.tracker.start(place) });
     this.reachable = { acts: this.acts, seen: this.seen, clock: () => this.clock, claimable: (act) => this.claimable(act), lent: (act) => this.judge.lent(act), toggle: (act) => this.judge.toggleOf(act), differing: (act) => this.judge.differing(act), described: (scope) => this.createBaselines.described(scope) };
   }
 

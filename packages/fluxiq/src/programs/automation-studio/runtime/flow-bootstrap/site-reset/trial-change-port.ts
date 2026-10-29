@@ -58,6 +58,8 @@ export class AutomationStudioSiteResetTrialChange {
     explored: () => readonly AutomationStudioSiteResetExploredAct[];
     standing: (act: Act) => AutomationStudioSiteResetLeftover["standing"];
     groups: (act: Act) => string[];
+    /** The counts a control place showed at the build's start (the control tracker's `start`), for a trial's direction (`../trial-change/proof.ts`, t787). */
+    controlStart?: (place: string) => Readonly<Record<string, number>> | undefined;
   }) {}
 
   /** The read-only port a trial's readings ask (header). */
@@ -74,7 +76,8 @@ export class AutomationStudioSiteResetTrialChange {
       },
       seq: () => this.readLog.seq,
       leftFromEarlier: () => this.leftFromEarlier(),
-      carried: (step) => this.carried(step)
+      carried: (step) => this.carried(step),
+      start: (place) => this.ledger.controlStart?.(place)
     };
   }
 

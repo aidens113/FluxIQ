@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4258
-- Class: 147
+- Public declarations: 4266
+- Class: 148
 - Interface: 10
 - Object: 555
-- Type: 2274
+- Type: 2276
 - Type Alias: 1
-- Value: 1271
+- Value: 1276
 
 ## Public Declarations
 
@@ -792,6 +792,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioCandidateEarlierAdviceMemory` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/earlier-advice-memory.ts` | One gate's memory of its build's judged trials' advice (header). |
 | `AutomationStudioCandidateEarlierAdviceTrial` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/earlier-advice-memory.ts` | One judged trial with advice, as a gate keeps it (header). |
 | `AutomationStudioCandidateExecutionReceipt` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/contracts.ts` | - |
+| `automationStudioCandidateExploredLayerHandlers` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/explored.ts` | - |
 | `automationStudioCandidateFingerprint` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/digest.ts` | One fingerprint owner: byte-compatible legacy graph and source-bound v2. |
 | `automationStudioCandidateGraphSource` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/candidate-graphs.ts` | - |
 | `AutomationStudioCandidateKeptStepHint` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/kept-step-hint.ts` | One controller's hints for dropped steps that chose the request's own words (header). |
@@ -1143,6 +1144,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioExplorationUnusableDecisionError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/unusable-decision.ts` | - |
 | `automationStudioExploredEvidenceHandle` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/explored-evidence-label.ts` | - |
 | `automationStudioExploredEvidenceLabel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/explored-evidence-label.ts` | - |
+| `AutomationStudioExploredInterruption` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-interruptions.ts` | One explored press that cleared a layer covering the page (header). |
+| `AutomationStudioExploredInterruptions` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-interruptions.ts` | Every explored press the domain answered as clearing a layer, oldest first (header). |
 | `AutomationStudioExploredToggles` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-toggles.ts` | Every explored press the domain answered as a toggle, oldest first (header). |
 | `AutomationStudioFactEvaluationContext` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/host-runtime.ts` | What Core hands the host beside a batch of fact conditions (state-aware recovery plan, C9): the frame's bound inputs and the run's values a condition's `{ input }` or `{ value }` compares with, and the node and attempt the boundary is at. The host resolves those bindings from here and never looks a value up itself. |
 | `AutomationStudioFailedStepRepairPort` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/step-failure-decision.ts` | The port the verification calls for a run that failed at a step. It answers the run with the attempt recorded and whether the Flow was changed, or nothing when the run was not routed -- in which case nothing was written and the failed run stands exactly as the ladder left it. |
@@ -1768,6 +1771,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLargeProjectFixture` | Type | `packages/fluxiq/src/programs/automation-studio/model/fixtures/large-project.ts` | - |
 | `AutomationStudioLargeProjectFixtureOptions` | Type | `packages/fluxiq/src/programs/automation-studio/model/fixtures/large-project.ts` | - |
 | `AutomationStudioLastingActCheck` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/effect-check.ts` | The caller's own check of whether a lasting act took effect, asked only after an attempt whose failure left that unknown: `landed`, `not_landed` (it did not happen, so making it again is not a second act) or `unknown`. |
+| `automationStudioLayerHandlerPatch` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/patch.ts` | - |
 | `AutomationStudioLazySqliteUiCacheStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/ui-cache-store.ts` | - |
 | `AutomationStudioLegacyBackup` | Type | `packages/fluxiq/src/programs/automation-studio/model/legacy-retirement.ts` | - |
 | `AutomationStudioLegacyBackupManifest` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts` | - |
@@ -2324,6 +2328,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioRecoveryExploredPacket` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts` | One packet an exploration returned, labelled for the runtime patch request. |
 | `AutomationStudioRecoveryLookupInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts` | - |
 | `AutomationStudioRecoveryNext` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/recovery-choice.ts` | What happens once the ladder stops, as the run knows it when it says so (`../../executor/step-loop/failed-attempt.ts`): the Flow's own way on from a failure, a failed route or an On Fail handler in scope (`on_fail`); a way on past a step the Flow can finish without (`goes_on`); an in-run fix of the step (`repair`); or none of these, and the run ends here (`stop`). Paid run R4a (t428) read "follows what the Flow says to do when this step fails" for a step with no such path, and the test simply ended. |
+| `automationStudioRecoveryPatchFactKind` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/patch-fact-kind.ts` | - |
 | `AutomationStudioRecoveryPatchReserve` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/patch-reserve.ts` | - |
 | `automationStudioRecoveryPermissionGate` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/permissions.ts` | - |
 | `AutomationStudioRecoveryPermissions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/permissions.ts` | - |
@@ -2869,12 +2874,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioTransientStatusEffect` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/transient-status.ts` | - |
 | `AutomationStudioTransitionComparison` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts` | - |
 | `AutomationStudioTransitionComparisonStatus` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts` | - |
+| `AutomationStudioTrialActControl` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | The control one landed act pressed, read by the act's own diff: its opaque place, its page's location where known, and the place's counts on each side. |
 | `AutomationStudioTrialActOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | What one act of the trial did: the step, the repeat pass and readable row it acted on, whether it changed something, found its target already in the asked state, or showed no change; the witness it shows at and the parts it serves. |
-| `AutomationStudioTrialChangeAct` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One act a live trial made or passed over, as the trial port reports it: the step's number as the trial's feedback numbers it, its definition and stamp, and what it did. |
+| `AutomationStudioTrialChangeAct` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One act a live trial made or passed over, as the trial port reports it: the step's number as the trial's feedback numbers it, its definition and stamp, what it did, and, for a landed act whose own diff read its control, that control's place, page location and counts just before and just after it (t787: each pass of a loop at its own item). |
 | `automationStudioTrialChangeActs` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/acts.ts` | - |
 | `automationStudioTrialChangeAfterRead` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/after-read.ts` | - |
 | `AutomationStudioTrialChangeAsk` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | What a trial gate hands its reset so Core can read the trial's change and find a start already in an asked end state. |
 | `automationStudioTrialChangeBegin` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/session.ts` | - |
+| `automationStudioTrialChangeContradictedNo` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contradicted.ts` | - |
 | `AutomationStudioTrialChangeFinding` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | Core's closed mechanical findings over a trial's change. |
 | `automationStudioTrialChangeFindings` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/findings.ts` | - |
 | `AutomationStudioTrialChangeLedgerPort` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | The narrow, read-only view of a build's ledger that the trial readings ask (`../site-reset/ledger.ts`, `trialChange`). |
@@ -2886,7 +2893,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioTrialChangeStep` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One step a live trial will run, as Core reads where its change shows: its number in the plan, its registered definition, its lasting classes, its node's witness stamp (unread here: the ledger resolves it), and the task parts it serves (none for a step that only prepares the trial's entry, or in a build with no task parts). |
 | `automationStudioTrialChangeSteps` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/steps.ts` | - |
 | `automationStudioTrialDelta` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/delta.ts` | - |
-| `AutomationStudioTrialDelta` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One witness's delta from before to after. `unread` when either side carried no reading of it. List subjects and control state tokens stay opaque here; the packet reduces them to counts. |
+| `AutomationStudioTrialDelta` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One witness's delta from before to after. `unread` when either side carried no reading of it. List subjects and control state tokens stay opaque here; the packet reduces them to counts. A changed control is `returned` where every state it changed ended at the build's recorded start for its place (`./delta.ts`, t787). |
 | `AutomationStudioTrialEvidenceAssertion` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | One task-goal assertion the trial checked, kept independent of candidate edits. |
 | `AutomationStudioTrialEvidenceAssertionOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | - |
 | `AutomationStudioTrialEvidenceExport` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | A result as it leaves Core: always marked derived. |
@@ -2916,8 +2923,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioTrialPartEffect` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | A task part's typed effect: structurally Core's `AutomationStudioProjectTaskEffect` (project-agents), written here so this directory imports nothing from it. |
 | `automationStudioTrialPartProof` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/proof.ts` | - |
 | `AutomationStudioTrialPartProof` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One part's proof, with its effect and the trial steps whose acts serve it. |
-| `AutomationStudioTrialProof` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | What the trial proves of one part: `none` (the part has no typed effect), `shown`, `no_change`, `already_in_end_state`, `carried` (the end state held before, and the same step was seen making it earlier in the build), or `unproven`. |
-| `AutomationStudioTrialReading` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One reading of a witness's place, before or after a trial: where it came from (the ledger's latest read while still current, a look Core took, or the end view's read), its location, the complete list groups it carried, its controls (place -> state token -> count), and, on an after reading, the domain's readable differences from the before reading. |
+| `automationStudioTrialPassWitnesses` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/pass-witnesses.ts` | - |
+| `AutomationStudioTrialProof` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | What the trial proves of one part: `none` (the part has no typed effect), `shown`, `no_change`, `already_in_end_state`, `carried` (the end state held before, and the same step was seen making it earlier in the build), `unproven`, or `contradicted` (a part asking to add, one of whose controls the trial put back to the build's start: t787), which is never a yes. |
+| `AutomationStudioTrialReading` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One reading of a witness's place, before or after a trial: where it came from (the ledger's latest read while still current, a look Core took, the end view's read, or the acting step's own diff, read just before and just after that step: t787), its location, the complete list groups it carried, its controls (place -> state token -> count), and, on an after reading, the domain's readable differences from the before reading. |
 | `AutomationStudioTrialSideReadings` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One side's readings by witness id, and each location's opaque state on that side (`./readings.ts`). |
 | `AutomationStudioTrialSiteChange` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | The bounded `siteChange` packet the judge sees (design section 2). No group, scope, place, subject or state token appears in it. |
 | `automationStudioTrialSiteChangePacket` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/packet.ts` | - |

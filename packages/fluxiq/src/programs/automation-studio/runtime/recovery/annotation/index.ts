@@ -2,6 +2,7 @@ export * from "./annotate.ts";
 export * from "./early-refusal.ts";
 export * from "./exploration.ts";
 export * from "./in-run.ts";
+export * from "./patch-fact-kind.ts";
 export * from "./patch-reserve.ts";
 export * from "./patches.ts";
 export * from "./permissions.ts";

@@ -170,7 +170,8 @@ function sessionOver(ledgers: readonly AutomationStudioSiteResetLedger[], ask: A
   const port: AutomationStudioTrialChangeLedgerPort = {
     places: own.places, latest: own.latest, seq: own.seq,
     leftFromEarlier: () => ports.flatMap((entry) => entry.leftFromEarlier()),
-    carried: (step) => ports.some((entry) => entry.carried(step))
+    carried: (step) => ports.some((entry) => entry.carried(step)),
+    start: (place) => ports.map((entry) => entry.start?.(place)).find((counts) => counts !== undefined)
   };
   return automationStudioTrialChangeBegin({ steps: ask.steps, parts: ask.parts, port, look: (location, start) => look(location, start) });
 }
