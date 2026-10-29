@@ -21,8 +21,10 @@ export const iamActionSourceSchema = z.discriminatedUnion("kind", [
  * (`packages/contracts/src/iam/actions.generated.ts`, written by Core's catalog
  * generator and checked for drift):
  *
- * - `action`: the action name; for an endpoint source it is exactly
+ * - `action`: the action name; for each endpoint source it is exactly
  *   `iamActionName(<service>, <endpoint>)`;
+ * - `sources`: every registration that declares the action (several programs
+ *   may register the same endpoint name), in a stable order;
  * - `accessLevel`: derived from the registration's classification
  *   (`IAM_DEFAULT_ACCESS_LEVEL_BY_CLASSIFICATION`) unless overridden;
  * - `resourceTypes`: the FRN resource types the action's `resource` extractor
@@ -37,7 +39,7 @@ export const iamActionCatalogEntrySchema = z
     action: z.string().refine(isIamActionName, "an action name is <service>:<PascalCaseAction>"),
     accessLevel: z.enum(IAM_ACCESS_LEVELS),
     resourceTypes: z.array(z.string().min(1).max(128)).min(1).max(16),
-    source: iamActionSourceSchema,
+    sources: z.array(iamActionSourceSchema).min(1).max(16),
     destructive: z.boolean(),
     description: z.string().min(1).max(300)
   })
@@ -45,9 +47,11 @@ export const iamActionCatalogEntrySchema = z
   .superRefine((entry, context) => {
     const service = entry.action.split(":")[0];
     if (!isIamService(service)) return;
-    if (entry.source.kind === "endpoint" && entry.action !== iamActionName(service, entry.source.endpoint)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["action"], message: `an endpoint action is ${iamActionName(service, entry.source.endpoint)}` });
-    }
+    entry.sources.forEach((source, index) => {
+      if (source.kind === "endpoint" && entry.action !== iamActionName(service, source.endpoint)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["sources", index], message: `an endpoint action is ${iamActionName(service, source.endpoint)}` });
+      }
+    });
     entry.resourceTypes.forEach((chain, index) => {
       if (!resourceChainAllowed(service, chain, entry.resourceTypes.length)) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ["resourceTypes", index], message: `not a ${service} resource type chain` });

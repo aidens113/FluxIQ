@@ -79,6 +79,8 @@ Global program internals use the layout described in
 - [Automation Studio Importer Guide](../integrations/automation-studio-importing-repos.md)
 - [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
 - [Runtime Kernel](runtime-kernel.md)
+- [Platform: The IAM Engine](platform.md) — inert IAM evaluator, store, audit,
+  authorizer and catalog generator under `src/platform/`
 - [Documentation System](docs-system.md)
 - [Program Layout](program-layout.md)
 - [Code Structure](code-structure.md) — placement procedure, feature and kind
