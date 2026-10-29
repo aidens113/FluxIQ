@@ -53,9 +53,9 @@ describe("the run-control endpoints", () => {
   it("are registered: holding and resuming under runtime.control as authoring, reading as a read", () => {
     const { registry } = world();
     expect(registry.endpoints()).toEqual(expect.arrayContaining([
-      { programId: "automation-studio", endpoint: "pause-runtime-session", permission: "runtime.control", classification: "authoring" },
-      { programId: "automation-studio", endpoint: "resume-runtime-session", permission: "runtime.control", classification: "authoring" },
-      { programId: "automation-studio", endpoint: "get-runtime-run-control", permission: "programs.read", classification: "read" }
+      expect.objectContaining({ programId: "automation-studio", endpoint: "pause-runtime-session", permission: "runtime.control", classification: "authoring" }),
+      expect.objectContaining({ programId: "automation-studio", endpoint: "resume-runtime-session", permission: "runtime.control", classification: "authoring" }),
+      expect.objectContaining({ programId: "automation-studio", endpoint: "get-runtime-run-control", permission: "programs.read", classification: "read" })
     ]));
   });
 

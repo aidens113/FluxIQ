@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireFluxIQUser } from "../../../lib/auth";
 import { getFluxIQ } from "../../../lib/fluxiq";
+import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor, panelRouteActor, type AppRouteRefusal } from "../../../lib/app-route-iam";
 import { pairedClientDomainScope } from "../../../lib/program-route";
+
+const ROUTE = appRouteIamContract("GET", "/api/recordings");
 
 // The recordings list. A signed-in person's cookie lists as before. A paired
 // client's token lists only the recordings of projects in the domain its
@@ -21,16 +24,23 @@ export async function GET(request: Request) {
 type Caller =
   | { kind: "person" }
   | { kind: "paired-client"; domainId: string | null }
-  | { kind: "refused"; status: 401 | 403; error: string };
+  | ({ kind: "refused" } & AppRouteRefusal);
 
 async function authorize(request: Request, fluxiq: ReturnType<typeof getFluxIQ>): Promise<Caller> {
   const bearerToken = readBearerToken(request.headers.get("authorization"));
   const session = bearerToken ? await fluxiq.programs.clientGateway.authorizeToken(bearerToken) : null;
   if (session) {
     const scope = pairedClientDomainScope(request.url, session);
-    return scope ? { kind: "paired-client", domainId: scope.domainId } : { kind: "refused", status: 403, error: "A paired client may only reach its own domain." };
+    if (!scope) return { kind: "refused", status: 403, error: "A paired client may only reach its own domain." };
+    const actor = await pairedClientRouteActor(fluxiq.programs.identityAccess, session);
+    if (!actor) return { kind: "refused", status: 401, error: "Authentication required" };
+    const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "paired-client", actor);
+    return refusal ? { kind: "refused", ...refusal } : { kind: "paired-client", domainId: scope.domainId };
   }
-  return await requireFluxIQUser() ? { kind: "person" } : { kind: "refused", status: 401, error: "Authentication required" };
+  const auth = await requireFluxIQUser();
+  if (!auth) return { kind: "refused", status: 401, error: "Authentication required" };
+  const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "panel", panelRouteActor(auth));
+  return refusal ? { kind: "refused", ...refusal } : { kind: "person" };
 }
 
 function readBearerToken(header: string | null): string | null {

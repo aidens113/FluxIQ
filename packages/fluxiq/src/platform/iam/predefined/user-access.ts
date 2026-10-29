@@ -1,6 +1,15 @@
 import { defineIamPredefinedPolicy } from "./define-predefined-policy.ts";
 import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
 
+// The list endpoints across the workspace whose registration declares a
+// `list` filter: the registry keeps only the items the caller may read, so
+// allowing the call shows a user their own items and nothing else. Named one
+// by one, never `List*`: an unfiltered list on the workspace (every client
+// session, every recording) would show a user other users' data. A registry
+// test fails when a declared filtered workspace list is missing here, and
+// another when a user reaches any unfiltered one (programs/_shared/tests).
+const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations", "studio:Projects", "secrets:Snapshot"];
+
 /**
  * `FluxIQUserAccess`: the own-data rule. What a user reaches is what they
  * own, plus creating and listing in the workspace, plus managing their own
@@ -12,14 +21,15 @@ import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
  *   owner is never reached through this statement. Children (flows, runs,
  *   datasets) carry their project's owner; keys their creator; browsers their
  *   user (plan, Ownership).
- * - `WorkspaceCreateList`: `Create*` and `List*` of the same services on the
- *   workspace FRN, where a top-level create or list evaluates. A list
- *   endpoint then filters its items by each item's `Read` action, so listing
- *   shows only what `OwnData` allows. Nothing else is granted on the workspace
- *   FRN: an action on no specific resource (today, every non-`ops` action,
- *   whose catalog `resourceTypes` is `["*"]`) is denied until its
- *   registration declares the resource it acts on, rather than reading the
- *   whole workspace.
+ * - `WorkspaceCreate`: `Create*` of the same services on the workspace FRN,
+ *   where a top-level create evaluates (the registry records the creator as
+ *   the new resource's owner). A list inside a project evaluates on the
+ *   project, under `OwnData`.
+ * - `WorkspaceFilteredLists`: the workspace-wide list endpoints whose
+ *   registration filters its items (`FILTERED_WORKSPACE_LISTS`), on the
+ *   workspace FRN; the filter then shows only what `OwnData` allows. Nothing
+ *   else is granted on the workspace FRN: an unfiltered list across the
+ *   workspace, and an action on no specific resource, are denied.
  * - `SelfService`: the `iam` actions that change only the caller's own
  *   credentials, on `user/${fluxiq:PrincipalId}`. Not `iam:CreateUser`,
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
@@ -36,9 +46,15 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Condition: { StringEquals: { "fluxiq:ResourceOwner": "${fluxiq:PrincipalId}" } }
   },
   {
-    Sid: "WorkspaceCreateList",
+    Sid: "WorkspaceCreate",
     Effect: "Allow",
-    Action: ["studio:Create*", "studio:List*", "secrets:Create*", "secrets:List*", "gateway:Create*", "gateway:List*"],
+    Action: ["studio:Create*", "secrets:Create*", "gateway:Create*"],
+    Resource: IAM_WORKSPACE_PATTERNS.workspace
+  },
+  {
+    Sid: "WorkspaceFilteredLists",
+    Effect: "Allow",
+    Action: [...FILTERED_WORKSPACE_LISTS],
     Resource: IAM_WORKSPACE_PATTERNS.workspace
   },
   {

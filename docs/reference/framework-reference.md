@@ -7,11 +7,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4311
+- Public declarations: 4313
 - Class: 148
 - Interface: 10
 - Object: 557
-- Type: 2295
+- Type: 2297
 - Type Alias: 1
 - Value: 1300
 
@@ -3904,8 +3904,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ProductionRunStatus` | Type | `packages/fluxiq/src/programs/production-runner/types.ts` | - |
 | `ProductionRunTargetType` | Type | `packages/fluxiq/src/programs/production-runner/types.ts` | - |
 | `ProductionTarget` | Type | `packages/fluxiq/src/programs/production-runner/types.ts` | - |
-| `ProgramApiActor` | Type | `packages/fluxiq/src/programs/_shared/api.ts` | - |
+| `ProgramApiActor` | Type | `packages/fluxiq/src/programs/_shared/api.ts` | Who calls. `channel` says how the call arrived: `paired-client` for a connected client's token (its `permissions` are narrowed below its role's), `panel` or absent otherwise. Under the `service` profile only a paired client is narrowed by its permissions; everyone else by their policies. |
+| `ProgramApiEndpointSummary` | Type | `packages/fluxiq/src/programs/_shared/api.ts` | What `endpoints()` lists for one registration (the catalog generator and parity read it). |
 | `ProgramApiHandler` | Type | `packages/fluxiq/src/programs/_shared/api.ts` | - |
+| `ProgramApiRegistrationParams` | Type | `packages/fluxiq/src/programs/_shared/api.ts` | One registration: its program, endpoint, today's permission and classification, and its IAM declaration. The declaration is optional in the type only so test doubles can register bare endpoints: every live registration declares `action`, `accessLevel` and `resource` (a registry test fails the build on any that does not), and an undeclared endpoint evaluates against the workspace FRN, which grants no owner-conditioned access. |
 | `ProgramApiRequest` | Type | `packages/fluxiq/src/programs/_shared/api.ts` | - |
 | `ProgramApiResponse` | Type | `packages/fluxiq/src/programs/_shared/api.ts` | - |
 | `programAuthorizationPinError` | Value | `packages/fluxiq/src/programs/_shared/authorization.ts` | - |

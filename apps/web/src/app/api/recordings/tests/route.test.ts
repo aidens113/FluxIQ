@@ -9,14 +9,22 @@ const listRecordingSummaries = vi.fn();
 const requireFluxIQUser = vi.fn();
 
 vi.mock("../../../../lib/auth", () => ({ requireFluxIQUser: () => requireFluxIQUser() }));
-vi.mock("../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({
-    programs: {
-      clientGateway: { authorizeToken },
-      automationStudio: { listRecordingSummaries },
-    },
-  }),
-}));
+const snapshot = vi.fn();
+// A real registry on the local profile decides the route, as live.
+vi.mock("../../../../lib/fluxiq", async () => {
+  const { GlobalProgramApiRegistry } = await import("fluxiq");
+  const api = new GlobalProgramApiRegistry();
+  return {
+    getFluxIQ: () => ({
+      programs: {
+        api,
+        identityAccess: { snapshot },
+        clientGateway: { authorizeToken },
+        automationStudio: { listRecordingSummaries },
+      },
+    }),
+  };
+});
 
 import { GET } from "../route";
 
@@ -28,7 +36,8 @@ function request(query = "", token: string | null = TOKEN) {
 }
 
 beforeEach(() => {
-  for (const mock of [authorizeToken, listRecordingSummaries, requireFluxIQUser]) mock.mockReset();
+  for (const mock of [authorizeToken, listRecordingSummaries, requireFluxIQUser, snapshot]) mock.mockReset();
+  snapshot.mockResolvedValue({ users: [{ id: "user:owner", roleId: "role:admin", enabled: true }], roles: [{ id: "role:admin", permissions: ["programs.read", "runtime.control"] }] });
   authorizeToken.mockImplementation(async (token: string) => (token === TOKEN ? { sessionId: "g1", operatorUserId: "user:owner", metadata: { domainId: "web-automation" } } : null));
   listRecordingSummaries.mockResolvedValue(PAGE);
   requireFluxIQUser.mockResolvedValue(null);
@@ -58,7 +67,7 @@ describe("the recordings list", () => {
   });
 
   it("lists a signed-in person's recordings as before, with no domain passed", async () => {
-    requireFluxIQUser.mockResolvedValue({ user: { id: "user:person" } });
+    requireFluxIQUser.mockResolvedValue({ session: { id: "session:person" }, user: { id: "user:person" }, role: { id: "role:viewer", permissions: ["programs.read"] } });
     const response = await GET(request("?page=1", null));
 
     expect(response.status).toBe(200);
@@ -67,7 +76,7 @@ describe("the recordings list", () => {
   });
 
   it("falls back to the cookie for a token that speaks for no session, and refuses without either", async () => {
-    requireFluxIQUser.mockResolvedValue({ user: { id: "user:person" } });
+    requireFluxIQUser.mockResolvedValue({ session: { id: "session:person" }, user: { id: "user:person" }, role: { id: "role:viewer", permissions: ["programs.read"] } });
     expect((await GET(request("", "stale-token"))).status).toBe(200);
     expect(listRecordingSummaries).toHaveBeenLastCalledWith({ page: undefined, pageSize: undefined });
 

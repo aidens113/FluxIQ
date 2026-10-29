@@ -25,18 +25,18 @@ describe("Automation Studio graph patch API", () => {
       const authorizeSessionPin = vi.fn().mockResolvedValue({ authorized: true });
       const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin } as any });
       registerAutomationStudioApi(registry, service);
-      expect(registry.endpoints()).toContainEqual({
+      expect(registry.endpoints()).toContainEqual(expect.objectContaining({
         programId: "automation-studio",
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.applyGraphPatch,
         permission: "flows.write",
         classification: "authoring"
-      });
-      expect(registry.endpoints()).toContainEqual({
+      }));
+      expect(registry.endpoints()).toContainEqual(expect.objectContaining({
         programId: "automation-studio",
         endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport,
         permission: "programs.read",
         classification: "read"
-      });
+      }));
 
       const response = await registry.call({
         programId: "automation-studio",

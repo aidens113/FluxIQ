@@ -130,6 +130,8 @@ describe("a paired client on the program route", () => {
       userId: "user:owner",
       roleId: "role:admin",
       permissions: ["programs.read", "programs.write", "runtime.control", "flows.write"],
+      // Under the service profile the registry narrows a paired client by these permissions too.
+      channel: "paired-client",
     });
     expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:viewer" }, directory)?.permissions).toEqual(["programs.read"]);
   });

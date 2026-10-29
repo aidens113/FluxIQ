@@ -1,6 +1,7 @@
 // Everything routed through a paired client: its snapshot and item listings,
 // trust revocation, recording control, snapshots and action execution.
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type CaptureClientSnapshotRequest, type ExecuteClientActionRequest, type RevokeClientTrustRequest, type StartClientRecordingRequest, type StopClientRecordingRequest } from "../contracts.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../../storage/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
@@ -12,6 +13,9 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.clientGatewaySnapshot,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ClientGatewaySnapshot",
+    accessLevel: "Read",
+    resource: endpointResource.workspace(),
     handler: async () => {
       await clientGateway?.ready();
       const summary = clientGateway?.summary() ?? { enabled: false, counts: { sessions: 0, pairings: 0, trustedClients: 0 } };
@@ -26,6 +30,9 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listClientGatewayItems,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListClientGatewayItems",
+    accessLevel: "List",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       await clientGateway?.ready();
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
@@ -45,6 +52,9 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.revokeClientTrust,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:RevokeClientTrust",
+    accessLevel: "Write",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       if (!clientGateway) return { ok: false, error: "Client gateway is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as RevokeClientTrustRequest & { authSessionId?: unknown; authorizationPin?: unknown };
@@ -57,6 +67,9 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startClientRecording,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:StartClientRecording",
+    accessLevel: "Write",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StartClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
@@ -68,6 +81,9 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.stopClientRecording,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:StopClientRecording",
+    accessLevel: "Write",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as StopClientRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
@@ -80,6 +96,9 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.captureClientSnapshot,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:CaptureClientSnapshot",
+    accessLevel: "Write",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       if (!clientGateway) return { ok: false, error: "Client gateway is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CaptureClientSnapshotRequest;
@@ -95,6 +114,9 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.executeClientAction,
     permission: "runtime.control",
     classification: "destructive",
+    action: "studio:ExecuteClientAction",
+    accessLevel: "Write",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       if (!clientGatewayBridge) return { ok: false, error: "Client gateway bridge is not available." };
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ExecuteClientActionRequest & { authSessionId?: unknown; authorizationPin?: unknown };
