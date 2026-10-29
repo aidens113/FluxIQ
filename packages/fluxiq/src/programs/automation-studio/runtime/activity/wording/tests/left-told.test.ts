@@ -83,3 +83,26 @@ describe("what a build left on the site, in a person's words", () => {
     expect(pressed).toBe("The build clicked “Apply coupon”, which changed the page and might have left something behind, so check it if you need the site exactly as it was.");
   });
 });
+
+// t796: two holds left on books the task did not ask for were told as one "clicked Hold", without which books; a tab press
+// and the opening of a book's page were listed as leaving something behind, burying the holds.
+describe("what a build left, naming where", () => {
+  it("names the place of each act left, so two holds on different books are two entries", () => {
+    const told = automationStudioActivityLeftTold([
+      { did: "click \"Hold\" button", on: "/library/book/12" },
+      { did: "click \"Hold\" button", on: "/library/book/31" }
+    ], []);
+    expect(told).toBe("These changes the build made are still on the site: clicked “Hold” on the page “/library/book/12” and clicked “Hold” on the page “/library/book/31”.");
+  });
+
+  it("keeps an act with no known place as it was", () => {
+    expect(automationStudioActivityLeftTold([{ did: "click \"Hold\" button" }], [])).toBe("These changes the build made are still on the site: clicked “Hold”.");
+  });
+
+  it("does not list a tab press or opening a page as something that might have been left behind", () => {
+    const told = automationStudioActivityLeftTold([{ did: "click \"Hold\" button", on: "/library/book/12" }], [
+      possibly("click \"Reviews\" tab"), possibly("click \"Authors\" tab"), possibly("trial step 4 \"open the book\" on \"Open\"")
+    ]);
+    expect(told).toBe("These changes the build made are still on the site: clicked “Hold” on the page “/library/book/12”.");
+  });
+});

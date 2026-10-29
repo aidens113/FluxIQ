@@ -171,3 +171,70 @@ export type AutomationStudioTrialExecutedStep = {
   /** The outputs of the loop pass the step ran in, when it ran in one. */
   pass?: AutomationStudioNodeAttemptTrace["outputs"] | undefined;
 };
+
+/**
+ * What one tracked step did on one pass of its repeat, or on the run outside
+ * one (`./act-ledger.ts`, t796): numbered `step` as the feedback numbers it when
+ * it ran, with the row its trace named where it named one.
+ *
+ * - `ran`: its final attempt settled done. A lasting step says its `act`:
+ *   `changed` (its act landed, `./landed-acts.ts`), `already_in_state` (its try
+ *   failed but the page already showed its effect, `stateHeld`) or
+ *   `no_change_seen` (it succeeded and nothing was seen to change).
+ * - `skipped`: the run passed over it: its control `absent` (an optional step),
+ *   `already_in_state` (its `ensureState` already held), `already_done` (its
+ *   act completed earlier in this run) or `state_routed` (the page was at
+ *   another step).
+ * - `refused`: the domain refused its press as `other_row` (another row's
+ *   control) or `covered` (a layer over the page).
+ * - `failed`: any other failure, by its code.
+ * - `not_run`: it has no attempt on this pass: `guarded`, a guard routed past it
+ *   because the optional step it runs `only after` (`after`, that step's label)
+ *   was skipped; `unreached`, the pass never got to it.
+ */
+export type AutomationStudioTrialActLedgerPass = { pass?: number; step?: number; row?: string } & (
+  | { status: "ran"; act?: "changed" | "already_in_state" | "no_change_seen" }
+  | { status: "skipped"; why: "absent" | "already_in_state" | "already_done" | "state_routed" }
+  | { status: "refused"; why: "other_row" | "covered" }
+  | { status: "failed"; code?: string }
+  | { status: "not_run"; why: "guarded"; after: string }
+  | { status: "not_run"; why: "unreached" }
+);
+
+/**
+ * One step the act ledger tracks (`./act-ledger.ts`): a step that does a
+ * lasting act, or one a guard can route past. Its graph node, the words it is
+ * named by, its plan key where the build stamped one, whether its act lasts,
+ * its guard (the optional step it runs only after), its repeat (that loop's
+ * node and how many passes it ran; absent outside one) and what it did on each
+ * pass, in pass order.
+ */
+export type AutomationStudioTrialActLedgerEntry = {
+  nodeId: string;
+  definitionId: string;
+  label: string;
+  key?: string;
+  lasting: boolean;
+  guard?: { nodeId: string; label: string };
+  repeat?: { nodeId: string; passes: number };
+  passes: AutomationStudioTrialActLedgerPass[];
+};
+
+/**
+ * One step a trial never ran on some passes, from its act ledger
+ * (`./not-run.ts`): what the feedback lists under `notRun` (with Core's
+ * sentence) and the trial's change reads as not run (`../../flow-bootstrap/trial-change/`).
+ * `passes` are the passes it did not run on, `of` its repeat's passes (absent
+ * outside one, where `passes` is `[1]`); `after` the guard step's label.
+ */
+export type AutomationStudioTrialNotRunStep = {
+  nodeId: string;
+  definitionId: string;
+  label: string;
+  key?: string;
+  reason: "guarded" | "unreached";
+  after?: string;
+  passes: number[];
+  of?: number;
+  lasting: boolean;
+};

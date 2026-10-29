@@ -4,7 +4,9 @@
 // definition, its lasting classes, its node's witness stamp unread, and the
 // task parts the subflow it belongs to serves (`partsOf`, by subflow key;
 // none where a build has no task parts, or for a subflow that only prepares
-// the trial's entry). Pure.
+// the trial's entry), and (t796) its plan key, which its graph node carries as
+// `bootstrapSymbolicKey`, so a step the trial's act ledger names by its graph
+// node is matched to it (`./part-acting.ts`). Pure.
 
 import type { AutomationStudioFlowBootstrapNode } from "../plan/index.ts";
 import type { AutomationStudioTrialChangeStep } from "./contracts.ts";
@@ -17,6 +19,7 @@ export function automationStudioTrialChangeSteps(subflows: readonly { key?: stri
     const entry: AutomationStudioTrialChangeStep = { step, definitionId: node.definitionId, consequences: [...(node.consequences ?? [])], parts: [...partsOf(subflow.key)] };
     if (node.label !== undefined) entry.label = node.label;
     if (node.resetWitness !== undefined) entry.witness = node.resetWitness;
+    if (node.key) entry.key = node.key;
     return entry;
   }));
 }

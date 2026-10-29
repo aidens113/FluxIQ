@@ -67,3 +67,31 @@ describe("a live trial's change session (t775 D1)", () => {
     expect((await session!.finish([])).siteChange.leftFromEarlier).toEqual([{ did: "an earlier act" }]);
   });
 });
+
+// t796: the steps the trial's act ledger says were not run reach the part proofs, never the packet's acts or witnesses.
+describe("a live trial's change session with steps not run (t796)", () => {
+  const keyed = automationStudioTrialChangeSteps([{ key: "hold", nodes: [{ key: "n1", label: "place a hold", definitionId: "library.hold", definitionVersion: "1", consequences: ["create_new"], resetWitness: { via: "destination", ref: "destination-1" } }, { key: "n2", definitionId: "library.read", definitionVersion: "1", consequences: [] }] }], () => ["p1"]);
+  const notRun = { outcome: "not_run" as const, definitionId: "library.hold", key: "n1", lasting: true, notRun: { nodeId: "node.hold", label: "place a hold", reason: "guarded" as const, after: "close the library banner", passes: [1, 2, 3], of: 3 } };
+
+  it("carries the plan key on each step", () => {
+    expect(keyed.map((step) => step.key)).toEqual(["n1", "n2"]);
+  });
+
+  it("proves a part whose hold step a guard went past on every pass not_run, naming it, with no act and no finding", async () => {
+    const fake = fakePort({ rows: { "s:a": "v:1" }, fresh: true });
+    const session = await automationStudioTrialChangeBegin({ steps: keyed, parts: [{ id: "p1", effect: { kind: "change", direction: "adds", count: 3, what: "a hold on each book" } }], port: fake.port, look: fake.look });
+    const { siteChange, findings } = await session!.finish([notRun]);
+    expect(siteChange.acts).toEqual([]);
+    expect(siteChange.witnesses[0]).toMatchObject({ steps: [] });
+    expect(siteChange.proofs).toEqual([{ part: "p1", effect: { kind: "change", direction: "adds", count: 3, what: "a hold on each book" }, proof: "not_run", steps: [], notRun: [notRun.notRun] }]);
+    expect(findings).toEqual([]);
+  });
+
+  it("matches a not-run step to the plan's only by its definition, key and label", async () => {
+    const fake = fakePort({ rows: { "s:a": "v:1" }, fresh: true });
+    const session = await automationStudioTrialChangeBegin({ steps: keyed, parts: [{ id: "p1", effect: { kind: "change", direction: "adds", count: 3, what: "holds" } }], port: fake.port, look: fake.look });
+    const { siteChange } = await session!.finish([{ ...notRun, key: "n9" }]);
+    expect(siteChange.proofs[0]).toMatchObject({ proof: "no_change" });
+    expect(siteChange.proofs[0]).not.toHaveProperty("notRun");
+  });
+});

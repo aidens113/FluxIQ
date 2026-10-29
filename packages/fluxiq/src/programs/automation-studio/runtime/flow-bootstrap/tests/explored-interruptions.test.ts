@@ -124,10 +124,10 @@ describe("a submitted Flow and a layer its build closed while exploring", () => 
     expect(savedFlowValidation(plan, registry, resolution).errors).toEqual([]);
   });
 
-  it("gets none without such a press, or when one of its own steps already makes it", async () => {
+  it("gets none without such a press, and still gets one when one of its own steps also makes the press (P6, t796)", async () => {
     expect((await submitted(["t10"])).buildPlan.plan.subflows[0]!.nodes).toHaveLength(1);
     const own = (await submitted(["t20", "t10"], explored())).buildPlan.plan.subflows[0]!;
-    expect(own.nodes.map((node) => node.definitionId)).toEqual([definition.id, definition.id]);
+    expect(own.nodes.map((node) => node.definitionId)).toEqual([definition.id, definition.id, "builtin.control.handler", definition.id, "builtin.control.handler-end"]);
   });
 });
 

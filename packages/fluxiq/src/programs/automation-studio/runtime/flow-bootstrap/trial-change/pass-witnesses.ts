@@ -21,7 +21,7 @@
 //   state a part is judged on) -- is attributed as before: to the witnesses
 //   its stamp names, else to those of its step's definition.
 
-import type { AutomationStudioTrialChangeAct, AutomationStudioTrialReading, AutomationStudioTrialWitness, AutomationStudioTrialWitnessSet } from "./contracts.ts";
+import type { AutomationStudioTrialChangeMadeAct, AutomationStudioTrialReading, AutomationStudioTrialWitness, AutomationStudioTrialWitnessSet } from "./contracts.ts";
 
 /** Both sides of one witness's readings, by witness id. */
 type Readings = Record<string, { before?: AutomationStudioTrialReading; after?: AutomationStudioTrialReading }>;
@@ -30,7 +30,7 @@ type Readings = Record<string, { before?: AutomationStudioTrialReading; after?: 
 export function automationStudioTrialPassWitnesses(input: {
   set: Pick<AutomationStudioTrialWitnessSet, "witnesses" | "byStamp" | "byDefinition">;
   readings: Readonly<Readings>;
-  acts: readonly AutomationStudioTrialChangeAct[];
+  acts: readonly AutomationStudioTrialChangeMadeAct[];
   /** The trial's steps that declare no lasting class: their acts' diffs never make or read a witness. */
   passive?: ReadonlySet<number> | undefined;
 }): { witnesses: AutomationStudioTrialWitness[]; readings: Readings; attributed: string[][] } {

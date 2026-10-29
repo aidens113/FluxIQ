@@ -114,3 +114,11 @@ describe("an only after line where it stands", () => {
     expect(edges).toEqual(["s2.failed -> s5.in", "s1.success -> s2.in", "s2.success -> s3.in", "s3.success -> s4.in", "s4.success -> s5.branches", "s5.success -> s6.in"]);
   });
 });
+
+describe("a misplaced only after line", () => {
+  it("says what the line does, so a step doing the request's act is not left behind it", () => {
+    const found = refusals([...OPEN, ...press("notice", ["  optional: yes"]), ...pause("cooldown", ["  only after: ghost"])]);
+    expect(found[0]!.message).toContain("runs only on passes where that step acted");
+    expect(found[0]!.message).toContain("a step that does what the request asks must not carry it");
+  });
+});

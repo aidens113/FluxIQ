@@ -24,11 +24,20 @@
 // starts are asked before Core's looks after the trial: a look's read reaches
 // the ledger, and a place it reports for the first time would take the trial's
 // own end as the build's start.
+//
+// **What the trial never ran (t796).** The acts the port hands `finish` may
+// carry the steps the trial's act ledger says were not run on some passes
+// (`not_run` entries, `./after-read.ts`). They are attributed to no witness;
+// each part's proof reads them against its acting steps (`./part-acting.ts`),
+// so a part whose act step a guard went past on every pass is `not_run`
+// (`./proof.ts`).
 
-import type { AutomationStudioTrialActOutcome, AutomationStudioTrialChangeAct, AutomationStudioTrialChangeLedgerPort, AutomationStudioTrialChangeLook, AutomationStudioTrialChangePart, AutomationStudioTrialChangeSession, AutomationStudioTrialChangeStep, AutomationStudioTrialReading, AutomationStudioTrialWitnessSet } from "./contracts.ts";
+import type { AutomationStudioTrialActOutcome, AutomationStudioTrialChangeAct, AutomationStudioTrialChangeLedgerPort, AutomationStudioTrialChangeLook, AutomationStudioTrialChangeMadeAct, AutomationStudioTrialChangePart, AutomationStudioTrialChangeSession, AutomationStudioTrialChangeStep, AutomationStudioTrialReading, AutomationStudioTrialWitnessSet } from "./contracts.ts";
 import { automationStudioTrialDelta } from "./delta.ts";
 import { automationStudioTrialChangeFindings } from "./findings.ts";
 import { automationStudioTrialSiteChangePacket } from "./packet.ts";
+import { automationStudioTrialChangeActsSplit } from "./acts-split.ts";
+import { automationStudioTrialPartActing } from "./part-acting.ts";
 import { automationStudioTrialPassWitnesses } from "./pass-witnesses.ts";
 import { automationStudioTrialPartProof } from "./proof.ts";
 import { automationStudioTrialWitnessReadings } from "./readings.ts";
@@ -53,7 +62,9 @@ export async function automationStudioTrialChangeBegin(input: {
   const carried = new Set(parts.filter((part) => part.effect?.kind === "end_state" && steps.some((step) => step.parts.includes(part.id) && port.carried(step))).map((part) => part.id));
   const before = await automationStudioTrialWitnessReadings({ side: "before", set, port, look: input.look, signal: input.signal });
   return {
-    async finish(acts: readonly AutomationStudioTrialChangeAct[], signal?: AbortSignal) {
+    async finish(handed: readonly AutomationStudioTrialChangeAct[], signal?: AbortSignal) {
+      // The steps not run go to the proofs alone (header, t796).
+      const { acts, notRun } = automationStudioTrialChangeActsSplit(handed);
       // Asked before the looks after the trial reach the ledger (header).
       const starts = startsOf(port, set, acts);
       const after = await automationStudioTrialWitnessReadings({ side: "after", set, port, look: input.look, starts: before.starts, signal: signal ?? input.signal });
@@ -72,7 +83,8 @@ export async function automationStudioTrialChangeBegin(input: {
         part,
         deltas: deltas.filter((delta) => witnesses.find((witness) => witness.id === delta.witness)?.parts.includes(part.id)),
         acts: outcomes,
-        carried: carried.has(part.id)
+        carried: carried.has(part.id),
+        acting: automationStudioTrialPartActing(part.id, steps, notRun)
       }));
       const findings = automationStudioTrialChangeFindings({ witnesses, deltas, acts: outcomes, proofs });
       return { siteChange: automationStudioTrialSiteChangePacket({ witnesses, readings, acts: outcomes, leftFromEarlier: left, proofs }), findings };
@@ -81,7 +93,7 @@ export async function automationStudioTrialChangeBegin(input: {
 }
 
 /** The build's start at every control place the trial's witnesses and acts name, where the port keeps one (header). */
-function startsOf(port: Pick<AutomationStudioTrialChangeLedgerPort, "start">, set: Pick<AutomationStudioTrialWitnessSet, "witnesses">, acts: readonly AutomationStudioTrialChangeAct[]): Map<string, Readonly<Record<string, number>>> {
+function startsOf(port: Pick<AutomationStudioTrialChangeLedgerPort, "start">, set: Pick<AutomationStudioTrialWitnessSet, "witnesses">, acts: readonly AutomationStudioTrialChangeMadeAct[]): Map<string, Readonly<Record<string, number>>> {
   const starts = new Map<string, Readonly<Record<string, number>>>();
   if (!port.start) return starts;
   const places = new Set([...set.witnesses.flatMap((witness) => (witness.kind === "control" ? [witness.place] : [])), ...acts.flatMap((act) => (act.control ? [act.control.place] : []))]);

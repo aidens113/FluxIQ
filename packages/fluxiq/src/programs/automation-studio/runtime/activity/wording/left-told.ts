@@ -57,9 +57,10 @@ import { automationStudioActivityActsSaid, type AutomationStudioActivityActSaid 
 
 /**
  * One act still in place: the ledger's words, why it stays where it cannot be undone, and `seen: false` when no
- * read after it ever showed a change it made (the ledger's `changeSeen`); absent, a change is assumed.
+ * read after it ever showed a change it made (the ledger's `changeSeen`); absent, a change is assumed. `on`: where Core
+ * holds the act as made, said after it, so two presses of one control on different pages are two entries (t796).
  */
-export type AutomationStudioActivityLeftAct = { did: string; stays?: "irreversible" | "kept"; seen?: boolean };
+export type AutomationStudioActivityLeftAct = { did: string; stays?: "irreversible" | "kept"; seen?: boolean; on?: string };
 
 /** How many acts of each kind are said by name; the rest are counted. */
 const MAX_NAMED = 5;
@@ -98,7 +99,20 @@ type Plain = { verb: string; name: string };
 
 /** Acts in place as phrases for the person (header), each with why it stays. */
 function said(acts: readonly AutomationStudioActivityLeftAct[]): AutomationStudioActivityActSaid[] {
-  return automationStudioActivityActsSaid(acts.map((act) => ({ did: act.did, note: act.stays === "irreversible" ? IRREVERSIBLE : undefined })));
+  return automationStudioActivityActsSaid(acts.map((act) => {
+    const note = [act.on ? onThePage(act.on) : undefined, act.stays === "irreversible" ? IRREVERSIBLE : undefined].filter((part) => part).join(" ");
+    return { did: act.did, note: note || undefined };
+  }));
+}
+
+/** The longest address said whole. */
+const MAX_WHERE = 80;
+
+/** Where an act was made, as the person reads it: the address on one line and cut when long; nothing when it holds no letter or digit (t796). */
+function onThePage(where: string): string | undefined {
+  const text = where.replace(/\s+/gu, " ").trim();
+  if (!/[\p{L}\p{N}]/u.test(text)) return undefined;
+  return `on the page “${text.length > MAX_WHERE ? `${text.slice(0, MAX_WHERE - 1).trimEnd()}…` : text}”`;
 }
 
 /** What is said when the build knows of nothing it left (header). */
