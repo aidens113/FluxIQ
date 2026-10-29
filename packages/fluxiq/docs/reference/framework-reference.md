@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4266
+- Public declarations: 4273
 - Class: 148
 - Interface: 10
 - Object: 555
-- Type: 2276
+- Type: 2280
 - Type Alias: 1
-- Value: 1276
+- Value: 1279
 
 ## Public Declarations
 
@@ -2892,6 +2892,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioTrialChangeSession` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | The readings Core took just before a live trial, finished by reading again just after it, before its judge. |
 | `AutomationStudioTrialChangeStep` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One step a live trial will run, as Core reads where its change shows: its number in the plan, its registered definition, its lasting classes, its node's witness stamp (unread here: the ledger resolves it), and the task parts it serves (none for a step that only prepares the trial's entry, or in a build with no task parts). |
 | `automationStudioTrialChangeSteps` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/steps.ts` | - |
+| `automationStudioTrialChangeUnwitnessedOutcome` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/unwitnessed-outcome.ts` | - |
+| `automationStudioTrialChangeUnwitnessedSession` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/unwitnessed-session.ts` | - |
+| `AutomationStudioTrialCollection` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One complete list group's collection as a trial reads it. A page read whole (t791, `../site-reset/page-collection.ts`: every subject one read of a page reports, as one list Core makes of it, which an empty page reads as holding nothing) also carries `values`, an opaque digest of every value that page shows (t772), so a quantity the page shows changing is a change of that page (`./delta.ts`). A list the domain read carries none. |
 | `automationStudioTrialDelta` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/delta.ts` | - |
 | `AutomationStudioTrialDelta` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One witness's delta from before to after. `unread` when either side carried no reading of it. List subjects and control state tokens stay opaque here; the packet reduces them to counts. A changed control is `returned` where every state it changed ended at the build's recorded start for its place (`./delta.ts`, t787). |
 | `AutomationStudioTrialEvidenceAssertion` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | One task-goal assertion the trial checked, kept independent of candidate edits. |
@@ -2929,9 +2932,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioTrialSideReadings` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One side's readings by witness id, and each location's opaque state on that side (`./readings.ts`). |
 | `AutomationStudioTrialSiteChange` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | The bounded `siteChange` packet the judge sees (design section 2). No group, scope, place, subject or state token appears in it. |
 | `automationStudioTrialSiteChangePacket` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/packet.ts` | - |
+| `AutomationStudioTrialSiteChangeUnwitnessed` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/unwitnessed-outcome.ts` | The packet's note of the steps with no witness (header): each by its label and the trial steps it acted at. |
 | `AutomationStudioTrialSiteLines` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | Bounded readable lines, with how many were left out on each side. |
 | `AutomationStudioTrialSiteSide` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | A witness's reading as the judge sees it: counts only, never a token. |
 | `AutomationStudioTrialSiteWitnessChange` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | A witness's change as the judge sees it. |
+| `AutomationStudioTrialUnwitnessed` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/unwitnessed-steps.ts` | What a trial's admission notes of its steps with no witness: each step, and what the builder is told of them. |
+| `automationStudioTrialUnwitnessedOf` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/unwitnessed-steps.ts` | - |
+| `AutomationStudioTrialUnwitnessedStep` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/unwitnessed-steps.ts` | One trial step with no witness: its number as the trial door numbers it, and its label where it has one. |
 | `AutomationStudioTrialWitness` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | Where a part's or a step's change shows: a list group, matched across every scope it was read in, or one control place. `steps` are the trial steps attributed to it (`[]` for a list watched only to stay unchanged). |
 | `automationStudioTrialWitnesses` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/witnesses.ts` | - |
 | `AutomationStudioTrialWitnessPlace` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | Where a witness is read: a list group, or a control place, and the page location Core can open it at (absent where none is known). |

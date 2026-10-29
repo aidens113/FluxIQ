@@ -23,10 +23,18 @@ import type { AutomationStudioSiteResetCollection } from "../reset-settlement/in
 export type AutomationStudioTrialReading = {
   source: "latest_read" | "core_look" | "end_view" | "step_diff";
   location?: string;
-  collections?: AutomationStudioSiteResetCollection[];
+  collections?: AutomationStudioTrialCollection[];
   controls?: Record<string, Record<string, number>>;
   lines?: { gone: string[]; added: string[] };
 };
+
+/**
+ * One complete list group's collection as a trial reads it. A page read whole (t791,
+ * `../site-reset/page-collection.ts`: every subject one read of a page reports, as one list Core makes of it, which an
+ * empty page reads as holding nothing) also carries `values`, an opaque digest of every value that page shows (t772), so
+ * a quantity the page shows changing is a change of that page (`./delta.ts`). A list the domain read carries none.
+ */
+export type AutomationStudioTrialCollection = AutomationStudioSiteResetCollection & { values?: string };
 
 /** Where a part's or a step's change shows: a list group, matched across every scope it was read in, or one control place. `steps` are the trial steps attributed to it (`[]` for a list watched only to stay unchanged). */
 export type AutomationStudioTrialWitness = (
@@ -173,4 +181,4 @@ export type AutomationStudioTrialChangeAsk = { steps: readonly AutomationStudioT
 export type AutomationStudioTrialSideReadings = { readings: Record<string, AutomationStudioTrialReading>; starts: Record<string, JsonObject> };
 
 /** One read a ledger logged for trial readings (`./read-log.ts`), with the ledger clock when it landed and its order. */
-export type AutomationStudioTrialLoggedRead = { state: JsonObject; location?: string; lines?: { gone: string[]; added: string[] }; collections?: AutomationStudioSiteResetCollection[]; controls?: Record<string, Record<string, number>>; clock: number; seq: number };
+export type AutomationStudioTrialLoggedRead = { state: JsonObject; location?: string; lines?: { gone: string[]; added: string[] }; collections?: AutomationStudioTrialCollection[]; controls?: Record<string, Record<string, number>>; clock: number; seq: number };

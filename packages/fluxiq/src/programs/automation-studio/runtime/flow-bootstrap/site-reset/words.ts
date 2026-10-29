@@ -170,10 +170,28 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
    */
   stepWitnessRequired(issued: readonly AutomationStudioSiteResetIssuedRef[] = []): string {
     return "Name where this step's change shows, so its trial can be judged by the change: no list it would show in was read complete, its control shows no state of its own, and it repeats no press made while exploring that names such a place. "
-      + "To name one, press that control once while exploring with core.run_node, naming as resetDestination the ref of the list where its effect would show, from a complete read of that list, then submit again; a control inside a list already read complete, or one whose own state the page shows, needs no ref. "
+      + "To name one, press that control once while exploring with core.run_node, in the tab where the step acts, naming as resetDestination the ref printed after a complete read, in that same tab, of the list where its effect would show, then submit again. "
+      + "A step that creates something may instead name the ref of the whole page where the made item will appear: a page with no list, an empty page included, is read whole and its ref is printed marked page: true. "
+      + "A control inside a list already read complete, or one whose own state the page shows, needs no ref. "
       + `${OWN_URL} `
-      + (issued.length ? `Refs already issued for lists read complete: ${refList(issued, true)}. ` : "")
+      + (issued.length ? `Refs already issued for lists read complete in this step's tab: ${refList(issued, true)}. ` : "No ref has been read in this step's tab yet, and a ref read in another tab cannot show a press in this one. ")
       + SHOWS;
+  },
+  /**
+   * A plan step whose change no call in its own tab can give Core a place to read (`../reset-admission/step-reach.ts`, t791 fix 2):
+   * its control names no tab or no item, page or list to read, or no new place can be recorded. Its trial still runs.
+   */
+  stepWitnessUnreachable(): string {
+    return "No call in the tab this step acts in can give Core a place that shows its change, so none will be asked for. "
+      + "Its trial runs and is judged by its end view and each step's done-when check only, and the task parts it serves stay unproven by what Core read: give it a done-when check that shows its change on the page.";
+  },
+  /**
+   * An exploration press that landed naming a ref that shows nothing of its change (t791 fix 3, `./press-notes.ts`): the ref was
+   * read in another tab, is not a list or page where this press's change would show, or already held the item the press made.
+   */
+  destinationUnreaching(ref: string): string {
+    return `The ref ${ref} cannot show this press's change: it was read in another tab, it is not where this press's effect would appear, or what the press made was already there. The press went ahead and has no place Core can read its change in. `
+      + "To give it one, read in this tab, completely, the list or page where its effect would show, then press once naming the ref that read printed. Until then a trial of the step that repeats it is judged by its end view and each step's done-when check only.";
   },
   /**
    * What a call naming an act under `undoes` settled (rerun round 3, office `run-mvgo5xft-25460ba2`): a settling look used to
@@ -204,9 +222,9 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
    * again). Only a press with no other witness needs a destination; a control that shows its own state needs none.
    */
   actionDeclarations(): string {
-    return "For a reversible lasting press that has no other witness, observe completely the list where its effect would show; a control that shows its own state, or one inside a list already read complete, needs none. "
+    return "For a reversible lasting press that has no other witness, observe completely, in the tab where it acts, the list where its effect would show (for a creation, the whole page where its item will appear); a control that shows its own state, or one inside a list already read complete, needs none. "
       + `${OWN_URL} `
-      + "A trial is judged by what it changed from the state just before it, so a lasting step needs a place where its change shows: a list read complete, or its own control's state. "
+      + "A trial is judged by what it changed from the state just before it, so a lasting step needs a place where its change shows: a list or page read complete, or its own control's state. "
       + "Declare the lasting consequences of every recovery press as honestly as the original operation, even when its control offers recovery from an error. Truly nonlasting actions keep an empty declaration. "
       + "A successful control press or a vanished source message does not prove destination restoration; report unproved restoration honestly.";
   },
@@ -216,7 +234,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   },
   /** A `resetDestination` naming no ref this build was shown (rerun round 2): refused before the call runs. */
   destinationUnissued(): string {
-    return "This call was not run: its resetDestination names no ref this build was shown. Refs come only from a resetDestinations receipt printed after a complete observation of a list; never invent one. "
+    return "This call was not run: its resetDestination names no ref this build was shown. Refs come only from a resetDestinations receipt printed after a complete read of a list, or of a whole page that has no list; never invent one. "
       + "Retry the call with core.run_node without resetDestination, or with a ref such a receipt printed. Looking and navigating remain available; no new permission is needed.";
   }
 });

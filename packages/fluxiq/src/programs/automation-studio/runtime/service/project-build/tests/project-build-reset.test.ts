@@ -653,10 +653,10 @@ describe("a reset brief", () => {
     expect(kept.mock.calls.some((call) => JSON.stringify(call[1]) === JSON.stringify(["act-1", "act-2"]))).toBe(true);
     const blocked = /2 acts are still to undo: act-2 \(press "Add to cart" button\), act-3 \(trial step 4 "add it to the cart"\)\. .*left on the site, as nothing can check or put it back: act-4 /u;
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked", reason: expect.stringMatching(blocked) }], lastingActsInPlace: 2 });
-    // Only the first whole trial was judged. The next was refused by no reset gate: the cart now lists one line twice, so it
-    // witnesses no add step (`flow-bootstrap/reset-settlement/collection-groups.ts`) and no change could be judged.
-    expect(run.cartWhenWholeJudged).toEqual([["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"]]);
-    expect(lastOf(run.supervisorSaw[7]!, "core.test_candidate")).toMatchObject({ ok: false, code: "candidate.trial_step_unwitnessed", stepsUnwitnessed: [{ step: 4 }] });
+    // Both whole trials were judged, twice each: a cart listing one line twice witnesses no add step (`reset-settlement/
+    // collection-groups.ts`), and since t791 fix 4 that trial runs as the site stands, saying the step's change went unread.
+    expect(run.cartWhenWholeJudged).toEqual([["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"], ["dish-soap", "herb-tea", "herb-tea"], ["dish-soap", "herb-tea", "herb-tea"]]);
+    expect(lastOf(run.supervisorSaw[7]!, "core.test_candidate")).toMatchObject({ ok: true, verdict: "yes", unwitnessed: { steps: [{ step: 4, label: "add it to the cart" }] } });
     // Both additions remain, with the original line untouched.
     expect(run.cart).toEqual(["dish-soap", "herb-tea", "herb-tea"]);
   });

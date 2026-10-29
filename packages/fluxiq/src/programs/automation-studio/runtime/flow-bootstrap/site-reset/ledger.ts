@@ -7,20 +7,17 @@
 // settle never refuse a trial: `beforeTrial` admits it, says them under
 // `startedWith` (`./trial-policy.ts`), and, given the trial's steps and parts
 // (`change`), takes the readings its judge is shown as `siteChange`
-// (`../trial-change/`), through this ledger's read log and read-only port
-// (`trialChange`). It refuses only a start already in an asked end state by an
-// in-place act of this build made with another step, with no earlier act of
-// the trial's step seen making it (`endStateClash`,
-// `candidate.trial_starts_in_end_state`, naming just that act). What follows
-// on settlement serves that targeted undo and a "put it back" the person asks
-// for; nothing in it holds a trial any more.
+// (`../trial-change/`, `trialChange`). It refuses only a start already in an asked
+// end state by an in-place act of this build made with another step, with no
+// earlier act of the trial's step seen making it (`endStateClash`,
+// `candidate.trial_starts_in_end_state`). What follows on settlement serves that
+// targeted undo and a "put it back" the person asks for.
 //
-// Candidate mode had no record of what a build left on the site: the draft
-// steps that carry it exist only in legacy mode. So the build's permission
-// wrapper (`../action-permissions.ts`) tells this ledger every exploration call
-// it ran (`explored`), and the trial gate tells it each trial's own lasting
-// acts (`trialRan`). Each becomes an act `act-N`, numbered once and never
-// reused, which the model names under `undoes` on the `core.run_node` call
+// Candidate mode had no record of what a build left on the site. So the build's
+// permission wrapper (`../action-permissions.ts`) tells this ledger every
+// exploration call it ran (`explored`), and the trial gate tells it each trial's
+// own lasting acts (`trialRan`). Each becomes an act `act-N`, numbered once and
+// never reused, which the model names under `undoes` on the `core.run_node` call
 // that reverses it (`claim`).
 //
 // - An act is recorded only when it landed, was permitted, applied an effect
@@ -47,22 +44,19 @@
 //
 // **Legacy unscoped acts can be kept.** One the model names under `cannotUndo`
 // once a reset has asked for it is kept: never asked for again, and said under
-// `startedWith.cannotUndo` (`./trial-policy.ts`). A strict act never leaves by
-// cannotUndo (below).
+// `startedWith.cannotUndo` (`./trial-policy.ts`); a strict act never is.
 //
 // **A start hook's reset asks the model for nothing (t475, t479).** When the
 // deployment's start hook has just put the site back (`startReset`), every act
 // of this build, kept ones too, counts undone, nothing is compared, and the
 // trial runs. Each act it took back is answered as `absorbedByStartReset`, by
 // what it did and the call that made it (t504): lane D round 17
-// (`run-mv6lgt3s-c3aa6fac`) pressed one row's control while exploring, the hook
-// took it back, and no trial evidence or run record said the act had existed.
-// The hook is the deployment's own reset of the whole site; what a look after it still sees is content that changes by itself, a cover the
-// runtime closed during the act, or a gap in the hook -- never something the
-// model can put back better. t475 looked again on each act's own page and
-// asked for what it still saw: lane B round 11 (`run-mv5yaapd-ad19eaae`) was
-// asked to undo a rotating carousel and a chat card's cover, and that ask is
-// what drove the removal of the dish soap.
+// (`run-mv6lgt3s-c3aa6fac`) pressed a row's control while exploring, the hook
+// took it back, and no run record said the act had existed. The hook is the
+// deployment's own reset of the whole site; what a look after it still sees is
+// content that changes by itself, a cover the runtime closed during the act, or
+// a gap in the hook -- never something the model can put back better (lane B
+// round 11, `run-mv5yaapd-ad19eaae`, was asked to undo a rotating carousel).
 //
 // **What the hook took back says who made it and on what (t647).** Each act it
 // answers carries, for Core alone, the brief whose ledger recorded it
@@ -80,39 +74,32 @@
 // `mutate` on a named control that declared no lasting class is recorded too,
 // marked `possible`, and so is a trial step that declared none and changed its
 // own page in place (`possible` on the trial act,
-// `../../service/candidate-trial/landed-acts.ts`). The ledger decides what is
-// done with it, and nothing is refused for it: it is never asked for, never
-// refuses a trial and is never kept; a start hook takes it back as it takes
-// back any act, without naming it among the acts it took back (a build presses
-// many controls that declare `none`, and a list of them all would only be
-// noise beside every trial); the model may still undo it under `undoes`, and
-// the ledger judges that undo as any other; and while it may still be there it
-// is answered under `possiblyInPlace`, so a phase's start can say so
-// (`../../service/project-build/phase-start.ts`). A navigation names no
+// `../../service/candidate-trial/landed-acts.ts`). Nothing is refused for it: it
+// is never asked for, never refuses a trial and is never kept; a start hook
+// takes it back without naming it among the acts it took back (a list of every
+// control that declared `none` would be noise beside every trial); the model
+// may still undo it under `undoes`, judged as any other undo; and while it may
+// still be there it is answered under `possiblyInPlace`, so a phase's start can
+// say so (`../../service/project-build/phase-start.ts`). A navigation names no
 // control and is never one.
 //
-// **A trial's act is tied to its own item too (t598).** A trial's act used to
-// be recorded with no item, so every undo of it was refused
-// `candidate.undo_wrong_target`, and on a site with no start hook what a
-// passing trial left -- with t597, every one of them -- could only be named
-// under `cannotUndo` and stayed on the site. A trial step's act now carries
-// where its control sat and the items its own page showed new, read off that
-// step's state diff (`spot`, `created` on the trial act,
+// **A trial's act is tied to its own item too (t598).** A trial step's act
+// carries where its control sat and the items its own page showed new, read off
+// that step's state diff (`spot`, `created` on the trial act,
 // `../../service/candidate-trial/landed-acts.ts`), and an undo of it is
 // admitted on them exactly as on an explored act's. Where the diff gave
-// neither, it is recorded as before. A start hook takes it back as before.
+// neither, it is recorded without them. A start hook takes it back as before.
 // A step that ran in several loop passes says its pass (t748): `trial step 6,
 // pass 3 of 3 "<label>"`; one that ran once keeps `trial step N "<label>"`.
 //
-// **No witness, no lasting press (rerun round 2, t751 R3).** A reversible
-// press nothing could ever settle is refused unrun by the one admission
-// (`../reset-admission/`), asked at the exploration door (`createBaseline`,
-// with the build's explored acts it may repeat) after any earlier act as
-// before one, and a `resetDestination` no receipt printed is refused before
-// its call runs, here under `undoes` (`claim`) too. A plan step is asked at
-// submission (`admitStep`), and its stamp is what its trial act takes
-// (`trialRan`, `./trial-stamp.ts`: a destination ref attaches that list, a repeated explored act
-// lends its witnesses).
+// **The one admission (rerun round 2, t751 R3; t775, t791).** The exploration
+// door (`createBaseline`, with the build's explored acts it may repeat) admits a
+// press with no witness, and a `resetDestination` no receipt printed is refused
+// before its call runs, here under `undoes` (`claim`) too; a ref showing nothing of
+// the press's change gets a note (`./press-notes.ts`, t791 fix 3). A plan step is
+// asked at submission (`admitStep`): its stamp is what its trial act takes
+// (`trialRan`, `./trial-stamp.ts`), and with none `ask.gap` says whether a call in
+// its own tab can make one (`../reset-admission/step-gaps.ts`, t791 fix 2).
 //
 // **The seal is per group (t751 R1).** Each act counts its witness groups --
 // its destinations, its own list, a transfer's, its subject undo's and those
@@ -120,9 +107,10 @@
 // original (`./create-baselines.ts`, `touch`). Only a legacy unscoped act
 // seals every group; since t775 a strict act with no witness at all (the
 // exploration door admits one) seals nothing, so a list read after it still
-// issues a ref a step can name, and the act itself is said as on the site. A destination named under
-// `undoes` is kept only from a call that landed (`./undo-claims.ts`).
+// issues a ref a step can name. A destination named under `undoes` is kept only
+// from a call that landed (`./undo-claims.ts`).
 //
+// **A page read whole is a destination (t791, `./page-collection.ts`)**, every read paged first (`observed`).
 // **Cross-page inverses need a destination baseline (t719 review).** A
 // subject/title says which item an effect concerns; it never proves that the
 // whole item belongs to the build. Before adding something whose removal will
@@ -133,15 +121,13 @@
 // read before the act, the subject was absent then and is present now. It is
 // unasked once, and the act settles as any act does (below). So is removing,
 // on a destination the act named (its own or lent by the acts it repeats), a
-// subject that list's original read before the act did not hold and its
-// fresh read holds now, for an act that created or changed something, even
+// subject that list's original did not hold and its fresh read holds now, even
 // where the domain names the item differently there than on the act's own
 // page (t743, job): `target` hands the admission the lent destinations, and
-// any unasked subject undo that lands is spent, whatever it declared. Unproved
-// quantity inverses stay refused; a changed page alone never marks a subject
-// inverse complete. A project reset updates the act owner's current
-// observation without manufacturing a baseline for a different brief's
-// independent resource.
+// any unasked subject undo that lands is spent. Unproved quantity inverses stay
+// refused; a changed page alone never marks a subject inverse complete. A
+// project reset updates the act owner's current observation without
+// manufacturing a baseline for a different brief's independent resource.
 //
 // **One settlement model for every strict act (L1, 2026-10-19).** An act is
 // settled by fresh complete reads of everything it could change -- its list
@@ -189,11 +175,13 @@
 // is compared again before a trial only once something was recorded in it.
 
 import { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
+import { AutomationStudioSitePressNotes } from "./press-notes.ts";
 import {
+  AutomationStudioSiteResetStepGaps,
   automationStudioSiteResetAdmission as admission,
   automationStudioSiteResetWitnessStampOf as stampOf,
   automationStudioSiteResetWitnessStampValid as stampValid,
-  type AutomationStudioSiteResetAdmissionDeclared,
+  type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetStepAsk,
   type AutomationStudioSiteResetWitnessStamp
 } from "../reset-admission/index.ts";
 import { automationStudioSiteResetAnswerAgreeing as agreeing, automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
@@ -286,6 +274,8 @@ export type AutomationStudioSiteResetRecordedAct = AutomationStudioSiteResetName
 export class AutomationStudioSiteResetLedger implements AutomationStudioSiteResetCalls {
   private readonly acts: Act[] = [];
   private readonly createBaselines: AutomationStudioSiteResetCreateBaselines;
+  private readonly stepGaps: AutomationStudioSiteResetStepGaps;
+  private readonly pressNotes: AutomationStudioSitePressNotes;
   private readonly controlWitnesses: AutomationStudioSiteResetControlWitnesses;
   private next = 1;
   /** The complete lists this ledger has seen: originals and latest reads (`../reset-settlement/observations.ts`). */
@@ -309,6 +299,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   constructor(options: AutomationStudioSiteResetLedgerOptions = {}) {
     this.options = { ...options };
     this.createBaselines = options.createBaselines ?? new AutomationStudioSiteResetCreateBaselines();
+    this.stepGaps = new AutomationStudioSiteResetStepGaps(this.createBaselines);
+    this.pressNotes = new AutomationStudioSitePressNotes(this.createBaselines.known());
     this.controlWitnesses = options.controlWitnesses ?? new AutomationStudioSiteResetControlWitnesses();
     this.judge = new AutomationStudioSiteResetSettlementJudge({
       seen: this.seen,
@@ -340,6 +332,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   /** The exploration door of the one admission (header, t751 R3), with the build's explored acts an action may repeat. */
   createBaseline(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown) {
     const verdict = admission({ declared, reference, door: "exploration", requireIdentity: this.options.owner !== undefined }, { ...this.createBaselines.known(), controlOriginal: (control) => this.controlWitnesses.proven(control), controlOriginalCanBeRead: (control) => this.controlWitnesses.canRead(control), explored: () => this.buildExplored() });
+    this.pressNotes.asked(declared, reference, verdict.kind === "admit" && verdict.witness !== undefined);
     return verdict.kind === "admit" ? { kind: "admit" as const } : verdict;
   }
 
@@ -347,7 +340,13 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
    * The step door of the one admission (header, t751 R3): asked of a plan step's declaration at submission, it answers the
    * witness stamp the step's node carries, or none where the step has no witness or needs none (refusing is the trial's).
    */
-  admitStep(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string): AutomationStudioSiteResetWitnessStamp | undefined {
+  admitStep(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string, ask?: AutomationStudioSiteResetStepAsk): AutomationStudioSiteResetWitnessStamp | undefined {
+    const stamp = this.stepStamp(declared, operation);
+    if (ask) this.stepGaps.asked(declared, operation, ask, stamp);
+    return stamp;
+  }
+
+  private stepStamp(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string): AutomationStudioSiteResetWitnessStamp | undefined {
     const verdict = admission({ declared, door: "step", requireIdentity: this.options.owner !== undefined, ...(operation !== undefined ? { operation } : {}) }, { ...this.createBaselines.known(), controlOriginal: (control) => this.controlWitnesses.proven(control), controlOriginalCanBeRead: (control) => this.controlWitnesses.canRead(control), explored: () => this.buildExplored() });
     if (verdict.kind !== "admit" || !verdict.witness) return undefined;
     if (verdict.witness.via === "own_list") {
@@ -380,7 +379,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   }
 
   /** A passive whole-scope observation; the first read is a baseline only for later acts. It feeds the lists, the controls and the clock's freshness (header, L1). */
-  observed(read: AutomationStudioSiteResetRead, baseline = true): void {
+  observed(given: AutomationStudioSiteResetRead, baseline = true): void {
+    const read = this.createBaselines.paged(given); // A page read whole among its lists, for every reader below (header, t791).
     this.controlWitnesses.observed(read);
     // A read after an act showing one of its witnesses changed is a change seen (`restored`, not `unchanged`): judged on the
     // latest read before this one too, so a witness named since that read counts what it showed.
@@ -416,6 +416,8 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   explored(call: AutomationStudioSiteResetExplored): void {
     const declared = call.declared;
+    const note = this.pressNotes.taken(call);
+    if (note) call.note = note;
     const pressed = call.landed && declared?.permitted === true && declared.effect === "mutate";
     // A call naming an act under `undoes`: an undo or a look, never an act of its own (`./undo-claims.ts`).
     if (call.undoes !== undefined) {

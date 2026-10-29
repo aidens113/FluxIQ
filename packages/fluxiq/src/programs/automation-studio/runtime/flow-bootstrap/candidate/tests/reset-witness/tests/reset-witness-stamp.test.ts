@@ -1,8 +1,9 @@
 // A lasting step's reset witness through the candidate seams (t751, R3 door 2).
 //
 // The stamp Core's one admission gives a reversible lasting step at submission
-// is part of what the Flow does: a trial's act takes it, and a trial is refused
-// for a step without one. So the same script text resubmitted after the build
+// is part of what the Flow does: a trial's act takes it, and a trial of a step
+// without one runs with that gap said (t791 fix 4; t751 R3 refused it unrun).
+// So the same script text resubmitted after the build
 // explored the step's control -- now stamped -- is a new revision, not
 // `candidate.unchanged_submission`; a whole candidate Core composed from
 // accepted proposals keeps every node's stamp; and a trial port's act keeps
@@ -12,7 +13,7 @@ import type { JsonObject } from "../../../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../../nodes/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../llm/harness-options/index.ts";
 import type { AutomationStudioSiteResetWitnessStamp } from "../../../../reset-admission/index.ts";
-import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, automationStudioCandidateTrialActs, type AutomationStudioCandidateTrialPort } from "../../../index.ts";
+import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, automationStudioCandidateTrialActs, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest } from "../../../index.ts";
 import { AutomationStudioSiteResetProjectLedger, automationStudioSiteResetProjectReset } from "../../../../site-reset/index.ts";
 
 const definition: AutomationStudioNodeDefinition = {
@@ -25,22 +26,49 @@ const registry = new AutomationStudioNodeRegistry([definition]);
 type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]>;
 const resolution = { scope: { kind: "domain" as const, domainId: "demo" }, runtimeCapabilities: [], permissions: [] };
 
-it("refuses an unwitnessed lasting trial before its start hook or reset can move baselines", async () => {
+it("runs an unwitnessed lasting trial, its answer and its judge's packet saying the gap, and its part unproven (t791 fix 4)", async () => {
   const { submissions } = controller();
   const submitted = await submissions.submit(script("modify_existing"));
   expect(submitted.ok).toBe(true);
   if (!submitted.ok) return;
   const prepare = vi.fn(async () => "reset" as const);
-  const run: AutomationStudioCandidateTrialPort = Object.assign(vi.fn(async () => ({ revision: submitted.candidate.revision, digest: submitted.candidate.digest, verdict: "yes" as const, feedback: {} })), { prepareStart: prepare });
+  const read: { siteChange?: unknown } = {};
+  const run: AutomationStudioCandidateTrialPort = Object.assign(vi.fn(async (request: AutomationStudioCandidateTrialRequest) => {
+    // The port reads the change after its end view, as `service/candidate-trial/run.ts` does.
+    read.siteChange = (await request.siteChange?.([{ step: 1, definitionId: "domain.demo.press", outcome: "changed" }]))?.siteChange;
+    return { revision: submitted.candidate.revision, digest: submitted.candidate.digest, verdict: "yes" as const, feedback: {} };
+  }), { prepareStart: prepare });
   const project = new AutomationStudioSiteResetProjectLedger();
   const compare = vi.fn(async () => ({ moved: false }));
-  const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => submitted.candidate, trial: { candidateId: "candidate.test", port: run }, reset: automationStudioSiteResetProjectReset({ project, checks: () => ({ compare }) }) });
+  const gate = new AutomationStudioFlowCandidateTrialGate({
+    latest: () => submitted.candidate, trial: { candidateId: "candidate.test", port: run }, reset: automationStudioSiteResetProjectReset({ project, checks: () => ({ compare }) }),
+    changeParts: () => ({ parts: [{ id: "p1", effect: { kind: "end_state", state: "the item is saved" } }], partsOf: () => ["p1"] })
+  });
   const result = await gate.test({ revision: submitted.candidate.revision, digest: submitted.candidate.digest });
-  expect(result.resultCode).toBe("candidate.trial_step_unwitnessed");
-  expect(prepare).not.toHaveBeenCalled();
-  expect(run).not.toHaveBeenCalled();
-  expect(compare).not.toHaveBeenCalled();
-  expect(project.snapshot().acts).toEqual([]);
+  expect(result.resultCode).toBe("candidate.trial_yes");
+  expect(prepare).toHaveBeenCalledTimes(1);
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(result.evidence).toMatchObject({ ok: true, verdict: "yes", unwitnessed: { steps: [{ step: 1, label: "save the item" }] } });
+  expect(String(((result.evidence as JsonObject).unwitnessed as JsonObject).instruction)).toContain("judged by its end view and each step's done-when check");
+  expect(read.siteChange).toMatchObject({ witnesses: [], proofs: [{ part: "p1", proof: "unproven", steps: [1] }], unwitnessed: { steps: [{ label: "save the item", ranAs: [1] }], parts: ["p1"] } });
+});
+
+it("says a step with no witness as advice beside the accepted revision, by label (t791 fix 2)", async () => {
+  const gaps = new Map<string, { canMeet: "another_page" | "no_call"; instruction: string }>();
+  const resolvePlanNodeParameters: Resolver = async ({ permission, declaredConsequences }) => {
+    if (declaredConsequences?.length) await permission({ consequences: [...declaredConsequences], control: { name: "Save", place: "c:save", state: "s:off" }, verb: "press" });
+    return { status: "unchanged" };
+  };
+  // A check that notes the gap its step door found, as the build's permission wrapper does (`planStep`).
+  const permissionFor = Object.assign(({ ref, witnessed }: { definitionId: string; ref: string; witnessed?: (stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void }) => async () => {
+    witnessed?.(undefined);
+    gaps.set(ref, { canMeet: "no_call", instruction: "No call in the tab this step acts in can give Core a place that shows its change." });
+    return { permitted: true as const };
+  }, { gaps: () => gaps });
+  const submissions = new AutomationStudioFlowCandidateSubmissionController({ projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base", binding: { resolvePlanNodeParameters }, permissionFor });
+  const accepted = await submissions.submit(script("modify_existing"));
+  expect(accepted.ok, JSON.stringify(accepted)).toBe(true);
+  expect(accepted.ok && accepted.advice).toEqual(["The step \"save the item\" (plan step 1) changes something on the site and has no place named that shows its change. No call in the tab this step acts in can give Core a place that shows its change."]);
 });
 
 /** One press, declared as `consequences`; none declared when absent. */

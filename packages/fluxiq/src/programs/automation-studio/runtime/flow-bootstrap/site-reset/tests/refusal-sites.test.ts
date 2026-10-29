@@ -168,10 +168,13 @@ describe("each refusal site names its failed condition (trial policy, baselines)
     expect(baselines.check(declared(ENTRY, ["create_new"]), undefined)).toEqual({ kind: "admit" });
     expect(step(baselines, ["modify_existing"])).toMatchObject({ kind: "refused", evidence: { ...named("candidate.reset_witness_required", "no_witness", "another_page"), instruction: WORDS.stepWitnessRequired([]) } });
     expect(step(baselines, ["create_new"])).toMatchObject({ kind: "refused", evidence: { ...named("candidate.create_baseline_required", "no_destination_original", "another_page"), instruction: WORDS.stepWitnessRequired([]) } });
+    // Sealed with no ref read in the step's tab, no call there can make a witness: it is told so, not sent after one (t791 fix 2).
     baselines.seal();
-    expect(step(baselines, ["create_new"])).toMatchObject({ kind: "refused", evidence: named("candidate.create_baseline_required", "no_destination_original", "another_page") });
+    expect(step(baselines, ["create_new"])).toMatchObject({ kind: "refused", evidence: { ...named("candidate.create_baseline_required", "no_destination_original", "no_call"), instruction: WORDS.stepWitnessUnreachable() } });
+    // Sealed after its tab's list was read and its ref printed, a ref already issued still names a place.
     const read = new AutomationStudioSiteResetCreateBaselines();
     read.observed(shelf);
+    read.receipts();
     read.seal();
     expect(step(read, ["create_new"])).toMatchObject({ kind: "refused", evidence: named("candidate.create_baseline_required", "no_destination_original", "another_page") });
   });

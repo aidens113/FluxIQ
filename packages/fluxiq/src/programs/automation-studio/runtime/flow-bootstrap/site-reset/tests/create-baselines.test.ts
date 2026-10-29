@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AutomationStudioSiteResetCreateBaselines } from "../create-baselines.ts";
 import type { AutomationStudioSiteResetDeclared, AutomationStudioSiteResetRead } from "../contracts.ts";
+import { automationStudioSiteResetPageCollection as pageCollection } from "../page-collection.ts";
 
 const original = (resource = "r:one"): AutomationStudioSiteResetRead => ({ state: {}, differs: [], scope: "p:destination-page", resource, collections: [
   { scope: "p:destination", group: "g:destination", subjects: ["s:existing"], states: { "s:existing": "v:original" } },
@@ -268,5 +269,92 @@ describe("per-group seal and the admission port (t751)", () => {
     expect(known.original("p:west", SITE)).toBeUndefined();
     baseline.observed({ state: {}, differs: [], scope: "p:print-page", resource: SITE, collections: [] });
     expect(known.here()).toEqual([]);
+  });
+});
+
+// A page read whole is a destination (t791 fix 1): a read naming its page and the subjects it shows, with no list the domain
+// vouches for, issues a page ref; a read that carries lists issues exactly the refs it did before. Made-up fixtures: a
+// library's reading shelf, opaque tokens.
+
+const SITE = "r:library-tab-1";
+const SHELF = "loc:shelf";
+/** The reading shelf: its books in plain blocks (no list the domain vouches for), or none at all (an empty state). */
+const shelf = (subjects: string[], over: Partial<AutomationStudioSiteResetRead> = {}): AutomationStudioSiteResetRead => ({ state: { page: "shelf" }, differs: [], location: SHELF, scope: "p:shelf-page", resource: SITE, subjects, ...over });
+/** The same shelf drawn as a list the domain vouches for. */
+const listed = (): AutomationStudioSiteResetRead => shelf(["s:atlas"], { collections: [{ scope: "p:shelf-list", group: "g:shelf-list", subjects: ["s:atlas"], states: { "s:atlas": "v:one-copy" } }] });
+
+describe("a page read whole issues a page ref (t791)", () => {
+  it("issues a ref for an empty-state page, printed as a page, holding nothing", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.observed(shelf([]));
+    expect(baseline.receipts()).toEqual([{ ref: "destination-1", ordinal: 1, count: 0, page: true }]);
+    expect(baseline.issuedRefs()).toEqual([{ ref: "destination-1", count: 0, location: SHELF }]);
+  });
+
+  it("issues a ref for a page whose items sit in plain blocks, counting the subjects it shows", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.observed(shelf(["s:atlas", "s:herbal", "s:atlas"]));
+    expect(baseline.receipts()).toEqual([{ ref: "destination-1", ordinal: 1, count: 2, page: true }]);
+  });
+
+  it("leaves the refs of a read carrying lists unchanged: no page ref beside them", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.observed(listed());
+    expect(baseline.receipts()).toEqual([{ ref: "destination-1", ordinal: 1, count: 1 }]);
+    expect(baseline.issuedRefs()).toEqual([{ ref: "destination-1", count: 1, location: SHELF }]);
+  });
+
+  it("issues none for a read with no subjects, no page scope, or no trusted resource", () => {
+    const without = (key: "subjects" | "scope" | "resource"): AutomationStudioSiteResetRead => {
+      const read = shelf([]);
+      delete read[key];
+      return read;
+    };
+    for (const read of [without("subjects"), without("scope"), without("resource"), shelf([], { resource: "not a token" }), shelf(["s:atlas", "not a token"])]) {
+      const baseline = new AutomationStudioSiteResetCreateBaselines();
+      baseline.observed(read);
+      expect(baseline.receipts()).toEqual([]);
+    }
+  });
+
+  it("keeps reading a page with an original once lists appear on it, and its ref stays the same", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.observed(shelf([]));
+    baseline.receipts();
+    baseline.observed(listed());
+    expect(baseline.receipts()).toEqual([{ ref: "destination-2", ordinal: 1, count: 1 }, { ref: "destination-1", ordinal: 2, count: 0, page: true }]);
+    expect(baseline.paged(listed()).collections?.map((collection) => collection.scope)).toEqual(["p:shelf-list", pageCollection(listed())!.scope]);
+    // Paging twice is the same read.
+    const paged = baseline.paged(shelf([]));
+    expect(baseline.paged(paged)).toBe(paged);
+  });
+
+  it("is per resource: the same page in another resource is another page, with a ref of its own", () => {
+    const baseline = new AutomationStudioSiteResetCreateBaselines();
+    baseline.observed(shelf([]));
+    baseline.receipts();
+    baseline.observed(shelf([], { resource: "r:library-tab-2" }));
+    expect(baseline.receipts()).toEqual([{ ref: "destination-2", ordinal: 1, count: 0, page: true }]);
+    expect(pageCollection(shelf([]))!.group).not.toBe(pageCollection(shelf([], { resource: "r:library-tab-2" }))!.group);
+  });
+
+  it("never makes a page original after a seal, nor from a read routed with baseline=false", () => {
+    const sealed = new AutomationStudioSiteResetCreateBaselines();
+    sealed.seal();
+    sealed.observed(shelf([]));
+    expect(sealed.receipts()).toEqual([]);
+    const routed = new AutomationStudioSiteResetCreateBaselines();
+    routed.observed(shelf([]), false);
+    expect(routed.receipts()).toEqual([]);
+  });
+
+  it("makes a page's scope and group no domain token can equal, and keeps its values as one digest", () => {
+    const page = pageCollection(shelf(["s:atlas"], { values: { "p:count": "v:two" } }))!;
+    expect(page.scope).not.toMatch(/^[A-Za-z0-9:_-]+$/u);
+    expect(page.group).not.toBe(page.scope);
+    expect(page.states).toEqual({ "s:atlas": "present" });
+    expect(page.values).toMatch(/^v:[0-9a-f]{32}$/u);
+    expect(pageCollection(shelf(["s:atlas"], { values: { "p:count": "v:three" } }))!.values).not.toBe(page.values);
+    expect(pageCollection(shelf(["s:atlas"]))!.values).toBe(pageCollection(shelf(["s:atlas"], { values: {} }))!.values);
   });
 });

@@ -174,7 +174,7 @@ type CandidateControllerInput = ConstructorParameters<typeof AutomationStudioFlo
 
 /** What a scoped submission answers: a proposal, or the candidate controller's refusal shape, so its refusal reads the same. */
 export type AutomationStudioSubflowScopedSubmission =
-  | { ok: true; proposal: AutomationStudioSubflowProposal }
+  | { ok: true; proposal: AutomationStudioSubflowProposal; advice?: string[] }
   | Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>;
 
 /** What the subflow trial gate knows of earlier proposals, handed to `submit` by the loop that owns both. */
@@ -274,7 +274,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
     if (!submitted.ok) return automationStudioSubflowRenumberedRefusal(read.probe === result ? submitted : asSent(submitted, read.probe, result), this.numbering);
     const proposal = this.proposalOf(submitted.candidate);
     for (const consequence of lastingOf(proposal.subflows)) if (!this.lasting.includes(consequence)) this.lasting.push(consequence);
-    return { ok: true, proposal: structuredClone(proposal) };
+    // What the candidate controller advised beside its acceptance, steps with no witness among it (t791 fix 2).
+    return { ok: true, proposal: structuredClone(proposal), ...(submitted.advice?.length ? { advice: submitted.advice } : {}) };
   }
 
   /**

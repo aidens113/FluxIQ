@@ -382,6 +382,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
         changedPaths: [...submitted.proposal.changedPaths], verification: "not_performed", promotionAllowed: false,
         ...acceptedScript(call.value, submitted.proposal),
         ...unneededNote(submitted.proposal),
+        ...(submitted.advice?.length ? { advice: submitted.advice } : {}),
         next: !gate.available
           ? "No subflow trial runner is available here; completing leaves an untried proposal."
           : whole

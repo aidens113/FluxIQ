@@ -21,6 +21,9 @@
 // every version (`wholeRuns`, the build's trial records) are said: how many
 // there were, what the last of them was judged, and that the latest version
 // was not tested.
+//
+// **Every test refused (t791).** A build whose every asked test was refused before it ran has no tested part and no
+// whole run; its record says that plainly with the refusal's reason, not that nothing was tested.
 
 import type { AutomationStudioActivityTimeLimitTried } from "../../activity/index.ts";
 import type { AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
@@ -60,9 +63,12 @@ export function automationStudioProjectBuildRecordTold(input: {
   assembled: boolean;
   whole?: Whole | undefined;
   wholeRuns?: WholeRuns | undefined;
+  refused?: { count: number; why: readonly string[] } | undefined;
 }): string | undefined {
-  const { parts, assembled, whole, wholeRuns } = input;
+  const { parts, assembled, whole, wholeRuns, refused } = input;
   const runs = wholeRuns && Number.isSafeInteger(wholeRuns.count) && wholeRuns.count > 0 ? wholeRuns : undefined;
+  // Every test the build asked was refused before it ran: said plainly, with why (header, t791).
+  if (refused && refused.count > 0 && !parts.size && !whole && !runs) return refusedSaid(refused);
   if (!parts.size && !assembled && !whole && !runs) return undefined;
   // The only part tested and the whole run are one test when they ended the same way: said once, with how often it was tried (t774).
   const only = parts.size === 1 ? [...parts.values()][0] : undefined;
@@ -72,6 +78,14 @@ export function automationStudioProjectBuildRecordTold(input: {
     return `${wholeSaid(assembled, whole, runs)}${often}`;
   }
   return [partsSaid(parts), wholeSaid(assembled, whole, runs)].join(" ");
+}
+
+/** That every test the build asked for was refused so none ran, and why in the refusal's own person words (header, t791). */
+function refusedSaid(refused: { count: number; why: readonly string[] }): string {
+  const opening = refused.count === 1 ? "The one test the build asked for was refused, so no test of the Flow ran" : `All ${refused.count} tests the build asked for were refused, so no test of the Flow ran`;
+  const reasons = refused.why.slice(0, 2).map((reason) => reason.replace(/[.\s]+$/u, ""));
+  if (!reasons.length) return `${opening}.`;
+  return `${opening}: Core would not run ${refused.count === 1 ? "it" : "them"} because ${reasons.join("; and because ")}.`;
 }
 
 /** How the parts tested on their own came out (header). */

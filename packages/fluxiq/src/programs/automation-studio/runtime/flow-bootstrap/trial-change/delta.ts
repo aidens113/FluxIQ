@@ -7,6 +7,14 @@
 //   removed, present on both sides with different states is changed. A reading
 //   that carries no collection of the group did not read it: `unread`. A group
 //   read with no subjects is an empty list, which is a reading.
+// - **A page read whole (t791).** Its subjects are every subject the page
+//   showed, so an item that appears on it is added, as on a list. Its rows hold
+//   no values of their own; the page's shown values are one digest beside them
+//   (`values`, t772). Where its subjects held still on both sides and that
+//   digest changed -- a quantity the page shows went up -- every subject on both
+//   sides is changed: Core cannot tell which row a value belongs to, and the
+//   judge reads which from the domain's lines. Where subjects came or went, the
+//   values say nothing more.
 // - **Control.** The place's counts per state token on each side, a missing
 //   token counting 0. A reading that reports controls but not this place shows
 //   none there (as `../reset-settlement/control-tracker.ts` reads a page); one
@@ -20,7 +28,7 @@
 //   diff did not report says nothing either way. No start, no direction.
 
 import type { AutomationStudioSiteResetCollection } from "../reset-settlement/index.ts";
-import type { AutomationStudioTrialDelta, AutomationStudioTrialReading, AutomationStudioTrialWitness } from "./contracts.ts";
+import type { AutomationStudioTrialCollection, AutomationStudioTrialDelta, AutomationStudioTrialReading, AutomationStudioTrialWitness } from "./contracts.ts";
 
 /** The delta of one witness from `before` to `after`; `unread` when either side carried no reading of it. `start`: a control place's counts at the build's start, for its direction (header). */
 export function automationStudioTrialDelta(
@@ -44,7 +52,17 @@ export function automationStudioTrialDelta(
     else (later === states ? unchanged : changed).push(subject);
   }
   for (const subject of to.keys()) if (!from.has(subject)) added.push(subject);
-  return { witness: witness.id, kind: "list", status: added.length + removed.length + changed.length ? "changed" : "unchanged", added: added.sort(), removed: removed.sort(), changed: changed.sort(), unchanged: unchanged.sort() };
+  // A page read whole whose subjects held still while the values it shows changed (header).
+  const shown = [groupValues(before!.collections, witness.group), groupValues(after!.collections, witness.group)];
+  const valuesMoved = shown[0] !== undefined && shown[1] !== undefined && shown[0] !== shown[1];
+  if (valuesMoved && !added.length && !removed.length) changed.push(...unchanged.splice(0));
+  const moved = added.length + removed.length + changed.length > 0 || valuesMoved;
+  return { witness: witness.id, kind: "list", status: moved ? "changed" : "unchanged", added: added.sort(), removed: removed.sort(), changed: changed.sort(), unchanged: unchanged.sort() };
+}
+
+/** The digest of the values a page read whole showed (header), from the group's first collection carrying one; none for a list the domain read. */
+function groupValues(collections: readonly AutomationStudioTrialCollection[] | undefined, group: string): string | undefined {
+  return (collections ?? []).find((collection) => collection.group === group && typeof collection.values === "string")?.values;
 }
 
 /** Each subject of the group across its scopes, with its state tokens joined in a fixed order; undefined when no collection of the group was read. */

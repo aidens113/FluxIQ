@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import {
-  AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS,
+  AUTOMATION_STUDIO_SITE_RESET_UNWITNESSED_STEP_WORDS as UNWITNESSED_WORDS,
   AutomationStudioSiteResetLedger,
   AutomationStudioSiteResetProjectLedger,
   automationStudioSiteResetProjectReset,
@@ -12,8 +12,8 @@ import {
 
 // The step door (t751, R3): at submission the ledger's `admitStep` asks the one admission of a lasting plan step's
 // declaration and answers the stamp its node carries -- `via` and the ref or act it names, nothing opaque -- or none. Before
-// a trial runs its steps, a project build's reset (`admit`) refuses it unrun while any reversible lasting step lacks a stamp
-// that still resolves. Made-up fixtures only: a recipe box, opaque tokens.
+// a trial runs its steps, a project build's reset (`admit`) admits it, noting under `unwitnessed` each reversible lasting
+// step that lacks a stamp that still resolves (t791 fix 4: that trial runs). Made-up fixtures only: a recipe box, opaque tokens.
 
 const SITE = "r:site";
 const boxPage = (): AutomationStudioSiteResetRead => ({ state: {}, differs: [], resource: SITE, scope: "p:box-page", location: "loc:box", collections: [
@@ -46,7 +46,7 @@ describe("the step door answers a stamp (admitStep)", () => {
     expect(project.stepWitnessResolves({ via: "legacy" })).toBe(false);
     const reset = automationStudioSiteResetProjectReset({ project, own: builder, checks: () => ({ compare: async () => ({ moved: false }) }) });
     for (const witness of [{ via: "control" }, { via: "control", ref: "control-99" }, { via: "own_list" }]) {
-      expect(reset.admit?.([{ step: 1, consequences: ["modify_existing"], witness }])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_step_unwitnessed" } });
+      expect(reset.admit?.([{ step: 1, consequences: ["modify_existing"], witness }])).toMatchObject({ kind: "admit", unwitnessed: { steps: [{ step: 1 }] } });
     }
     expect(new AutomationStudioSiteResetLedger().createBaseline(unidentified, undefined)).toEqual({ kind: "admit" });
   });
@@ -77,7 +77,7 @@ describe("the step door answers a stamp (admitStep)", () => {
   });
 });
 
-describe("a project build's reset refuses a trial with an unwitnessed reversible step (admit)", () => {
+describe("a project build's reset admits a trial with an unwitnessed reversible step, noting it (admit, t791 fix 4)", () => {
   const built = () => {
     const project = new AutomationStudioSiteResetProjectLedger();
     const builder = boxed(project.forBrief("brief-1"));
@@ -101,7 +101,7 @@ describe("a project build's reset refuses a trial with an unwitnessed reversible
     ])).toEqual({ kind: "admit" });
   });
 
-  it("refuses unrun, naming each step whose stamp is missing, malformed or no longer resolves", () => {
+  it("admits, noting each step whose stamp is missing, malformed or no longer resolves, with the builder's words", () => {
     const { reset } = built();
     const decision = reset.admit?.([
       { step: 1, label: "add the card", consequences: ["create_new"], witness: { via: "destination", ref: "destination-1" } },
@@ -110,17 +110,14 @@ describe("a project build's reset refuses a trial with an unwitnessed reversible
       { step: 4, label: "pin it", consequences: ["modify_existing"], witness: { via: "repeats", act: "act-2" } },
       { step: 5, label: "star it", consequences: ["modify_existing"], witness: { via: "control", place: "pl:star" } }
     ]);
-    expect(decision).toEqual({ kind: "refuse", moved: false, evidence: {
-      ok: false, code: "candidate.trial_step_unwitnessed", failed: "no_witness", canMeet: "another_page", condition: WORDS.condition("no_witness", "another_page"),
-      stepsUnwitnessed: [{ step: 2, label: "mark it" }, { step: 3 }, { step: 4, label: "pin it" }, { step: 5, label: "star it" }],
-      instruction: WORDS.stepWitnessRequired([{ ref: "destination-1", count: 2, location: "loc:box" }])
-    } });
+    const steps = [{ step: 2, label: "mark it" }, { step: 3 }, { step: 4, label: "pin it" }, { step: 5, label: "star it" }];
+    expect(decision).toEqual({ kind: "admit", unwitnessed: { steps, instruction: UNWITNESSED_WORDS.ran(steps.map((entry) => ({ ...entry, canMeet: "another_page" as const, issued: [] }))) } });
   });
 
-  it("refuses every reversible step where the caller's port cannot resolve a stamp", () => {
+  it("notes every reversible step where the caller's port cannot resolve a stamp", () => {
     const { project } = built();
     const narrow = automationStudioSiteResetProjectReset({ project: { snapshot: () => project.snapshot(), forBrief: (brief) => project.forBrief(brief) }, checks: () => ({ compare: async () => ({ moved: false }) }) });
-    expect(narrow.admit?.([{ step: 1, consequences: ["create_new"], witness: { via: "destination", ref: "destination-1" } }])).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_step_unwitnessed" } });
+    expect(narrow.admit?.([{ step: 1, consequences: ["create_new"], witness: { via: "destination", ref: "destination-1" } }])).toMatchObject({ kind: "admit", unwitnessed: { steps: [{ step: 1 }] } });
   });
 
   it("a standalone ledger's reset has no admit", () => {

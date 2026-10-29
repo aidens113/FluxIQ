@@ -65,6 +65,7 @@
 // the build could not undo, which may still be there; or, where no read ever
 // showed it change anything, as one that may have changed nothing.
 import { AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT, automationStudioActivityLeftTold, emitAutomationStudioActivity, type AutomationStudioActivityLeftAct } from "../../activity/index.ts";
+import { automationStudioProjectBuildReasonNothingChanged } from "../../service/project-build-ending/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 
 /** Each act still on the target, as the ledger names it, and a line for the person when anything is left. */
@@ -81,6 +82,8 @@ export type AutomationStudioProjectSupervisorLeftOnTarget = {
   note: string | undefined;
   /** What is left, in a person's words, said even when nothing is (header, `activity/wording/left-told.ts`). */
   told: string;
+  /** What Core last read of the pages the build's acts in place were made on, as lines gained and lost (header, t791). */
+  readings: Array<{ added: string[]; gone: string[] }>;
   /** An ending's reason with the note after it, within the record's 2000 characters: the model's words give way, never Core's note. */
   reason: (said: string) => string;
   /** Says what is left as a chat row when a build ends with a Flow (header, t785); says nothing when nothing is left. */
@@ -127,13 +130,17 @@ export function automationStudioProjectSupervisorLeftOnTarget(ports: Pick<Automa
     if (told === AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT) return;
     emitAutomationStudioActivity({ phase: "verifying", label: "Left on the site", detail: { kind: "note", title: "Left on the site", status: "succeeded", text: told } });
   };
+  // Read once, as the ending is made: the latest reads at that moment (header, t791).
+  const readings = readingsOfPagesLeft(ledger);
   const fitted = note ? noteWithin(note, MAX_REASON - 2) : undefined;
   const reason = (said: string) => {
     // The ending is being named: the build hears what is left in Core's words (header).
-    ports.leftAtEnding?.({ note, told });
-    return fitted ? `${saidWithin(said, MAX_REASON - fitted.length - 1)} ${fitted}`.trim() : saidWithin(said, MAX_REASON);
+    ports.leftAtEnding?.({ note, told, readings });
+    // The model cannot know what the build left; where the ledger holds anything, its "nothing changed" gives way (t791, fix 5b).
+    const own = note ? automationStudioProjectBuildReasonNothingChanged(said) : said;
+    return fitted ? `${saidWithin(own, MAX_REASON - fitted.length - 1)} ${fitted}`.trim() : saidWithin(own, MAX_REASON);
   };
-  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), unsettleable: acts.some((act) => act.unsettleable === true), possibly, undoable: acts.some((act) => act.undoable), note, told, reason, announce };
+  return { acts: acts.map(({ line: _line, stays: _stays, seen: _seen, ...act }) => act), unsettleable: acts.some((act) => act.unsettleable === true), possibly, undoable: acts.some((act) => act.undoable), note, told, readings, reason, announce };
 }
 
 /** `said` within `max`: whole, else up to the last sentence end that fits, else cut at a word's end with "…" (header, t741 B5). */
@@ -167,4 +174,27 @@ function possiblyLeft(ledger: AutomationStudioProjectSupervisorPorts["projectLed
     return ids.has(act);
   };
   return acts.filter((act) => holds(act.owner, act.act)).map((act) => ({ act: act.act, did: act.did, brief: act.owner }));
+}
+
+/**
+ * What Core last read of every page an act of the build in place was made on (header, t791): each brief's ledger knows
+ * where its acts in place were made (`trialChange().leftFromEarlier()`) and holds the latest read it took of every page
+ * (`latest`, a list place with no group reading the latest read at that location, `flow-bootstrap/trial-change/read-log.ts`).
+ * Per page, once, in the order the acts were made: the lines that read shows beyond how the build found the page, and the
+ * ones it lost, so the ending can say them (`service/project-build-ending/readings-told.ts`) and drop a claim they
+ * contradict. A page never read since the build began, or one that differs from its start by no line, gives nothing.
+ */
+function readingsOfPagesLeft(ledger: AutomationStudioProjectSupervisorPorts["projectLedger"]): Array<{ added: string[]; gone: string[] }> {
+  const pages = new Set<string>();
+  const readings: Array<{ added: string[]; gone: string[] }> = [];
+  for (const owner of new Set(ledger.snapshot().acts.map((act) => act.owner))) {
+    const port = ledger.forBrief(owner).trialChange();
+    for (const act of port.leftFromEarlier()) {
+      if (act.where === undefined || pages.has(act.where)) continue;
+      pages.add(act.where);
+      const lines = port.latest({ kind: "list", group: "", location: act.where })?.reading.lines;
+      if (lines && (lines.added.length || lines.gone.length)) readings.push({ added: [...lines.added], gone: [...lines.gone] });
+    }
+  }
+  return readings;
 }

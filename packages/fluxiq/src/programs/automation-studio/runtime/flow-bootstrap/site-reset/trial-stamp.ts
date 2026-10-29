@@ -5,7 +5,9 @@
 // A destination ref attaches that issued list, a repeated explored act lends
 // its witnesses; a control receipt retains its immutable pre-act counts even
 // without the optional runtime diff. Own-list admission emits a destination
-// stamp. Bare standalone stamps add no authority.
+// stamp. Bare standalone stamps add no authority. A step whose stamp is missing
+// takes nothing here: its trial still ran (t791 fix 4), the act is recorded as on
+// the site, and the gap was said to the builder and the judge before it.
 //
 // A control receipt covers only the item it was read on (t751 final
 // acceptance, photo-dialog-act). A looped step carries the explored item's
@@ -32,8 +34,8 @@
 // there first (`./control-witnesses.ts`, `passed`). Its spot touches that
 // place, so no later read can become its original: without this, a step on the
 // same control (the item's own page, first opened after the trial) had no
-// receipt, the trial door refused it unwitnessed, and that refusal hid the
-// pass's act still to undo. Filed here, the step is stamped by what the build
+// receipt, it counted as unwitnessed, and its trial was refused unrun,
+// which hid the pass's act still to undo (a trial now runs, t791 fix 4). Filed here, the step is stamped by what the build
 // found, never by a read showing the pass's own press.
 
 import { automationStudioSiteResetWitnessStampValid as stampValid } from "../reset-admission/index.ts";

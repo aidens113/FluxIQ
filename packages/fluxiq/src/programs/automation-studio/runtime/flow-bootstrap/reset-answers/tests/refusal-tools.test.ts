@@ -115,9 +115,12 @@ function meetableSites(): Site[] {
       const helper = own.length ? undefined : helperOf(text, call.at);
       const uses = own.length || !helper ? [call] : callsOf(text, helper);
       for (const use of uses) {
-        const canMeet = [...use.args.matchAll(/"(this_page|another_page|no_call)"/gu)].map((match) => match[1]!);
+        // A literal compared against (`canMeet === "no_call" ? ...`, t791) picks words; it is not the site's canMeet.
+        const canMeet = [...use.args.matchAll(/(?<![!=]==\s*)"(this_page|another_page|no_call)"/gu)].map((match) => match[1]!);
         if (canMeet.length && canMeet.every((value) => value === "no_call")) continue;
-        sites.push({ ...where(use.at), canMeet, words: own.length ? own : wordsIn(use.args) });
+        // Words picked only where no call can meet it (`canMeet === "no_call" ? WORDS.x() : ...`) say so and name no tool.
+        const unmeetable = new Set([...use.args.matchAll(/===\s*"no_call"\s*\?\s*WORDS\.(\w+)\(/gu)].map((match) => match[1]!));
+        sites.push({ ...where(use.at), canMeet, words: (own.length ? own : wordsIn(use.args)).filter((entry) => !unmeetable.has(entry.name)) });
       }
     }
   }
@@ -127,8 +130,8 @@ function meetableSites(): Site[] {
 describe("every refusal some call can meet names a tool the builder is offered (t751 R5)", () => {
   it("the scan finds the refusal sites it must, in each directory that builds them", () => {
     const sites = meetableSites();
-    // t775: the trial policy refuses nothing; the one trial refusal left is the ledger's (`startsInEndState`).
-    for (const file of ["site-reset/undo-admission.ts", "site-reset/undo-claims.ts", "site-reset/ledger.ts", "site-reset/project-reset.ts", "site-reset/create-baselines.ts", "reset-admission/admission.ts"]) {
+    // t775: the trial policy refuses nothing; the one trial refusal left is the ledger's (`startsInEndState`); t791: the project reset refuses no unwitnessed step.
+    for (const file of ["site-reset/undo-admission.ts", "site-reset/undo-claims.ts", "site-reset/ledger.ts", "site-reset/create-baselines.ts", "reset-admission/admission.ts"]) {
       expect(sites.some((site) => site.file.replaceAll("\\", "/") === file), file).toBe(true);
     }
     expect(sites.flatMap((site) => site.words.map((entry) => entry.name))).toEqual(expect.arrayContaining(["startsInEndState", "unprovedUndo", "stepWitnessRequired", "alreadyBack", "destinationUnissued", "unknownAct"]));

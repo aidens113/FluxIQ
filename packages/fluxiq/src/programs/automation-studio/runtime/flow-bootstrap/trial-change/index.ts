@@ -6,7 +6,8 @@
 // session a trial gate's reset begins and its trial port finishes; (t787) the
 // acts attributed each at its own control's place, a loop's passes each at its
 // own item, and what of a trial's change contradicts its yes, which a trial
-// gate never takes as a pass.
+// gate never takes as a pass; (t791) the steps a trial runs with no witness,
+// and the gap they leave in what Core read, said to the judge.
 export * from "./acts.ts";
 export * from "./after-read.ts";
 export * from "./contracts.ts";
@@ -20,4 +21,7 @@ export * from "./read-log.ts";
 export * from "./readings.ts";
 export * from "./session.ts";
 export * from "./steps.ts";
+export * from "./unwitnessed-outcome.ts";
+export * from "./unwitnessed-session.ts";
+export * from "./unwitnessed-steps.ts";
 export * from "./witnesses.ts";

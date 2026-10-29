@@ -89,6 +89,15 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trial
 // apart, under `actsUnsettleable` beside `phaseStart`'s words: still on the
 // site, nothing can check or put them back, so no call should try, and no trial
 // can run while they are there.
+//
+// **A predecessor's step with no witness is run to the entry (t791 fix 4).**
+// Before (d) the reset's admission is asked of the predecessors' steps, as a
+// trial's door asks it. A project build's reset no longer refuses a reversible
+// lasting step with no witness (`flow-bootstrap/site-reset/project-reset.ts`),
+// so such a predecessor runs to the entry as any does, and its acts go into
+// the phase's own ledger as on the site. Nothing judges the entry, so the
+// admission's note is not told here; a trial that runs that step says it. A
+// refusal from any other reset still leaves the entry unprepared.
 
 /** What a phase is told of the acts no call can settle (header, t743): generic, naming no site. */
 const UNSETTLEABLE_SAID = "These acts of this build are still on the site, and nothing can check or put them back, so do not try to undo them; no trial can run while they are there:";

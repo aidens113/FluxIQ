@@ -45,6 +45,15 @@ describe("testing a candidate's whole Flow, in words", () => {
     expect(test(yes({ steps: [] }))?.words).toBe("the test passed and the Flow did what you asked");
   });
 
+  it("a test that ran a step whose change could not be read says so, by the step's words (t791 fix 4)", () => {
+    const ran = (unwitnessed: unknown, verdict = "yes") => test({ ...yes({ steps: [{ step: 3, definitionId: "forum.follow", label: "follow the author", status: "succeeded" }] }), verdict, unwitnessed });
+    expect(said(ran({ steps: [{ step: 1, label: "follow the author" }], instruction: "x" }))?.words)
+      .toBe("the test passed and the Flow did what you asked: 1 step done; what “follow the author” changed on the site couldn't be checked, so it was judged by how the page ended");
+    expect(said(ran({ steps: [{ step: 1 }, { step: 2, label: "hold the book" }], instruction: "x" }, "unsure"))?.words)
+      .toBe("the Flow ran, but whether it did what you asked couldn't be confirmed: 1 step done; what 2 steps changed on the site couldn't be checked, so they were judged by how the page ended");
+    expect(said(ran(undefined))?.words).toBe("the test passed and the Flow did what you asked: 1 step done");
+  });
+
   it("a failed check says what it waited for and whether the page had it", () => {
     const check = (extra: Record<string, unknown>) => test({ ok: false, verdict: "execution_failed", feedback: { code: "executor.node_failed", steps: [{ step: 5, definitionId: "web.output.wait_for_text", label: "Wait for confirmation", status: "failed", happened: "The step, or the wait for its result, ran out of time.", ...extra }] } })?.words;
     expect(check({ waitedFor: "Added to your cart", textPresence: "hidden" })).toBe("step 5, “Wait for confirmation”, didn't work: “Added to your cart” was on the page but stayed hidden");

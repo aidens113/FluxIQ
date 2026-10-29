@@ -123,17 +123,20 @@ const yes = () => mockProvider(async () => judgeReply("yes"));
 const nothingDiffers = async (): Promise<AutomationStudioSiteResetComparison> => ({ moved: true, differs: [] });
 
 describe("every phase of a project build starts from the build's one start", () => {
-  it("refuses unwitnessed entry preparation before its start hook", async () => {
+  it("runs an unwitnessed predecessor to the entry, its act on the site in the phase's own ledger (t791 fix 4)", async () => {
     const run = site({ hook: true });
     for (const subflow of run.f.findProposal.subflows) {
       for (const node of subflow.nodes) delete node.resetWitness;
     }
     // Replace the kept passing proposal with the unstamped one, as an old proposal may arrive.
     run.proposals.trialled(scopeOf("find", "brief.find", []), run.f.findProposal, "yes");
-    const started = await run.start.explore({ phase: "builder", scope: scopeOf("add", "brief.add", ["find"]), own: run.ledger.forBrief("brief.add"), signal: new AbortController().signal, openingArrives: true });
-    expect(started.entry).toMatchObject({ kind: "unprepared", code: "candidate.trial_step_unwitnessed" });
-    expect(run.state.hooks).toBe(0);
-    expect(run.state.ran).toEqual([]);
+    const own = run.ledger.forBrief("brief.add");
+    const started = await run.start.explore({ phase: "builder", scope: scopeOf("add", "brief.add", ["find"]), own, signal: new AbortController().signal, openingArrives: true });
+    expect(started.entry).toMatchObject({ kind: "prepared" });
+    expect(started.told).not.toHaveProperty("admission");
+    expect(run.state.hooks).toBe(1);
+    expect(run.state.ran).toEqual(["hook", `go ${START}`, `${PRESS.id} on ${START}`]);
+    expect(own.inPlace()).toEqual([expect.objectContaining({ did: expect.stringContaining("trial step") })]);
   });
   const explored = [
     { phase: "builder" as const, predecessors: [] as string[] },
