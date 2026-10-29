@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../../../../lib/auth";
 import { getFluxIQ } from "../../../../../../../lib/fluxiq";
 import { pairedClientProjectDomainRefusal } from "../../../../../../../lib/paired-client-project-domain";
+import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor, panelRouteActor, routeParamId } from "../../../../../../../lib/app-route-iam";
 import { pairedClientDomainScope } from "../../../../../../../lib/program-route";
 
 type RouteParams = {
@@ -11,6 +12,9 @@ type RouteParams = {
     sha256: string;
   }>;
 };
+
+const READ_ROUTE = appRouteIamContract("GET", "/api/programs/automation-studio/state-assets/[projectId]/[sha256]");
+const WRITE_ROUTE = appRouteIamContract("PUT", "/api/programs/automation-studio/state-assets/[projectId]/[sha256]");
 
 const MAX_STATE_ASSET_BYTES = 20 * 1024 * 1024;
 const ALLOWED_UPLOAD_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -22,7 +26,8 @@ export async function GET(_request: Request, context: RouteParams) {
   if (!sessionId) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
   const auth = await fluxiq.programs.identityAccess.validateSession(sessionId);
   if (!auth) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
-  if (!auth.role.permissions.includes("programs.read")) return NextResponse.json({ ok: false, error: "Permission required: programs.read" }, { status: 403 });
+  const refusal = await authorizeAppRoute(fluxiq.programs.api, READ_ROUTE, "panel", panelRouteActor({ session: { id: sessionId }, user: auth.user, role: auth.role }), { projectId: routeParamId(projectId) });
+  if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
   if (!/^[a-f0-9]{64}$/i.test(sha256)) return NextResponse.json({ ok: false, error: "Invalid object digest" }, { status: 400 });
   try {
     const asset = await fluxiq.programs.automationStudio.readProjectObjectAsset(decodeURIComponent(projectId), sha256.toLowerCase());
@@ -107,6 +112,10 @@ async function authorizeStateAssetUpload(
     if (!scope) return { ok: false, status: 403, error: "A paired client may only reach its own domain." };
     const refusal = await pairedClientProjectDomainRefusal(fluxiq.programs.automationStudio, projectId, scope.domainId);
     if (refusal) return { ok: false, status: 403, error: refusal.error, errorCode: refusal.errorCode };
+    const actor = await pairedClientRouteActor(fluxiq.programs.identityAccess, clientSession);
+    if (!actor) return { ok: false, status: 401, error: "Authentication required" };
+    const denied = await authorizeAppRoute(fluxiq.programs.api, WRITE_ROUTE, "paired-client", actor, { projectId });
+    if (denied) return { ok: false, ...denied };
     return { ok: true, clientSessionId: clientSession.sessionId, ...(clientSession.activeRecordingId ? { recordingId: clientSession.activeRecordingId } : {}) };
   }
 
@@ -114,7 +123,8 @@ async function authorizeStateAssetUpload(
   if (!sessionId) return { ok: false, status: 401, error: "Authentication required" };
   const auth = await fluxiq.programs.identityAccess.validateSession(sessionId);
   if (!auth) return { ok: false, status: 401, error: "Authentication required" };
-  if (!auth.role.permissions.includes("programs.write")) return { ok: false, status: 403, error: "Permission required: programs.write" };
+  const denied = await authorizeAppRoute(fluxiq.programs.api, WRITE_ROUTE, "panel", panelRouteActor({ session: { id: sessionId }, user: auth.user, role: auth.role }), { projectId });
+  if (denied) return { ok: false, ...denied };
   return { ok: true };
 }
 

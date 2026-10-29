@@ -11,17 +11,19 @@ already know.
 
 ## Status
 
-The engine is complete and tested. Its one caller is provisioning (lane B1),
-which authorises each provisioning operation through it (see Provisioning).
-Nothing else in the running product calls it: no program registration carries a resource or access level, no route
-asks it for a decision, and no store or audit database is opened at start-up.
-Every existing permission check still goes through the role's `permissions`
-list in `programs/identity-access`.
+The engine is complete, tested and enforced (lane B3, t803). Provisioning
+(lane B1) authorises each operation through it (see Provisioning), every
+program endpoint is decided by it in `GlobalProgramApiRegistry.call`, and every
+authenticated app route asks the registry's `authorize` (see
+[Enforcement](#enforcement)). On `local` and `self-hosted` each decision equals
+the role check it replaced, by construction and by the parity tests (see
+[Parity](#parity)); only `service` narrows a `FluxIQUserAccess` user to their
+own resources.
 
-Lane B3 turns it on. It adds `resource` and `accessLevel` to each endpoint
-registration and calls `IamAuthorizer` before the endpoint runs. Until then
-the engine is proven against today's behavior by the parity check (see
-[Parity](#parity)).
+The running product still constructs the registry with no `iam` options, so it
+decides as `local` with a discarding audit sink; the profile, the per-workspace
+IAM store and the audit store are wired by lanes A and C (see
+[Not yet wired](#not-yet-wired)).
 
 The plan's terms (principals, FRNs, policy kinds, actions) are in the
 [hosted production plan](../working/hosted-production-plan.md), "Permissions
@@ -140,8 +142,11 @@ missing, lets `Deny` win, and otherwise returns the first matching `Allow`.
 
 ## The resource rule
 
-A request names no pattern, only concrete FRNs. Until B3 declares real
-resources per endpoint, no action names a specific resource, so:
+A request names no pattern, only concrete FRNs. Every program registration now
+declares the resource it acts on (see [Enforcement](#enforcement)); the table
+below is the fallback for a registration that declares none (test doubles
+only: a registry test fails the build on any live one), and the rule for a
+create or a list across the whole workspace:
 
 | Request | Resource evaluated |
 | --- | --- |
@@ -167,7 +172,7 @@ the generated lists" use `IAM_READ_ONLY_ACTIONS` and `IAM_DESTRUCTIVE_ACTIONS`.
 | `FluxIQOwnerFullAccess` | identity | `Allow *` on the workspace content and the workspace FRN, no condition, so it takes the fast path. Reaches nothing outside the workspace. |
 | `FluxIQAdministratorAccess` | identity | An unconditional `Allow *` on the workspace content, and `Allow` of the `studio`, `secrets`, `gateway`, `iam` and `ops` services on the workspace FRN. No `platform:*` (platform FRNs have no workspace segment, so the content grant cannot reach them). It reaches every endpoint today's admin does, and the content grant makes it full access, so the single local owner, who is `admin` today, keeps the list fast path. |
 | `FluxIQReadOnlyAccess` | identity | Exactly the 98 read-only actions, one statement per service, on the same two resources. Built from the generated list. |
-| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. Create and list of those services on the workspace FRN. Self-service password, PIN, TOTP, session and vault actions on the principal's own user FRN. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
+| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. Self-service password, PIN, TOTP, session and vault actions on the principal's own user FRN. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
 | `FluxIQBrowserSession` | session | Allows `gateway` and `studio` in the workspace. Denies all `iam` actions, `secrets:RevealKey` and the 16 destructive actions. A connected browser acts as its user, narrowed by this. |
 | `FluxIQProvisioner` | identity | For the website's provisioning identity: allows `platform:*Account*` on account FRNs; denies everything on any FRN with a workspace segment and on workspace FRNs. |
 | `FluxIQServiceGuardrail` | guardrail | `Deny ops:*` and `Deny platform:*`. Keeps operator actions (including database migration and node registration) out of a hosted workspace. |
@@ -296,6 +301,76 @@ identity check records its own row. The result is a role principal
 (`type: "role"`) plus `assumedRole` and session-policy options. The contract
 defines no separate role-session FRN yet, so the role FRN stands in for it.
 
+## Enforcement
+
+Lane B3 (t803) puts the engine in front of every program endpoint and app
+route.
+
+**Declarations.** Each `registry.register` carries, beside `permission` and
+`classification`:
+
+- `action`: exactly `iamActionName(<service>, <endpoint>)`, and `accessLevel`:
+  exactly `iamEndpointAccessLevel`; `register` throws on any other, so the
+  catalog cannot drift from the registrations;
+- `resource`: `{ types, of(request) }`, built with `endpointResource` in
+  `programs/_shared/iam/` (`workspace()`, `program()`, `project()`,
+  `projectChild(kind, field)`, `key()`, `schedule()`, `client()`, `user()`,
+  `selfUser()`, `custom()`). It names what the handler actually scopes by: a
+  create or list inside a project acts on the project, a top-level create or
+  a list across the workspace on the workspace, an operator endpoint on its
+  program;
+- `list` (optional): for a list across the workspace, the items, each item's
+  resource and how to rebuild the payload; the registry keeps only the items
+  the caller may read;
+- `creates` (optional): the resource a successful call created; the registry
+  records the caller as its owner.
+
+**Resources.** `describeProgramResource` turns a ref into an FRN. An id that is
+not an FRN segment is encoded; a missing one is the placeholder `~` with no
+owner, so a malformed request can never widen access. A project's child
+(`project/<id>/flow/<id>`) is owned by its project's owner, a user FRN by that
+user. Programs register owner resolvers by kind (`registerResourceOwners`):
+Automation Studio for projects, Secret Keys for keys (the key's `createdBy`).
+A connected client (`client`, the `gateway` FRN type `browser`) has no
+resolver yet. Owners are looked up only under `service`.
+
+**Who is asked** (`ProgramIamGate`).
+
+| Profile | Identity | Session | Guardrail |
+| --- | --- | --- | --- |
+| `local`, `self-hosted` | the role's predefined policies plus `FluxIQPermissions`, allowing exactly the actions whose permission the actor holds | `FluxIQPermissionSession`, the same set | none |
+| `service` | what the IAM store attaches to `user/<id>` | the permission session for a paired client only | `FluxIQServiceGuardrail` |
+
+On `local` and `self-hosted` identity can never allow less than the actor's
+permissions and the session never more, so every decision equals
+`permissions.includes(permission)`, including a paired client's narrowed
+permissions and an edited role. An actor holding every permission gets
+`Allow *`, so the single owner keeps the full-access fast path. These sets are
+compiled once and cached (256 entries; `register` clears the cache). On
+`service` with no store, everything is denied. A refusal keeps today's
+`authorization.forbidden` shape and, on `local`, today's wording; the PIN check
+for `destructive` endpoints is unchanged.
+
+**App routes.** `apps/web/src/lib/app-route-iam/` holds one table,
+`APP_ROUTE_IAM_CONTRACTS`: each authenticated route and method has an action
+(framework setup, migrate and io are `ops` actions on the program FRN
+`framework`, which the guardrail denies on `service`), today's permission, and
+its resources from the route parameters. `authorizeAppRoute` calls
+`GlobalProgramApiRegistry.authorize`. `/api/programs/[programId]/[endpoint]`
+only marks the actor's channel (`panel` or `paired-client`), because `call`
+decides it. Login and logout stay unauthenticated. Route actions are not in
+the generated catalog yet (see Known gaps).
+
+**Project ownership.** `AutomationStudioProject.ownerUserId` is the owner
+recorded in `<automation data dir>/ownership/projects.json` (a SQLite row
+under layout v2, one transaction per change), beside the projects and outside
+the runtime's own records (`programs/automation-studio/api/ownership/`). A
+creator is recorded through `create-project`'s `creates`. The migration gives
+an unowned project the workspace owner, or the first enabled `admin` by
+creation; it is idempotent, never overwrites, and runs lazily on first lookup,
+so no project is ever ownerless while an administrator exists. An id that is
+not a project answers no owner.
+
 ## Catalog generator
 
 `generateIamActionCatalog` turns endpoint registrations (program id, endpoint,
@@ -343,14 +418,27 @@ today's `permissions.includes(permission)` and with the IAM engine using the
 role's policies as identity policies, under both the `local` and `self-hosted`
 profiles with origin `panel`. A live test runs it over the real registry.
 
+Since B3 a second live test (`programs/_shared/tests/api-iam-parity.test.ts`)
+compares at the call level: every registration through
+`GlobalProgramApiRegistry.call`, for admin, viewer, a paired admin and viewer,
+an edited role, an unmapped role and a `user` role, under `local` and
+`self-hosted`, with and without ids in the payload, against
+`permissions.includes`. The app routes have the same check in
+`apps/web/src/app/api/tests/app-route-iam-parity.test.ts`. An escalation test
+(`api-iam-escalation.test.ts`) runs `service` with two `FluxIQUserAccess`
+users: neither reaches the other's project or its children, any operator
+endpoint, `iam:Snapshot`, `CreateUser` or `UpdateUser`, or any unfiltered
+action on the workspace other than a create, and each list shows only the
+caller's own items.
+
 Result: for all 236 registrations, admin and viewer have 0 mismatches
 (472 pairs, 944 decisions; 340 pairs allowed and 132 refused today). The
 viewer's 104 allowed registrations are the 98 read-only actions plus the six
 extra registrations sharing `ops:Snapshot`. The owner policy matches admin and
 takes the fast path on all 472 decisions.
 
-It does not cover the 15 app routes, which have no catalog actions yet, nor
-the service profile or other origins.
+The role-level check does not cover the app routes or `service`; the
+call-level, route and escalation tests above do.
 
 ## Role mapping
 
@@ -755,6 +843,13 @@ and `instanceHost`, the host of `FLUXIQ_PUBLIC_ORIGIN` when set.
 
 ## Not yet wired
 
+- **The registry's `iam` options** (`programs/_shared/runtime.ts`): the
+  profile (lane A), the per-workspace IAM store as `source` and the audit store
+  as `audit` (lane C). Until then every decision is the `local` one and no
+  decision is recorded.
+- **A startup refusal** of an undeclared registration under public profiles:
+  only the completeness test enforces declarations.
+
 - **`apps/web/src/lib/fluxiq.ts`** does not start or close the private listener. It
   needs a `provisioningListener` field on the runtime state, a start after the
   client gateway (a dynamic import of `server/provisioning-listener`, because that
@@ -768,12 +863,22 @@ and `instanceHost`, the host of `FLUXIQ_PUBLIC_ORIGIN` when set.
 
 ## Known gaps
 
-- **`FluxIQUserAccess` grants little until B3.** Every non-operator action
-  evaluates against the workspace FRN, which has no owner, so own-data
-  grants never match. A principal holding only this policy can create and list
-  but cannot read until per-resource FRNs with owners are declared.
-- **Routes.** The 15 app routes have no actions, so neither the catalog nor
-  the parity check covers them.
+- **`FluxIQUserAccess` refuses workspace-wide reads it cannot filter.** On
+  `service` a hosted user is refused the endpoints that act on the whole
+  workspace without a per-item filter (the program snapshot, categories, the
+  client-gateway listings, recordings across projects, signal registries) and
+  the routes for pairing approval, the Studio context, trace upload (no owner
+  resolver for connected clients yet) and the program directory. Each needs a
+  per-item filter or a narrower resource before the hosted panel can offer it.
+- **Projects created outside `create-project`** (a chat or a schedule calling
+  the service directly) get the default owner, not their creator.
+- **No fast path on `service`.** The guardrail's `Deny` disables the
+  full-access shortcut, so every hosted list is decided item by item.
+- **Routes are not in the generated catalog**, which lists endpoint sources
+  only; adding them regenerates `@fluxiq/contracts`' `actions.generated.ts`.
+- **Catalog resource types** stay `["*"]` and `["program"]`: the declared
+  `resource.types` are not yet written to the generated catalog (same
+  regeneration).
 - **Generated-list policies do not re-version.** `FluxIQReadOnlyAccess` and
   `FluxIQBrowserSession` change when the lists regenerate, but stay at `v1`;
   no check enforces a bump.

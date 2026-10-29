@@ -1,3 +1,4 @@
+import { endpointResource } from "../../../../_shared/iam/index.ts";
 import { readTrustedModuleIdentities } from "../../../../../runtime/build-identity/modules/index.ts";
 import { createHash } from "node:crypto";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
@@ -6,6 +7,9 @@ import type { AutomationStudioApiDependencies } from "../dependencies.ts";
 /** Authenticated, read-only projection of the retained executing service's build. */
 export function registerRuntimeIdentityEndpoint({ registry, service, clientGateway }: AutomationStudioApiDependencies): void {
   registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runtimeBuildIdentity, permission: "programs.read", classification: "read",
+    action: "studio:GetRuntimeBuildIdentity",
+    accessLevel: "Read",
+    resource: endpointResource.workspace(),
     handler: async request => {
       const inputs = (request.payload as { reachedInputs?: unknown } | undefined)?.reachedInputs;
       if (!Array.isArray(inputs) || inputs.length < 1 || inputs.length > 5_000 || inputs.some(input => typeof input !== "string" || !/^packages\/(fluxiq|contracts)\/dist\/[a-zA-Z0-9_./-]+\.js$/.test(input) || input.includes(".."))) throw new Error("Runtime identity needs bounded reached artifact paths.");

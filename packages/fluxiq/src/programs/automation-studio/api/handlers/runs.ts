@@ -10,6 +10,7 @@
 // in `tests/domain-scope.test.ts` — it decides which side a new endpoint
 // belongs on.
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type FlowAdaptationRequest, type FlowExpansionSummaryRequest, type FlowRunActionPageRequest, type FlowRunDetailRequest, type FlowRunEventPageRequest, type FlowSpendRequest, type FlowSpendResponse, type ReviewFlowAdaptationRequest } from "../contracts.ts";
 import { automationStudioWithWholeAttemptInputs, type AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
@@ -21,6 +22,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRuns,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowRuns",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
       const input: Parameters<AutomationStudioService["listFlowRunSummaries"]>[0] = { projectId: String(payload.projectId ?? ""), limit: payload.limit, offset: payload.offset };
@@ -41,6 +45,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowRunDetail",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunDetailRequest : {} as FlowRunDetailRequest;
       const runDetail = await service.getFlowRunDetail(String(payload.projectId ?? ""), String(payload.runId ?? ""), { includeCollections: payload.compact !== true });
@@ -59,6 +66,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSpend,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowSpend",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSpendRequest : {} as FlowSpendRequest;
       const record = await service.creationSpends.get(String(payload.projectId ?? ""), String(payload.flowId ?? ""));
@@ -86,6 +96,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportFlowRunAudit,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ExportFlowRunAudit",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunDetailRequest : {} as FlowRunDetailRequest;
       const audit = await service.exportFlowRunAudit(String(payload.projectId ?? ""), String(payload.runId ?? ""));
@@ -97,6 +110,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRunActions,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowRunActions",
+    accessLevel: "List",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunActionPageRequest : {} as FlowRunActionPageRequest;
       const page = await service.listFlowRunActions({ projectId: String(payload.projectId ?? ""), runId: String(payload.runId ?? ""), limit: payload.limit, offset: payload.offset, cursor: payload.cursor });
@@ -108,6 +124,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunActionDetail,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowRunActionDetail",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
       return { ok: true, payload: { action: await service.getFlowRunActionDetail({ projectId: String(payload.projectId ?? ""), runId: String(payload.runId ?? ""), attemptId: String(payload.attemptId ?? "") }) } };
@@ -118,6 +137,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRunEvents,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowRunEvents",
+    accessLevel: "List",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunEventPageRequest : {} as FlowRunEventPageRequest;
       const page = await service.listFlowRunEvents({ projectId: String(payload.projectId ?? ""), runId: String(payload.runId ?? ""), afterSequence: payload.afterSequence, cursor: payload.cursor, limit: payload.limit });
@@ -129,6 +151,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunEventDetail,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowRunEventDetail",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
       return { ok: true, payload: { event: await service.getFlowRunEventDetail({ projectId: String(payload.projectId ?? ""), runId: String(payload.runId ?? ""), sequence: payload.sequence }) } };
@@ -139,6 +164,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowAdaptations,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowAdaptations",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
       const input: Parameters<AutomationStudioService["listFlowAdaptationSummaries"]>[0] = { projectId: String(payload.projectId ?? ""), limit: payload.limit, offset: payload.offset };
@@ -158,6 +186,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowAdaptation,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowAdaptation",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowAdaptationRequest : {} as FlowAdaptationRequest;
       return { ok: true, payload: { adaptation: await service.getFlowAdaptation(String(payload.projectId ?? ""), String(payload.flowId ?? ""), String(payload.adaptationId ?? "")) } };
@@ -168,6 +199,9 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewFlowAdaptation,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:ReviewFlowAdaptation",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as ReviewFlowAdaptationRequest : {} as ReviewFlowAdaptationRequest;
       return {

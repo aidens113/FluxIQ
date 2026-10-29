@@ -10,6 +10,16 @@ export type AutomationStudioProject = {
   /** Null is a global project; a string scopes the project to one host domain. */
   domainId?: string | null;
   categoryId?: string | null;
+  /**
+   * The Identity Access user who owns the project, which `FluxIQUserAccess`
+   * matches against the caller (`fluxiq:ResourceOwner`); the project's flows,
+   * recordings, runs and datasets are owned by the same user. Kept beside the
+   * project rather than in its runtime record (`api/ownership/`), so it is
+   * present only on answers that add it: absent means not looked up, null
+   * means the project has no owner yet (no workspace owner and no enabled
+   * `admin` to default to).
+   */
+  ownerUserId?: string | null;
   createdAt: number;
   updatedAt: number;
 };
