@@ -7,6 +7,8 @@
 // barrel with a dynamic `import()`, which keeps the two out of a load cycle.
 export * from "./platform-services";
 export * from "./provisioning-listener-config-error";
+export * from "./resolve-email-sender";
 export * from "./start-provisioning-listener";
+export * from "./listener-for-profile";
 export * from "./start-provisioning-listener-from-env";
 export type * from "./types";
