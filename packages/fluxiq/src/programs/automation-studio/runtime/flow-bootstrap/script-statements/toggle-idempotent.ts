@@ -27,6 +27,13 @@
 // press's `expectedState`, and the trial flipped the control back (t775-P, the
 // photo-social like loop). A node that cannot take it stays a plain press.
 //
+// A step is also tied to a toggle its own node made in a trial pass (t787): the
+// press records `trialNodes`, the executed ids of the trial nodes the domain
+// answered as a toggle, and a step named `<subflow key>.<node key>` is that node
+// when an id ends with `.<subflow key>.<node key>`. A looped step whose handle
+// was never pressed while exploring then carries `ensureState` from the revision
+// after its first trial.
+//
 // The model never writes `ensureState`: one it wrote is taken off first. Pure;
 // returns a new plan.
 
@@ -42,6 +49,12 @@ export type AutomationStudioExploredToggle = {
   handles: readonly string[];
   /** Its `target` as the domain resolved it; opaque. */
   target?: JsonValue;
+  /**
+   * The executed ids of the trial nodes that made this toggle in a trial pass
+   * (t787): a step whose own node is one of them is tied to it though its handle
+   * was never pressed while exploring. Absent for a press made while exploring.
+   */
+  trialNodes?: readonly string[];
   /** The domain's opaque word for the state the press left. */
   signature: JsonObject;
   /** The library node that sets the asked state itself, where the domain has one. */
@@ -75,7 +88,7 @@ export function automationStudioFlowPlanToggleSteps(input: {
       const handles = new Set((input.handleViews ?? []).filter((view) => view.node === ref).map((view) => view.handle));
       const target = node.parameters?.target;
       const press = [...input.explored].reverse().find((explored) => explored.node === node.definitionId
-        && (explored.handles.some((handle) => handles.has(handle)) || (target !== undefined && explored.target !== undefined && canonical(target) === canonical(explored.target))));
+        && (explored.handles.some((handle) => handles.has(handle)) || explored.trialNodes?.some((id) => id.endsWith(`.${ref}`)) || (target !== undefined && explored.target !== undefined && canonical(target) === canonical(explored.target))));
       if (!press) continue;
       if (press.idempotentWith) {
         issues.push({ severity: "error", code: NOT_IDEMPOTENT, message: refusal(press.idempotentWith), path: `plan.subflows.${subflowIndex}.nodes.${nodeIndex}` });

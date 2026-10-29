@@ -86,6 +86,8 @@
 // loop's memory or repeat guard. The answer of a trial that ran says under
 // `leftOnSite` the acts now on the site, the trial's own among them. An offline
 // trial has no reset and no readings.
+// A yes the trial's own readings contradict is kept as a no (t787 fix 4,
+// `../trial-change/contradicted.ts`): no judge's answer makes it a pass.
 //
 // **A start hook runs before the reset check (t475).** When the trial port has
 // one (`prepareStart`), it runs first, and the reset is told the site was just
@@ -275,7 +277,7 @@ import {
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
-import { automationStudioTrialChangeSteps, type AutomationStudioTrialChangePart, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
+import { automationStudioTrialChangeContradictedNo, automationStudioTrialChangeSteps, type AutomationStudioTrialChangeOutcome, type AutomationStudioTrialChangePart, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
@@ -615,16 +617,16 @@ export class AutomationStudioFlowCandidateTrialGate {
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
   private async ask(trial: { candidateId: string; port: AutomationStudioCandidateTrialPort }, latest: AutomationStudioFlowCandidate, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioCandidateTrialRequest["earlierAdvice"] = [], change?: AutomationStudioTrialChangeSession): Promise<Asked> {
     const failed = (code: string): { answer: AutomationStudioCandidateTrialResult } => ({ answer: { revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code } } });
-    let raw: unknown;
+    let raw: unknown, finished: AutomationStudioTrialChangeOutcome | undefined; // What its readings finished with (header, t787).
     try {
-      raw = await trial.port({ candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}), ...(change ? { siteChange: (acts, actsSignal) => change.finish(acts, actsSignal) } : {}) });
+      raw = await trial.port({ candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}), ...(change ? { siteChange: async (acts, actsSignal) => (finished = await change.finish(acts, actsSignal)) } : {}) });
     } catch (error) {
       if (signal.aborted) throw error;
       // The port's own error text may carry page or account detail, so the model is told only its kind (header).
       return { answer: { ...failed("candidate.trial_port_failed").answer, feedback: Stop.portFailed("candidate.trial_port_failed", error) } };
     }
     const checked = checkedAnswer(raw, latest);
-    return typeof checked === "string" ? failed(checked) : checked;
+    return typeof checked === "string" ? failed(checked) : { ...checked, answer: automationStudioTrialChangeContradictedNo(checked.answer, finished) };
   }
 }
 

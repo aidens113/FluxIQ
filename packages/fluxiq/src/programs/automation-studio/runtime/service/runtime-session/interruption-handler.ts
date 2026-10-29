@@ -11,7 +11,9 @@
 // the defence pressed, which the domain names by a handle.
 //
 // So the branch is an `add_handler` (C4), the kind an in-run repair writes for
-// an interruption, scoped to the step the layer was met at:
+// an interruption, scoped to the step the layer was met at, in the one shape a
+// build also gives a layer its exploration cleared
+// (`../../flow-bootstrap/layer-handlers/patch.ts`, t787):
 //
 // - `before` that step, `when` a dialog by that name is visible: the guard. No
 //   wait is written (supervisor, 2026-10-13): a wait would slow every run for a
@@ -31,6 +33,7 @@ import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../../nodes/control-
 import type { AutomationStudioClearedLayer } from "../../executor/index.ts";
 import type { AutomationStudioFactCondition } from "../../executor/lifecycle/index.ts";
 import type { AutomationStudioRuntimeAddHandlerPatch } from "../../llm/index.ts";
+import { automationStudioLayerHandlerPatch } from "../../flow-bootstrap/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 
 /** The host fact a layer by its name is asked about: any open dialog whose name contains the words. */
@@ -53,18 +56,14 @@ export function automationStudioInterruptionHandlerPatch(input: {
   const shown: AutomationStudioFactCondition = { fact: LAYER_FACT, op: "visible", value: name };
   const gone: AutomationStudioFactCondition = { fact: LAYER_FACT, op: "absent", value: name };
   const pressed = layer.controlName ?? layer.control;
-  return {
-    kind: "add_handler",
-    event: "before",
+  return automationStudioLayerHandlerPatch({
     scope: { kind: "nodes", nodeIds: [nodeId] },
-    when: [shown],
-    completionCheck: [gone],
-    steps: [{ definitionId: layer.wayOutDefinitionId, label: `Close "${quoted(name)}"`, parameters: { target: { handle: input.handle } } }],
-    then: { kind: "resume" },
-    consequences: [],
+    shown,
+    gone,
+    press: { definitionId: layer.wayOutDefinitionId, label: `Close "${quoted(name)}"`, parameters: { target: { handle: input.handle } } },
     reason: `The page put "${quoted(name)}" in the way of this step and the run closed it by "${quoted(pressed)}". When it is there again, the Flow closes it the same way and carries on.`,
     metadata: { learnedFrom: "defence_close", layerKind: layer.kind }
-  };
+  });
 }
 
 /** Whether a handler of the graph already waits for a dialog by `name` before or around `nodeId`. */

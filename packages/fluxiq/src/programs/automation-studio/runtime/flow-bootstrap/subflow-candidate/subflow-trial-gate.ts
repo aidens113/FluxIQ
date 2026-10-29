@@ -27,7 +27,8 @@
 // one refusal left names just an act of this build that already shows a step's
 // asked end state (`candidate.trial_starts_in_end_state`), as the
 // whole-candidate gate does (`../candidate/trial-gate.ts`): a refusal is not a
-// trial and answers `retry_allowed`. When the port can run the deployment's start hook ahead of
+// trial and answers `retry_allowed`. A yes its own readings contradict is a no
+// before any row check sees it (t787, `../trial-change/contradicted.ts`). When the port can run the deployment's start hook ahead of
 // the check (`prepareStart`, `../../service/subflow-trial/port.ts`), it runs
 // first and the reset is told the site was just put back, so every act counts
 // undone and the model is asked for nothing (t475, t479); what the hook took
@@ -267,7 +268,7 @@ import {
 import type { AutomationStudioResultKeptEveryRow } from "../../result-verification/contracts/index.ts";
 import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as OFFLINE_WORDS } from "../offline-first/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
-import { automationStudioTrialChangeSteps, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
+import { automationStudioTrialChangeContradictedNo, automationStudioTrialChangeSteps, type AutomationStudioTrialChangeOutcome, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowTrialOfflineFirstCheck } from "./subflow-trial-offline-first.ts";
 import { automationStudioSubflowTrialResultRead } from "./subflow-trial-result.ts";
@@ -676,16 +677,17 @@ export class AutomationStudioSubflowTrialGate {
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
   private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = [], change?: AutomationStudioTrialChangeSession): Promise<ReturnType<typeof automationStudioSubflowTrialResultRead>> {
     const identity = this.identity();
-    let raw: unknown;
+    let raw: unknown, finished: AutomationStudioTrialChangeOutcome | undefined; // What its readings finished with (header, t787).
     try {
-      raw = await port({ ...this.request(latest, signal, startedWith, earlierAdvice), ...(change ? { siteChange: (acts, actsSignal) => change.finish(acts, actsSignal) } : {}) });
+      raw = await port({ ...this.request(latest, signal, startedWith, earlierAdvice), ...(change ? { siteChange: async (acts, actsSignal) => (finished = await change.finish(acts, actsSignal)) } : {}) });
     } catch (error) {
       if (signal.aborted) throw error;
       // The port's own error text may carry page or account detail, so the model is told only its kind (header, lane 3).
       return { answer: { partial: true, scope: "subflow", identity, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: Stop.portFailed("subflow.trial_port_failed", error), entryPrepared: false } };
     }
-    // The gate's own checks of what the port answered (`./subflow-trial-result.ts`).
-    return automationStudioSubflowTrialResultRead(raw, identity, latest);
+    // The gate's own checks of what the port answered (`./subflow-trial-result.ts`); a yes its own change contradicts is a no (header, t787).
+    const read = automationStudioSubflowTrialResultRead(raw, identity, latest);
+    return { ...read, answer: automationStudioTrialChangeContradictedNo(read.answer, finished) };
   }
 
   /** The request a trial of `latest` sends: the port's, and the offline-first check's before any reset (header, P6). */

@@ -3,13 +3,14 @@
 // which are refused and why). The refusals and readings it composes are the
 // sibling files of this directory.
 
+import { isDeepStrictEqual } from "node:util";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion, type AutomationStudioFlowBootstrapCompletionVerdict } from "../../llm/harness-options/index.ts";
 import { automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import { automationStudioResultKeptConditionsDropped, type AutomationStudioResultKeptConditionDrop, type AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
-import type { AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
+import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapIssue, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import { automationStudioFlowPlanToggleSteps, automationStudioFlowScriptWayOutIssues, type AutomationStudioExploredToggle } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
@@ -20,6 +21,8 @@ import { changedPaths } from "./changed-paths.ts";
 import { keptConditionRefusal } from "./kept-condition-refusal.ts";
 import { partOutputPortIssues } from "./part-output-port-issues.ts";
 import { submissionText } from "./submission-text.ts";
+import type { AutomationStudioExploredInterruption } from "../explored-interruptions.ts";
+import { automationStudioCandidateExploredLayerHandlers } from "../layer-handlers/index.ts";
 
 /** Session-local candidates, separate from discovery and the accepted Flow store. */
 export class AutomationStudioFlowCandidateSubmissionController {
@@ -53,6 +56,14 @@ export class AutomationStudioFlowCandidateSubmissionController {
      * is still taken off.
      */
     exploredToggles?: { list(): readonly AutomationStudioExploredToggle[] } | undefined;
+    /**
+     * The build's explored presses the domain answered as clearing a layer
+     * that covered the page (`../explored-interruptions.ts`, the permission
+     * wrapper's): each one no step of a model's Flow makes becomes a handler of
+     * every part, closing the layer whenever it shows
+     * (`../layer-handlers/explored.ts`, t787). Absent, none is added.
+     */
+    exploredInterruptions?: { list(): readonly AutomationStudioExploredInterruption[] } | undefined;
   }) {
     const descriptor = Object.getOwnPropertyDescriptor(input, "originalSource");
     if (!descriptor) return;
@@ -145,7 +156,21 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * answered as a toggle carries `ensureState`, or is refused
    * `candidate.toggle_not_idempotent` naming the node that sets the state
    * (`../script-statements/toggle-idempotent.ts`). A composed Flow keeps what
-   * its parts' submissions gave it.
+   * its parts' submissions gave it. A step is tied to a trial pass of its own
+   * node the domain answered as a toggle too (t787), so a looped step whose
+   * handle was never pressed while exploring carries it from the revision after
+   * its first trial. The plan so changed is validated and laid out again, as
+   * the layer handlers' is: a trial runs, and a promotion saves, the graph
+   * built from the laid-out parts, not the plan, and a trial refuses a
+   * candidate whose plan lays out otherwise (`candidate.execution_plan_rewritten`,
+   * `../verification/detached-execution.ts`).
+   *
+   * **A layer the build closed while exploring is closed by the Flow too
+   * (t787).** Each explored press the domain answered as clearing a layer that
+   * covered the page, which no step of the Flow makes, becomes a handler of
+   * every part: when the control it used shows, press it, then carry on
+   * (`../layer-handlers/explored.ts`). The model writes nothing; a composed Flow
+   * keeps the handlers its parts' submissions gave it.
    */
   async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
     return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" }), true);
@@ -207,7 +232,13 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const toggled = holdKept ? automationStudioFlowPlanToggleSteps({ plan: verdict.buildPlan.plan, handleViews: verdict.handleViews, explored: this.input.exploredToggles?.list() ?? [],
       takesEnsureState: (definitionId) => this.input.registry.get(definitionId, this.input.resolution)?.parameters.some((parameter) => parameter.id === "ensureState") === true }) : undefined;
     if (toggled?.issues.length) return { ok: false, revision, check: bindingRefusal(toggled.issues, verdict.locator, "candidate.toggle_not_idempotent") };
-    const plan = structuredClone(toggled ? { ...verdict.buildPlan, plan: toggled.plan } : verdict.buildPlan);
+    // Laid out again, so the parts a trial runs and a promotion saves carry what the plan does (header of `submit`, t787).
+    const relaid = toggled ? this.relaid(verdict.buildPlan, toggled.plan) : { buildPlan: verdict.buildPlan };
+    if ("issues" in relaid) return { ok: false, revision, check: bindingRefusal(relaid.issues, verdict.locator, "candidate.toggle_not_idempotent") };
+    const kept = relaid.buildPlan;
+    // A layer an exploration press cleared that no step answers: a handler of every part closes it whenever it shows (header of `submit`, t787).
+    const plan = structuredClone(holdKept ? automationStudioCandidateExploredLayerHandlers({ buildPlan: kept, handleViews: verdict.handleViews, explored: this.input.exploredInterruptions?.list() ?? [],
+      registry: this.input.registry, resolution: this.input.resolution, size: this.input.size }) : kept);
     const digest = fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
       ...(this.originalSource ? { originalInstructionsDigest: this.originalSource.originalInstructionsDigest } : {}) });
     // The same plan as the current revision's, written differently, or a Flow
@@ -244,6 +275,18 @@ export class AutomationStudioFlowCandidateSubmissionController {
     this.currentText = text;
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     return { ok: true, candidate, handleViews };
+  }
+
+  /**
+   * `buildPlan` with `plan` in its place, validated and laid out again so its
+   * parts and risk are the plan's own (header of `submit`, t787); the
+   * validator's errors when it refuses it. Unchanged when `plan` is its own.
+   */
+  private relaid(buildPlan: AutomationStudioFlowBuildPlan, plan: AutomationStudioFlowBootstrapPlan): { buildPlan: AutomationStudioFlowBuildPlan } | { issues: AutomationStudioFlowBootstrapIssue[] } {
+    if (isDeepStrictEqual(plan, buildPlan.plan)) return { buildPlan };
+    const validation = validateAutomationStudioFlowBootstrapPlan({ plan, registry: this.input.registry, resolution: this.input.resolution, ...(this.input.size ? { size: this.input.size } : {}) });
+    if (!validation.ok || !validation.validated) return { issues: validation.issues.filter((issue) => issue.severity === "error") };
+    return { buildPlan: { ...buildPlan, plan: validation.validated.plan, risk: validation.validated.risk, subflows: validation.validated.subflows } };
   }
 
   /**

@@ -211,7 +211,10 @@ toggle and the skip record.
   witness twice: before the trial, from the ledger's latest read when nothing
   landed since, otherwise by Core looking at the witness's location; and after
   the trial, from the end view when the run ended on that page, otherwise by a
-  second look. The judge's packet gains `siteChange`: per witness the before and
+  second look. A lasting step that ran in several passes of a loop gets one
+  control witness per pass, at that pass's own place and location, read from the
+  pass's own diff (`trial-change/pass-witnesses.ts`, t787), so a pass at the
+  second item is never attributed to the first. The judge's packet gains `siteChange`: per witness the before and
   after side and the change (added, removed, changed, or none), the acts of the
   trial with their outcome (`changed`, `already_in_state`, `no_change_seen`),
   the earlier acts of this build left in place at the start, and one proof per
@@ -232,9 +235,14 @@ toggle and the skip record.
   grounded no, never a yes), `already_in_end_state` (the state held before and
   after, and no earlier act of that same step was seen to make it), `carried`
   (the state held before, and the same step was seen to make that change earlier
-  in this build), and `unproven` (a witness unread or none named). A judge yes on
+  in this build), `unproven` (a witness unread or none named), and
+  `contradicted` (a part asking to add, one of whose control witnesses the trial
+  put back to the counts the build first read there: a removal; finding
+  `result.change_contradicted`, t787). A judge yes on
   `no_change`, `unproven` or `already_in_end_state` is not taken; the verdict is
-  `unknown` with the reason named. A pass that skipped a row as `already_in_state`
+  `unknown` with the reason named. A judge yes on `contradicted` becomes a no at
+  both trial gates, with Core's words as `changeContradicted`
+  (`trial-change/contradicted.ts`), so such a trial never passes. A pass that skipped a row as `already_in_state`
   is still listed with its row, so a Flow that targets a row it must not touch is
   seen even when nothing changed.
 - **Targeted resets only.** A reset is asked for when an `end_state` part's state
@@ -249,15 +257,30 @@ toggle and the skip record.
   `aria-pressed`, `aria-checked`, `aria-selected`) uses `web.dom.check`. A control
   that shows its state only by name is handled by the toggle signature: the
   domain answers an exploration press with `toggle: { signature,
-  idempotentWith? }`; `flow-bootstrap/explored-toggles.ts` records it, and a
-  `modify_existing` step repeating that press gets the node parameter
-  `ensureState` written by Core, never by the model. The click node then presses
+  idempotentWith? }`, and a trial pass's press carries the same answer on its
+  action result (`outputs.result.toggle`, t787); `flow-bootstrap/explored-toggles.ts`
+  records both, and a `modify_existing` step repeating an explored press, or the
+  same node's press from an earlier trial, gets the node parameter
+  `ensureState` written by Core, never by the model. The submission re-validates
+  the rewritten plan, so `ensureState` reaches the laid-out subflows the trial and
+  the saved graph are built from, not only the plan. The click node then presses
   only when the target does not already show the signature, and otherwise answers
   `skipped: "already_in_state"`, which the executor records as a skipped attempt
   with no landed act. A plain press that repeats a toggle whose signature names
   `idempotentWith` is refused `candidate.toggle_not_idempotent` at submission
   (`script-statements/toggle-idempotent.ts`). A toggle with no signature has no
   idempotent form and falls under the targeted-reset case.
+- **Layers cleared while exploring become handlers.** A press while exploring
+  that cleared a covering layer (the domain's `evidence.layerCleared`: the
+  layer's signature and the control pressed) is recorded by
+  `flow-bootstrap/explored-interruptions.ts`. Unless a step of the Flow already
+  makes that press, the submission adds to every non-recovery part a handler of
+  the same shape in-run interruption learning builds
+  (`flow-bootstrap/layer-handlers/patch.ts`): when the control shows, press it,
+  check it gone, resume, with no lasting consequence, scoped to that part
+  (`inherit: false`). Core writes it; the model writes nothing (t787). A Flow
+  therefore does not depend on a layer the build dismissed once and the site
+  remembered.
 - **No automatic cleanup.** The build does not put the site back when it ends.
   The ending row says per witness what the build changed ("held 9, now holds 11"),
   and the chat offers "Put it back", which runs the reset brief only on request.
@@ -1562,6 +1585,13 @@ it, never both:
   draft (`bootstrap-completion.ts`) -- for the one-shot `flow_bootstrap` plan of
   a build that explored nothing (`service.ts`), and for every step and fact an
   in-run repair writes (`runtime/recovery/annotation/step-evidence-resolution.ts`).
+  Before asking, a repair's condition about a control named by handle takes its
+  `fact` from its `op` (`exists`, `absent`, `visible`, `enabled`, `count`), or
+  keeps `text`, `value`, `count` or a presence word for a comparison, because the
+  domain reads a described fact as `unknown` and a `when` that answers `unknown`
+  never holds; a comparison that says only in its own words what it compares is
+  refused (`recovery.fact_kind_unread`), so the repair answers `none` and records
+  no adaptation (`runtime/recovery/annotation/patch-fact-kind.ts`, t787).
 - `modelWrittenParameters: string[]`: for a node the host wrote -- a plan built
   from the draft, whose steps ran with what the domain resolved -- the
   top-level parameters the model wrote over it: the `settings` an

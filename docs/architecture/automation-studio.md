@@ -1459,7 +1459,9 @@ takes these steps:
 
 1. It asks the domain to name the pressed way out by a handle
    (`clearedControlHandles`).
-2. It proposes an `add_handler` (`interruption-handler.ts`):
+2. It proposes an `add_handler` (`interruption-handler.ts`, whose shape is the
+   one `runtime/flow-bootstrap/layer-handlers/patch.ts` builds; a build gives a
+   submitted Flow the same shape for a layer it cleared while exploring, t787):
    - the event is `before` that step, scoped to that step;
    - `when` is `{ fact: "dialog", op: "visible", value: <name> }`;
    - the one step presses the way out by `wayOutDefinitionId` and the handle,
