@@ -7,7 +7,9 @@
 // site already in the state the step asks for. Only the domain can tell that a
 // press flipped such a control, so it says so on the press's own answer, in
 // the press's answer (`evidence.toggle`, or `outputs.toggle`): `signature`, an opaque JSON object Core
-// never reads inside, which the domain later checks the page against; and
+// never reads inside but for the words it gained and lost (`gains`, `loses`),
+// which tie a step that names the control in its other state
+// (`./script-statements/toggle-state-words.ts`, t792); the domain later checks the page against it; and
 // `idempotentWith`, the id of another node of its library that sets the asked
 // state itself, where it has one.
 //
@@ -20,11 +22,16 @@
 //
 // A trial pass is a press too (t787): a step the build submitted that the domain
 // answered as a toggle while a trial ran it is recorded from the trial's own
-// attempts (`trial`), under the trial node's id (`trialNodes`), so a later
-// revision of the same step is tied to it though its handle was never pressed
-// while exploring. The answer is read where the domain puts it on an executed
-// attempt: its outputs' `toggle`, or the action result kept under `result`. An
-// attempt skipped as already in its state pressed nothing and says nothing.
+// attempts (`trial`), under the trial node's id (`trialNodes`) and with the
+// parameters that node ran with (`trialParameters`, read off the trial's graph,
+// Core's `ensureState` taken off), so a later revision of the same step is tied
+// to it though its handle was never pressed while exploring. The step is known
+// by those parameters, never by its key, which is only its place in the script
+// (t792, `./script-statements/toggle-tie.ts`); a trial node the graph does not
+// show is recorded without them and ties no step. The answer is read where the
+// domain puts it on an executed attempt: its outputs' `toggle`, or the action
+// result kept under `result`. An attempt skipped as already in its state
+// pressed nothing and says nothing.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
@@ -38,10 +45,22 @@ const NODE_ID = /^[A-Za-z0-9_.:-]{1,200}$/u;
 const MAX_SIGNATURE_CHARS = 4_096;
 /** The most presses kept; the oldest goes first. */
 const MAX_RECORDS = 256;
+/** The longest trial node's parameters kept as its step's identity, as JSON; longer, the press ties no step. */
+const MAX_PARAMETERS_CHARS = 16_384;
+/** The parameter Core gives a toggle step, never part of the step's identity (header). */
+const ENSURE_STATE = "ensureState";
+
+/** The trial's graph, as far as its nodes' written parameters go: every frame's nodes, by executed id. */
+type TrialGraph = { readonly nodes: readonly { readonly id: string; readonly parameterValues?: JsonObject | undefined }[] };
 
 /** Every explored press the domain answered as a toggle, oldest first (header). */
 export class AutomationStudioExploredToggles {
-  private readonly records: AutomationStudioExploredToggle[] = [];
+  private readonly records: AutomationStudioExploredToggle[];
+
+  /** A record starting from `restored`, oldest first: the toggles a build record kept (t792), each its own copy; the newest `MAX_RECORDS` are kept. */
+  constructor(restored: readonly AutomationStudioExploredToggle[] = []) {
+    this.records = structuredClone(restored.slice(-MAX_RECORDS)) as AutomationStudioExploredToggle[];
+  }
 
   /** Records the call when it ran a node and its answer carries a well-formed `toggle`: on the press's own answer (`evidence.toggle`, as the web domain writes it) or among its outputs (header). */
   explored(call: { callId?: string | undefined; toolId: string; value: JsonObject }, execution: unknown): void {
@@ -65,19 +84,23 @@ export class AutomationStudioExploredToggles {
     if (this.records.length > MAX_RECORDS) this.records.shift();
   }
 
-  /** Records each succeeded, unskipped attempt of a trial whose outputs carry a well-formed `toggle` (header, t787); the same node and signature twice is kept once. */
-  trial(attempts: readonly AutomationStudioNodeAttemptTrace[]): void {
+  /** Records each succeeded, unskipped attempt of a trial whose outputs carry a well-formed `toggle`, with its node's parameters from `graph` (header, t787, t792); the same node, parameters and signature twice is kept once. */
+  trial(attempts: readonly AutomationStudioNodeAttemptTrace[], graph?: TrialGraph | undefined): void {
+    const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node] as const));
     for (const attempt of attempts) {
       if (attempt.status !== "succeeded" || attempt.skipped) continue;
       const toggle = objectOf(attempt.outputs.toggle) ?? objectOf(objectOf(attempt.outputs.result)?.toggle);
       const signature = objectOf(toggle?.signature);
       if (!toggle || !signature || !Object.keys(signature).length || JSON.stringify(signature).length > MAX_SIGNATURE_CHARS) continue;
-      if (this.records.some((record) => record.trialNodes?.includes(attempt.nodeId) && JSON.stringify(record.signature) === JSON.stringify(signature))) continue;
+      const trialParameters = stepParameters(nodes.get(attempt.nodeId));
+      if (this.records.some((record) => record.trialNodes?.includes(attempt.nodeId) && JSON.stringify(record.signature) === JSON.stringify(signature)
+        && JSON.stringify(record.trialParameters) === JSON.stringify(trialParameters))) continue;
       const idempotentWith = typeof toggle.idempotentWith === "string" && NODE_ID.test(toggle.idempotentWith) ? toggle.idempotentWith : undefined;
       this.records.push({
         node: attempt.definitionId,
         handles: [],
         trialNodes: [attempt.nodeId],
+        ...(trialParameters ? { trialParameters } : {}),
         signature: structuredClone(signature),
         ...(idempotentWith ? { idempotentWith } : {})
       });
@@ -89,6 +112,13 @@ export class AutomationStudioExploredToggles {
   list(): AutomationStudioExploredToggle[] {
     return structuredClone(this.records);
   }
+}
+
+/** A trial node's parameters as its step's identity (header): a copy, `ensureState` taken off; none for a node the graph did not show, or too long to keep. */
+function stepParameters(node: TrialGraph["nodes"][number] | undefined): JsonObject | undefined {
+  if (!node) return undefined;
+  const { [ENSURE_STATE]: _core, ...rest } = node.parameterValues ?? {};
+  return JSON.stringify(rest).length > MAX_PARAMETERS_CHARS ? undefined : structuredClone(rest);
 }
 
 function objectOf(value: unknown): Record<string, JsonValue> | undefined {

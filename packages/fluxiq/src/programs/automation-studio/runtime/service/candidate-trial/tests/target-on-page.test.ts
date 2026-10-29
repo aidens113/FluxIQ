@@ -204,3 +204,41 @@ describe("trial feedback for a step whose control was on the page but not shown"
     expect(gate.completion({ revision: 2, digest: "d5915cd0" })).toMatchObject({ ok: false, feedback: { instruction: expect.stringMatching(/not shown/u) } });
   });
 });
+
+// t792: a repeat pass's press whose only match was another row's control. Every row of an order table holds the same
+// "Cancel" button; the client refuses the other rows' copies and says so, but the scores it reports beside the refusal
+// are the look-alikes', and they cleared the near-miss bar. The step was told its control "is on the page ... the step
+// itself is right ... test again", and spent its trials re-testing a control of the wrong row.
+describe("trial feedback for a step whose target matched another row's control", () => {
+  const refused = { ...measured, refusedBecause: "other-record" };
+
+  it("a well-scored candidate refused in another record is not targetOnPage", () => {
+    const step = lastStep(["t1", "t2"].map((id) => typing(id, refused)));
+    expect(step).not.toHaveProperty("targetOnPage");
+    expect(step).not.toHaveProperty("onPage");
+    expect(step).toMatchObject({
+      targetOtherRecord: true, retryable: false, failureCode: "web.target.not_found",
+      happened: "The step's target matched another row's control, not the control of the row this pass is on."
+    });
+    // It names the repeat rule: each pass's own row's control, from the row's value or from what the pass opened.
+    expect(String(step.advice)).toMatch(/each pass's own row's control/u);
+    expect(String(step.advice)).toMatch(/row's value/u);
+    expect(String(step.advice)).toMatch(/inside what the pass opened/u);
+    // And never the test-again wording, or a score.
+    expect(JSON.stringify(step)).not.toMatch(/step itself is right|test this same revision again, unchanged/iu);
+    expect(JSON.stringify(step)).not.toMatch(/scor|0\.27/iu);
+  });
+
+  it("the tries it absorbed say the same, not that the control was on the page", () => {
+    const step = lastStep(["t1", "t2", "t3"].map((id) => typing(id, refused)));
+    expect((step.absorbed as JsonObject[]).map((entry) => entry.happened)).toEqual(Array(2).fill("The step's target matched another row's control, not the control of the row this pass is on."));
+  });
+
+  it("the refusal decides even when the measurement is too weak to be a near miss", () => {
+    expect(lastStep([typing("t1", { strategy: "selector", candidateCount: 0, refusedBecause: "other-record" })])).toMatchObject({ targetOtherRecord: true });
+  });
+
+  it("a different word is ignored: the step keeps the near-miss reading its measurement earns", () => {
+    expect(lastStep([typing("t1", { ...measured, refusedBecause: "other-dialog" })])).toMatchObject({ targetOnPage: true });
+  });
+});

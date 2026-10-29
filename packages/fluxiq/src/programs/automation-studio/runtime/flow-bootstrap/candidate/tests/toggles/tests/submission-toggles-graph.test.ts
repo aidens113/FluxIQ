@@ -47,9 +47,9 @@ function candidate(ensureState?: JsonObject): JsonObject {
     subflows: [{ key: "primary", name: "Primary", role: "primary", nodes, edges: [{ key: "e0", source: { nodeKey: "n0", portId: "success" }, target: { nodeKey: "n1", portId: "in" } }] }] } };
 }
 
-/** A trial's executed attempt of `primary.n0` that the domain answered as a toggle. */
-function trialPress(signature: JsonObject): AutomationStudioNodeAttemptTrace {
-  return { attemptId: "attempt.1", nodeId: "node.bootstrap.0123456789abcdef.primary.n0", definitionId: definition.id, startedAt: 1, finishedAt: 2, status: "succeeded",
+/** A trial's executed attempt of the graph node `nodeId` (`primary.n0`) that the domain answered as a toggle. */
+function trialPress(signature: JsonObject, nodeId: string): AutomationStudioNodeAttemptTrace {
+  return { attemptId: "attempt.1", nodeId, definitionId: definition.id, startedAt: 1, finishedAt: 2, status: "succeeded",
     inputs: {}, outputs: { toggle: { signature } }, effects: [] };
 }
 
@@ -59,10 +59,13 @@ const controller = (exploredToggles?: AutomationStudioExploredToggles) => new Au
 
 /** The graph nodes' parameters, by plan key, as a trial runs them and a promotion saves them. */
 function graphParameters(buildPlan: AutomationStudioFlowBuildPlan): Record<string, unknown> {
+  return Object.fromEntries(graphOf(buildPlan).nodes.map((node) => [String(node.id).split(".").at(-1), node.parameterValues]));
+}
+
+/** The graph a trial of `buildPlan` runs, as a trial hands it to the build's toggles (t792). */
+function graphOf(buildPlan: AutomationStudioFlowBuildPlan) {
   const parentFlow = createBlankAutomationStudioFlowArtifact({ flowId: "flow.test", projectId: "project.test", name: "Test", now: 1 });
-  const topology = normalizeAutomationStudioFlowBuildPlan({ adaptationId: "candidate.test", parentFlow, buildPlan, sourceInstructionIds: [], now: 1 });
-  const graph = topology.subflows[0]!.graphFlow;
-  return Object.fromEntries(graph.nodes.map((node) => [String(node.id).split(".").at(-1), node.parameterValues]));
+  return normalizeAutomationStudioFlowBuildPlan({ adaptationId: "candidate.test", parentFlow, buildPlan, sourceInstructionIds: [], now: 1 }).subflows[0]!.graphFlow;
 }
 
 /** Whether a trial would run the plan as submitted: its plan re-validates to the same laid-out parts. */
@@ -82,8 +85,9 @@ describe("a toggle step's ensureState in the graph that is run and saved", () =>
     if (!first.ok) return;
     expect(graphParameters(first.candidate.buildPlan).n0).toEqual({ target: { selector: "#t9" } });
 
-    // The trial pressed `primary.n0`, and the domain said that press flipped its control.
-    toggles.trial([trialPress(SIGNATURE)]);
+    // The trial pressed `primary.n0`, and the domain said that press flipped its control; the trial's graph says how that step was written.
+    const ran = graphOf(first.candidate.buildPlan);
+    toggles.trial([trialPress(SIGNATURE, ran.nodes.find((node) => String(node.id).endsWith(".primary.n0"))!.id)], ran);
     const second = await submissions.submit(candidate());
     expect(second.ok, JSON.stringify(second)).toBe(true);
     if (!second.ok) return;

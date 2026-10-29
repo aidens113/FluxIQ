@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared/api.ts";
 import { IdentityAccessService } from "../../runtime/service.ts";
 import { registerIdentityAccessApi } from "../handlers.ts";
+import { SecretKeysService } from "../../../secret-keys/index.ts";
 
 const WEAK = { N: 2 ** 10, r: 8, p: 1, keyLength: 32 } as const;
 const PASSWORD = "dummy-password";
@@ -176,5 +177,28 @@ describe("identity access endpoint authorization", () => {
     await expect(call(registry, actor, "revoke-session", { sessionId })).resolves.toMatchObject({ ok: true, payload: { revoked: true } });
     expect((await service.snapshot()).sessions).toHaveLength(0);
     expect((await service.snapshot()).vault.unlocked).toBe(false);
+  });
+
+  // The wiring `createGlobalProgramRuntime` carries (hosted plan, Model Calls):
+  // an administrator's revoke drops the session's Secret Keys unlock, as a
+  // sign-out does, so `unlockedSessionFor` stops handing it to the user's browser.
+  it("drops the revoked session's Secret Keys unlock, with the real services wired as the runtime wires them", async () => {
+    const { service, registry, actor } = await setup();
+    const secretKeys = new SecretKeysService({ passwordKdf: { testOnlyWeakParameters: WEAK } });
+    service.subscribeSessionRevocation((sessionId, revoker) => { secretKeys.revokeSessionUnlock(sessionId, revoker); });
+    try {
+      const target = await service.authenticate({ username: "target-viewer", password: PASSWORD });
+      await secretKeys.createKey({ name: "DeepSeek", kind: "llm", provider: "deepseek", value: "fake-key-target", authorizationPassword: PASSWORD, createdBy: TARGET });
+      await secretKeys.unlockSession({ sessionId: target.session.id, userId: TARGET, authorizationPassword: PASSWORD, expiresAtMs: target.session.expiresAtMs });
+      expect(secretKeys.unlockedSessionFor(TARGET)).toBe(target.session.id);
+
+      await expect(call(registry, actor, "revoke-session", { sessionId: target.session.id })).resolves.toMatchObject({ ok: true, payload: { revoked: true } });
+
+      expect(secretKeys.unlockedSessionFor(TARGET)).toBeNull();
+      expect(secretKeys.activeSessionUnlockCount()).toBe(0);
+      await expect(service.validateSession(target.session.id)).resolves.toBeNull();
+    } finally {
+      secretKeys.close();
+    }
   });
 });

@@ -25,6 +25,9 @@ const ON_PAGE_HAPPENED = "The step could not find its control where it was saved
 /** What a not-found try of a step whose control was measured on the page but not shown says happened (t661, `./target-on-page.ts`). */
 const NOT_SHOWN_HAPPENED = "The step found its control on the page, but the control was not shown, so it could not be used.";
 
+/** What a not-found try of a step whose target matched another row's control says happened (t792, `./target-on-page.ts`). */
+const OTHER_RECORD_HAPPENED = "The step's target matched another row's control, not the control of the row this pass is on.";
+
 /** The longest row words a pass is named by. */
 const MAX_ROW_CHARS = 60;
 
@@ -43,10 +46,12 @@ export function automationStudioTrialAbsorbedFeedback(input: {
   targetOnPage?: boolean | undefined;
   /** Set when the step's control was measured on the page but not shown (t661): a not-found try then says that. */
   targetNotShown?: boolean | undefined;
+  /** Set when the step's target matched another row's control (t792): a not-found try then says that. */
+  targetOtherRecord?: boolean | undefined;
 }): JsonObject[] {
   const where = passOf(input.pass);
   const happenedTo = (category: string): string => category !== "target_not_found" ? automationStudioTrialFailureHappened(category)
-    : input.targetNotShown ? NOT_SHOWN_HAPPENED : input.targetOnPage ? ON_PAGE_HAPPENED : automationStudioTrialFailureHappened(category);
+    : input.targetOtherRecord ? OTHER_RECORD_HAPPENED : input.targetNotShown ? NOT_SHOWN_HAPPENED : input.targetOnPage ? ON_PAGE_HAPPENED : automationStudioTrialFailureHappened(category);
   return input.absorbed.slice(0, MAX_ABSORBED).map(({ failed, retry }) => {
     const askedMs = failed.fault?.hintedWaitMs ?? retry.retry?.hintedWaitMs ?? (failed.failure ? automationStudioRetryHintMs(failed.failure, failed.finishedAt ?? failed.startedAt) : undefined);
     const waitedMs = retry.retry?.backoffMs;

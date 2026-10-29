@@ -39,6 +39,7 @@ import { AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS, AUTOMATION_STUDIO_PROJ
 import { automationStudioProjectBuildSubflowTrials } from "./subflow-trials.ts";
 import { automationStudioProjectBuildSupervisorProvider } from "./supervisor-provider.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
+import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-toggles/index.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
 // A project build (automation-project-agents-plan, unit A5c): the project
@@ -101,7 +102,9 @@ import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 // lasting act the project ledger records is written into the build record as
 // it is recorded (`./acts-record.ts`); the build waits for those writes before
 // it saves its draft, so a record that could not be written fails the build as
-// a dispatcher's record write does.
+// a dispatcher's record write does. So is every press the domain answered as a
+// toggle, from exploring or a trial, which a later step on that control is
+// given `ensureState` from (`../project-build-toggles/toggles-record.ts`, t792).
 //
 // **A build has a time limit (t592).** The supervisor's run is held to Core's
 // `AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS` from its start
@@ -254,6 +257,8 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const decisions = new AutomationStudioProjectBuildDecisions(draft, () => [draft.trialSpend?.(), subflowTrials.spent()]);
   const acts = AutomationStudioProjectBuildActsRecord.of(project.ledger);
   acts.bind(records, ref);
+  const toggles = AutomationStudioProjectBuildTogglesRecord.of(AutomationStudioProjectBuildTogglesRecord.toggles(project.trialEnvironment));
+  toggles.bind(records, ref);
   // The whole trials' judge reads the task checklist from this build's record (unit A9, `./task-checklist.ts`).
   AutomationStudioProjectBuildTaskChecklist.bind(project.trialEnvironment, { records, ref });
   const accounting = () => decisions.accounting();
@@ -312,6 +317,8 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   // The whole trials' acts, recorded under the supervisor, are written last of all (`./acts-record.ts`).
   acts.sync();
   await acts.flushed();
+  toggles.sync();
+  await toggles.flushed();
   const candidate = outcome.candidate;
   if (!candidate) {
     // A build its time limit stopped ends as recorded, not as its stopped loop's cancel (header).

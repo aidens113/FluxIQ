@@ -40,13 +40,14 @@ describe("automationStudioConversationCommandPort", () => {
 
 describe("automationStudioConversationEffectiveCaller", () => {
   it("leaves a person's own session alone", () => {
-    expect(automationStudioConversationEffectiveCaller({ userId: "u", sessionId: "session.1" }, () => "session.other")).toEqual({ userId: "u", sessionId: "session.1", paired: false, keyLocked: false });
+    expect(automationStudioConversationEffectiveCaller({ userId: "u", sessionId: "session.1" }, () => "session.other")).toEqual({ userId: "u", sessionId: "session.1", preferredSessionId: "session.1", paired: false, keyLocked: false });
   });
 
+  // The session is only where model calls start: each call resolves the person's live unlock again (H0-S5).
   it("maps a paired client to its person's unlocked session, or says the key is locked", () => {
     const paired = { userId: "u", sessionId: `${AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX}gateway.9` };
-    expect(automationStudioConversationEffectiveCaller(paired, (userId) => (userId === "u" ? "session.unlocked" : null))).toEqual({ userId: "u", sessionId: "session.unlocked", paired: true, keyLocked: false });
-    expect(automationStudioConversationEffectiveCaller(paired, () => null)).toEqual({ userId: "u", sessionId: paired.sessionId, paired: true, keyLocked: true });
+    expect(automationStudioConversationEffectiveCaller(paired, (userId) => (userId === "u" ? "session.unlocked" : null))).toEqual({ userId: "u", sessionId: "session.unlocked", preferredSessionId: "session.unlocked", paired: true, keyLocked: false });
+    expect(automationStudioConversationEffectiveCaller(paired, () => null)).toEqual({ userId: "u", sessionId: paired.sessionId, preferredSessionId: null, paired: true, keyLocked: true });
     expect(automationStudioConversationEffectiveCaller(paired, null)).toMatchObject({ sessionId: paired.sessionId, keyLocked: true });
   });
 });
