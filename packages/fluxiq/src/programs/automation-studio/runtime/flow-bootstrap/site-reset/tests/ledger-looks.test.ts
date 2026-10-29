@@ -42,7 +42,7 @@ describe("a look under `undoes` is never an undo (L1 build repeats)", () => {
     const claim = ledger.claim("act-1");
     expect(claim).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept" } });
     expect(claim.kind === "refused" ? claim.evidence.undoneBy : undefined).toBeUndefined();
-    // Settled unchanged: told to the judge as above, never returned as left on the site (t772 w7, `../leftover.ts`).
+    // Settled unchanged: told to the judge as above, never returned as left on the site (t772 w7, `../../reset-ledger/leftover.ts`).
     expect(ledger.trialRan([], "trial.1").map((act) => act.act)).toEqual([]);
   });
 

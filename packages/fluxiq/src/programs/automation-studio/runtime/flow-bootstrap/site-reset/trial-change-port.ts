@@ -36,8 +36,7 @@ import type { AutomationStudioSiteResetChecks } from "./contracts.ts";
 import type { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
 import type { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
 import type { AutomationStudioSiteResetExploredAct } from "./ledger.ts";
-import type { AutomationStudioSiteResetLedgerAct } from "./ledger-act.ts";
-import type { AutomationStudioSiteResetLeftover } from "./leftover.ts";
+import type { AutomationStudioSiteResetLedgerAct, AutomationStudioSiteResetLeftover } from "../reset-ledger/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 
 type Act = AutomationStudioSiteResetLedgerAct;

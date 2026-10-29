@@ -25,12 +25,14 @@
 //   `lookFirst`). A read with no location is judged as read, as before: no one,
 //   Core included, could open its page again, so holding it as in place would
 //   leave its acts open for good. Per group this keeps how many undos had
-//   landed on the acts it witnesses at its latest load (`loads`, counted by the
-//   judge, which knows the acts); a group whose latest read came after more
+//   landed on the ledger's acts at its latest load (`loads`, counted by the
+//   judge, which knows the acts): any act's, not only one the list witnesses
+//   (t797 P4 item 2), since an act witnessed by its own control alone may
+//   still have put a row on the list. A group whose latest read came after more
 //   landed undos than that was read in place after one, and is stale for
 //   settlement and reach alike
 //   (`readInPlace`): the one fact `./judge.ts` (`evaluate`, `lookFirst`) and
-//   `../site-reset/undo-reach.ts` read, with no second copy.
+//   `../reset-undo/reach.ts` read, with no second copy.
 
 import { automationStudioSiteResetInvalidCollectionGroups as invalidCollectionGroups, type AutomationStudioSiteResetCollection } from "./collection-groups.ts";
 
@@ -56,7 +58,7 @@ export class AutomationStudioSiteResetObservations {
   private loadingAt: string | undefined;
   /** Groups the latest read loaded, not yet counted (`loads`). */
   private loadedNow: string[] = [];
-  /** Per group, the undos landed on the acts it witnesses at its latest load (header). */
+  /** Per group, the undos landed on the ledger's acts at its latest load (header). */
   private readonly loadedUndos = new Map<string, number>();
 
   /** Core's own look is loading `location` (header): a read there loads it, though the read before was there too. Undefined: the look is over. */
@@ -64,7 +66,7 @@ export class AutomationStudioSiteResetObservations {
     this.loadingAt = location;
   }
 
-  /** Counts, for each group the latest read loaded, the undos landed on the acts it witnesses now (`undos`, the judge's); after every read (header). */
+  /** Counts, for each group the latest read loaded, the undos landed on the ledger's acts now (`undos`, the judge's); after every read (header). */
   loads(undos: (group: string) => number): void {
     for (const group of this.loadedNow) this.loadedUndos.set(group, undos(group));
     this.loadedNow = [];

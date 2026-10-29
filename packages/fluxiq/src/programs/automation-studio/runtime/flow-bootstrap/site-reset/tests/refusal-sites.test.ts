@@ -17,7 +17,7 @@ import {
 // t743, the actionable-answer contract: every site-reset refusal goes through
 // the one constructor in `../../reset-answers/`, which makes it name its failed
 // condition and whether any call can meet it. Enforced here mechanically: a
-// scan of every site-reset, reset-settlement and reset-answers source file, tests excluded,
+// scan of every site-reset, reset-settlement, reset-undo, reset-ledger and reset-answers source file, tests excluded,
 // fails when a `candidate.*` refusal is written anywhere else. Then each
 // refusal site, as the model would receive it.
 
@@ -25,6 +25,9 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ANSWERS = fileURLToPath(new URL("../../reset-answers", import.meta.url));
 /** The settlement modules, moved out of site-reset (t743): no refusal may be written there either. */
 const SETTLEMENT = fileURLToPath(new URL("../../reset-settlement", import.meta.url));
+/** The undo modules and the ledger's collaborators, moved out of site-reset (t797): nor there. */
+const UNDO = fileURLToPath(new URL("../../reset-undo", import.meta.url));
+const LEDGER = fileURLToPath(new URL("../../reset-ledger", import.meta.url));
 
 /** Every site-reset source file, tests excluded, with its path from the site-reset root. */
 function sources(directory = ROOT): Array<{ path: string; text: string }> {
@@ -93,10 +96,11 @@ describe("every site-reset refusal goes through the constructor", () => {
     expect(violations(`// was { ok: false, code: "candidate.x" }\n/* code: "candidate.y" */ const type: { ok: false; code: string } = value;`)).toEqual([]);
   });
 
-  it("finds no refusal written outside reset-answers/, in site-reset, reset-settlement or any subdirectory", () => {
-    const files = [...sources(), ...sources(SETTLEMENT), ...sources(ANSWERS)];
+  it("finds no refusal written outside reset-answers/, in site-reset, reset-settlement, reset-undo, reset-ledger or any subdirectory", () => {
+    const files = [...sources(), ...sources(SETTLEMENT), ...sources(UNDO), ...sources(LEDGER), ...sources(ANSWERS)];
     expect(files.some((file) => file.path.startsWith(SETTLEMENT) && file.path.endsWith("judge.ts"))).toBe(true);
-    expect(files.some((file) => file.path.endsWith("undo-admission.ts"))).toBe(true);
+    expect(files.some((file) => file.path.startsWith(UNDO) && file.path.endsWith("admission.ts"))).toBe(true);
+    expect(files.some((file) => file.path.startsWith(LEDGER) && file.path.endsWith("claims.ts"))).toBe(true);
     expect(files.some((file) => file.path.startsWith(ANSWERS))).toBe(true);
     const found = files.filter((file) => !file.path.startsWith(ANSWERS)).flatMap((file) => violations(file.text).map((violation) => `${relative(ROOT, file.path)}: ${violation}`));
     expect(found).toEqual([]);

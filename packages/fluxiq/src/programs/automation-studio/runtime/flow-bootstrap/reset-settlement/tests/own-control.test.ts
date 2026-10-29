@@ -4,6 +4,7 @@ import {
   AutomationStudioSiteResetObservations,
   AutomationStudioSiteResetReach,
   AutomationStudioSiteResetSettlementJudge,
+  automationStudioSiteResetActOwnControl,
   automationStudioSiteResetOwnControlStanding as ownControl,
   automationStudioSiteResetSettleWords as settleWords,
   type AutomationStudioSiteResetJudgedAct
@@ -45,7 +46,7 @@ function judged() {
   return { tracker, acts, state, judge };
 }
 
-describe("an act whose own control is back while its witness stays open is closed (t772)", () => {
+describe("an act's own control is judged at its one place (t772, t797 P4 item 1)", () => {
   // The shape a pass's original had before t772: filed under another entry's place, while its own press sat at its own.
   const filedElsewhere = () => {
     const { tracker, acts, state, judge } = judged();
@@ -59,32 +60,66 @@ describe("an act whose own control is back while its witness stays open is close
     acts.push(act);
     return { tracker, state, judge, act };
   };
+  /** Its original and its own press at one place, entry 2's Reserve. */
+  const onePlace = () => {
+    const made = filedElsewhere();
+    made.act.controlOriginal = { ...made.act.controlOriginal!, place: "pl:reserve-2" };
+    return made;
+  };
+  const read = (counts: Record<string, number> | undefined) => ({ resource: "r:library", scope: "p:entry-2", location: "loc:entry-2", controls: counts === undefined ? {} : { "pl:reserve-2": counts } });
 
-  it("never asks to press back a control a fresh read shows as the build found it: no call can settle it, named already back", () => {
+  it("never takes a press read at another place than its original's as its toggle, and never asks for a press back there", () => {
     const { tracker, state, judge, act } = filedElsewhere();
-    // Its undo landed and a fresh read of its own entry shows the entry free again.
     act.attempts = 1;
     state.clock = 2;
-    tracker.read({ resource: "r:library", scope: "p:entry-2", location: "loc:entry-2", controls: { "pl:reserve-2": { "st:free": 1 } } }, 2);
-    expect(judge.toggleOf(act)).toMatchObject({ place: "pl:reserve-2", from: "st:free", to: "st:held" });
-    const decision = judge.evaluate(act);
-    expect(decision).toEqual({ kind: "open", reasons: [{ reason: "own_back", witness: "toggle", location: "loc:entry-2" }] });
-    expect(judge.unmet(act, () => undefined)).toBe("already_back");
+    tracker.read(read({ "st:free": 1 }), 2);
+    expect(automationStudioSiteResetActOwnControl(act)).toMatchObject({ place: "pl:reserve-1", page: "p:entry-2", at: "loc:entry-2" });
+    expect(judge.toggleOf(act)).toBeUndefined();
+    // Its own place is not on the page its original was read on: no press back can be admitted, so it is closed.
+    expect(judge.evaluate(act)).toEqual({ kind: "open", reasons: [{ reason: "control_other", witness: "toggle", location: "loc:entry-2" }] });
+    expect(judge.unmet(act, () => undefined)).toBe("no_admissible_undo");
     expect(judge.settle(act)).toContain("no call can settle it in this build");
     expect(judge.settle(act)).not.toContain("press that same control back");
   });
 
-  it("still asks to press it back while a fresh read shows the state the act set, and reads it again when the read is stale", () => {
-    const { tracker, state, judge, act } = filedElsewhere();
-    tracker.read({ resource: "r:library", scope: "p:entry-2", location: "loc:entry-2", controls: { "pl:reserve-2": { "st:held": 1 } } }, 1);
-    expect(judge.evaluate(act)).toMatchObject({ kind: "open", reasons: [{ reason: "toggle" }] });
-    expect(judge.unmet(act, () => undefined)).toBeUndefined();
-    // A later lasting call: the read is stale, so nothing closes it.
-    state.clock = 2;
-    expect(judge.evaluate(act)).toMatchObject({ kind: "open", reasons: [{ reason: "look" }] });
+  it("at one place: asks for a press back while a fresh read shows the state the act set, closes it on a third state or when gone, settles it when back", () => {
+    for (const [counts, expected] of [
+      [{ "st:held": 1 }, { kind: "open", reasons: [{ reason: "toggle", witness: "toggle", location: "loc:entry-2" }] }],
+      [{ "st:waitlisted": 1 }, { kind: "open", reasons: [{ reason: "control_other", witness: "toggle", location: "loc:entry-2" }] }],
+      [undefined, { kind: "open", reasons: [{ reason: "control_other", witness: "toggle", location: "loc:entry-2" }] }],
+      [{ "st:free": 1 }, { kind: "settled", how: "restored" }]
+    ] as const) {
+      const { tracker, judge, act } = onePlace();
+      tracker.read(read(counts === undefined ? undefined : { ...counts }), 1);
+      expect(judge.toggleOf(act), JSON.stringify(counts)).toMatchObject({ place: "pl:reserve-2", from: "st:free", to: "st:held" });
+      expect(judge.evaluate(act), JSON.stringify(counts)).toEqual(expected);
+      const unmet = judge.unmet(act, () => undefined);
+      expect(unmet, JSON.stringify(counts)).toBe(expected.kind === "open" && expected.reasons[0].reason === "control_other" ? "no_admissible_undo" : undefined);
+    }
   });
 
-  it("words the closed reason without a press to make", () => {
+  it("reads it again when the read is stale, and closes nothing on a stale read", () => {
+    const { tracker, state, judge, act } = onePlace();
+    tracker.read(read({ "st:waitlisted": 1 }), 1);
+    state.clock = 2;
+    expect(judge.evaluate(act)).toMatchObject({ kind: "open", reasons: [{ reason: "look" }] });
+    expect(judge.unmet(act, () => undefined)).toBeUndefined();
+  });
+
+  it("words the closed reasons without a press to make", () => {
     expect(settleWords([{ reason: "own_back", witness: "toggle", location: "loc:entry-2" }], [])).toBe("Its own control at loc:entry-2 already shows the state the build found it in, so there is nothing to press back, but the control it is judged on does not show it put back: no call can settle it in this build.");
+    expect(settleWords([{ reason: "control_other", witness: "toggle", location: "loc:entry-2" }], [])).toBe("Its own control at loc:entry-2 shows neither the state the build found it in nor the state this act set, or is no longer shown there, so no press back can be admitted: no call can settle it in this build.");
+  });
+});
+
+describe("an act's one place (t797 P4 item 1)", () => {
+  const original = { resource: "r:library", page: "p:entry-2", place: "pl:reserve-2", before: { "st:free": 1 }, at: "loc:entry-2" };
+  const press = { page: "p:entry-2", place: "pl:reserve-9", clock: 1, before: {} };
+  it("is its original's place, else its toggle's, else its press's, else its spot's", () => {
+    expect(automationStudioSiteResetActOwnControl({ controlOriginal: original, toggle: { page: "p:x", place: "pl:other" }, press, spot: { place: "pl:spot", resource: "r:library" } })).toEqual({ place: "pl:reserve-2", page: "p:entry-2", resource: "r:library", at: "loc:entry-2", found: { "st:free": 1 } });
+    expect(automationStudioSiteResetActOwnControl({ toggle: { page: "p:x", place: "pl:toggled" }, press, spot: { place: "pl:spot", resource: "r:library" } })).toEqual({ place: "pl:toggled", page: "p:x", resource: "r:library" });
+    expect(automationStudioSiteResetActOwnControl({ press, spot: { place: "pl:spot" } })).toEqual({ place: "pl:reserve-9", page: "p:entry-2" });
+    expect(automationStudioSiteResetActOwnControl({ spot: { place: "pl:spot", resource: "r:library" } })).toEqual({ place: "pl:spot", resource: "r:library" });
+    expect(automationStudioSiteResetActOwnControl({ spot: {} })).toBeUndefined();
   });
 });

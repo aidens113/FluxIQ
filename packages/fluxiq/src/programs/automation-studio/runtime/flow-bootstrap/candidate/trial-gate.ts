@@ -279,6 +279,7 @@ import {
   type AutomationStudioResultKeptConditionsCarrier,
   type AutomationStudioResultStandingNoContradiction
 } from "../../result-verification/standing-no/index.ts";
+import { automationStudioTrialDefaultsBeforeTrial } from "../trial-defaults/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { automationStudioTrialChangeContradictedNo, automationStudioTrialChangeSteps, type AutomationStudioTrialChangeOutcome, type AutomationStudioTrialChangePart, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
@@ -376,7 +377,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, effect: "mutate",
     description: "Ask Core to run your latest submitted candidate once, on its own with no model, from its declared start, and to judge only what that run did. Give that candidate's revision and digest exactly. The answer is a verdict (yes, no, unsure, not_judged or execution_failed) with feedback. The run acts on the site like the saved Flow would, on the site as it stands: what this build already did there stays, the judge is told it, and the trial is judged by what it changed from the state just before it. If this answers candidate.trial_starts_in_end_state, undo just the act it lists, then test again. Complete only after a yes for that exact revision and digest; any later submission needs its own trial. After a no, change the Flow and submit it before testing again. If it answers candidate.trial_unavailable, no trial can run here: complete with the latest revision and digest and the Flow stays an unverified draft.",
     inputSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" },
-      cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Only after a refusal listed them under actsToUndo: the acts the site offers no control to undo. They stay on the site, and the judge is told." } },
+      cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Optional; leave it out. Core defaults it to the acts a reset listed apart as ones no call can settle. Give it only to name, among the acts a reset listed, those the site offers no control to undo. They stay on the site, and the judge is told." } },
     required: ["revision", "digest"], additionalProperties: false }
   };
   /** Each trial's answer as kept, with the kept conditions as of that trial (header, t641): what `standing` hands the submission controller. */
@@ -425,7 +426,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     const cannotUndo = value.cannotUndo;
     if (!Number.isSafeInteger(revision) || typeof digest !== "string" || Object.keys(value).some((key) => key !== "revision" && key !== "digest" && key !== "cannotUndo")
       || (cannotUndo !== undefined && !(Array.isArray(cannotUndo) && cannotUndo.length <= 50 && cannotUndo.every((act) => typeof act === "string")))) {
-      return refused("candidate.trial_input_invalid", "Call core.test_candidate with exactly the latest submission's revision (an integer) and digest (a string), as core.submit_candidate returned them, and optionally cannotUndo: the act ids a reset listed that the site cannot undo.");
+      return refused("candidate.trial_input_invalid", "Call core.test_candidate with exactly the latest submission's revision (an integer) and digest (a string), as core.submit_candidate returned them, and, only to narrow what Core defaults, cannotUndo: the act ids a reset listed that the site cannot undo.");
     }
     const trial = this.input.trial;
     if (!trial) return refused("candidate.trial_unavailable", "No trial runner is available here. Complete with the latest revision and digest; the Flow stays an unverified draft.");
@@ -465,7 +466,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     const parted = this.input.changeParts?.(latest);
     const change = { steps: automationStudioTrialChangeSteps(latest.buildPlan?.plan?.subflows ?? [], parted?.partsOf), parts: [...(parted?.parts ?? [])] };
     const reset = siteReset && await automationStudioLlmStepLogReset({ stage: "site_check", trialToolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID },
-      () => siteReset.beforeTrial(signal, Array.isArray(cannotUndo) ? cannotUndo as string[] : undefined, { ...(prepared === "reset" ? { startReset: true } : {}), change }), (decision) => decision.kind);
+      () => automationStudioTrialDefaultsBeforeTrial(siteReset, signal, cannotUndo, { ...(prepared === "reset" ? { startReset: true } : {}), change }), (decision) => decision.kind);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };

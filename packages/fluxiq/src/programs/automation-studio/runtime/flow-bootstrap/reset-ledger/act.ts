@@ -1,13 +1,12 @@
 // One lasting act of this build as the site-reset ledger keeps it
-// (`./ledger.ts`), moved out of that file whole (t743) because the ledger and
-// the undo claims it hands its acts to (`./undo-claims.ts`) both read and
-// write it. Never shown to a model as it is: `./ledger.ts` names an act
-// through `namedAct`.
+// (`../site-reset/ledger.ts`), moved out of that file whole (t743) because the ledger and
+// the undo claims it hands its acts to (`../reset-undo/claims.ts`) both read and
+// write it. Never shown to a model as it is: the ledger names an act
+// through `namedAct` (`./named-act.ts`, t797).
 
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioSiteResetPress, AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
-import type { AutomationStudioSiteResetPlace, AutomationStudioSiteResetSpot } from "./contracts.ts";
-import type { AutomationStudioSiteResetControlOriginal } from "./control-witnesses.ts";
+import type { AutomationStudioSiteResetControlOriginal, AutomationStudioSiteResetEffect, AutomationStudioSiteResetPlace, AutomationStudioSiteResetSpot } from "../site-reset/index.ts";
 
 /** One act of this build, as the ledger records, judges and undoes it (header). */
 export type AutomationStudioSiteResetLedgerAct = {
@@ -42,7 +41,7 @@ export type AutomationStudioSiteResetLedgerAct = {
   destinations: Array<{ scope: string; group: string }>;
   /** The explored acts a trial act repeats: their destinations, named whenever, cover it too (header, L1). */
   repeats: string[];
-  /** Those destinations as last gathered, refreshed whenever an undo of it is put to the admission (`./undo-admission.ts`, t743). */
+  /** Those destinations as last gathered, refreshed whenever an undo of it is put to the admission (`../reset-undo/admission.ts`, t743). */
   lent?: Array<{ scope: string; group: string }>;
   /** The ledger clock it landed at: a read counts for it only from then on. */
   clock: number;
@@ -53,7 +52,7 @@ export type AutomationStudioSiteResetLedgerAct = {
   toggle?: { page: string; place: string; from: string; to: string };
   /** The shown values its press replaced, while nothing else witnesses it (`../reset-settlement/judge.ts`, t772); only for an act that declared exactly `modify_existing`. */
   value?: AutomationStudioSiteResetValueWitness;
-  /** Its own control answered a state that is neither the build's nor the act's, so it cannot be pressed back (`./undo-reach.ts`, t748); cleared once a press back is admitted. */
+  /** Its own control answered a state that is neither the build's nor the act's, so it cannot be pressed back (`../reset-undo/reach.ts`, t748); cleared once a press back is admitted. */
   pressBackRefused?: true;
   /** A read after it showed one of its witnesses changed. */
   changeSeen: boolean;
@@ -77,4 +76,10 @@ export type AutomationStudioSiteResetLedgerAct = {
   kept: boolean;
   /** It declared no lasting class, but had an effect: possibly lasting, never asked for (header, t593). */
   possible: boolean;
+  /** What its press did, as the client read it (CC4), from the read just after it (`../site-reset/act-places.ts`); absent where none was given. */
+  effect?: AutomationStudioSiteResetEffect;
+  /** Its own press at its control's place, kept until the read after it fills it, for undo pairing alone (`../reset-undo/claims.ts`, `pairOf`, P4). */
+  pairPress?: AutomationStudioSiteResetPress;
+  /** Its press reversed this act's effect, so it was recorded as that act's undo, never an act of its own (`./recording.ts`, P4). */
+  pairedWith?: string;
 };
