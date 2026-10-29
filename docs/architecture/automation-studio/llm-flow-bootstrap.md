@@ -346,10 +346,15 @@ Before every trial the model returns the site to the state the build started
 from, through the site's own controls, undoing exactly the lasting acts this
 build made and nothing that was there before it began
 (`runtime/flow-bootstrap/site-reset/`, with its siblings
-`flow-bootstrap/reset-settlement/`, which judges whether an act is settled, and
-`flow-bootstrap/reset-answers/`, which builds every refusal; the dependency runs
-one way, from site-reset to each sibling, and site-reset's barrel re-exports
-reset-settlement's):
+`flow-bootstrap/reset-settlement/`, which judges whether an act is settled,
+`flow-bootstrap/reset-answers/`, which builds every refusal,
+`flow-bootstrap/reset-undo/`, which admits and reaches undos,
+`flow-bootstrap/reset-ledger/`, the ledger's collaborators, and
+`flow-bootstrap/trial-defaults/`, which fills in what a trial request leaves
+out; the dependency runs one way, from site-reset to each sibling, and
+site-reset's barrel re-exports reset-settlement's). `site-reset/ledger.ts` is
+the facade callers use; the siblings sit beside site-reset, not under it,
+because the structure audit's depth limit leaves no room below it:
 
 - **The ledger.** The build's permission wrapper tells
   `AutomationStudioSiteResetLedger` every exploration call it ran. One that was
@@ -427,17 +432,14 @@ reset-settlement's):
   split into those read on this page and those read elsewhere, says to name the
   list the new entry would join, and that a list that only suggests or relates
   other items never gains it; `candidate.reset_witness_required` says the same
-  of a press's effect. While a press stands refused for want of a ref, each
-  later answer that prints refs the refusal did not print carries
-  `retryRefused`: the refused call, those refs, and words saying to make the
-  call again naming the ref of the list where its effect shows. It stops once
-  a call lands an act (`service/project-build/brief-ports.ts`). Every reversible
+  of a press's effect. Every reversible
   press needs a witness before and after earlier build acts. Unknown legacy
   effect locations still seal all groups; no global seal bypasses admission.
 - **Undo through the normal tool.** In candidate mode with a trial runner,
-  `core.run_node` takes an optional `undoes: "act-N"`. The wrapper strips it
-  before the domain sees the call. The ledger accepts it only for an act still
-  to undo. An accepted undo of an act that created something may `delete`
+  `core.run_node` takes an optional `undoes: "act-N"`, a hint. The wrapper strips
+  it before the domain sees the call. The ledger accepts it only for an act still
+  to undo. The key is not required: Core pairs an undo with its act by inverse
+  effect (see "Undo pairs by effect" below). An accepted undo of an act that created something may `delete`
   without asking (`AutomationStudioActionPermissionAction.undoes`), once per
   act: the allowance is spent only by a landed undo of that act that declared
   `delete`, never by a navigation or a look under the claim (t471, lane B round
@@ -470,7 +472,12 @@ reset-settlement's):
 - **Acts the site cannot undo.** An act the reset made no progress on, or asked
   for twice, or one the model names under `core.test_candidate`'s `cannotUndo`
   once the reset has listed it, is kept: never asked for again, refused if
-  named (`candidate.undo_act_kept`). For legacy acts without identified
+  named (`candidate.undo_act_kept`). `cannotUndo` is optional: when the request
+  leaves it out, Core fills in the acts a reset listed apart as unsettleable
+  (reason `gate_unsatisfiable`, below), remembered per reset by
+  `flow-bootstrap/trial-defaults/before-trial.ts`, which both trial gates call.
+  A list the model does supply only narrows that default to acts Core listed;
+  an id Core never listed is dropped, and `[]` stays empty. For legacy acts without identified
   resource-scoped ownership, later trials run with it in
   place under `startedWith.cannotUndo`, with words telling the model to make
   the Flow pass over an item already done. The trial request carries
@@ -588,8 +595,11 @@ reset-settlement's):
 
 The site-reset ledger settles every strict act by one rule over observed state
 (L1 reset settlement replaced three narrow proofs, 2026-10-19). Sources:
-`site-reset/ledger.ts` (with the undo side in `site-reset/undo-claims.ts` and
-the act record in `site-reset/ledger-act.ts`), the settlement modules in
+`site-reset/ledger.ts`, a facade over its collaborators in
+`flow-bootstrap/reset-ledger/` (what it records in `recording.ts`, its
+settlement answers in `answers.ts`, its answers under `undoes` in `claims.ts`,
+the act record in `act.ts`; t797), the undo side in `flow-bootstrap/reset-undo/`
+(`claims.ts`, `admission.ts`, `reach.ts`), the settlement modules in
 `flow-bootstrap/reset-settlement/` (the judgement in `judge.ts`,
 `AutomationStudioSiteResetSettlementJudge`), `site-reset/words.ts`,
 `site-reset/contracts.ts`. The settlement modules import nothing from
@@ -713,7 +723,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
   reads them build-wide, `unsatisfiable()` with each act's `owner`.
 - **No undo can put it back: `no_admissible_undo` (t748).** An open act is
   also `gate_unsatisfiable` when no undo under `undoes` could ever settle it,
-  decided from Core's own reads (`site-reset/undo-reach.ts`). The only undo
+  decided from Core's own reads (`reset-undo/reach.ts`). The only undo
   paths that act on a list a read can describe are removals of a subject new
   on that list: the subject deletion for an act that created it, or the
   removal on a destination the act named or can name, at most one per act
@@ -726,8 +736,8 @@ the collection type in `reset-settlement/collection-groups.ts`).
   its last open condition, answers a state that is neither the build's nor the
   act's (`control_state_differs`); a press back admitted later clears it. A
   differing list the reads could not name a group for is never judged. Nothing
-  is newly admitted. `undo-reach.ts` mirrors the admission paths of
-  `undo-admission.ts` by copy, so `site-reset/tests/settlement-unmeetable.test.ts`
+  is newly admitted. `reset-undo/reach.ts` mirrors the admission paths of
+  `reset-undo/admission.ts` by copy, so `site-reset/tests/settlement-unmeetable.test.ts`
   pins the admitting lines: a path changed there fails the build until the
   reach rule is checked against it and the pin is updated.
 - **Settled or open** (`reset-settlement/decision.ts`). With every witness holding,
@@ -743,7 +753,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
   (`toggle`), or a value it replaced still not back (`value`). `standing(actId)` answers `in_place`, `restored`, `unchanged`,
   `kept`, `irreversible`, `unsettleable`, `possible` or nothing, and a reset's `done` words say why an act
   stayed from it (`project-agents/dispatch/reset-done.ts`).
-- **What is left on the site** (t772, `site-reset/leftover.ts`). One function
+- **What is left on the site** (t772, `reset-ledger/leftover.ts`). One function
   decides, from an act's settlement, whether it is left: **no** once settled
   restored or unchanged; **yes** while open or of a class no site control
   undoes; **possibly** when closed `gate_unsatisfiable` (carrying its `failed`
@@ -753,6 +763,49 @@ the collection type in `reset-settlement/collection-groups.ts`).
   and each project-ledger snapshot act (`left`, `failed`) all read that one
   answer, so an ending never reports as left an act settlement put back, and
   reports an act no call can settle as possibly left, with its reason.
+- **One answer, never two.** The ledger's verdict is the answer. A refusal
+  never says a call can still meet it while the ledger lists the same act
+  apart as `gate_unsatisfiable`: where a refusal's own act is listed apart,
+  `reset-answers/agreeing.ts` re-says the refusal with `canMeet: "no_call"`,
+  the generic listed-apart instruction, and the act out of `actsToUndo`. (This
+  reverses the earlier direction, in which the refusal was trusted and the act
+  moved to `actsToUndo`.) Every act to undo has an admissible call its `settle`
+  words name, or it is listed apart as `gate_unsatisfiable` with a closed
+  `failed`; `site-reset/tests/ledger-act-to-call.test.ts` sweeps the loop and
+  value states to hold that.
+- **One place per act, one own-control answer.** An act's control has one place
+  token: the original's place, else the toggle's, else the press's, else the
+  spot's (`reset-settlement/own-control.ts`). The judge, the toggle witness and
+  the value undo's same-control check all read it, and one shared function says
+  whether the control stands set, back, or other. A control read in a third
+  state, or no longer drawn at its place, is `other`, and the act closes
+  `control_other` (`no_admissible_undo`): no press back is admitted there, so
+  none is promised. A later fresh read showing the set state reopens it.
+- **A list read in place after a landed undo is not judged.** Any landed undo
+  in the ledger, of an act that witnesses the list or only has its own
+  control, can change a list that a read taken in place (without Core loading
+  the page) still draws. Such a read is never judged until a fresh read of the
+  page: the in-place fact counts every landed undo of the ledger, so the other
+  acts on the list are not wrongly called `undo` or `no_admissible_undo`.
+- **Undo pairs by effect.** `undoes` is an optional hint. Core pairs a press
+  with the earlier open act it reverses (`reset-undo/claims.ts`): both on the
+  same resource, and either the press's changed places are exactly the act's
+  reversed (after back to before) with nothing extra, or both are toggles at
+  the same place with `from` and `to` swapped. Two possible matches pair
+  nothing; an act declared irreversible never pairs. The domain may put an
+  `effect` record on the start-state read taken just after a press
+  (`AutomationStudioSiteResetRead.effect`, and the binding's `startState`
+  answer; passed through `site-reset/start-check.ts` to
+  `site-reset/act-places.ts`): `class`, per-place `before`/`after`, and an
+  optional `inverse` that narrows the match by action, control or resulting
+  state. Every member is optional and a malformed member is dropped alone. A
+  paired press is recorded like an admitted `undoes` press (attempts,
+  `undoneBy`, named lists), is never asked for or listed as left itself, and
+  drops out of `exploredActs`. The lists an undo attaches to an act are those
+  the act already named; otherwise, for an act whose change showed on its own
+  page, only a list read at that page, else a list on the same resource.
+  Pairing never admits more than the `undoes` path does. The web domain does
+  not fill `effect` yet; pairing then runs from the control counts alone.
 - **Core looks first.** Before deciding, `beforeTrial` goes once to each
   location where an open act's witness is stale (`checks.lookAt`): the start
   check takes the target there with the arrival's node, reads it settled, and
@@ -796,7 +849,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
   act's undo on a control whose `scope` is one of the act's destinations, or a
   destination lent from the explored act it repeats (`Act.lent`, gathered by
   the judge's `lent(act)` before admission), is admitted once, on `subject`,
-  without asking (`site-reset/undo-admission.ts`, `destinationRemoval`, after
+  without asking (`reset-undo/admission.ts`, `destinationRemoval`, after
   every earlier admission path). It needs, in order: a subject token
   (`no_item_identity`); the allowance unspent (`undo_spent`); an original read
   of that list before the act (`no_destination_read_before`); the list read
@@ -3756,6 +3809,81 @@ already contain an earlier trial creation and is not the original whole-site
 baseline. Missing original authority stays unresolved. Current evidence from
 another resource cannot prove restoration of a different scope.
 
+
+## Computed facts first
+
+Before a judge is asked, Core measures what it can in its own record of the run
+or build test (`runtime/result-verification/computed-facts/`, contract in
+`contracts/computed-facts.ts`; framework plan P5, K4). A fact is never a reading
+of a model's reply, and one Core cannot compute is omitted, so the judge is
+asked as before. There are eight kinds, in the order a person reads them:
+
+- `count`: the rows stored against the count the part's declared answer asks for
+  (`answer.rows` on the task spec, K2: exactly, at least, at most). Too many is
+  always Core's to say; too few fails only where Core's record shows rows that
+  passed every condition and never reached the answer (a limit cut them, or the
+  unfiltered read stopped short of a list that went on).
+- `columns`: each requested column (the declared answer's, and those the
+  instruction names) is stored and filled. Only a declared column can fail.
+- `repeated`: no row stored twice, by the store's own identity or the reads'
+  shared `dedupeBy` key.
+- `verbatim`: each stored cell is the verbatim text of the element it was read
+  from. It computes no fact yet: the summary holds no per-cell source text, which
+  paired W5 is to supply.
+- `kept_bounds`: every `where` bound Core can read holds on every row the read
+  kept, by the same semantics that settle the rows a condition left out.
+- `order`: the stored order against the read's declared sort, or, with no sort,
+  against the stored date fields when the request asks for newest or oldest
+  first. A date-field order waits on stored date fields; a sort Core cannot
+  read gives no fact.
+- `left_out_accounted`: every row a read left out, alone or by several
+  conditions together, is left out under an exclusion the request itself states.
+  It applies only where the request asks for every result it looks through (the
+  every-result rule, below).
+- `act_passes`: each pass of a repeat ran the step carrying a part's requested
+  act. It reads t796's per-pass proof on a build trial's `siteChange.proofs[]`:
+  the proof `not_run` (no serving step ran on any pass), or a `notRun` list
+  (each step's node, label, passes and reason, `guarded` or `unreached`), which
+  may sit on a `shown` part whose act missed only some passes. Either fails, as
+  an `act_missing` defect naming the step, the passes and why. A judge's yes
+  over such a part is a Core no too (`site-change/held.ts`, through the same
+  `computed-facts/computed-no.ts`), never a held yes, and the judge's
+  instruction says what `not_run` means.
+
+**A fact that fails** is a conclusive reading only, and is a Core no with the
+defects located in Core's record and no judge call (`verify.ts`). **A fact that
+holds** is put on the judge's copy as `resultSummary.computedFacts`, each said
+as "Settled by Core: ... Do not decide ... again", and the judge's instruction
+tells it these are true as said and not to answer no over them. A pass still
+needs a model yes: a fully computed result is not a yes.
+
+**The every-result rule** (`asked-words/every-result.ts`). A request that
+asks for "every"/"each"/"all" of its results (a quantifier, a generic list noun
+and at most two other words, none narrowing by a judgement) asks for every row
+the search shows, less the exclusions it states. For such a request the words it
+searched by say where to look and exclude nothing. So every row a read left out
+needs a stated exclusion (`left_out_accounted`; and the judge's yes over a row
+one condition alone, or several together, left out must quote the request's own
+words, `leftOutOnlyByThis` and `leftOutTogether`), and a no that holds a kept
+row only to the searched words is not located and does not bind
+(`located-defects/searched-words-kept.ts`). A request for a kind of thing is
+read as before.
+
+**Rows left out together** (`request-rows/summary-reads.ts`,
+`unquoted-rows.ts`). A read's `leftOutTogether` set is one left-out group, and
+a yes over its rows is held to the request's words as alone rows are. Every row
+of the group fails every member condition, so one stated exclusion accounts for
+it: where a member is a condition Core settles, the group is accounted for when
+any such member is named in a sentence that itself quotes the request (no
+lending, and not by a quote whose own words name only another condition of the
+read). A yes that accounts for no settled member is held under each member
+where all are settled, and row by row where one is not.
+
+**The presence locate rule** (`located-defects/presence-settled.ts`). A no that
+names a row missing for an absence a presence condition left it out by,
+quoting the value as "(no value)", is located when that read's
+`leftOutSettled` holds the row with the condition's tested column and
+"(no value)" and the defect's column is that column.
 
 ## Judge advice consistency and grounded defects
 

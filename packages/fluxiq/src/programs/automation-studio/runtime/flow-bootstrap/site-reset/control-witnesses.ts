@@ -42,7 +42,7 @@ export class AutomationStudioSiteResetControlWitnesses {
   }
 
   /**
-   * A trial pass's own counts at its own place, read just before the build's first press there (`./trial-stamp.ts`): that
+   * A trial pass's own counts at its own place, read just before the build's first press there (`../reset-ledger/trial-stamp.ts`): that
    * place's original, where no read or act of the build got there first. Only an original the build could still have read
    * (`canRead`) is filed, so a later read showing the pass's own press never becomes one, and a step on that control is
    * stamped by what the build found (t772 w9).

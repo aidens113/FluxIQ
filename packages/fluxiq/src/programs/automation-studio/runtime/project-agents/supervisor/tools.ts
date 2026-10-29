@@ -16,6 +16,21 @@ const EFFECT: JsonObject = {
   additionalProperties: false
 };
 
+/**
+ * How many rows a part's answer asks for (framework plan K2,
+ * `../contracts/task-spec.ts`): optional, and generic in its words; its example
+ * is a library's, as every example the supervisor is shown is.
+ */
+const ANSWER_ROWS: JsonObject = {
+  type: "object",
+  description: "Optional. How many rows the answer asks for, where the person's words say a number: count for exactly that many, or atLeast, atMost or both for a range, each a whole number from 1 to 10000, never count beside atLeast or atMost "
+    + "(the 5 newest books is {count: 5}; at least 3 reviews is {atLeast: 3}; up to 10 titles is {atMost: 10}). Leave it out where the words give no number of rows.",
+  properties: { count: { type: "integer" }, atLeast: { type: "integer" }, atMost: { type: "integer" } },
+  additionalProperties: false
+};
+
+const ANSWER: JsonObject = { type: "object", properties: { kind: { type: "string", enum: ["records"] }, columns: TEXTS, rows: ANSWER_ROWS }, required: ["kind", "columns"], additionalProperties: false };
+
 const PLAN_INPUT: JsonObject = {
   type: "object",
   properties: {
@@ -31,7 +46,7 @@ const PLAN_INPUT: JsonObject = {
               quote: { type: "object", properties: { sourceId: TEXT, text: TEXT }, required: ["sourceId", "text"], additionalProperties: false },
               goalFacts: TEXTS,
               lastingActs: { type: "array", items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] } },
-              answer: { type: "object", properties: { kind: { type: "string", enum: ["records"] }, columns: TEXTS }, required: ["kind", "columns"], additionalProperties: false },
+              answer: ANSWER,
               effect: EFFECT
             },
             required: ["id", "quote", "goalFacts", "lastingActs"],

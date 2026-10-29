@@ -19,6 +19,14 @@
 // for exactly those rows is read the same way; a quote that adds the words
 // excluding the rest ("only", a stated kind) is what tells it apart, and the
 // quote's own words are what is held to the request.
+//
+// **A phrase inside a longer one counts (F2).** Debug of
+// `run-mvtdoyf3-47ffaac1`: one kept row's longest request phrase was "for
+// wireless earbuds", every other row's "wireless earbuds", so the exact
+// phrases had nothing in common and the search's words were taken for the
+// request's own on the very revision that was right. Each row is now read for
+// every run inside its phrases that is itself a request phrase, and those runs
+// are what every kept row must share.
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
@@ -91,13 +99,25 @@ function searchedWords(requestText: string, summary: AutomationStudioRunResultSu
   for (const read of automationStudioRequestRowsReads(summary, true).reads) {
     let common: Set<string> | undefined;
     for (const label of read.kept) {
-      const named = new Set(phrases.phrasesOf(label).map((phrase) => phrase.words.join(" ")));
+      const named = new Set(phrases.phrasesOf(label).flatMap((phrase) => containedPhrases(phrase.words, phrases)));
       common = common === undefined ? named : new Set([...common].filter((key) => named.has(key)));
       if (!common.size) break;
     }
     for (const key of common ?? []) for (const word of key.split(" ")) searched.add(word);
   }
   return searched;
+}
+
+/** Every run of a phrase's words, itself included, that is a request phrase (header, F2). */
+function containedPhrases(words: readonly string[], phrases: AutomationStudioRequestPhrases): string[] {
+  const found: string[] = [];
+  for (let start = 0; start < words.length; start += 1) {
+    for (let end = start + 2; end <= words.length; end += 1) {
+      const run = words.slice(start, end);
+      if (phrases.isPhrase(run)) found.push(run.join(" "));
+    }
+  }
+  return found;
 }
 
 function wordsOf(text: string): string[] {

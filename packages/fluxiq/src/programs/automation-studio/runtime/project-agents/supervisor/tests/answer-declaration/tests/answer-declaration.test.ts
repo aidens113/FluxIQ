@@ -17,7 +17,8 @@ describe("the plan tool's part schema", () => {
   it("accepts an optional answer of records with columns, and still takes nothing else", () => {
     const part = partSchema();
     const properties = part.properties as JsonObject;
-    expect(properties.answer).toEqual({ type: "object", properties: { kind: { type: "string", enum: ["records"] }, columns: { type: "array", items: { type: "string" } } }, required: ["kind", "columns"], additionalProperties: false });
+    const answer = properties.answer as JsonObject;
+    expect({ ...answer, properties: { ...(answer.properties as JsonObject), rows: undefined } }).toEqual({ type: "object", properties: { kind: { type: "string", enum: ["records"] }, columns: { type: "array", items: { type: "string" } }, rows: undefined }, required: ["kind", "columns"], additionalProperties: false });
     expect(part.required).not.toContain("answer");
     expect(part.additionalProperties).toBe(false);
   });

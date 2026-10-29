@@ -217,7 +217,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   },
   /**
    * The build's standing guidance on declaring lasting acts and observing their destinations, aligned with
-   * `resetDestination` in `./undoes-tool.ts` (t743, photo debug fix 2: an unconditional "observe its destination's
+   * `resetDestination` in `../reset-undo/undoes-tool.ts` (t743, photo debug fix 2: an unconditional "observe its destination's
    * complete original inventory" sent a builder whose press already had a toggle witness after a list it could never read
    * again). Only a press with no other witness needs a destination; a control that shows its own state needs none.
    */
@@ -228,7 +228,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "Declare the lasting consequences of every recovery press as honestly as the original operation, even when its control offers recovery from an error. Truly nonlasting actions keep an empty declaration. "
       + "A successful control press or a vanished source message does not prove destination restoration; report unproved restoration honestly.";
   },
-  /** Where a destination should be read (t743, photo debug fix 2): said beside `resetDestination` in `./undoes-tool.ts` and wherever a destination is asked for. */
+  /** Where a destination should be read (t743, photo debug fix 2): said beside `resetDestination` in `../reset-undo/undoes-tool.ts` and wherever a destination is asked for. */
   ownUrl(): string {
     return OWN_URL;
   },

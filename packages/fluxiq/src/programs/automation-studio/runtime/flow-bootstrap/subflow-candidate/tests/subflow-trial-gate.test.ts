@@ -23,6 +23,23 @@ function gateWith(port?: (request: AutomationStudioSubflowTrialRequest) => Promi
 const receipt: JsonObject = { revision: proposal.revision, digest: proposal.digest };
 
 describe("the subflow trial gate", () => {
+  it("cannotUndo is defaulted to the acts listed as unsettleable when omitted, and only narrowed when supplied", async () => {
+    const asked: Array<readonly string[] | undefined> = [];
+    const reset: AutomationStudioSiteResetTrialReset = {
+      beforeTrial: async (_signal, cannotUndo) => {
+        asked.push(cannotUndo);
+        return { kind: "admit", startedWith: { acts: [{ act: "act-1", did: "press \"Renew\" button" }, { act: "act-2", did: "press \"Hold\" button", reason: "gate_unsatisfiable", failed: "no_admissible_undo" }], instruction: "x" } };
+      },
+      trialRan: () => []
+    };
+    const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), reset,
+      port: async (request) => ({ partial: true, scope: "subflow", identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, verdict: "unsure", feedback: { said: "ok" }, entryPrepared: true }) });
+    await gate.test(receipt);
+    await gate.test(receipt);
+    await gate.test({ ...receipt, cannotUndo: ["act-1", "act-9"] });
+    expect(asked).toEqual([undefined, ["act-2"], ["act-1"]]);
+  });
+
   it("asks the port with the scope and the exact latest proposal, and keeps its partial verdict", async () => {
     const asked: AutomationStudioSubflowTrialRequest[] = [];
     const gate = gateWith(async (request) => {

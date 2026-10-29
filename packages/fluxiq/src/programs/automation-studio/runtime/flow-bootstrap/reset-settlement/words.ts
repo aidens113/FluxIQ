@@ -4,7 +4,7 @@
 // product or task is named (AGENTS.md, "Model guidance never teaches to the
 // test").
 //
-// Four guards:
+// The guards:
 //
 // - **Only refs read before the act (t751 R6, replacing rerun round 2's
 //   `closed`).** An act with no witness is told only the issued refs whose
@@ -16,6 +16,12 @@
 //   refused while it is in place.
 // - A list read in place after an undo (`reload`, t772 R1) is told to load
 //   again, never to be undone or given up on: the read says nothing yet.
+// - **A press back is asked for only where the admission admits one (t797 P4
+//   item 4).** `toggle` asks to press the act's own control back: it is said
+//   only while a fresh read shows that control in the state the act set, the
+//   one state the undo admission admits a press back from
+//   (`./own-control.ts`). A control in any other state, or no longer drawn at
+//   its place (`control_other`), is told that no call can settle it.
 // - **Words follow the witness kind (t772).** An act witnessed by a value its
 //   press replaced is told to set that value back where it shows -- choose the
 //   value it replaced, then press the control it pressed -- and then look; the
@@ -57,6 +63,8 @@ function clause(reason: AutomationStudioSiteResetOpenReason, before: readonly Au
   if (reason.reason === "baseline" && reason.witness === "value") return `the value it changed${at} was never read before the build changed it, so nothing read can show it put back: no call can settle it in this build`;
   // A control whose place was never read before the build acted there (`./control-tracker.ts`, t751 R1): no call can meet it.
   if (reason.reason === "baseline") return `its control${at} was never read before the build acted there, so nothing read can show it put back: no call can settle it in this build`;
+  // Its own control in neither state, or not drawn at its place (`./own-control.ts`, t797): no press back is admitted, so no call can meet it.
+  if (reason.reason === "control_other") return `its own control${at} shows neither the state the build found it in nor the state this act set, or is no longer shown there, so no press back can be admitted: no call can settle it in this build`;
   // Its own control read back at its found state while its witness does not hold (`./own-control.ts`, t772): no call can meet it.
   if (reason.reason === "own_back") return `its own control${at} already shows the state the build found it in, so there is nothing to press back, but the control it is judged on does not show it put back: no call can settle it in this build`;
   // A list Core's own look could not read again (`./reach.ts`, t743): no call can meet it.

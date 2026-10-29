@@ -13,7 +13,7 @@ import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../../site-reset/in
 // every sample of them. A refusal no call can meet is exempt: it tells the model to stop.
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const DIRECTORIES = ["site-reset", "reset-settlement", "reset-answers", "reset-admission"];
+const DIRECTORIES = ["site-reset", "reset-settlement", "reset-answers", "reset-admission", "reset-undo", "reset-ledger"];
 /** The tools a builder is offered to meet a refusal with. */
 const TOOLS = ["core.run_node", "core.test_subflow", "core.test_candidate", "core.submit_subflow"];
 const MEETABLE = ["this_page", "another_page"];
@@ -131,7 +131,7 @@ describe("every refusal some call can meet names a tool the builder is offered (
   it("the scan finds the refusal sites it must, in each directory that builds them", () => {
     const sites = meetableSites();
     // t775: the trial policy refuses nothing; the one trial refusal left is the ledger's (`startsInEndState`); t791: the project reset refuses no unwitnessed step.
-    for (const file of ["site-reset/undo-admission.ts", "site-reset/undo-claims.ts", "site-reset/ledger.ts", "site-reset/create-baselines.ts", "reset-admission/admission.ts"]) {
+    for (const file of ["reset-undo/admission.ts", "reset-undo/claims.ts", "site-reset/ledger.ts", "site-reset/create-baselines.ts", "reset-admission/admission.ts"]) {
       expect(sites.some((site) => site.file.replaceAll("\\", "/") === file), file).toBe(true);
     }
     expect(sites.flatMap((site) => site.words.map((entry) => entry.name))).toEqual(expect.arrayContaining(["startsInEndState", "unprovedUndo", "stepWitnessRequired", "alreadyBack", "destinationUnissued", "unknownAct"]));
