@@ -256,7 +256,7 @@ describe("the judges send too many rows acted on to the listing's where", () => 
 describe("the judges are told what an excluded row is, and what a replayed read's rows are", () => {
   it("says an excluded row is the excluded kind of thing, not one whose text only mentions it", () => {
     expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain(
-      "A row the request excludes is one that is the excluded kind of thing, not one whose text only mentions it: an item sold with or including an excluded part is still the item."
+      "A row the request excludes is one that is the excluded kind of thing, not one whose text only mentions it: a report filed with or including an excluded appendix is still the report."
     );
   });
 
@@ -360,8 +360,8 @@ describe("the build-test judge is told the page kept what exploration did, and w
 // coupon as the Flow's result. Each judge's request now says what startView is
 // and to credit only what changed.
 describe("each judge is told the page before it is not the Flow's doing, and to credit only what changed", () => {
-  const FINISHED = "resultSummary.startView, where present, is the same view of the page before the run did anything: what it already shows -- a count, an item in a cart, a collected coupon, a chosen store -- predates the run and is not its doing; credit an act only where startView and endView differ on it or the act's own step shows it.";
-  const TEST = "resultSummary.startView, where present, is that page just before the test did anything: what it already shows -- a count, an item in a cart, a collected coupon, a chosen store -- predates the test and is not its doing, so credit an act only where startView and endView differ on it or the act's own step shows it";
+  const FINISHED = "resultSummary.startView, where present, is the same view of the page before the run did anything: what it already shows -- a count, an entry in a reading list, a saved search, a chosen branch library -- predates the run and is not its doing; credit an act only where startView and endView differ on it or the act's own step shows it.";
+  const TEST = "resultSummary.startView, where present, is that page just before the test did anything: what it already shows -- a count, an entry in a reading list, a saved search, a chosen branch library -- predates the test and is not its doing, so credit an act only where startView and endView differ on it or the act's own step shows it";
   // What the system prompt says for a post-run check, and for a build's test (`deepseek/system-prompt.ts` picks by `resultSummary.buildTest`).
   const judged = (buildTest: boolean) => automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest });
 

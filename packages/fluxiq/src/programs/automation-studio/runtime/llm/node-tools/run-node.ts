@@ -85,9 +85,9 @@ const DESCRIPTION = [
   // products into a table read "leaves nothing behind" as a question about the
   // dataset it would produce, answered `create_new` for the node that reads the
   // list, and stopped to ask permission to read (`run-mueozmp8-348a2057`).
-  // "or opens checkout" is the one example a live build needed (t195-w18):
-  // models declared `move_money` on the press that only opens a checkout page.
-  `Judge \`consequences\` for this node, not the Flow: [] when it only reads, and in one Flow the press that applies a filter or opens checkout is [] and the press that submits the post is ${PUBLISHING}.`
+  // "or opens the reply form" is the one example a live build needed (t195-w18):
+  // models declared `move_money` on the press that only opens a reply form.
+  `Judge \`consequences\` for this node, not the Flow: [] when it only reads, and in one Flow the press that applies a filter or opens the reply form is [] and the press that sends the reply is ${PUBLISHING}.`
 ].join(" ");
 
 /**

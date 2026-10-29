@@ -192,7 +192,7 @@ function unaccountedFinding(entry: AutomationStudioResultLeftOutNamingTheItem): 
 
 /** What to do about one condition's flagged rows: decide each by the request, and change the condition that left out the ones it asks for. */
 function unaccountedFix(entry: AutomationStudioResultLeftOutNamingTheItem): string {
-  return `Decide row by row whether the request excludes each row the ${entry.condition} (${leftOutWhere(entry)}) alone left out that names "${entry.item}" first and ${quotedList(entry.also)} after it -- an item sold with or including something the request leaves out is still the item -- and change that condition so it keeps the rows the request asks for: ${entry.rows.join("; ")}.`;
+  return `Decide row by row whether the request excludes each row the ${entry.condition} (${leftOutWhere(entry)}) alone left out that names "${entry.item}" first and ${quotedList(entry.also)} after it -- a report filed with or including something the request leaves out is still the report -- and change that condition so it keeps the rows the request asks for: ${entry.rows.join("; ")}.`;
 }
 
 /**
