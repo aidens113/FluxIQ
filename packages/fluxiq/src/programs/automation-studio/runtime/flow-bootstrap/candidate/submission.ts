@@ -65,6 +65,14 @@ export class AutomationStudioFlowCandidateSubmissionController {
      * (`../layer-handlers/explored.ts`, t787). Absent, none is added.
      */
     exploredInterruptions?: { list(): readonly AutomationStudioExploredInterruption[] } | undefined;
+    /**
+     * The lasting acts the task's parts ask for, as consequence classes
+     * (a subflow scope's parts' `lastingActs`, t796): a step declaring one of
+     * them is a requested act even where the instruction's words name no act
+     * Core reads, so it is never optional or `only after:`
+     * (`../instructed-acts/optional-act-steps.ts`). Absent, words alone decide.
+     */
+    askedConsequences?: readonly string[] | undefined;
   }) {
     const descriptor = Object.getOwnPropertyDescriptor(input, "originalSource");
     if (!descriptor) return;
@@ -224,7 +232,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const wayOut = script ? automationStudioFlowScriptWayOutIssues({ script, plan: verdict.buildPlan.plan, locator: verdict.locator }) : [];
     // A step doing one of the person's requested acts is never optional (r4b
     // F4): the draft path's `step_is_optional` rule, which no candidate met.
-    const optionalActs = script ? automationStudioInstructedActOptionalScriptIssues({ instructionText: this.input.instructionText, script, plan: verdict.buildPlan.plan, locator: verdict.locator }) : [];
+    const optionalActs = script ? automationStudioInstructedActOptionalScriptIssues({ instructionText: this.input.instructionText, script, plan: verdict.buildPlan.plan, locator: verdict.locator, ...(this.input.askedConsequences?.length ? { askedConsequences: this.input.askedConsequences } : {}) }) : [];
     if (bindings.length || wayOut.length || optionalActs.length) {
       const code = bindings.length ? "candidate.loop_or_binding_refused" : wayOut.length ? "candidate.way_out_refused" : "candidate.optional_act_refused";
       return { ok: false, revision, check: bindingRefusal([...bindings, ...wayOut, ...optionalActs], verdict.locator, code) };

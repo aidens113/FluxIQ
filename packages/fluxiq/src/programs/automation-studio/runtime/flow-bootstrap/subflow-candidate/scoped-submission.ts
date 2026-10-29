@@ -242,7 +242,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     // The build's toggles, each trial node also under the probe's keys (header, t792).
     const toggles = input.submission.exploredToggles;
     const probeToggles = toggles ? { exploredToggles: { list: () => underProbeKeys(toggles.list(), this.written) } } : {};
-    this.inner = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, ...probeToggles, instructionText: this.instructionText, refusalTools: SUBFLOW_TOOLS });
+    this.inner = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, ...probeToggles, instructionText: this.instructionText, refusalTools: SUBFLOW_TOOLS, askedConsequences: [...new Set(this.scope.parts.flatMap((part) => part.lastingActs ?? []))] });
   }
 
   /** The latest valid proposal, or none once a refusal cleared it. */

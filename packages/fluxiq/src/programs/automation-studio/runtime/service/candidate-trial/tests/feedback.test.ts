@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
-import type { AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
+import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioCandidateTrialStop } from "../../../flow-bootstrap/candidate/index.ts";
 import { automationStudioCandidateTrialFeedback, automationStudioTrialStepControl } from "../index.ts";
+import { runLibraryHolds } from "./act-ledger/tests/library-holds-loop.ts";
 
 // Lane A round 4 (`run-muyrpbnk-fef374e7`, 0032 and 0048): the model was told only "step 2, dom-click, failed,
 // web.target.not_found" and then "web.action.rate_limited". C4: each step names the control it acted on and what
@@ -430,5 +431,37 @@ describe("trial feedback for a read of words an earlier step changed", () => {
     expect(automationStudioTrialStepControl(due, undefined)).toBeUndefined();
     expect(automationStudioTrialStepControl(renew, ran("renew", { outputs: { value: "Renewed" } }))).toBe("Renew loan");
     expect(automationStudioTrialStepControl({ ...due!, parameterValues: { element: { visibleText: "Due back 3 March", readsWords: false } } }, ran("due", { outputs: { value: "Due back 17 March" } }))).toBe("Due back 3 March");
+  });
+});
+
+// Debug `run-mvtdn37t-e1e4d0a7` (t796): the act step was written `only after:` an optional step whose control was absent
+// on every pass, so a guard went past it on all 21 passes, and the step list -- each step that ran -- never named it.
+describe("trial feedback names the steps a pass never ran", () => {
+  const banner = "close the library banner";
+  const noHold: AutomationStudioBuildTestVerdict = { verdict: "no", findings: [], expected: "a hold on each book", observed: "no hold was placed", records: { stored: 0, refused: 0, missingRequired: 0 }, spent: { calls: 2, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 } };
+  const judged = (graph: AutomationStudioFlowArtifact, trace: AutomationStudioGraphExecutionTrace) => automationStudioCandidateTrialFeedback.judged({
+    verdict: noHold,
+    summary: { schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 0, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 0, recordSets: [], flowShape: [], withheld: false } as AutomationStudioRunResultSummary,
+    trialRunId: "trial.1", trace, graph, start: "not_reset"
+  }).feedback;
+
+  it("a guarded act step passed over on every pass is listed as not run, with its act not done", async () => {
+    const { graph, trace } = await runLibraryHolds();
+    const feedback = judged(graph, trace);
+    expect(feedback.notRun).toEqual([
+      { nodeId: "hold", label: "place a hold", reason: "guarded", after: banner, passes: [1, 2, 3], of: 3, lasting: true,
+        said: `Not run on passes 1, 2 and 3 of 3: it runs only after "${banner}", which was skipped, so what it does was not done.` },
+      { nodeId: "settle", label: "wait for the hold to settle", reason: "guarded", after: banner, passes: [1, 2, 3], of: 3, lasting: false,
+        said: `Not run on passes 1, 2 and 3 of 3: it runs only after "${banner}", which was skipped.` }
+    ]);
+    // The step list still names only the steps that ran: the hold is in notRun, never in steps.
+    expect((feedback.steps as JsonObject[]).some((step) => step.label === "place a hold")).toBe(false);
+  });
+
+  it("names only the passes a guard went past when the act step ran on another, and says nothing when every step ran", async () => {
+    const some = await runLibraryHolds([2]);
+    expect((judged(some.graph, some.trace).notRun as JsonObject[])[0]).toMatchObject({ nodeId: "hold", passes: [1, 3], of: 3, said: `Not run on passes 1 and 3 of 3: it runs only after "${banner}", which was skipped, so what it does was not done.` });
+    const all = await runLibraryHolds([1, 2, 3]);
+    expect(judged(all.graph, all.trace)).not.toHaveProperty("notRun");
   });
 });

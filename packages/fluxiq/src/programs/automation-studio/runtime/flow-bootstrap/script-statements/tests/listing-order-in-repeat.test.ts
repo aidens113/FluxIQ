@@ -3,8 +3,9 @@
 // the saved answer, so a lasting act in the repeat's span would land on rows in
 // page order. Refused at the listing, unless the span makes no lasting act.
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
+import { acceptAutomationStudioFlowBootstrapResult } from "../../authoring/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { automationStudioFlowPlanListingOrderInRepeatIssues } from "../index.ts";
@@ -17,12 +18,13 @@ const CLICK = "web.output.dom-click";
 type Node = { key: string; definitionId: string; parameters?: JsonObject; consequences?: string[] };
 
 /** The shape a `repeat over: rows` span assembles into: the listing feeds a For Each, whose body joins back before it. */
-function rowsLoop(listing: JsonObject, act: { consequences?: string[] }, most?: string | number): AutomationStudioFlowBootstrapPlan {
+function rowsLoop(listing: JsonObject, act: { consequences?: string[] }, most?: string | number, order?: JsonValue): AutomationStudioFlowBootstrapPlan {
+  const loop: JsonObject = { ...(most === undefined ? {} : { stopAfter: most }), ...(order === undefined ? {} : { order }) };
   const nodes: Node[] = [
     { key: "s1", definitionId: "web.output.browser-navigate" },
     { key: "s2", definitionId: READ, parameters: listing },
     { key: "s3", definitionId: "builtin.control.merge" },
-    { key: "s4", definitionId: "builtin.control.for-each", ...(most === undefined ? {} : { parameters: { stopAfter: most } }) },
+    { key: "s4", definitionId: "builtin.control.for-each", ...(Object.keys(loop).length ? { parameters: loop } : {}) },
     { key: "s5", definitionId: CLICK, ...act },
     { key: "s6", definitionId: "builtin.control.merge" }
   ];
@@ -118,37 +120,89 @@ describe("a listing whose node declares it hands its rows on in page order", () 
     expect(found[0]!.instead).toContain("Take `recordOutput.process.where` out.");
   });
 
-  it("refuses a sort, and its instead names the listing's where, repeat most and the limit, never a sort to write", () => {
-    const found = declared(rowsLoop(processed({ sort: [{ field: "due", order: "asc", as: "date" }], limit: 3 }), { consequences: ["modify_existing"] }, "3"));
-    expect(found).toEqual([expect.objectContaining({ code: "record_output.process_order_in_repeat", path: "plan.subflows.0.nodes.1.parameters.recordOutput.process.sort" })]);
-    const instead = found[0]!.instead!;
-    expect(instead).toContain("hands its rows on in the order the page shows them");
-    expect(instead).toContain("`extractList.where`");
-    expect(instead).toContain("`repeat most: 3`");
-    expect(instead).toContain("`\"limit\": 3` in `recordOutput.process`");
-    expect(instead).toContain("Take `recordOutput.process.sort` out.");
-    expect(instead).not.toContain("extractList.sort");
+  // t796 (`run-mvtdn37t-e1e4d0a7`, 0105, 0140, 0230): each `extractList.sort` was refused under a sentence about
+  // `recordOutput.process`, a key the model had not written, and "the N most recent" had no way to be said.
+  // Core now hands the For Each the rows in the listing's own sort (`../repeat-order.ts`).
+  const newestFirst = [{ field: "due", order: "desc", as: "date" }];
+
+  it("admits the listing's own sort when every lasting repeat over it is handed its rows in that order", () => {
+    const sorted = { extractList: { handle: "extraction.1", sort: newestFirst }, recordOutput: { datasetId: "invoices", schema: SCHEMA, process: { sort: newestFirst } } };
+    expect(declared(rowsLoop(sorted, { consequences: ["modify_existing"] }, "3", newestFirst))).toEqual([]);
+    // With a limit of the same N, the rows it saves are the first N of the same order.
+    const limited = { extractList: { handle: "extraction.1", sort: newestFirst, maxItems: 3 }, recordOutput: { datasetId: "invoices", schema: SCHEMA, process: { sort: newestFirst, limit: 3 } } };
+    expect(declared(rowsLoop(limited, { consequences: ["modify_existing"] }, 3, newestFirst))).toEqual([]);
   });
 
-  it("refuses at the key the author wrote on the listing, never at a process key it never wrote", () => {
+  it("refuses the listing's sort a repeat is not handed, at the key the model wrote, never naming recordOutput.process", () => {
     const sortWritten = { extractList: { handle: "extraction.1", sort: [{ field: "due", order: "asc" }], maxItems: 3 }, recordOutput: { datasetId: "invoices", schema: SCHEMA, process: { sort: [{ field: "due", order: "asc" }], limit: 3 } } };
-    const sorted = declared(rowsLoop(sortWritten, { consequences: ["modify_existing"] }, "3"));
-    expect(sorted.map((issue) => issue.path)).toEqual(["plan.subflows.0.nodes.1.parameters.extractList.sort"]);
-    expect(sorted[0]!.instead).toContain("`extractList.maxItems: 3`");
-    expect(sorted[0]!.instead).toContain("Take `extractList.sort` out.");
-    expect(sorted[0]!.instead).not.toContain("recordOutput.process.sort");
+    for (const order of [undefined, newestFirst]) {
+      const sorted = declared(rowsLoop(sortWritten, { consequences: ["modify_existing"] }, "3", order));
+      expect(sorted.map((issue) => issue.path)).toEqual(["plan.subflows.0.nodes.1.parameters.extractList.sort"]);
+      expect(sorted[0]!.message).toContain("`extractList.sort`");
+      expect(sorted[0]!.message).not.toContain("recordOutput.process");
+      expect(sorted[0]!.instead).toContain("`repeat over:`");
+      expect(sorted[0]!.instead).not.toContain("recordOutput.process");
+    }
     // A maxItems the domain has not moved into the process is read too.
     const unmoved = { extractList: { handle: "extraction.1", maxItems: 5 }, recordOutput: { datasetId: "invoices", schema: SCHEMA } };
-    expect(declared(rowsLoop(unmoved, { consequences: ["modify_existing"] }, "3")).map((issue) => issue.path)).toEqual(["plan.subflows.0.nodes.1.parameters.extractList.maxItems"]);
+    const limited = declared(rowsLoop(unmoved, { consequences: ["modify_existing"] }, "3"));
+    expect(limited.map((issue) => issue.path)).toEqual(["plan.subflows.0.nodes.1.parameters.extractList.maxItems"]);
+    expect(limited[0]!.message).toContain("`extractList.maxItems`");
+    expect(limited[0]!.message).not.toContain("recordOutput.process");
     expect(declared(rowsLoop({ ...unmoved, extractList: { handle: "extraction.1", maxItems: 3, sort: [] } }, { consequences: ["modify_existing"] }, "3"))).toEqual([]);
   });
 
+  it("refuses a sort written only in recordOutput.process, naming it, and puts the order on the listing instead", () => {
+    const found = declared(rowsLoop(processed({ sort: [{ field: "due", order: "asc", as: "date" }], limit: 3 }), { consequences: ["modify_existing"] }, "3"));
+    expect(found).toEqual([expect.objectContaining({ code: "record_output.process_order_in_repeat", path: "plan.subflows.0.nodes.1.parameters.recordOutput.process.sort" })]);
+    expect(found[0]!.message).toContain("`recordOutput.process.sort`");
+    const instead = found[0]!.instead!;
+    expect(instead).toContain("`extractList.sort`");
+    expect(instead).toContain("`repeat most: 3`");
+    expect(instead).toContain("Take `recordOutput.process.sort` out.");
+  });
+
+  it("refuses a limit beside an applied sort that is not the repeat's own, and keeps the sort in its instead", () => {
+    const refused = { extractList: { handle: "extraction.1", where: [{ field: "due", is: "present" }], sort: newestFirst, maxItems: 5 }, recordOutput: { datasetId: "invoices", schema: SCHEMA, process: { sort: newestFirst, limit: 5 } } };
+    const found = declared(rowsLoop(refused, { consequences: ["modify_existing"] }, "3", newestFirst));
+    expect(found.map((issue) => issue.path)).toEqual(["plan.subflows.0.nodes.1.parameters.extractList.maxItems"]);
+    expect(found[0]!.instead).toContain("in the order `extractList.sort` asks for");
+    expect(found[0]!.instead).toContain("`extractList.maxItems: 3`");
+    expect(found[0]!.instead).not.toContain("Take `extractList.sort` out");
+  });
+
   it("applying its instead literally gives a listing the rule admits", () => {
-    const refused = { extractList: { handle: "extraction.1", where: [{ field: "due", is: "present" }], sort: [{ field: "due", order: "desc" }], maxItems: 5 }, recordOutput: { datasetId: "invoices", schema: SCHEMA, process: { sort: [{ field: "due", order: "desc" }], limit: 5 } } };
-    expect(declared(rowsLoop(refused, { consequences: ["modify_existing"] }, "3"))).toHaveLength(1);
-    // Take both sorts out; write extractList.maxItems: 3 with the repeat's own 3 (the domain moves it to the process limit).
-    const answered = { extractList: { handle: "extraction.1", where: [{ field: "due", is: "present" }], maxItems: 3 }, recordOutput: { datasetId: "invoices", schema: SCHEMA, process: { limit: 3 } } };
-    expect(declared(rowsLoop(answered, { consequences: ["modify_existing"] }, "3"))).toEqual([]);
+    const refused = { extractList: { handle: "extraction.1", where: [{ field: "due", is: "present" }], sort: newestFirst, maxItems: 5 }, recordOutput: { datasetId: "invoices", schema: SCHEMA, process: { sort: newestFirst, limit: 5 } } };
+    expect(declared(rowsLoop(refused, { consequences: ["modify_existing"] }, "3", newestFirst))).toHaveLength(1);
+    // Write extractList.maxItems: 3 with the repeat's own 3 (the domain moves it to the process limit).
+    const answered = { extractList: { handle: "extraction.1", where: [{ field: "due", is: "present" }], sort: newestFirst, maxItems: 3 }, recordOutput: { datasetId: "invoices", schema: SCHEMA, process: { sort: newestFirst, limit: 3 } } };
+    expect(declared(rowsLoop(answered, { consequences: ["modify_existing"] }, "3", newestFirst))).toEqual([]);
+  });
+
+  it("a sort on a page-order listing feeding a lasting repeat is applied by Core before the loop", () => {
+    // A library catalogue lists two featured books first: the three newest are a sort and `repeat most: 3`.
+    const script = [
+      "flow: Place a hold on the three newest books",
+      "step: open the catalogue",
+      "  node: web.browser.navigate",
+      "  url: https://library.test/catalogue",
+      "step books: list the books",
+      "  node: web.dom.extract_list",
+      "  extractList: extraction.1",
+      "  extractList.sort: [{\"field\": \"published\", \"order\": \"desc\", \"as\": \"date\"}]",
+      "step: place a hold on the book",
+      "  node: web.dom.click",
+      "  target: t30",
+      "  consequences: create_new",
+      "  repeat over: books",
+      "  repeat most: 3"
+    ].join("\n");
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: script }, registry: pageOrder, resolution });
+    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
+    if (!accepted.ok) return;
+    const loop = accepted.plan.subflows[0]!.nodes.find((node) => node.definitionId === "builtin.control.for-each")!;
+    expect(loop.parameters).toMatchObject({ stopAfter: 3, order: [{ field: "published", order: "desc", as: "date" }] });
+    expect(declared(accepted.plan)).toEqual([]);
   });
 
   it("leaves a listing that declares no capability on today's rule", () => {

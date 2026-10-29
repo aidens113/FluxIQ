@@ -179,9 +179,23 @@
 // has that note, the feedback says `rowMark`, Core's suggestion from the rows it
 // holds (`./row-mark.ts`): the column of the read that marks the rows the listed
 // values pick out, or, where none does, where to look in the read's structure.
+//
+// **A step a pass never ran is said, per pass (t796).** Run
+// `run-mvtdn37t-e1e4d0a7` wrote its act step `only after:` an optional step whose
+// control was absent on every pass, so a guard went past the act on all 21
+// passes, and the step list, which names each step that ran, never named it.
+// `notRun` lists, from the trial's act ledger (`./act-ledger.ts`, `./not-run.ts`),
+// each step a guard routed past and each lasting step a pass never reached:
+// its node, label, why (`guarded`, with the guard step's label as `after`, or
+// `unreached`), the passes it was not run on and of how many (absent outside a
+// repeat), whether it does a lasting act, and Core's sentence
+// (`../../executor/step-skip/not-run-said.ts`), which for a lasting step says
+// that what it does was not done. At most `MAX_NOT_RUN` are listed, and
+// `notRunLeftOut` counts the rest. A trial whose every step ran says nothing.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
+import { automationStudioStepNotRunSaid } from "../../executor/step-skip/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
@@ -189,10 +203,12 @@ import { automationStudioModelFacingFailureText } from "../../llm/model-facing/i
 import { automationStudioResultAdviceShown } from "../../result-verification/agreement/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES, automationStudioResultReadListContinues, automationStudioResultSummaryWithPagingWords, type AutomationStudioBuildTestVerdict, type AutomationStudioResultReadAccount, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
+import { automationStudioTrialActLedger } from "./act-ledger.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
 import { automationStudioTrialFailureHappened } from "./happened.ts";
 import { automationStudioTrialInterruptions } from "./interruptions.ts";
+import { automationStudioTrialNotRun } from "./not-run.ts";
 import { automationStudioTrialProcessedOutFeedback } from "./processed-out.ts";
 import { automationStudioTrialReadsFeedback } from "./reads.ts";
 import { automationStudioTrialRowMark } from "./row-mark.ts";
@@ -243,6 +259,9 @@ const CHANGE_ADVISED = Object.freeze({
 
 /** The most steps a feedback lists; a longer run lists its first ones and the last it ran, and says how many it left out between (header, S5). */
 const MAX_STEPS = 40;
+
+/** The most steps `notRun` lists; `notRunLeftOut` counts the rest (header, t796). */
+const MAX_NOT_RUN = 20;
 
 /** A trial's verdict for the model, from the judge's verdict on the trial run. */
 export const automationStudioCandidateTrialFeedback = Object.freeze({
@@ -395,7 +414,7 @@ function unvisitedEnding(code: string, trace: AutomationStudioGraphExecutionTrac
  * Each step that ran, in order: its definition, the control it acted on, its
  * final status, how many attempts it took, what it absorbed on the way
  * (`./absorbed.ts`) and, for a failure, what happened. Then the paces the run
- * learned, once each.
+ * learned, once each, and the steps a pass never ran (header, t796).
  */
 function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined, wayOuts: WayOutHandles | undefined): JsonObject {
   const ran = automationStudioTrialExecutedSteps(trace?.attempts ?? []);
@@ -429,7 +448,18 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     return failure && !attempt.stateHeld ? { ...told, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : told;
   });
   const paces = learnedPaces(trace, nodes);
-  return { steps: listed, ...(ran.length > shown.length ? { stepsLeftOut: ran.length - shown.length } : {}), ...(paces.length ? { paces } : {}) };
+  return { steps: listed, ...(ran.length > shown.length ? { stepsLeftOut: ran.length - shown.length } : {}), ...(paces.length ? { paces } : {}), ...notRunOf(trace, graph) };
+}
+
+/** Each step a guard routed past, or a lasting step a pass never reached, with Core's sentence (header, t796); nothing when every step ran. */
+function notRunOf(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject {
+  const notRun = automationStudioTrialNotRun(automationStudioTrialActLedger(trace, graph));
+  if (!notRun.length) return {};
+  const listed = notRun.slice(0, MAX_NOT_RUN).map(({ nodeId, label, reason, after, passes, of, lasting }) => ({
+    nodeId, label, reason, ...(after !== undefined ? { after } : {}), passes: [...passes], ...(of !== undefined ? { of } : {}), lasting,
+    said: automationStudioStepNotRunSaid({ reason, after, passes, of, lasting })
+  }));
+  return { notRun: listed, ...(notRun.length > MAX_NOT_RUN ? { notRunLeftOut: notRun.length - MAX_NOT_RUN } : {}) };
 }
 
 /** The number of the nearest step listed before `index` that acted: it succeeded, and was neither skipped nor done by state. */

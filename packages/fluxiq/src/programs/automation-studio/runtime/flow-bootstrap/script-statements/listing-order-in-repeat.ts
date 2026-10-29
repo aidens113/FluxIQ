@@ -33,10 +33,10 @@
 //   them, and nothing it is given reorders them. Then a `limit` of N with no
 //   sort and no where in the process is admitted when every lasting For Each it
 //   feeds stops after the same N (`repeat most: N`): the rows it saves and the
-//   rows the repeat acts on are the same first N in page order. A sort is still
-//   refused, and the `instead` names only the narrowing on the listing, `repeat
-//   most` and that limit -- never a sort, which this node cannot apply to the
-//   rows a repeat walks.
+//   rows the repeat acts on are the same first N in page order. A sort was then
+//   still refused, its `instead` naming only the narrowing on the listing,
+//   `repeat most` and that limit, until Core came to apply the listing's own
+//   sort to the rows a repeat walks (t796, below).
 // - `recordProcessWrittenAt: {<process key>: "<parameter path>"}` -- where on
 //   the node's own parameters its author writes a process key. A sort or limit
 //   written there is read as one, whether or not the domain has yet moved it
@@ -45,6 +45,22 @@
 //
 // A listing that declares neither keeps the t741 rule and sentence unchanged.
 //
+// **Core orders the rows a repeat walks by the listing's own sort (t796).** The
+// page-order case left "the three newest" on a page that lists featured or
+// pinned rows first no way to be said, and every `extractList.sort` a live build
+// wrote (`run-mvtdn37t-e1e4d0a7`, 0105, 0140, 0230) was refused under a sentence
+// about `recordOutput.process`, a key it had not written. Assembly now gives each
+// For Each over a page-order listing that listing's own sort as its `order`
+// (`./repeat-order.ts`), which the For Each applies before its stop
+// (`nodes/control-flow/for-each.ts`). So a sort written where the node declares
+// its author writes one is admitted once every lasting For Each it feeds carries
+// it (`./listing-repeat-sort.ts` reads it for both), and a limit beside it is
+// judged as above: the same N as `repeat most`, with no where in the process,
+// saves the rows the repeat acted on, the first N of one order. A sort a repeat
+// is not handed is still refused, at the key the model wrote; a sort written
+// only in the process is refused with an `instead` that puts the order on the
+// listing. Every sentence names the key the refused value was written at.
+//
 // It reads the assembled plan, as `./record-replace-in-repeat.ts` does, and the
 // completion check asks it beside that one
 // (`../../llm/harness-options/bootstrap-completion.ts`).
@@ -52,26 +68,27 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { isAutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationNodeParameter, AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
+import { automationStudioListingRepeatSort } from "./listing-repeat-sort.ts";
 import { automationStudioFlowPlanLoopBody } from "./loop-body.ts";
 
-/** The node a `repeat over` span becomes, the input its rows arrive on, and its `repeat most` (header). */
+/** The node a `repeat over` span becomes, the input its rows arrive on, its `repeat most`, and the order Core hands it its rows in (header). */
 const FOR_EACH_ID = "builtin.control.for-each";
 const ROWS_INPUT = "items";
 const STOP_AFTER = "stopAfter";
+const ORDER = "order";
 /** The definition metadata a listing node declares its rows' order and its process keys' authored paths under (header). */
 const ANSWERS_ROWS = "answersRows";
 const PAGE_ORDER = "page_order";
 const WRITTEN_AT = "recordProcessWrittenAt";
 /** A declared authored path: dotted parameter keys. */
 const PARAMETER_PATH = /^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)*$/u;
-/** The code the refusal is made under; its sentences are Core's own and quote nothing the model or the page wrote. */
+/** The code the refusal is made under; its sentences are Core's own and quote nothing the model or the page wrote, only keys the listing's node declares. */
 const CODE = "record_output.process_order_in_repeat";
-const MESSAGE = "This listing sorts or limits its rows in recordOutput.process, and a repeat over it makes a lasting change on each row it visits. "
-  + "A repeat visits the rows in the listing's own order, every row the listing kept: recordOutput.process only shapes the answer saved at the end of the run, "
-  + "so the repeat would act on the rows in the order the page shows them, not in the order or the number the process asks for.";
 const INSTEAD = "Put the order on the listing step itself, `extractList.sort: [{\"field\": \"<column>\", \"order\": \"asc\", \"as\": \"date\"}]` "
   + "(order asc or desc, as number, date or text), keep only the rows to act on with `extractList.where`, "
   + "and act on the first N of that order with `repeat most: <N>` beside `repeat over:`. Then take sort and limit out of recordOutput.process.";
+/** How a sort is written on a listing, in the record process's own shape (`nodes/record-process.ts`). */
+const SORT_SHAPE = "`[{\"field\": \"<column>\", \"order\": \"asc\", \"as\": \"date\"}]` (order asc or desc, as number, date or text)";
 
 type OrderingKey = "sort" | "limit";
 type WrittenAt = Partial<Record<OrderingKey, string>>;
@@ -104,39 +121,99 @@ export function automationStudioFlowPlanListingOrderInRepeatIssues(input: {
       const parameter = definition.parameters.find((candidate) => candidate.ui?.control === "record-output" && orderingKey(parameters, candidate, writtenAt));
       if (!parameter) return [];
       const key = orderingKey(parameters, parameter, writtenAt)!;
-      const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters.${writtenPath(parameters, parameter, writtenAt, key)}`;
-      if (definition.metadata?.[ANSWERS_ROWS] !== PAGE_ORDER) return [{ severity: "error", code: CODE, message: MESSAGE, instead: INSTEAD, path }];
+      const at = (written: string) => `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters.${written}`;
+      if (definition.metadata?.[ANSWERS_ROWS] !== PAGE_ORDER) {
+        const written = writtenPath(parameters, parameter, writtenAt, key);
+        return [{ severity: "error", code: CODE, message: saveOnlyMessage(written, key), instead: INSTEAD, path: at(written) }];
+      }
       const process = processOf(parameters, parameter);
       const most = sameStop(loops);
+      // The listing's own sort, which Core hands each For Each over it (header).
+      const handed = automationStudioListingRepeatSort(definition, parameters);
+      if (key === "sort") {
+        if (handed) {
+          if (!loops.every((loop) => sameValue(loop.parameters?.[ORDER], handed.keys))) {
+            return [{ severity: "error", code: CODE, message: notHandedMessage(handed.path), instead: notHandedInstead(handed.path), path: at(handed.path) }];
+          }
+        } else if (writtenAt.sort !== undefined && authoredSort(valueAt(parameters, writtenAt.sort))) {
+          // Written on the listing in a shape no key reads, so Core handed the repeat nothing.
+          return [{ severity: "error", code: CODE, message: notHandedMessage(writtenAt.sort), instead: notHandedInstead(writtenAt.sort), path: at(writtenAt.sort) }];
+        } else {
+          const written = `${parameter.id}.process.sort`;
+          return [{ severity: "error", code: CODE, message: processSortMessage(written), instead: processSortInstead(parameters, parameter, writtenAt, most), path: at(written) }];
+        }
+      }
+      if (!present(process?.limit) && !present(valueAt(parameters, writtenAt.limit))) return [];
       const limit = present(process?.limit) ? wholeNumber(process?.limit) : wholeNumber(valueAt(parameters, writtenAt.limit));
-      // Saved rows = acted rows: the same first N in page order, with nothing reordering or dropping either.
-      if (key === "limit" && most !== undefined && limit === most && process?.where === undefined) return [];
-      return [{ severity: "error", code: CODE, message: MESSAGE, instead: pageOrderInstead(parameters, parameter, writtenAt, most), path }];
+      // Saved rows = acted rows: the same first N of one order, with nothing dropping either.
+      if (most !== undefined && limit === most && process?.where === undefined) return [];
+      const written = writtenPath(parameters, parameter, writtenAt, "limit");
+      return [{ severity: "error", code: CODE, message: limitMessage(written), instead: pageOrderInstead(parameters, parameter, writtenAt, most, handed?.path), path: at(written) }];
     });
   });
 }
 
+/** The t741 sentence, naming the key the refused value was written at. */
+function saveOnlyMessage(written: string, key: OrderingKey): string {
+  return `This listing ${key === "sort" ? "sorts" : "limits"} its rows in \`${written}\`, and a repeat over it makes a lasting change on each row it visits. `
+    + `A repeat visits the rows in the listing's own order, every row the listing kept: \`${written}\` only shapes the answer saved at the end of the run, `
+    + "so the repeat would act on the rows in the order the page shows them, not in the order or the number it asks for.";
+}
+
+/** A page-order listing's own sort that a lasting repeat over it was not handed. */
+function notHandedMessage(written: string): string {
+  return `This listing sorts its rows in \`${written}\`, and a repeat over it that makes a lasting change on each row it visits is not handed its rows in that order. `
+    + "This listing's node hands its rows on in the order the page shows them, so the repeat would act on them in page order.";
+}
+
+function notHandedInstead(written: string): string {
+  return `Repeat over the listing with \`repeat over:\` naming its step, and \`repeat most: <N>\` for the first N: Core then hands the repeat its rows in the order \`${written}\` asks for, and takes the first N of that order.`;
+}
+
+/** A page-order listing sorted only in its saved answer. */
+function processSortMessage(written: string): string {
+  return `This listing sorts its rows only in \`${written}\`, which shapes the answer saved at the end of the run, and a repeat over it makes a lasting change on each row it visits. `
+    + "This listing's node hands its rows on in the order the page shows them, so the repeat would act on them in page order, not in that sort's.";
+}
+
+/** Where the order goes instead: on the listing, where the node declares its author writes a sort, when it declares one. */
+function processSortInstead(parameters: JsonObject, parameter: AutomationNodeParameter, writtenAt: WrittenAt, most: number | undefined): string {
+  const take = ` Take \`${parameter.id}.process.sort\` out.`;
+  if (writtenAt.sort === undefined) return pageOrderInstead(parameters, parameter, writtenAt, most, undefined) + take;
+  const n = most === undefined ? "<N>" : String(most);
+  return `Put the order on the listing step, \`${writtenAt.sort}\`, written ${SORT_SHAPE}: Core hands a repeat over the listing its rows in that order. `
+    + `Act on the first ${n} of them with \`repeat most: ${n}\` beside \`repeat over:\`.${take}`;
+}
+
+/** A page-order listing's saved answer cut to a number that is not the repeat's own, or beside a where. */
+function limitMessage(written: string): string {
+  return `This listing limits the rows it saves in \`${written}\`, and a repeat over it makes a lasting change on each row it visits. `
+    + `\`${written}\` only shapes the answer saved at the end of the run, so unless it is the repeat's own \`repeat most\`, with no where in the saved answer, the rows it saves are not the rows the repeat acted on.`;
+}
+
 /**
- * The `instead` for a listing whose node hands its rows on in page order: the
- * narrowing on the listing, `repeat most`, and a limit of the same N written
- * where this listing already writes its limit -- never a sort (header).
+ * The `instead` for a limit on a listing whose node hands its rows on in page
+ * order: the narrowing on the listing, `repeat most`, and a limit of the same N
+ * written where this listing already writes its limit. The order it names is
+ * the listing's own sort when Core hands the repeat one (header), else the
+ * page's.
  */
-function pageOrderInstead(parameters: JsonObject, parameter: AutomationNodeParameter, writtenAt: WrittenAt, most: number | undefined): string {
+function pageOrderInstead(parameters: JsonObject, parameter: AutomationNodeParameter, writtenAt: WrittenAt, most: number | undefined, sorted: string | undefined): string {
   const n = most === undefined ? "<N>" : String(most);
   const process = processOf(parameters, parameter);
   const limitAt = writtenAt.limit !== undefined && present(valueAt(parameters, writtenAt.limit))
     ? `\`${writtenAt.limit}: ${n}\``
     : `\`"limit": ${n}\` in \`${parameter.id}.process\``;
-  // A sort is named where it was written: on the listing when its author wrote it there, which is
-  // then the sort the process carries (the read's own wins over the record output's), else in the process.
-  const out: string[] = [];
-  if (processSort(process?.sort) || authoredSort(valueAt(parameters, writtenAt.sort))) out.push(`\`${writtenPath(parameters, parameter, writtenAt, "sort")}\``);
-  if (process?.where !== undefined) out.push(`\`${parameter.id}.process.where\``);
-  return "This listing's node hands its rows on in the order the page shows them, and nothing reorders the rows a repeat over it visits. "
+  return `Core hands a repeat over this listing its rows ${sorted === undefined ? "in the order the page shows them" : `in the order \`${sorted}\` asks for`}. `
     + "Keep only the rows to act on with `extractList.where`, "
     + `act on the first ${n} of them with \`repeat most: ${n}\` beside \`repeat over:\`, `
     + `and, to save only the rows the repeat acts on, write ${limitAt} with that same number.`
-    + (out.length ? ` Take ${out.join(" and ")} out.` : "");
+    + (process?.where !== undefined ? ` Take \`${parameter.id}.process.where\` out.` : "");
+}
+
+/** Whether two JSON values are the same value: the order Core wrote is a copy of the listing's sort. */
+function sameValue(left: JsonValue | undefined, right: JsonValue): boolean {
+  return left !== undefined && JSON.stringify(left) === JSON.stringify(right);
 }
 
 /** Whether a step declares a lasting consequence, any of Core's classes. */

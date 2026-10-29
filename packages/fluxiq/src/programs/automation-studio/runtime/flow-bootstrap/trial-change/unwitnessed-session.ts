@@ -6,11 +6,15 @@
 // a witness and nothing of the build is on the site, so there is no change to
 // read -- the judge is still told what Core could not read: the packet carries
 // the trial's acts, no witness, each typed part `unproven` (`./proof.ts`, a
-// part with no witness), and the gap.
+// part with no witness), and the gap. A step the trial never ran on some
+// passes (t796, `not_run` entries) reaches each part's proof as it does in a
+// session (`./part-acting.ts`), and never the gap's acts.
 
 import type { AutomationStudioTrialActOutcome, AutomationStudioTrialChangeAct, AutomationStudioTrialChangePart, AutomationStudioTrialChangeSession, AutomationStudioTrialChangeStep, AutomationStudioTrialLeftAct } from "./contracts.ts";
+import { automationStudioTrialChangeActsSplit } from "./acts-split.ts";
 import { automationStudioTrialChangeFindings } from "./findings.ts";
 import { automationStudioTrialSiteChangePacket } from "./packet.ts";
+import { automationStudioTrialPartActing } from "./part-acting.ts";
 import { automationStudioTrialPartProof } from "./proof.ts";
 import { automationStudioTrialChangeUnwitnessedOutcome } from "./unwitnessed-outcome.ts";
 
@@ -29,16 +33,17 @@ export function automationStudioTrialChangeUnwitnessedSession(input: {
   return {
     async finish(acts, signal) {
       const outcome = session ? await session.finish(acts, signal) : unread(acts, steps, parts, left);
-      return automationStudioTrialChangeUnwitnessedOutcome(outcome, { steps, unwitnessed, acts });
+      return automationStudioTrialChangeUnwitnessedOutcome(outcome, { steps, unwitnessed, acts: automationStudioTrialChangeActsSplit(acts).acts });
     }
   };
 }
 
 /** A trial's change where Core read nothing (header): its acts, each with the parts its step definition serves, and each part's proof from no witness. */
-function unread(acts: readonly AutomationStudioTrialChangeAct[], steps: readonly AutomationStudioTrialChangeStep[], parts: readonly AutomationStudioTrialChangePart[], left: readonly AutomationStudioTrialLeftAct[]) {
+function unread(handed: readonly AutomationStudioTrialChangeAct[], steps: readonly AutomationStudioTrialChangeStep[], parts: readonly AutomationStudioTrialChangePart[], left: readonly AutomationStudioTrialLeftAct[]) {
+  const { acts, notRun } = automationStudioTrialChangeActsSplit(handed);
   const served = (definitionId: string): string[] => [...new Set(steps.filter((step) => step.definitionId === definitionId).flatMap((step) => step.parts))];
   const outcomes: AutomationStudioTrialActOutcome[] = acts.map((act) => ({ step: act.step, ...(act.pass ? { pass: act.pass } : {}), ...(act.row !== undefined ? { row: act.row } : {}), outcome: act.outcome, parts: served(act.definitionId) }));
-  const proofs = parts.map((part) => automationStudioTrialPartProof({ part, deltas: [], acts: outcomes, carried: false }));
+  const proofs = parts.map((part) => automationStudioTrialPartProof({ part, deltas: [], acts: outcomes, carried: false, acting: automationStudioTrialPartActing(part.id, steps, notRun) }));
   const findings = automationStudioTrialChangeFindings({ witnesses: [], deltas: [], acts: outcomes, proofs });
   return { siteChange: automationStudioTrialSiteChangePacket({ witnesses: [], readings: {}, acts: outcomes, leftFromEarlier: left, proofs }), findings };
 }

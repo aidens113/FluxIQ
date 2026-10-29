@@ -11,7 +11,7 @@
 // of a loop is witnessed at its own item (`./pass-witnesses.ts`). Either half
 // missing, the act carries none and is attributed by its stamp as before.
 
-import type { AutomationStudioTrialActControl, AutomationStudioTrialChangeAct } from "./contracts.ts";
+import type { AutomationStudioTrialActControl, AutomationStudioTrialChangeMadeAct } from "./contracts.ts";
 
 /** What of a landed act's diff names its control (`landed-acts.ts`, header). */
 type LandedControl = { spot?: { place?: string | undefined } | undefined; controls?: { location?: string | undefined; before: Readonly<Record<string, number>>; after: Readonly<Record<string, number>> } | undefined };
@@ -20,7 +20,7 @@ type LandedControl = { spot?: { place?: string | undefined } | undefined; contro
 export function automationStudioTrialChangeActs(
   landed: ReadonlyArray<{ step: number; definitionId: string; witness?: unknown; pass?: { number: number; of: number } | undefined } & LandedControl>,
   already: ReadonlyArray<{ step: number; definitionId: string; pass?: { number: number; of: number } | undefined; row?: string | undefined }> = []
-): AutomationStudioTrialChangeAct[] {
+): AutomationStudioTrialChangeMadeAct[] {
   return [
     ...landed.map((act) => {
       const control = controlOf(act);

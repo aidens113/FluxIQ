@@ -107,7 +107,9 @@ import {
   automationStudioCandidateTrialSummary,
   automationStudioTrialExecutedSteps,
   automationStudioTrialExecutorOptions,
+  automationStudioTrialActLedger,
   automationStudioTrialJudgingShortfall,
+  automationStudioTrialNotRun,
   type AutomationStudioCandidateTrialLandedAct,
   type AutomationStudioCandidateTrialStart
 } from "../candidate-trial/index.ts";
@@ -244,8 +246,8 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
       ...(ports.readEndView ? { readEndView: () => ports.readEndView!({ runId }) } : {}), actionAttempts: ports.actionAttempts?.(ended),
       observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}),
       ...(request.earlierAdvice?.length ? { earlierAdvice: request.earlierAdvice } : {}),
-      // What the trial changed, read after the end view and before the judge (t775, `../candidate-trial/run.ts`).
-      ...(request.siteChange ? { siteChangeRead: automationStudioTrialChangeAfterRead({ signal: request.signal, siteChange: request.siteChange }, acts, automationStudioCandidateTrialAlreadyInState(executed.trace, frames.graph)) } : {}) });
+      // What the trial changed, read after the end view and before the judge (t775, `../candidate-trial/run.ts`), with the steps its act ledger says never ran on some passes (t796).
+      ...(request.siteChange ? { siteChangeRead: automationStudioTrialChangeAfterRead({ signal: request.signal, siteChange: request.siteChange }, acts, automationStudioCandidateTrialAlreadyInState(executed.trace, frames.graph), automationStudioTrialNotRun(automationStudioTrialActLedger(executed.trace, frames.graph))) } : {}) });
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";
