@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797) and P5a (t795) merged; P6 (t799), P7 (t800) and the repair-from-step fix (t804) in flight; P1 and P5b next.
+Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797) and P5a (t795) merged; P6 (t799), P7 (t800), the repair-from-step fix (t804), P1a (t806) and the Core-no ending words (t805) in flight; P1b (after t804) and P5b next.
 Created: 2026-10-28
 Last updated: 2026-10-29
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -12,8 +12,8 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 ## Current State
 
 **Mode 2, executing (2026-10-29).** P0 (t793, scenario-free model text with a downstream check) and the per-pass act
-ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`), P4 (t797, one undo and reset answer) and P5a (t795, computed facts before any judge) are merged; P6 (t799), P7 (t800) and t804 (repair from the failing step) are in flight, and P1 starts
-after them because it shares their files. t796 gave trial proofs `not_run`, and t795 made it a Core no.
+ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`), P4 (t797, one undo and reset answer) and P5a (t795, computed facts before any judge) are merged; P6 (t799), P7 (t800), t804 (repair from the failing step) and P1a (t806, the parts of P1 outside t804's files) are in flight; P1b starts
+after t804, whose files it shares. t796 gave trial proofs `not_run`, and t795 made it a Core no.
 The rest of this section is the plan as written.
 
 The audit ran 2026-10-28 at the user's direction: make
