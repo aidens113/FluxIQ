@@ -32,6 +32,8 @@ describe("a candidate trial's toggles", () => {
     // The executed id ends with the step's `<subflow key>.<node key>`, which is how a later revision's step is tied to it.
     expect(recorded[0]!.trialNodes).toHaveLength(1);
     expect(recorded[0]!.trialNodes![0]).toMatch(/\.primary\.press$/u);
+    // With the parameters the trial's node ran with (it has none), by which a later revision's step is known (t792).
+    expect(recorded[0]!.trialParameters).toEqual({});
   });
 
   it("record nothing from a press that answered no toggle", async () => {

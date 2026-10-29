@@ -18,7 +18,7 @@ import {
   type AutomationStudioProjectSubflowBrief,
   type AutomationStudioProjectTaskSpec
 } from "../contracts/index.ts";
-import type { AutomationStudioProjectBuildEnding, AutomationStudioProjectBuildLastingAct, AutomationStudioProjectBuildRecord, AutomationStudioProjectBuildRecordView, AutomationStudioProjectBuildRef, AutomationStudioProjectBuildReturnRecord, AutomationStudioProjectBuildSummary } from "./build-record.ts";
+import type { AutomationStudioProjectBuildEnding, AutomationStudioProjectBuildLastingAct, AutomationStudioProjectBuildRecord, AutomationStudioProjectBuildRecordView, AutomationStudioProjectBuildRef, AutomationStudioProjectBuildReturnRecord, AutomationStudioProjectBuildSummary, AutomationStudioProjectBuildToggle } from "./build-record.ts";
 import { automationStudioProjectBuildRecordParser as parser } from "./build-record-parser.ts";
 import { AutomationStudioProjectBuildDocuments } from "./documents.ts";
 import { AutomationStudioProjectRecordRefusal } from "./refusal.ts";
@@ -199,6 +199,17 @@ export class AutomationStudioProjectBuildRecordStore {
       if (record.lastingActs.some((recorded) => recorded.act === entry.act)) throw new AutomationStudioProjectRecordRefusal("project.duplicate", "lastingAct.act");
       // The whole record is validated as it is written (`change`), this entry with it.
       record.lastingActs.push({ recordedAt: at, act: entry.act, owner: structuredClone(entry.owner), consequences: [...entry.consequences], description: entry.description, undoable: entry.undoable });
+    });
+  }
+
+  /**
+   * A press the domain answered as a toggle, as the build's record of them
+   * holds it (t792), so a debug sees what each later step was held to. The
+   * whole record is validated as it is written, this entry with it.
+   */
+  async recordToggle(input: AutomationStudioProjectBuildRef, entry: Omit<AutomationStudioProjectBuildToggle, "recordedAt">): Promise<void> {
+    await this.change(input, (record, at) => {
+      (record.toggles ??= []).push({ ...structuredClone(entry), recordedAt: at });
     });
   }
 
