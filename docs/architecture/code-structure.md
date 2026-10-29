@@ -418,3 +418,15 @@ live/                         6 source files + four directories
   view-host/                  existing
   tests/                      tests for the six loose files; each subfolder owns its own tests/
 ```
+
+## `pnpm check` never reads a stale library build
+
+`tsconfig.base.json` `paths` map only some `fluxiq` subpaths to source; the
+rest (`fluxiq/identity-access`, `fluxiq/auth`, ...) resolve through
+`package.json` `exports` to `dist`. So `pnpm check` runs the three library
+build steps (`contracts:build fluxiq:build client-gateway-websocket:build`)
+through the build cache before the package checks. Unchanged sources reuse the
+stamped `dist` (seconds); a changed library source rebuilds it, and the web
+check's fingerprint includes that `dist`, so it re-runs against the new types.
+`scripts/build-cache/tests/registry.test.mjs` fails when the root check drops
+or reorders those builds.
