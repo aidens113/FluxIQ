@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Executing since 2026-10-29: P0 (t793) and the per-pass act ledger (t796) merged; P5 (t795) and P4 (t797) in flight; P1 next.
+Status detail: Executing since 2026-10-29: P0 (t793) and the per-pass act ledger (t796) merged; P5 (t795), P4 (t797), P6 (t799) and P7 (t800) in flight; P1 next.
 Created: 2026-10-28
 Last updated: 2026-10-29
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -12,7 +12,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 ## Current State
 
 **Mode 2, executing (2026-10-29).** P0 (t793, scenario-free model text with a downstream check) and the per-pass act
-ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`) are merged; P5 (t795) and P4 (t797) are in flight, and P1 starts
+ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`) are merged; P5 (t795), P4 (t797), P6 (t799) and P7 (t800) are in flight, and P1 starts
 after them because it shares their files. t796 gave trial proofs `not_run`; t795 makes it a Core no in `held.ts`.
 The rest of this section is the plan as written.
 
