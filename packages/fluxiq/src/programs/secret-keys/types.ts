@@ -74,3 +74,14 @@ export type EncryptedSecretValueRecord = EncryptedSecretValueRecordV1 | Encrypte
 export type SecretKeysSnapshot = {
   keys: SecretKeySummary[];
 };
+
+/**
+ * Who asks for a session's unlock to be dropped (`revokeSessionUnlock`): the
+ * user asking (null when nobody vouches for one), and whether they are an
+ * administrator. `administrator` is true only when the caller's own permission
+ * check admitted them (`identity.manage`), never because they hold a session id.
+ */
+export type SecretKeyUnlockRevoker = {
+  userId: string | null;
+  administrator: boolean;
+};

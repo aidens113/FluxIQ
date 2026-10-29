@@ -20,7 +20,7 @@ import { automationStudioResultConditionName, type AutomationStudioRunResultSumm
 
 /** What the rows mean and what to do about them, said once (header). No site's words. */
 const PROCESSED_OUT = "Each list below is the rows a read kept and the saved answer then left out by one condition of recordOutput.process.where alone: every other condition kept them, so the run did not store them. "
-  + "Read each row against the request's own words. A row that is the kind of thing the request asks for must not be left out, even when its text also mentions something the request excludes: an item sold with or including an excluded part is still the item. "
+  + "Read each row against the request's own words. A row that is the kind of thing the request asks for must not be left out, even when its text also mentions something the request excludes: a report filed with or including an excluded appendix is still the report. "
   + "Where a listed row is one the request asks for, change that condition so it keeps it.";
 
 /** Each processing condition's rows and Core's sentence for them; nothing when no condition alone left a row out. */

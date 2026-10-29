@@ -122,7 +122,12 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
         generated = await service.generateFlowBootstrapAdaptation({
           projectId,
           flowId,
-          // Whose key pays for the build's model calls. Not an authorization.
+          // Whose key pays for the build's model calls. Not an authorization,
+          // and not a fixed key handle: the session is the one the build
+          // started from, which each call tries first before the person's
+          // other live unlocks (`runtime/llm/session-key-provider.ts`). A
+          // sign-out of it mid-build no longer fails the build while another
+          // unlock of theirs lives; with none, the next call is `secrets.locked`.
           caller: { actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId },
           // A build that meets an act outside these asks the person; empty
           // permits nothing lasting.

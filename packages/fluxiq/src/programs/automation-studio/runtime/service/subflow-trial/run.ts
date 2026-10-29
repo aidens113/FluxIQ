@@ -228,7 +228,7 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
   const frames = automationStudioCandidateFrameEvidence(executed.trace?.attempts ?? [], executed.graph, executed.candidateGraphs);
   const shown = { trialRunId: runId, trace: executed.trace, graph: frames.graph, start: start.status };
   // Every lasting act that landed, the predecessors' included, for the build to undo before its next trial.
-  ports.exploredToggles?.trial(frames.attempts);
+  ports.exploredToggles?.trial(frames.attempts, frames.graph);
   const acts = automationStudioCandidateTrialLandedActs(executed.trace, frames.graph);
   const ran = { trialRunId: runId, start, entryPrepared: executed.entryPrepared, ...(executed.failedPredecessor ? { failedPredecessor: executed.failedPredecessor } : {}) };
   if (executed.receipt.status !== "succeeded") {

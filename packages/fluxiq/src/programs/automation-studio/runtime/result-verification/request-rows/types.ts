@@ -29,8 +29,10 @@ export type AutomationStudioRequestRowsCondition = {
   /**
    * The rows Core settled itself (`../value-readings/settled-rows.ts`, t574):
    * their labels, and the word runs a sentence names this condition by -- its
-   * `condition N`, its column, and the numbers its bound writes. A yes need
-   * not quote beside these rows, only once beside a naming of the condition.
+   * `condition N`, its column (unless that column is one of the answer's own,
+   * which every reply lists, t790), and the numbers its bound writes. A yes
+   * need not quote beside these rows, only once, in a sentence that itself
+   * names the condition and quotes the request (no quote lent, t790).
    */
   settled?: { labels: string[]; names: string[][]; kind: "bound" | "presence" | "text" };
 };

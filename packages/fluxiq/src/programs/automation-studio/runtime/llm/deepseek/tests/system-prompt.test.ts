@@ -186,7 +186,7 @@ describe("a verification's system message, on judging a trial by its change (t77
 describe("a verification's system message, on the defects a no rests on (t752)", () => {
   const DEFECTS = "When you answer no, list in diagnosis.defects each defect of this result the no rests on: kind kept_not_asked (a row kept that the request does not ask for), asked_missing (a row asked for that the result lacks) or wrong_value (a kept row whose column holds a wrong value); an act the request asks for is named as one, whether or not the result also stores rows: act_missing (an act the request asks for that no step does, naming in row what it is done to) or act_wrong (a step that did its act to the wrong thing, with the wrong value or with no effect the evidence shows, naming that step in step by its nodeId, its label or its buildTest step number, and in row what it acted on); use other for ordering, formatting, missing columns or requirements not expressible as a row or act defect, naming the unmet requirement in row; row, the row as the evidence names it, by Core's id for it or its whole label, or \"rows not read\" for rows the run never read; column and value, for a wrong value the actual cell value the defect claims, so Core can compare it with the stored cell, and for a row a read left out that the request asks for, that row's own value in the column that makes it asked for, as its leftOutCells give it, so Core can compare it with that row's cell; and requestWords, quoting the request's words it fails.";
   const NOT_A_DEFECT = "A concern that is not a defect of this result -- a method, wording, how a condition is written, what another run might meet -- is no ground for a no: where it is all you find, answer yes and give it as advice in changed.";
-  const RELATION = "Where the request defines its set by the person's relation to each item, a condition should read the sign of that relation each row shows, its own control or mark: advise that sign, never a literal list of today's values, and a literal list that keeps exactly the rows asked for is no defect of this result; for example, a library's \"books I have on loan\" are kept by each row's Return button.";
+  const RELATION = "Where the request defines its set by the person's relation to each item, a condition should read the sign of that relation each row shows, its own control or mark: advise that sign, never a literal list of today's values, and a literal list that keeps exactly the rows asked for is no defect of this result; for example, an archive's \"documents I have checked out\" are kept by each row's Check-in button.";
   const EARLIER = "resultSummary.earlierAdvice, where present, says what an earlier judge of this build advised and, in followed, whether this revision changed what it named: a changed step or condition does not prove that the advice was followed or correct. Earlier advice never overrides the original request: independently check every requirement, including ordering, formatting, required fields and actions, and report any defect introduced by earlier advice. An absent structured row defect does not prove correctness; answer unknown when the evidence cannot settle a requirement.";
   const WORKING = "resultSummary.reads[].workingRows, where present, is Core's flag on a read whose kept rows a later step was repeated over and whose list a later read (rereadBy) read again: its rows are working rows, what the repeat went over, not the answer, so judge the answer by the later read's rows.";
   const WORKING_SET = "Each record set holds the run's answer, unless only reads Core flagged with workingRows collected it:";
@@ -224,11 +224,11 @@ describe("a verification's system message, on the defects a no rests on (t752)",
     expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!)).not.toContain("buildTest.stores");
   });
 
-  it("teaches nothing a Lab scenario could be passed by: its example is a library", () => {
+  it("teaches nothing a Lab scenario could be passed by: its example is an archive", () => {
     for (const said of [...SAID, STORES]) {
       expect(said).not.toMatch(/[$€£]|\bprice|\bcart\b|\bshop|earbud|friend|\bjob|listing|rating|sponsor|mutual|follow(?!ed)|connect|accept|auction|bid\b|photo|feed\b/iu);
     }
-    expect(RELATION).toContain("library");
+    expect(RELATION).toContain("archive");
   });
 });
 

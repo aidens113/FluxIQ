@@ -3,9 +3,12 @@ import type { IamRecordRepository } from "./record-repository.ts";
 
 /**
  * Typed access to one store's rows in the repository. A row's id is
- * `<kind>/<key>` (just `<kind>` when the key is empty), its envelope kind is
- * `iam.<kind>`, and its scope is the workspace. Rows of other kinds or other
- * workspaces in the same repository are never returned.
+ * `<kind>/<key>` (just `<kind>` when the key is empty) and its scope is the
+ * workspace. Kinds are told apart by that id prefix alone: the envelope kind
+ * `iam.<kind>` is still written, but a repository may store its own kind over
+ * it (`SQLiteRepository` does), so it is never read back. Workspaces are kept
+ * apart by the repository's scope (a database per workspace for SQLite), not by
+ * comparing the scope a row comes back with, which a repository may normalise.
  */
 export class IamRecords {
   private readonly repository: IamRecordRepository;
@@ -19,14 +22,13 @@ export class IamRecords {
   }
 
   async get<T extends object>(kind: string, key: string): Promise<T | null> {
-    const envelope = await this.repository.get(this.id(kind, key), { domainId: this.workspaceId });
-    if (envelope === null || envelope.kind !== `iam.${kind}`) return null;
-    return envelope.data as unknown as T;
+    const envelope = await this.repository.get(this.id(kind, key), this.scope());
+    return envelope === null ? null : (envelope.data as unknown as T);
   }
 
   async put(kind: string, key: string, data: object): Promise<void> {
     const id = this.id(kind, key);
-    const scope = { domainId: this.workspaceId };
+    const scope = this.scope();
     const existing = await this.repository.get(id, scope);
     const nowMs = this.now();
     await this.repository.put({
@@ -40,13 +42,17 @@ export class IamRecords {
   }
 
   async remove(kind: string, key: string): Promise<boolean> {
-    return this.repository.delete(this.id(kind, key), { domainId: this.workspaceId });
+    return this.repository.delete(this.id(kind, key), this.scope());
   }
 
+  /** Every row of `kind` in this workspace: ids `<kind>` and `<kind>/...`, whatever kind the repository reports. */
   async list<T extends object>(kind: string): Promise<T[]> {
-    const envelopes = await this.repository.list({ domainId: this.workspaceId });
-    const own = envelopes.filter((envelope) => envelope.kind === `iam.${kind}` && (envelope.scope.domainId ?? null) === this.workspaceId);
-    return own.map((envelope) => envelope.data as unknown as T);
+    const envelopes = await this.repository.list(this.scope());
+    return envelopes.filter((envelope) => envelope.id === kind || envelope.id.startsWith(`${kind}/`)).map((envelope) => envelope.data as unknown as T);
+  }
+
+  private scope(): { domainId: string | null } {
+    return { domainId: this.workspaceId };
   }
 
   private id(kind: string, key: string): string {

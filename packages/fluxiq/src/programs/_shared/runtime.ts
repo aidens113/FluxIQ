@@ -133,6 +133,13 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
     repository: identityUsersRepository,
     credentialChangeSubscribers: [secretKeysCredentialChangeSubscriber(secretKeys)]
   });
+  // A revoked session's unlock goes with it: a sign-out, an administrator's
+  // revoke (by raw id or by the digest the panel lists), `revokeUserSessions`
+  // and `deleteUser` each tell Secret Keys the raw id and who revoked it, and
+  // Secret Keys drops the unlock only for its own user or an administrator.
+  identityAccess.subscribeSessionRevocation((sessionId, revoker) => {
+    secretKeys.revokeSessionUnlock(sessionId, revoker);
+  });
   // The registry, not each handler, asks for the operator's PIN before a
   // `destructive` endpoint runs, so it is built once Identity Access exists.
   const api = new GlobalProgramApiRegistry({ identityAccess });
@@ -141,7 +148,16 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
   // key, released per call to their unlocked session. No grant is issued,
   // held, digest-checked or revoked around it; the run's budget bounds it, and
   // a lasting consequence of an action is still asked about act by act.
-  if (modelProvidersEnabled) automationStudio.bindLlmExecutionProvider(createAutomationStudioSessionKeyProviderResolver({ ports: secretKeys }));
+  //
+  // The key is the Flow's own `llmSecretKeyId` when it names one: a build calls
+  // the resolver without the Flow's metadata, so the Flow is read here. The
+  // locked sentence names the public host when `FLUXIQ_PUBLIC_ORIGIN` sets one.
+  const instanceHost = publicInstanceHost(process.env.FLUXIQ_PUBLIC_ORIGIN);
+  if (modelProvidersEnabled) automationStudio.bindLlmExecutionProvider(createAutomationStudioSessionKeyProviderResolver({
+    ports: secretKeys,
+    flowSecretKeyId: ({ projectId, flowId }) => flowSecretKeyId(automationStudio, projectId, flowId),
+    ...(instanceHost ? { instanceHost } : {})
+  }));
   // The chat window reads plain requests with DeepSeek, on the key of whoever
   // sent the message, released to their own unlocked session. With no key, or
   // a locked session, the conversation still answers from its offline reading.
@@ -287,4 +303,22 @@ function createClientGatewayTrustedClientStore(dataDir: string): ClientGatewayTr
 function positiveNumber(value: string | undefined): number | undefined {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * The Flow's own `llmSecretKeyId`, or undefined when it names none. A Flow
+ * that cannot be read fails the call: guessing "no key" would spend the
+ * caller's own key on a Flow that may name another.
+ */
+async function flowSecretKeyId(automationStudio: AutomationStudioService, projectId: string, flowId: string): Promise<string | undefined> {
+  const flow = await automationStudio.getFlow(projectId, flowId);
+  const keyId = flow.metadata?.llmSecretKeyId;
+  return typeof keyId === "string" && keyId ? keyId : undefined;
+}
+
+/** The host of `FLUXIQ_PUBLIC_ORIGIN` (`app.example.com`), for the locked sentence; undefined when unset or not a URL. */
+function publicInstanceHost(origin: string | undefined): string | undefined {
+  const value = origin?.trim();
+  if (!value || !URL.canParse(value)) return undefined;
+  return new URL(value).host || undefined;
 }

@@ -1,5 +1,6 @@
 import type {
   AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES,
+  AUTOMATION_STUDIO_RECORD_CONDITION_TYPES,
   AUTOMATION_STUDIO_RECORD_SORT_ORDERS,
   AUTOMATION_STUDIO_RECORD_SORT_TYPES
 } from "./processing-vocabulary.ts";
@@ -8,20 +9,43 @@ import type {
 export type AutomationStudioRecordConditionValue = string | number;
 
 /**
+ * A bound: a number, against the number the value states, or a date written as
+ * text ("2026-09-19", "19 September 2026"), against the date it states (t790,
+ * `date-bound.ts`). One condition's bounds are all of one kind.
+ */
+export type AutomationStudioRecordConditionBound = number | string;
+
+/** What a condition's bounds compare (t790). */
+export type AutomationStudioRecordConditionType = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_TYPES)[number];
+
+/**
  * Whether one stored column of a row holds what a `where` asks. Every
  * comparison named must hold, a list means any of its entries, and `not`
  * inverts the whole verdict, a missing value included. A condition naming no
  * comparison asks whether the value is there (`is`, default `present`).
  * `is: "absent"` beside a comparison is refused.
+ *
+ * A date bound (t790, run `run-mvswewhy-e4e469d4`) is a bound written as a
+ * date, with `as: "date"`: `{field: "due", atLeast: "2026-09-19", as: "date"}`
+ * keeps the rows whose value states a date on or after that day. A bound with
+ * no time of day means its whole day, so `atLeast` and `atMost` together keep
+ * the days between them, both included. A value stating no date the bound can
+ * read fails the condition whatever `not` says: it is never kept as matching.
  */
 export type AutomationStudioRecordCondition = {
   /** A stored field id of the schema. */
   field: string;
   is?: (typeof AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES)[number];
-  atLeast?: number;
-  atMost?: number;
-  lessThan?: number;
-  greaterThan?: number;
+  atLeast?: AutomationStudioRecordConditionBound;
+  atMost?: AutomationStudioRecordConditionBound;
+  lessThan?: AutomationStudioRecordConditionBound;
+  greaterThan?: AutomationStudioRecordConditionBound;
+  /**
+   * What the bounds compare, where a caller says it. A bound written as text is
+   * a date bound with or without it, and the canonical condition
+   * (`parse-condition.ts`) carries none.
+   */
+  as?: AutomationStudioRecordConditionType;
   equals?: AutomationStudioRecordConditionValue | AutomationStudioRecordConditionValue[];
   /** A regular expression; a bare source ignores case, `/source/flags` says what its flags say. */
   matches?: string | string[];
@@ -106,6 +130,12 @@ export type AutomationStudioRecordProcessingConditionAccount = {
   rejected: number;
   alone: number;
   leftOutOnlyByThis: AutomationStudioRecordProcessingLeftOutRow[];
+  /**
+   * Of `rejected`, the rows a date bound left out because their value states no
+   * date it can read, a missing value included (t790): recorded, never kept as
+   * matching. Absent for a condition with no date bound, and where none was.
+   */
+  undated?: number;
 };
 
 /**

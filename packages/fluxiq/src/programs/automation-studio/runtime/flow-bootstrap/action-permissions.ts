@@ -100,6 +100,17 @@
 // and to the record of layers a press cleared (`./explored-interruptions.ts`,
 // t787), which a submission makes a handler of each of
 // (`./layer-handlers/explored.ts`).
+//
+// **A control this build already flipped is held to that press (t792).** An
+// exploration press of a node on a control a recorded toggle ties to -- by the
+// handle the call names, or the call's target equal to the press's resolved
+// target (`./script-statements/toggle-tie.ts`) -- runs with `ensureState` set
+// to the earliest tied press's signature, so a second press toward the state
+// the build already reached presses nothing and the domain answers
+// `already_in_state`. Run `run-mvswfjbq-d0a95f6e` pressed such a control once
+// more while exploring, flipped it back, and the step was taught the reversal.
+// An undo of the build's own act is how a build means to put a control back,
+// and goes through the site reset's undo path unheld.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import {
@@ -138,6 +149,7 @@ import type { AutomationStudioPlanStepGaps, AutomationStudioSiteResetStepAsk, Au
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
 import { AutomationStudioExploredToggles } from "./explored-toggles.ts";
 import { AutomationStudioExploredInterruptions } from "./explored-interruptions.ts";
+import { automationStudioExploredToggleTie } from "./script-statements/index.ts";
 import { automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetWitness, type AutomationStudioSiteResetWitnessStamp } from "./reset-admission/index.ts";
 
 /**
@@ -363,10 +375,12 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
           }
           return await check(declaration);
         };
-        const execution = await input.executeTool({ ...call, permission });
+        // On a control this build already flipped, held to that press (header, t792).
+        const held = { ...call, value: heldToToggle(call.toolId, call.value, exploredToggles) };
+        const execution = await input.executeTool({ ...held, permission });
         gate.observe(execution);
-        exploredToggles.explored(call, execution);
-        exploredInterruptions.explored(call, execution);
+        exploredToggles.explored(held, execution);
+        exploredInterruptions.explored(held, execution);
         if (unproved) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "candidate.create_baseline_unavailable", instruction: "This lasting action was not run because this project's original-state preflight is unavailable. End honestly naming the unavailable precondition; no new permission is required." }, effectApplied: false, targetsUnchanged: true, resultCode: "candidate.create_baseline_unavailable" };
         // Recoverable. The domain has already turned a refusal nobody granted
         // into evidence the model can read and route around, and the request it
@@ -375,12 +389,14 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       }
       // A candidate build's call, which may name an act of this build it
       // undoes (t462). Only the ledger reads the claim; the domain never sees it.
-      const { value, claim } = claimed(siteReset, call.value);
+      const { value: claimedValue, claim } = claimed(siteReset, call.value);
       if (claim.kind === "refused") {
         const code = claim.evidence.code;
         return { kind: "llm_evidence_tool_execution", evidence: claim.evidence, effectApplied: false, targetsUnchanged: true, ...(typeof code === "string" ? { resultCode: code } : {}) };
       }
       const undo = claim.kind === "undo" ? claim.undo : undefined;
+      // On a control this build already flipped, held to that press; an undo is the build putting it back, and is not (header, t792).
+      const value = undo ? claimedValue : heldToToggle(call.toolId, claimedValue, exploredToggles);
       if (automationStudioFlowDraftDeclaresLasting(value.consequences)) await read();
       const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
       // The last action the domain put to the gate for this call, as the gate read it.
@@ -562,6 +578,9 @@ function placeOf(read: AutomationStudioReadActionDeclaration): AutomationStudioS
 /** The classes a site's own controls can reverse: the only declarations a plan step is stamped for (t751, R3 door 2). */
 const REVERSIBLE: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);
 
+/** The tool an exploration press is run through (`../llm/node-tools/run-node.ts`). */
+const RUN_NODE_TOOL_ID = "core.run_node";
+
 /** A mutating declaration whose every lasting class is reversible. */
 function reversibleLasting(read: AutomationStudioReadActionDeclaration): boolean {
   return read.effect === "mutate" && read.consequences.length > 0 && read.consequences.every((consequence) => REVERSIBLE.has(consequence));
@@ -593,6 +612,19 @@ function isRecord(value: unknown): value is JsonObject {
 /** An evidence tool's own answer, as opposed to bare JSON. */
 function isExecutionResult(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): execution is AutomationStudioLlmEvidenceToolExecutionResult {
   return Boolean(execution) && typeof execution === "object" && !Array.isArray(execution) && (execution as { kind?: unknown }).kind === "llm_evidence_tool_execution";
+}
+
+/**
+ * A node call's input with `ensureState` set to the signature of the earliest recorded toggle tied to its control, by
+ * the handle its `target` names or that whole `target` (header, t792); any other call's input as it was.
+ */
+function heldToToggle(toolId: string, value: JsonObject, exploredToggles: AutomationStudioExploredToggles): JsonObject {
+  const parameters = value.parameters;
+  if (toolId !== RUN_NODE_TOOL_ID || typeof value.node !== "string" || !parameters || typeof parameters !== "object" || Array.isArray(parameters)) return value;
+  const target = parameters.target;
+  const handle = target && typeof target === "object" && !Array.isArray(target) ? target.handle : undefined;
+  const press = automationStudioExploredToggleTie({ node: value.node, handles: new Set(typeof handle === "string" && handle.length ? [handle] : []), target }, exploredToggles.list());
+  return press ? { ...value, parameters: { ...parameters, ensureState: structuredClone(press.signature) } } : value;
 }
 
 /** The call applied an effect and did not answer `ok: false`: what the ledger counts as an act having landed. */

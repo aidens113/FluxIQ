@@ -341,11 +341,21 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
  * condition to the key, and the number a bound reads is the shared reader's
  * (`read-number.ts`). `tests/condition-rules.test.ts` holds every key of that
  * vocabulary to being named here.
+ *
+ * **A date bound (t790).** Run `run-mvswewhy-e4e469d4` was asked for rows "on
+ * or after Saturday 19 September 2026" and, with bounds that read only
+ * numbers, wrote `posted matches "(19|20|21) September 2026"`, which drops
+ * every row dated later. The bounds now take a date written as text with
+ * `as: "date"` (`@fluxiq/contracts`, `date-bound.ts`), and the rules
+ * say so with an example on a kind of site no realistic scenario is (a library's
+ * loans), that a bound states its year, and that a row whose date cannot be
+ * read is never kept.
  */
 export const AUTOMATION_STUDIO_FLOW_CONDITION_RULES = [
   "Presence: is: \"present\" or \"absent\", for a column only some items have.",
   "Number: atLeast, atMost, lessThan, greaterThan, or equals with a number, compare the number the value states: the first number written ($49 is 49, 3.7 out of 5 is 3.7), or the total of a combined count it recognises; a value stating no number fails.",
   "A quantity -- a count, price, rating or amount -- is always compared with a bound, never a text test: a pattern reads characters, not the number, and misses the same count written another way.",
+  "Date: the same bounds with a date written as text and \"as\": \"date\" compare the date the value states (\"Tuesday 6 October 2026 at 09:00\", \"6 Oct 2026\", \"2026-10-06\", \"Oct 6, 2026\", or \"3 days ago\" from now): {\"field\": \"due\", \"atLeast\": \"2026-10-01\", \"as\": \"date\"} keeps loans due on or after 1 October 2026, and atLeast with atMost keeps the days between, both included. Write each bound as one date with its year; a bound with no time of day is its whole day. A row whose value states no date it can read is never kept. A date is always compared with a date bound, never a pattern: a pattern reads characters and misses the days it does not spell.",
   "Text: contains, startsWith, endsWith, equals with text, or matches for a regex, ignoring case; one value or a list meaning any. not: true keeps what the condition rejects."
 ].join(" ");
 
@@ -463,14 +473,14 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "  node: web.dom.wait_for_text",
   "  text: $row.number",
   "Example, a loop the site asked to slow down:",
-  "flow: Archive every message from the Garden Club newsletter, as slowly as the mail service asks",
+  "flow: Archive every message from the print shop, as slowly as the mail service asks",
   "step: open the inbox",
   "  node: web.browser.navigate",
   "  url: https://mail.test/inbox",
-  "step messages: list the Garden Club messages",
+  "step messages: list the print shop's messages",
   "  node: web.dom.extract_list",
   "  extractList: extraction.2",
-  "  extractList.where: [{\"field\": \"sender\", \"contains\": \"Garden Club\"}]",
+  "  extractList.where: [{\"field\": \"sender\", \"contains\": \"Print Shop\"}]",
   "  extractList.minItems: 0",
   "step: archive the message",
   "  node: web.dom.click",

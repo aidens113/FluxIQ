@@ -128,6 +128,22 @@
 // scope's `handedOn`. One no line reads is no refusal (`./callable-target.ts`):
 // the proposal carries it as `unneededInputs`, which the builder's answer and
 // its brief's return say, so the supervisor amends nothing for it.
+//
+// **A toggle a trial pass made is read under the probe's keys (t792).** A
+// trial runs the proposal, so the record of a press the domain answered as a
+// toggle in it (`../explored-toggles.ts`, t787) names its trial node
+// `<...>.<proposal key>.<node key>`: this brief's subflow under the scope's key,
+// each part under its rekeyed one (`./part-keys.ts`). The candidate controller
+// ties a step to it by the step's identity, its parameters as written, and by
+// the probe's own `<subflow key>.<node key>` only between two steps written the
+// same (`../script-statements/toggle-tie.ts`, t792). The probe names this
+// subflow as it was written -- a script's own steps as `main` -- so before the
+// identity tie a repair's resubmission of the step a trial pressed never
+// carried `ensureState`, and flipped the control back (debug
+// run-mvswfjbq-d0a95f6e); the place still has to read the same for twins. The
+// controller is handed the build's record with each trial node also named as
+// the probe of the submission it checks names it; nothing else in the record
+// changes.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import {
@@ -141,6 +157,7 @@ import {
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import type { AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapInterface, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
+import type { AutomationStudioExploredToggle } from "../script-statements/index.ts";
 import { automationStudioNodeSideEffectClass } from "../../executor/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialResult } from "./contracts.ts";
@@ -194,6 +211,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
   private readonly offset: number;
   /** The proposal each revision the candidate controller accepted is: a plan it accepted again after another is a new revision there, and still its first proposal here (header, t741). */
   private readonly byInnerRevision = new Map<number, AutomationStudioSubflowProposal>();
+  /** The key the submission being checked wrote each subflow under, by the key its proposal gives it (header, t792). */
+  private written: ReadonlyMap<string, string> = new Map();
   /** How a refusal's revisions and digests read on this brief's numbering (`./submission-numbering.ts`, t741). */
   private readonly numbering = {
     revision: (inner: number): number => this.byInnerRevision.get(inner)?.revision ?? inner + this.offset,
@@ -220,7 +239,10 @@ export class AutomationStudioSubflowScopedSubmissionController {
     // The brief's parts are what this subflow is asked to do: the probe's checks read them as the instruction.
     this.instructionText = this.scope.parts.map((part) => part.text).join("\n");
     // Its refusals name this loop's tools, never the whole candidate's (`../candidate/unchanged-submission.ts`, t632).
-    this.inner = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, instructionText: this.instructionText, refusalTools: SUBFLOW_TOOLS });
+    // The build's toggles, each trial node also under the probe's keys (header, t792).
+    const toggles = input.submission.exploredToggles;
+    const probeToggles = toggles ? { exploredToggles: { list: () => underProbeKeys(toggles.list(), this.written) } } : {};
+    this.inner = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, ...probeToggles, instructionText: this.instructionText, refusalTools: SUBFLOW_TOOLS });
   }
 
   /** The latest valid proposal, or none once a refusal cleared it. */
@@ -242,6 +264,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
       const last = this.inner.lastAccepted();
       return { ok: false, revision: last ? this.numbering.revision(last.revision) : 0, check: scopeRefusal(read.issues) };
     }
+    this.written = read.written ?? new Map();
     const submitted = await this.inner.submit(read.probe, this.candidateHistory(history));
     this.input.submission.signal?.throwIfAborted();
     if (submitted.ok && read.proposedCheck) this.proposedChecks.set(submitted.candidate.digest, read.proposedCheck);
@@ -260,7 +283,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
    * existing checks run on: the submission itself, or for a callable subflow
    * its script with the call that runs it (`./callable-target.ts`).
    */
-  private read(result: JsonObject): { issues: ScopeIssue[]; probe: JsonObject; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]>; unneeded?: string[] } {
+  private read(result: JsonObject): { issues: ScopeIssue[]; probe: JsonObject; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]>; unneeded?: string[]; written?: ReadonlyMap<string, string> } {
     const issues: ScopeIssue[] = [];
     if (typeof result.flow === "string") {
       for (const block of parseAutomationStudioFlowScript(result.flow).script.blocks) {
@@ -283,7 +306,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     // A submission that cannot be read is refused by the probe's own checks, with every issue named.
     if (!accepted.ok) return { issues, probe };
     const read = this.planIssues(accepted.plan, result);
-    return { issues: [...issues, ...read.issues], probe, ...(read.proposedCheck ? { proposedCheck: read.proposedCheck } : {}), ...(unneeded ? { unneeded } : {}) };
+    return { issues: [...issues, ...read.issues], probe, ...(read.proposedCheck ? { proposedCheck: read.proposedCheck } : {}), ...(unneeded ? { unneeded } : {}), written: this.writtenKeys(accepted.plan) };
   }
 
   private planIssues(plan: AutomationStudioFlowBootstrapPlan, result: JsonObject): { issues: ScopeIssue[]; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]> } {
@@ -368,6 +391,18 @@ export class AutomationStudioSubflowScopedSubmissionController {
     this.proposals.set(candidate.digest, proposal);
     this.byInnerRevision.set(candidate.revision, proposal);
     return proposal;
+  }
+
+  /** The key `plan` wrote each subflow under, by the key its proposal gives it (`proposalOf`): this subflow's, then each part's (header, t792). */
+  private writtenKeys(plan: AutomationStudioFlowBootstrapPlan): ReadonlyMap<string, string> {
+    const contract = this.scope.interface;
+    const entry = entryOf(plan);
+    const written = contract ? plan.subflows.find((subflow) => subflow.key === this.scope.subflowKey) : entry;
+    const keys = new Map<string, string>();
+    if (!written) return keys;
+    keys.set(this.scope.subflowKey, written.key);
+    for (const part of plan.subflows) if (part !== written && !(contract && part === entry)) keys.set(automationStudioSubflowPartKey(this.scope.subflowKey, part.key), part.key);
+    return keys;
   }
 
   /** The subflow gate's history, as the candidate controller asks it: by the probe's revision and digest. */
@@ -465,6 +500,21 @@ function isObject(value: unknown): value is JsonObject {
 
 function foreign(key: string, path: string): ScopeIssue {
   return { code: "subflow.foreign_subflow_refused", path, message: `"${key}" is not this brief's subflow or a part it calls. A subflow builder writes only its own subflow, outside every block, and the parts it calls; another subflow of the plan is another brief's.` };
+}
+
+/**
+ * Each toggle with every trial node `<...>.<proposal key>.<node key>` also
+ * named `<...>.<written key>.<node key>`, as the probe writes that subflow
+ * (header, t792); a toggle of no trial, or of another subflow, as it was.
+ */
+function underProbeKeys(toggles: readonly AutomationStudioExploredToggle[], written: ReadonlyMap<string, string>): AutomationStudioExploredToggle[] {
+  return toggles.map((toggle) => {
+    const aliases = (toggle.trialNodes ?? []).flatMap((id) => [...written].flatMap(([proposalKey, writtenKey]) => {
+      const at = id.lastIndexOf(`.${proposalKey}.`);
+      return at < 0 || writtenKey === proposalKey ? [] : [`${id.slice(0, at)}.${writtenKey}.${id.slice(at + proposalKey.length + 2)}`];
+    }));
+    return aliases.length ? { ...toggle, trialNodes: [...toggle.trialNodes!, ...aliases] } : toggle;
+  });
 }
 
 /** The router's fallback Subflow: the steps outside every block. */

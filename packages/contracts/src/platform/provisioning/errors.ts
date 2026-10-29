@@ -16,6 +16,14 @@ import { z } from "zod";
  * operation asked over HTTP, or an unknown one); `request_conflict` (409, a
  * reused `requestId` with a different input); `entitlement_required` (403);
  * `rate_limited` (429).
+ *
+ * Then three added before the first release: `last_administrator` (409, the
+ * operation would disable, delete or demote the last enabled administrator,
+ * so identity access refused it and nothing changed); `two_factor` (409,
+ * `setPassword` on an account with two-factor sign-in whose credential is
+ * sealed, which only a signed-in administrator's reset may replace; nothing
+ * changed); `internal_error` (500, an unexpected failure, whose message is
+ * generic and says nothing of the failure or the request).
  */
 export const PLATFORM_PROVISIONING_ERROR_STATUS = Object.freeze({
   email_taken: 409,
@@ -29,7 +37,10 @@ export const PLATFORM_PROVISIONING_ERROR_STATUS = Object.freeze({
   operation_unavailable: 404,
   request_conflict: 409,
   entitlement_required: 403,
-  rate_limited: 429
+  rate_limited: 429,
+  last_administrator: 409,
+  two_factor: 409,
+  internal_error: 500
 } as const);
 
 export type PlatformProvisioningErrorCode = keyof typeof PLATFORM_PROVISIONING_ERROR_STATUS;

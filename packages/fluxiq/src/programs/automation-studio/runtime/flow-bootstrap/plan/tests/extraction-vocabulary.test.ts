@@ -125,9 +125,13 @@ describe("the vocabulary a model writes an extraction filter from", () => {
     // until t567 (aa04a943, 2026-10-18) published recordOutput's `purpose` key
     // (answer|intermediate) in the same contract text, as
     // automation-studio-native-nodes.md ("Intermediate rows") records: 412
-    // bytes on purpose, to 4,394. The bound sits just above the intended
-    // entry, not room for another addition.
-    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(4_400);
+    // bytes on purpose, to 4,394. The bound was 4,400 until t790 (2026-10-28)
+    // published the date bound of `where` (`as: "date"`, a bound with its
+    // year, an unreadable row date never kept) in the same contract text, for
+    // run-mvswewhy-e4e469d4's "on or after" request: 294 bytes on purpose, to
+    // 4,688. The bound sits just above the intended entry, not room for
+    // another addition.
+    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(4_700);
     expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBe(context.catalogSelection.usedBytes);
   });
 

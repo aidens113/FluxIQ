@@ -2,16 +2,20 @@
 // carries, its parser, the value readers it shares with the downstream domain
 // and their parity table, and the pure function that turns a dataset's
 // collected rows into its answer and the account of it, a condition said in
-// words. `cell-text.ts` is internal and not re-exported.
+// words, with the date bound a condition may carry (t790, run
+// `run-mvswewhy-e4e469d4`). `cell-text.ts` is internal and not re-exported.
+export * from "./compares-dates.ts";
 export * from "./condition-holds.ts";
 export * from "./condition-text.ts";
 export * from "./count-unsortable-rows.ts";
+export * from "./date-bound.ts";
 export * from "./parse-condition.ts";
 export * from "./parse-processing.ts";
 export * from "./process-rows.ts";
 export * from "./processing-vocabulary.ts";
 export * from "./read-date.ts";
 export * from "./read-number.ts";
+export * from "./row-date.ts";
 export * from "./row-identity.ts";
 export * from "./sort-rows.ts";
 export * from "./sort-value.ts";

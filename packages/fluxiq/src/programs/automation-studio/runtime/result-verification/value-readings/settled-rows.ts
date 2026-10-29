@@ -63,6 +63,14 @@
 // mixing a text test with a bound, is not settled, and is still quoted for row
 // by row.
 //
+// **A date bound is settled by the date Core read (t790).** Run
+// `run-mvswewhy-e4e469d4` had no date bound; one may now be written
+// (`as: "date"`), and it is read as a date, never as the first number in it
+// ("21 September 2026" is not 21). A row is settled where Core read a date in
+// its value that fails the bound, or where the read found no value; a row whose
+// value states no date Core can read is not settled -- the bound left it out
+// for that alone -- and is still quoted for row by row.
+//
 // **What a yes must still show.** That the condition is the request's: Core
 // read the row against the condition as authored, not against the request. So
 // the sentence says a yes quotes, once, in a sentence naming the condition, the
@@ -74,7 +82,13 @@
 // one quote, and each row's tested value shown beside it, are what guard that,
 // as for a bound.
 
-import { automationStudioRecordConditionHolds, readAutomationStudioRecordNumber, type AutomationStudioRecordCondition } from "@fluxiq/contracts/automation-studio";
+import {
+  automationStudioRecordConditionComparesDates,
+  automationStudioRecordConditionHolds,
+  readAutomationStudioRecordConditionDate,
+  readAutomationStudioRecordNumber,
+  type AutomationStudioRecordCondition
+} from "@fluxiq/contracts/automation-studio";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
 import type { AutomationStudioResultLeftOutObservation, AutomationStudioResultReadCondition } from "../read-condition.ts";
 import type { AutomationStudioResultReadCell } from "./condition-readings.ts";
@@ -105,6 +119,8 @@ export function automationStudioResultSettledRows(input: {
   number: number;
   wording: string | undefined;
   leftOut: readonly LeftOutRow[];
+  /** What a relative date in a value is measured back from; the moment of reading when absent. */
+  now?: number;
 }): SettledRows | undefined {
   const { condition, column } = input;
   const name = automationStudioResultConditionName(input.number, input.wording);
@@ -127,17 +143,21 @@ export function automationStudioResultSettledRows(input: {
   }
   if (textOnly(condition)) return textSettled(input, name, named);
   if (column === undefined || !numericOnly(condition)) return undefined;
+  // A date bound reads the date, never the number in it (header, t790).
+  const kind = automationStudioRecordConditionComparesDates(condition) ? "date" : "number";
+  const now = input.now ?? Date.now();
+  const states = (value: string) => (kind === "date" ? readAutomationStudioRecordConditionDate(value, now) : readAutomationStudioRecordNumber(value)) !== undefined;
   // A bound fails on no value unless it is negated (header, t636).
-  const failsEmpty = !automationStudioRecordConditionHolds(condition, undefined);
-  const numbered = (entry: LeftOutRow) => entry.cell !== undefined && readAutomationStudioRecordNumber(entry.cell.value) !== undefined && !automationStudioRecordConditionHolds(condition, entry.cell.value);
+  const failsEmpty = !automationStudioRecordConditionHolds(condition, undefined, now);
+  const numbered = (entry: LeftOutRow) => entry.cell !== undefined && states(entry.cell.value) && !automationStudioRecordConditionHolds(condition, entry.cell.value, now);
   const empty = (entry: LeftOutRow) => failsEmpty && foundEmpty(entry, column);
   const settled = input.leftOut.filter((entry) => numbered(entry) || empty(entry));
   if (!settled.length) return undefined;
   const read = !settled.some(empty)
-    ? `Core read ${column} as a number on each row in leftOutSettled, and each fails ${name} as written`
+    ? `Core read ${column} as a ${kind} on each row in leftOutSettled, and each fails ${name} as written`
     : settled.every(empty)
-      ? `On each row in leftOutSettled the read found no ${column}, and a row with no number fails ${name} as written`
-      : `Core read ${column} on each row in leftOutSettled, and each fails ${name} as written: where the row states a number, that number fails it, and where the read found no ${column}, a row with no number fails every bound`;
+      ? `On each row in leftOutSettled the read found no ${column}, and a row with no ${kind} fails ${name} as written`
+      : `Core read ${column} on each row in leftOutSettled, and each fails ${name} as written: where the row states a ${kind}, that ${kind} fails it, and where the read found no ${column}, a row with no ${kind} fails every bound`;
   return {
     leftOutSettled: settled.map(({ row }) => row),
     settledKind: "bound",

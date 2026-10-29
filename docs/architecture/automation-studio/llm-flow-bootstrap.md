@@ -162,6 +162,16 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   act of the build after a restart. The build waits for those writes before it
   saves its draft; a write that fails for a reason other than the record's own
   refusal fails the build.
+- **Toggles in the build record (t792).** Every toggle the build learned, from
+  an exploration press or a trial pass's press, is written into the build
+  record's `toggles` (`service/project-build-toggles/toggles-record.ts`): where
+  it came from, its node and call, the handles and resolved target it is tied
+  by, the trial nodes that pressed it and the parameters they ran with
+  (`trialParameters`), its signature and `idempotentWith`. It is written after
+  each builder or repair tool call and each trial, so a debug can read which
+  signature a step was given, and what the record kept is a record of toggles
+  again (`AutomationStudioProjectBuildTogglesRecord.restored`) that ties a
+  step exactly as before.
 - **Repair before ending (t743).** While money is left, the supervisor's
   `ended` completion is refused `project.completion_repair_first`
   (`project-agents/supervisor/completion.ts`), with `unrepaired:
@@ -260,8 +270,22 @@ toggle and the skip record.
   idempotentWith? }`, and a trial pass's press carries the same answer on its
   action result (`outputs.result.toggle`, t787); `flow-bootstrap/explored-toggles.ts`
   records both, and a `modify_existing` step repeating an explored press, or the
-  same node's press from an earlier trial, gets the node parameter
-  `ensureState` written by Core, never by the model. The submission re-validates
+  same step's press from an earlier trial, gets the node parameter
+  `ensureState` written by Core, never by the model. A trial's press is tied to
+  a step by the step's identity, never its key (t792): the same node written
+  with the same parameters, compared whole with `ensureState` taken off, as the
+  trial's graph recorded them (`trialParameters`). That is the identity Core
+  already uses for a step across revisions (`result-verification/standing-no/written-conditions.ts`,
+  t666); a label is display words, and the web domain drops a resolved
+  `target`. A step's key (`s10`) is its place in the script, which a repair
+  renumbers when it inserts or removes an earlier step, so the key decides only
+  between two steps written the same, and a step whose parameters match no
+  trial press gets none (`script-statements/toggle-tie.ts`). A toggle's own
+  words change with its state ("Like" and "Unlike"), so a step whose parameters
+  differ only by the words that press's own signature gained and lost
+  (`gains`, `loses`, the one place Core reads inside a signature) is the same
+  step, unless another step of the plan on that node matches the press too
+  (`script-statements/toggle-state-words.ts`). The submission re-validates
   the rewritten plan, so `ensureState` reaches the laid-out subflows the trial and
   the saved graph are built from, not only the plan. The click node then presses
   only when the target does not already show the signature, and otherwise answers
@@ -270,6 +294,18 @@ toggle and the skip record.
   `idempotentWith` is refused `candidate.toggle_not_idempotent` at submission
   (`script-statements/toggle-idempotent.ts`). A toggle with no signature has no
   idempotent form and falls under the targeted-reset case.
+  When several presses are tied to one step and their signatures disagree, the
+  earliest decides (`script-statements/toggle-tie.ts`, t792): a later opposite
+  press reversed the build's own act and names the site's before-state, never
+  the asked state. An exploration press on a control the build already flipped
+  runs with the earliest tied press's signature as `ensureState`
+  (`flow-bootstrap/action-permissions.ts`), so pressing toward the asked state
+  again presses nothing; an undo goes through the undo path as before. A trial
+  names a subflow's nodes under the brief's key while the submission names them
+  as written (a script's own steps as `main`), so a subflow builder's
+  controller reads the build's toggles with each trial node also under the
+  written key (`subflow-candidate/scoped-submission.ts`, t792), which the key
+  tie between two steps written the same still needs.
 - **Layers cleared while exploring become handlers.** A press while exploring
   that cleared a covering layer (the domain's `evidence.layerCleared`: the
   layer's signature and the control pressed) is recorded by
