@@ -410,7 +410,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     // What the run closed over the page while the step ran, and the handle of the way out it pressed when the domain named one (t470).
     // A layer the domain marks as opened by this run is said as the nearest earlier step's that acted (t661).
     const interruptions = automationStudioTrialInterruptions([...absorbed.map((entry) => entry.failed), attempt], wayOuts, openerBefore(ran, index));
-    const told = { ...step, ...(issues.length ? { issues } : {}), ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage?.targetOnPage === true, targetNotShown: onPage?.targetNotShown === true }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
+    const told = { ...step, ...(issues.length ? { issues } : {}), ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage?.targetOnPage === true, targetNotShown: onPage?.targetNotShown === true, targetOtherRecord: onPage?.targetOtherRecord === true }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
     // A step whose state already held is done: no retry or check advice for a failure the run went past.
     return failure && !attempt.stateHeld ? { ...told, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : told;
   });

@@ -11,6 +11,7 @@ import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "./supervisor-ledger.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
+import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-toggles/index.ts";
 
 // The whole candidate's trial runner and judge, once per build (t340; unit
 // A5c moved them out of `service.ts`): each trial runs the exact submitted
@@ -91,8 +92,16 @@ export function automationStudioProjectBuildWholeTrials(input: {
   const arrival = AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment);
   // An offline trial's acts never happened on the site (header, Decision 6).
   const offline = automationStudioCandidateTrialOffline(trials.port);
+  // The build's one record of toggles, which the whole trials' presses are told to through the environment (`../project-build-toggles/toggles-record.ts`, t792).
+  const togglesWritten = AutomationStudioProjectBuildTogglesRecord.of(AutomationStudioProjectBuildTogglesRecord.toggles(environment));
   const run: AutomationStudioCandidateTrialPort = async (request) => {
-    const result = await trials.port(request);
+    let result: Awaited<ReturnType<AutomationStudioCandidateTrialPort>>;
+    try {
+      result = await trials.port(request);
+    } finally {
+      // What its presses told that record, written into the build record (t792).
+      togglesWritten.sync();
+    }
     if (!offline && result.acts?.length) {
       // Refresh original pre-effect scope authority without overwriting current evidence.
       ledger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER).trialRan(result.acts, result.trialRunId);

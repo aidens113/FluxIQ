@@ -56,6 +56,21 @@
 // says a step before it must show it, carries `targetNotShown` rather than
 // `targetOnPage`, and is never told to test unchanged. A domain that does not
 // report it leaves the step as it was.
+//
+// **A control that belongs to another row is not a near miss (t792).** A repeat
+// pass's press whose saved control the page answered with another row's copy
+// of it (every row of an order table holds the same "Cancel" button): the
+// client refuses that match and says so on the resolution as one closed word,
+// `refusedBecause: "other-record"`. The measurement beside it then scores the
+// other rows' look-alikes, well, and the step read as "could not find its
+// control ... The step itself is right ... test again" -- the opposite of the
+// truth: the step's target is a control of the wrong row, and testing it again
+// meets the same row. The refusal is read before the scores and decides alone:
+// the step says its target matched another row's control and that a step
+// inside a repeat must name each pass's own row's control, from the row's value
+// or from a control inside what the pass opened; it carries `targetOtherRecord`
+// rather than `targetOnPage`, is not retryable, and is never told to test
+// unchanged.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -83,6 +98,12 @@ const NOT_SHOWN_HAPPENED = "The step found its control on the page, but the cont
 /** What the model is told to do about it on the step itself; the trial gate says the same as its instruction (header, t661). */
 const NOT_SHOWN_ADVICE = "Testing this revision unchanged would meet the same hidden control. A step before this one must show it: the step that opens the menu, panel or list holding it must run right before this step, with nothing between them that could close it again. Change the steps that lead to this one, not how this step finds its control.";
 
+/** What happened to a step whose control matched another row's (header, t792; `./absorbed.ts` says the same). */
+const OTHER_RECORD_HAPPENED = "The step's target matched another row's control, not the control of the row this pass is on.";
+
+/** What the model is told to do about it on the step itself (header, t792). */
+const OTHER_RECORD_ADVICE = "Testing this revision unchanged would meet the same other row's control. A step inside a repeat must name each pass's own row's control: take it from the row's value, or use a control inside what the pass opened. Change how this step names its control, not the steps before it.";
+
 /**
  * The fields a step that could not find a control still on the page adds to its
  * feedback entry, replacing what it says happened; nothing for any other step.
@@ -105,7 +126,16 @@ export function automationStudioTrialTargetOnPage(input: {
   const named = `Step ${input.step}${label ? ` (${JSON.stringify(label)})` : ""}`;
   const control = input.control ? ` ${JSON.stringify(input.control)}` : "";
   // The latest try that measured anything decides: one that found the control hidden is never a near miss (header, t661).
-  const latest = tried.find((each) => automationStudioTargetMeasuredNotShown(each) || measurement(each) !== undefined);
+  const latest = tried.find((each) => automationStudioTargetMeasuredNotShown(each) || refusedAsOtherRecord(each) || measurement(each) !== undefined);
+  if (latest && !automationStudioTargetMeasuredNotShown(latest) && refusedAsOtherRecord(latest)) {
+    return {
+      happened: OTHER_RECORD_HAPPENED,
+      targetOtherRecord: true,
+      otherRecord: `${named} matched another row's control${control}, not the control of the row this pass is on.`,
+      advice: OTHER_RECORD_ADVICE,
+      retryable: false
+    };
+  }
   if (latest && automationStudioTargetMeasuredNotShown(latest)) {
     return {
       happened: NOT_SHOWN_HAPPENED,
@@ -124,6 +154,11 @@ export function automationStudioTrialTargetOnPage(input: {
     advice: ADVICE,
     retryable: true
   };
+}
+
+/** Whether the client refused the attempt's match as another row's control (header, t792). */
+function refusedAsOtherRecord(attempt: AutomationStudioNodeAttemptTrace): boolean {
+  return objectAt(attempt.outputs, "result", "result", "resolution")?.refusedBecause === "other-record";
 }
 
 type Measurement = { candidateCount: number; bestScore: number; runnerUpScore?: number };

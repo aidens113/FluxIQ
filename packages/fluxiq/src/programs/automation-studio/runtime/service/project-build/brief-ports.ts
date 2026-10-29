@@ -3,7 +3,7 @@ import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
-import { AutomationStudioExploredInterruptions, AutomationStudioExploredToggles, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
+import { AutomationStudioExploredInterruptions, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetIssuedRef, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
@@ -20,6 +20,7 @@ import { AutomationStudioProjectBuildPermissions } from "./permissions.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildResetCalls } from "./reset-calls.ts";
+import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-toggles/index.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 
 // Each brief's surroundings (unit A5c; the dispatcher's port factory,
@@ -261,10 +262,10 @@ export function automationStudioProjectBuildBriefPorts(input: {
   /**
    * The presses any brief of this build explored that the domain answered as a toggle: every brief's gate records here and every submission reads it (t775).
    * The build's own record when its trial environment carries one, so what a subflow trial pressed, which that environment's trials record (t787), reaches
-   * the next submission of every brief.
+   * the next submission of every brief. Each toggle it holds is written into the build record (`../project-build-toggles/toggles-record.ts`, t792).
    */
-  const shared = project.trialEnvironment.exploredToggles;
-  const exploredToggles = shared instanceof AutomationStudioExploredToggles ? shared : new AutomationStudioExploredToggles();
+  const exploredToggles = AutomationStudioProjectBuildTogglesRecord.toggles(project.trialEnvironment);
+  const togglesWritten = AutomationStudioProjectBuildTogglesRecord.of(exploredToggles);
   /** The presses any brief of this build explored that the domain answered as clearing a layer over the page, shared as the toggles are (t787). */
   const exploredInterruptions = new AutomationStudioExploredInterruptions();
   const environment = async (request: AutomationStudioProjectBriefPortRequest, siteReset: AutomationStudioSiteResetCalls, task?: () => AutomationStudioFlowInstruction[]) => {
@@ -292,7 +293,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const { purse: _purse, signal: _signal, budget: _budget, maxIterations: _maxIterations, tools: _tools, executeTool: _executeTool, nodeOf: _nodeOf, ...limits } = draft.loop;
     // This brief's own submissions, watched where the builder loop answers them (`observe` below).
     const submissions = automationStudioCandidateSubmissionRefusals(AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID);
-    const loop = { ...limits, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: routing.recording(personNeeded.executeTool), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: decide(undefined) };
+    // A toggle an exploration call recorded is written into the build record once the call has answered (t792).
+    const loop = { ...limits, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: decide(undefined) };
     return { loop, permissions, decide, submissions, ended: briefEnding(permissions, personNeeded) };
   };
   const { proposals } = input;
@@ -544,4 +546,15 @@ function briefEnding(permissions: AutomationStudioFlowBootstrapActionPermissions
       return undefined;
     }
   };
+}
+
+/** `execute`, with the build's toggles written into its record after every call it answers, whether or not the call succeeded (t792). */
+function written<T extends (...args: never[]) => Promise<unknown>>(execute: T, toggles: Pick<AutomationStudioProjectBuildTogglesRecord, "sync">): T {
+  return (async (...args: Parameters<T>) => {
+    try {
+      return await execute(...args);
+    } finally {
+      toggles.sync();
+    }
+  }) as T;
 }

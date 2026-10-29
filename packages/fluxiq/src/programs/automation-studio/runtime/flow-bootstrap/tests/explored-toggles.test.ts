@@ -79,6 +79,24 @@ describe("the explored toggles record from a trial (t787)", () => {
     ]);
   });
 
+  // t792: the step a trial press is tied to is known by the parameters its node ran with, never by its key.
+  it("keeps the parameters each trial node ran with, Core's ensureState taken off, and none for a node the graph does not show", () => {
+    const toggles = new AutomationStudioExploredToggles();
+    const graph = { nodes: [
+      { id: "node.bootstrap.b1.primary.s6", parameterValues: { target: { selector: "#pin" }, ensureState: { state: "s.on" } } },
+      { id: "node.bootstrap.b1.primary.s7" }
+    ] };
+    toggles.trial([attempt(), attempt({ attemptId: "a2", nodeId: "node.bootstrap.b1.primary.s7" }), attempt({ attemptId: "a3", nodeId: "node.bootstrap.b1.primary.s8" })], graph);
+    expect(toggles.list().map((press) => [press.trialNodes, press.trialParameters])).toEqual([
+      [["node.bootstrap.b1.primary.s6"], { target: { selector: "#pin" } }],
+      [["node.bootstrap.b1.primary.s7"], {}],
+      [["node.bootstrap.b1.primary.s8"], undefined]
+    ]);
+    // The same node id written as another step in a later revision's trial is another press, kept beside the first.
+    toggles.trial([attempt()], { nodes: [{ id: "node.bootstrap.b1.primary.s6", parameterValues: { target: { selector: "#star" } } }] });
+    expect(toggles.list().filter((press) => press.trialNodes?.[0] === "node.bootstrap.b1.primary.s6").map((press) => press.trialParameters)).toEqual([{ target: { selector: "#pin" } }, { target: { selector: "#star" } }]);
+  });
+
   it("records nothing for a failed or skipped attempt or one with no well-formed toggle answer", () => {
     const toggles = new AutomationStudioExploredToggles();
     toggles.trial([attempt({ status: "failed" }), attempt({ skipped: { reason: "already_in_state", code: "x" } }), attempt({ outputs: {} }), attempt({ outputs: { toggle: { signature: {} } } })]);
