@@ -205,10 +205,17 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     classification: "authoring",
     handler: async (request) => {
       const payload = request.payload as RevokeSessionRequest | undefined;
-      if (!payload?.sessionId) return { ok: false, error: "sessionId is required" };
+      const sessionId = typeof payload?.sessionId === "string" && payload.sessionId ? payload.sessionId : undefined;
+      const sessionDigest = typeof payload?.sessionDigest === "string" && payload.sessionDigest ? payload.sessionDigest : undefined;
+      if ((sessionId === undefined) === (sessionDigest === undefined)) return { ok: false, error: "Exactly one of sessionId or sessionDigest is required" };
       // No recheck: revoking only takes a bearer session away. Gating it would
-      // leave a stolen session alive while its owner tried to kill it.
-      return { ok: true, payload: { revoked: await service.revokeSession(payload.sessionId) } };
+      // leave a stolen session alive while its owner tried to kill it. The
+      // revoker is the caller, an administrator by the permission check above
+      // (`identity.manage`), so the digest the snapshot lists is enough and no
+      // raw id has to leave the server. The service tells its listeners the
+      // raw id and the revoker, so the session's Secret Keys unlock is dropped.
+      const revoker = { userId: request.actor?.userId ?? null, administrator: request.actor?.permissions.includes("identity.manage") === true };
+      return { ok: true, payload: { revoked: await service.revokeSession(sessionId ?? { digest: sessionDigest ?? "" }, revoker) } };
     }
   });
   registry.register({
