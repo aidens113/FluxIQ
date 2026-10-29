@@ -3757,6 +3757,81 @@ baseline. Missing original authority stays unresolved. Current evidence from
 another resource cannot prove restoration of a different scope.
 
 
+## Computed facts first
+
+Before a judge is asked, Core measures what it can in its own record of the run
+or build test (`runtime/result-verification/computed-facts/`, contract in
+`contracts/computed-facts.ts`; framework plan P5, K4). A fact is never a reading
+of a model's reply, and one Core cannot compute is omitted, so the judge is
+asked as before. There are eight kinds, in the order a person reads them:
+
+- `count`: the rows stored against the count the part's declared answer asks for
+  (`answer.rows` on the task spec, K2: exactly, at least, at most). Too many is
+  always Core's to say; too few fails only where Core's record shows rows that
+  passed every condition and never reached the answer (a limit cut them, or the
+  unfiltered read stopped short of a list that went on).
+- `columns`: each requested column (the declared answer's, and those the
+  instruction names) is stored and filled. Only a declared column can fail.
+- `repeated`: no row stored twice, by the store's own identity or the reads'
+  shared `dedupeBy` key.
+- `verbatim`: each stored cell is the verbatim text of the element it was read
+  from. It computes no fact yet: the summary holds no per-cell source text, which
+  paired W5 is to supply.
+- `kept_bounds`: every `where` bound Core can read holds on every row the read
+  kept, by the same semantics that settle the rows a condition left out.
+- `order`: the stored order against the read's declared sort, or, with no sort,
+  against the stored date fields when the request asks for newest or oldest
+  first. A date-field order waits on stored date fields; a sort Core cannot
+  read gives no fact.
+- `left_out_accounted`: every row a read left out, alone or by several
+  conditions together, is left out under an exclusion the request itself states.
+  It applies only where the request asks for every result it looks through (the
+  every-result rule, below).
+- `act_passes`: each pass of a repeat ran the step carrying a part's requested
+  act. It reads t796's per-pass proof on a build trial's `siteChange.proofs[]`:
+  the proof `not_run` (no serving step ran on any pass), or a `notRun` list
+  (each step's node, label, passes and reason, `guarded` or `unreached`), which
+  may sit on a `shown` part whose act missed only some passes. Either fails, as
+  an `act_missing` defect naming the step, the passes and why. A judge's yes
+  over such a part is a Core no too (`site-change/held.ts`, through the same
+  `computed-facts/computed-no.ts`), never a held yes, and the judge's
+  instruction says what `not_run` means.
+
+**A fact that fails** is a conclusive reading only, and is a Core no with the
+defects located in Core's record and no judge call (`verify.ts`). **A fact that
+holds** is put on the judge's copy as `resultSummary.computedFacts`, each said
+as "Settled by Core: ... Do not decide ... again", and the judge's instruction
+tells it these are true as said and not to answer no over them. A pass still
+needs a model yes: a fully computed result is not a yes.
+
+**The every-result rule** (`asked-words/every-result.ts`). A request that
+asks for "every"/"each"/"all" of its results (a quantifier, a generic list noun
+and at most two other words, none narrowing by a judgement) asks for every row
+the search shows, less the exclusions it states. For such a request the words it
+searched by say where to look and exclude nothing. So every row a read left out
+needs a stated exclusion (`left_out_accounted`; and the judge's yes over a row
+one condition alone, or several together, left out must quote the request's own
+words, `leftOutOnlyByThis` and `leftOutTogether`), and a no that holds a kept
+row only to the searched words is not located and does not bind
+(`located-defects/searched-words-kept.ts`). A request for a kind of thing is
+read as before.
+
+**Rows left out together** (`request-rows/summary-reads.ts`,
+`unquoted-rows.ts`). A read's `leftOutTogether` set is one left-out group, and
+a yes over its rows is held to the request's words as alone rows are. Every row
+of the group fails every member condition, so one stated exclusion accounts for
+it: where a member is a condition Core settles, the group is accounted for when
+any such member is named in a sentence that itself quotes the request (no
+lending, and not by a quote whose own words name only another condition of the
+read). A yes that accounts for no settled member is held under each member
+where all are settled, and row by row where one is not.
+
+**The presence locate rule** (`located-defects/presence-settled.ts`). A no that
+names a row missing for an absence a presence condition left it out by,
+quoting the value as "(no value)", is located when that read's
+`leftOutSettled` holds the row with the condition's tested column and
+"(no value)" and the defect's column is that column.
+
 ## Judge advice consistency and grounded defects
 
 Each trial carries the advice of all earlier trials judged no (never of one judged unsure, t771), with Core's comparison of the named

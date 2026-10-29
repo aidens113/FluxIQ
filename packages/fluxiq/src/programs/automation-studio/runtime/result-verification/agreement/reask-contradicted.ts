@@ -1,5 +1,6 @@
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "../contracts/index.ts";
 import { automationStudioResultReaskRefutedNo, type AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
+import { automationStudioRequestAsksEveryResult } from "../asked-words/index.ts";
 import { automationStudioResultSiteChangeHeld } from "../site-change/index.ts";
 import { automationStudioResultDoubtRecheckWords } from "../unsure-doubts/index.ts";
 import { automationStudioResultKeptRowsFlagged } from "../verdict/index.ts";
@@ -78,7 +79,8 @@ async function reaskUnstatedExclusion(
   if (!unstated) return settled;
   const judgement = (unstated.call === 1 ? input.first : second).repair?.judgement;
   if (!automationStudioResultNoReasonsSettled(judgement, { addressed: keptRowReason(unstated.exclusions), record }).settled) return settled;
-  const reasked = await input.ask(exclusionRecheckWords(unstated.exclusions), unstated.call);
+  // Where the request asks for every result, the searched words name no kind a kept row fails (`./exclusion-words.ts`, F3).
+  const reasked = await input.ask(exclusionRecheckWords(unstated.exclusions, automationStudioRequestAsksEveryResult(input.requestText)), unstated.call);
   const verdicts: AutomationStudioResultVerdict[] = [...(settled.verdicts ?? []), reasked.verdict];
   if (reasked.basis !== "model") return { ...settled, verdicts, calls: 3 };
   const again = agree({ ...input, first: unstated.call === 1 ? reasked : input.first, second: unstated.call === 2 ? reasked : second }, unstated.call);

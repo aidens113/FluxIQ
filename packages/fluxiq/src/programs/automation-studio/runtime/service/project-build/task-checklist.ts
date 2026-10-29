@@ -52,7 +52,7 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
    * declares one, so a build that declared nothing saves nothing and its Flow is judged as it always was (t764; `promote.ts` saves it with the proposal).
    */
   requestedOutput(spec: AutomationStudioProjectTaskSpec | undefined): { parts: Array<{ part: string; columns: string[] }> } | undefined {
-    const parts = (spec?.parts ?? []).flatMap((part) => part.answer?.kind === "records" ? [{ part: part.id, columns: [...part.answer.columns] }] : []);
+    const parts = (spec?.parts ?? []).flatMap((part) => part.answer?.kind === "records" ? [{ part: part.id, columns: [...part.answer.columns], ...(part.answer.rows ? { rows: { ...part.answer.rows } } : {}) }] : []);
     return parts.length ? { parts } : undefined;
   },
 
@@ -113,7 +113,7 @@ export const AutomationStudioProjectBuildTaskChecklist = Object.freeze({
 });
 
 function checked(part: AutomationStudioProjectTaskPart): AutomationStudioBuildTestTaskChecklist["parts"][number] {
-  return { id: part.id, words: part.quote.text, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs], ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns] } } : {}), ...(part.effect ? { effect: { ...part.effect } } : {}) };
+  return { id: part.id, words: part.quote.text, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs], ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns], ...(part.answer.rows ? { rows: { ...part.answer.rows } } : {}) } } : {}), ...(part.effect ? { effect: { ...part.effect } } : {}) };
 }
 
 /** The spec's `unchanged` list (t775), carried when it declares one. */

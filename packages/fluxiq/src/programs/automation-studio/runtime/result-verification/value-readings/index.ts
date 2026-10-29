@@ -7,6 +7,7 @@
 // steps declare (`summary-readings.ts`, `record-outputs.ts`); and whether a
 // judge's words deny an order Core found (`order-claim.ts`).
 export * from "./condition-readings.ts";
+export * from "./kept-date-order.ts";
 export * from "./order-claim.ts";
 export * from "./record-outputs.ts";
 export * from "./settled-rows.ts";

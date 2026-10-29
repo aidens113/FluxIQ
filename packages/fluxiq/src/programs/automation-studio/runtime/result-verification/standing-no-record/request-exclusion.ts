@@ -17,7 +17,7 @@
 // keeping the rows that lack a value (`<subject> is absent`, `<subject> not is
 // present`) or a negated text test (`<subject> not contains "..."`) -- the
 // shapes `../refuted-no/request-text-test.ts` reads by the request's exclusion
-// words (`../refuted-no/request-exclusion-test.ts`, t660). Of the rows it alone
+// words (`../asked-words/request-exclusion-test.ts`, t660). Of the rows it alone
 // left out, Core settled some, reading the value on each: where that test
 // passed on the value (`quoted`, `../refuted-no/record.ts`), the row has what
 // the request says to leave out. So:
@@ -38,9 +38,9 @@ import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummar
 import type { AutomationStudioResultNoCondition, AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
 import { automationStudioRequestRowLabel } from "../request-rows/index.ts";
 
-/** A presence test that keeps the rows lacking a value, as its account words it (`../refuted-no/request-exclusion-test.ts`). */
+/** A presence test that keeps the rows lacking a value, as its account words it (`../asked-words/request-exclusion-test.ts`). */
 const LACKING = /^(?:.+?) (?:is absent|not is present)(?: \(a row is kept only when it has no .*\))?$/su;
-/** A negated literal text test of quoted text, as its account words it (`../refuted-no/request-exclusion-test.ts`). */
+/** A negated literal text test of quoted text, as its account words it (`../asked-words/request-exclusion-test.ts`). */
 const NEGATED_TEXT = /^(?:.+?) not (?:contains|equals|startsWith|endsWith) (?:\[|")/su;
 
 /** What Core's record says of `condition` as an exclusion the request states (header); nothing where it says nothing. */

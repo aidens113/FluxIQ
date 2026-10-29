@@ -18,6 +18,7 @@
 // never marked.
 
 import type { AutomationStudioResultRecordSetSummary } from "../contracts/index.ts";
+import { automationStudioResultKeptDateOrders } from "./kept-date-order.ts";
 
 /** A denial of order: "not sorted", "isn't newest-first", "out of order", "sorted as strings". */
 const DENIES_ORDER = new RegExp([
@@ -28,20 +29,43 @@ const DENIES_ORDER = new RegExp([
   String.raw`\b(?:sort|order)\w*\s+on\s+(?:\w+\s+){0,2}(?:text|strings?)\b`
 ].join("|"), "iu");
 
+
+/** Newest, latest or most recent first, or descending. */
+const NEWEST_FIRST = /\b(?:newest|latest|most\s+recent|recent)[\s-]+first\b|\bdescending\b/iu;
+/** Oldest or earliest first, or ascending. */
+const OLDEST_FIRST = /\b(?:oldest|earliest)[\s-]+first\b|\bascending\b/iu;
+
 /**
  * Whether `text` denies the order of a column every record set sorted by it
- * says is in order (header). Nothing is contradicted without a record set whose
- * first sort key Core checked, or where any such check found the rows out of
- * order.
+ * says is in order (header), or of a date column the kept rows themselves run
+ * one way in. Nothing is contradicted without a record set whose first sort key
+ * Core checked, or a date column the rows run in.
+ *
+ * **By the rows' own dates (t795).** Where a set holds a column of dates every
+ * kept row states, the rows run one way in it, and nothing was cut past a limit
+ * (so no cut row can be the newer one), a denial is contradicted when it names
+ * that way (newest first for dates running down, oldest first for dates running
+ * up) or, naming no way, names the column. `now` anchors relative dates ("4d");
+ * it defaults to the present.
  */
-export function automationStudioResultOrderClaimContradicted(text: string | undefined, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined): boolean {
+export function automationStudioResultOrderClaimContradicted(text: string | undefined, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined, now: number = Date.now()): boolean {
   if (!text || !DENIES_ORDER.test(text)) return false;
   const checked = (recordSets ?? []).flatMap((set) => {
     const first = set.sortRead?.[0];
     return first?.inOrder === undefined ? [] : [first];
   });
-  if (!checked.length || checked.some((key) => key.inOrder !== true)) return false;
-  return checked.some((key) => new RegExp(`(?<![\\p{L}\\p{N}_])${escaped(key.field)}(?![\\p{L}\\p{N}_])`, "iu").test(text));
+  if (checked.length && checked.every((key) => key.inOrder === true) && checked.some((key) => namesColumn(text, key.field))) return true;
+  return (recordSets ?? []).some((set) => automationStudioResultKeptDateOrders(set, now).some((kept) => {
+    if (!kept.nothingCut) return false;
+    const down = NEWEST_FIRST.test(text);
+    const up = OLDEST_FIRST.test(text);
+    if (down !== up) return down === (kept.order === "desc");
+    return namesColumn(text, kept.field);
+  }));
+}
+
+function namesColumn(text: string, field: string): boolean {
+  return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped(field)}(?![\\p{L}\\p{N}_])`, "iu").test(text);
 }
 
 function escaped(text: string): string {

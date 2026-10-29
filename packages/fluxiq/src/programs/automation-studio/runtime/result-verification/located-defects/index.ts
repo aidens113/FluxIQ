@@ -84,13 +84,29 @@
 // its column (`./untested-column.ts`). Where Core cannot tell the column, the
 // row's cells decide as before.
 //
+// **Nor a kept row by the searched words alone, where the request asks for
+// every result (framework plan P5, F3).** Debug `run-mvtdoyf3-47ffaac1`: under
+// a request for every search result, a `kept_not_asked` defect quoting only
+// the search clause was located over a row whose own label says that clause's
+// phrases, and the correct revision was locked. Where the request asks for
+// every result it looks through and the quote states no exclusion, such a
+// defect is not located (`./searched-words-kept.ts`); a request for a kind of
+// thing is held as before (t628).
+//
+// **And a row a presence condition left out is missing by its settled absence
+// (F4).** A defect naming that condition's column with "(no value)" for a row
+// its `leftOutSettled` holds is located (`./presence-settled.ts`): Core
+// measured the absence itself (t599), though it holds no cell of that column.
+//
 // What a no whose defects Core finds none of comes to is `../unsupported-no.ts`.
 
 export * from "./act-located.ts";
 export * from "./act-steps.ts";
 export * from "./condition-authored.ts";
 export * from "./condition-equals.ts";
+export * from "./presence-settled.ts";
 export * from "./row-cells.ts";
+export * from "./searched-words-kept.ts";
 export * from "./tested-cell.ts";
 export * from "./tested-value-only.ts";
 export * from "./untested-column.ts";

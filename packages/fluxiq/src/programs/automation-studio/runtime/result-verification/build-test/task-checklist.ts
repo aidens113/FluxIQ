@@ -63,7 +63,7 @@ export type AutomationStudioBuildTestTaskChecklist = {
    * Each part: its id, the instructions' own words for it, the facts true once it is done and the lasting acts it needs,
    * and the answer it asks for where its task spec declares one (t757): what a yes is held to (`../requested-output/`).
    */
-  parts: ReadonlyArray<{ id: string; words: string; goalFacts: readonly string[]; lastingActs: readonly string[]; answer?: { kind: "records"; columns: readonly string[] } | undefined; effect?: AutomationStudioBuildTestTaskEffect | undefined }>;
+  parts: ReadonlyArray<{ id: string; words: string; goalFacts: readonly string[]; lastingActs: readonly string[]; answer?: { kind: "records"; columns: readonly string[]; rows?: { count?: number; atLeast?: number; atMost?: number } | undefined } | undefined; effect?: AutomationStudioBuildTestTaskEffect | undefined }>;
   /** What the instructions do not ask for. */
   notAsked: readonly string[];
   /** Things that must show no change, judged relative to the state before the run (t775). */
@@ -117,7 +117,7 @@ export function automationStudioBuildTestSummaryWithTaskChecklist(summary: Autom
     supplementary: said.join(" "),
     asked: checklist.parts.map((part) => ({
       part: part.id, words: part.words, goalFacts: [...part.goalFacts], lastingActs: [...part.lastingActs],
-      ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns] } } : {}),
+      ...(part.answer ? { answer: { kind: part.answer.kind, columns: [...part.answer.columns], ...(part.answer.rows ? { rows: { ...part.answer.rows } } : {}) } } : {}),
       ...(part.effect ? { effect: { ...part.effect } } : {})
     })),
     notAsked: [...checklist.notAsked],

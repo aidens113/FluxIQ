@@ -35,7 +35,55 @@ export type AutomationStudioRequestRowsCondition = {
    * names the condition and quotes the request (no quote lent, t790).
    */
   settled?: { labels: string[]; names: string[][]; kind: "bound" | "presence" | "text" };
+  /**
+   * The condition these rows failed, or, for rows several conditions left out
+   * together, each of them (`summary-reads.ts`), as its sender says it.
+   * Absent where the sender said neither a wording nor a field.
+   */
+  tests?: AutomationStudioRequestRowsTest[];
+  /**
+   * True for rows two or more conditions left out together (t655, debug of
+   * `run-mvtdoyf3-47ffaac1`, F1): no one condition's value is the reason, so
+   * none is settled, and each row is held to the request's own words.
+   */
+  together?: true;
+  /**
+   * For such a group whose every member is a condition Core settles -- one
+   * whose own rows, those it alone left out, carry `settled`
+   * (`../value-readings/settled-rows.ts`) -- each member (t795 w1b, social runs
+   * `run-mvskodlp-9966d618` and `run-mvswewhy-e4e469d4`). The group's rows are
+   * then accounted for exactly when every member is, by the settled rule
+   * (`unquoted-rows.ts`), and are not named row by row. Absent on every other
+   * group, and on every condition that is not a group.
+   */
+  settledMembers?: AutomationStudioRequestRowsSettledMember[];
+  /** Per row, in `rows`' order, the value Core's read found on it for this condition (its witness), where it found one. Absent where none was sent. */
+  witnesses?: Array<string | undefined>;
 };
+
+/**
+ * One member of a group of conditions that left rows out together, where the
+ * member is a condition Core settles (`AutomationStudioRequestRowsCondition`,
+ * `settledMembers`): its name as every line names it, the word runs a sentence
+ * names it by and the kind Core settled its own rows by, both as its own
+ * `settled` says, and how its sender says it.
+ */
+export type AutomationStudioRequestRowsSettledMember = {
+  condition: string;
+  names: string[][];
+  kind: "bound" | "presence" | "text";
+  test: AutomationStudioRequestRowsTest;
+};
+
+/**
+ * One condition a read's rows are tested by, as its sender says it
+ * (`summary-reads.ts`): its number from 1 where the sender numbered it, and
+ * either its wording, as a run's account or a saved answer's processing words
+ * it (`../read-account/condition.ts`), or, for a build test's replay, which
+ * names a condition by the field it tested alone, that field. What
+ * `../asked-words/condition-words.ts` reads a condition's words from.
+ */
+export type AutomationStudioRequestRowsTest = { number?: number; wording?: string; field?: string };
 
 /** One list read, as the rows a summary holds for it. */
 export type AutomationStudioRequestRowsRead = {
@@ -59,6 +107,13 @@ export type AutomationStudioRequestRowsRead = {
    * there are none, and on a build test's read.
    */
   storedElsewhere?: Array<{ label: string; by: string[] }>;
+  /**
+   * Every condition of the read, whether it left rows out or not, and of the
+   * saved answer it collected: what tells one condition's reason from
+   * another's (`unquoted-rows.ts`, debug of `run-mvtdoyf3-47ffaac1`, F1 d).
+   * Absent where the sender said none.
+   */
+  tests?: AutomationStudioRequestRowsTest[];
 };
 
 /** A finished run's stored row: its label and every text cell, for an id a judgement names. */

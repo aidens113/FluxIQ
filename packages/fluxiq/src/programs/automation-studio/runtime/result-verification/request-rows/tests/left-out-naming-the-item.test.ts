@@ -3,7 +3,7 @@
 // left out three pairs of earbuds sold with a charging case, beside two real
 // accessories. The pairs are flagged; the accessories, which name their excluded
 // phrase first, are not.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { verifyAutomationStudioRunResult } from "../../verify.ts";
@@ -13,6 +13,14 @@ import {
   runMuw60j7cRunSummary, runMuw60j7cTestSummary
 } from "./run-muw60j7c.ts";
 import { RUN_MV6BG8D8_ACCESSORIES, RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT, RUN_MV6BG8D8_READ, runMv6bg8d8RunSummary } from "./run-mv6bg8d8.ts";
+
+// These tests are about how the judge is asked, and their trimmed live-run summaries store rows a computed fact would
+// rightly fail before any judge is asked (run muw60j7c appended an unfiltered read beside its filtered one), so Core
+// settles no fact first here (`../../computed-facts/`, framework plan P5, t795).
+vi.mock("../../computed-facts/index.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../computed-facts/index.ts")>()),
+  automationStudioResultComputedFacts: () => []
+}));
 
 describe("rows a condition alone left out that name the asked item", () => {
   it("flags the build test's three pairs and not its two accessories (step 0031)", () => {
