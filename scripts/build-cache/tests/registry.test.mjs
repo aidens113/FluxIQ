@@ -119,8 +119,13 @@ test("root build runs every package build, dependencies first; root check runs t
   }
   const calls = [...check.matchAll(ROOT_CALL)].map((call) => call[1].trim().split(" "));
   assert.deepEqual(calls[0], ["structure-audit:check"]);
-  assert.equal(calls[1][0], "--parallel");
-  assert.deepEqual(calls[1].slice(1).sort(), packageSteps("check").map(([name]) => name).sort());
+  // tsconfig.base.json `paths` cover only some library subpaths, so a check can resolve one through
+  // `dist`. The library builds therefore run first, through the cache (reused when nothing changed,
+  // rebuilt when a library source did): a check never reads a stale `dist`.
+  const libraryBuilds = order.filter((name) => name !== "web:build");
+  assert.deepEqual(calls[1], libraryBuilds, "root check builds every library before the checks, in build order");
+  assert.equal(calls[2][0], "--parallel");
+  assert.deepEqual(calls[2].slice(1).sort(), packageSteps("check").map(([name]) => name).sort());
   assert.equal(rootScripts["structure:check"], STEPS["structure-audit:check"].command, "the uncached audit stays available, for --rule and --update");
   assert.ok(!check.includes("pnpm -r check"), "package checks run once, through the cache");
 });
