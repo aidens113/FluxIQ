@@ -9,14 +9,27 @@
 //   `matches` source ignores case and `/source/flags` says what it says.
 // - A missing value fails every comparison, and `not` inverts the whole verdict,
 //   so "no case in the title" keeps a row with no title.
+// - A date bound (t790, run `run-mvswewhy-e4e469d4`: "on or after Saturday 19
+//   September 2026" written as a regex of three days) reads the date the value
+//   states (`row-date.ts`) against the date the bound names
+//   (`date-bound.ts`), the row's own day against a bound with no time
+//   of day. A value stating no date it can read fails it **whatever `not`
+//   says**: a row whose date is unknown is never kept as matching, and the
+//   run-end account counts it (`process-rows.ts`, `undated`).
 
 import { cellText, collapsedText, foldedText } from "./cell-text.ts";
+import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
+import { readAutomationStudioRecordConditionDateBound } from "./date-bound.ts";
 import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "./processing-vocabulary.ts";
 import { readAutomationStudioRecordNumber } from "./read-number.ts";
+import { readAutomationStudioRecordConditionDate } from "./row-date.ts";
 import type { AutomationStudioRecordConditionTest, AutomationStudioRecordConditionValue } from "./types.ts";
 
 type ConditionBound = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS)[number];
 type ConditionText = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS)[number];
+
+/** One day, for a date bound naming a whole day. */
+const DAY_MS = 86_400_000;
 
 /** How far apart two numbers may be and still be equal. */
 const EQUAL_WITHIN = 1e-9;
@@ -51,10 +64,14 @@ const TEXT_HOLDS: Record<ConditionText, (text: string, written: string) => boole
  * Whether a row whose cell for the condition's field is `cell` satisfies the
  * condition. The field itself is not read, so a condition naming none judges
  * the one value it is given; a blank string, `null` and `undefined` are all a
- * value that is not there.
+ * value that is not there. `now` is what a relative date in the value ("3 days
+ * ago") is measured back from, for a date bound; the run-end processing passes
+ * its own, and a read on the page reads at the moment it reads.
  */
-export function automationStudioRecordConditionHolds(condition: AutomationStudioRecordConditionTest, cell: unknown): boolean {
-  const held = valueHolds(condition, cell);
+export function automationStudioRecordConditionHolds(condition: AutomationStudioRecordConditionTest, cell: unknown, now: number = Date.now()): boolean {
+  // A date bound never keeps a row whose date it cannot read, `not` or no `not` (header, t790).
+  if (automationStudioRecordConditionComparesDates(condition) && datedAt(cell, now) === undefined) return false;
+  const held = valueHolds(condition, cell, now);
   return condition.not === true ? !held : held;
 }
 
@@ -74,7 +91,7 @@ export function automationStudioRecordConditionPattern(written: string): RegExp 
   }
 }
 
-function valueHolds(condition: AutomationStudioRecordConditionTest, cell: unknown): boolean {
+function valueHolds(condition: AutomationStudioRecordConditionTest, cell: unknown, now: number): boolean {
   const value = cellText(cell);
   const bounds = AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS.filter((key) => condition[key] !== undefined);
   const texts = AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS.filter((key) => condition[key] !== undefined);
@@ -84,8 +101,15 @@ function valueHolds(condition: AutomationStudioRecordConditionTest, cell: unknow
   if (value === undefined) return false;
   const number = typeof cell === "number" ? cell : readAutomationStudioRecordNumber(value);
   if (bounds.length > 0) {
-    if (number === undefined) return false;
-    if (!bounds.every((key) => BOUND_HOLDS[key](number, condition[key] as number))) return false;
+    if (automationStudioRecordConditionComparesDates(condition)) {
+      if (!bounds.every((key) => dateBoundHolds(key, condition[key], cell, now))) return false;
+    } else {
+      if (number === undefined) return false;
+      if (!bounds.every((key) => {
+        const bound = condition[key];
+        return typeof bound === "number" && BOUND_HOLDS[key](number, bound);
+      })) return false;
+    }
   }
   const text = collapsedText(value);
   for (const key of texts) {
@@ -93,6 +117,20 @@ function valueHolds(condition: AutomationStudioRecordConditionTest, cell: unknow
   }
   if (condition.equals !== undefined && !equalsHolds(anyOf(condition.equals), value, number)) return false;
   return true;
+}
+
+/** The instant a cell's value states for a date bound, or `undefined` for one that states none it can read. */
+function datedAt(cell: unknown, now: number): number | undefined {
+  const value = cellText(cell);
+  return value === undefined ? undefined : readAutomationStudioRecordConditionDate(value, now);
+}
+
+/** Whether a date bound holds of the cell: the row's own day against a bound naming a whole day, else the instants (header). */
+function dateBoundHolds(key: ConditionBound, written: unknown, cell: unknown, now: number): boolean {
+  const bound = typeof written === "string" ? readAutomationStudioRecordConditionDateBound(written) : undefined;
+  const at = datedAt(cell, now);
+  if (bound === undefined || at === undefined) return false;
+  return BOUND_HOLDS[key](bound.wholeDay ? Math.floor(at / DAY_MS) * DAY_MS : at, bound.at);
 }
 
 function equalsHolds(written: readonly AutomationStudioRecordConditionValue[], value: string, number: number | undefined): boolean {

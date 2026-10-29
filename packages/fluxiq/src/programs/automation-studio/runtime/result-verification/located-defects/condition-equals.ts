@@ -26,13 +26,15 @@
 // summary built by hand holds, is read as it is. Run t785's headed proof on the
 // realistic feed showed the screened shape; a reader of plain lists alone found
 // no condition there at all. A step the summary does not hold -- a called
-// part's read, a step whose parameters were not carried -- has none. Its one
-// reader is `./tested-value-only.ts`.
+// part's read, a step whose parameters were not carried -- has none. The
+// condition is found by `./condition-authored.ts`, which t790's column reader
+// (`./untested-column.ts`) shares. Its one reader is `./tested-value-only.ts`.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioStoredListItems } from "../stored-list/index.ts";
 import type { AutomationStudioResultFlowStepSummary, AutomationStudioResultReadAccount } from "../contracts/index.ts";
-import { automationStudioResultReadConditionColumn, automationStudioResultReadParameters } from "../read-account/index.ts";
+import { automationStudioResultReadConditionColumn } from "../read-account/index.ts";
+import { automationStudioResultReadAuthoredCondition } from "./condition-authored.ts";
 
 /** Keys that name the value a condition tests, rather than testing it (`../read-account/condition.ts`). */
 const NAMING_KEYS = new Set(["field", "read"]);
@@ -48,15 +50,13 @@ export function automationStudioResultReadConditionEquals(
   read: Pick<AutomationStudioResultReadAccount, "nodeId" | "definitionId">,
   number: number
 ): { column: string; values: string[] } | undefined {
-  const step = flowShape.find((one) => one.nodeId === read.nodeId && one.definitionId === read.definitionId);
-  const authored = automationStudioResultReadParameters(step?.parameters);
-  const written = automationStudioStoredListItems(authored?.where) ?? [];
-  const condition = Number.isSafeInteger(number) && number >= 1 ? written[number - 1] : undefined;
-  if (!isRecord(condition) || condition.not === true) return undefined;
+  const authored = automationStudioResultReadAuthoredCondition(flowShape, read, number);
+  if (!authored || authored.condition.not === true) return undefined;
+  const { condition, fields } = authored;
   const relations = Object.keys(condition).filter((key) => !NAMING_KEYS.has(key) && key !== "not" && condition[key] !== null && condition[key] !== undefined);
   if (relations.length !== 1 || relations[0] !== "equals") return undefined;
   const values = literals(condition.equals);
-  const column = automationStudioResultReadConditionColumn(condition, isRecord(authored?.fields) ? authored.fields : undefined);
+  const column = automationStudioResultReadConditionColumn(condition, fields);
   return values && column ? { column, values } : undefined;
 }
 

@@ -257,3 +257,36 @@ describe("what handling exclude and process.columns mean, as the contract says t
     for (const shown of [text, condensedText]) expect(shown).toContain("a sort or dedupe key may be a stored field columns leaves out");
   });
 });
+
+// t790 (run `run-mvswewhy-e4e469d4`): a bound may be a date written as text with as: "date"; one that names no one
+// date is refused at plan time with Core's sentence saying how to write one, quoting the field and never the bound.
+describe("a date bound in a record output's processing", () => {
+  const loans = (where: JsonValue[]): JsonObject => ({
+    datasetId: "loans",
+    writeMode: "append",
+    schema: { schemaVersion: "0.1", fields: [{ id: "title", label: "Title", valueType: "string" }, { id: "due", label: "Due", valueType: "string" }] },
+    process: { where }
+  });
+
+  it("is accepted where it names one date, and the contract says how to write it", () => {
+    expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, loans([{ field: "due", atLeast: "2026-10-01", as: "date" }]))).toEqual([]);
+    expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, loans([{ field: "due", atLeast: "1 October 2026", atMost: "Oct 31, 2026", as: "date" }]))).toEqual([]);
+    const { text, condensedText } = automationStudioFlowBootstrapRecordOutputContract(extractList);
+    for (const shown of [text, condensedText]) {
+      expect(shown).toContain("as?:date");
+      expect(shown).toContain("a row stating no readable date is never kept");
+    }
+  });
+
+  it("is refused where it names no one date, with Core's sentence naming the field and not the bound", () => {
+    for (const bound of ["Nov 9", "5 days ago", "04/07/2026"]) {
+      const value = loans([{ field: "due", atLeast: bound, as: "date" }]);
+      expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, value), bound).toEqual(["record_output.process_invalid_condition"]);
+      const message = automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_condition", value)!;
+      expect(message).toContain("\"due\"");
+      expect(message).toContain("with its year");
+      expect(message).not.toContain(bound);
+    }
+    expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_condition", loans([{ field: "due", contains: "" }]))).toBeUndefined();
+  });
+});

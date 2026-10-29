@@ -3,7 +3,12 @@
 // `name not contains "Spare Strap"` or `price atLeast 10 and lessThan 50`. A
 // condition naming no comparison asks whether the value is there. `not` inverts
 // the whole condition, so it goes before the comparisons, bracketing two or more.
+//
+// A date bound says so (t790, run `run-mvswewhy-e4e469d4`): `due atLeast
+// "2026-09-19" as a date`, so no reader of an account takes a bound written as
+// a date for text or a number.
 
+import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
 import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "./processing-vocabulary.ts";
 import type { AutomationStudioRecordCondition } from "./types.ts";
 
@@ -12,7 +17,8 @@ export function automationStudioRecordConditionText(condition: AutomationStudioR
   const compared = [...AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, "equals" as const, ...AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS]
     .filter((key) => condition[key] !== undefined)
     .map((key) => `${key} ${written(condition[key]!)}`);
-  const said = compared.length ? compared.join(" and ") : `is ${condition.is ?? "present"}`;
+  const dated = automationStudioRecordConditionComparesDates(condition) ? " as a date" : "";
+  const said = compared.length ? `${compared.join(" and ")}${dated}` : `is ${condition.is ?? "present"}`;
   if (condition.not !== true) return `${condition.field} ${said}`;
   return `${condition.field} not ${compared.length > 1 ? `(${said})` : said}`;
 }

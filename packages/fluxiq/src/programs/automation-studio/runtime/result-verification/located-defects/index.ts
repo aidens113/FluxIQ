@@ -73,12 +73,25 @@
 // words naming the condition (`./tested-value-only.ts`); where the request
 // says it, it is located as before.
 //
+// **Nor by a column that condition did not test (t790).** Run
+// `run-mvswewhy-e4e469d4`: a no called rows missing by their `posted` dates,
+// rows one condition of another column had left out alone; the cells said the
+// dates, so only a label mismatch kept t771's check from locating it and
+// refuting a correct result. Where a row was left out by one condition alone,
+// a defect is located only if it quotes the column that condition tests, as
+// Core knows it from the authored step (`./condition-authored.ts`) or the
+// column the row is said with; otherwise Core's words name the condition and
+// its column (`./untested-column.ts`). Where Core cannot tell the column, the
+// row's cells decide as before.
+//
 // What a no whose defects Core finds none of comes to is `../unsupported-no.ts`.
 
 export * from "./act-located.ts";
 export * from "./act-steps.ts";
+export * from "./condition-authored.ts";
 export * from "./condition-equals.ts";
 export * from "./row-cells.ts";
 export * from "./tested-cell.ts";
 export * from "./tested-value-only.ts";
+export * from "./untested-column.ts";
 export * from "./located-defects.ts";

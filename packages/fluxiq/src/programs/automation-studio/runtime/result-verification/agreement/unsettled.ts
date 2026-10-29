@@ -24,6 +24,14 @@ import { answeredReadingOf } from "./yes-readings.ts";
  * view's pagination as the read's page; the yes had read the end view's
  * "14 of 14 results", and the model hunted for pages that were not there.
  * Each reading stays its own call's, never merged into the other.
+ *
+ * **An unsure plus a no is checked for an unstated exclusion too (t790, F2 of
+ * run `run-mvswh11y-9d462629`).** Trial 1 there was unsure plus no
+ * (`model_unconfirmed`), and the no's advice, to leave out accessory rows the
+ * request never excludes, went out as `unconfirmedReading.advice` unmarked; the
+ * builder followed it. The t515 screen now runs for both bases. Nothing was
+ * asked again for such a no, so its mark never says it was (`reasked` holds only
+ * for a split, whose no `reask-split-no.ts` or the exclusion re-ask asked again).
  */
 export function unsettled(
   first: AutomationStudioResultVerification,
@@ -41,9 +49,9 @@ export function unsettled(
   } = {}
 ): AutomationStudioResultVerification {
   const read = unconfirmedReading(first) ?? unconfirmedReading(second);
-  // A split's no whose advice adds an exclusion the request never states, marked so (header, t515).
-  const unstated = basis === "model_disagreed" ? unstatedExclusion(first, second, weigh.wording, weigh.record) : undefined;
-  const exclusionMarked = read && unstated ? { ...read, advice: markedAdvice(unstated, read.advice ?? "", weigh.reasked === unstated.call) } : read;
+  // A no whose advice adds an exclusion the request never states, marked so, on a split and on an unsure beside it (header, t515, t790).
+  const unstated = unstatedExclusion(first, second, weigh.wording, weigh.record);
+  const exclusionMarked = read && unstated ? { ...read, advice: markedAdvice(unstated, read.advice ?? "", basis === "model_disagreed" && weigh.reasked === unstated.call) } : read;
   // Advice listing literal values the request never says gets a note, kept whole (t785, `./exclusion-words.ts`).
   const marked = exclusionMarked?.advice ? { ...exclusionMarked, advice: listedValuesAdvice(exclusionMarked.advice, weigh.wording) } : exclusionMarked;
   const reading = marked && weigh.refuted ? refutedLabelled(marked, weigh.refuted) : marked;
