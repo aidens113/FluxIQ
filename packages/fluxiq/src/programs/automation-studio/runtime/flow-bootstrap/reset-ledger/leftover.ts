@@ -6,11 +6,11 @@
 // The ledger's settlement answers -- the acts to undo (`inPlace`) and the acts
 // no call can settle, listed apart (`unsatisfiable`) -- and its record of what
 // is left -- `standing`, `leftover`, a project build's snapshot
-// (`./project-ledger.ts`) and the acts a trial returns as left on the site
+// (`../site-reset/project-ledger.ts`) and the acts a trial returns as left on the site
 // (`trialRan`) -- were each worked out on their own, so one could say left what
 // another said settled: `standing` said `in_place` of an act listed apart, and a
 // trial returned an act settled `unchanged` as left. Every one of them now reads
-// this one function, so they agree by construction (`./ledger.ts`, `leftOf`):
+// this one function, so they agree by construction (`./answers.ts`, `leftOf`):
 //
 // - `no`: settlement answered it `restored` (an undo of it settled, or a start
 //   hook took it back), or settled it `unchanged` -- fresh complete reads of
@@ -28,7 +28,7 @@
 // still open, as the settlement asks it.
 
 import type { AutomationStudioSiteResetUnmet } from "../reset-settlement/index.ts";
-import type { AutomationStudioSiteResetLedgerAct } from "./ledger-act.ts";
+import type { AutomationStudioSiteResetLedgerAct } from "./act.ts";
 
 /** Whether an act is left on the site, and where it stands (header). */
 export type AutomationStudioSiteResetLeftover =

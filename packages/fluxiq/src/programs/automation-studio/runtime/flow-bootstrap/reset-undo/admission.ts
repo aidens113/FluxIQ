@@ -1,6 +1,6 @@
 // Whether an undo of one act may act on the control the domain declared, read
 // before the domain acts: the admission the ledger's `target` answers
-// (`./ledger.ts`, header; t475, t479, t719, L1). Moved out of the ledger whole,
+// (`../site-reset/ledger.ts`, header; t475, t479, t719, L1). Moved out of the ledger whole,
 // behaviour unchanged.
 //
 // - A look changes nothing, wherever it looks: admitted `moving`.
@@ -25,7 +25,7 @@
 //   absent before the act never touches what existed before the build began.
 //   It is recorded as the subject inverse is (`subjectUndo`), so the settlement
 //   reads that destination's group witness, and is spent once it lands
-//   (`./ledger.ts`). A control there on a subject the original held is refused
+//   (`../site-reset/ledger.ts`). A control there on a subject the original held is refused
 //   `subject_there_before`; a list the act never named keeps its condition.
 // - Anything else is refused unrun: `candidate.undo_unproved` for a strict act,
 //   with another act whose effect was observed there when exactly one fits
@@ -44,6 +44,13 @@
 // own control stands is read by the one answer the settlement reads it by
 // (`../reset-settlement/own-control.ts`, t772), so an admission answering
 // already back and a settlement asking to press it back cannot both hold.
+// Its place is the act's one place (t797 P4 item 1): the toggle the ledger
+// hands here is always at it (`../reset-settlement/judge.ts`, `toggleOf`), and
+// a value act's own control is read at it too (`ownControlOf`), so the control
+// admitted is the one the settlement judges. The settlement asks for a press
+// back only while its fresh read shows the state the act set -- the one state
+// admitted `own` here -- and closes the act otherwise (`control_other`), so no
+// answer asks for a press this admission refuses.
 //
 // **A value act (t772, rerun round 6 `run-mvrj7qg8-6916b3f7` cause 1).** An act
 // witnessed by the shown values its press replaced (a choice confirmed by a
@@ -67,7 +74,7 @@
 // The act's side of each path (what the act must be: a legacy act's created
 // items, its own item, a witnessed transfer, a landed undo's chain, an act that
 // created, a strict act that created or changed, a list it named or was lent)
-// is read from `./undo-paths.ts` (t750), the one source `./undo-reach.ts` also
+// is read from `./paths.ts` (t750), the one source `./reach.ts` also
 // reads to say when none could ever admit an undo for what an act's differing
 // lists show (t748, `no_admissible_undo`); what the act was about is read from
 // `../reset-settlement/act-subjects.ts`, as the settlement reads it. A path's
@@ -76,10 +83,10 @@
 
 import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../action-permissions/index.ts";
 import { automationStudioSiteResetRefusal as refusal, type AutomationStudioSiteResetCanMeet, type AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
-import { automationStudioSiteResetActSubjects as actSubjects, automationStudioSiteResetOwnControlStanding as ownControlStanding, type AutomationStudioSiteResetObservations, type AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
-import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTarget } from "./contracts.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "./undo-paths.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
+import { automationStudioSiteResetActOwnControl as ownControlOf, automationStudioSiteResetActSubjects as actSubjects, automationStudioSiteResetOwnControlStanding as ownControlStanding, type AutomationStudioSiteResetObservations, type AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
+import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTarget } from "../site-reset/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "./paths.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../site-reset/words.ts";
 
 /** For each undoable class, the classes an undo tied to its act by subject may declare (t719): what reverses it, and nothing else lasting. */
 const REVERSES: Readonly<Partial<Record<AutomationStudioActionConsequence, readonly AutomationStudioActionConsequence[]>>> = {
@@ -102,13 +109,13 @@ export type AutomationStudioSiteResetAdmittedAct = {
   spent: boolean;
   spot?: AutomationStudioSiteResetSpot;
   createdItems: readonly string[];
-  /** The lists named as where its effect would show, and those the explored acts it repeats lend it (`./ledger-act.ts`). */
+  /** The lists named as where its effect would show, and those the explored acts it repeats lend it (`../reset-ledger/act.ts`). */
   destinations: ReadonlyArray<{ scope: string; group: string }>;
   lent?: ReadonlyArray<{ scope: string; group: string }> | undefined;
   chain?: "own" | "created" | undefined;
   subjectUndo?: { scope: string; subject: string; group: string; origin?: string };
   transfer?: { origin: string; scope: string; group: string; subject: string; state: string };
-  /** The shown values its press replaced, where those witness it (`./ledger-act.ts`, t772). */
+  /** The shown values its press replaced, where those witness it (`../reset-ledger/act.ts`, t772). */
   value?: AutomationStudioSiteResetValueWitness | undefined;
 };
 
@@ -188,7 +195,7 @@ export function automationStudioSiteResetUndoAdmission<A extends AutomationStudi
  * Its own toggle's place, already showing the state the build found (t743,
  * photo `run-mvgw7320-de416190` 0151): refused unrun as already back, with the
  * act's remaining settle. The act is still open -- an act a fresh read settled
- * is answered before this admission (`./undo-claims.ts`, t751 R2) -- so it
+ * is answered before this admission (`./claims.ts`, t751 R2) -- so it
  * stays listed, and a look on this page, whose fresh read settles it, meets it.
  */
 function alreadyBack<A extends AutomationStudioSiteResetAdmittedAct>(ledger: AutomationStudioSiteResetAdmissionLedger<A>, act: A): AutomationStudioSiteResetTarget {
@@ -208,7 +215,8 @@ function valueUndo<A extends AutomationStudioSiteResetAdmittedAct>(ledger: Autom
   if (!page && !consequences.length && control.item === undefined && control.dialog === undefined && control.scope === undefined && control.subject === undefined) return undefined;
   // No call can settle it -- no own control's tokens, its value never read before it, or never back -- so nothing is met here.
   if (!PATHS.ownControl(act) || !ledger.inPlace().some((entry) => entry.act === act.id)) return ["no_admissible_undo", "no_call"];
-  if (act.spot && sameControl(act.spot, control)) return consequences.length === 1 && consequences[0] === "modify_existing" ? { kind: "admit", on: "own", allowed: ["modify_existing"] } : ["consequence_not_inverse", "this_page"];
+  // Its own control, at the act's one place (header, t797).
+  if (act.spot && sameControl(act.spot, control, ownControlOf({ spot: act.spot })?.place)) return consequences.length === 1 && consequences[0] === "modify_existing" ? { kind: "admit", on: "own", allowed: ["modify_existing"] } : ["consequence_not_inverse", "this_page"];
   if (page && !consequences.length) return { kind: "admit", on: "step", allowed: [] };
   return ["value_not_own_control", page ? "this_page" : "another_page"];
 }
@@ -379,12 +387,12 @@ function sameItem(spot: AutomationStudioSiteResetSpot, control: AutomationStudio
 }
 
 /**
- * Whether `control` is the act's own control by a value (header, t772): the same resource, page, place and state, all
- * present, in the same item and dialog or in none.
+ * Whether `control` is the act's own control by a value (header, t772): the same resource, page and state, and the act's
+ * one place (`place`, t797), all present, in the same item and dialog or in none.
  */
-function sameControl(spot: AutomationStudioSiteResetSpot, control: AutomationStudioSiteResetSpot): boolean {
-  const tokens = ["resource", "scope", "place", "state"] as const;
-  return tokens.every((key) => spot[key] !== undefined && spot[key] === control[key]) && spot.item === control.item && spot.dialog === control.dialog;
+function sameControl(spot: AutomationStudioSiteResetSpot, control: AutomationStudioSiteResetSpot, place: string | undefined): boolean {
+  const tokens = ["resource", "scope", "state"] as const;
+  return place !== undefined && place === control.place && tokens.every((key) => spot[key] !== undefined && spot[key] === control[key]) && spot.item === control.item && spot.dialog === control.dialog;
 }
 
 /**

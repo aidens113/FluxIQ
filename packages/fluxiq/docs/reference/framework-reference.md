@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4273
+- Public declarations: 4274
 - Class: 148
 - Interface: 10
 - Object: 555
 - Type: 2280
 - Type Alias: 1
-- Value: 1279
+- Value: 1280
 
 ## Public Declarations
 
@@ -2895,6 +2895,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioTrialChangeUnwitnessedOutcome` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/unwitnessed-outcome.ts` | - |
 | `automationStudioTrialChangeUnwitnessedSession` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/unwitnessed-session.ts` | - |
 | `AutomationStudioTrialCollection` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One complete list group's collection as a trial reads it. A page read whole (t791, `../site-reset/page-collection.ts`: every subject one read of a page reports, as one list Core makes of it, which an empty page reads as holding nothing) also carries `values`, an opaque digest of every value that page shows (t772), so a quantity the page shows changing is a change of that page (`./delta.ts`). A list the domain read carries none. |
+| `automationStudioTrialDefaultsBeforeTrial` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-defaults/before-trial.ts` | - |
 | `automationStudioTrialDelta` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/delta.ts` | - |
 | `AutomationStudioTrialDelta` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One witness's delta from before to after. `unread` when either side carried no reading of it. List subjects and control state tokens stay opaque here; the packet reduces them to counts. A changed control is `returned` where every state it changed ended at the build's recorded start for its place (`./delta.ts`, t787). |
 | `AutomationStudioTrialEvidenceAssertion` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | One task-goal assertion the trial checked, kept independent of candidate edits. |

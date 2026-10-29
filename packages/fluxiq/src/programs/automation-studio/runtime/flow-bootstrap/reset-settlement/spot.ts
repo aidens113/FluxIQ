@@ -4,9 +4,11 @@
 // so this directory needs nothing from site-reset, which depends on it one way.
 // Opaque tokens, compared only for equality; every site-reset spot is one.
 
-/** The opaque tokens of where an act's control sat that settlement compares: its item, list scope, subject, page, resource and own state. */
+/** The opaque tokens of where an act's control sat that settlement compares: its item, list scope, subject, page, resource, place and own state. */
 export type AutomationStudioSiteResetSettlementSpot = {
   item?: string | undefined;
+  /** Its control's place: the act's own place where nothing else gives one (`./own-control.ts`, t797). */
+  place?: string | undefined;
   subject?: string | undefined;
   page?: string | undefined;
   scope?: string | undefined;

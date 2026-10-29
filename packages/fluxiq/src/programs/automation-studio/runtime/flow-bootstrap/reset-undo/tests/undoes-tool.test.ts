@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 import { automationStudioSiteResetUndoesTool } from "../undoes-tool.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../words.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../../site-reset/index.ts";
 
 it("offers creation receipts only with the explicit project-builder option, retaining ordinary undo", () => {
   const tool: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a registered operation.", effect: "mutate", perCallEffect: true, inputSchema: { type: "object", properties: { node: { type: "string" } } } };
@@ -30,7 +30,7 @@ it("describes resetDestination for any reversible press before the first lasting
   expect(described).toContain("no other witness");
   expect(described).toContain("on a later look that names it under undoes");
   expect(described).toContain("Never invent a ref");
-  // t743 (photo r4, fix 2): the same clause as the build's guidance (`../words.ts`, `actionDeclarations`).
+  // t743 (photo r4, fix 2): the same clause as the build's guidance (`../../site-reset/words.ts`, `actionDeclarations`).
   expect(described).toContain(WORDS.ownUrl());
   expect(WORDS.actionDeclarations()).toContain(WORDS.ownUrl());
 });

@@ -7,7 +7,7 @@
 
 /** Every condition a site-reset refusal may name, in no particular order. */
 export const AUTOMATION_STUDIO_SITE_RESET_FAILED = [
-  // Undo admission (`../undo-admission.ts`).
+  // Undo admission (`../reset-undo/admission.ts`).
   "already_back",
   "control_state_differs",
   "control_elsewhere",
@@ -31,7 +31,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_FAILED = [
   "destination_unissued",
   // Trials (`../site-reset/ledger.ts`, t775): only a start already in an asked end state by this build's own act made by another step.
   "starts_in_end_state",
-  // Acts no call can settle (`../reset-settlement/judge.ts`, `gate_unsatisfiable`; `../site-reset/undo-reach.ts`, t748; a control's start never read, t751 R1): what each failed on, and the trial refused on them.
+  // Acts no call can settle (`../reset-settlement/judge.ts`, `gate_unsatisfiable`; `../reset-undo/reach.ts`, t748; a control's start never read, t751 R1): what each failed on, and the trial refused on them.
   "witness_unreachable",
   "nothing_to_name",
   "no_admissible_undo",

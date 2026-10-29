@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
 import type { AutomationStudioSiteResetOriginal } from "../../reset-settlement/index.ts";
-import type { AutomationStudioSiteResetSpot } from "../contracts.ts";
-import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "../undo-paths.ts";
+import type { AutomationStudioSiteResetSpot } from "../../site-reset/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "../paths.ts";
 
 // t750: the act's side of each undo admission path, the one source the
-// admission (`../undo-admission.ts`) and the reach (`../undo-reach.ts`) both
+// admission (`../admission.ts`) and the reach (`../reach.ts`) both
 // read. What each caller then does with a gate is covered beside it
-// (`./undo-admission.test.ts`, `./settlement-unmeetable.test.ts`). Made-up
+// (`./admission.test.ts`, `../../site-reset/tests/settlement-unmeetable.test.ts`). Made-up
 // fixtures: a gallery's albums, opaque tokens only.
 
 type Act = Parameters<typeof PATHS.ownItem>[0];

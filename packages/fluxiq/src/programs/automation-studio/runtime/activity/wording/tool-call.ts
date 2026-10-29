@@ -32,7 +32,7 @@ const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${t
 
 /** The prefix of Core's own tools' ids. */
 const CORE_PREFIX = "core.";
-/** The key a call that undoes one of the build's own lasting acts carries (`../../flow-bootstrap/site-reset/undoes-tool.ts`), read as a plain string so this module does not reach into the build. */
+/** The key a call that undoes one of the build's own lasting acts carries (`../../flow-bootstrap/reset-undo/undoes-tool.ts`), read as a plain string so this module does not reach into the build. */
 const UNDOES_KEY = "undoes";
 /** How such a call opens: what it is for, then the act it does to get there. */
 const PUTTING_BACK = "Putting the site back";

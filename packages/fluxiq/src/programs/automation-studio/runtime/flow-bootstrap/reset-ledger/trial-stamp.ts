@@ -1,5 +1,5 @@
 // What a trial act takes of its step's witness stamp (t751 R3), moved whole out
-// of `./ledger.ts` (t772 w7, no change in behaviour), which calls it from
+// of `../site-reset/ledger.ts` (t772 w7, no change in behaviour); `./recording.ts` calls it from
 // `trialRan` for each trial act it records.
 //
 // A destination ref attaches that issued list, a repeated explored act lends
@@ -31,7 +31,7 @@
 //
 // That pass's own original is also its place's original for the whole build
 // (t772 w9, headed photo-dialog-act), where no read or act of the build got
-// there first (`./control-witnesses.ts`, `passed`). Its spot touches that
+// there first (`../site-reset/control-witnesses.ts`, `passed`). Its spot touches that
 // place, so no later read can become its original: without this, a step on the
 // same control (the item's own page, first opened after the trial) had no
 // receipt, it counted as unwitnessed, and its trial was refused unrun,
@@ -39,10 +39,8 @@
 // found, never by a read showing the pass's own press.
 
 import { automationStudioSiteResetWitnessStampValid as stampValid } from "../reset-admission/index.ts";
-import type { AutomationStudioSiteResetTrialAct } from "./contracts.ts";
-import type { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
-import type { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";
-import type { AutomationStudioSiteResetLedgerAct } from "./ledger-act.ts";
+import type { AutomationStudioSiteResetControlWitnesses, AutomationStudioSiteResetCreateBaselines, AutomationStudioSiteResetTrialAct } from "../site-reset/index.ts";
+import type { AutomationStudioSiteResetLedgerAct } from "./act.ts";
 
 /** Fills `act`'s witnesses from its step's stamp `witness` (header); a stamp that is not valid adds nothing. */
 export function automationStudioSiteResetTrialStamp(

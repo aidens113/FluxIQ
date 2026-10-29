@@ -34,11 +34,18 @@
 // its place: a choice confirmed by a press that reloads its page to the same
 // address shows its effect only there. A reload to the same address stayed on
 // its page here, since only the two locations are compared.
+//
+// **What the client read its press did (CC4, P4).** The read just after an act
+// may carry the client's own effect record (`effect`,
+// `AutomationStudioSiteResetEffect`), which is kept with its place, parsed
+// member by member: a malformed member is dropped and the rest kept, as a
+// failure record's are, and nothing at all is kept where nothing survives. The
+// ledger pairs a later press by it (`../reset-undo/claims.ts`, `pairOf`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, automationStudioSiteResetValueReplacements as replacements } from "../reset-settlement/index.ts";
-import type { AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
+import type { AutomationStudioSiteResetEffect, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 
 /** The classes whose act the reset may have to look for. */
 const LOOKED_FOR: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);
@@ -108,8 +115,38 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
     return ran;
   }
   const values = valuesReplaced(before, after);
-  ledger.placed(act, { state: before.state, location: before.location, changed: after.differs, ...(before.collections && after.collections ? { collections: { before: before.collections, after: after.collections } } : {}), ...(after.lines ? { lines: after.lines } : {}), ...(created.length ? { created } : {}), ...(values ? { values } : {}) });
+  const effect = effectOf(after.effect);
+  ledger.placed(act, { state: before.state, location: before.location, changed: after.differs, ...(before.collections && after.collections ? { collections: { before: before.collections, after: after.collections } } : {}), ...(after.lines ? { lines: after.lines } : {}), ...(created.length ? { created } : {}), ...(values ? { values } : {}), ...(effect ? { effect } : {}) });
   return ran;
+}
+
+/** Core's bound on the places one effect record names: a record naming more names none. */
+const MAX_EFFECT_PLACES = 256;
+const CLASSES: ReadonlySet<unknown> = new Set(["observe", "state", "commit"]);
+
+/** The client's effect record (header, CC4), every member parsed on its own: malformed ones dropped, none where nothing is left. */
+function effectOf(value: unknown): AutomationStudioSiteResetEffect | undefined {
+  if (!isRecord(value)) return undefined;
+  const effect: AutomationStudioSiteResetEffect = {};
+  if (CLASSES.has(value.class)) effect.class = value.class as NonNullable<AutomationStudioSiteResetEffect["class"]>;
+  if (Array.isArray(value.places) && value.places.length <= MAX_EFFECT_PLACES) {
+    const places = value.places.flatMap((entry: unknown) => (isRecord(entry) && token(entry.place) && token(entry.before) && token(entry.after) ? [{ place: entry.place, before: entry.before, after: entry.after }] : []));
+    if (places.length) effect.places = places;
+  }
+  if (typeof value.placeChanged === "boolean") effect.placeChanged = value.placeChanged;
+  const inverse = value.inverse;
+  if (isRecord(inverse) && inverse.kind === "irreversible") effect.inverse = { kind: "irreversible" };
+  else if (isRecord(inverse) && inverse.kind === undefined && token(inverse.action) && token(inverse.control)) effect.inverse = { action: inverse.action, control: inverse.control, ...(token(inverse.toState) ? { toState: inverse.toState } : {}) };
+  return Object.keys(effect).length ? effect : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** An opaque token, as a read's (`../reset-settlement/values-of.ts`), with dots too: `inverse.action` is an operation id. */
+function token(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9:._-]{1,128}$/u.test(value);
 }
 
 /** The shown values an act replaced on one page read before and after it (header, t772); none where the reads name two pages or it replaced none. */

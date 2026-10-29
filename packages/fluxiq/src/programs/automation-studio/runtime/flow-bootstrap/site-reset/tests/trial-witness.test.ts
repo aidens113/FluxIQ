@@ -498,3 +498,14 @@ describe("an undo answered already back finds its act settled or closed, never o
     for (const shape of shapes.filter((entry) => entry.fresh === "st:free")) expect(code(run(shape).answer), JSON.stringify(shape)).toBe("candidate.undo_already_back");
   });
 });
+
+// t796: an act made where it changed nothing the reads could name has no `place`, so its page was never told. Its control's
+// place, read at a location, still says where it was made.
+describe("an act left on the site names its page from what the ledger holds", () => {
+  it("falls back to where its control was last read", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.observed(page("p:post", "loc:post", undefined, { "pl:hold": { "st:off": 1 } }));
+    ledger.explored(press("hold", ["modify_existing"], { scope: "p:post", subject: "s:post", page: "s:post", resource: SITE, place: "pl:hold" }));
+    expect(ledger.trialChange().leftFromEarlier().map((act) => act.where)).toEqual(["loc:post"]);
+  });
+});
