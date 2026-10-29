@@ -29,6 +29,15 @@
 // closes or declines something optional ("Not now", "Close chat", "Decline
 // optional cookies"), or moves to another page, is `passing`: it saves nothing
 // by itself, so it is never listed as something that may have stayed.
+//
+// **A trial step that closes something is passing too (t790).** Run
+// `run-mvswewhy-e4e469d4`'s build ending said "Left on the site: The build ran
+// the step "close the chat window if it shows", which changed the page and might
+// have left something behind". A step labelled to close, dismiss, hide or skip
+// something, or to decline something optional, is `passing` like the control of
+// the same name. An optional cookie "Decline" pressed as a control
+// (`run-mvswh11y-9d462629`) carries only its name and kind in the act record, no
+// cookie or consent context, so it stays as it was.
 
 /**
  * One phrase for the person: a named act (`clicked “Save”`, with its verb and
@@ -67,6 +76,12 @@ const PASSING = /^(?:type(?: text)?|fill|clear|key|press key|scroll|hover|focus|
  * may have stayed (t774: "ran the step 'show more of the feed' ... might have left something behind").
  */
 const TRIAL_ONLY_MOVES = /^(?:scroll|go to|go back|open the (?:\w+ )?page|navigate|show|see|load|view|next|back|read|look|find|search|browse|collect|get|list)(?![\p{L}\p{N}])/iu;
+/**
+ * A trial step labelled for dismissing, closing, hiding or skipping something, or declining something optional ("close the
+ * chat window if it shows", "decline the optional cookies", "not now"): closing a window is no lasting site change (t790,
+ * `run-mvswewhy-e4e469d4`). A bare "decline" or "reject" is not one: it may answer a request.
+ */
+const TRIAL_DISMISSES = /^(?:(?:close|dismiss|hide|skip)(?![\p{L}\p{N}])|(?:decline|reject|refuse)\b.*\b(?:all|optional|non-essential|tracking|marketing|cookies?|banner|pop-?up)\b|not now(?![\p{L}\p{N}]))/iu;
 /** Verbs that press a control. */
 const PRESSING = /^(?:click|press|tap|double click)$/u;
 /** A link: pressing one goes to another page, which saves nothing by itself (t753). */
@@ -125,7 +140,7 @@ function plainAct(did: string): Plain {
   const trial = TRIAL.exec(bare);
   if (trial) {
     const label = readable(trial[1]);
-    if (label) return { verb: "ran the step", name: label, passing: TRIAL_ONLY_MOVES.test(label.slice(1, -1)), press: false, trial: true };
+    if (label) return { verb: "ran the step", name: label, passing: TRIAL_ONLY_MOVES.test(label.slice(1, -1)) || TRIAL_DISMISSES.test(label.slice(1, -1)), press: false, trial: true };
     const control = readable(trial[2]);
     return { verb: control ? "ran a step on" : "used", name: control, passing: false, press: false, trial: true };
   }

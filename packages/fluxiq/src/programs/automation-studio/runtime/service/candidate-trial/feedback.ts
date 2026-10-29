@@ -172,6 +172,13 @@
 // seeded from the earlier one. `stored.answerRows` is the row count of the set
 // the Flow answers with: the set written by the run's last storing step, in run
 // order (`flowShape`), or the last set listed where the run order names none.
+//
+// **Beside a noted list of values, the mark to test instead (t790).** Run
+// `run-mvswewhy-e4e469d4`: both judges advised a literal list, Core's note said
+// so, and the builder kept the list. Where the advice a no or an unsure carries
+// has that note, the feedback says `rowMark`, Core's suggestion from the rows it
+// holds (`./row-mark.ts`): the column of the read that marks the rows the listed
+// values pick out, or, where none does, where to look in the read's structure.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
@@ -188,6 +195,7 @@ import { automationStudioTrialFailureHappened } from "./happened.ts";
 import { automationStudioTrialInterruptions } from "./interruptions.ts";
 import { automationStudioTrialProcessedOutFeedback } from "./processed-out.ts";
 import { automationStudioTrialReadsFeedback } from "./reads.ts";
+import { automationStudioTrialRowMark } from "./row-mark.ts";
 import { automationStudioTrialStepControl } from "./step-control.ts";
 import { automationStudioTrialStepIssues } from "./step-issues.ts";
 import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
@@ -272,13 +280,19 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     if (judged.verdict === "no") {
       // A read of one part of a list that goes on is said as that, never as counts that look right (header, F8).
       const findings = continuedNo(judged.findings, judged.fix, input.summary.reads);
-      return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: automationStudioResultAdviceShown(judged.advice), stillAchievable: judged.stillAchievable }), ...findings, ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
+      const advice = automationStudioResultAdviceShown(judged.advice);
+      // The mark to test in place of a noted list of values (header, t790).
+      const rowMark = automationStudioTrialRowMark(advice, input.summary);
+      return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice, stillAchievable: judged.stillAchievable }), ...(rowMark ? { rowMark } : {}), ...findings, ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
     }
     if (judged.verdict === "unknown") {
       const split = judged.answeredReading !== undefined;
       // A doubt about pages Core's record contradicts, in Core's words, and how to weigh it (t503).
       const doubt = judged.doubtContradicted;
-      return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading, advice: automationStudioResultAdviceShown(judged.unconfirmedReading.advice) }) } : {}),
+      const advice = judged.unconfirmedReading ? automationStudioResultAdviceShown(judged.unconfirmedReading.advice) : undefined;
+      // The mark to test in place of a noted list of values (header, t790).
+      const rowMark = automationStudioTrialRowMark(advice, input.summary);
+      return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading, advice }) } : {}), ...(rowMark ? { rowMark } : {}),
         ...(doubt ? { doubtContradicted: doubt } : {}),
         ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") + (doubt ? DOUBT_NOTE : "") } : doubt ? { readings: DOUBT_ALONE_NOTE } : {}) } };
     }
@@ -410,7 +424,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     // What the run closed over the page while the step ran, and the handle of the way out it pressed when the domain named one (t470).
     // A layer the domain marks as opened by this run is said as the nearest earlier step's that acted (t661).
     const interruptions = automationStudioTrialInterruptions([...absorbed.map((entry) => entry.failed), attempt], wayOuts, openerBefore(ran, index));
-    const told = { ...step, ...(issues.length ? { issues } : {}), ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage?.targetOnPage === true, targetNotShown: onPage?.targetNotShown === true }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
+    const told = { ...step, ...(issues.length ? { issues } : {}), ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage?.targetOnPage === true, targetNotShown: onPage?.targetNotShown === true, targetOtherRecord: onPage?.targetOtherRecord === true }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
     // A step whose state already held is done: no retry or check advice for a failure the run went past.
     return failure && !attempt.stateHeld ? { ...told, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : told;
   });

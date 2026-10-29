@@ -61,6 +61,13 @@
 // element, the same two screens every other authored string in a request
 // passes. `not: true` is said as `not`.
 //
+// **A date bound says it is one (t790).** Run `run-mvswewhy-e4e469d4` could
+// write no date bound; one is now a bound written as a date with `as: "date"`
+// (`@fluxiq/contracts`, `date-bound.ts`), said `due atLeast
+// "2026-10-01" as a date`: `as` is said as that suffix, never as a relation of
+// its own, and a bound written as text is a date bound whether or not the
+// condition still carries its `as`.
+//
 // **Nothing is cut** (user, 2026-09-30: "Remove ANY AND ALL LIMITS ON THE NUMBER
 // OF ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION"): no wording, value or
 // list length bound, and no length bound on a relation word or a name.
@@ -68,11 +75,14 @@
 // Without the bound domain's declared keys nothing authored is carried at all:
 // an absent declaration means nobody said, never "deny nothing".
 
+import { automationStudioRecordConditionComparesDates, type AutomationStudioRecordConditionTest } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioEvidenceKey, automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 
 /** Keys that name the value a condition tests, rather than saying something about it. */
 const NAMING_KEYS = new Set(["field", "read"]);
+/** The key saying a condition's bounds are dates, said as a suffix rather than a relation (header, t790). */
+const DATE_KEY = "as";
 /** What a compared value that could not be carried reads as. */
 const WITHHELD_OPERAND = "(withheld)";
 /** A relation key or a kind word: plain letters, as a grammar spells them. */
@@ -102,11 +112,13 @@ export function automationStudioResultReadConditionText(
   const found = named.ownRead || unstored ? foundText(seen, denied) : undefined;
   const subject = found ? `${named.text} (read ${found} on a row it kept)` : named.text;
   const relations = Object.entries(condition)
-    .filter(([key, value]) => !NAMING_KEYS.has(key) && key !== "not" && value !== null && value !== undefined && WORD.test(key))
+    .filter(([key, value]) => !NAMING_KEYS.has(key) && key !== "not" && key !== DATE_KEY && value !== null && value !== undefined && WORD.test(key))
     .map(([key, value]) => `${key} ${operandText(key, value)}`);
   if (!relations.length) return undefined;
   const negated = condition.not === true ? "not " : "";
-  const text = `${subject} ${negated}${relations.join(" and ")}`;
+  // A date bound is said as one (header, t790).
+  const dated = automationStudioRecordConditionComparesDates(condition as AutomationStudioRecordConditionTest) ? " as a date" : "";
+  const text = `${subject} ${negated}${relations.join(" and ")}${dated}`;
   return sayable(text) ? text : undefined;
 }
 

@@ -58,7 +58,7 @@ export {
   type AutomationStudioDeepSeekPanelCommandOptions,
   type AutomationStudioPanelCommandKeyPorts
 } from "./deepseek/index.ts";
-export { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
+export { AutomationStudioSecretsLockedError, releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyOptions, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
 // How a loop that asks again counts the replies it could not read, and what the

@@ -13,6 +13,7 @@ import {
   REQUEST_WORDS_NAMES, REQUEST_WORDS_HANDLE, REQUEST_WORDS_OUT_OF_STOCK, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS,
   requestWordsRunSummary, requestWordsWording
 } from "./request-words-fixture.ts";
+import { AUDIOBOOKS_INSTRUCTION, AUDIOBOOKS_READ, AUDIOBOOKS_SAMPLER, audiobooksRunSummary } from "../../value-readings/tests/audiobooks-fixture.ts";
 
 const unquoted = (reply: string, wording = requestWordsWording()) => automationStudioResultLeftOutRowsUnquoted(requestWordsRunSummary(), reply, wording);
 
@@ -91,6 +92,51 @@ The request says "leaving out out-of-stock items".`
   it("holds no words to a request that says nothing", () => {
     expect(automationStudioRequestWording([], requestWordsRunSummary())).toBeUndefined();
     expect(automationStudioRequestWording([{ title: "", body: "  " }], requestWordsRunSummary())).toBeUndefined();
+  });
+});
+
+// A condition Core settled is accounted for only by a sentence that itself
+// names it and itself quotes the request's own words (t790, debug of
+// `run-mvswh11y-9d462629`, D3/F1): five yeses over a negated text test the
+// request never states were taken, each naming the condition in a sentence that
+// quoted nothing of the request, beside a sentence that quoted it for another
+// condition or another clause and lent that quote; and one was taken by a
+// sentence that only listed the answer's columns, the tested column among
+// them. The audiobooks read of `../../value-readings/tests/audiobooks-fixture.ts`:
+// condition 4 (title not contains "Sampler") is settled, and `title` is one of
+// the answer's columns.
+describe("a settled condition, named and quoted in one sentence (t790)", () => {
+  const summary = audiobooksRunSummary();
+  const wording = automationStudioRequestWording([AUDIOBOOKS_INSTRUCTION], summary)!;
+  const settledUnquoted = (reply: string) => automationStudioResultLeftOutRowsUnquoted(summary, reply, wording);
+  /** Conditions 1 to 3, each named beside the request's own words in its own sentence, each on its own line. */
+  const FIRST_THREE = [
+    "Condition 1 (promoted is absent) carries out \"Leave out promoted entries\".",
+    "Condition 2 (shelf contains \"On shelf today\") carries out \"my branch has on the shelf today\".",
+    "Condition 3 (rating atLeast 4) carries out \"rated 4 or higher\"."
+  ];
+  const HELD_FOR_CONDITION_4 = [{ nodeId: AUDIOBOOKS_READ, condition: "condition 4 (title not contains [\"Sampler\"])", rows: [AUDIOBOOKS_SAMPLER], bound: true, boundKind: "text" }];
+  const CONDITION_4_UNQUOTED = "Condition 4 (title not contains \"Sampler\") leaves out the sampler, a preview and not a whole book.";
+
+  it("takes a yes that names each condition beside the request's own words in that condition's own sentence", () => {
+    const reply = [...FIRST_THREE, "Condition 4 (title not contains \"Sampler\") keeps \"every audiobook in the library catalogue\"."].join("\n");
+    expect(settledUnquoted(reply)).toEqual([]);
+  });
+
+  it("holds the condition whose sentence quotes no request words, though the sentence beside it quotes the request for another condition", () => {
+    // Condition 3's sentence, quoting the request, sits beside condition 4's in one line.
+    const reply = [FIRST_THREE[0], FIRST_THREE[1], `${FIRST_THREE[2]} ${CONDITION_4_UNQUOTED}`].join("\n");
+    expect(settledUnquoted(reply)).toEqual(HELD_FOR_CONDITION_4);
+  });
+
+  it("holds it too when the sentence beside it quotes an unrelated clause of the request", () => {
+    const reply = [...FIRST_THREE, `${CONDITION_4_UNQUOTED} The rows keep "the order the catalogue shows them".`].join("\n");
+    expect(settledUnquoted(reply)).toEqual(HELD_FOR_CONDITION_4);
+  });
+
+  it("never reads a list of the answer's columns, beside a quote of the request, as naming a condition tested on one of them", () => {
+    const reply = [...FIRST_THREE, "Each row is stored with title, author and rating, as \"columns title, author and rating\" asks."].join("\n");
+    expect(settledUnquoted(reply)).toEqual(HELD_FOR_CONDITION_4);
   });
 });
 

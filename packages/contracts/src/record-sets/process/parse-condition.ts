@@ -4,13 +4,26 @@
 // refuses, this refuses: a bound that is not a finite number, an empty list, a
 // blank text, a pattern that does not compile, and `is: "absent"` beside a
 // comparison. `not: false` says nothing and is dropped.
+//
+// **A date bound (t790, run `run-mvswewhy-e4e469d4`).** A bound written as text
+// is a date bound and must name one date on its own
+// (`date-bound.ts`): its year written, nothing relative, no day and
+// month that read either way. One that does not is refused here, at plan time,
+// never run as a filter that keeps nothing. A condition's bounds are all
+// numbers or all dates, and `as` must name that kind. The canonical condition
+// carries no `as`: a bound written as text is what marks a date bound, so `as`
+// says what the bounds already say and is dropped, as `not: false` is -- the
+// downstream domain's canonical condition, which carries none, is the same
+// condition to the key.
 
 import { isPlainRecord } from "../is-plain-record.ts";
+import { readAutomationStudioRecordConditionDateBound } from "./date-bound.ts";
 import { automationStudioRecordConditionPattern } from "./condition-holds.ts";
 import {
   AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
   AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES,
-  AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS
+  AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS,
+  AUTOMATION_STUDIO_RECORD_CONDITION_TYPES
 } from "./processing-vocabulary.ts";
 import type { AutomationStudioRecordCondition, AutomationStudioRecordConditionValue } from "./types.ts";
 
@@ -18,11 +31,13 @@ const CONDITION_KEYS: ReadonlySet<string> = new Set([
   "field",
   "is",
   ...AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
+  "as",
   "equals",
   ...AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS,
   "not"
 ]);
 const PRESENCES: ReadonlySet<unknown> = new Set(AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES);
+const TYPES: ReadonlySet<unknown> = new Set(AUTOMATION_STUDIO_RECORD_CONDITION_TYPES);
 
 /** The condition as fresh objects, or `null` for one that cannot run. The field id is checked against the schema by the caller. */
 export function parseAutomationStudioRecordCondition(value: unknown): AutomationStudioRecordCondition | null {
@@ -34,13 +49,21 @@ export function parseAutomationStudioRecordCondition(value: unknown): Automation
     condition.is = value.is as NonNullable<AutomationStudioRecordCondition["is"]>;
   }
   let compares = false;
+  const kinds = new Set<"number" | "date">();
   for (const key of AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS) {
     const bound = value[key];
     if (bound === undefined) continue;
-    if (typeof bound !== "number" || !Number.isFinite(bound)) return null;
+    if (typeof bound === "string") {
+      if (readAutomationStudioRecordConditionDateBound(bound) === undefined) return null;
+      kinds.add("date");
+    } else if (typeof bound === "number" && Number.isFinite(bound)) kinds.add("number");
+    else return null;
     condition[key] = bound;
     compares = true;
   }
+  // One kind of bound, and `as` naming that kind (header, t790).
+  if (kinds.size > 1) return null;
+  if (value.as !== undefined && (!TYPES.has(value.as) || !kinds.has(value.as as "number" | "date"))) return null;
   if (value.equals !== undefined) {
     const equals = oneOrMany(value.equals, isComparedValue);
     if (equals === null) return null;

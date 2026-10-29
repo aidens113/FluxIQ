@@ -322,7 +322,10 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
   it("a no the second call did not confirm is unknown, carrying that no's expected, observed and advice as one unconfirmed reading", async () => {
     const provider = answering({ answersRequest: "no", ...FIRST }, { answersRequest: "unknown" });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "unknown", why: expect.stringContaining("nor were both that it does not"), unconfirmedReading: { expected: FIRST.expected, observed: FIRST.observed, advice: FIRST.changed } });
+    // t790 (F2 of run-mvswh11y-9d462629): an unsure beside a no is screened as a split is, and this advice excludes
+    // accessories, which the request never names, so it reaches the build marked, with the no's own words whole.
+    expect(verdict).toMatchObject({ verdict: "unknown", why: expect.stringContaining("nor were both that it does not"), unconfirmedReading: { expected: FIRST.expected, observed: FIRST.observed, advice: expect.stringContaining(FIRST.changed) } });
+    expect(verdict).toMatchObject({ unconfirmedReading: { advice: expect.stringContaining("Core's check: this advice adds an exclusion the request never states") } });
     expect(verdict).not.toHaveProperty("advice");
   });
 

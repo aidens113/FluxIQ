@@ -25,10 +25,21 @@
 // present), or a row a text test left out whose witness found a value failing
 // it (`../value-readings/settled-rows.ts`), needs no quote beside it:
 // Core measured it. What Core did not measure is that the condition is the
-// request's, so a yes still quotes the request once, beside a sentence that
-// names that condition -- its `condition N`, its column, or a number its bound
+// request's, so a yes still quotes the request once, in a sentence that names
+// that condition -- its `condition N`, its column, or a number its bound
 // writes -- and a yes that does not is held for that condition alone, its rows
 // marked `bound`.
+//
+// **That sentence names the condition and quotes the request itself (t790).**
+// Debug of `run-mvswh11y-9d462629` (D3, F1): a read's negated text test, which
+// the request never states, left a row out, and five yeses over it were taken.
+// Each named the condition in a sentence that quoted nothing of the request,
+// beside one that quoted the request for another condition, or another of its
+// clauses, and lent that quote below. Core's settled sentence asks the judge
+// to quote "in a sentence that names condition N", so a settled condition is
+// lent no quote: the lending below stays for a row named row by row. Nor is a
+// settled condition named by a tested column that is one of the answer's own
+// (`summary-reads.ts`), which a reply lists routinely.
 //
 // **A row is named by Core's short id too (t599, `row-id.ts`)**, which the
 // judge's copy shows before each left-out row (`row-naming.ts`). And the reads
@@ -121,14 +132,21 @@ const QUOTE = /"([^"\n]{0,400})"|“([^”\n]{0,400})”|‘([^’\n]{1,400})’
 /** One sentence of a reply, whether it quotes the request's own words, and whether it names a row of any read. */
 type Sentence = { text: string; quotesRequest: boolean; namesRow?: boolean };
 
-/** A sentence a row named in it is accounted for in, and that sentence with the ones beside it that lent it a quote (header). */
-type Accounting = { text: string; beside: string };
+/**
+ * A sentence a row named in it is accounted for in, that sentence with the ones
+ * beside it that lent it a quote (header), and whether it quotes the request
+ * itself, which is all a settled condition takes (t790).
+ */
+type Accounting = { text: string; beside: string; quotes: boolean };
 
 /** Each condition with the left-out rows the reply did not name beside a quote of the request's excluding words; none when it did for all. */
 export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStudioRunResultSummary, reply: string, wording: AutomationStudioRequestWording): AutomationStudioRequestRowsUnquoted[] {
   const { reads } = automationStudioRequestRowsReads(summary);
   const namings = reads.flatMap((read) => read.labels.map((label) => automationStudioRequestRowNaming(label, read.labels)));
-  const accounting = accountingSentences(reply, namings, (quote) => wording.says(quote) && wording.ownWords(quote).length > 0).map((sentence) => sentence.text);
+  const accountingFor = accountingSentences(reply, namings, (quote) => wording.says(quote) && wording.ownWords(quote).length > 0);
+  const accounting = accountingFor.map((sentence) => sentence.text);
+  // A settled condition is accounted for by its own sentence's quote, never a lent one (header, t790).
+  const quoting = accountingFor.filter((sentence) => sentence.quotes).map((sentence) => sentence.text);
   // A stored row is asked for by any of the request's words that carry something, as a kept row is (header, t663, t691).
   const storedAccounting = accountingSentences(reply, namings, carryingQuote(wording));
   return reads.flatMap((read) => {
@@ -144,7 +162,7 @@ export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStu
         const naming = automationStudioRequestRowNaming(label, read.labels);
         return !accounting.some((sentence) => automationStudioRequestTextNamesRow(sentence, naming));
       });
-      const bound = boundUnquoted(condition, inResult, accounting);
+      const bound = boundUnquoted(condition, inResult, quoting);
       const stored = storedUnquoted(condition, elsewhere, storedAccounting, read.labels);
       return [
         ...(rows.length ? [{ ...where, condition: condition.condition, rows }] : []),
@@ -206,7 +224,7 @@ function accountingSentences(reply: string, namings: readonly AutomationStudioRe
   return lines.flatMap((line) => line.flatMap((sentence, at) => {
     const lenders = [line[at - 1], line[at + 1]].flatMap((beside) => beside && lends(beside) ? [beside] : []);
     if (!sentence.quotesRequest && !lenders.length) return [];
-    return [{ text: sentence.text, beside: [sentence.text, ...lenders.map((lender) => lender.text)].join(" ") }];
+    return [{ text: sentence.text, beside: [sentence.text, ...lenders.map((lender) => lender.text)].join(" "), quotes: sentence.quotesRequest }];
   }));
 }
 
@@ -229,7 +247,7 @@ function storedUnquoted(condition: AutomationStudioRequestRowsCondition, elsewhe
   return { rows, by: [...by] };
 }
 
-/** A settled condition's rows still out of the result, when no sentence that quotes the request, or sits beside one, names the condition (header); none otherwise. */
+/** A settled condition's rows still out of the result, when no sentence that itself quotes the request names the condition (header, t790); none otherwise. */
 function boundUnquoted(condition: AutomationStudioRequestRowsCondition, inResult: ReadonlySet<string>, accounting: readonly string[]): string[] {
   const settled = condition.settled;
   if (!settled) return [];

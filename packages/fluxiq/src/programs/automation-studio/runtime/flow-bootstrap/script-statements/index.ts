@@ -51,4 +51,8 @@ export * from "./step-done-when.ts";
 // t775: a check on a submitted plan, once the domain resolved each step -- a step that flips a
 // control explored as a toggle is given `ensureState`, or refused for the node that sets the state.
 export * from "./toggle-idempotent.ts";
+// t792: which press of a toggle a step or an exploration call on the same control is held to -- the earliest tied one.
+export * from "./toggle-tie.ts";
+// t792: whether two writings of a step name one control in its two states, by the words its toggle signature recorded.
+export * from "./toggle-state-words.ts";
 export * from "./way-out-steps.ts";

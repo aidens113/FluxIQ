@@ -128,6 +128,43 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): a `where` bound may be a date (`@fluxiq/contracts`, `fluxiq`)
+
+Read this entry if a domain or a browser host reads a record condition's
+bounds, or calls `automationStudioRecordConditionHolds`. Run
+`run-mvswewhy-e4e469d4` (t790) was asked for rows "on or after Saturday 19
+September 2026" and could only write a pattern of three days.
+
+**Added.**
+- A bound (`atLeast`, `atMost`, `lessThan`, `greaterThan`) may be a date
+  written as text, with `as: "date"`: `{"field": "due", "atLeast":
+  "2026-10-01", "as": "date"}`. `AutomationStudioRecordConditionBound` is
+  `number | string`; `as` is `AUTOMATION_STUDIO_RECORD_CONDITION_TYPES`
+  (`number`, `date`) and must agree with the bounds. A bound written as text is
+  a date bound with or without `as`, so the parsed (canonical) condition, like
+  the web domain's, carries no `as`. A bound names one date only with its year, nothing
+  relative, and no day and month that read either way
+  (`readAutomationStudioRecordConditionDateBound`); a bound with no time of day
+  is its whole day, so `atLeast` with `atMost` keep the days between, both
+  included. The row's date is read by the sort's date reader, except that a
+  numeric day and month that read either way state no date
+  (`readAutomationStudioRecordConditionDate`).
+- `automationStudioRecordConditionComparesDates`, and `undated` on a
+  condition's processing account: the rows a date bound left out because their
+  value states no date it can read.
+- `automationStudioRecordConditionHolds(condition, cell, now?)`: `now`
+  (default `Date.now()`) measures a relative row date ("3 days ago"); the
+  run-end processing passes its own.
+
+**Changed behaviour.**
+- A bound written as text was refused as `record_output.process_invalid_condition`;
+  it is now a date bound, refused only where it names no one date, and that
+  refusal's message is Core's own sentence on how to write one.
+- A date bound never keeps a row whose value states no date it can read,
+  whatever `not` says.
+- `fluxiq/automation-studio/nodes` re-exports no new name: a browser host judges
+  a date bound with `automationStudioRecordConditionHolds` as before.
+
 ### Next minor (unreleased): a candidate's node is told the steps before it, and the window counts only what is sent (`fluxiq`)
 
 Read this entry if you implement `resolvePlanNodeParameters` or an LLM

@@ -36,11 +36,19 @@
 // whether the rows run in its order (first key), and a few rows' values, never
 // text -- goes on the account (`hiddenSortKeys`). The column stays stored and
 // hidden; a re-processing still has it, and it is never forced into the answer.
+//
+// **A date bound counts the rows it could not date (t790).** Run
+// `run-mvswewhy-e4e469d4` needed "on or after Saturday 19 September 2026" and
+// could only write a pattern. A date bound now says it, and a row whose value
+// states no date it can read is left out, never kept as matching; its account
+// says how many such rows it left out (`undated`), beside the rows it names.
 
-import { cellOf } from "./cell-text.ts";
+import { cellOf, cellText } from "./cell-text.ts";
+import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
 import { automationStudioRecordConditionHolds } from "./condition-holds.ts";
 import { automationStudioRecordConditionText } from "./condition-text.ts";
 import { AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS } from "./processing-vocabulary.ts";
+import { readAutomationStudioRecordConditionDate } from "./row-date.ts";
 import { automationStudioRecordRowIdentity } from "./row-identity.ts";
 import { sortAutomationStudioRecordRows } from "./sort-rows.ts";
 import { automationStudioRecordAutoSortKind, readAutomationStudioRecordSortValue } from "./sort-value.ts";
@@ -92,7 +100,7 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
 
   const where = process.where ?? [];
   // Which conditions each row fails, by position: a row failing none is in the answer's running.
-  const failed = input.rows.map((row) => where.flatMap((condition, index) => automationStudioRecordConditionHolds(condition, cellOf(row.values, condition.field)) ? [] : [index]));
+  const failed = input.rows.map((row) => where.flatMap((condition, index) => automationStudioRecordConditionHolds(condition, cellOf(row.values, condition.field), input.now) ? [] : [index]));
   const matching = input.rows.filter((_row, index) => failed[index]!.length === 0);
 
   const seen = new Set<string>();
@@ -116,7 +124,7 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
     kept: rows.length,
     passes: passesOf(input.rows, process.dedupe === false || process.dedupe === undefined ? wholeRow : process.dedupe.by)
   };
-  if (where.length) account.conditions = conditionAccounts(where, input.rows, failed, (process.columns ?? stored));
+  if (where.length) account.conditions = conditionAccounts(where, input.rows, failed, (process.columns ?? stored), input.now);
   const hiddenSortKeys = hiddenSortKeysOf(process.sort ?? [], process.columns, distinct, limited, input.now);
   if (hiddenSortKeys.length) account.hiddenSortKeys = hiddenSortKeys;
   if (rows.length === 0) account.keptNone = true;
@@ -130,15 +138,19 @@ function conditionAccounts(
   where: readonly AutomationStudioRecordCondition[],
   rows: readonly AutomationStudioRecordCollectedRow[],
   failed: readonly (readonly number[])[],
-  labelFields: readonly string[]
+  labelFields: readonly string[],
+  now: number
 ): AutomationStudioRecordProcessingConditionAccount[] {
   return where.map((condition, index) => {
     const account: AutomationStudioRecordProcessingConditionAccount = { field: condition.field, condition: automationStudioRecordConditionText(condition), rejected: 0, alone: 0, leftOutOnlyByThis: [] };
     const named = new Set<string>();
+    const dated = automationStudioRecordConditionComparesDates(condition);
+    let undated = 0;
     rows.forEach((row, at) => {
       const fails = failed[at]!;
       if (!fails.includes(index)) return;
       account.rejected += 1;
+      if (dated && undatedCell(cellOf(row.values, condition.field), now)) undated += 1;
       if (fails.length !== 1) return;
       account.alone += 1;
       const label = labelOf(row.values, labelFields);
@@ -146,8 +158,15 @@ function conditionAccounts(
       named.add(label.label);
       account.leftOutOnlyByThis.push(label);
     });
+    if (undated > 0) account.undated = undated;
     return account;
   });
+}
+
+/** Whether a cell states no date a date bound can read, a missing value included (header, t790). */
+function undatedCell(cell: unknown, now: number): boolean {
+  const text = cellText(cell);
+  return text === undefined || readAutomationStudioRecordConditionDate(text, now) === undefined;
 }
 
 /** A row's label: its first stored column, in schema order, holding text -- the column a stored row is labelled by where it is judged. */

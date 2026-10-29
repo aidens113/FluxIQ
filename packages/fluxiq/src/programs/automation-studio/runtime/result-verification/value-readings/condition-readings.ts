@@ -9,12 +9,24 @@
 // each text test the part it found (`./text-match.ts`): on a kept row, or on a
 // left-out row for a `not` test, the row it held on.
 //
+// **A date bound says the date it compared (t790).** Run
+// `run-mvswewhy-e4e469d4` needed "on or after Saturday 19 September 2026" and
+// had only a pattern; a bound may now be a date, and its reading is the day
+// Core read, `due read as 2026-09-21 04:00 UTC from "Monday 21 September 2026 at
+// 04:00"`, or that the value states no date Core can read, which is why such a
+// row was left out. Never the number in a date.
+//
 // **Bounded, labels only.** At most `PER_SIDE` kept and `PER_SIDE` left-out rows,
 // in the order given, each by its label and the tested value -- both already
 // screened where they came from (the stored rows, a condition's left-out rows) --
 // and no other text of the page.
 
-import { readAutomationStudioRecordNumber, type AutomationStudioRecordCondition } from "@fluxiq/contracts/automation-studio";
+import {
+  automationStudioRecordConditionComparesDates,
+  readAutomationStudioRecordConditionDate,
+  readAutomationStudioRecordNumber,
+  type AutomationStudioRecordCondition
+} from "@fluxiq/contracts/automation-studio";
 import { automationStudioResultTextMatch } from "./text-match.ts";
 
 /** The most rows said on each side of one condition. */
@@ -31,13 +43,21 @@ export function automationStudioResultConditionReadings(input: {
   column: string;
   kept: readonly AutomationStudioResultReadCell[];
   leftOut: readonly AutomationStudioResultReadCell[];
+  /** What a relative date in a value is measured back from; the moment of reading when absent. */
+  now?: number;
 }): string[] {
   const { condition, column } = input;
-  const numeric = BOUNDS.some((key) => condition[key] !== undefined) || anyOf(condition.equals).some((entry) => typeof entry === "number");
+  const dated = automationStudioRecordConditionComparesDates(condition);
+  const numeric = (!dated && BOUNDS.some((key) => condition[key] !== undefined)) || anyOf(condition.equals).some((entry) => typeof entry === "number");
   const text = condition.matches !== undefined || condition.contains !== undefined || condition.startsWith !== undefined || condition.endsWith !== undefined;
-  if (!numeric && !text) return [];
+  if (!numeric && !text && !dated) return [];
+  const now = input.now ?? Date.now();
   const line = (side: "kept" | "left out", cell: AutomationStudioResultReadCell): string | undefined => {
     const parts: string[] = [];
+    if (dated) {
+      const at = readAutomationStudioRecordConditionDate(cell.value, now);
+      parts.push(`${column} read as ${at === undefined ? "no date Core can read" : dayText(at)} from ${JSON.stringify(cell.value)}`);
+    }
     if (numeric) {
       const number = readAutomationStudioRecordNumber(cell.value);
       parts.push(`${column} read as ${number === undefined ? "no number" : String(number)} from ${JSON.stringify(cell.value)}`);
@@ -45,13 +65,19 @@ export function automationStudioResultConditionReadings(input: {
     // A text test held on a kept row, or, negated, on the row it left out.
     if (text && (side === "kept") !== (condition.not === true)) {
       const found = automationStudioResultTextMatch(condition, cell.value);
-      if (found) parts.push(`${column} ${numeric ? "" : `${JSON.stringify(cell.value)} `}matched ${found}`);
+      if (found) parts.push(`${column} ${numeric || dated ? "" : `${JSON.stringify(cell.value)} `}matched ${found}`);
     }
     return parts.length ? `${side} ${JSON.stringify(cell.label)}: ${parts.join("; ")}` : undefined;
   };
   const said = (side: "kept" | "left out", cells: readonly AutomationStudioResultReadCell[]): string[] =>
     cells.slice(0, AUTOMATION_STUDIO_RESULT_READINGS_PER_SIDE).flatMap((cell) => line(side, cell) ?? []);
   return [...said("kept", input.kept), ...said("left out", input.leftOut)];
+}
+
+/** A date as its day, with the time where it states one, in UTC as every date is read. */
+function dayText(at: number): string {
+  const iso = new Date(at).toISOString();
+  return at % 86_400_000 === 0 ? iso.slice(0, 10) : `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 }
 
 function anyOf<T>(value: T | readonly T[] | undefined): readonly T[] {

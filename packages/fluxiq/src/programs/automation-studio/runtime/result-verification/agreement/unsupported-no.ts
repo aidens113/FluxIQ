@@ -40,6 +40,18 @@ const CORE_LOCATED: ReadonlySet<string> = new Set([
  * asked once more (`CONFIRM_LONE_YES`), in the refused no's place: a second yes
  * stands as the agreement weighs two yeses; any other answer leaves it unsure.
  *
+ * **A yes one no of a double no became, beside the other Core refused (t790).**
+ * Run `run-mvswewhy-e4e469d4`: both calls said no naming nothing Core could
+ * find; asked once more, one said yes and the other said no again, still
+ * naming nothing Core could find. The confirming ask was guarded on every
+ * first no being refused, which a double no whose re-asks split can never
+ * meet, so nothing was asked and the outcome was unsure. The ask is now made
+ * wherever every call Core takes is a yes and every other is a refused no, in
+ * the first refused no's place: on a split exactly as before, and on such a
+ * double no too. A no naming a defect Core finds still stands, and a double no
+ * whose re-asks both stay refused asks nothing more. The unsure reason says
+ * what each re-asked no named: none, or how many, of which Core finds none.
+ *
  * **Nothing of a no Core could not ground is carried on (t771).** In that run
  * such a no's advice reached every later judge as earlier advice and the
  * repair as the unconfirmed reading, and the repair dropped the right
@@ -68,17 +80,23 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   if ([...before.values()].some((one) => one.supported)) return settled;
   const asked: AutomationStudioResultVerdict[] = [];
   const notTaken = new Map<1 | 2, string[]>();
+  // How many defects each refused no's re-ask listed, or `undefined` where it gave no answer that could be read: the reason's words (header, t790).
+  const named = new Map<1 | 2, number | undefined>();
   for (const call of nos) {
     const was = before.get(call)!;
     const again = await input.ask(recheckWords(was.findings, summary.earlierAdvice), call);
     asked.push(again.verdict);
     if (again.basis !== "model") {
       notTaken.set(call, was.findings);
+      named.set(call, undefined);
       continue;
     }
     calls[call - 1] = again;
     const now = modelNo(again) ? weigh(again) : undefined;
-    if (now && !now.supported) notTaken.set(call, now.findings);
+    if (now && !now.supported) {
+      notTaken.set(call, now.findings);
+      named.set(call, again.repair?.judgement?.defects?.length ?? 0);
+    }
   }
   const verdicts = [...(settled.verdicts ?? []), ...asked];
   if (!notTaken.size) {
@@ -94,8 +112,10 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   if (standing) return { ...input.agree(standing, standing), verdicts, calls: verdicts.length, unsupportedNo };
   const yes = taken.find(modelYes);
   // A lone yes beside nos Core refused every one of is asked once more to confirm; a second yes stands (header, t771).
-  if (yes && nos.every((call) => notTaken.has(call))) {
-    const call = nos[0]!;
+  // Every call Core takes is a yes and every other a refused no: a split, or a double no whose re-asks split (t790);
+  // asked in the first refused no's place, which on a split is its one no.
+  if (yes && taken.every(modelYes)) {
+    const call = [...notTaken.keys()][0]!;
     const confirming = await input.ask(CONFIRM_LONE_YES, call);
     verdicts.push(confirming.verdict);
     if (modelYes(confirming)) return { ...input.agree(yes, confirming), verdicts, calls: verdicts.length, unsupportedNo };
@@ -110,7 +130,7 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
     basis,
     code: codes.refutationUnsupported,
     // Core's words only: a run records the reason, and the rows a judge named are in `unsupportedNo` beside it.
-    reason: `This result was checked with the same evidence, and ${both ? "both checks" : "a check"} answered that it does not do what was asked without naming a defect Core can find in its own record of this run: a row the result keeps that the request does not ask for, a row the request asks for that it lacks, a wrong value, or an act missing or done wrong by a step it took, each with the request's own words. Asked once more to list each, ${both ? "neither" : "it"} named one, so ${both ? "neither no is" : "that no is not"} taken. ${UNSETTLED[basis].run}`,
+    reason: `This result was checked with the same evidence, and ${both ? "both checks" : "a check"} answered that it does not do what was asked without naming a defect Core can find in its own record of this run: a row the result keeps that the request does not ask for, a row the request asks for that it lacks, a wrong value, or an act missing or done wrong by a step it took, each with the request's own words. Asked once more to list each, ${namedWords([...notTaken.keys()].map((call) => named.get(call)))}, so ${both ? "neither no is" : "that no is not"} taken. ${UNSETTLED[basis].run}`,
     observation: settled.observation,
     verdicts,
     calls: verdicts.length,
@@ -162,6 +182,24 @@ function recheckWords(findings: readonly string[], earlier: readonly AutomationS
     + "For a claim about kept or dropped rows, name the row when the evidence identifies it. Ordering, formatting, missing columns, actions, and constraints not measurable from these rows can still violate the original request: report them in observed and do not answer yes unless the evidence independently supports correctness. "
     + "A concern about another possible run alone is advice. An absent structured row defect does not establish correctness: answer unknown when the evidence cannot settle a requirement, and answer yes only after independently checking every requirement of the original request."
     + (findings.length ? ` What Core found of that answer: ${findings.join(" ")}` : "");
+}
+
+/**
+ * What each refused no named when asked once more (header, t790), in call
+ * order, for the unsure reason: how many defects its re-ask listed, of which
+ * Core finds none, or `undefined` where the re-ask gave no answer that could
+ * be read. Run `run-mvswewhy-e4e469d4`: the reason read "it named one", the
+ * opposite of what happened.
+ */
+function namedWords(named: ReadonlyArray<number | undefined>): string {
+  const one = (count: number | undefined): string =>
+    count === undefined ? "gave no answer that could be read"
+      : count === 0 ? "named none"
+        : count === 1 ? "named one defect, which Core cannot find in its record"
+          : `named ${count} defects, none of which Core can find in its record`;
+  if (named.length < 2) return `it ${one(named[0])}`;
+  const [first, second] = named.map(one);
+  return first === second ? `each ${first}` : `the first ${first} and the second ${second}`;
 }
 
 /** What a no was concerned about, as screened for its reading: its advice, else what it observed. */

@@ -69,8 +69,14 @@ export type SessionRequest = {
   authorizationTotp?: string;
 };
 
+/**
+ * Exactly one of the two: `sessionId`, a raw session id, or `sessionDigest`,
+ * the digest the snapshot lists a session by, so an administrator can revoke
+ * another user's session without any raw id leaving the server.
+ */
 export type RevokeSessionRequest = {
-  sessionId: string;
+  sessionId?: string;
+  sessionDigest?: string;
 };
 
 export type VaultUnlockRequest = {

@@ -11,6 +11,7 @@ import type { AutomationStudioProjectBuildKeptProposals } from "./entry-preparat
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
+import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-toggles/index.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trials.ts";
 
@@ -77,8 +78,12 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   const source = { records: input.records, ref };
   // The arrival every phase of the build takes (header).
   const arrival = AutomationStudioProjectBuildPhaseStart.arrival(binding.runsNodes?.arrival, environment);
+  // The build's one record of toggles, which each trial's presses are told to and every brief's submission reads (`../project-build-toggles/toggles-record.ts`, t792).
+  const exploredToggles = AutomationStudioProjectBuildTogglesRecord.toggles(environment);
+  const togglesWritten = AutomationStudioProjectBuildTogglesRecord.of(exploredToggles);
   const ports: AutomationStudioSubflowTrialPorts = {
     ...environment,
+    exploredToggles,
     ...automationStudioProjectBuildTrialReads(binding, projectId, flowId),
     // Every trial's run goes to the build's start first, so it starts on a loaded start page (header, t578).
     ...(arrival ? { arrival } : {}),
@@ -112,7 +117,13 @@ export function automationStudioProjectBuildSubflowTrials(input: {
     while (answered.size > MAX_ANSWERED) answered.delete(answered.keys().next().value!);
   };
   const run = async (request: AutomationStudioSubflowTrialRequest): Promise<AutomationStudioSubflowTrialResult> => {
-    const result = await trials.port(request);
+    let result: Awaited<ReturnType<typeof trials.port>>;
+    try {
+      result = await trials.port(request);
+    } finally {
+      // What its presses told the build's record of toggles, written into the build record (t792).
+      togglesWritten.sync();
+    }
     answer(request);
     // How its start was made, as every phase is told (header).
     const predecessors = request.scope.predecessors.length ? { keys: request.scope.predecessors, prepared: result.entryPrepared } : undefined;
@@ -124,6 +135,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   // A failure the gate keeps from the recording is a trial this build answered too: the proposals learn its verdict (header, P6).
   const offlineFirst: AutomationStudioSubflowTrialPreparingPort["offlineFirst"] = async (request) => {
     const offered = await offline.offlineFirst(request);
+    togglesWritten.sync();
     if (offered.kind === "kept") answer(request);
     return offered;
   };

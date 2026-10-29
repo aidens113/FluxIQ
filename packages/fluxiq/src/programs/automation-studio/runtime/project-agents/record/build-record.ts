@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type {
   AutomationStudioProjectAgentRole,
@@ -48,7 +49,40 @@ export type AutomationStudioProjectBuildRecord = {
   /** The project's lasting-act ledger: one writer, every act of the build with the agent that made it and its lasting classes. */
   lastingActs: AutomationStudioProjectBuildLastingAct[];
   decisions: Array<{ recordedAt: number; entry: AutomationStudioProjectDecisionLogEntry }>;
+  /**
+   * Every press the domain answered as a toggle, as the build's record of them
+   * held it (`flow-bootstrap/explored-toggles.ts`; t792): what a later step on
+   * the same control was given `ensureState` from. Absent until the first.
+   */
+  toggles?: AutomationStudioProjectBuildToggle[];
   ending?: AutomationStudioProjectBuildEnding;
+};
+
+/**
+ * One press the domain answered as a toggle (t775, t787): the node it ran;
+ * where it was made, while exploring (the call, the handles its target named)
+ * or in a trial's pass (the executed trial nodes); the domain's opaque
+ * signature of the state it left, never read inside; and the node that sets
+ * that state itself, where the domain named one.
+ */
+export type AutomationStudioProjectBuildToggle = {
+  recordedAt: number;
+  from: "explored" | "trial";
+  node: string;
+  callId?: string;
+  handles: string[];
+  /** An exploration press only: its `target` as the domain resolved it, opaque, which a step is also tied by (t792). */
+  target?: JsonValue;
+  trialNodes?: string[];
+  /**
+   * A trial's press only: the parameters its node ran with, Core's
+   * `ensureState` taken off (t792), the identity a later revision's step is
+   * tied to it by (`flow-bootstrap/script-statements/toggle-tie.ts`). Absent
+   * where the trial's graph did not show the node.
+   */
+  trialParameters?: JsonObject;
+  signature: JsonObject;
+  idempotentWith?: string;
 };
 
 /**

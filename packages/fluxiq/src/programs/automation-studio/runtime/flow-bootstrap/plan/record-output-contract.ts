@@ -29,6 +29,13 @@
 //   failed when it ran (`run-mu4yk4u1-60a1c3a4`).
 //
 // A test runs Core's two nodes against the verdict here, value by value.
+//
+// **A date bound (t790).** Run `run-mvswewhy-e4e469d4` had no way to write "on
+// or after Saturday 19 September 2026" in a `where`. A bound may now be a date
+// written as text with `as: "date"`, the processing help says so, and a
+// condition refused for a date bound that names no one date is refused with
+// Core's own sentence saying how to write one (`dateBoundRefusal`), which
+// quotes only the field id the model wrote, never the bound.
 
 import {
   AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
@@ -36,7 +43,8 @@ import {
   AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS,
   AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS,
   AUTOMATION_STUDIO_RECORD_SORT_ORDERS,
-  AUTOMATION_STUDIO_RECORD_SORT_TYPES
+  AUTOMATION_STUDIO_RECORD_SORT_TYPES,
+  readAutomationStudioRecordConditionDateBound
 } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
@@ -125,8 +133,27 @@ export function automationStudioFlowBootstrapRecordOutputIssues(definition: Auto
  * field id instead" stays for a field `columns` alone names.
  */
 export function automationStudioFlowBootstrapRecordOutputIssueMessage(code: string, value: JsonValue | undefined): string | undefined {
-  return fieldRefusal(code, value)?.message;
+  return fieldRefusal(code, value)?.message ?? dateBoundRefusal(code, value);
 }
+
+/**
+ * Core's sentence for a condition refused for a date bound that names no one
+ * date (header, t790): the field ids whose condition carries one, and how to
+ * write a bound. `undefined` for any other refusal. Quotes no bound, which is a
+ * value the model wrote and may hold anything.
+ */
+function dateBoundRefusal(code: string, value: JsonValue | undefined): string | undefined {
+  if (code !== "record_output.process_invalid_condition" || !isPlainObject(value) || !isPlainObject(value.process) || !Array.isArray(value.process.where)) return undefined;
+  const unread = unique(value.process.where.filter(isPlainObject).filter((condition) => AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS.some((key) => {
+    const bound = condition[key];
+    return typeof bound === "string" && readAutomationStudioRecordConditionDateBound(bound) === undefined;
+  })).map((condition) => condition.field).filter((id): id is string => typeof id === "string" && FIELD_ID.test(id)));
+  if (!unread.length) return undefined;
+  return `process.where compares ${quoted(unread)} with a date bound that names no one date. Write each bound as one date with its year, as 2026-10-01, 1 October 2026 or Oct 1, 2026, with as: "date": a date with no year, a relative date such as 3 days ago or today, and a day and month that could each be the other, as 02/03/2026, name none.`;
+}
+
+/** A field id a sentence may name: identifier characters only. */
+const FIELD_ID = /^[A-Za-z0-9_.$@-]{1,64}$/u;
 
 /**
  * The field a processing refusal is about and the names that can stand there
@@ -241,8 +268,9 @@ function processingText(): string {
   return [
     "process is optional, with only dedupe, where, sort, limit, columns, minRows; every member is optional.",
     "dedupe: false | {by:[fieldId,...]}; by is a nonempty list of distinct stored field ids. Absent dedupe uses the whole row (selected columns when columns is set); false keeps duplicates.",
-    `where: [{field:fieldId, is?:${AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES.join("|")}, ${bounds}?:number, equals?:string|number|nonempty list, ${texts}?:string|nonempty string list, not?:boolean}].`,
+    `where: [{field:fieldId, is?:${AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES.join("|")}, ${bounds}?:number|date text, as?:date, equals?:string|number|nonempty list, ${texts}?:string|nonempty string list, not?:boolean}].`,
     "Every comparison in a condition must hold; a value list means any; not inverts the condition. No comparison means presence; absent cannot accompany a comparison. Numbers must be finite, text nonblank, matches a valid regex.",
+    "A date bound is a date written with its year, as 2026-10-01 or 1 October 2026, with as:date; it compares the date the value states, a bound with no time is its whole day, and a row stating no readable date is never kept. One condition's bounds are all numbers or all dates.",
     `sort: [{field:fieldId, order:${AUTOMATION_STUDIO_RECORD_SORT_ORDERS.join("|")}, as?:${AUTOMATION_STUDIO_RECORD_SORT_TYPES.join("|")}}]; at most ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.maxSortKeys} keys; absent as means auto.`,
     `limit: integer 1-${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.limitCeiling}. columns: nonempty list of distinct stored field ids, in answer order.`,
     `minRows: nonnegative integer, default ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault}; a shortfall is reported, never a failure.`,

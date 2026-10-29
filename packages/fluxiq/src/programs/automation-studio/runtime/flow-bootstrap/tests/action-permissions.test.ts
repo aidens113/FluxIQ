@@ -15,7 +15,7 @@ import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioPa
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapUnansweredSaid } from "../action-permissions.ts";
 import { automationStudioInstructedActs } from "../instructed-acts/index.ts";
 import type { AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
-import { AutomationStudioSiteResetLedger, automationStudioSiteResetPlacedCall } from "../site-reset/index.ts";
+import { AutomationStudioSiteResetLedger, automationStudioSiteResetPlacedCall, type AutomationStudioSiteResetCalls } from "../site-reset/index.ts";
 
 const CHECKOUT: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Continue to checkout", kind: "button" }, verb: "press" };
 const PLACE: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" };
@@ -720,5 +720,61 @@ describe("a plan step's reset witness", () => {
     expect(refused.verdict.permitted).toBe(false);
     expect(refused.told).toEqual([]);
     expect(run.asked).toEqual([]);
+  });
+});
+
+// t792: an exploration press on a control this build already flipped is held to the earliest such press.
+describe("an exploration press on a control this build flipped", () => {
+  const PINNED = { via: "name", gains: ["unpin"], loses: ["pin"] };
+  const UNPINNED = { via: "name", gains: ["pin"], loses: ["unpin"] };
+  /** A stand-in domain: a notes board's "Pin"/"Unpin" control, pressed only where the page is not already in a call's `ensureState`. */
+  function board(siteReset?: AutomationStudioSiteResetCalls) {
+    let pinned = false;
+    const ran: JsonObject[] = [];
+    const permissions = automationStudioFlowBootstrapActionPermissions({
+      permittedConsequences: ["modify_existing"], instructionIds: [], ...(siteReset ? { siteReset } : {}),
+      executeTool: async (call) => {
+        ran.push(structuredClone(call.value));
+        const ensure = (call.value.parameters as JsonObject).ensureState;
+        if (ensure !== undefined && JSON.stringify(ensure) === JSON.stringify(pinned ? PINNED : UNPINNED)) return { kind: "llm_evidence_tool_execution", evidence: { ok: true, skipped: "already_in_state" }, effectApplied: false };
+        const verdict = await call.permission!({ consequences: ["modify_existing"], control: { name: pinned ? "Unpin" : "Pin", kind: "button" }, verb: "press" });
+        if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false }, effectApplied: false };
+        pinned = !pinned;
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: true, toggle: { signature: pinned ? PINNED : UNPINNED } }, effectApplied: true, draft: { ranWith: { node: "domain.demo.press", parameters: { target: { selector: "#note-3 .pin" } } } } };
+      }
+    });
+    const press = (callId: string, target: JsonObject, extra: JsonObject = {}) => permissions.executeTool({ callId, toolId: "core.run_node", value: { node: "domain.demo.press", parameters: { target }, consequences: ["modify_existing"], ...extra } });
+    return { permissions, ran, press, pinned: () => pinned };
+  }
+
+  it("a second exploration press on a control this build flipped is run with its ensureState", async () => {
+    const run = board();
+    expect(await run.press("pin", { handle: "t7" })).toMatchObject({ effectApplied: true });
+    // Pressed again by handle, and by the target as the domain resolved it: the board stays pinned and nothing new is recorded.
+    expect(await run.press("again", { handle: "t7" })).toMatchObject({ evidence: { skipped: "already_in_state" } });
+    expect(await run.press("by-target", { selector: "#note-3 .pin" })).toMatchObject({ evidence: { skipped: "already_in_state" } });
+    expect(run.pinned()).toBe(true);
+    expect(run.ran.map((value) => (value.parameters as JsonObject).ensureState)).toEqual([undefined, PINNED, PINNED]);
+    expect(run.permissions.exploredToggles.list()).toMatchObject([{ callId: "pin", signature: PINNED }]);
+    // Another control, or another node, is not held to it.
+    await run.press("other", { handle: "t9" });
+    await run.permissions.executeTool({ callId: "look", toolId: "core.run_node", value: { node: "domain.demo.look", parameters: { target: { handle: "t7" } }, consequences: [] } });
+    expect(run.ran.slice(3).map((value) => (value.parameters as JsonObject).ensureState)).toEqual([undefined, undefined]);
+  });
+
+  it("holds a candidate build's press the same way, and leaves an undo of its act unchanged", async () => {
+    const undoes: unknown[] = [];
+    const run = board({
+      claim: (value) => value === "act-1" ? { kind: "undo", undo: { act: "act-1", allowed: ["modify_existing"] } } : { kind: "none" },
+      target: () => ({ kind: "admit", on: "own", allowed: ["modify_existing"] }),
+      explored: (call) => undoes.push(call.undoes)
+    });
+    await run.press("pin", { handle: "t7" });
+    expect(await run.press("again", { handle: "t7" })).toMatchObject({ evidence: { skipped: "already_in_state" } });
+    expect(run.pinned()).toBe(true);
+    expect(await run.press("undo", { handle: "t7" }, { undoes: "act-1" })).toMatchObject({ effectApplied: true });
+    expect(run.ran.map((value) => (value.parameters as JsonObject).ensureState)).toEqual([undefined, PINNED, undefined]);
+    expect(run.pinned()).toBe(false);
+    expect(undoes).toEqual([undefined, undefined, "act-1"]);
   });
 });

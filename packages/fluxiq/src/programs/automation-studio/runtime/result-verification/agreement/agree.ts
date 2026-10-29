@@ -14,6 +14,12 @@ import { unsettled } from "./unsettled.ts";
 import { refutedMark, splitRefuted, weighedNos } from "./weighed-no.ts";
 import { advisedChange, answeredYes, yesReading } from "./yes-readings.ts";
 
+// An unsure beside a no is held to the request's wording as a split is (t790,
+// F2 of `run-mvswh11y-9d462629`): its `unsettled` call now carries the wording
+// and Core's record, so advice adding an exclusion the request never states is
+// marked before it reaches the builder; `reasked` stays unset, as no call of
+// that pair was asked again (`./unsettled.ts`).
+
 /** The agreement, `reasked` naming the call a split's no was asked again for (t515), so its mark says so. */
 export function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?: 1 | 2): AutomationStudioResultVerification {
   const { first, second } = input;
@@ -89,7 +95,7 @@ export function agree(input: AutomationStudioResultVerificationAgreementInput, r
   const refuted = noCall ? splitRefuted(input, noCall) : undefined;
   const doubt = contradictedUnsure(1, first, input).contradictedUnsure ? contradictedUnsure(1, first, input) : contradictedUnsure(2, second, input);
   return {
-    ...unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts, { refuted }),
+    ...unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts, { wording: input.wording, record: noRecordOf(input), refuted }),
     ...doubt
   };
 }
