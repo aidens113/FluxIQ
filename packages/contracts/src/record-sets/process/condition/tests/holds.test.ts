@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioRecordConditionHolds, automationStudioRecordConditionPattern } from "../index.ts";
+import { automationStudioRecordConditionHolds, automationStudioRecordConditionPattern } from "../../index.ts";
 
 describe("automationStudioRecordConditionHolds", () => {
   it("tests presence when the condition compares nothing", () => {

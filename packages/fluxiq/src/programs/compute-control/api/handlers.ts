@@ -1,4 +1,5 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { endpointResource } from "../../_shared/iam/index.ts";
 import {
   COMPUTE_CONTROL_ENDPOINTS,
   type AcquireComputeLeaseRequest,
@@ -17,6 +18,9 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     endpoint: COMPUTE_CONTROL_ENDPOINTS.snapshot,
     permission: "programs.read",
     classification: "read",
+    action: "ops:Snapshot",
+    accessLevel: "Read",
+    resource: endpointResource.program(),
     handler: async () => ({ ok: true, payload: await service.snapshot() })
   });
   registry.register({
@@ -24,6 +28,9 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     endpoint: COMPUTE_CONTROL_ENDPOINTS.registerNode,
     permission: "compute.control",
     classification: "authoring",
+    action: "ops:RegisterNode",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as RegisterComputeNodeRequest | undefined;
       if (!payload?.id || !payload.label) return { ok: false, error: "id and label are required" };
@@ -35,6 +42,9 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     endpoint: COMPUTE_CONTROL_ENDPOINTS.heartbeat,
     permission: "compute.control",
     classification: "authoring",
+    action: "ops:Heartbeat",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as ComputeHeartbeatRequest | undefined;
       if (!payload?.nodeId) return { ok: false, error: "nodeId is required" };
@@ -46,6 +56,9 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     endpoint: COMPUTE_CONTROL_ENDPOINTS.command,
     permission: "compute.control",
     classification: "authoring",
+    action: "ops:Command",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as ComputeControlCommandRequest | undefined;
       if (!payload?.targetComputeId || !payload.kind) {
@@ -59,6 +72,9 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     endpoint: COMPUTE_CONTROL_ENDPOINTS.pollCommands,
     permission: "compute.control",
     classification: "authoring",
+    action: "ops:PollCommands",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as PollComputeCommandsRequest | undefined;
       if (!payload?.nodeId) return { ok: false, error: "nodeId is required" };
@@ -70,6 +86,9 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     endpoint: COMPUTE_CONTROL_ENDPOINTS.completeCommand,
     permission: "compute.control",
     classification: "authoring",
+    action: "ops:CompleteCommand",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as CompleteComputeCommandRequest | undefined;
       if (!payload?.commandId) return { ok: false, error: "commandId is required" };
@@ -81,6 +100,9 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     endpoint: COMPUTE_CONTROL_ENDPOINTS.acquireLease,
     permission: "compute.control",
     classification: "authoring",
+    action: "ops:AcquireLease",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as AcquireComputeLeaseRequest | undefined;
       if (!payload?.computeId || !payload.holder || !payload.purpose || !payload.ttlMs) {
@@ -94,6 +116,9 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     endpoint: COMPUTE_CONTROL_ENDPOINTS.releaseLease,
     permission: "compute.control",
     classification: "authoring",
+    action: "ops:ReleaseLease",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as ReleaseComputeLeaseRequest | undefined;
       if (!payload?.leaseId) return { ok: false, error: "leaseId is required" };

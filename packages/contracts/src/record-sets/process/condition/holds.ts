@@ -16,14 +16,20 @@
 //   of day. A value stating no date it can read fails it **whatever `not`
 //   says**: a row whose date is unknown is never kept as matching, and the
 //   run-end account counts it (`process-rows.ts`, `undated`).
+// - Relative to the run (t800, K1): a date bound written as `today`,
+//   `yesterday`, `now` or `<n> <unit> ago` is read against `now`, and `within`
+//   keeps the dates in the last `n` units up to `now` (`date-within.ts`). The
+//   row's own "3 days ago" is read against the same `now`, so a relative value
+//   and a relative bound agree wherever the condition is judged.
 
-import { cellText, collapsedText, foldedText } from "./cell-text.ts";
-import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
-import { readAutomationStudioRecordConditionDateBound } from "./date-bound.ts";
-import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "./processing-vocabulary.ts";
-import { readAutomationStudioRecordNumber } from "./read-number.ts";
-import { readAutomationStudioRecordConditionDate } from "./row-date.ts";
-import type { AutomationStudioRecordConditionTest, AutomationStudioRecordConditionValue } from "./types.ts";
+import { cellText, collapsedText, foldedText } from "../cell-text.ts";
+import { automationStudioRecordConditionComparesDates } from "../compares-dates.ts";
+import { readAutomationStudioRecordConditionDateBound } from "../date-bound.ts";
+import { readAutomationStudioRecordConditionWithin } from "../date-within.ts";
+import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "../processing-vocabulary.ts";
+import { readAutomationStudioRecordNumber } from "../read-number.ts";
+import { readAutomationStudioRecordConditionDate } from "../row-date.ts";
+import type { AutomationStudioRecordConditionTest, AutomationStudioRecordConditionValue } from "../types.ts";
 
 type ConditionBound = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS)[number];
 type ConditionText = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS)[number];
@@ -65,8 +71,9 @@ const TEXT_HOLDS: Record<ConditionText, (text: string, written: string) => boole
  * condition. The field itself is not read, so a condition naming none judges
  * the one value it is given; a blank string, `null` and `undefined` are all a
  * value that is not there. `now` is what a relative date in the value ("3 days
- * ago") is measured back from, for a date bound; the run-end processing passes
- * its own, and a read on the page reads at the moment it reads.
+ * ago") and a relative bound or `within` are measured back from, for a date
+ * bound; the run-end processing passes its own, and a read on the page reads at
+ * the moment it reads unless its caller passes the run's.
  */
 export function automationStudioRecordConditionHolds(condition: AutomationStudioRecordConditionTest, cell: unknown, now: number = Date.now()): boolean {
   // A date bound never keeps a row whose date it cannot read, `not` or no `not` (header, t790).
@@ -95,11 +102,12 @@ function valueHolds(condition: AutomationStudioRecordConditionTest, cell: unknow
   const value = cellText(cell);
   const bounds = AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS.filter((key) => condition[key] !== undefined);
   const texts = AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS.filter((key) => condition[key] !== undefined);
-  if (bounds.length === 0 && texts.length === 0 && condition.equals === undefined) {
+  if (bounds.length === 0 && texts.length === 0 && condition.equals === undefined && condition.within === undefined) {
     return (value !== undefined) === (condition.is !== "absent");
   }
   if (value === undefined) return false;
   const number = typeof cell === "number" ? cell : readAutomationStudioRecordNumber(value);
+  if (condition.within !== undefined && !withinHolds(condition.within, cell, now)) return false;
   if (bounds.length > 0) {
     if (automationStudioRecordConditionComparesDates(condition)) {
       if (!bounds.every((key) => dateBoundHolds(key, condition[key], cell, now))) return false;
@@ -127,10 +135,17 @@ function datedAt(cell: unknown, now: number): number | undefined {
 
 /** Whether a date bound holds of the cell: the row's own day against a bound naming a whole day, else the instants (header). */
 function dateBoundHolds(key: ConditionBound, written: unknown, cell: unknown, now: number): boolean {
-  const bound = typeof written === "string" ? readAutomationStudioRecordConditionDateBound(written) : undefined;
+  const bound = typeof written === "string" ? readAutomationStudioRecordConditionDateBound(written, now) : undefined;
   const at = datedAt(cell, now);
   if (bound === undefined || at === undefined) return false;
   return BOUND_HOLDS[key](bound.wholeDay ? Math.floor(at / DAY_MS) * DAY_MS : at, bound.at);
+}
+
+/** Whether the cell's date lies in the span a `within` keeps at `now`, both ends included (`date-within.ts`). */
+function withinHolds(written: unknown, cell: unknown, now: number): boolean {
+  const span = typeof written === "string" ? readAutomationStudioRecordConditionWithin(written, now) : undefined;
+  const at = datedAt(cell, now);
+  return span !== undefined && at !== undefined && at >= span.from && at <= span.to;
 }
 
 function equalsHolds(written: readonly AutomationStudioRecordConditionValue[], value: string, number: number | undefined): boolean {

@@ -31,7 +31,7 @@
 // request writes them. Anywhere it says them otherwise ("include reference
 // copies"), the condition is the judge's to weigh, and nothing comes back.
 
-import { automationStudioRequestRowWords, type AutomationStudioRequestRowWord } from "../request-rows/index.ts";
+import { automationStudioRequestRowWords, type AutomationStudioRequestRowWord } from "../request-rows/words.ts";
 
 /** A presence test that keeps the rows lacking a value, as its account words it. */
 const LACKING = /^(?:.+?) (?:is absent|not is present)(?: \(a row is kept only when it has no .*\))?$/su;

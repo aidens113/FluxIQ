@@ -16,15 +16,22 @@ const clientGateway = { authorizeToken, receiveTraceArtifact };
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({ get: vi.fn(() => (cookieValue === undefined ? undefined : { value: cookieValue })) })),
 }));
-vi.mock("../../../../../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({
-    programs: {
-      clientGateway,
-      identityAccess: { validateSession },
-      automationStudio: { assertProjectDomainAccess, writeProjectObjectAsset },
-    },
-  }),
-}));
+const snapshot = vi.fn(async () => ({ users: [{ id: "user:owner", roleId: "role:viewer", enabled: true }], roles: [{ id: "role:viewer", permissions: ["programs.read"] }] }));
+// A real registry on the local profile decides the route, as live; a token acts as the person who approved it.
+vi.mock("../../../../../../../../lib/fluxiq", async () => {
+  const { GlobalProgramApiRegistry } = await import("fluxiq");
+  const api = new GlobalProgramApiRegistry();
+  return {
+    getFluxIQ: () => ({
+      programs: {
+        api,
+        clientGateway,
+        identityAccess: { validateSession, snapshot },
+        automationStudio: { assertProjectDomainAccess, writeProjectObjectAsset },
+      },
+    }),
+  };
+});
 
 import { PUT } from "../route";
 
@@ -45,7 +52,7 @@ function upload(token: string | null) {
 beforeEach(() => {
   for (const mock of [authorizeToken, receiveTraceArtifact, validateSession, assertProjectDomainAccess, writeProjectObjectAsset]) mock.mockReset();
   cookieValue = undefined;
-  authorizeToken.mockResolvedValue({ sessionId: "gateway-session-7", activeRecordingId: "recording-3", metadata: { domainId: "web-automation" } });
+  authorizeToken.mockResolvedValue({ sessionId: "gateway-session-7", operatorUserId: "user:owner", activeRecordingId: "recording-3", metadata: { domainId: "web-automation" } });
   assertProjectDomainAccess.mockResolvedValue(undefined);
   writeProjectObjectAsset.mockResolvedValue({ sha256: SHA, contentRef: `object:${SHA}` });
 });

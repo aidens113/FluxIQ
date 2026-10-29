@@ -17,6 +17,7 @@
 // (CD17). Paging is clamped through the shared helper, 1-200 with a default of
 // 50 (C11), never the Design's 1-500.
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type DatasetRunListRequest, type ProjectDatasetListRequest, type RunDatasetDeleteRequest, type RunDatasetExportRequest, type RunDatasetListRequest, type RunDatasetPageRequest } from "../contracts.ts";
 import { automationStudioPageLimit } from "../../storage/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
@@ -29,6 +30,9 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRunDatasets,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListRunDatasets",
+    accessLevel: "List",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = datasetPayload<RunDatasetListRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -43,6 +47,9 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRunDatasetPage,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetRunDatasetPage",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("dataset", "datasetId"),
     handler: async (request) => {
       const payload = datasetPayload<RunDatasetPageRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -63,6 +70,9 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportRunDataset,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ExportRunDataset",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("dataset", "datasetId"),
     handler: async (request) => {
       const payload = datasetPayload<RunDatasetExportRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -83,6 +93,9 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets,
     permission: "flows.write",
     classification: "destructive",
+    action: "studio:DeleteRunDatasets",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = datasetPayload<RunDatasetDeleteRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -102,6 +115,9 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectDatasets,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListProjectDatasets",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = datasetPayload<ProjectDatasetListRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -123,6 +139,9 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listDatasetRuns,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListDatasetRuns",
+    accessLevel: "List",
+    resource: endpointResource.projectChild("dataset", "datasetId"),
     handler: async (request) => {
       const payload = datasetPayload<DatasetRunListRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");

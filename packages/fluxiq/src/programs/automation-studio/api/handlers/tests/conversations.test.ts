@@ -72,7 +72,7 @@ describe("Automation Studio conversation API", () => {
     const { registry } = conversationApi();
     expect(registry.endpoints()).toHaveLength(CONVERSATION_ENDPOINTS.length);
     for (const { endpoint, permission, classification } of CONVERSATION_ENDPOINTS) {
-      expect(registry.endpoints()).toContainEqual({ programId: "automation-studio", endpoint, permission, classification });
+      expect(registry.endpoints()).toContainEqual(expect.objectContaining({ programId: "automation-studio", endpoint, permission, classification }));
     }
   });
 

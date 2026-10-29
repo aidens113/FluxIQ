@@ -39,9 +39,26 @@
 // builder reads why its last read is in doubt, and a single-subflow plan's
 // whole test carries it to the builder's gate from here
 // (`../../project-agents/single-subflow/single-subflow-trial.ts`).
+//
+// **And how many rows a date condition left out undated (t800, K1).** A date
+// bound or a `within` never keeps a row whose value states no date it can read,
+// `not` or no `not` (`@fluxiq/contracts`, `condition/holds.ts`), and the
+// run-end account counts them (`undated`); a page read's account did not, so a
+// trial whose date condition left out rows reading "Date to be confirmed" or no
+// value at all said only how many it rejected. Each such condition now says how
+// many of the rows it alone left out, as its read's witnesses saw them, state no
+// readable date (`undatedByItself`), and the read's sentence says it once. A
+// count only, never a row. The condition is known as a date condition from the
+// step's authored `where`, in its canonical keys.
+import { automationStudioRecordConditionComparesDates, readAutomationStudioRecordConditionDate, type AutomationStudioRecordConditionTest } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
-import { automationStudioResultConditionName, type AutomationStudioResultReadAccount } from "../../result-verification/index.ts";
+import {
+  automationStudioResultConditionName,
+  automationStudioResultReadParameters,
+  type AutomationStudioResultReadAccount,
+  type AutomationStudioResultReadCondition
+} from "../../result-verification/index.ts";
 
 /** What a read's `narrowedBefore` means for it, said to the model once per read that carries one (header). */
 const BEFORE_READ = "These steps acted on the page before this read ran. Rows a step removed on the site (a search, a filter, a category, a sort, an option chosen) never reached the read, so no condition's count shows them. A step whose words keep less than the request asks leaves asked rows out; remove it, or keep exactly the request's terms with a condition on the read.";
@@ -49,12 +66,19 @@ const BEFORE_READ = "These steps acted on the page before this read ran. Rows a 
 /** Each read the trial made: what it saw, kept and rejected, and Core's sentence for it. */
 export function automationStudioTrialReadsFeedback(reads: readonly AutomationStudioResultReadAccount[] | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject[] {
   const labels = new Map((graph?.nodes ?? []).map((node) => [node.id, node.label]));
+  const authored = new Map((graph?.nodes ?? []).map((node) => [node.id, automationStudioResultReadParameters(node.parameterValues)?.where]));
   return (reads ?? []).map((read) => {
-    const conditions = (read.conditions ?? []).map((condition, index) => ({
-      condition: automationStudioResultConditionName(condition.number ?? index + 1, condition.condition),
-      ...(condition.rejected !== undefined ? { rejected: condition.rejected } : {}),
-      ...(condition.alone !== undefined ? { rejectedByItself: condition.alone } : {})
-    }));
+    const where = authored.get(read.nodeId);
+    const conditions = (read.conditions ?? []).map((condition, index) => {
+      const number = condition.number ?? index + 1;
+      const undated = undatedByItself(condition, Array.isArray(where) ? where[number - 1] : undefined);
+      return {
+        condition: automationStudioResultConditionName(number, condition.condition),
+        ...(condition.rejected !== undefined ? { rejected: condition.rejected } : {}),
+        ...(condition.alone !== undefined ? { rejectedByItself: condition.alone } : {}),
+        ...(undated ? { undatedByItself: undated } : {})
+      };
+    });
     const label = labels.get(read.nodeId);
     return {
       nodeId: read.nodeId,
@@ -71,14 +95,29 @@ export function automationStudioTrialReadsFeedback(reads: readonly AutomationStu
   });
 }
 
-function said(read: AutomationStudioResultReadAccount, conditions: ReadonlyArray<{ condition: string; rejected?: number }>): string {
+/**
+ * Of the rows a date condition alone left out, how many its read's witnesses
+ * saw with no value or a value stating no date it can read (header, t800);
+ * `undefined` for a condition that compares no date, or where none is known.
+ */
+function undatedByItself(condition: AutomationStudioResultReadCondition, written: unknown): number | undefined {
+  if (typeof written !== "object" || written === null || Array.isArray(written)) return undefined;
+  if (!automationStudioRecordConditionComparesDates(written as AutomationStudioRecordConditionTest)) return undefined;
+  const now = Date.now();
+  const undated = (condition.leftOutObservations ?? []).filter((seen) => seen !== null && (seen.state === "absent" || (seen.state === "present" && readAutomationStudioRecordConditionDate(seen.value, now) === undefined))).length;
+  return undated > 0 ? undated : undefined;
+}
+
+function said(read: AutomationStudioResultReadAccount, conditions: ReadonlyArray<{ condition: string; rejected?: number; undatedByItself?: number }>): string {
   const seen = read.itemsSeen !== undefined ? `saw ${read.itemsSeen} ${read.itemsSeen === 1 ? "row" : "rows"} and ` : "";
   const kept = read.kept === 0 ? "kept none" : `kept ${read.kept}`;
   const each = conditions.map((condition) => `${condition.condition} rejected ${condition.rejected ?? "an unreported number of"}`).join("; ");
   const rule = conditions.length > 1
     ? `A row is kept only when it passes every one of its ${conditions.length} conditions (a row can fail more than one): ${each}.`
     : conditions.length ? `Its condition ${each}.` : "";
-  const head = `The read ${seen}${kept}.${rule ? ` ${rule}` : ""}`;
+  const undated = conditions.filter((condition) => condition.undatedByItself !== undefined)
+    .map((condition) => `Of the rows ${condition.condition} left out by itself, ${condition.undatedByItself} ${condition.undatedByItself === 1 ? "states" : "state"} no date it can read, and a date condition never keeps such a row.`);
+  const head = `The read ${seen}${kept}.${rule ? ` ${rule}` : ""}${undated.length ? ` ${undated.join(" ")}` : ""}`;
   if (read.unfiltered) return `${head} Every row failed its conditions, so it answered with the unfiltered rows.`;
   if (read.kept > 0 || !conditions.length) return head;
   return `${head} Keeping no rows is a valid outcome when no row on the page matches, and a loop over the kept rows then runs no passes; it is not a fault in the Flow's connections. If the request wants some of these rows, a condition is wrong: check each against the request's own words. Conditions that should accept a row in any of several forms must be one condition that names the forms together, not separate conditions that must all hold.`;

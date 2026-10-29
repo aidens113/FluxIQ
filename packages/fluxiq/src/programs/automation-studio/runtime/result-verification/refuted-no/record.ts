@@ -15,7 +15,7 @@
 // **And a condition that leaves out what the request excludes (t660).** The
 // text test is asked per settled row, with the value Core's read found on it:
 // a presence test (`sponsored is absent`) tests that witness against the
-// request's exclusion words (`./request-exclusion-test.ts`), so a row showing a
+// request's exclusion words (`../asked-words/request-exclusion-test.ts`), so a row showing a
 // value the request says to leave out is accounted by the request's words.
 //
 // **Never a condition that tests a row's own label (t651).** Where the value a

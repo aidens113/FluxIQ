@@ -71,6 +71,14 @@
 // value states no date Core can read is not settled -- the bound left it out
 // for that alone -- and is still quoted for row by row.
 //
+// **And a kept row (framework plan P5, `../computed-facts/kept-bounds.ts`).**
+// The same three kinds, read on the other side: a row the read kept and the
+// answer stored, whose own stored value fails the read's condition as written
+// (`automationStudioResultStoredValueAgainst`). Only what Core measured counts:
+// a stored cell that states no number for a bound, a date bound (whose
+// relative dates read against the run's moment), or any other condition says
+// nothing, and the row is left to the judge.
+//
 // **What a yes must still show.** That the condition is the request's: Core
 // read the row against the condition as authored, not against the request. So
 // the sentence says a yes quotes, once, in a sentence naming the condition, the
@@ -202,6 +210,26 @@ function textSettled(input: { condition: AutomationStudioRecordCondition; column
     settled: `${read}, so Core settled these rows, and a yes need not quote the request beside each of them. `
       + `It must still show the condition is the request's: quote, once, in a sentence that names ${named}, the request's own words ${asks} ${value} says what the condition looks for. If the request asks no such thing, these rows are ones it asks for.`
   };
+}
+
+/**
+ * A stored row's own tested value against the condition of the read that kept
+ * it (header, "And a kept row", framework plan P5): `fails` or `holds` by Core's
+ * own semantics (`automationStudioRecordConditionHolds`), with the kind of
+ * condition that decided it; `undefined` where Core cannot say -- a condition
+ * that is not a numeric bound, a presence test or a text test alone, a date
+ * bound (a relative date reads against the run's moment, which Core does not
+ * hold here), or a bound over a value that states no number. `value` is the
+ * stored cell, `undefined` where the row stores it empty.
+ */
+export function automationStudioResultStoredValueAgainst(condition: AutomationStudioRecordCondition, value: string | number | undefined): { verdict: "holds" | "fails"; kind: SettledRows["settledKind"] } | undefined {
+  const keeps = presenceKept(condition);
+  if (keeps) return { verdict: (value !== undefined) === (keeps === "present") ? "holds" : "fails", kind: "presence" };
+  const judged = (kind: SettledRows["settledKind"]) => ({ verdict: automationStudioRecordConditionHolds(condition, value) ? "holds" as const : "fails" as const, kind });
+  if (textOnly(condition)) return judged("text");
+  if (!numericOnly(condition) || automationStudioRecordConditionComparesDates(condition)) return undefined;
+  if (value !== undefined && typeof value !== "number" && readAutomationStudioRecordNumber(value) === undefined) return undefined;
+  return judged("bound");
 }
 
 /** Whether the condition compares text and nothing else: a text relation, or an `equals` of text only, with no bound and no presence test. */

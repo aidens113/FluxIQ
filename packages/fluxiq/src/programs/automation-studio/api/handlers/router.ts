@@ -1,6 +1,7 @@
 // The flow router: its summary and route listings, and the flow-map route,
 // group and fallback mutations.
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type DeleteFlowMapRouteGroupRequest, type DeleteFlowMapRouteRequest, type FlowIdProjectRequest, type MutateFlowMapRouteRequest, type SaveFlowMapFallbackRequest, type SaveFlowMapRouteGroupRequest, type SaveFlowMapRouteRequest, type TestFlowMapRouteConditionRequest } from "../contracts.ts";
 import { evaluateAutomationStudioRouteCondition, type AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
@@ -12,6 +13,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouter,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowRouter",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowIdProjectRequest : {} as FlowIdProjectRequest;
       return { ok: true, payload: { router: await service.getFlowRouter(String(payload.projectId ?? ""), String(payload.flowId ?? "")) } };
@@ -22,6 +26,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouterSummary,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowRouterSummary",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowIdProjectRequest : {} as FlowIdProjectRequest;
       return { ok: true, payload: { router: await service.getFlowRouterSummary(String(payload.projectId ?? ""), String(payload.flowId ?? "")) } };
@@ -32,6 +39,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRouterRoutes,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowRouterRoutes",
+    accessLevel: "List",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
       const page = await service.listFlowRouterRoutes({
@@ -51,6 +61,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRouterTargetReferences,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowRouterTargetReferences",
+    accessLevel: "List",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
       const subflowIds = Array.isArray(payload.subflowIds) ? payload.subflowIds.filter((value): value is string => typeof value === "string") : [];
@@ -68,6 +81,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouterGraphSummary,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowRouterGraphSummary",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
       return { ok: true, payload: { graph: await service.getFlowRouterGraphSummary({
@@ -86,6 +102,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapRouteGroup,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:SaveFlowMapRouteGroup",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as SaveFlowMapRouteGroupRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as SaveFlowMapRouteGroupRequest;
       const input: Parameters<AutomationStudioService["upsertFlowMapRouteGroup"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), name: String(payload.name ?? "") };
@@ -102,6 +121,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowMapRouteGroup,
     permission: "flows.write",
     classification: "destructive",
+    action: "studio:DeleteFlowMapRouteGroup",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as DeleteFlowMapRouteGroupRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as DeleteFlowMapRouteGroupRequest;
       return { ok: true, payload: { router: await service.deleteFlowMapRouteGroup({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), groupId: String(payload.groupId ?? "") }) } };
@@ -112,6 +134,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapRoute,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:SaveFlowMapRoute",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as SaveFlowMapRouteRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as SaveFlowMapRouteRequest;
       const input: Parameters<AutomationStudioService["upsertFlowMapRoute"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), name: String(payload.name ?? ""), targetSubflowId: String(payload.targetSubflowId ?? "") };
@@ -135,6 +160,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapFallback,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:SaveFlowMapFallback",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as SaveFlowMapFallbackRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as SaveFlowMapFallbackRequest;
       return { ok: true, payload: { router: await service.setFlowMapFallback({
@@ -151,6 +179,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.testFlowMapRouteCondition,
     permission: "programs.read",
     classification: "read",
+    action: "studio:TestFlowMapRouteCondition",
+    accessLevel: "Read",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as TestFlowMapRouteConditionRequest : {} as TestFlowMapRouteConditionRequest;
       const condition = payload.condition && typeof payload.condition.signalPath === "string" ? payload.condition as any : undefined;
@@ -162,6 +193,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.mutateFlowMapRoute,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:MutateFlowMapRoute",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as MutateFlowMapRouteRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as MutateFlowMapRouteRequest;
       const action = ["move_up", "move_down", "duplicate", "toggle", "delete"].includes(payload.action) ? payload.action : "toggle";
@@ -173,6 +207,9 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowMapRoute,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:DeleteFlowMapRoute",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as DeleteFlowMapRouteRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as DeleteFlowMapRouteRequest;
       return { ok: true, payload: { router: await service.deleteFlowMapRoute({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), ruleId: String(payload.ruleId ?? "") }) } };

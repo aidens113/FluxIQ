@@ -3,6 +3,7 @@
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../contracts.ts";
 import type { AutomationStudioProjectArtifactKind } from "../../model/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { endpointResource } from "../../../_shared/iam/index.ts";
 
 export function registerArtifactEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
@@ -11,6 +12,9 @@ export function registerArtifactEndpoints(dependencies: AutomationStudioApiDepen
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectArtifact,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetProjectArtifact",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifactId?: unknown } : {};
       return { ok: true, payload: { artifact: await service.getProjectArtifact(String(payload.projectId ?? ""), String(payload.kind ?? "") as AutomationStudioProjectArtifactKind, String(payload.artifactId ?? "")) } };
@@ -21,6 +25,9 @@ export function registerArtifactEndpoints(dependencies: AutomationStudioApiDepen
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectArtifact,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:SaveProjectArtifact",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifact?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       const projectId = String(payload.projectId ?? ""); const kind = String(payload.kind ?? "") as AutomationStudioProjectArtifactKind;
@@ -34,6 +41,9 @@ export function registerArtifactEndpoints(dependencies: AutomationStudioApiDepen
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectArtifact,
     permission: "flows.write",
     classification: "destructive",
+    action: "studio:DeleteProjectArtifact",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; kind?: unknown; artifactId?: unknown; deleteOwnedArtifacts?: unknown; authSessionId?: unknown; authorizationPin?: unknown } : {};
       const projectId = String(payload.projectId ?? ""); const kind = String(payload.kind ?? "") as AutomationStudioProjectArtifactKind;

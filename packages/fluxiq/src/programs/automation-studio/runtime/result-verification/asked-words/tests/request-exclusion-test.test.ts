@@ -9,9 +9,8 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioRequestWording } from "../../request-rows/index.ts";
-import { automationStudioResultNoRecord } from "../record.ts";
+import { automationStudioResultNoRecord, automationStudioResultRequestTextTest } from "../../refuted-no/index.ts";
 import { automationStudioResultRequestExclusionTest } from "../request-exclusion-test.ts";
-import { automationStudioResultRequestTextTest } from "../request-text-test.ts";
 
 const REQUEST = "List every book in the branch catalogue's search results, leaving out reference copies, with columns title and shelf.";
 const KEPT = [{ title: "Tides of the Northern Coast", shelf: "Lending A2" }, { title: "A Short History of Lanterns", shelf: "Lending C4" }];

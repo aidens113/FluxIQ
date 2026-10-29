@@ -10,12 +10,19 @@ import {
 import { AutomationStudioRequestRowId } from "../request-rows/index.ts";
 import { automationStudioResultActDefectNotFound } from "./act-located.ts";
 import { automationStudioResultActSteps, type AutomationStudioResultActStep } from "./act-steps.ts";
+import { automationStudioResultAskedPresenceSettled } from "./presence-settled.ts";
 import { automationStudioResultLeftOutLabelKey, automationStudioResultLeftOutRowCells } from "./row-cells.ts";
+import { automationStudioResultKeptSearchedWordsOnly } from "./searched-words-kept.ts";
 import { automationStudioResultAskedTestedValueOnly } from "./tested-value-only.ts";
 import { automationStudioResultAskedUntestedColumn } from "./untested-column.ts";
 
 type Defect = AutomationStudioLlmVerificationDefect;
-type Context = { record: AutomationStudioResultNoRecord; summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets" | "flowShape" | "buildTest"> };
+type Context = {
+  record: AutomationStudioResultNoRecord;
+  summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets" | "flowShape" | "buildTest">;
+  /** The request's text, where the caller holds it: whether it asks for every result (`./searched-words-kept.ts`, F3). Absent, every defect is held as before. */
+  requestText?: string | undefined;
+};
 
 /**
  * Which of a no's defects Core finds in its own record of the result (header,
@@ -62,7 +69,8 @@ function notFound(defect: Defect, context: Context, actSteps: () => AutomationSt
       if (!values.length) return `Core holds no measured stored cell for column "${defect.column}" of ${quoted}, so its claimed value remains unconfirmed.`;
       if (values.every((value) => fold(value) !== fold(defect.value!))) return `Core's stored cell contradicts the value the judge claims for column "${defect.column}" of ${quoted}.`;
     }
-    return undefined;
+    // Under a request for every result, a kept row is not "not asked" by searched words its own label says (`./searched-words-kept.ts`, F3).
+    return automationStudioResultKeptSearchedWordsOnly(defect, rows.label, quoted, record, context.requestText);
   }
   if (rows.stored.length) return `${quoted} is a row the result holds.`;
   // A left-out row Core accounts for by the request's own words is no row the request asks for (`../../refuted-no/record.ts`, t629).
@@ -71,7 +79,9 @@ function notFound(defect: Defect, context: Context, actSteps: () => AutomationSt
   // Nor by a column the one condition that left it out did not test (`./untested-column.ts`, t790),
   // nor by the one value a condition tested and left it out for, which the request does not say (`./tested-value-only.ts`, t785).
   if (rows.leftOut.length || rows.seen) {
-    return askedCellNotFound(defect, quoted, rows.cells, rows.label)
+    // A presence condition's settled absence is a cell Core measured (`./presence-settled.ts`, F4).
+    const absent = automationStudioResultAskedPresenceSettled(defect, rows.label, summary);
+    return (absent ? undefined : askedCellNotFound(defect, quoted, rows.cells, rows.label))
       ?? automationStudioResultAskedUntestedColumn(defect, rows.label, quoted, summary)
       ?? automationStudioResultAskedTestedValueOnly(defect, rows.label, quoted, summary, record.says);
   }

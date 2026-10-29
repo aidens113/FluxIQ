@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioRecordConditionText } from "../index.ts";
+import { automationStudioRecordConditionText } from "../../index.ts";
 
 describe("automationStudioRecordConditionText", () => {
   it("says a condition as its field, each comparison and its value", () => {

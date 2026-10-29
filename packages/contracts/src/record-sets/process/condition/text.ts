@@ -6,15 +6,16 @@
 //
 // A date bound says so (t790, run `run-mvswewhy-e4e469d4`): `due atLeast
 // "2026-09-19" as a date`, so no reader of an account takes a bound written as
-// a date for text or a number.
+// a date for text or a number. A `within` (t800) says its span the same way:
+// `posted within "7 days" as a date`.
 
-import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
-import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "./processing-vocabulary.ts";
-import type { AutomationStudioRecordCondition } from "./types.ts";
+import { automationStudioRecordConditionComparesDates } from "../compares-dates.ts";
+import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "../processing-vocabulary.ts";
+import type { AutomationStudioRecordCondition } from "../types.ts";
 
 /** The condition as words: its field, `not` where it says so, and every comparison with its written value. */
 export function automationStudioRecordConditionText(condition: AutomationStudioRecordCondition): string {
-  const compared = [...AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, "equals" as const, ...AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS]
+  const compared = [...AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, "within" as const, "equals" as const, ...AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS]
     .filter((key) => condition[key] !== undefined)
     .map((key) => `${key} ${written(condition[key]!)}`);
   const dated = automationStudioRecordConditionComparesDates(condition) ? " as a date" : "";

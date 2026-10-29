@@ -104,6 +104,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_KEPT_STEP_DROPPED_CODE } from "./kept-step-hint.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE } from "./kept-condition-dropped-code.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_NUMERIC_TEXT_TEST_CODE } from "../numeric-text/index.ts";
 
 /** The code a refused submission is counted under when its check names no closed code of its own. */
 export const AUTOMATION_STUDIO_CANDIDATE_SUBMISSION_REFUSED_CODE = "candidate.submission_refused";
@@ -208,6 +209,9 @@ export function automationStudioCandidateSubmissionRefusal(submitted: Extract<Au
       // A dropped step that chose the request's own words is a hint too, said as one (header, t666).
       : feedback.code === AUTOMATION_STUDIO_CANDIDATE_KEPT_STEP_DROPPED_CODE && typeof feedback.instruction === "string"
         ? hintNext(feedback.instruction, feedback.standingRevision, "the Flow does not need that step, or reads those words another way")
+        // A text test of numbers or dates by characters is a hint too (t800, `../numeric-text/hint.ts`).
+        : feedback.code === AUTOMATION_STUDIO_CANDIDATE_NUMERIC_TEXT_TEST_CODE && typeof feedback.instruction === "string"
+          ? hintNext(feedback.instruction, feedback.standingRevision, "the text really is words")
         : refusedSteps(feedback) + (advice ? advice + HANDLE_TAIL : GENERAL_NEXT);
   return {
     evidence: { ok: false, revision: submitted.revision, diagnostics: feedback, issueCodes: [...submitted.check.issueCodes], next },

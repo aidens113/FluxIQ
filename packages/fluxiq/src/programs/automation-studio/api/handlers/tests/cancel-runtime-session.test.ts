@@ -37,12 +37,12 @@ describe("the stop endpoint", () => {
 
   it("is registered, under runtime.control, as authoring rather than destructive", () => {
     const registry = registryWith({});
-    expect(registry.endpoints()).toContainEqual({
+    expect(registry.endpoints()).toContainEqual(expect.objectContaining({
       programId: "automation-studio",
       endpoint: "cancel-runtime-session",
       permission: "runtime.control",
       classification: "authoring"
-    });
+    }));
   });
 
   it("no longer answers not-found, and hands the service the run to stop", async () => {

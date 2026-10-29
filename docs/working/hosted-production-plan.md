@@ -63,7 +63,7 @@ lanes in parallel to 11-08 (the extension's connection files merge 11-10); hoste
 11-12; store submission about 11-13; public when Google approves.
 
 **Next.** (1) Contracts frozen 2026-10-28 (t784, `@fluxiq/contracts` 0.3.0: `/platform`, `/iam`,
-gateway 0.2 additions; decisions in the paired document's ledger); lanes A, B1, B2 and C start with
+gateway 0.2 additions; decisions in the paired document's ledger); B1 (t789) and B2 (t788) merged 10-28; B3 (t803) merged 10-29 (inert on `service` until C wires it); lane A (t802) and C0 (t808) in flight; C starts with
 the H0 changes, each as its own task. (2) The
 user answers N1 to N7 and creates the VM, DNS and store developer account (paired U9). Nothing
 blocks H1.
@@ -748,23 +748,15 @@ Chrome submission (about 11-13). getfluxiq.com sign-up opens on store approval.
 
 ## Work Ledger
 
-Compacted 2026-10-28 (the document was at the 800-line limit). The three earlier entries are
-merged into one below with their validation substance; the verbatim entries are in
-`hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`.
+The plan's history (2026-10-17 to 10-28) and the H0 fold moved on 2026-10-29 to
+`hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`; the contract freeze, B1 and B2 entries are in the paired document's ledger.
 
-### 2026-10-17 to 10-28 — Plan written, revised with the user's decisions, revised around FluxIQWebsite
-- Agent: lane lead hosted-production-planner; supervisor and a worker-heavy for the 10-28 revision (notes `!FluxIQWebExtension/docs/working/hosted-production-plan/reports/revision-2026-10-28-notes.md`)
-- Changed: created this document and the paired one; revised both on 10-18 (hosted with the Chrome release, provisioning API, bring-your-own-key, billing a port) and 10-28 (FluxIQWebsite is the public site, Core on app.getfluxiq.com behind a private provisioning listener, `apps/site` shrinks to `apps/product`, local website stand-in, AWS-IAM-style permissions with an inert-for-local parity test, parallel lanes, store submission about 11-13); no code, config or index edited
-- Validation: `node scripts/structure-audit.mjs` (Core), 10-17 and 10-18 -> "1 violation(s) across 1 rule(s)": only `[working-docs] docs/working/README.md is out of date` (index row left to the supervisor), no header, size or link findings; on 10-18 the document was 751 lines with a 73-line Current State. The 10-28 worker checked the cited Core facts in code (no `platform/` or provisioning yet; one permission check in `_shared/api.ts`; 289 permission declarations); its post-swap audit result was not recorded. Baseline re-read in `apps/web/package.json`, `client-gateway-websocket.ts:27-45`, `client-gateway-transport.ts:98-107`, `session-key.ts:33-43`, `project.ts:6-15`, `domains/index.ts:53-54`, `login/route.ts:116-122`, `held-keys.ts:12-88`, `conversations.ts:200-278`
-- Outcome: Partial (10-17, 10-18); revised, H0 startable (10-28)
-- Follow-up: the user's answers to the Open Questions; H0 (done below)
-
-### 2026-10-28 — H0 spikes folded in
-- Agent: supervisor; spikes by sub-supervisor t782 (S5 on Opus, the rest on Sonnet); this fold drafted by a worker (brief H0-fold)
-- Changed: this document: Current State; Audit of every decision; credential and gateway 0.2 fields; Gateway Transport (Origin rule, limits, client IP); Tenancy (workspace manager, `close()`, singletons); Model Calls (selection fix, unlock); Security rows 9 and 10; Testing; Phases (lanes A, B1, B2, C with new C0, D; optional lane P; totals); Risks; N7; baseline and old ledger moved to the archive
-- Validation: the sub-supervisor's re-runs, from `reports/h0.md`: S2 `node run.mjs list` -> two 101 upgrades to `server.pairing_required`, 403 for refused Origins and a direct evil Origin; S3 `node --expose-gc retain.mjs` -> `"alive":[true,true,true,true]` after close and gc; S5 `npx vitest run --dir ../../spikes/h0-s5` from `packages/fluxiq` -> 3 of 3 passed; S6 `bench-filter.cjs` and `volume.cjs` -> volume figures match, per-item SQLite rows 32 to 46 µs. S1 outputs read (3 accepted, 3 rejected per browser, boot ids change); S4 tables read, rg counts not re-run. This fold: not validated by command (plan text only); the supervisor runs `node scripts/structure-audit.mjs` after the swap
-- Outcome: Partial (S2 ran through a Node TLS stand-in; Caddy is not installed)
-- Follow-up: contract freeze with the H0 changes; C0; the user's answer on N7
+### 2026-10-29 — Lane B3 merged: IAM enforced on every registration and route, inert on `service` until wired (t803)
+- Agent: supervisor; t803 sub-supervisor (worker-heavy H1 registry, H2 routes, H3 ownership; worker S1, S2 declarations, O docs, T tests); report `hosted-production-plan/reports/t803-b3.md`
+- Changed: all 236 registrations declare `action`, `accessLevel`, `resource` (`list` or `creates` where they apply), refused at `register` when the catalog would not derive them, with a completeness test; `GlobalProgramApiRegistry.call` decides through the B2 engine (local and self-hosted: the actor's own permissions as inline and session policies, so parity holds by construction; service: the IAM store's policies plus `FluxIQServiceGuardrail`); every authenticated app route decides through `authorize()` from `apps/web/src/lib/app-route-iam/`; projects carry `ownerUserId` in a transactional ownership store, assigned lazily; `docs/architecture/platform.md` Enforcement section.
+- Decisions: B2's `FluxIQUserAccess` `List*` wildcards on the workspace are replaced by `Create*` and three per-item-filtered lists (five list endpoints read the whole workspace); resource kind `browser` is `client` in new code (the FRN type stays `browser`); lead kept the tightening that a paired token whose approving user is gone or disabled gets 401 on the four token routes (snapshot, trace-artifacts, recordings, state-assets), since a removed user's token must not keep working.
+- Validation: lead-run under the heavy-check lock on the tree merged with dev: tsc clean; `pnpm test src/platform src/programs/_shared src/programs/automation-studio/api src/programs/client-gateway src/programs/identity-access src/programs/secret-keys` -> "Tests 760 passed (760)", real-sql "Tests 119 passed (119)", "all groups passed"; parity `"decisions":6608 … "mismatches":0` over 236 registrations, 7 actors, local and self-hosted; escalation on service `{"projectRegistrations":153,"escalations":0}`, `{"operatorAndIdentityTargets":45,"reached":[]}`, `{"unfilteredWorkspaceTargets":25,"reached":[]}`; apps/web tsc clean and `vitest run src/lib src/app/api` -> "Test Files 23 passed (23)", "Tests 273 passed (273)"; `pnpm check` exit 0; docs current; structure passed.
+- Outcome: Accepted. Follow-ups: lane C wires the registry's `iam` options in `programs/_shared/runtime.ts` (until then service decides as local and records nothing); regenerate `actions.generated.ts` (data only, after the two mixed `custom` resources become `["project"]`); per-item filters or narrower resources before the hosted panel offers pairing approval, the Studio context, the program directory, trace upload, the workspace-wide reads and `revoke-session`; a creator owner for projects made outside `create-project`; a public `service.hasProject(id)`.
 
 ## Open Questions
 

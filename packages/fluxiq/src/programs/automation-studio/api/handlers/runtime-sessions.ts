@@ -12,6 +12,7 @@
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../contracts.ts";
 import { automationStudioWithWholeAttemptInputs } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { endpointResource } from "../../../_shared/iam/index.ts";
 
 /** The most a listing answer may serialise to; a page of summaries is a few kilobytes. */
 export const AUTOMATION_STUDIO_RUNTIME_SESSION_LISTING_MAX_BYTES = 4 * 1024 * 1024;
@@ -23,6 +24,9 @@ export function registerRuntimeSessionEndpoints(dependencies: AutomationStudioAp
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListRuntimeSessions",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
       // `summaries: true` was how a caller asked for this answer before it was the only one; it is accepted and changes nothing.
@@ -43,6 +47,9 @@ export function registerRuntimeSessionEndpoints(dependencies: AutomationStudioAp
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRuntimeSession,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetRuntimeSession",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: unknown; runId?: unknown } : {};
       // A saved trace keeps each value once; a client reads every attempt's whole inputs (t377).

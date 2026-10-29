@@ -225,6 +225,17 @@ describe("the judge is told what the rows a condition left out by itself are", (
     expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("leftOutOnlyByThis names the rows that condition alone left out of the result");
     expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("none of them came back");
   });
+
+  it("holds rows several conditions left out together to the request's words, and leaves computed facts to Core", () => {
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("each read's leftOutTogether");
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("resultSummary.computedFacts are facts Core measured");
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("do not decide them again or answer no over them");
+  });
+
+  it("says what a not_run proof, or notRun on a shown part, means (t796)", () => {
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("not_run means the step doing what the part asks did not run on the passes its notRun lists");
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("whatever the page looks like; a shown part carrying notRun has the same gap on the passes listed, and either is no yes");
+  });
 });
 
 // t471, lane D round 9 (`run-mv5q4j2n-25784472`): a trial ran on a site that

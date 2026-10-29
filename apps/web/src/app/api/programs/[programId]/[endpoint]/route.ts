@@ -32,7 +32,10 @@ type ProgramActor = NonNullable<ProgramCall["actor"]>;
 /**
  * Who a request speaks for. The web panel's login cookie is the ordinary
  * caller; a paired client's bearer token is accepted only on the endpoints
- * `lib/program-route.ts` allowlists, and never alongside a valid cookie.
+ * `lib/program-route.ts` allowlists, and never alongside a valid cookie. Each
+ * actor names its channel (`panel`, `paired-client`), and the registry's
+ * `call` decides the endpoint through IAM by its registration's own action,
+ * permission and resources (`APP_ROUTES_DECIDED_BY_REGISTRY`).
  */
 type RouteCaller =
   | { kind: "person"; sessionId: string; userId: string; actor: ProgramActor; scope: ProgramCall["scope"] }
@@ -81,7 +84,7 @@ async function authenticate(request: Request, fluxiq: FluxIQ, programId: string,
       kind: "person",
       sessionId,
       userId: auth.user.id,
-      actor: { sessionId, userId: auth.user.id, roleId: auth.role.id, permissions: auth.role.permissions },
+      actor: { sessionId, userId: auth.user.id, roleId: auth.role.id, permissions: auth.role.permissions, channel: "panel" },
       scope: programDomainScope(request.url),
     };
   }
