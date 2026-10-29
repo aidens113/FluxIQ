@@ -18,7 +18,7 @@
 // `unproven` and `contradicted` stand: a place that went back to the build's
 // start contradicts a part asking to add, whatever another step did.
 
-import type { AutomationStudioTrialChangeAct, AutomationStudioTrialChangeFinding, AutomationStudioTrialChangeOutcome, AutomationStudioTrialChangeStep, AutomationStudioTrialSiteChange } from "./contracts.ts";
+import type { AutomationStudioTrialChangeMadeAct, AutomationStudioTrialChangeFinding, AutomationStudioTrialChangeOutcome, AutomationStudioTrialChangeStep, AutomationStudioTrialSiteChange } from "./contracts.ts";
 
 /** What the judge is told of the steps with no witness (header). Generic: it names no site. */
 const SAID = "Core had no place to read for what these steps change on the site, so this packet shows no change of theirs: judge what they did by the run, its end view and each step's done-when check. "
@@ -38,7 +38,7 @@ export type AutomationStudioTrialSiteChangeUnwitnessed = { steps: Array<{ label?
  */
 export function automationStudioTrialChangeUnwitnessedOutcome(
   outcome: AutomationStudioTrialChangeOutcome,
-  gap: { steps: readonly Pick<AutomationStudioTrialChangeStep, "step" | "definitionId" | "label" | "parts">[]; unwitnessed: readonly number[]; acts: readonly Pick<AutomationStudioTrialChangeAct, "step" | "definitionId">[] }
+  gap: { steps: readonly Pick<AutomationStudioTrialChangeStep, "step" | "definitionId" | "label" | "parts">[]; unwitnessed: readonly number[]; acts: readonly Pick<AutomationStudioTrialChangeMadeAct, "step" | "definitionId">[] }
 ): { siteChange: AutomationStudioTrialSiteChange & { unwitnessed?: AutomationStudioTrialSiteChangeUnwitnessed }; findings: AutomationStudioTrialChangeFinding[] } {
   const steps = gap.steps.filter((step) => gap.unwitnessed.includes(step.step));
   if (!steps.length) return { siteChange: outcome.siteChange, findings: [...outcome.findings] };

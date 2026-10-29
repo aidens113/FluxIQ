@@ -126,6 +126,77 @@ describe("builtin.control.for-each", () => {
     expect(parseAutomationStudioFailureRecord(result.failure)).toEqual(failure);
   });
 
+  // t796 (`run-mvtdn37t-e1e4d0a7`): a listing that hands its rows on in page order put featured rows first, and
+  // "the N most recent" had no way to be said. Core orders the rows a For Each walks, then takes its first N.
+  describe("its order option", () => {
+    const NOW = Date.parse("2026-10-01T12:00:00Z");
+    // A library catalogue that lists two featured books first, then the rest, one with no date it can read.
+    const books: JsonValue[] = [
+      { title: "Featured Atlas", published: "2019-03-02" },
+      { title: "Featured Primer", published: "2020-07-15" },
+      { title: "Harbour Notes", published: "2026-05-11" },
+      { title: "Glass Rivers", published: "" },
+      { title: "Quiet Orchard", published: "2026-08-30" },
+      { title: "North Ledger", published: "2026-01-04" }
+    ];
+    const newestFirst = [{ field: "published", order: "desc", as: "date" }];
+    const walk = async (parameters: Record<string, JsonValue>, items: JsonValue[] = books): Promise<JsonValue[]> => {
+      const iteration = keptPlace();
+      const taken: JsonValue[] = [];
+      for (;;) {
+        const result = await pass({ inputs: { items }, parameters, iteration, now: () => NOW });
+        if (result.route !== "body") return taken;
+        taken.push(result.outputs!.item!);
+      }
+    };
+    const titles = (items: JsonValue[]) => items.map((item) => (item as { title: string }).title);
+
+    it("declares order as a list Core writes, with no default", () => {
+      const order = forEachNode.parameters.find((parameter) => parameter.id === "order");
+      expect(order).toMatchObject({ valueType: "array", allowStateBinding: false });
+      expect(order).not.toHaveProperty("defaultValue");
+    });
+
+    it("orders the items by the key, then stops after the first N of that order", async () => {
+      const taken = await walk({ order: newestFirst, stopAfter: 3 });
+      expect(titles(taken)).toEqual(["Quiet Orchard", "Harbour Notes", "North Ledger"]);
+      // Handed on by reference, as the list holds them.
+      expect(taken[0]).toBe(books[4]);
+      const iteration = keptPlace();
+      expect(await pass({ inputs: { items: books }, parameters: { order: newestFirst, stopAfter: 3 }, iteration, now: () => NOW })).toMatchObject({ outputs: { index: 0, count: 3 } });
+    });
+
+    it("puts the items the key cannot read last, whichever the direction, and reads auto, number and text keys", async () => {
+      expect(titles(await walk({ order: newestFirst })).at(-1)).toBe("Glass Rivers");
+      expect(titles(await walk({ order: [{ field: "published", order: "asc", as: "date" }] }))).toEqual(["Featured Atlas", "Featured Primer", "North Ledger", "Harbour Notes", "Quiet Orchard", "Glass Rivers"]);
+      expect(titles(await walk({ order: [{ field: "published", order: "desc" }], stopAfter: 1 }))).toEqual(["Quiet Orchard"]);
+      expect(titles(await walk({ order: [{ field: "title", order: "asc", as: "text" }], stopAfter: 2 }))).toEqual(["Featured Atlas", "Featured Primer"]);
+      const shelves: JsonValue[] = [{ shelf: "12" }, "synthetic-not-a-row", { shelf: "3" }, { shelf: "40" }];
+      expect(await walk({ order: [{ field: "shelf", order: "asc", as: "number" }] }, shelves)).toEqual([shelves[2], shelves[0], shelves[3], shelves[1]]);
+    });
+
+    it.each([
+      { case: "unset", parameters: {} },
+      { case: "null", parameters: { order: null } },
+      { case: "empty", parameters: { order: [] } }
+    ])("walks the list's own order when order is $case, as a Flow saved before it did", async ({ parameters }) => {
+      expect(titles(await walk({ ...parameters, stopAfter: 2 }))).toEqual(["Featured Atlas", "Featured Primer"]);
+    });
+
+    it.each([
+      { case: "a key with no field", order: [{ order: "desc" }] },
+      { case: "an unknown direction", order: [{ field: "published", order: "newest" }] },
+      { case: "an unknown reading", order: [{ field: "published", order: "desc", as: "calendar" }] },
+      { case: "an unknown key", order: [{ field: "published", order: "desc", by: "day" }] },
+      { case: "not a list", order: "published desc" }
+    ])("fails with for_each.order_invalid, keeping no place, on $case", async ({ order }) => {
+      const iteration = keptPlace();
+      const result = await pass({ inputs: { items: books }, parameters: { order: order as JsonValue }, iteration, now: () => NOW });
+      expect(result).toMatchObject({ status: "failed", route: "failed", failure: { category: "graph_validation_or_unknown_node", code: "for_each.order_invalid", retryable: false } });
+      expect(iteration.get()).toBeUndefined();
+    });
+  });
+
   it.each([
     { case: "a string", items: "synthetic-not-a-list" as JsonValue },
     { case: "an object", items: { first: 1 } as JsonValue },

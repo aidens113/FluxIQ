@@ -270,7 +270,8 @@ function strayRefusal(input: {
   if (named < 0) {
     return input.elsewhere(label)
       ? `${at}, a step in another block. A step runs only after an optional step of its own block, written directly before it.`
-      : `${at}, which labels no step. Write \`only after: <label>\` with the label of the optional step written directly before it.`;
+      : `${at}, which labels no step. Write \`only after: <label>\` with the label of the optional step written directly before it. `
+        + "A step behind `only after:` runs only on passes where that step acted, so a step that does what the request asks must not carry it.";
   }
   const reading = input.readings[named];
   if (reading === "refused" || reading === "unresolved") return null;

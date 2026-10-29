@@ -6,8 +6,8 @@
 // remembered: no trial met the layer again, so the model wrote no step for it,
 // and playback on a fresh account met it and failed. The domain says which
 // presses cleared such a layer (`../explored-interruptions.ts`), and each one
-// the submitted Flow has no step of its own for becomes the handler Core writes
-// for a layer that got in the way (`./patch.ts`), lowered into
+// the build recorded becomes the handler Core writes for a layer that got in
+// the way (`./patch.ts`), lowered into
 // every part of the plan but the recovery one:
 //
 // - scope: the part it sits in, not the parts it calls, which have their own;
@@ -22,9 +22,12 @@
 //   lasting, as the explored press declared.
 // - then carry on.
 //
-// A press a step of the plan already makes is the model's own answer and is
-// left to it: the same node naming one of the press's handles
-// (`handleViews`), or the same resolved target, compared whole. Nothing is
+// A press the plan's own steps also make still gets the handler (P6, t796): the
+// model's own press of the control is an ordinary step, which the plan may make
+// optional, and a later pass finds the site remembering the layer closed, so
+// that step is skipped when its control is absent; the layer, not the step, is
+// what the Flow must answer wherever it shows again. The step stays harmless.
+// Only a press recorded twice for the same control is made once. Nothing is
 // added to a part that would then hold more nodes than the Flow allows, and a
 // plan that would then fail validation keeps none: the handler never costs a
 // submission that was valid without it.
@@ -37,7 +40,6 @@ import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS,
   validateAutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBootstrapNode,
-  type AutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBootstrapSizeLimits,
   type AutomationStudioFlowBootstrapSubflow,
   type AutomationStudioFlowBuildPlan
@@ -59,10 +61,10 @@ const LEARNED_FROM = "exploration_close";
 /** How many nodes one handler adds to a part: its registration, its press and its end. */
 const HANDLER_NODES = 3;
 
-/** The build plan with a handler for each explored cleared layer the plan has no step for (header); the plan as given when there is none. */
+/** The build plan with a handler for each explored cleared layer (header); the plan as given when there is none. */
 export function automationStudioCandidateExploredLayerHandlers(input: {
   buildPlan: AutomationStudioFlowBuildPlan;
-  /** Which handle each node was resolved from, the node named `<subflow key>.<node key>`. */
+  /** Which handle each node was resolved from; no longer consulted, since a step pressing the same control no longer replaces the handler (header). */
   handleViews?: readonly { node: string; handle: string }[] | undefined;
   explored: readonly AutomationStudioExploredInterruption[];
   registry: AutomationStudioNodeRegistry;
@@ -72,7 +74,7 @@ export function automationStudioCandidateExploredLayerHandlers(input: {
   const ids = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS;
   const handler = input.registry.get(ids.handler, input.resolution);
   const end = input.registry.get(ids.handlerEnd, input.resolution);
-  const presses = unanswered(input.buildPlan.plan, input.explored, input.handleViews ?? []);
+  const presses = distinctPresses(input.explored);
   if (!handler || !end || !presses.length) return input.buildPlan;
   const plan = structuredClone(input.buildPlan.plan);
   const most = input.size?.maxNodesPerSubflow ?? Number.POSITIVE_INFINITY;
@@ -99,19 +101,15 @@ export function automationStudioCandidateExploredLayerHandlers(input: {
   return { ...input.buildPlan, plan: validation.validated.plan, risk: validation.validated.risk, subflows: validation.validated.subflows };
 }
 
-/** The explored presses, one per control, that no step of `plan` already makes (header). */
-function unanswered(plan: AutomationStudioFlowBootstrapPlan, explored: readonly AutomationStudioExploredInterruption[], handleViews: readonly { node: string; handle: string }[]): AutomationStudioExploredInterruption[] {
+/** The explored presses, one per control (header). */
+function distinctPresses(explored: readonly AutomationStudioExploredInterruption[]): AutomationStudioExploredInterruption[] {
   const seen = new Set<string>();
   const kept: AutomationStudioExploredInterruption[] = [];
   for (const press of [...explored].reverse()) {
     const key = JSON.stringify([press.node, press.parameters]);
     if (seen.has(key)) continue;
     seen.add(key);
-    const made = plan.subflows.some((subflow) => subflow.nodes.some((node) => node.definitionId === press.node && (
-      handleViews.some((view) => view.node === `${subflow.key}.${node.key}` && press.handles.includes(view.handle))
-      || (press.parameters.target !== undefined && JSON.stringify(node.parameters?.target) === JSON.stringify(press.parameters.target))
-    )));
-    if (!made) kept.unshift(press);
+    kept.unshift(press);
   }
   return kept;
 }

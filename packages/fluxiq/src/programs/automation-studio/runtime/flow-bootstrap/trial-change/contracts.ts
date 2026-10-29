@@ -63,11 +63,25 @@ export type AutomationStudioTrialDelta =
   | { witness: string; kind: "list"; status: "changed" | "unchanged"; added: string[]; removed: string[]; changed: string[]; unchanged: string[] }
   | { witness: string; kind: "control"; status: "changed" | "unchanged"; before: Record<string, number>; after: Record<string, number>; returned?: true };
 
-/** What the trial proves of one part: `none` (the part has no typed effect), `shown`, `no_change`, `already_in_end_state`, `carried` (the end state held before, and the same step was seen making it earlier in the build), `unproven`, or `contradicted` (a part asking to add, one of whose controls the trial put back to the build's start: t787), which is never a yes. */
-export type AutomationStudioTrialProof = "none" | "shown" | "no_change" | "already_in_end_state" | "carried" | "unproven" | "contradicted";
+/**
+ * What the trial proves of one part: `none` (the part has no typed effect), `shown`, `no_change`, `already_in_end_state`,
+ * `carried` (the end state held before, and the same step was seen making it earlier in the build), `unproven`,
+ * `contradicted` (a part asking to add, one of whose controls the trial put back to the build's start: t787), which is
+ * never a yes, or `not_run` (t796: every step that does the part's lasting act never ran on any pass, a guard routed past
+ * it or no pass reached it, so the act was not done whatever the places read; its `notRun` names those steps and why).
+ */
+export type AutomationStudioTrialProof = "none" | "shown" | "no_change" | "already_in_end_state" | "carried" | "unproven" | "contradicted" | "not_run";
 
-/** One part's proof, with its effect and the trial steps whose acts serve it. */
-export type AutomationStudioTrialPartProof = { part: string; effect?: AutomationStudioTrialPartEffect; proof: AutomationStudioTrialProof; steps: number[] };
+/**
+ * One step of a trial not run on some passes, as a part's proof names it (t796, the trial's act ledger,
+ * `../../service/candidate-trial/act-ledger.ts`): its node and label, why (`guarded`: a guard routed past it because the
+ * optional step it runs only after, `after` by its label, was skipped; `unreached`: the pass never got to it), the passes
+ * it was not run on, and `of`, its repeat's passes (absent outside a repeat, where `passes` is `[1]`).
+ */
+export type AutomationStudioTrialNotRun = { nodeId: string; label: string; reason: "guarded" | "unreached"; after?: string; passes: number[]; of?: number };
+
+/** One part's proof, with its effect, the trial steps whose acts serve it, and (t796) the part's acting steps not run on some passes. */
+export type AutomationStudioTrialPartProof = { part: string; effect?: AutomationStudioTrialPartEffect; proof: AutomationStudioTrialProof; steps: number[]; notRun?: AutomationStudioTrialNotRun[] };
 
 /** Core's closed mechanical findings over a trial's change. */
 export type AutomationStudioTrialChangeFinding =
@@ -96,7 +110,7 @@ export type AutomationStudioTrialSiteChange = {
   witnesses: Array<{ id: string; kind: "list" | "control"; where?: string; steps: number[]; parts: string[]; before: AutomationStudioTrialSiteSide; after: AutomationStudioTrialSiteSide; change: AutomationStudioTrialSiteWitnessChange }>;
   acts: Array<{ step: number; pass?: { number: number; of: number }; row?: string; outcome: AutomationStudioTrialActOutcome["outcome"]; witness?: string; parts: string[] }>;
   leftFromEarlier: AutomationStudioTrialLeftAct[];
-  proofs: Array<{ part: string; effect: AutomationStudioTrialPartEffect; proof: Exclude<AutomationStudioTrialProof, "none">; steps: number[] }>;
+  proofs: Array<{ part: string; effect: AutomationStudioTrialPartEffect; proof: Exclude<AutomationStudioTrialProof, "none">; steps: number[]; notRun?: AutomationStudioTrialNotRun[] }>;
   omitted?: { witnesses?: number; acts?: number; leftFromEarlier?: number };
 };
 
@@ -107,7 +121,7 @@ export type AutomationStudioTrialSiteChange = {
  * definition, its lasting classes, its node's witness stamp (unread here: the ledger resolves it), and the task parts
  * it serves (none for a step that only prepares the trial's entry, or in a build with no task parts).
  */
-export type AutomationStudioTrialChangeStep = { step: number; definitionId: string; label?: string; consequences: readonly string[]; witness?: unknown; parts: string[] };
+export type AutomationStudioTrialChangeStep = { step: number; definitionId: string; label?: string; consequences: readonly string[]; witness?: unknown; parts: string[]; /** The plan node's key, which its graph node carries as `bootstrapSymbolicKey` (t796). */ key?: string };
 
 /** One task part a trial is judged on, with its typed effect where the plan declared one. */
 export type AutomationStudioTrialChangePart = { id: string; effect?: AutomationStudioTrialPartEffect | undefined };
@@ -152,8 +166,21 @@ export type AutomationStudioTrialWitnessSet = {
   byDefinition: Record<string, { witnesses: string[]; parts: string[] }>;
 };
 
+/**
+ * One act a live trial made or passed over, as the trial port reports it (`./acts.ts`): one it made or found already done
+ * (`AutomationStudioTrialChangeMadeAct`), or (t796) a step it never ran on some passes, from the trial's act ledger
+ * (`AutomationStudioTrialChangeNotRunAct`), which only the part proofs read (`./part-acting.ts`).
+ */
+export type AutomationStudioTrialChangeAct = AutomationStudioTrialChangeMadeAct | AutomationStudioTrialChangeNotRunAct;
+
+/**
+ * A step the trial never ran on some passes (t796): its definition, its graph node's plan key where stamped, whether it
+ * does a lasting act, and which passes and why (`AutomationStudioTrialNotRun`). Never attributed to a witness.
+ */
+export type AutomationStudioTrialChangeNotRunAct = { outcome: "not_run"; definitionId: string; key?: string | undefined; lasting: boolean; notRun: AutomationStudioTrialNotRun };
+
 /** One act a live trial made or passed over, as the trial port reports it: the step's number as the trial's feedback numbers it, its definition and stamp, what it did, and, for a landed act whose own diff read its control, that control's place, page location and counts just before and just after it (t787: each pass of a loop at its own item). */
-export type AutomationStudioTrialChangeAct = {
+export type AutomationStudioTrialChangeMadeAct = {
   step: number;
   definitionId: string;
   witness?: unknown;

@@ -62,7 +62,7 @@ describe("learning a closed layer in the run session", () => {
     if (answer.kind !== "overlay") return;
     expect(answer.unit.kind).toBe("handler");
     const handler = answer.graph.nodes.find((node) => node.definitionId === "builtin.control.handler");
-    expect(handler?.parameterValues).toMatchObject({ event: "before", scope: { kind: "nodes", nodeIds: ["read"] }, when: [{ fact: "dialog", op: "visible", value: "Join the reading club" }], completionCheck: [{ fact: "dialog", op: "absent", value: "Join the reading club" }] });
+    expect(handler?.parameterValues).toMatchObject({ event: "before", scope: { kind: "subflow", inherit: false }, when: [{ fact: "dialog", op: "visible", value: "Join the reading club" }], completionCheck: [{ fact: "dialog", op: "absent", value: "Join the reading club" }] });
     const press = answer.graph.nodes.find((node) => node.definitionId === "test.output.press");
     expect(press?.parameterValues).toEqual({ target: RESOLVED_TARGET });
 

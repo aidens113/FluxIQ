@@ -7,14 +7,18 @@
 // acts attributed each at its own control's place, a loop's passes each at its
 // own item, and what of a trial's change contradicts its yes, which a trial
 // gate never takes as a pass; (t791) the steps a trial runs with no witness,
-// and the gap they leave in what Core read, said to the judge.
+// and the gap they leave in what Core read, said to the judge; (t796) the
+// steps a trial never ran on some passes, read against each part's acting
+// steps, which make a part whose act never ran `not_run`.
 export * from "./acts.ts";
+export * from "./acts-split.ts";
 export * from "./after-read.ts";
 export * from "./contracts.ts";
 export * from "./contradicted.ts";
 export * from "./delta.ts";
 export * from "./findings.ts";
 export * from "./packet.ts";
+export * from "./part-acting.ts";
 export * from "./pass-witnesses.ts";
 export * from "./proof.ts";
 export * from "./read-log.ts";

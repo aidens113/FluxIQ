@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioTrialDelta as delta, automationStudioTrialPartProof as proof, type AutomationStudioTrialActOutcome, type AutomationStudioTrialDelta, type AutomationStudioTrialWitness } from "../index.ts";
+import { automationStudioTrialDelta as delta, automationStudioTrialPartProof as proof, type AutomationStudioTrialActOutcome, type AutomationStudioTrialDelta, type AutomationStudioTrialNotRun, type AutomationStudioTrialWitness } from "../index.ts";
 
 // What a trial proves of one task part, from the part's typed effect and the
 // deltas of its witnesses: judged against the before-state, never an absolute.
@@ -77,5 +77,34 @@ describe("an end-state part's proof", () => {
     const changed: AutomationStudioTrialDelta = { witness: "w9", kind: "control", status: "changed", before: { "st:off": 1 }, after: { "st:on": 1 } };
     expect(proof({ part: alert, deltas: [changed], acts: [], carried: false }).proof).toBe("shown");
     expect(proof({ part: alert, deltas: [unread], acts: [], carried: true }).proof).toBe("unproven");
+  });
+});
+
+// Debug `run-mvtdn37t-e1e4d0a7` (t796): a guard went past the act step on every pass, and the proof said `no_change`
+// with `steps: []`, so the judge and the builder read "the act did not register" instead of "the act step never ran".
+describe("a part whose acting steps were not run (t796)", () => {
+  const holdEach = { id: "p1", effect: { kind: "change" as const, direction: "adds" as const, count: "each_match" as const, what: "a hold on each book" } };
+  const guarded = (passes: number[]): AutomationStudioTrialNotRun => ({ nodeId: "hold", label: "place a hold", reason: "guarded", after: "close the library banner", passes, of: 3 });
+
+  it("a part whose act step never ran is `not_run`, naming the step", () => {
+    expect(proof({ part: holdEach, deltas: [unchanged], acts: [], carried: false, acting: [{ notRun: [guarded([1, 2, 3])] }] })).toEqual({
+      part: "p1", effect: holdEach.effect, proof: "not_run", steps: [], notRun: [guarded([1, 2, 3])]
+    });
+  });
+
+  it("is not_run first, before contradicted or shown, and when every pass is covered by its reasons together", () => {
+    const returned: AutomationStudioTrialDelta = { witness: "w9", kind: "control", status: "changed", before: { "st:on": 1 }, after: { "st:off": 1 }, returned: true };
+    const unreached: AutomationStudioTrialNotRun = { nodeId: "hold", label: "place a hold", reason: "unreached", passes: [3], of: 3 };
+    expect(proof({ part: holdEach, deltas: [returned], acts, carried: false, acting: [{ notRun: [guarded([1, 2]), unreached] }] }).proof).toBe("not_run");
+    // Outside a repeat, an entry alone says the step never ran.
+    expect(proof({ part: holdEach, deltas: [], acts: [], carried: false, acting: [{ notRun: [{ nodeId: "renew", label: "renew", reason: "unreached", passes: [1] }] }] }).proof).toBe("not_run");
+  });
+
+  it("keeps the proof it reads, with notRun beside it, when the act step ran on some passes or another acting step ran", () => {
+    const changed: AutomationStudioTrialDelta = { witness: "w9", kind: "control", status: "changed", before: { "st:off": 1 }, after: { "st:on": 1 } };
+    expect(proof({ part: holdEach, deltas: [changed], acts, carried: false, acting: [{ notRun: [guarded([1, 3])] }] })).toMatchObject({ proof: "shown", notRun: [guarded([1, 3])] });
+    expect(proof({ part: holdEach, deltas: [unchanged], acts, carried: false, acting: [{ notRun: [guarded([1, 2, 3])] }, { notRun: [] }] })).toMatchObject({ proof: "no_change", notRun: [guarded([1, 2, 3])] });
+    // A part with no acting step, or none not run, reads as before.
+    expect(proof({ part: holdEach, deltas: [unchanged], acts, carried: false, acting: [] })).toEqual({ part: "p1", effect: holdEach.effect, proof: "no_change", steps: [2] });
   });
 });

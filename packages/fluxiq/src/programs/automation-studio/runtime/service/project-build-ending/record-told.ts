@@ -118,7 +118,8 @@ function wholeSaid(assembled: boolean, whole: Whole | undefined, runs: WholeRuns
 
 /** What the judged run did, from its own feedback: how many of its steps ran, and how many rows it stored; empty when it says neither. */
 function ran(feedback: unknown): string {
-  const record = feedback && typeof feedback === "object" ? feedback as { steps?: unknown; stepsLeftOut?: unknown; stored?: unknown } : {};
+  const record = feedback && typeof feedback === "object" ? feedback as { steps?: unknown; stepsLeftOut?: unknown; stored?: unknown; notRun?: unknown } : {};
+  const skipped = notRunTold(record.notRun);
   const listed: unknown[] = Array.isArray(record.steps) ? record.steps : [];
   const statuses = listed.map((step: unknown) => (step && typeof step === "object" ? (step as { status?: unknown }).status : undefined));
   // The listing cuts a long run between its first steps and its last; the cut steps ran too (t774).
@@ -132,10 +133,35 @@ function ran(feedback: unknown): string {
   if (total) {
     const succeeded = statuses.filter((status) => status === "succeeded").length + cut;
     const counted = repeats ? ", counting each pass of a repeat" : "";
-    said.push(succeeded === total ? (total === 1 ? "ran its one step" : total === 2 ? "ran both of its steps" : `ran all ${total} of its steps${counted}`) : `ran ${succeeded} of its ${total} steps${counted}`);
+    // A step listed as never run is not among "all": the count is of the step runs the listing holds, which the missing step is not in (t796).
+    if (skipped.length) said.push(`made ${succeeded} step ${succeeded === 1 ? "run" : "runs"}${counted}`);
+    else said.push(succeeded === total ? (total === 1 ? "ran its one step" : total === 2 ? "ran both of its steps" : `ran all ${total} of its steps${counted}`) : `ran ${succeeded} of its ${total} steps${counted}`);
   }
   if (typeof rows === "number" && Number.isInteger(rows) && rows >= 0) said.push(rows === 0 ? "stored no rows" : `stored ${rows} ${rows === 1 ? "row" : "rows"}`);
-  return said.join(" and ");
+  const told = said.join(" and ");
+  return skipped.length ? `${told}${told ? ", but " : ""}${skipped.join("; and ")}` : told;
+}
+
+/** Each step the judged run's feedback lists as not run, said by its name and the passes it missed (header, t796); none where the feedback has none. */
+function notRunTold(listed: unknown): string[] {
+  if (!Array.isArray(listed)) return [];
+  const said = new Map<string, string>();
+  for (const entry of listed) {
+    if (!entry || typeof entry !== "object") continue;
+    const { label, passes, of } = entry as { label?: unknown; passes?: unknown; of?: unknown };
+    if (typeof label !== "string" || !label.trim() || said.has(label)) continue;
+    const missed = Array.isArray(passes) ? passes.filter((pass): pass is number => Number.isSafeInteger(pass)) : [];
+    const total = typeof of === "number" && Number.isSafeInteger(of) && of > 0 ? of : undefined;
+    const name = `its step “${label.trim()}”`;
+    if (total !== undefined && missed.length && missed.length >= total) said.set(label, `${name} never ran (on any of the ${total} passes)`);
+    else if (missed.length) said.set(label, `${name} did not run on ${missed.length === 1 ? "pass" : "passes"} ${joinedPasses(missed)}${total !== undefined ? ` of ${total}` : ""}`);
+    else said.set(label, `${name} never ran`);
+  }
+  return [...said.values()].slice(0, 5);
+}
+
+function joinedPasses(passes: readonly number[]): string {
+  return passes.length <= 1 ? String(passes[0] ?? "") : `${passes.slice(0, -1).join(", ")} and ${passes[passes.length - 1]}`;
 }
 
 function times(count: number): string {

@@ -82,3 +82,29 @@ describe("a build's ending against Core's record", () => {
     expect(automationStudioProjectBuildReasonChecked("The feed stopped loading, so nothing more could be read.", true)).toContain("feed stopped loading");
   });
 });
+
+// t796, a repeat's step that never ran on any pass was told as "ran all 25 of its steps": the count included merges and
+// every pass, and the step missing from it was not named. A library stands in: a loan step that never ran.
+describe("a judged run that left steps out", () => {
+  const ok = (label: string) => ({ status: "succeeded", label });
+  const run = (notRun: Array<Record<string, string | number | boolean | number[]>>, steps = [ok("open"), ok("find the book"), ok("find the book"), ok("find the book")]) =>
+    automationStudioProjectBuildRecordTold({ parts: new Map(), assembled: true, whole: { verdict: "no", feedback: { steps, notRun, stored: { rows: 3 } } } })!;
+
+  it("names a step that never ran on any pass, and does not say it ran all its steps", () => {
+    const told = run([{ nodeId: "n1", label: "place the hold", reason: "unreached", passes: [1, 2, 3], of: 3, lasting: true, said: "x" }]);
+    expect(told).toContain("its step “place the hold” never ran (on any of the 3 passes)");
+    expect(told).not.toContain("ran all");
+    expect(told).toContain("stored 3 rows");
+  });
+
+  it("names the passes a step did not run on", () => {
+    const told = run([{ nodeId: "n1", label: "place the hold", reason: "guarded", passes: [2, 3], of: 3, lasting: true, said: "x" }]);
+    expect(told).toContain("its step “place the hold” did not run on passes 2 and 3 of 3");
+    expect(told).not.toContain("ran all");
+  });
+
+  it("is as before when the feedback lists none", () => {
+    expect(run([], [ok("a"), ok("b"), ok("c")])).toContain("ran all 3 of its steps");
+    expect(run([], [ok("a"), ok("b"), ok("c")])).not.toContain("never ran");
+  });
+});
