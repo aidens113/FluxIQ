@@ -14,7 +14,7 @@ import {
 import { chooseAutomationStudioEdge, missingTargetTrace } from "../graph-navigation.ts";
 import { runAutomationStudioRecoveryLadder } from "../ladder-run.ts";
 import { executeAutomationStudioNode } from "../node-execution.ts";
-import { automationStudioRunWait } from "../pacing/index.ts";
+import { automationStudioPaceAfterRateLimit, automationStudioRunWait } from "../pacing/index.ts";
 import { recoveryBudgetState } from "../recovery-budget.ts";
 import { automationStudioRecoveryPathEdge, failureMessageForRecoveryStop } from "../recovery-ladder.ts";
 import { recordRegionTransition } from "../region-execution.ts";
@@ -78,9 +78,8 @@ export async function automationStudioStepFailedAttempt(
   let fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
   // A failure that asked for a wait raises this node's pace for the rest of the run (`pacing/`), and its attempt says so.
   // Its hint counts from when the refused attempt settled, as the retry wait counts it, not from after its snapshot (t485).
-  const refusedAt = attempts[attemptIndex]!.finishedAt ?? attempts[attemptIndex]!.startedAt;
-  const raisedToMs = fault?.hintedWaitMs === undefined ? undefined : runState.pace.learn(failedNode, fault.hintedWaitMs, refusedAt);
-  if (raisedToMs !== undefined) attempts[attemptIndex] = { ...attempts[attemptIndex]!, pace: { ...(attempts[attemptIndex]!.pace ?? { inForceMs: 0, waitedMs: 0 }), raisedToMs } };
+  // A rate limit that stated no wait slows it too, by a growing step (`pacing/rate-limit-pace.ts`, P6 CC8).
+  attempts[attemptIndex] = automationStudioPaceAfterRateLimit(runState.pace, failedNode, attempts[attemptIndex]!, fault?.hintedWaitMs);
   const mayAbsorb = automationStudioRunMayStillAbsorb(runState.defence.runWaitedMs());
   // Settles the step as failed, with its failure's code, so a card can say
   // why ("the page was busy", D8); it opens no "Recovery started" row of
@@ -125,7 +124,8 @@ export async function automationStudioStepFailedAttempt(
     }
   });
   const recoveryDecision = ladder.decision;
-  if (!fault?.actUncertain && !(ladder.kind === "retry" && automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode))) settleFailed();
+  // Nor is one that the clear_interference rung cleared and retried: that rung's retry is a repeat of a step that did not run, and the step then works (P6, w1's finding, t774).
+  if (!fault?.actUncertain && !(ladder.kind === "retry" && (automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode) || ladder.rung === "clear_interference"))) settleFailed();
   // A retry's wait, bounded and with a hint's elapsed time credited, settled before the recovery is worded (`defensive/planned-retry-wait.ts`).
   const settled = attempts[attemptIndex]!;
   const { wait, hint, siteAsked } = automationStudioPlannedRetryWait({

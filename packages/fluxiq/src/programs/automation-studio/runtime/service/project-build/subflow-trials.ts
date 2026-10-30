@@ -12,6 +12,7 @@ import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-toggles/index.ts";
+import { AutomationStudioExploredInterruptions, AutomationStudioLearnedPaces } from "../../flow-bootstrap/index.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trials.ts";
 
@@ -84,6 +85,8 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   const ports: AutomationStudioSubflowTrialPorts = {
     ...environment,
     exploredToggles,
+    exploredInterruptions: AutomationStudioExploredInterruptions.of(environment),
+    exploredPaces: AutomationStudioLearnedPaces.of(environment),
     ...automationStudioProjectBuildTrialReads(binding, projectId, flowId),
     // Every trial's run goes to the build's start first, so it starts on a loaded start page (header, t578).
     ...(arrival ? { arrival } : {}),

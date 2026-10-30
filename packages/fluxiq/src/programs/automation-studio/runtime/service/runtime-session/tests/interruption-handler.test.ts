@@ -7,7 +7,7 @@ import type { AutomationStudioClearedLayer } from "../../../executor/index.ts";
 import { automationStudioInterruptionHandlerPatch } from "../interruption-handler.ts";
 import { inRunRepairGraph } from "./in-run-repair-fixture.ts";
 
-const OFFER: AutomationStudioClearedLayer = { kind: "dialog", control: "Maybe later", name: "Join the reading club", controlName: "Maybe later, thanks", wayOut: "way-out.0a1b", wayOutDefinitionId: "test.output.press" };
+const OFFER: AutomationStudioClearedLayer = { kind: "other", control: "Maybe later", name: "Join the reading club", controlName: "Maybe later, thanks", wayOut: "way-out.0a1b", wayOutDefinitionId: "test.output.press" };
 
 describe("the handler proposed for a closed layer", () => {
   it("waits for the layer by its name before the step, presses its way out by its handle, checks it is gone, and resumes", () => {

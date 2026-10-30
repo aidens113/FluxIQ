@@ -23,7 +23,7 @@ import { partOutputPortIssues } from "./part-output-port-issues.ts";
 import { submissionText } from "./submission-text.ts";
 import { automationStudioCandidateUnwitnessedAdvice } from "../reset-admission/index.ts";
 import type { AutomationStudioExploredInterruption } from "../explored-interruptions.ts";
-import { automationStudioCandidateExploredLayerHandlers } from "../layer-handlers/index.ts";
+import { automationStudioCandidateExploredLayerHandlers, automationStudioDroppedLayerHandlerAdvice, type AutomationStudioDroppedLayerHandler } from "../layer-handlers/index.ts";
 
 /** Session-local candidates, separate from discovery and the accepted Flow store. */
 export class AutomationStudioFlowCandidateSubmissionController {
@@ -65,6 +65,13 @@ export class AutomationStudioFlowCandidateSubmissionController {
      * (`../layer-handlers/explored.ts`, t787). Absent, none is added.
      */
     exploredInterruptions?: { list(): readonly AutomationStudioExploredInterruption[] } | undefined;
+    /**
+     * The paces the build's trials learned (`../learned-paces.ts`, P6 CC8,
+     * t799): `lower` sets each on the model's step it was learned for, tied by
+     * the step's identity, so the model writes no `repeat pace:` for it. It
+     * answers the plan itself when nothing changes. Absent, none is written.
+     */
+    exploredPaces?: { lower(plan: AutomationStudioFlowBootstrapPlan): AutomationStudioFlowBootstrapPlan } | undefined;
     /**
      * The lasting acts the task's parts ask for, as consequence classes
      * (a subflow scope's parts' `lastingActs`, t796): a step declaring one of
@@ -174,6 +181,15 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * candidate whose plan lays out otherwise (`candidate.execution_plan_rewritten`,
    * `../verification/detached-execution.ts`).
    *
+   * **A pace a trial learned is written by Core (P6 CC8, t799).** A step whose
+   * pace a trial raised, because the site refused it as too fast or showed a
+   * slow-down notice, is given that pace (rounded up to a whole 100 ms, within
+   * the plan's limits, never below a pace it already has) when the step is
+   * written as the trial's node was: the same node and parameters, never the
+   * same key (`../learned-paces.ts`). The model writes no `repeat pace:` for it.
+   * A submission of the same script is a new revision once such a pace is
+   * waiting to be written, so the instruction to submit and test again holds.
+   *
    * **A layer the build closed while exploring is closed by the Flow too
    * (t787).** Each explored press the domain answered as clearing a layer that
    * covered the page, which no step of the Flow makes, becomes a handler of
@@ -210,7 +226,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const last = standing ?? this.previous;
     const text = submissionText(result);
     // A Flow with a reversible lasting step is checked again even as the same text: its steps' reset witnesses are stamped as it is resolved, and a new stamp is a new Flow (t751).
-    if (last && text !== undefined && text === this.currentText && !restampable(last.buildPlan.plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest));
+    // Nor a Flow that a pace a trial learned has still to be written on (P6 CC8): the same script is a new revision once Core sets it.
+    if (last && text !== undefined && text === this.currentText && !restampable(last.buildPlan.plan) && !(holdKept && this.input.exploredPaces !== undefined && this.input.exploredPaces.lower(last.buildPlan.plan) !== last.buildPlan.plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest));
     // Even a refused revision invalidates any earlier candidate and receipt.
     const revision = ++this.revision;
     this.current = undefined;
@@ -242,11 +259,15 @@ export class AutomationStudioFlowCandidateSubmissionController {
       takesEnsureState: (definitionId) => this.input.registry.get(definitionId, this.input.resolution)?.parameters.some((parameter) => parameter.id === "ensureState") === true }) : undefined;
     if (toggled?.issues.length) return { ok: false, revision, check: bindingRefusal(toggled.issues, verdict.locator, "candidate.toggle_not_idempotent") };
     // Laid out again, so the parts a trial runs and a promotion saves carry what the plan does (header of `submit`, t787).
-    const relaid = toggled ? this.relaid(verdict.buildPlan, toggled.plan) : { buildPlan: verdict.buildPlan };
+    // And each step a trial slowed down given the pace it learned, tied by the step's identity (header of `submit`, P6 CC8).
+    const paced = holdKept ? this.input.exploredPaces?.lower(toggled?.plan ?? verdict.buildPlan.plan) : undefined;
+    const wanted = paced ?? toggled?.plan;
+    const relaid = wanted ? this.relaid(verdict.buildPlan, wanted) : { buildPlan: verdict.buildPlan };
     if ("issues" in relaid) return { ok: false, revision, check: bindingRefusal(relaid.issues, verdict.locator, "candidate.toggle_not_idempotent") };
     const kept = relaid.buildPlan;
     // A layer an exploration press cleared that no step answers: a handler of every part closes it whenever it shows (header of `submit`, t787).
-    const plan = structuredClone(holdKept ? automationStudioCandidateExploredLayerHandlers({ buildPlan: kept, handleViews: verdict.handleViews, explored: this.input.exploredInterruptions?.list() ?? [],
+    const droppedHandlers: AutomationStudioDroppedLayerHandler[] = [];
+    const plan = structuredClone(holdKept ? automationStudioCandidateExploredLayerHandlers({ buildPlan: kept, handleViews: verdict.handleViews, explored: this.input.exploredInterruptions?.list() ?? [], dropped: droppedHandlers,
       registry: this.input.registry, resolution: this.input.resolution, size: this.input.size }) : kept);
     const digest = fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
       ...(this.originalSource ? { originalInstructionsDigest: this.originalSource.originalInstructionsDigest } : {}) });
@@ -285,7 +306,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     // Advice, never a refusal: a condition listing values the request never says (t785, `../script-statements/listed-values-advice.ts`).
     // And each step with no witness, said now rather than after its trial (t791 fix 2, `../reset-admission/unwitnessed-advice.ts`).
-    const advice = [...automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText), ...automationStudioCandidateUnwitnessedAdvice(plan.plan, this.input.permissionFor)];
+    const advice = [...automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText), ...automationStudioCandidateUnwitnessedAdvice(plan.plan, this.input.permissionFor), ...automationStudioDroppedLayerHandlerAdvice(droppedHandlers)];
     return { ok: true, candidate, handleViews, ...(advice.length ? { advice } : {}) };
   }
 
