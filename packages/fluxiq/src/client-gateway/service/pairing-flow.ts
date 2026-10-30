@@ -1,5 +1,7 @@
 import type { ClientGatewayPairingChallenge, ClientGatewaySession } from "@fluxiq/contracts/client-gateway";
+import type { JsonObject } from "../../core/index.ts";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
+import { clientGatewayPeerAuditFields } from "./security/index.ts";
 import type { ClientGatewayConfig } from "./config.ts";
 import { declaredDomainId } from "./declared-domain.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
@@ -72,10 +74,22 @@ export class ClientGatewayPairingFlow {
     requestedByClientId?: string;
     requestedByClientName?: string;
   } = {}): ClientGatewayPairingChallenge {
+    // Over a pending cap the challenge is refused before a code is minted; the caller tells the client.
+    const refusal = this.pairings.capacityRefusal(input.requestedBySessionId);
+    if (refusal) {
+      this.audit.record("pairing.refused_capacity", "A new pairing challenge was refused: too many are waiting for approval.", {
+        sessionId: input.requestedBySessionId ?? null,
+        clientId: input.requestedByClientId ?? null,
+        scope: refusal.scope,
+        ...this.addressFields(input.requestedBySessionId)
+      });
+      throw refusal;
+    }
     const pairing = this.pairings.create(input);
     this.audit.record("pairing.created", "Client pairing challenge created.", {
       pairingCode: pairing.pairingCode,
-      projectId: input.projectId ?? null
+      projectId: input.projectId ?? null,
+      ...this.addressFields(input.requestedBySessionId)
     });
     return pairing;
   }
@@ -110,7 +124,8 @@ export class ClientGatewayPairingFlow {
     this.audit.record("pairing.dismissed", "Client pairing challenge dismissed.", {
       pairingCode,
       sessionId: pairing.requestedBySessionId ?? pairing.sessionId ?? null,
-      clientId: pairing.requestedByClientId ?? null
+      clientId: pairing.requestedByClientId ?? null,
+      ...this.addressFields(pairing.requestedBySessionId)
     });
     return true;
   }
@@ -122,7 +137,7 @@ export class ClientGatewayPairingFlow {
    */
   withdrawForSession(sessionId: string, reason: string): void {
     for (const pairingCode of this.pairings.withdrawForSession(sessionId, reason)) {
-      this.audit.record("pairing.withdrawn", "Client pairing challenge withdrawn because its session ended.", { pairingCode, sessionId, reason });
+      this.audit.record("pairing.withdrawn", "Client pairing challenge withdrawn because its session ended.", { pairingCode, sessionId, reason, ...this.addressFields(sessionId) });
     }
   }
 
@@ -200,7 +215,8 @@ export class ClientGatewayPairingFlow {
       pairingCode,
       trustedClientId: trustedClient.trustedClientId,
       approvedByUserId,
-      projectId: pairing.projectId ?? null
+      projectId: pairing.projectId ?? null,
+      ...clientGatewayPeerAuditFields(session.peer)
     });
     await this.events.emit({ type: "session.ready", session: this.sessions.toPublic(session) });
     return this.sessions.toPublic(session);
@@ -216,7 +232,12 @@ export class ClientGatewayPairingFlow {
   }
 
   private refuse(pairingCode: string, code: PairingRefusal["code"], message: string): PairingRefusal {
-    this.audit.record("pairing.refused", "Client pairing approval refused; no trust was kept.", { pairingCode, code });
+    this.audit.record("pairing.refused", "Client pairing approval refused; no trust was kept.", { pairingCode, code, ...this.addressFields(this.pairings.get(pairingCode)?.requestedBySessionId) });
     return Object.assign(new Error(message), { code });
+  }
+
+  /** The requesting session's address prefix for an audit entry; nothing when it gave no peer or is gone. */
+  private addressFields(sessionId: string | undefined): JsonObject {
+    return clientGatewayPeerAuditFields(sessionId === undefined ? undefined : this.sessions.get(sessionId)?.peer);
   }
 }

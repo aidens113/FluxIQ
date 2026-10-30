@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { resolveClientAddress } from "fluxiq/platform/profile";
 
 export type LoginAttemptState = {
   count: number;
@@ -110,8 +111,9 @@ export class DurableLoginAttemptTracker {
 
 export function loginClientAddress(request: Pick<Request, "headers">, trustProxy: boolean): string {
   if (!trustProxy) return "direct";
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || request.headers.get("x-real-ip")?.trim() || "proxy-unknown";
+  // A Next Request carries no peer address; only the trusted proxy's appended entry counts.
+  const { address } = resolveClientAddress({ peerAddress: null, forwardedFor: request.headers.get("x-forwarded-for"), trustProxy: true });
+  return address ?? "proxy-unknown";
 }
 
 async function acquireFileLock(lockPath: string): Promise<() => Promise<void>> {

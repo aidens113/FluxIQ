@@ -7,11 +7,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4313
-- Class: 148
+- Public declarations: 4320
+- Class: 149
 - Interface: 10
-- Object: 557
-- Type: 2297
+- Object: 559
+- Type: 2301
 - Type Alias: 1
 - Value: 1300
 
@@ -3082,6 +3082,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CLIENT_GATEWAY_RECONCILE_ANSWER_METADATA_KEY` | Object | `packages/contracts/src/client-gateway.ts` | The capability metadata field a client sets to `true` to say it answers `server.reconcile_command`. Core asks only a session that declared it, on any capability; a session that did not is never asked, and a lost reply to it keeps the outcome it had (`timed_out`). |
 | `CLIENT_GATEWAY_RECONCILE_STATES` | Object | `packages/contracts/src/client-gateway.ts` | What became of one command, as the client that was sent it answers `server.reconcile_command` (state-aware recovery plan, C8 and B3). The client answers from what it kept and never by acting: - `landed`: the command finished there; `result` is the result it kept, the one whose delivery was lost; - `not_seen`: the client has no record of that id, so the act never reached it and making it again is not a second act. A client that answers this refuses the id from then on, so a copy still on its way cannot act later; - `running`: the command is still being carried out; - `unknown`: the client cannot say -- for example its record was cleared by a restart before a result was kept. Core never makes the act again on it. |
 | `CLIENT_GATEWAY_REPORTED_ACTION_STATUSES` | Object | `packages/contracts/src/client-gateway.ts` | The statuses a client may report for an action, in order of the wire: Core's own five, plus `interrupted` -- the client lost the command in flight (its background worker stopped, or its channel to the page closed) and does not know whether the act happened. Core reads `interrupted` the way it reads the wire status a client sent before it existed (state-aware recovery plan, C8 and B3): a committing act is `unknown`, its outcome uncertain (`effect: "ambiguous"`), and every other act is `failed` having done nothing (`effect: "unacted"`). Which acts commit is the domain's fact, so Core takes it from the result's `failure.effect`: only a record stating `unacted` makes it a failure, and a result that states nothing is held uncertain. A client built earlier sends `unknown` or `failed` with `payload.status: "interrupted"`, which Core still accepts and records as interrupted. |
+| `CLIENT_GATEWAY_SECURITY_EVENT_TYPES` | Object | `packages/fluxiq/src/client-gateway/service/security/security-events.ts` | The audit entries that are security events: delivered to every `onSecurityEvent` listener as they are recorded, so the web layer can persist them beyond the in-memory audit ring. Everything the transport reports through `recordTransportEvent` is a security event too, whatever its type. |
 | `CLIENT_GATEWAY_TRACE_ACTIVITIES` | Object | `packages/fluxiq/src/client-gateway/trace/vocabulary.ts` | The build activity the episode was in. |
 | `CLIENT_GATEWAY_TRACE_ARTIFACT_PATH` | Object | `packages/contracts/src/client-gateway.ts` | Where a paired client uploads a trace artifact: `PUT <path>/<sha256>`, bearer token, `content-type` its media type. |
 | `CLIENT_GATEWAY_TRACE_ARTIFACT_ROLES` | Object | `packages/contracts/src/client-gateway.ts` | `primary`: the observation itself; `resource`: something the primary artifact refers to, stored once per digest. |
@@ -3103,6 +3104,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS` | Object | `packages/fluxiq/src/client-gateway/trace-replay/session-references/bound-kinds.ts` | - |
 | `CLIENT_GATEWAY_TRACE_TAP_STREAMS` | Object | `packages/fluxiq/src/client-gateway/service/trace-tap/streams.ts` | - |
 | `CLIENT_GATEWAY_TRACE_TERMINATION_REASONS` | Object | `packages/fluxiq/src/client-gateway/trace/vocabulary.ts` | Why a trace was closed. |
+| `CLIENT_GATEWAY_TRANSPORT_EVENT_TYPES` | Object | `packages/fluxiq/src/client-gateway/service/security/security-events.ts` | The types a transport is expected to report through `recordTransportEvent` (hosted-production-plan, "Gateway Transport Over The Internet"). Any other type is accepted and delivered the same way. |
 | `ClientGatewayActionCommand` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayActionResponse` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayActionResult` | Type | `packages/contracts/src/client-gateway.ts` | An action result as Core hands it to the caller that dispatched the command. A client's `interrupted` has already been read into `unknown` or `failed` (see `ClientGatewayReportedActionResult`), so no caller meets it. |
@@ -3139,8 +3141,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayItemKind` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | - |
 | `ClientGatewayLateActionResult` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | A result that arrived for a command Core no longer awaited. It names the command and how it ended, never what the client said in words: no message, payload or target, so no page data reaches the run's evidence through it. |
 | `ClientGatewayLateActionResultListener` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | - |
+| `ClientGatewayPairingCapacityError` | Class | `packages/fluxiq/src/client-gateway/service/security/pairing-capacity-error.ts` | A new pairing challenge refused because a pending-pairing cap was reached (`ClientGatewayPairingLimits`). `code` is what a caller reads; the client that asked is told the same code in `server.error`. |
+| `ClientGatewayPairingCapacityScope` | Type | `packages/fluxiq/src/client-gateway/service/security/pairing-capacity-error.ts` | Which pending-pairing cap a new challenge met. |
 | `ClientGatewayPairingChallenge` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayPairingLimits` | Type | `packages/fluxiq/src/client-gateway/service/security/pairing-limits.ts` | Caps on pairing challenges still waiting for approval. `total` bounds them across the gateway; `perAddress` bounds those asked for from one client address, and `null` turns that cap off. A challenge whose session has no known address counts towards `total` only. |
 | `ClientGatewayPairingRequired` | Type | `packages/contracts/src/client-gateway.ts` | `server.pairing_required`. Gateway 0.2 adds `codeEntryUrl`, the same-origin path where the signed-in person types `referenceCode` (Flow B). |
+| `ClientGatewayPeer` | Type | `packages/fluxiq/src/client-gateway/service/security/peer.ts` | Where a connection came from, as the transport read it. `address` is the full client address; `prefix` is the part of it the audit may keep (the transport decides how much to keep); `source` says whether it came from the socket's own peer, from a forwarded header the transport was told to trust, or from nowhere. The gateway keeps it on its own session record only. It never reaches the public session (`ClientGatewaySession` is a frozen contract), an event, a trace or the snapshot, and the audit carries `clientAddressPrefix` alone. |
 | `ClientGatewayReconcileAnswer` | Type | `packages/contracts/src/client-gateway.ts` | A client's answer to `server.reconcile_command`. `result` is present only on `landed`. |
 | `ClientGatewayReconcileRequest` | Type | `packages/contracts/src/client-gateway.ts` | Core asking a client what became of a command it sent: answered, never executed. |
 | `ClientGatewayReconcileState` | Type | `packages/contracts/src/client-gateway.ts` | - |
@@ -3151,6 +3157,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayRevokedNotice` | Type | `packages/contracts/src/client-gateway.ts` | `server.revoked` (gateway 0.2): the credential this socket connected with is revoked. The gateway closes the socket after it; the client discards the credential and must connect again through the connect flow. |
 | `ClientGatewayRuntimeTransport` | Class | `packages/fluxiq/src/runtime/client-gateway-transport.ts` | - |
 | `ClientGatewayRuntimeTransportOptions` | Type | `packages/fluxiq/src/runtime/client-gateway-transport.ts` | - |
+| `ClientGatewaySecurityEventListener` | Type | `packages/fluxiq/src/client-gateway/service/security/security-events.ts` | Hears each security event as it is recorded. A throw or a rejection is audited and never reaches the gateway. |
 | `ClientGatewayServerMessage` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayService` | Class | `packages/fluxiq/src/client-gateway/service.ts` | The client gateway: pairing, durable client trust, session lifecycle, and the command channel to a paired client. This class is a facade. It holds no gateway state of its own; each method forwards to the collaborator under `service/` that owns the state it touches. Its public surface is the gateway contract every program imports, so a method is added or removed here only when that contract changes — the collaborators behind it can be reshaped freely. |
 | `ClientGatewayServiceOptions` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | Construction options for `ClientGatewayService`. |
