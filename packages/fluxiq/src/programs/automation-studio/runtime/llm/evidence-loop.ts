@@ -86,13 +86,12 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AutomationStudioLlmUnusableDecisionError,
   automationStudioLlmUnusableDecisionFeedback,
   automationStudioLlmUnusableDecisionIssueSet,
-  type AutomationStudioLlmUnusableDecisionOffers,
+  type AutomationStudioLlmUnusableDecisionOffers, type AutomationStudioLlmUnusableDecisionUnknownTool,
   type AutomationStudioLlmUnusableDecisionFieldIssue
 } from "./unusable-decision.ts";
 import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "./unreadable-reply.ts";
 import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnansweredCount } from "./unanswered-calls.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard } from "./repeat-guard/index.ts";
-
 // The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is bounded by the same three numbers, and a constant
 // both directories read is how an import edge grows between them. Re-exported so every consumer still reads it from runtime/llm/.
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
@@ -162,7 +161,6 @@ export type {
 } from "./evidence-loop/index.ts";
 /** The evidence entry a refused completion's feedback arrives under. */
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceRestoredStep } from "./evidence-loop/index.ts";
-
 
 /**
  * Coordinates an allowlisted, bounded evidence-gathering loop. Provider grants,
@@ -325,14 +323,14 @@ export async function runAutomationStudioLlmEvidenceLoop(
     offers: { tools: boolean; complete: boolean; amend: boolean },
     usage?: AutomationStudioLlmEvidenceLoopTrace["usage"],
     resultReason?: string,
-    fieldIssues?: readonly AutomationStudioLlmUnusableDecisionFieldIssue[]
+    fieldIssues?: readonly AutomationStudioLlmUnusableDecisionFieldIssue[], unknownTool?: AutomationStudioLlmUnusableDecisionUnknownTool
   ): "ask_again" | { error: unknown } => {
     const resultCode = issueCodes[0];
     history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
     const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(resultReason ? { resultReason } : {}), ...(usage ? { usage } : {}) }, issueCodes);
     if (stalled) return stalled;
     // The model is told what was wrong, as evidence, before it is asked again.
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers, ...(fieldIssues ? { fieldIssues } : {}) });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers, ...(fieldIssues ? { fieldIssues } : {}), ...(unknownTool ? { unknownTool } : {}) });
     automationStudioLlmFailedDecisionFeedback({ iteration, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, feedback, evidence, accountEvidence });
     return "ask_again";
   };
@@ -655,7 +653,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       unreadable.readable(); unanswered.answered();
       const binding = drafting ? { steps: draftSteps, nodeOf: input.nodeOf } : undefined; // A written call's `$step` reads the draft it joins after its last step (P5, t270).
       decision = automationStudioLlmEvidenceParseDecision(raw, binding);
-      refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }, binding) : undefined;
+      refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend, unknownTool: { known: toolIds, shown: offered.length ? offered : tools } }, binding) : undefined;
     } catch (thrown) { const costRefusal = purse.refused(thrown); if (costRefusal) { accounting.iterations = iteration - 1; return exhausted("budget", costRefusal); } // Not sent: the purse could not pay for it at worst, the only cost ending.
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
@@ -685,7 +683,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const usage = refusal.usage ?? decision?.usage;
       automationStudioLlmEvidenceLoopAddUsage(accounting, usage);
       if (usage) reportedDecisions += 1;
-      const refused = refuseDecision(iteration, refusal.issueCodes, offers(), usage);
+      const refused = refuseDecision(iteration, refusal.issueCodes, offers(), usage, undefined, undefined, refusal.unknownTool);
       if (refused === "ask_again") continue;
       if (input.propagateDecisionErrors) throw refused.error;
       return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);

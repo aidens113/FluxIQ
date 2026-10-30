@@ -12,7 +12,7 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io/index.ts";
-import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, programStateConnections, registerHostDocumentationGenerators, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
+import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, programStateConnections, registerHostDocumentationGenerators, type HeldKeys, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
 import { migrateFluxIQStorage, rollbackFluxIQStorageMigration, type FluxIQStorageMigrationResult } from "./storage-migration.ts";
 
@@ -79,7 +79,22 @@ export type FluxIQOptions = {
   /** Omitted enables the host's built-in model provider bindings. */
   modelProvidersEnabled?: boolean;
   envFiles?: string[];
+  /**
+   * Key custody owned by the host rather than this instance (a workspace
+   * manager's entry). Omitted, the instance holds its own and `close()` locks
+   * every key, as a single local install always has.
+   */
+  heldKeys?: HeldKeys;
 };
+
+/**
+ * How `FluxIQ.close()` ends an instance. `shutdown` (the default) is a real
+ * stop: every held key is revoked. `evict` drops an idle instance a host will
+ * create again: key custody given in `FluxIQOptions.heldKeys` stays held, so its
+ * users stay unlocked. Both close the instance's own connections and detach it
+ * from process-wide state, and neither touches another instance's.
+ */
+export type FluxIQCloseOptions = { mode?: "shutdown" | "evict" };
 
 export type FluxIQEnvironment = Partial<Record<FluxIQEnvironmentKey, string | undefined>>;
 
@@ -176,7 +191,7 @@ export class FluxIQ {
       artifacts: resolveInside(root, path.join(fluxiqDir, "artifacts")),
       cache: resolveInside(root, path.join(fluxiqDir, "cache"))
     };
-    this.programs = createGlobalProgramRuntime(this.paths, { ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}) });
+    this.programs = createGlobalProgramRuntime(this.paths, { ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}) });
     this.runtime = this.programs.runtime;
     this.programs.automationStudio.bindIoRuntime(this.io, activeDomainId);
     if (options.nativeNodeRuntime) this.programs.automationStudio.bindNativeNodeRuntime(options.nativeNodeRuntime);
@@ -197,19 +212,22 @@ export class FluxIQ {
     });
   }
 
-  close(): Promise<void> {
+  /** Closes the instance once; a later call returns the first call's result, whatever mode it names. */
+  close(options: FluxIQCloseOptions = {}): Promise<void> {
     this.closePromise ??= (async () => {
       const errors: unknown[] = [];
+      // First, so a closed instance gets no more activity events and the process-wide hub no longer reaches it (t808).
+      try { this.programs.detach(); } catch (error) { errors.push(error); }
       try { await this.programs.clientGateway.close(); } catch (error) { errors.push(error); }
       try {
         await this.programs.automationStudio.close();
       } catch (error) {
         errors.push(error);
       } finally {
-        try { this.programs.secretKeys.close(); } catch (error) { errors.push(error); }
+        try { this.programs.secretKeys.close({ mode: options.mode ?? "shutdown" }); } catch (error) { errors.push(error); }
       }
-      // Program state keeps its database connections open between operations; none outlives FluxIQ (t435).
-      try { await programStateConnections.closeAll(); } catch (error) { errors.push(error); }
+      // Program state keeps its database connections open between operations; none outlives FluxIQ (t435), and only this instance's storage root is closed, never another workspace's (t808).
+      try { await programStateConnections.close(this.paths.fluxiq); } catch (error) { errors.push(error); }
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, "fluxiq.close_failed");
     })();

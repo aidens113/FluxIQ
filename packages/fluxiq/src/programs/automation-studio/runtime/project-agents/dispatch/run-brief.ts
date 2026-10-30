@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AutomationStudioSubflowRepeatedAdvice, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { AutomationStudioSubflowPendingRepair, AutomationStudioSubflowRepeatedAdvice, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../executor/index.ts";
 import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
@@ -111,7 +111,12 @@ import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectDispatc
 // and plan, so a repair's gate weighs a no against what the brief before it
 // upheld. The judged trials' advice its gate kept crosses its briefs the same
 // way (`ADVISED`, t752), so a repair's judge is told what earlier briefs' judges
-// advised and whether the revision changed it.
+// advised and whether the revision changed it. A failed whole test's repair,
+// checked from its failing step before the part is tested whole again
+// (`../../flow-bootstrap/subflow-candidate/pending-repair.ts`, t804), crosses
+// them too (`REPAIRS`, by subflow and plan), so a repair brief's gate refuses
+// a whole test until a run from the step its build brief's test failed at
+// passes it.
 //
 // **A repair's opening call carries the calls of the proposal it repairs
 // (A8 `run-mv9zn5ob`, t648).** Its builder was shown that proposal, and the
@@ -255,6 +260,8 @@ const STANDING = new WeakMap<AutomationStudioProjectDispatcherInput, AutomationS
 const ADVISED = new WeakMap<AutomationStudioProjectDispatcherInput, Map<string, unknown[]>>();
 /** Each subflow's trials and the judges' advice on them across one build's briefs, by subflow key, as long as the build's dispatcher (header, t741 D). */
 const ADVICE = new WeakMap<AutomationStudioProjectDispatcherInput, Map<string, AutomationStudioSubflowRepeatedAdvice>>();
+/** Each subflow's failed-test repair across one build's briefs, by subflow and plan, as long as the build's dispatcher (header, t804). */
+const REPAIRS = new WeakMap<AutomationStudioProjectDispatcherInput, Map<string, AutomationStudioSubflowPendingRepair>>();
 const YOUR_SUBFLOW_NOTE = "yourSubflow is your subflow as Core accepted it before this brief, at the revision it names: script is the whole text its builder sent, and steps are its steps as Core resolved them, each handle the script names (tN, extraction.N) there replaced by what it stood for on the page that builder saw. "
   + "Those handles came from that builder's looks, not yours, so the check knows none of them: find the same controls and reads on your own page and write the handles your looks give. Start from this script, change only what this repair asks, and keep every other step as it is.";
 const CARRIED_NOTE = "startsFrom is your subflow as an earlier brief built it, at the revision it names, before the plan changed it: its trial passed then, but was never judged against this brief's parts as they are now -- those under addedParts, and any whose facts or lasting acts changed -- or the outputs under renamedOutputs, so it is not done. "
@@ -403,6 +410,8 @@ async function run(input: {
   const revisionsAfter = opening?.revision;
   // One memory of the subflow's trials and their advice across the build's briefs (header, t741 D).
   const repeatedAdvice = adviceOf(dispatcher, brief.subflowKey);
+  // One repair memory of the subflow across the build's briefs of one plan (header, t804).
+  const pendingRepair = repairOfSubflow(dispatcher, mapped.scope.planDigest, brief.subflowKey);
   const outcome = await untilEnded(signal, outputs.ending(ports.ended), (stop) => runBuilder({
     loop: { ...loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
     scope: mapped.scope,
@@ -414,6 +423,7 @@ async function run(input: {
     // Its test is the judged whole run, and its words and budget say so (header, t679).
     ...(whole ? { trialIsWhole: true as const } : {}),
     repeatedAdvice,
+    pendingRepair,
     observe,
     accepted
   }));
@@ -561,6 +571,18 @@ function adviceOf(dispatcher: AutomationStudioProjectDispatcherInput, subflowKey
   if (found) return found;
   const made = new AutomationStudioSubflowRepeatedAdvice();
   bySubflow.set(subflowKey, made);
+  return made;
+}
+
+/** The build's one repair memory of `subflowKey` under the plan `planDigest`, made on first ask (header, t804). */
+function repairOfSubflow(dispatcher: AutomationStudioProjectDispatcherInput, planDigest: string, subflowKey: string): AutomationStudioSubflowPendingRepair {
+  const bySubflow = REPAIRS.get(dispatcher) ?? new Map<string, AutomationStudioSubflowPendingRepair>();
+  REPAIRS.set(dispatcher, bySubflow);
+  const key = `${planDigest}\n${subflowKey}`;
+  const found = bySubflow.get(key);
+  if (found) return found;
+  const made = new AutomationStudioSubflowPendingRepair();
+  bySubflow.set(key, made);
   return made;
 }
 

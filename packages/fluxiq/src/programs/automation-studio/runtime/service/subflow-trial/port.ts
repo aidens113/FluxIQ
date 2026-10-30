@@ -34,9 +34,18 @@
 // (`../candidate-trial/port.ts`): the runner opens it after the trial's start,
 // around its own run (`./run.ts`), so the start hook -- prepared here or run
 // by the runner -- and the site reset stay in the build's trace.
+//
+// **A repair is checked from its step (t804).** A live port offers
+// `fromStep`: the proposal run from one of its steps on the page as it stands,
+// with no hook, reset, arrival, predecessors or judge (`./from-step.ts`). It is
+// not a trial, so it is not recorded with them, costs no judge spend and is
+// never a run `checkRows` answers for. An offline port offers none, as it
+// offers no `prepareStart`: a from-step run acts on the page as it stands, and
+// an offline environment has no page left by a live test.
 
-import type { AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowFromStepPort, AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
+import { runAutomationStudioSubflowFromStep } from "./from-step.ts";
 import { runAutomationStudioSubflowTrial } from "./run.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import type { AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
@@ -77,7 +86,15 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
     return trial.result;
   };
   const environmentKind = ports.environment?.kind ?? "live";
-  const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind });
+  // A run from one step (header, t804): never a trial, so nothing of it is recorded here, spent or offered to `checkRows`.
+  const fromStep: AutomationStudioSubflowFromStepPort = async (request) => {
+    if (request.scope.buildId === buildId) return await runAutomationStudioSubflowFromStep(request, ports);
+    const { scope, proposal, fromKey } = request;
+    const code = "subflow.trial_other_build";
+    return { fromStep: true, identity: { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey }, revision: proposal.revision, digest: proposal.digest,
+      fromKey, status: "not_run", passedKeys: [], code, feedback: { fromStep: true, from: fromKey, status: "not_run", passed: false, code } };
+  };
+  const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind, ...(environmentKind === "live" ? { fromStep } : {}) });
   // The gate's row check, answered from the converse of this build's own trials (header, t692).
   port.checkRows = async ({ scope, trialRunId }) => (scope.buildId === buildId && trialRunId ? converse.get(trialRunId) : undefined);
   // An offline trial runs no start hook, so only a live port offers one (header, Decision 6).

@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4320
-- Class: 149
+- Public declarations: 4329
+- Class: 150
 - Interface: 10
 - Object: 559
-- Type: 2301
+- Type: 2305
 - Type Alias: 1
-- Value: 1300
+- Value: 1304
 
 ## Public Declarations
 
@@ -645,6 +645,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioActivityDraftEditCard` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/draft-edit-card.ts` | - |
 | `AutomationStudioActivityEmission` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/contracts.ts` | What an emission site says; the scope it runs under supplies the rest. |
 | `automationStudioActivityEndedReason` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/ended-reason.ts` | - |
+| `automationStudioActivityFoldedReason` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/folded-reason.ts` | - |
 | `AutomationStudioActivityFrame` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/contracts.ts` | What the scope storage holds for one unit of work. A run's id is known only once its session is admitted, so a run frame starts `pending` and emits nothing until it is bound. |
 | `automationStudioActivityHold` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/hold.ts` | - |
 | `automationStudioActivityHub` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/activity/default-hub.ts` | The one hub every emission in this process publishes to. |
@@ -1059,8 +1060,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioDeleteProjectUiCacheResponse` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/ui-cache.ts` | - |
 | `AutomationStudioDeleteReusableLlmContextRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/llm.ts` | - |
 | `automationStudioDestructiveConsequences` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/destructive.ts` | - |
+| `automationStudioDetachedFromNode` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/from-node.ts` | - |
+| `automationStudioDetachedFromNodeKeyValid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/from-node.ts` | - |
 | `AutomationStudioDetachedSubflowArrival` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | The arrival step a partial trial opens with (header): the domain's node, the parameter it takes a location under, and the location. |
 | `automationStudioDetachedSubflowCandidateIdentity` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | - |
+| `AutomationStudioDetachedSubflowFromInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow-from.ts` | A from-step run's input: a partial trial's, with no predecessors or arrival, and the plan key of the target's step it starts at. |
 | `AutomationStudioDetachedSubflowIdentity` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | What a partial trial is bound to. Re-read through `currentIdentity` before anything runs and at every child load; any change (a new proposal of the target or a predecessor, an amended plan, a moved base) stops the run. |
 | `AutomationStudioDetachedSubflowInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | - |
 | `AutomationStudioDetachedSubflowProposal` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | One proposal's place in the trial: the Subflow it proposes (first) and the `part` helpers it owns, under its revision and digest. |
@@ -3635,6 +3639,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FluxIQ` | Class | `packages/fluxiq/src/framework/index.ts` | - |
 | `FLUXIQ_RUNTIME_WITHHELD_VALUE` | Object | `packages/fluxiq/src/runtime/contracts.ts` | What a withheld value reads as in a command attempt the runtime keeps. A constant rather than a removed field, so a reader can tell a value that was withheld from one that was never there. |
 | `FLUXIQ_STORAGE_LAYOUT_VERSION` | Object | `packages/fluxiq/src/framework/storage-layout.ts` | - |
+| `FluxIQCloseOptions` | Type | `packages/fluxiq/src/framework/index.ts` | How `FluxIQ.close()` ends an instance. `shutdown` (the default) is a real stop: every held key is revoked. `evict` drops an idle instance a host will create again: key custody given in `FluxIQOptions.heldKeys` stays held, so its users stay unlocked. Both close the instance's own connections and detach it from process-wide state, and neither touches another instance's. |
 | `FluxIQConfigFile` | Type | `packages/fluxiq/src/framework/index.ts` | - |
 | `fluxiqConsoleTheme` | Object | `packages/fluxiq/src/ui/index.ts` | - |
 | `FluxIQEnvironment` | Type | `packages/fluxiq/src/framework/index.ts` | - |
@@ -3704,8 +3709,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `GlobalProgramApiRegistry` | Class | `packages/fluxiq/src/programs/_shared/api.ts` | - |
 | `GlobalProgramDefinition` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `GlobalProgramRuntime` | Type | `packages/fluxiq/src/programs/_shared/runtime.ts` | - |
+| `GlobalProgramRuntimeOptions` | Type | `packages/fluxiq/src/programs/_shared/runtime.ts` | How a program runtime is built; each field is optional, and absent means today's local behaviour. |
 | `GraphPatchOperation` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/graph.ts` | - |
 | `GraphViewportRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/graph.ts` | - |
+| `HeldKeys` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/held-keys.ts` | Custody of password-derived keys held after a successful check: session unlocks and one-use reveal authorizations. Invariant: every held key opens its record's current seal. Rotation, metadata edits, and deletion revoke a key's holders; a re-seal or credential change replaces their keys. Every buffer dropped or replaced is zeroed. A `SecretKeysService` creates its own, or is given one that outlives it (a workspace manager's, so evicting an idle instance does not lock its users' keys). Expiry timers come from here and hold only this custody and an id, never the service that asked for them or the password that unlocked them. |
 | `holdAutomationStudioRecoveryPatchReserve` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/patch-reserve.ts` | - |
 | `hostExpectationEvaluator` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/host-runtime.ts` | - |
 | `hostRuntimeCapabilityIds` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/host-runtime.ts` | - |
@@ -3927,7 +3934,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ProgramScope` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `ProgramScopeContract` | Type | `packages/contracts/src/program-api.ts` | - |
 | `programScopeSchema` | Object | `packages/contracts/src/program-api.ts` | - |
-| `programStateConnections` | Object | `packages/fluxiq/src/programs/_shared/state-connections.ts` | The connections the storage layout's SQLite state keeps open between the operations of one unit of work (`./storage.ts`, t435). A unit of work opts in with `programStateConnections.keepWhile` (a runtime session run does); every kept connection is closed when the last one ends, and FluxIQ closes any left when it is closed (`framework/index.ts`). |
+| `programStateConnections` | Object | `packages/fluxiq/src/programs/_shared/state-connections.ts` | The storage state's SQLite connection pools, one per storage root: a unit of work keeps connections with `forRoot(dir).keepWhile`, and a FluxIQ instance closes only its own root's with `close(dir)` (t435, t808). |
 | `ProgramStatus` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `ProgramSummary` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `ProgramSummaryContract` | Type | `packages/contracts/src/program-api.ts` | - |
@@ -4096,6 +4103,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `runAutomationStudioCompiledPlan` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/compiled-plan.ts` | - |
 | `runAutomationStudioDetachedCandidate` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-execution.ts` | - |
 | `runAutomationStudioDetachedSubflow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | - |
+| `runAutomationStudioDetachedSubflowFrom` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow-from.ts` | - |
 | `runAutomationStudioFlowBootstrapBuildPhases` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts` | - |
 | `runAutomationStudioFlowCandidateAuthoringLoop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/authoring-loop.ts` | - |
 | `runAutomationStudioFlowDraftPart` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/run-flow-part.ts` | - |
@@ -4167,6 +4175,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SecretKeyKind` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
 | `SecretKeyMutationResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
 | `SecretKeyRecord` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
+| `SecretKeysCloseMode` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/service.ts` | How `SecretKeysService.close` ends. `shutdown` revokes and zeroes every held key. `evict` drops the instance but leaves a `HeldKeys` the service was given as it is, so the next service over the same repository releases the same unlocks; a service's own `HeldKeys` is revoked either way. |
 | `SecretKeyScope` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
 | `SecretKeysService` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/service.ts` | Secret Keys: values sealed under account passwords. This class is the public surface; records and their writes live in `SecretKeyStore`, held derived keys in `HeldKeys`, seal upgrades in `SealUpgrades`, and credential changes, including pending seals, in `CredentialChanges`. |
 | `SecretKeysSnapshot` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |

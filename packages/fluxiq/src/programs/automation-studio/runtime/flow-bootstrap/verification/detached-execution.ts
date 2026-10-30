@@ -10,6 +10,7 @@ import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBui
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "./contracts.ts";
 import { automationStudioCandidateGraphSource } from "./candidate-graphs.ts";
 import { automationStudioRootInvocation } from "../../executor/frames/index.ts";
+import { automationStudioDetachedFromNode, automationStudioDetachedFromNodeKeyValid } from "./from-node.ts";
 
 /**
  * Runs only a trusted owner's submitted topology; never reads or changes accepted graphs.
@@ -29,9 +30,11 @@ export async function runAutomationStudioDetachedCandidate(input: {
   start: AutomationStudioCandidateStartReceipt;
   options?: AutomationStudioGraphExecutionOptions;
   signal?: AbortSignal;
+  /** A from-step run (t804): the plan key of the selected graph's node to start at (`./from-node.ts`). A caller's own `options.startNodeId` stays refused. */
+  fromNodeKey?: string;
 }): Promise<{ receipt: AutomationStudioCandidateExecutionReceipt; code?: string; trace?: AutomationStudioGraphExecutionTrace; route?: AutomationStudioRouterExecutionResult; graph?: AutomationStudioFlowArtifact; candidateGraphs?: AutomationStudioFlowArtifact[] }> {
   // Clone owner-controlled artifacts before the first await; a mutable builder cannot swap graphs during routing.
-  const identity = structuredClone(input.identity), candidate = structuredClone(input.candidate), parent = structuredClone(input.parentFlow);
+  const identity = structuredClone(input.identity), candidate = structuredClone(input.candidate), parent = structuredClone(input.parentFlow), fromNodeKey = input.fromNodeKey;
   const snapshots = structuredClone(input.snapshots), start = structuredClone(input.start), options = { ...input.options };
   if (options.inputs) options.inputs = structuredClone(options.inputs);
   const signal = input.signal ?? options.signal, now = options.now ?? Date.now, startedAt = now();
@@ -52,6 +55,7 @@ export async function runAutomationStudioDetachedCandidate(input: {
   if (!input.runId || !start.receiptId || !Number.isFinite(start.preparedAt) || start.preparedAt > startedAt) return refused("candidate.invalid_execution_start");
   if (options.startNodeId !== undefined || options.stopAfterNodeId !== undefined || options.priorAttemptCount !== undefined || options.compositeExecutor !== undefined) return refused("candidate.partial_execution_unsupported");
   if (options.invocation !== undefined) return refused("candidate.foreign_invocation_unsupported");
+  if (fromNodeKey !== undefined && !automationStudioDetachedFromNodeKeyValid(fromNodeKey)) return refused("candidate.from_node_invalid");
   try {
     if (!await fresh()) return refused("candidate.execution_stale");
     const validation = validateAutomationStudioFlowBootstrapPlan({ plan: candidate.buildPlan.plan, resolution: input.resolution, ...(input.registry ? { registry: input.registry } : {}) });
@@ -73,6 +77,9 @@ export async function runAutomationStudioDetachedCandidate(input: {
     if (graph.projectId !== identity.projectId || selected.subflow.flowId !== identity.flowId || selected.subflow.projectId !== identity.projectId
       || graph.flowId !== selected.subflow.graphFlowId || graph.metadata?.parentFlowId !== identity.flowId
       || graph.metadata?.parentSubflowId !== selected.subflow.subflowId || graph.metadata?.subflowGraph !== true) return { ...refused("candidate.execution_graph_not_owned"), route };
+    // Resolved in the graph about to run, never taken as a caller's node id (`./from-node.ts`, t804).
+    const from = automationStudioDetachedFromNode(graph, fromNodeKey);
+    if (from && "refused" in from) return { ...refused(from.refused), route };
     if (parent.executionDefaults) graph.executionDefaults = structuredClone(parent.executionDefaults);
     returnedGraph = structuredClone(graph);
     // Definitions for attributing invoked child evidence, never proof that every alternative graph ran.
@@ -102,7 +109,8 @@ export async function runAutomationStudioDetachedCandidate(input: {
     const executionOptions: AutomationStudioGraphExecutionOptions = { ...options, ...(signal ? { signal } : {}), currentSubflowId: selected.subflow.subflowId,
       subflowGraphs: automationStudioCandidateGraphSource(topology, parent, fresh),
       allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [],
-      recoveryBudget: candidateRecoveryBudget(graph)
+      recoveryBudget: candidateRecoveryBudget(graph),
+      ...(from ? { startNodeId: from.nodeId } : {})
     };
     // Each invoked graph gets only its own authored alternatives. A root with none must not fence off a helper's declared way on.
     executionOptions.invocation = automationStudioRootInvocation(graph, executionOptions, async (target, childOptions, onExecuted) => {

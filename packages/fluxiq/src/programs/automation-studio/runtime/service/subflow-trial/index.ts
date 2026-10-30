@@ -7,3 +7,6 @@ export * from "./run.ts";
 export * from "./start.ts";
 export * from "./port.ts";
 export * from "./predecessor-gap.ts";
+export * from "./from-step.ts";
+export * from "./from-step-binding.ts";
+export * from "./stopped-at.ts";

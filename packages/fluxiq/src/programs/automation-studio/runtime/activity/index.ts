@@ -10,6 +10,7 @@ export { bindAutomationStudioActivityRun } from "./bind.ts";
 export { boundedAutomationStudioActivity } from "./bounded.ts";
 export { AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS, emitAutomationStudioBuildRequest, withAutomationStudioBuildActivity } from "./build.ts";
 export { automationStudioActivityDecisionReason } from "./decision-reason.ts";
+export { automationStudioActivityFoldedReason } from "./folded-reason.ts";
 // The reason a refusal given again carries in place of its cause, published
 // here so a domain that gives it reaches the one word Core reads (t728).
 export { AUTOMATION_STUDIO_REPEATED_ANSWER_REASON } from "@fluxiq/contracts/automation-studio";

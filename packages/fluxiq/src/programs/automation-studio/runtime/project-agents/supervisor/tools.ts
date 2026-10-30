@@ -95,7 +95,8 @@ const BRIEF_INPUT: JsonObject = {
       additionalProperties: false
     }
   },
-  required: ["kind", "subflowKey"],
+  // `kind` is defaulted from the subflow's last return when left out (`../brief-defaults/`).
+  required: ["subflowKey"],
   additionalProperties: false
 };
 
