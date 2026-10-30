@@ -18,7 +18,8 @@
 //   run-end account counts it (`process-rows.ts`, `undated`).
 // - Relative to the run (t800, K1): a date bound written as `today`,
 //   `yesterday`, `now` or `<n> <unit> ago` is read against `now`, and `within`
-//   keeps the dates in the last `n` units up to `now` (`date-within.ts`). The
+//   keeps the dates in the last `n` units up to `now` (`date-within.ts`; a value
+//   stating only a day is judged by whole days there, G1). The
 //   row's own "3 days ago" is read against the same `now`, so a relative value
 //   and a relative bound agree wherever the condition is judged.
 
@@ -26,6 +27,7 @@ import { cellText, collapsedText, foldedText } from "../cell-text.ts";
 import { automationStudioRecordConditionComparesDates } from "../compares-dates.ts";
 import { readAutomationStudioRecordConditionDateBound } from "../date-bound.ts";
 import { readAutomationStudioRecordConditionWithin } from "../date-within.ts";
+import { automationStudioRecordDateStatesOnlyDay } from "../read-date.ts";
 import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "../processing-vocabulary.ts";
 import { readAutomationStudioRecordNumber } from "../read-number.ts";
 import { readAutomationStudioRecordConditionDate } from "../row-date.ts";
@@ -145,7 +147,13 @@ function dateBoundHolds(key: ConditionBound, written: unknown, cell: unknown, no
 function withinHolds(written: unknown, cell: unknown, now: number): boolean {
   const span = typeof written === "string" ? readAutomationStudioRecordConditionWithin(written, now) : undefined;
   const at = datedAt(cell, now);
-  return span !== undefined && at !== undefined && at >= span.from && at <= span.to;
+  if (span === undefined || at === undefined) return false;
+  // A value stating only a day, in a span of days, is judged by its day against the days of the span's ends (G1).
+  if (span.wholeDays && automationStudioRecordDateStatesOnlyDay(cellText(cell) ?? "", now)) {
+    const day = Math.floor(at / DAY_MS);
+    return day >= Math.floor(span.from / DAY_MS) && day <= Math.floor(span.to / DAY_MS);
+  }
+  return at >= span.from && at <= span.to;
 }
 
 function equalsHolds(written: readonly AutomationStudioRecordConditionValue[], value: string, number: number | undefined): boolean {
