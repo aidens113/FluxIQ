@@ -1,0 +1,41 @@
+# t809 report: hosted wiring follow-ups (lanes A and B3) and the stand-in round trip
+
+## Outcome
+Done, with three findings for the lead (below). Goals 1-3 and 5 are done; goal 4 turned out to be already true (tests added, no code change); goal 6 passes after two Core/stand-in fixes found by the live run. Nobody committed.
+
+## Workers
+- W1 `worker` welcomeUrl: `file-email-sender.ts` writes `welcomeUrl` when the variable is a string (key absent otherwise); test added in `email/tests/file-email-sender.test.ts`. Verified: its test group passes (6 tests).
+- W2 `worker` PIN gate: `deployment-sync` `sync` and `rollback`, `database-manager` `run-migration` are now `destructive`. Decisions that changed: none in IAM allow/deny (action names `ops:Sync`, `ops:Rollback`, `ops:RunMigration` and access level `Write` are unchanged); the only change is the registry's PIN check before the handler (`authorizationPin` + `authSessionId` required), and the generated catalog now marks the three `destructive: true` (the 3-line diff in `actions.generated.ts`). `endpoint-classification.test.ts`: `DECLARED_UNGATED` is empty, the three are in `PIN_GATED`. Docs `package-boundaries.md` and `persistence.md` updated.
+- W6 `worker` web callers (needed by W2, found by it): `deployment-sync` added to `SESSION_BOUND_PROGRAMS` in `apps/web/src/lib/program-route.ts`; `deployment-sync.tsx` now asks for the PIN through `AuthorizationDialog` for sync and rollback (dry run sends none). No UI caller of `run-migration` exists.
+- W3 `worker` drain gate: gate is in the apps/web program route (not Core), so `programs/_shared/runtime.ts` was not needed. `apps/web/src/server/drain/program-start-refusal.ts` refuses with HTTP 503, `errorCode: "server.draining"`, `Retry-After: 30`, for automation-studio `start-runtime-session`, `run-runtime-session`, `resume-runtime-session`, `append-turn`, `generate-flow-bootstrap-adaptation`, `start-client-recording`, `execute-client-action`, on GET and POST, both caller kinds, before the handler. Reads, cancel, pause, stop and `answer-ask` pass. `start-client-recording` is a judgement call (easy to drop). Retry-After is fixed at 30 because the drain seconds are private to `lib/fluxiq.ts`.
+- W4 `worker-heavy` username and email: both goals already held. `create-account.ts` sets the username to the normalised email (contract field is email-shaped, all profiles); the owner claim passes the form's username as the email, non-email refused with `fields: ["username"]`. The claim never proves the email (the setup code is a file on the server, never mailed), so the owner starts unverified (`emailVerifiedAtMs: null`); only a redeemed mailed link sets it. Added `provisioning/tests/account-username.test.ts` (14 tests) and three tests in `owner-claim/tests/claim-owner.test.ts`; comment-only change in `claim-owner.ts`. No contract change.
+- W5 `worker` resources and generated catalog: three mixed `custom` resources existed, not two (`recordings.ts` `["*","project"]`, `caches.ts` and `conversations.ts` `["project","*"]`); all now `["project"]` (runtime refs unchanged; nothing reads `resource.types`). Catalog regenerated through `FLUXIQ_REGENERATE_IAM_CATALOG=1 vitest run src/platform/iam/catalog`.
+- W7 `worker` web fixes: moved the drain module into `server/drain/` (the `lib/` dir would have had three `program-` files), fixed the recovery test (it mocked Modal through the wrong module; component was fine), reformatted statement packing, lowered two `.structure-baseline.json` entries.
+
+## Integration changes I made
+- `apps/web/src/server/security-audit/attach-gateway-audit-persistence.ts` and its test imported `@fluxiq/contracts/client-gateway`, which apps/web does not depend on. It type-checks in the dev tree through path aliases but failed the production build (`next build` with `tsconfig.build.json`): "Cannot find module '@fluxiq/contracts/client-gateway'". Lane A introduced it. Now `fluxiq/client-gateway` (a re-export of the same type). Without this the stand-in could not build Core at all.
+- Stand-in `packages/website-stand-in/scripts/up.mjs`: sets `FLUXIQ_EMAIL_SENDER=file:<runDir>/mail` (Core supports it now) and uses that folder; removed the stale "listener never starts" text and the outbox scan; service profile requires an https `FLUXIQ_PUBLIC_ORIGIN`, so the stack uses `https://app.standin.test` as the public origin (links and `SITE_APP_ORIGIN`) while Core listens on loopback http.
+- `round-trip.mjs`: reads the link from the record's `welcomeUrl` (falls back to the text); checks the link origin against the public origin; sends the password POST with no Origin header (see finding 3).
+
+## Commands run and observed
+- Core `tsc --noEmit -p .` (packages/fluxiq) -> exit 0.
+- `pnpm test src/platform src/programs/_shared src/programs/deployment-sync src/programs/database-manager src/programs/automation-studio/api src/programs/tests` -> "Test Files 95 passed (95), Tests 716 passed (716)" and "Test Files 26 passed (26), Tests 148 passed (148)"; "all groups passed: parallel, real-sql". W2 also ran `src/platform/iam` (parity and escalation tests): 79 tests passed.
+- Contracts `pnpm test` -> 37 files, 522 tests passed.
+- apps/web `tsc --noEmit -p .` -> exit 0 (before and after the import fix); `vitest run src/server src/lib src/app src/features/programs` -> "Test Files 147 passed (147), Tests 1420 passed (1420)"; after the import fix `vitest run src/server/security-audit` -> 3 passed.
+- `pnpm check` -> exit 0 (471 contract tests pass, structure passed); `pnpm docs:check` -> exit 0; `pnpm structure:check` -> "passed (467 warning(s), 1152 baselined)".
+- Downstream: `node --test` in `packages/website-stand-in` -> tests 40, pass 40, fail 0; structure audit -> "passed (234 warning(s), 616 baselined)".
+- `node packages/website-stand-in/scripts/up.mjs --build-only` -> "Core build ready (key 0bdc870f...); host module ready" (after the import fix; it failed before it).
+- `up.mjs --round-trip` (isolated Core, run dir under `test-runs/site-up`, random ports, `FLUXIQ_PROFILE=service`, children stopped, none left): step 1 PASS sign-up 202; step 2 PASS welcome mail (link written, origin is the public origin, token length 43); step 3 PASS set password 200; step 4 PASS getAccount status `active`; step 5 PASS second sign-up 202 identical, "already registered" mail arrived, resend same; "round trip PASS".
+
+## Findings and open questions for the lead
+1. **Goal 5 changed nothing in the catalog.** `generateIamActionCatalog` hard-codes `resourceTypes` (`["*"]`/`["program"]`) and ignores `resource.types`, so narrowing the declarations has no effect on `actions.generated.ts`; its only diff is the three `destructive` flips from goal 2. Feeding declared types into the catalog needs a generator change (`endpoint-registration.ts`, `generate-iam-action-catalog.ts`) and probably a catalog-schema decision: your call.
+2. **No way for the `service` owner to verify their email.** Option A: the claim sends a welcome link (no contract change), but redeeming it resets the password and revokes sessions, which makes keys sealed under the claim password unreadable. Option B: a dedicated verify link purpose in `platform/store` plus a page. Neither implemented. Also: usernames are not unique in identity-access (`createUser`/`updateUser` accept another account's email; `authenticate` signs in the first match): a separate risk, not touched.
+3. **Welcome submit rejects any Origin header** when Core runs under `next start --hostname 127.0.0.1` (403 `forbidden` for both the loopback and the public origin), because `app/welcome/server/isCrossSiteRequest.ts` compares Origin to `new URL(request.url).origin`, which is not what a loopback client sends. A browser behind Caddy has the real host, so likely fine in production, but unproven; the round trip omits Origin. Worth checking when Caddy is real.
+4. The SessionBound/PIN flow for deployment-sync is unit tested only; no live PIN run.
+
+## Not verified
+Live PIN flow for sync/rollback; drain refusal against a really draining server (route tests with `drainState` only); real Turnstile and TLS; Caddy. Did not commit or push. The shared heavy-check lock was released by my own scripts each time; waits were up to about 80 minutes.
+
+## Return
+Outcome: Done
+Report: this file

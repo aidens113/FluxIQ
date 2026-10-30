@@ -761,6 +761,11 @@ The plan's history (2026-10-17 to 10-28) and the H0 fold moved on 2026-10-29 to
 - Validation: lead-run under the heavy-check lock on the tree merged with dev: `pnpm test src/programs/secret-keys src/programs/_shared src/framework .../runtime/activity` -> "Tests 702 passed (702)", real-sql "Tests 67 passed (67)"; leak test "Tests 4 passed (4)" twice; `pnpm check` exit 0; docs current; structure passed; apps/web `vitest run src` -> "Test Files 435 passed (435)", "Tests 3370 passed (3370)" after the dev fix c5cb635b (B3's ownership needed `snapshot()` on the contract test's identity fake).
 - Outcome: Accepted. Open: one shared activity hub (per-instance events are C3's); the trace slots keep the last instance alive when tracing is on (C3); a storage directory outside `.fluxiq` gets a pool `close()` does not reach; `docs/architecture/platform.md` should name `FluxIQCloseOptions`, `heldKeys` and per-root pools.
 
+### 2026-10-29 — A and B3 follow-ups merged; the first sign-up round trip passes (t809)
+- Agent: supervisor (Sonnet), six workers and one worker-heavy; report `hosted-production-plan/reports/t809-followups.md`. Changed: `welcomeUrl` in the file mail record; the three "check nothing" handlers `destructive` (PIN), with the panel's dialog in `deployment-sync.tsx`; drain refuses program starts (`apps/web/src/server/drain/program-start-refusal.ts`); the IAM catalog regenerated after three mixed `custom` resources became `["project"]`; tests that usernames are email-shaped under `service`.
+- Validation: lead-run under the lock, merged with dev: `pnpm check` exit 0; `pnpm test src/platform src/programs/_shared src/programs/deployment-sync src/programs/database-manager src/programs/automation-studio/api src/programs/tests` -> "Tests 716 passed (716)", real-sql "Tests 151 passed (151)"; contracts "Tests 523 passed (523)"; apps/web `vitest run src` -> "Tests 3383 passed (3383)"; downstream `up.mjs --round-trip` against an isolated `service` Core -> "step 1 PASS site sign-up: status 202" through "step 5 PASS repeat sign-up", "round trip PASS".
+- Outcome: Accepted. Open: the owner cannot verify their email under `service` (options in the report); Caddy, Turnstile and a really draining server are not exercised.
+
 ## Open Questions
 
 Owner: the user, for all of them. A recommendation follows each; the plan proceeds on it.

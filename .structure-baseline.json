@@ -685,7 +685,7 @@
       "apps/web/src/features/programs/shared-ui.tsx": 1
     },
     "statement-packing": {
-      "apps/web/src/features/programs/live-views/tests/deployment-sync-recovery.test.tsx": 66,
+      "apps/web/src/features/programs/live-views/tests/deployment-sync-recovery.test.tsx": 63,
       "apps/web/src/features/programs/live-views/tests/database-manager-json.test.tsx": 61,
       "packages/fluxiq/src/client-gateway/service/command-ledger/tests/dispatch.test.ts": 59,
       "apps/web/src/features/automation-studio/hierarchy/tests/AutomationHierarchyDialog-recovery.test.tsx": 58,
@@ -756,7 +756,6 @@
       "apps/web/src/app/tests/AuthStatus.test.tsx": 16,
       "apps/web/src/features/automation-studio/hierarchy/components/tests/ProjectTree-keyboard-ownership.test.tsx": 16,
       "apps/web/src/features/programs/components/overlays/tests/Modal-keyboard.test.tsx": 16,
-      "apps/web/src/features/programs/live-views/deployment-sync.tsx": 16,
       "apps/web/src/features/automation-studio/instructions/InstructionsView.tsx": 15,
       "packages/fluxiq/src/client-gateway/service/command-ledger/controller.ts": 15,
       "apps/web/src/features/programs/documentation-tree/tests/useDocumentationTree.test.tsx": 14,
@@ -781,6 +780,7 @@
       "apps/web/src/features/automation-studio/live/components/tests/studio-start-entry.test.tsx": 11,
       "apps/web/src/features/programs/components/overlays/tests/ModalContent-focus.test.tsx": 11,
       "apps/web/src/features/programs/live-views/background-tasks.tsx": 11,
+      "apps/web/src/features/programs/live-views/deployment-sync.tsx": 11,
       "apps/web/src/features/programs/operational-refresh/useOperationalSnapshot.ts": 11,
       "packages/fluxiq/src/client-gateway/service/transport-build-identity/tests/owner.test.ts": 11,
       "packages/fluxiq/src/programs/automation-studio/api/handlers/flow-lifecycle.ts": 11,
