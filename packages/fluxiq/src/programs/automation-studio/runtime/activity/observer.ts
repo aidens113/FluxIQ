@@ -39,6 +39,8 @@ import { automationStudioActivityCallContext } from "./call-context.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 import { automationStudioActivityDraftEdit, automationStudioActivityNarration, automationStudioActivityRefusedCall } from "./decision-answer/index.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
+import { automationStudioActivityFoldedTest } from "./folded-test/index.ts";
+import { emitAutomationStudioActivityThought } from "./thought.ts";
 import { automationStudioActivityRepeatedReason } from "./repeated-reason.ts";
 import { automationStudioActivityCandidateResult, automationStudioActivityRunRefused } from "./candidate/index.ts";
 import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityReasonText, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
@@ -341,6 +343,15 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         const candidate: CandidateSaid | undefined = automationStudioActivityCandidateResult(call.toolId, result) ?? automationStudioActivityRunRefused(call.toolId, result);
         narration.ended(call, candidate?.status !== "failed" ? undefined : candidate.unchanged ? "unchanged" : candidate.part === "Declined" ? "declined" : candidate.unconfirmed ? "unconfirmed" : "failed");
         toolActivity(call, candidate?.status ?? "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? named : { ...named, list }, said, excusable, candidate);
+        // A test the submission carried is its own row after the submit's, with Core's line (`./folded-test/`).
+        const folded = automationStudioActivityFoldedTest(call, result);
+        if (folded) {
+          const foldedWords = automationStudioActivityToolCall(folded.call);
+          emitAutomationStudioActivityThought({ phase: foldedWords.phase, title: foldedWords.title, text: folded.line });
+          toolActivity(folded.call, "started", { code: undefined }, undefined, {});
+          const foldedSaid = automationStudioActivityCandidateResult(folded.call.toolId, folded.result);
+          toolActivity(folded.call, foldedSaid?.status ?? "succeeded", resultOf(folded.result), undefined, {}, undefined, foldedSaid);
+        }
         return result;
       } catch (error) {
         narration.ended(call, "declined");

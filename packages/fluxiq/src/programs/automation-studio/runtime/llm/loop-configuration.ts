@@ -432,6 +432,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * as the stored Flow's read does (`node-tools/replay.ts`, read-list S1).
    */
   definitionOf?: AutomationStudioFlowDraftDryRunGateInput["definitionOf"];
+  /**
+   * The plan part a step serves, for a build that works within a scope: the dry
+   * run sends the record output the part owes that the saved Flow has (K5,
+   * `node-tools/replay-draft.ts`). Absent (an instruction-only build), none.
+   */
+  partOf?: AutomationStudioFlowDraftDryRunGateInput["partOf"];
   signal?: AbortSignal;
 };
 

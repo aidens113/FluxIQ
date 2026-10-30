@@ -18,6 +18,7 @@ import { automationStudioCandidateTrialStop as Stop } from "../candidate/index.t
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowFromStepPort, AutomationStudioSubflowFromStepResult, AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "./contracts.ts";
 import type { AutomationStudioSubflowPendingRepair } from "./pending-repair.ts";
+import { automationStudioSubflowFromStepKeys, automationStudioSubflowFromStepResolve } from "../step-label/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_REPAIR_WORDS as WORDS } from "./repair-words.ts";
 
 const STATUSES: ReadonlySet<unknown> = new Set(["ended", "stopped", "not_run"]);
@@ -35,9 +36,18 @@ export async function automationStudioSubflowFromStepRun(input: {
   offline: boolean;
   repair: AutomationStudioSubflowPendingRepair;
 }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
-  const { from, latest, signal } = input;
-  const keys = [...new Set((latest.subflows ?? []).flatMap((subflow) => (subflow.nodes ?? []).map((node) => node.key)))];
-  if (!keys.includes(from)) return refused("subflow.from_step_unknown", WORDS.unknownStep(from), { steps: keys.slice(0, MAX_KEYS_LISTED) });
+  const { latest, signal } = input;
+  const { keys, labelsOf } = automationStudioSubflowFromStepKeys(latest);
+  const resolved = automationStudioSubflowFromStepResolve(input.from, keys, latest.stepLabels);
+  if (!resolved || !("key" in resolved)) {
+    const labelled = keys.filter((key) => labelsOf.has(key)).slice(0, MAX_KEYS_LISTED).map((key) => ({ key, labels: [...labelsOf.get(key)!] }));
+    const listing = { steps: keys.slice(0, MAX_KEYS_LISTED), ...(labelled.length ? { labelled } : {}) };
+    return resolved
+      ? refused("subflow.from_step_unknown", WORDS.ambiguousLabel(input.from, resolved.ambiguous), { ...listing, ambiguous: resolved.ambiguous })
+      : refused("subflow.from_step_unknown", WORDS.unknownStep(input.from, labelled.length > 0), listing);
+  }
+  // From here on `from` is the plan key, which the port, the repair and the answer all use.
+  const from = resolved.key;
   const { buildId, briefId, planDigest, subflowKey } = input.scope;
   const identity = { buildId, briefId, planDigest, subflowKey };
   let raw: unknown;
@@ -63,6 +73,7 @@ export async function automationStudioSubflowFromStepRun(input: {
     ok: true, fromStep: true, passed: result.status === "ended", subflowKey, revision: latest.revision, digest: latest.digest, from,
     ...(result.stoppedAtKey !== undefined ? { stoppedAt: result.stoppedAtKey } : {}),
     passedKeys: [...result.passedKeys], steps: structuredClone(result.feedback), promotionCredit: false,
+    ...(resolved.label !== undefined ? { fromLabel: resolved.label } : {}),
     ...(checked.standing ? { repairChecked: checked.cleared, ...(checked.step ? { repairStep: checked.step.key } : {}) } : {}),
     instruction: WORDS.answered({ status: result.status, from, stoppedAt: result.stoppedAtKey, checked, latest }),
     ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map(namedAct) } : {}),

@@ -151,16 +151,17 @@ const AMEND_PLAN = "Replace the plan with a new revision: the fields of project.
   + "Changing words does not change what a builder writes: amend to change what the subflows are, not to get past a refusal. "
   + "Every stretch of the person's words a part of the plan in force holds stays in a part of the new one, split or joined in any way, and never goes under notAsked: to give a part up, end honestly with ended instead.";
 
-const DISPATCH = "Send one or more briefs to builders and wait for every return. Each brief: kind (build, repair, or reset, which puts the target back the way this build found it before the whole test), subflowKey, "
-  + "parts it carries, optional entry {caseId, predecessors: the subflows whose proposals run first to reach its start}, which is observed-current and the plan's after for that subflow when left out; optional recordingExcerpt; "
-  + "and for a repair, and only a repair, failingReceipt: one entry of the trials an earlier return of that subflow listed, the object copied whole, or the latest whole test (kind candidate_trial, receiptId its trialRunId, the third field as in the complete object it tested). "
-  + "It must name a trial that did not pass; its builder is shown what that trial said. "
+const DISPATCH = "Send one or more briefs to builders and wait for every return. Each brief needs only subflowKey. "
+  + "kind (build, repair, or reset, which puts the target back as this build found it) may be left out: Core picks repair when that subflow's latest return was not done after its builder ran, else build. A reset is never picked: send it. "
+  + "parts may be left out: the plan's parts for that subflow. Optional entry {caseId, predecessors: subflows that run first}, observed-current and the plan's after when left out; optional recordingExcerpt; "
+  + "and for a repair only, failingReceipt: one entry of the trials an earlier return of that subflow listed, the object copied whole, or the latest whole test (kind candidate_trial, receiptId its trialRunId, the third field as in the complete object it tested). "
+  + "It must name a trial that did not pass; its builder is shown what that trial said. Left out, Core names one from the subflow's latest return. "
   + "A reset carries no parts and permits no act; its subflowKey is the subflow the router runs. Core fills in the plan, interface and brief id, "
-  + "lets each brief make the lasting acts the task asks for (one outside its parts that moves money, deletes or sends goes to the person first), and gives it its share of the money and calls still to give. "
-  + "Optional allowanceUsd and maxIterations only lower a brief's share. "
-  + "A predecessor must be done or sent in the same call; a brief whose predecessor comes back blocked does too. reason says why you send them. A reset comes back done once nothing of this build is left to undo. "
-  + "The answer is every return: done, partial or blocked, the builder's reason, what it was given and spent, the proposal's revision when done (and changedNothing if it does what the one before did), trials (a list holding one receipt reference for each trial its builder ran), and any interface change it asks for. "
-  + "A brief that could only do what one before it did is not run (a reset after one that came back not done, a brief sent again unchanged after it came back blocked, a brief of a subflow whose latest one changed nothing): the answer says what to do instead.";
+  + "lets each brief make the lasting acts the task asks for (one outside its parts that moves money, deletes or sends goes to the person first), and gives it its share of the money and calls left. "
+  + "allowanceUsd and maxIterations only lower its share. "
+  + "A predecessor must be done or sent in the same call; so is one whose predecessor comes back blocked. A reset comes back done once nothing is left to undo. "
+  + "The answer is every return: done, partial or blocked, the builder's reason, what it was given and spent, the proposal's revision when done (and changedNothing if it repeats the one before), trials (a list holding one receipt reference for each trial its builder ran), and any interface change asked for. "
+  + "A brief that could only do what one before it did is not run (a reset after one not done, a brief sent again unchanged after blocked, a brief of a subflow whose latest changed nothing): the answer says what to do instead.";
 
 const ASSEMBLE = "Join the plan and every subflow's latest done proposal into one whole Flow, and submit it. The subflow the router runs, with no proposal of its own, calls every other subflow in the order their starts depend on each other, "
   + "each input taken from the latest earlier output of the same name, or else from the Flow's own value of that name. The answer is the new revision with a complete object to test and complete with, or every reason it could not be assembled. "

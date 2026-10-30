@@ -383,6 +383,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     ...(input.observeTest ? { observed: input.observeTest } : {}),
     ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
     ...(input.testEndView ? { endView: input.testEndView } : {}),
+    ...(input.partOf ? { partOf: input.partOf } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
   const draftOf = (toolId: string): string | undefined => (toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined); // A part run is keyed on its draft too (`repeat-guard/draft-key.ts`).

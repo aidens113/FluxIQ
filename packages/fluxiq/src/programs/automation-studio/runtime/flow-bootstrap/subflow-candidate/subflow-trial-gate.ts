@@ -351,10 +351,10 @@ const UNAFFORDABLE_INSTRUCTION = "Core did not start this trial: the money this 
 
 /** The tool's description, by whether a test is the judged whole run (header, t679). Generic words. */
 const RESET_WORDS = "The trial runs on the site as it stands: what this build already did there stays, the judge is told it, and the trial is judged by what it changed from the state just before it. If this answers candidate.trial_starts_in_end_state, undo just the act it lists, then test again.";
-const SUBFLOW_DESCRIPTION = "Ask Core to try your latest submitted subflow once, on its own with no model: from the start page, it runs the subflows before this one to reach its entry, runs this subflow with its inputs, and judges it against its parts and success check. Give that proposal's revision and digest exactly. The answer is a partial verdict (yes, no, unsure, not_judged or execution_failed) with feedback; it counts for this brief only. The run acts on the site like the saved subflow would. "
+const SUBFLOW_DESCRIPTION = "Ask Core to try your latest submitted subflow once, on its own with no model: from the start page, it runs the subflows before this one to reach its entry, runs this subflow with its inputs, and judges it against its parts and success check. Leave revision and digest out to test your latest submitted proposal, or give both exactly as core.submit_subflow returned them; a pair that is not the latest is refused. The answer is a partial verdict (yes, no, unsure, not_judged or execution_failed) with feedback; it counts for this brief only. The run acts on the site like the saved subflow would. "
   + `${RESET_WORDS} Complete only after a yes for that exact revision and digest. If it answers subflow.trial_unavailable, no trial can run here.`;
 const WHOLE_DESCRIPTION = "Ask Core to test your latest submitted subflow as the whole Flow: the plan is your one subflow, so Core joins it into the whole Flow and runs that once from its start with no model, and the judge says whether the run did what the person asked. This test is the build's judged run: a yes completes this brief, and the supervisor completes the Flow on it. "
-  + "Give that proposal's revision and digest exactly. The answer is a verdict (yes, no, unsure, not_judged or execution_failed) with feedback. The run acts on the site like the saved Flow would. "
+  + "Leave revision and digest out to test your latest submitted proposal, or give both exactly as core.submit_subflow returned them; a pair that is not the latest is refused. The answer is a verdict (yes, no, unsure, not_judged or execution_failed) with feedback. The run acts on the site like the saved Flow would. "
   + `${RESET_WORDS} Complete only after a yes for that exact revision and digest. If it answers subflow.trial_unavailable, no trial can run here.`;
 /** What a yes says when the test was the judged whole run (header, t679). Generic words. */
 const WHOLE_YES = "The whole Flow's test passed for this exact revision and digest: it is the build's judged run. Complete with exactly this subflowKey, revision and digest; the supervisor completes the Flow on it. Submitting again makes a new revision that needs its own test.";
@@ -506,9 +506,9 @@ export class AutomationStudioSubflowTrialGate {
     if (!port) return refused("subflow.trial_unavailable", "No subflow trial runner is available here. Complete with the latest subflowKey, revision and digest; the proposal stays untried.");
     const latest = this.input.latest();
     // A revision at or below the one this brief starts from is an earlier brief's, said so beside this brief's own (header, t658).
-    const earlier = this.earlierBrief(revision);
-    if (!latest) return refused("subflow.trial_stale_revision", `${earlier}There is no valid latest proposal to test. Submit this subflow with core.submit_subflow, then test the revision and digest it returns.`, earlier ? { earlierRevision: revision } : {});
-    if (latest.revision !== revision || latest.digest !== digest) {
+    const earlier = revision === undefined ? "" : this.earlierBrief(revision);
+    if (!latest) return refused("subflow.trial_stale_revision", `${earlier}There is no valid latest proposal to test. Submit this subflow with core.submit_subflow, then test the revision and digest it returns.`, earlier && revision !== undefined ? { earlierRevision: revision } : {});
+    if (revision !== undefined && (latest.revision !== revision || latest.digest !== digest)) {
       return refused("subflow.trial_stale_revision", `${earlier}Only the latest proposal can be tested. Test the revision and digest given here.`, { latestRevision: latest.revision, latestDigest: latest.digest, ...(earlier ? { earlierRevision: revision } : {}) });
     }
     // A run from a step checks a repair, on the page as it stands; it is never the part's test (header, t804).

@@ -6,6 +6,8 @@ import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIP
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID,
+  AutomationStudioFlowCandidateTrialGate,
+  type AutomationStudioFlowCandidate,
   runAutomationStudioFlowCandidateAuthoringLoop,
   type AutomationStudioCandidateTrialRequest,
   type AutomationStudioCandidateTrialResult,
@@ -359,5 +361,53 @@ describe("candidate trial gate", () => {
     expect(submitTool.description).toContain(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID);
     for (const tool of tools) expect(tool.description.length).toBeLessThanOrEqual(2_000);
     expect(tools.map((tool) => tool.toolId)).toContain(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID);
+  });
+});
+
+describe("the whole-candidate test's latest default (K7)", () => {
+  const latestCandidate = { revision: 4, digest: "f".repeat(64) } as AutomationStudioFlowCandidate;
+  type Ran = Array<{ revision: number; digest: string }>;
+  function latestGate(latest: AutomationStudioFlowCandidate | undefined, ran: Ran): AutomationStudioFlowCandidateTrialGate {
+    return new AutomationStudioFlowCandidateTrialGate({ latest: () => latest, trial: { candidateId: "candidate.latest", port: async (request) => {
+      ran.push({ revision: request.revision, digest: request.digest });
+      return { revision: request.revision, digest: request.digest, verdict: "unsure", feedback: { said: "ok" } };
+    } } });
+  }
+
+  it("tests the latest candidate where neither revision nor digest is given, and does not require the pair", async () => {
+    const ran: Ran = [];
+    const gate = latestGate(latestCandidate, ran);
+    const answer = await gate.test({});
+    expect(ran).toEqual([{ revision: 4, digest: latestCandidate.digest }]);
+    expect((answer.evidence as JsonObject).revision).toBe(4);
+    expect(gate.tool.inputSchema).not.toHaveProperty("required");
+    expect(String(gate.tool.description)).toContain("Leave revision and digest out");
+  });
+
+  it("refuses a supplied pair that is not the latest, naming the latest", async () => {
+    const ran: Ran = [];
+    const gate = latestGate(latestCandidate, ran);
+    for (const stale of [{ revision: 3, digest: latestCandidate.digest }, { revision: 4, digest: "a".repeat(64) }]) {
+      const answer = await gate.test(stale);
+      expect(answer.evidence).toMatchObject({ ok: false, code: "candidate.trial_stale_revision", latestRevision: 4, latestDigest: latestCandidate.digest });
+    }
+    expect(ran).toEqual([]);
+  });
+
+  it("refuses one of the two with an instruction to give both or neither", async () => {
+    const ran: Ran = [];
+    const gate = latestGate(latestCandidate, ran);
+    for (const half of [{ revision: 4 }, { digest: latestCandidate.digest }]) {
+      const answer = await gate.test(half);
+      expect(answer.evidence).toMatchObject({ ok: false, code: "candidate.trial_input_invalid" });
+      expect(String((answer.evidence as JsonObject).instruction)).toContain("both revision and digest");
+    }
+    expect(ran).toEqual([]);
+  });
+
+  it("answers as before with no candidate", async () => {
+    const answer = await latestGate(undefined, []).test({});
+    expect(answer.evidence).toMatchObject({ ok: false, code: "candidate.trial_stale_revision" });
+    expect(String((answer.evidence as JsonObject).instruction)).toContain("no valid latest candidate");
   });
 });

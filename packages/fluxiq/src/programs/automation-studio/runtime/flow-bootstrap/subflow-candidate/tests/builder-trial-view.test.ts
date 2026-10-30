@@ -19,7 +19,7 @@ const REFUSAL = { ok: false, code: "candidate.trial_reset_required", instruction
 
 type Entry = { callId: string; toolId: string; value: unknown };
 
-/** Submits, tests, then ends blocked; answers what the model was shown for its test, and the looks the loop took. */
+/** Submits, tests, then ends blocked where no yes completed the brief; answers what the model was shown for its test, and the looks the loop took. */
 async function tested(options: { reset?: { moved: boolean; movesDuring: number } | undefined; moves?: boolean; trialRuns?: boolean }) {
   let moved = 0;
   const looks: string[] = [];
@@ -38,15 +38,22 @@ async function tested(options: { reset?: { moved: boolean; movesDuring: number }
       const accepted = [...evidence].reverse().find((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!.value as JsonObject;
       return { kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, callId: "test", input: { revision: accepted.revision!, digest: accepted.digest! } };
     },
-    (evidence) => {
-      shown = [...evidence].reverse().find((entry) => entry.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID)!.value as JsonObject;
-      return { kind: "complete", result: { ended: "blocked", reason: "The reset could not be met in this test." } };
-    }
+    // After a refusal the model ends the brief; after a yes Core completes it, and this is never asked (t811).
+    () => ({ kind: "complete", result: { ended: "blocked", reason: "The reset could not be met in this test." } })
   ];
   let index = 0;
   await runAutomationStudioSubflowBuilderLoop({
     scope: testScope(), siblings: [...SIBLINGS], submission: testSubmission(),
     trial: { port, ...(reset ? { reset } : {}), ...(options.moves === false ? {} : { moves: () => moved }) },
+    // What the model is shown for its test: the answer the builder gives the loop, whatever decision follows it.
+    observe: (loop) => ({
+      ...loop,
+      executeTool: async (call) => {
+        const answered = await loop.executeTool(call);
+        if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) shown = (answered as { evidence?: JsonObject }).evidence;
+        return answered;
+      }
+    }),
     loop: {
       tools: [look], maxIterations: 6, maxToolCalls: 8,
       unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
