@@ -31,6 +31,19 @@ import type { AutomationStudioProjectDispatchWholeTrial } from "../dispatch/inde
 //   `./single-subflow-trial.ts`): whether its yes was confirmed by the judge's
 //   converse question. The port keeps it by the trial's run id, hands the
 //   trial on without it, and answers the gate's `checkRows` with it.
+// - **A repair is checked from its step by the scoped port (t804).** The
+//   scoped port's `fromStep` is handed through unchanged: on this plan the one
+//   subflow is the one the router runs, so a run of it as the root from one of
+//   its steps is the assembled Flow from that step, minus the arrival before
+//   it. It is no whole test: the whole test is never asked for it. The trial
+//   carries no `stoppedAtKey` on this path: the whole test's feedback names a
+//   step by its number and label in the whole Flow, never by plan key, and a
+//   key guessed from a label could name the wrong step.
+// - **The whole test's offline check stays the whole gate's (t804, §4).** It
+//   is asked inside the whole test, after the brief's gate has taken its
+//   readings; it is not handed to the brief's gate, because it is keyed by
+//   the whole revision that `whole` assembles only when it is asked, and the
+//   whole gate would then ask it again.
 
 /** Told each trial's proposal with the verdict its gate kept (header). */
 export type AutomationStudioProjectWholeTestTried = (scope: AutomationStudioSubflowScope, proposal: Readonly<AutomationStudioSubflowProposal>, verdict: AutomationStudioCandidateTrialVerdict) => void;
@@ -67,6 +80,8 @@ export class AutomationStudioProjectWholeTestPort {
     };
     if (kept.prepareStart) port.prepareStart = kept.prepareStart;
     if (kept.standingNos) port.standingNos = kept.standingNos;
+    // A run from one step is the scoped port's own (header, t804): the router-run subflow as the root, from that step.
+    if (scoped?.fromStep) Object.assign(port, { fromStep: scoped.fromStep });
     // The gate's row check, from the whole test's own converse (header, t692).
     port.checkRows = async ({ trialRunId }) => (trialRunId ? converse.get(trialRunId) : undefined);
     port.weighed = (trial) => {

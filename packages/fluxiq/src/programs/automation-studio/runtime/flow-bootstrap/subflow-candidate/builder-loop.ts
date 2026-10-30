@@ -147,6 +147,14 @@
 // no's advice less what an earlier trial's advice already said, and a note,
 // `adviceRepeated`, saying so and what the trial that followed that advice
 // answered.
+//
+// **A failed test is repaired from its failing step (t804).** E's builder
+// re-tested its whole part after every one-step change. Where the trial port
+// can run from a step (`fromStep`), the gate holds a failed whole test's repair
+// (`./pending-repair.ts`) until a run from the failing step passes it, and the
+// submit answer's `next` says so: run from that step, with its exact call, and
+// test the whole part only when the whole part should work. The repair memory
+// is the caller's where it passes one (`pendingRepair`), so it crosses briefs.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
@@ -157,7 +165,9 @@ import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts
 import type { AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowBriefWords } from "./brief-words.ts";
 import { automationStudioSubflowDoneBefore, automationStudioSubflowEntryLeft } from "./done-before.ts";
+import { AutomationStudioSubflowPendingRepair } from "./pending-repair.ts";
 import { AutomationStudioSubflowRepeatedAdvice } from "./repeated-advice.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_REPAIR_WORDS as REPAIR_WORDS } from "./repair-words.ts";
 import { automationStudioSubflowBuilderTools } from "./role-tools.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-submission.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
@@ -254,6 +264,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
    * brief of a build makes advice given to an earlier brief count too. Absent, the builder keeps its own.
    */
   repeatedAdvice?: AutomationStudioSubflowRepeatedAdvice | undefined;
+  /** The repair memory of this subflow (header, t804): a caller that passes one memory to each brief of it holds a repair brief to its build brief's failed test. Absent, the builder keeps its own. */
+  pendingRepair?: AutomationStudioSubflowPendingRepair | undefined;
 }): Promise<AutomationStudioSubflowBuilderOutcome> {
   const signals = [input.loop.signal, input.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
@@ -261,7 +273,16 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   const after = input.revisionsAfter !== undefined ? { revisionsAfter: input.revisionsAfter } : {};
   const controller = new AutomationStudioSubflowScopedSubmissionController({ scope: input.scope, siblings: input.siblings, submission, ...after });
   const whole = input.trialIsWhole === true;
-  const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal, ...(input.trial?.reset ? { reset: input.trial.reset } : {}), ...after, ...(whole ? { whole: true as const } : {}) });
+  // A failed test's repair, checked from its failing step, where the port can run from one (header, t804).
+  const repair = input.pendingRepair ?? new AutomationStudioSubflowPendingRepair();
+  const fromStep = typeof input.trial?.port?.fromStep === "function";
+  const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal, ...(input.trial?.reset ? { reset: input.trial.reset } : {}), ...after, ...(whole ? { whole: true as const } : {}), pendingRepair: repair });
+  // The submit answer's next step where the port can run from a step (header, t804): from the failing step while a repair stands, else the test with when to ask for it.
+  const withRepair = (proposal: AutomationStudioSubflowProposal, testNext: string): string => {
+    if (!fromStep) return testNext;
+    const pending = repair.refuses(proposal, undefined);
+    return pending ? REPAIR_WORDS.next(pending.step, proposal) : `${testNext} ${REPAIR_WORDS.wholeWhenReady}`;
+  };
   const subflowKey = input.scope.subflowKey;
   let tried = false;
   let lastTrial: AutomationStudioSubflowTrialResult | undefined;
@@ -272,7 +293,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   let entryActs: string[] = [];
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
-    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${automationStudioSubflowBriefWords.successCheck(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes. ${HONEST_ENDING}`,
+    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${automationStudioSubflowBriefWords.successCheck(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.${fromStep ? ` After a failed test, repair the failing step live and check it by testing from that step (from) before testing the whole part again.` : ""} ${HONEST_ENDING}`,
     inputSchema: { type: "object", properties: { flow: { type: "string", description: `${automationStudioSubflowBriefWords.brief(input.scope)}\nThis subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
   const receiptCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
@@ -385,9 +406,9 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
         ...(submitted.advice?.length ? { advice: submitted.advice } : {}),
         next: !gate.available
           ? "No subflow trial runner is available here; completing leaves an untried proposal."
-          : whole
+          : withRepair(submitted.proposal, whole
             ? `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. This test runs the whole Flow from its start as the build's judged run; a yes completes this brief. Submitting again makes a new revision that needs its own test.`
-            : `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.`
+            : `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.`)
       };
       return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };
     }

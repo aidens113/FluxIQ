@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4279
+- Public declarations: 4283
 - Class: 148
 - Interface: 10
 - Object: 555
-- Type: 2283
+- Type: 2284
 - Type Alias: 1
-- Value: 1282
+- Value: 1285
 
 ## Public Declarations
 
@@ -1055,8 +1055,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioDeleteProjectUiCacheResponse` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/ui-cache.ts` | - |
 | `AutomationStudioDeleteReusableLlmContextRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/llm.ts` | - |
 | `automationStudioDestructiveConsequences` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/destructive.ts` | - |
+| `automationStudioDetachedFromNode` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/from-node.ts` | - |
+| `automationStudioDetachedFromNodeKeyValid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/from-node.ts` | - |
 | `AutomationStudioDetachedSubflowArrival` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | The arrival step a partial trial opens with (header): the domain's node, the parameter it takes a location under, and the location. |
 | `automationStudioDetachedSubflowCandidateIdentity` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | - |
+| `AutomationStudioDetachedSubflowFromInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow-from.ts` | A from-step run's input: a partial trial's, with no predecessors or arrival, and the plan key of the target's step it starts at. |
 | `AutomationStudioDetachedSubflowIdentity` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | What a partial trial is bound to. Re-read through `currentIdentity` before anything runs and at every child load; any change (a new proposal of the target or a predecessor, an amended plan, a moved base) stops the run. |
 | `AutomationStudioDetachedSubflowInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | - |
 | `AutomationStudioDetachedSubflowProposal` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | One proposal's place in the trial: the Subflow it proposes (first) and the `part` helpers it owns, under its revision and digest. |
@@ -4055,6 +4058,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `runAutomationStudioCompiledPlan` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/compiled-plan.ts` | - |
 | `runAutomationStudioDetachedCandidate` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-execution.ts` | - |
 | `runAutomationStudioDetachedSubflow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow.ts` | - |
+| `runAutomationStudioDetachedSubflowFrom` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/detached-subflow-from.ts` | - |
 | `runAutomationStudioFlowBootstrapBuildPhases` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts` | - |
 | `runAutomationStudioFlowCandidateAuthoringLoop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/authoring-loop.ts` | - |
 | `runAutomationStudioFlowDraftPart` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/run-flow-part.ts` | - |
