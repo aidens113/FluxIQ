@@ -17,6 +17,8 @@ const IMPOSSIBLE: JsonObject = { type: "string", minLength: 1, maxLength: 500, d
 const MAX_REASON = 500;
 
 const INVALID = "subflow.trial_input_invalid";
+/** A tool-call refusal that carries its own instruction (`WORDS.unavailable`), as `INVALID` does; not a submission issue. */
+const UNAVAILABLE = "subflow.from_step_unavailable";
 const INVALID_SAID = "Call core.test_subflow with exactly the latest proposal's revision (an integer) and digest (a string), as core.submit_subflow returned them, and, only to narrow what Core defaults, cannotUndo: the act ids a reset listed that the site cannot undo.";
 const INVALID_FROM_SAID = `${INVALID_SAID} To run from a step, add from: that step's key, and nothing else; fromStepImpossible goes only on a whole test.`;
 
@@ -36,7 +38,7 @@ export const AUTOMATION_STUDIO_SUBFLOW_TEST_INPUT = Object.freeze({
       return { ok: false, code: INVALID, instruction: fromStep ? INVALID_FROM_SAID : INVALID_SAID };
     }
     // A run from a step where the port cannot make one is said as such (t804).
-    if (from !== undefined && !fromStep) return { ok: false, code: "subflow.from_step_unavailable", instruction: WORDS.unavailable };
+    if (from !== undefined && !fromStep) return { ok: false, code: UNAVAILABLE, instruction: WORDS.unavailable };
     if (from !== undefined && (typeof from !== "string" || !from.trim() || from.length > 200 || cannotUndo !== undefined || fromStepImpossible !== undefined)) return { ok: false, code: INVALID, instruction: INVALID_FROM_SAID };
     if (fromStepImpossible !== undefined && (typeof fromStepImpossible !== "string" || !fromStepImpossible.trim())) return { ok: false, code: INVALID, instruction: WORDS.reasonEmpty };
     const call: AutomationStudioSubflowTestCall = { revision: revision as number, digest, ...(cannotUndo !== undefined ? { cannotUndo } : {}) };
