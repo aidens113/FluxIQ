@@ -414,6 +414,19 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     expect((await answerRows(pool, "run.a", "listings")).map((row) => JSON.parse(row.row_json))).toEqual(answer);
   });
 
+  it("judges a relative date at the run's start, and a now the caller gives wins", async () => {
+    const started = Date.UTC(2026, 9, 6, 12);
+    const { store } = await openFixture([{ runId: "run.a", flowId: "flow.a", startedAt: started }]);
+    const process: AutomationStudioRecordProcessing = { where: [{ field: "title", within: "7 days" }] };
+    const titles = ["2026-09-29 13:00", "2026-09-29 11:00", "3d"];
+    await store.appendBatch(batch({ rows: titles.map((title) => ({ title })), process }));
+    await store.processRunDatasets("run.a");
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["2026-09-29 13:00", "3d"]);
+    // Ten days on, the stated dates fall out of the last 7 days; "3d" is read against the given now too, so it stays.
+    await store.processRunDatasets("run.a", { now: started + 10 * 86_400_000 });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["3d"]);
+  });
+
   it("reads the collected rows again after an append, until the dataset is processed again", async () => {
     const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
     await store.appendBatch(batch({ rows: lettered("A", "B", "C") }));

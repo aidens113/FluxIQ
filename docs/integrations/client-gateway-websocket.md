@@ -38,11 +38,113 @@ FLUXIQ_PUBLIC_CLIENT_WS_URL=ws://127.0.0.1:4777/client
 FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS=chrome-extension://your-extension-id,moz-extension://your-extension-id
 ```
 
-Loopback listeners may omit an origin allowlist for native and extension
-development. A listener bound to `0.0.0.0`, a LAN address, or another
-non-loopback host will refuse to start unless
-`FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS` is a restrictive list; `*` is not
-accepted for those listeners.
+With none of the hosted settings below, a `local` install on loopback behaves
+as it always has: no Origin allowlist is needed, no hello deadline or rate
+limit applies, and the address the socket came from is its peer's.
+
+## Hosted Transport Settings
+
+The transport (`apps/web/src/server/client-gateway-websocket.ts`, its helpers
+under `apps/web/src/server/client-gateway-websocket/`) reads these through
+`resolveFluxIQDeploymentSettings` (`fluxiq/platform/profile`), which the web
+runtime passes to `startClientGatewayWebSocketServer` as `profile`,
+`allowedOrigins`, `publicUrl`, `trustProxy` and `limits`:
+
+```bash
+FLUXIQ_PROFILE=service                      # local (default) | self-hosted | service
+FLUXIQ_PUBLIC_CLIENT_WS_URL=wss://app.example.com/client
+FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS=chrome-extension://<id>,moz-extension://*
+FLUXIQ_TRUST_PROXY=true                     # only behind a proxy you run
+FLUXIQ_CLIENT_GATEWAY_MAX_FRAME_BYTES=16777216
+FLUXIQ_CLIENT_GATEWAY_HELLO_DEADLINE_MS=10000
+FLUXIQ_CLIENT_GATEWAY_MESSAGES_PER_SECOND=50
+FLUXIQ_CLIENT_GATEWAY_MESSAGE_BURST=200
+FLUXIQ_CLIENT_GATEWAY_PENDING_PAIRINGS_PER_ADDRESS=5
+FLUXIQ_CLIENT_GATEWAY_PENDING_PAIRINGS_TOTAL=1000
+FLUXIQ_DRAIN_SECONDS=30
+```
+
+The values shown are the `self-hosted` and `service` defaults. The `local`
+defaults are a 256 MiB frame cap, no hello deadline, no rate limit, no
+per-address pairing cap and 1,000 pending pairings in all. An empty value keeps
+the profile's default, and the hello deadline, rate, burst and per-address
+pairing cap turn off with `0` or `off`.
+
+### Origin allowlist
+
+Each upgrade's `Origin` is judged by the platform contract's grammar
+(`packages/contracts/src/platform/origin/`), not by string equality. An entry
+is one of:
+
+- an exact web origin in canonical form, such as `https://app.example.com` or
+  `http://127.0.0.1:3000`;
+- `chrome-extension://<32 letters a-p>` (Chrome and Edge ids differ, so list
+  each);
+- `moz-extension://<uuid>`, or `moz-extension://*` for every Firefox install,
+  since Firefox gives each install its own id.
+
+`*`, `null`, any other wildcard, a path, query or trailing slash, and any other
+scheme are refused. The gateway is **public** under the `service` profile, or
+under any profile bound beyond loopback. A public gateway refuses to start with
+no rule, or with any refused entry; a non-public one warns about a refused
+entry and drops it, and with no rule at all admits every Origin.
+
+A missing or empty `Origin` (native clients send none) is admitted on a
+non-public gateway and refused on a public one, allowlist or not. An Origin
+that no rule admits gets `403 Forbidden`, audited as
+`transport.origin_refused` with `reason` `missing_origin` or
+`origin_not_allowed`.
+
+### Limits
+
+- **Frame size.** A frame whose declared payload length exceeds
+  `maxFrameBytes` is refused from its header, before the payload is buffered;
+  so is a fragmented message, or a pending buffer, that grows beyond it. The
+  socket is closed with 1009 and destroyed (`transport.frame_too_large`).
+- **Hello deadline.** Until a complete text message with
+  `type: "client.hello"` arrives, the socket is closed with 1008 once
+  `helloDeadlineMs` passes (`transport.hello_deadline`).
+- **Rate.** Each socket has a token bucket of `messageBurst` messages refilled
+  at `messagesPerSecond`; every complete data message and every ping or pong
+  takes one. Over it, the socket is closed with 1008
+  (`transport.rate_limited`). A burst left unset is one second's worth.
+- **Pending pairings.** At start the transport calls
+  `ClientGatewayService.setPairingLimits({ perAddress, total })` from
+  `pendingPairingsPerAddress` and `pendingPairingsTotal`.
+
+Every refusal is a security event (`ClientGatewayService.recordTransportEvent`),
+so `onSecurityEvent` listeners see it as well as the audit ring.
+
+### Client address
+
+The address a connection counts as is the socket's peer, or, with
+`FLUXIQ_TRUST_PROXY=true`, the rightmost `X-Forwarded-For` entry: the one the
+trusted proxy appended, so a client cannot choose it by sending its own header.
+Set it only when every connection arrives through a proxy you run, such as
+Caddy terminating TLS for `wss://`. The full address goes only to the
+gateway's own session record, for the per-address pairing cap; the audit,
+events and snapshot carry its network prefix (`clientAddressPrefix`: IPv4
+`/24`, IPv6 `/48`).
+
+### Drain
+
+The server handle has `beginDrain({ retryAfterMs, reason })`, `reason` being
+`restart` (the default) or `shutdown`. From then on a new upgrade gets
+`503 Service Unavailable` with `Retry-After` in whole seconds, and every open
+socket is sent `server.going_away` once:
+
+```json
+{
+  "type": "server.going_away",
+  "payload": { "reason": "restart", "retryAfterMs": 30000 }
+}
+```
+
+The client keeps its credential and reconnects after `retryAfterMs`; open
+sockets are left for their clients to close. `openConnectionCount()` says how
+many are still open, so a shutdown can wait up to `FLUXIQ_DRAIN_SECONDS` for it
+to reach zero before closing the listener. The health response
+(`GET /`) reports `draining`.
 
 ## Approval Flow
 
@@ -400,6 +502,15 @@ The mock client connects, prints the reference code from
   `apps/web/src/server/client-gateway-websocket.ts`.
 - Hosts can provide their own adapter as long as they attach accepted sockets to
   `ClientGatewayService.connect()` and forward text frames to `receiveRaw()`.
+  A hosted adapter should also pass `peer` to `connect()`, call
+  `setPairingLimits()` at start, and report its own refusals through
+  `recordTransportEvent()`, as the Node adapter does.
+- The transport's checks are covered by
+  `apps/web/src/server/tests/client-gateway-websocket.test.ts` (Origin rule,
+  limits, drain over loopback) and
+  `apps/web/src/server/tests/client-gateway-websocket-wss.test.ts` (`wss://`
+  through a Node TLS proxy standing in for Caddy, under the `service`
+  profile, with a self-signed certificate made by `openssl` at test time).
 
 ## Web Pairing Queue
 

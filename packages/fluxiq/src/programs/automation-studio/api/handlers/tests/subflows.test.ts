@@ -21,12 +21,12 @@ describe("Automation Studio explicit legacy representation migration API", () =>
     const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin } as any });
     registerAutomationStudioApi(registry, { migrateLegacyFlowRepresentation } as any);
 
-    expect(registry.endpoints()).toContainEqual({
+    expect(registry.endpoints()).toContainEqual(expect.objectContaining({
       programId: "automation-studio",
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateLegacyFlowRepresentation,
       permission: "flows.write",
       classification: "authoring"
-    });
+    }));
     const response = await registry.call({
       programId: "automation-studio",
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateLegacyFlowRepresentation,

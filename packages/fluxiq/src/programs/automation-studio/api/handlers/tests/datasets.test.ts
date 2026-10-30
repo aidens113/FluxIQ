@@ -53,7 +53,7 @@ describe("Automation Studio run dataset API", () => {
   it("registers every dataset endpoint under its permission and classification", () => {
     const { registry } = datasetService();
     for (const { endpoint, permission, classification } of DATASET_ENDPOINTS) {
-      expect(registry.endpoints()).toContainEqual({ programId: "automation-studio", endpoint, permission, classification });
+      expect(registry.endpoints()).toContainEqual(expect.objectContaining({ programId: "automation-studio", endpoint, permission, classification }));
     }
   });
 

@@ -43,12 +43,12 @@ describe("Automation Studio run audit export API", () => {
   it("registers export-flow-run-audit under programs.read", () => {
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, {} as AutomationStudioService);
-    expect(registry.endpoints()).toContainEqual({
+    expect(registry.endpoints()).toContainEqual(expect.objectContaining({
       programId: "automation-studio",
       endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportFlowRunAudit,
       permission: "programs.read",
       classification: "read"
-    });
+    }));
   });
 
   it("forwards projectId and runId to the service and answers { audit }", async () => {

@@ -35,7 +35,23 @@ const UNIT_MS: ReadonlyArray<readonly [RegExp, number]> = [
 ];
 
 const RELATIVE = /\b(\d+(?:\.\d+)?|an?|one)\+?\s*(seconds?|secs?|s|minutes?|mins?|hours?|hrs?|h|days?|d|weeks?|wks?|w|months?|mos?|years?|yrs?|y)\s+ago\b/iu;
-const NOW_WORDS = /^(?:(?:posted|active|updated)\s+)?(?:just now|just posted|right now|today|now)$/iu;
+/**
+ * A compact age as social pages print it: "1d", "3h", "2w", "45m", "45min", "5s",
+ * "1mo", "1y", with an optional "ago" and "Posted" style prefix. It must be the
+ * whole value, so "Apply in 3d" and "Size 5s" state none, and a bare number
+ * does too. A bare `m` is minutes ("1mo" is the month); a fraction is allowed.
+ */
+const COMPACT_AGE = /^(?:(?:posted|active|updated)\s+)?(\d+(?:\.\d+)?)\s*(s|sec|secs|m|min|mins|h|hr|hrs|d|w|wk|wks|mo|mos|y|yr|yrs)(?:\s+ago)?$/iu;
+const COMPACT_AGE_UNIT: Readonly<Record<string, number>> = {
+  s: 1_000, sec: 1_000, secs: 1_000,
+  m: 60_000, min: 60_000, mins: 60_000,
+  h: 3_600_000, hr: 3_600_000, hrs: 3_600_000,
+  d: DAY_MS,
+  w: 7 * DAY_MS, wk: 7 * DAY_MS, wks: 7 * DAY_MS,
+  mo: 30 * DAY_MS, mos: 30 * DAY_MS,
+  y: 365 * DAY_MS, yr: 365 * DAY_MS, yrs: 365 * DAY_MS
+};
+const NOW_WORDS =/^(?:(?:posted|active|updated)\s+)?(?:just now|just posted|right now|today|now)$/iu;
 const YESTERDAY = /^(?:(?:posted|active|updated)\s+)?yesterday$/iu;
 const ISO = /\b(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/u;
 const MONTH = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
@@ -65,6 +81,8 @@ export function readAutomationStudioRecordDate(text: string, now: number): numbe
     const ms = UNIT_MS.find(([pattern]) => pattern.test(unit))?.[1];
     return ms === undefined ? undefined : now - amount * ms;
   }
+  const compact = COMPACT_AGE.exec(collapsedText(text));
+  if (compact !== null) return now - Number(compact[1]) * COMPACT_AGE_UNIT[compact[2]!.toLowerCase()]!;
   const left = TIME_LEFT.exec(text);
   if (left !== null) {
     const ms = timeLeftMs(left[1] ?? left[2]!);

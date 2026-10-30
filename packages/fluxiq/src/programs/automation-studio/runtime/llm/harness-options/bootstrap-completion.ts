@@ -137,6 +137,7 @@ import {
   AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS,
   acceptAutomationStudioFlowBootstrapResult,
   assembleAutomationStudioFlowDraftPlan,
+  type AuthoringPartOfStep,
   type AutomationStudioFlowBootstrapAcceptance,
   automationStudioEvidenceFlowBootstrapLimitsExceeded,
   automationStudioFlowBootstrapDraftWithStartStep,
@@ -164,6 +165,7 @@ import { automationStudioAmendedPlanParameters } from "./amended-plan-parameters
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView, type AutomationStudioFlowBootstrapPlanParameterResolution } from "./plan-parameter-resolution.ts";
 import { automationStudioFlowPlanListingOrderInRepeatIssues, automationStudioFlowPlanRecordReplaceInRepeatIssues } from "../../flow-bootstrap/script-statements/index.ts";
+import { automationStudioFlowPlanRepeatWhereInProcessIssues } from "../../flow-bootstrap/repeat-where/index.ts";
 
 // `evidence_completion_cannot_answer` is still produced, by the two act rules
 // that refuse (an undeclared consequence a person is asked about, and an act
@@ -290,6 +292,12 @@ export type AutomationStudioFlowBootstrapCompletionInput = {
    */
   instructionText?: string | undefined;
   /**
+   * Which plan part each step serves (`flow-bootstrap/record-defaults/`, K5): a record output the model left
+   * out the parts of is declared from the part's answer. The test and the saved Flow read the same one.
+   * Absent, or `undefined` for a step, the step is read as it was written.
+   */
+  partOf?: AuthoringPartOfStep | undefined;
+  /**
    * Where the Flow starts, as the build was told it
    * (`flow-bootstrap/start-location.ts`).
    *
@@ -381,9 +389,9 @@ export async function checkAutomationStudioFlowBootstrapPlanCompletion(
     : undefined;
   const proposed = draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
   const drafted = draftSteps && proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
-    ? fromDraft(draftSteps, result, input.registry, input.resolution, input.instructionText, input.routeSignaturesOf)
+    ? fromDraft(draftSteps, result, input.registry, input.resolution, input.instructionText, input.routeSignaturesOf, input.partOf)
     : undefined;
-  const accepted = drafted ?? fromReply(result, input.registry, input.resolution, input.instructionText);
+  const accepted = drafted ?? fromReply(result, input.registry, input.resolution, input.instructionText, input.partOf);
   return checkPlan(input, accepted, { origin: "model", result, drafted, draftSteps, restoredStep });
 }
 
@@ -463,7 +471,9 @@ async function checkPlan(
           const replacing = automationStudioFlowPlanRecordReplaceInRepeatIssues({ plan: buildPlan.plan, registry: input.registry, resolution: input.resolution });
           // A lasting repeat over a listing that sorts or limits only its saved answer acts in page order (header, t741).
           const ordering = automationStudioFlowPlanListingOrderInRepeatIssues({ plan: buildPlan.plan, registry: input.registry, resolution: input.resolution });
-          if (replacing.length || ordering.length) failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: [...replacing, ...ordering] });
+          // And a where on its saved answer's processing belongs on the listing's read (t800, `../../flow-bootstrap/repeat-where/`).
+          const wherePlaced = automationStudioFlowPlanRepeatWhereInProcessIssues({ plan: buildPlan.plan, registry: input.registry, resolution: input.resolution });
+          if (replacing.length || ordering.length || wherePlaced.length) failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: [...replacing, ...ordering, ...wherePlaced] });
         }
       }
     }
@@ -582,9 +592,10 @@ function fromReply(
   result: JsonObject,
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution,
-  instructionText: string | undefined
+  instructionText: string | undefined,
+  partOf: AuthoringPartOfStep | undefined
 ): AutomationStudioFlowBootstrapAcceptance {
-  const accepted = acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution, instructionText });
+  const accepted = acceptAutomationStudioFlowBootstrapResult({ result, registry, resolution, instructionText, partOf });
   return accepted.ok ? { ...accepted, plan: withoutCoreDerived(accepted.plan) } : accepted;
 }
 
@@ -623,7 +634,8 @@ function fromDraft(
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution,
   instructionText: string | undefined,
-  routeSignaturesOf: ((step: AutomationStudioFlowDraftStep) => AutomationStudioRouteSignatures | undefined) | undefined
+  routeSignaturesOf: ((step: AutomationStudioFlowDraftStep) => AutomationStudioRouteSignatures | undefined) | undefined,
+  partOf: AuthoringPartOfStep | undefined
 ): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string>; amendedParameters?: ReadonlyMap<string, readonly string[]> } {
   // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
   // summary is one sentence about the Flow, and refusing a whole Flow because the
@@ -638,7 +650,8 @@ function fromDraft(
     resolution,
     summary,
     instructionText,
-    routeSignaturesOf
+    routeSignaturesOf,
+    partOf
   });
   if (!assembled.plan) {
     return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script: DRAFT_SCRIPT_NOTE };

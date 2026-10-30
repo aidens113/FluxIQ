@@ -32,11 +32,8 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioResultNotedListedValues } from "../../result-verification/listed-values/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioSeparatingColumn } from "../../flow-bootstrap/listed-values/index.ts";
 
-/** What a screened or empty cell reads as in a summary row: never a value to compare. */
-const NOT_A_VALUE: ReadonlySet<string> = new Set(["[withheld]", "(withheld)", "(no value)"]);
-/** The shortest shared start worth testing; a shorter one is a letter or two any row may start with. */
-const SHORTEST_START = 4;
 /** A column id a sentence may name. */
 const COLUMN = /^[A-Za-z0-9_.$@-]{1,64}$/u;
 
@@ -52,7 +49,7 @@ export function automationStudioTrialRowMark(advice: string | undefined, summary
     const listed = rows.filter((row) => values.includes(folded(row[listedBy] ?? "")));
     const others = rows.filter((row) => !values.includes(folded(row[listedBy] ?? "")));
     if (!listed.length || !others.length) continue;
-    const mark = markOf(rows, listedBy, listed, others);
+    const mark = automationStudioSeparatingColumn(rows, listedBy, listed, others);
     const picked = `the rows whose ${listedBy} is one the advice lists (${listed.length} of the ${rows.length} rows of this read Core holds)`;
     if (mark) return `Core's record: ${mark.column} ${mark.said} on every one of ${picked} and on none of the other ${others.length}. A condition on that column, ${JSON.stringify(mark.condition)}, keeps a row by what the row itself shows rather than by today's values; check it against the request before you use it.`;
     return `Core's record: no column this read takes differs between ${picked} and the other ${others.length}, so what marks the rows the request asks for is not read yet. ${LOOK_IN_STRUCTURE}`;
@@ -63,6 +60,10 @@ export function automationStudioTrialRowMark(advice: string | undefined, summary
 type Row = Record<string, string>;
 
 /** Each read's rows Core holds: the stored rows of the sets its passes wrote, and the rows each of its conditions alone left out. */
+export function automationStudioTrialSampleRows(summary: AutomationStudioRunResultSummary): Row[][] {
+  return rowsByRead(summary);
+}
+
 function rowsByRead(summary: AutomationStudioRunResultSummary): Row[][] {
   return (summary.reads ?? []).map((read) => [
     ...summary.recordSets.filter((set) => (set.processing?.passes ?? []).some((pass) => pass.node === read.nodeId)).flatMap((set) => (set.sampleRows ?? []).map(rowOf)),
@@ -83,44 +84,6 @@ function listingColumn(rows: readonly Row[], values: readonly string[]): string 
     if (hits > 0 && (!best || hits > best.hits)) best = { column, hits };
   }
   return best?.column;
-}
-
-/** A column other than the listing one that marks the listed rows: by having a value, lacking one, or a shared start. */
-function markOf(rows: readonly Row[], listedBy: string, listed: readonly Row[], others: readonly Row[]): { column: string; said: string; condition: JsonObject } | undefined {
-  for (const column of new Set(rows.flatMap((row) => Object.keys(row)))) {
-    if (column === listedBy || !COLUMN.test(column)) continue;
-    const cell = (row: Row): string | null | undefined => {
-      const value = (row[column] ?? "").trim();
-      if (value === "(no value)") return "";
-      return NOT_A_VALUE.has(value) ? null : value;
-    };
-    // A screened cell says nothing either way, so a column holding one is not weighed.
-    if ([...listed, ...others].some((row) => cell(row) === null)) continue;
-    const has = (row: Row) => cell(row) !== "";
-    if (listed.every(has) && !others.some(has)) return { column, said: "has a value", condition: { field: column, is: "present" } };
-    if (!listed.some(has) && others.every(has)) return { column, said: "has no value", condition: { field: column, is: "absent" } };
-    if (listed.length < 2 || !listed.every(has)) continue;
-    const start = sharedStart(listed.map((row) => cell(row)!));
-    if (start.length >= SHORTEST_START && !others.some((row) => folded(cell(row)!).startsWith(folded(start)))) {
-      return { column, said: `starts with ${JSON.stringify(start)}`, condition: { field: column, startsWith: start } };
-    }
-  }
-  return undefined;
-}
-
-/** The longest start every value shares, case aside, cut back to a whole word where it ends inside one. */
-function sharedStart(values: readonly string[]): string {
-  const first = values[0]!;
-  let length = first.length;
-  for (const value of values.slice(1)) {
-    let at = 0;
-    while (at < length && at < value.length && first[at]!.toLowerCase() === value[at]!.toLowerCase()) at += 1;
-    length = at;
-  }
-  const start = first.slice(0, length);
-  if (values.every((value) => value.length === length || /\s/u.test(value[length] ?? ""))) return start.trim();
-  const word = start.lastIndexOf(" ");
-  return word > 0 ? start.slice(0, word).trim() : "";
 }
 
 function folded(value: string): string {

@@ -3,6 +3,7 @@
 import { AUTOMATION_STUDIO_ENDPOINTS, type CreateFlowSubflowRequest, type DuplicateFlowSubflowRequest, type FlowExpansionSummaryRequest, type FlowSubflowRequest, type MigrateLegacyFlowRepresentationRequest, type RenameFlowSubflowRequest, type UpdateFlowSubflowRequest } from "../contracts.ts";
 import type { AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { endpointResource } from "../../../_shared/iam/index.ts";
 
 export function registerSubflowEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
@@ -11,6 +12,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSubflows,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowSubflows",
+    accessLevel: "List",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowExpansionSummaryRequest : {} as FlowExpansionSummaryRequest;
       const page = await service.listFlowSubflowSummaries({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), limit: payload.limit, offset: payload.offset, ...(typeof payload.status === "string" ? { status: payload.status } : {}), ...(typeof payload.role === "string" ? { role: payload.role } : {}), ...(typeof payload.search === "string" ? { search: payload.search } : {}), ...((payload.sort === "updated" || payload.sort === "name" || payload.sort === "status" || payload.sort === "role") ? { sort: payload.sort } : {}), ...(payload.direction ? { direction: payload.direction } : {}) });
@@ -22,6 +26,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSubflowTargets,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowSubflowTargets",
+    accessLevel: "List",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
       const page = await service.listFlowSubflowTargets({
@@ -41,6 +48,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSubflow,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowSubflow",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSubflowRequest : {} as FlowSubflowRequest;
       return { ok: true, payload: { subflow: await service.getFlowSubflow(String(payload.projectId ?? ""), String(payload.flowId ?? ""), String(payload.subflowId ?? "")) } };
@@ -51,6 +61,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createFlowSubflow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:CreateFlowSubflow",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as CreateFlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as CreateFlowSubflowRequest;
       const input: Parameters<AutomationStudioService["createFlowSubflow"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), name: String(payload.name ?? "") };
@@ -66,6 +79,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateLegacyFlowRepresentation,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:MigrateLegacyFlowRepresentation",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as MigrateLegacyFlowRepresentationRequest : {} as MigrateLegacyFlowRepresentationRequest;
       return {
@@ -83,6 +99,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSubflow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:UpdateFlowSubflow",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as UpdateFlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as UpdateFlowSubflowRequest;
       const input: Parameters<AutomationStudioService["updateFlowSubflow"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") };
@@ -106,6 +125,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.renameFlowSubflow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:RenameFlowSubflow",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RenameFlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as RenameFlowSubflowRequest;
       return { ok: true, payload: { subflow: await service.renameFlowSubflow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? ""), name: String(payload.name ?? "") }) } };
@@ -116,6 +138,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.duplicateFlowSubflow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:DuplicateFlowSubflow",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as DuplicateFlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as DuplicateFlowSubflowRequest;
       const input: Parameters<AutomationStudioService["duplicateFlowSubflow"]>[0] = { projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") };
@@ -128,6 +153,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.disableFlowSubflow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:DisableFlowSubflow",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as FlowSubflowRequest;
       return { ok: true, payload: { subflow: await service.disableFlowSubflow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") }) } };
@@ -138,6 +166,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.archiveFlowSubflow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:ArchiveFlowSubflow",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as FlowSubflowRequest;
       return { ok: true, payload: { subflow: await service.archiveFlowSubflow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") }) } };
@@ -148,6 +179,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.enableFlowSubflow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:EnableFlowSubflow",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as FlowSubflowRequest;
       return { ok: true, payload: { subflow: await service.enableFlowSubflow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") }) } };
@@ -158,6 +192,9 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowSubflow,
     permission: "flows.write",
     classification: "destructive",
+    action: "studio:DeleteFlowSubflow",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowSubflowRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as FlowSubflowRequest;
       return { ok: true, payload: await service.deleteFlowSubflow({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? ""), subflowId: String(payload.subflowId ?? "") }) };

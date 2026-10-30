@@ -140,6 +140,7 @@ describe("program endpoint route", () => {
         userId: "user:test",
         roleId: "role:test",
         permissions: ["programs.read"],
+        channel: "panel",
       },
     });
     expect(await response.json()).toEqual({ ok: true, payload: { readiness: { supported: true } } });
@@ -201,6 +202,7 @@ describe("a paired client's bearer token", () => {
         userId: "user:owner",
         roleId: "role:admin",
         permissions: ["programs.read", "programs.write", "flows.write", "runtime.control"],
+        channel: "paired-client",
       },
       payload: forwardedPayload(endpoint, body),
     });
@@ -322,6 +324,7 @@ describe("a paired client's bearer token", () => {
           userId: "user:approver",
           roleId: "role:author",
           permissions: ["programs.read", "programs.write", "runtime.control"],
+          channel: "paired-client",
         });
         expect(forwarded.scope).toEqual({ domainId: "web-automation" });
         // Body fields naming a person are data for Core's handler, which reads

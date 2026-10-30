@@ -1,8 +1,10 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { SQLiteRepository } from "fluxiq/database-manager";
-import { BufferedIamAuditSink, createPlatformServices, FileEmailSender, IamAuditStore, NoneEmailSender, type PlatformServices } from "fluxiq/platform";
+import { BufferedIamAuditSink, createPlatformServices, IamAuditStore, type PlatformServices } from "fluxiq/platform";
+import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
 import { getFluxIQ } from "../../lib/fluxiq";
+import { resolveEmailSender } from "./resolve-email-sender";
 
 // The platform services (account provisioning, the welcome and reset links)
 // for the running web server: one composition per FluxIQ instance, built on
@@ -12,7 +14,6 @@ import { getFluxIQ } from "../../lib/fluxiq";
 // under `<fluxiq>/platform/iam-audit.sqlite`.
 
 const SINGLE_WORKSPACE_ID = process.env.FLUXIQ_WORKSPACE_ID?.trim() || "workspace-main";
-const DEFAULT_PUBLIC_ORIGIN = "http://127.0.0.1:3000";
 
 const services = new WeakMap<object, Promise<PlatformServices>>();
 
@@ -37,9 +38,9 @@ async function composePlatformServices(fluxiq: ReturnType<typeof getFluxIQ>): Pr
     repository: new SQLiteRepository({ rootDir: fluxiq.paths.databases, kind: "platform.store", layoutVersion }),
     iamRepository: new SQLiteRepository({ rootDir: fluxiq.paths.databases, kind: "platform.iam", layoutVersion }),
     identity: fluxiq.programs.identityAccess,
-    email: process.env.FLUXIQ_EMAIL_SENDER?.trim() === "none" ? new NoneEmailSender() : new FileEmailSender({ directory: path.join(platformDir, "outbox") }),
+    email: resolveEmailSender(process.env.FLUXIQ_EMAIL_SENDER, path.join(platformDir, "outbox")),
     auditSink,
-    publicOrigin: process.env.FLUXIQ_PUBLIC_ORIGIN?.trim() || DEFAULT_PUBLIC_ORIGIN,
+    publicOrigin: resolveFluxIQDeploymentSettings(process.env).publicOrigin,
     tenancy: { mode: "single", workspaceId: SINGLE_WORKSPACE_ID }
   });
 }

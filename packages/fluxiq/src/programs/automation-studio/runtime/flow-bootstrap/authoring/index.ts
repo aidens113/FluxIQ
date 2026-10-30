@@ -31,6 +31,7 @@ export * from "./assemble-draft.ts";
 export * from "./contracts.ts";
 export { automationStudioFlowBootstrapDraftUnreadColumnsSentence, automationStudioFlowBootstrapUnreadColumnsSentence } from "./instruction-record-columns.ts";
 export * from "./parse.ts";
+export type { AuthoringPartAnswer, AuthoringPartOfStep } from "../record-defaults/index.ts";
 // The one lookup of where a refusal is in what the model wrote, so every check
 // after authoring names the step the same way (`./script-locator.ts` and
 // `./plan-locator.ts` build what it reads, and stay unpublished).
