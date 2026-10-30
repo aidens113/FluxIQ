@@ -3,8 +3,9 @@
 // a read Core flagged would always be unsure, the gate having no check to ask.
 // It also hands on the port's environment kind (F3) and offline-first check (trace plan P6, t769) as they are,
 // and lists a trial the gate kept from the recording, which the port never answered, as the brief's trial.
+// And it hands on the port's from-step run (t804) unchanged, listing, remembering and spending nothing for it.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialResult } from "../../../flow-bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioSubflowFromStepPort, AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialResult } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import { AutomationStudioProjectDispatchReceipts } from "../receipts.ts";
 import { AutomationStudioProjectDispatchStandingNos } from "../standing-nos.ts";
 import { automationStudioProjectDispatchTrialPort } from "../trial-port.ts";
@@ -81,5 +82,29 @@ describe("the dispatcher's partial-trial port, offline", () => {
     await port({ proposal: { scope: identity, revision: 1, digest: "d".repeat(64) } } as unknown as Parameters<typeof port>[0]);
     port.weighed?.({ answer: { ...kept("no", "run-1"), verdict: "unsure" } });
     expect(receipts.list()).toMatchObject([{ receiptId: "run-1", verdict: "unsure" }]);
+  });
+});
+
+describe("the dispatcher's partial-trial port, from a step", () => {
+  it("hands the brief's port's from-step run to the gate unchanged, listing and remembering nothing", () => {
+    const receipts = new AutomationStudioProjectDispatchReceipts("brief.1");
+    const remembered: unknown[] = [];
+    const spend = { allowance: undefined, trials: [] };
+    const fromStep: AutomationStudioSubflowFromStepPort = async () => {
+      throw new Error("not asked");
+    };
+    const trial = unused();
+    Object.assign(trial, { fromStep });
+    const port = automationStudioProjectDispatchTrialPort({ port: trial, scope: { subflowKey: "approve", planDigest: "plan.1" }, receipts, spend, standingNos: new AutomationStudioProjectDispatchStandingNos(), remember: (ref) => {
+      remembered.push(ref);
+    } });
+    expect(port.fromStep).toBe(fromStep);
+    expect(receipts.list()).toEqual([]);
+    expect(remembered).toEqual([]);
+    expect(spend).toEqual({ allowance: undefined, trials: [] });
+  });
+
+  it("offers none where the brief's port has none", () => {
+    expect(wrapped(unused()).fromStep).toBeUndefined();
   });
 });

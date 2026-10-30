@@ -39,6 +39,8 @@ export function automationStudioSubflowTrialResultRead(raw: unknown, identity: A
   if (Array.isArray(result.acts) && result.acts.length) kept.acts = structuredClone(result.acts);
   // A port's answer from the recording, nothing done on the site (trace plan P6, D48).
   if (result.checkedAgainst === "recorded_run") kept.checkedAgainst = "recorded_run";
+  // The proposal's step it stopped at, which a failed test is repaired on (t804, `./pending-repair.ts`).
+  if (typeof result.stoppedAtKey === "string" && result.stoppedAtKey) kept.stoppedAtKey = result.stoppedAtKey;
   const standingNo = (result as { standingNo?: unknown }).standingNo;
   // Kept conditions another gate found, where the port carries them (header, t689).
   const carried = carriedKept((result as AutomationStudioResultKeptConditionsCarrier).keptConditions);

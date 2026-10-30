@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800), the Core-no ending words (t805) and P1a (t806) merged; P6 (t799) and the repair-from-step fix (t804) in flight; P1b (after t804) and P5b next.
+Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800), the Core-no ending words (t805) P1a (t806), the P7 follow-ups (t807) and the repair-from-step fix (t804) merged; P6 (t799) and P5b (t810) in flight; P1b next.
 Created: 2026-10-28
 Last updated: 2026-10-29
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -766,6 +766,12 @@ The P0, t794 and t796 entries moved on 2026-10-29 to
 - Changed: `contracts/.../date-within.ts`: a day-only value under a `within` bound in days or weeks compares by whole UTC days (minutes and hours stay instants); `llm/node-tools/{replay-draft,dry-run-gate}.ts` accept the plan part that owes records (callers in `evidence-loop.ts`, `single-subflow/rebuild.ts`, `supervisor-loop.ts` wired with P1b); the web picker keeps `mark` (downstream).
 - Validation: lead-run under the lock, merged with dev: contracts `vitest run src/record-sets` -> "Tests 259 passed (259)"; `pnpm check` exit 0; `pnpm test` over record-defaults, node-tools, plan, candidate, result-verification -> "Tests 2205 passed (2205)", real-sql "3 passed"; docs current; structure passed.
 - Outcome: Accepted.
+
+### 2026-10-29 - A failed build test is repaired from its failing step (t804, user rule)
+- Agent: supervisor; worker-heavy trace, runner, gate; worker headed spec; lead fixes (fromStep through `service/project-build/subflow-trials.ts`, read-only at construction; the refusal code by constant); report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t804-repair-from-step.md`
+- Changed: `core.test_subflow` takes `from: <step key>` and runs the latest revision from that step on the page as it stands (no reset, earlier steps or judge; never the part's test); a failed whole test leaves a pending repair, and another whole test or a completion is refused `subflow.trial_from_step_first` (naming the step and the call) until a from-step run passes it, unless the builder says why one is impossible. P1b shape: `then: "test_whole" | {from}` on `core.submit_subflow`.
+- Validation: lead-run under the lock, merged with dev (t806 in): tsc clean; `pnpm test` over subflow-candidate, plan, verification, candidate, service, project-agents, llm -> "Tests 4821 passed | 2 skipped", real-sql "346 passed"; `pnpm check` exit 0; headed `e2e/site-reset/tests` -> "33 passed (35.9m)" with `photo-repair-from-step.spec.ts` counts `{"wholeRuns":2,"fromStepRuns":1}`.
+- Outcome: Accepted. Follow-up (P1b): `from` also takes the step label the model wrote.
 
 ## Open Questions
 

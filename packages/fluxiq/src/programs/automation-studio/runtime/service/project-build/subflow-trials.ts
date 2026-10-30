@@ -139,7 +139,10 @@ export function automationStudioProjectBuildSubflowTrials(input: {
     if (offered.kind === "kept") answer(request);
     return offered;
   };
-  const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind, offlineFirst });
+  // A run from the failing step is also the inner port's (`../subflow-trial/from-step.ts`, t804): without it the gate
+  // cannot offer a repair its from-step check, and keeps refusing nothing.
+  const fromStep = trials.port.fromStep ? { fromStep: trials.port.fromStep } : {};
+  const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind, offlineFirst, ...fromStep });
   // The start hook, ahead of the gate's reset check, is the inner port's (`../subflow-trial/port.ts`).
   if (trials.port.prepareStart) port.prepareStart = trials.port.prepareStart;
   port.admissionPredecessors = (scope) => input.proposals.predecessors(scope).flatMap((proposal) => proposal.subflows);
