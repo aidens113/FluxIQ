@@ -172,3 +172,28 @@ function startOfDay(now: number): number {
 function monthOf(word: string): number {
   return ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(word.slice(0, 3).toLowerCase()) + 1;
 }
+
+/** The units of a relative age that count whole days: a day-count age ("3 days ago", "2w", "1mo") names a day, not a moment in it. */
+const DAY_COUNT_UNIT = /^(?:days?|d|weeks?|wks?|w|months?|mos?|years?|yrs?|y)$/iu;
+
+/**
+ * Whether a value that states a date states only a day, not a time of day
+ * (G1): "2026-10-22", "22 Oct 2026", "Posted yesterday", "today", "3 days ago"
+ * or "2w" name a day; "2026-10-22 09:00", "Today 09:00", "5 hours ago", "just
+ * now", "45m" and a time left ("1d 0h left") name a moment. A value that reads
+ * no date is not day-only (`undefined` from `readAutomationStudioRecordDate`).
+ */
+export function automationStudioRecordDateStatesOnlyDay(text: string, now: number): boolean {
+  if (readAutomationStudioRecordDate(text, now) === undefined) return false;
+  const relative = RELATIVE.exec(text);
+  if (relative !== null) return DAY_COUNT_UNIT.test(relative[2]!);
+  const compact = COMPACT_AGE.exec(collapsedText(text));
+  if (compact !== null) return DAY_COUNT_UNIT.test(compact[2]!);
+  if (TIME_LEFT.test(text)) return false;
+  const whole = collapsedText(text);
+  if (YESTERDAY.test(whole)) return true;
+  if (ISO.exec(text)?.[4] !== undefined) return false;
+  if (timeOfDayMs(text) !== undefined) return false;
+  // What is left is a day, or "today" alone; "now" and "just posted" are moments.
+  return !NOW_WORDS.test(whole) || /\btoday$/iu.test(whole);
+}

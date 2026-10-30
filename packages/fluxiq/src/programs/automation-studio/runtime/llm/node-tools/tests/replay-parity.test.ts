@@ -30,6 +30,7 @@
 import { describe, expect, it } from "vitest";
 import {
   automationStudioFlowBootstrapDraftNodeStep,
+  automationStudioFlowDraftDryRunGate,
   automationStudioLlmNodeDescriptions,
   replayAutomationStudioFlowDraft,
   type AutomationStudioLlmEvidenceToolExecutionResult
@@ -44,6 +45,7 @@ import {
 } from "../../../flow-draft/index.ts";
 import { assembleAutomationStudioFlowDraftPlan, normalizeAutomationStudioFlowBuildPlan, validateAutomationStudioFlowBootstrapPlan } from "../../../flow-bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
+import { authoringScopePartOf } from "../../../flow-bootstrap/record-defaults/index.ts";
 import { runAutomationStudioGraph } from "../../../executor/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { canonicalFlowDocument } from "../../../service/flows/index.ts";
@@ -320,5 +322,44 @@ describe("the build's test and the stored Flow run one draft's do-while alike", 
     ];
     expect(comparable(stored.sent)).toEqual(expected);
     expect(comparable(tested.sent)).toEqual(expected);
+  });
+});
+
+// K5 in the dry run: a read whose record output the model left half written is replayed with the output
+// the saved Flow has, once exactly one plan part owes records; with no such part it is replayed as before.
+describe("the dry run writes the record output the saved Flow has for a part", () => {
+  const halfWritten = (): AutomationStudioFlowDraftStep[] => [step(1, LIST, { extractList: { item: ".entry", fields: { title: ".t", price: ".p" } }, recordOutput: { label: "Entries" } }, { observe: true })];
+  const owing = authoringScopePartOf([{ id: "p1", words: "Find the entries", columns: ["title", "price"] }]);
+  const none = authoringScopePartOf([{ id: "p1", words: "Press the button" }]);
+
+  const storedOutput = (partOf: typeof owing): JsonObject => {
+    const assembled = assembleAutomationStudioFlowDraftPlan({ steps: halfWritten(), write: automationStudioFlowBootstrapDraftNodeStep, registry, resolution, summary: "Read", ...(partOf ? { partOf } : {}) });
+    return assembled.plan!.subflows[0]!.nodes[0]!.parameters!.recordOutput as JsonObject;
+  };
+
+  async function sentOutput(partOf: typeof owing, through: "replay" | "gate"): Promise<JsonValue | undefined> {
+    const sent: JsonObject[] = [];
+    const executeTool = async ({ value }: { callId: string; toolId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+      if (value.replay !== "reset") sent.push(value);
+      return { kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, resultCode: "core.replay.replayed" };
+    };
+    const nodeOf = automationStudioLlmNodeDescriptions({ registry, resolution }).definition;
+    const definitionOf = (id: string) => registry.get(id, resolution);
+    const steps = halfWritten();
+    const shared = { steps, executeTool, nodeOf, definitionOf, ...(partOf ? { partOf } : {}) };
+    if (through === "replay") await replayAutomationStudioFlowDraft({ ...shared, attempt: 1 });
+    else await automationStudioFlowDraftDryRunGate({ enabled: true, ...shared, accountEvidence: () => 1, showEvidence: () => undefined, targetMoved: () => undefined })();
+    return (sent[0]?.parameters as JsonObject | undefined)?.recordOutput;
+  }
+
+  it.each(["replay", "gate"] as const)("sends the part's defaults through the %s", async (through) => {
+    const saved = storedOutput(owing);
+    expect(saved.process).toMatchObject({ columns: ["title", "price"] });
+    expect(await sentOutput(owing, through)).toEqual(saved);
+  });
+
+  it.each(["replay", "gate"] as const)("sends what it did before when no part owes records, through the %s", async (through) => {
+    expect(await sentOutput(undefined, through)).toEqual(storedOutput(undefined));
+    expect(await sentOutput(none, through)).toEqual(storedOutput(undefined));
   });
 });
