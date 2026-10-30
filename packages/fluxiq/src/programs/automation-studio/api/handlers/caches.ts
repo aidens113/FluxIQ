@@ -1,6 +1,7 @@
 // The two per-project cache stores: saved editor UI state and the reusable
 // LLM context pool, each with its own read, write, purge and stats surface.
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type AutomationStudioClearReusableLlmContextScopeRequest, type AutomationStudioDeleteProjectUiCacheRequest, type AutomationStudioDeleteReusableLlmContextRequest, type AutomationStudioGetProjectUiCacheRequest, type AutomationStudioGetReusableLlmContextRequest, type AutomationStudioListProjectUiCacheStatsRequest, type AutomationStudioListReusableLlmContextsRequest, type AutomationStudioPackReusableLlmContextsRequest, type AutomationStudioPurgeExpiredReusableLlmContextsRequest, type AutomationStudioPutReusableLlmContextRequest, type AutomationStudioSaveProjectUiCacheRequest } from "../contracts.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
@@ -11,6 +12,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectUiCache,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetProjectUiCache",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioGetProjectUiCacheRequest> : {};
       return { ok: true, payload: await service.getProjectUiCache({ projectId: String(payload.projectId ?? ""), userId: request.actor?.userId ?? "", cacheKeys: payload.cacheKeys }) };
@@ -21,6 +25,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectUiCache,
     permission: "programs.write",
     classification: "authoring",
+    action: "studio:SaveProjectUiCache",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioSaveProjectUiCacheRequest> : {};
       return { ok: true, payload: await service.saveProjectUiCache({ projectId: String(payload.projectId ?? ""), userId: request.actor?.userId ?? "", entries: payload.entries }) };
@@ -31,6 +38,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectUiCache,
     permission: "programs.write",
     classification: "authoring",
+    action: "studio:DeleteProjectUiCache",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioDeleteProjectUiCacheRequest> : {};
       return { ok: true, payload: await service.deleteProjectUiCache({ projectId: String(payload.projectId ?? ""), userId: request.actor?.userId ?? "", cacheKeys: payload.cacheKeys }) };
@@ -41,14 +51,23 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectUiCacheStats,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListProjectUiCacheStats",
+    accessLevel: "List",
+    resource: endpointResource.custom(["project"], (request) => {
+      const projectId = request.payload !== null && typeof request.payload === "object" ? (request.payload as { projectId?: unknown }).projectId : undefined;
+      return typeof projectId === "string" && projectId !== "" ? { kind: "project", projectId } : { kind: "workspace" };
+    }),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<AutomationStudioListProjectUiCacheStatsRequest> : {};
       return { ok: true, payload: await service.listProjectUiCacheStats({ projectId: payload.projectId, userId: request.actor?.userId ?? "" }) };
     }
   });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContextStatus, permission: "programs.read", classification: "read", handler: async () => ({ ok: true, payload: service.reusableLlmContextStatus() }) });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContextStatus, permission: "programs.read", classification: "read", action: "studio:GetReusableLlmContextStatus", accessLevel: "Read", resource: endpointResource.workspace(), handler: async () => ({ ok: true, payload: service.reusableLlmContextStatus() }) });
   registry.register({
     programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.listReusableLlmContexts, permission: "programs.read", classification: "read",
+    action: "studio:ListReusableLlmContexts",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioListReusableLlmContextsRequest>;
       const projectId = String(payload.projectId ?? "");
@@ -59,6 +78,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContext, permission: "programs.read", classification: "read",
+    action: "studio:GetReusableLlmContext",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioGetReusableLlmContextRequest>;
       const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
@@ -69,6 +91,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putReusableLlmContext, permission: "flows.write", classification: "authoring",
+    action: "studio:PutReusableLlmContext",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioPutReusableLlmContextRequest>;
       const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
@@ -78,6 +103,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteReusableLlmContext, permission: "flows.write", classification: "authoring",
+    action: "studio:DeleteReusableLlmContext",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioDeleteReusableLlmContextRequest>;
       const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
@@ -88,6 +116,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.clearReusableLlmContextScope, permission: "flows.write", classification: "authoring",
+    action: "studio:ClearReusableLlmContextScope",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioClearReusableLlmContextScopeRequest>;
       const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
@@ -97,6 +128,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.purgeExpiredReusableLlmContexts, permission: "flows.write", classification: "authoring",
+    action: "studio:PurgeExpiredReusableLlmContexts",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioPurgeExpiredReusableLlmContextsRequest>;
       const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);
@@ -106,6 +140,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.packReusableLlmContexts, permission: "programs.read", classification: "read",
+    action: "studio:PackReusableLlmContexts",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<AutomationStudioPackReusableLlmContextsRequest>;
       const projectId = String(payload.projectId ?? ""); await service.assertProjectDomainAccess(projectId, request.scope.domainId);

@@ -1,4 +1,4 @@
-const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "automation-studio", "secret-keys"]);
+const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "deployment-sync", "automation-studio", "secret-keys"]);
 
 export function programResponseStatus(response: { ok: boolean; errorCode?: string }): number {
   if (response.ok) return 200;
@@ -175,11 +175,14 @@ type PairedClientActor<TPermission extends string> = {
   userId: string;
   roleId: string;
   permissions: TPermission[];
+  channel: "paired-client";
 };
 
 /**
  * The actor a paired client's call runs as: the person who approved the
- * pairing, with their role's permissions narrowed to the allowlist's. Null when
+ * pairing, with their role's permissions narrowed to the allowlist's, on the
+ * `paired-client` channel (under the `service` profile the registry then
+ * narrows it by those permissions as well as its person's policies). Null when
  * that person is gone, disabled or roleless, so disabling a person takes their
  * paired clients' reach with them.
  */
@@ -191,7 +194,7 @@ export function pairedClientActor<TPermission extends string>(session: PairedSes
   const role = directory.roles.find((candidate) => candidate.id === user.roleId);
   if (!role) return null;
   const permissions = role.permissions.filter((permission) => PAIRED_CLIENT_PERMISSIONS.includes(permission)) as TPermission[];
-  return { sessionId: `client-gateway:${session.sessionId}`, userId, roleId: role.id, permissions };
+  return { sessionId: `client-gateway:${session.sessionId}`, userId, roleId: role.id, permissions, channel: "paired-client" };
 }
 
 /**

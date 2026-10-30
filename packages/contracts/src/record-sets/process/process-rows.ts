@@ -45,8 +45,7 @@
 
 import { cellOf, cellText } from "./cell-text.ts";
 import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
-import { automationStudioRecordConditionHolds } from "./condition-holds.ts";
-import { automationStudioRecordConditionText } from "./condition-text.ts";
+import { automationStudioRecordConditionHolds, automationStudioRecordConditionText } from "./condition/index.ts";
 import { AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS } from "./processing-vocabulary.ts";
 import { readAutomationStudioRecordConditionDate } from "./row-date.ts";
 import { automationStudioRecordRowIdentity } from "./row-identity.ts";

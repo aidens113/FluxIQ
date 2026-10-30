@@ -141,3 +141,21 @@ describe("a refutation that rests on the judges' word alone (t785, run-mvskodlp-
     expect(automationStudioActivityRunEnding({ ...refuted, resultReauthor: { outcome: "nothing_to_change" } })).toMatch(/they don't answer what you asked/u);
   });
 });
+
+describe("a no Core reached from its computed facts (t805)", () => {
+  const said = "Core counted 3 stored rows where the build declared 2.";
+  const coreNo = { status: "refuted", performed: true, verdict: "does_not_answer", basis: "core_observation", code: "core.result.computed_fact_failed", observation: said, reason: `Core's own record shows it does not answer the request, so no judge was asked: ${said}` };
+  it("ends with what Core found, never the fix that did not finish", () => {
+    const ended = automationStudioActivityRunEnding({ resultVerification: coreNo, resultRepair: { attempted: true, history: [{ attempt: 1, totalRecordCount: 15 }], phase: "reauthoring" } });
+    expect(ended).toBe("it saved 15 rows, but FluxIQ counted 3 stored rows where the build declared 2.");
+    expect(`Run failed: ${ended}`.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_ACTIVITY_LIMITS.label);
+    expect(automationStudioActivityRunEnding({ resultVerification: coreNo, resultRepair: repairEnded({ outcome: "not_rerun" }) })).not.toMatch(/fix/u);
+  });
+  it("says Core's sentence alone, in FluxIQ's name, when no rows were counted, and prefixes a sentence not in Core's voice", () => {
+    expect(automationStudioActivityRunEnding({ resultVerification: coreNo })).toBe("FluxIQ counted 3 stored rows where the build declared 2.");
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...coreNo, observation: "Two columns were never stored." } })).toBe("FluxIQ found that two columns were never stored.");
+  });
+  it("leaves a judge's no on the same code untouched", () => {
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...coreNo, basis: "model" }, resultRepair: repairEnded({ outcome: "not_rerun" }) })).toMatch(/the fix didn't finish\.$/u);
+  });
+});

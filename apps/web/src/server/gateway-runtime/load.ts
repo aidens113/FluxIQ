@@ -2,7 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GatewayServerRuntime } from "./types";
 type RuntimeGlobal = typeof globalThis & { __fluxiqGatewayServerModule?: { path: string; runtime: GatewayServerRuntime } };
-const intendedPath = (modulePath?: string) => path.resolve(modulePath ?? path.join(process.cwd(), ".server-runtime/client-gateway-server.mjs"));
+const intendedPath = (modulePath?: string) => path.resolve(modulePath ?? (process.env.FLUXIQ_GATEWAY_SERVER_MODULE?.trim() || path.join(process.cwd(), ".server-runtime/client-gateway-server.mjs")));
 /** Native import keeps the executing adapter separate from Next route bundles. */
 export const gatewayServerRuntime = Object.freeze({
   async load(modulePath?: string): Promise<void> {

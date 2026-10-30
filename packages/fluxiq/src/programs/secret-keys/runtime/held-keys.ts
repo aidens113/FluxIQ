@@ -29,10 +29,29 @@ export type HeldSessionUnlock = {
  * record's current seal. Rotation, metadata edits, and deletion revoke a key's
  * holders; a re-seal or credential change replaces their keys. Every buffer
  * dropped or replaced is zeroed.
+ *
+ * A `SecretKeysService` creates its own, or is given one that outlives it (a
+ * workspace manager's, so evicting an idle instance does not lock its users'
+ * keys). Expiry timers come from here and hold only this custody and an id,
+ * never the service that asked for them or the password that unlocked them.
  */
 export class HeldKeys {
   private readonly authorizations = new Map<string, HeldRevealAuthorization>();
   private readonly sessions = new Map<string, HeldSessionUnlock>();
+
+  /** An unreferenced timer that revokes `sessionId`'s unlock after `delayMs`. */
+  sessionExpiryTimer(sessionId: string, delayMs: number): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => this.revokeSession(sessionId), delayMs);
+    timer.unref?.();
+    return timer;
+  }
+
+  /** An unreferenced timer that revokes `authorizationId` after `delayMs`. */
+  authorizationExpiryTimer(authorizationId: string, delayMs: number): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => this.revokeAuthorization(authorizationId), delayMs);
+    timer.unref?.();
+    return timer;
+  }
 
   authorization(authorizationId: string): HeldRevealAuthorization | undefined {
     return this.authorizations.get(authorizationId);

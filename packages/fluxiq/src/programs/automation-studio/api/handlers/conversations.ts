@@ -28,6 +28,7 @@
 // service. `register.ts` builds the record from the service's `conversations`
 // field in one line.
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../contracts.ts";
 import type { GlobalProgramApiRegistry, ProgramApiRequest } from "../../../_shared/api.ts";
 import { automationStudioPageLimit } from "../../storage/index.ts";
@@ -91,6 +92,20 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversations,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListConversations",
+    accessLevel: "List",
+    resource: endpointResource.custom(["project"], (request) => {
+      const projectId = request.payload !== null && typeof request.payload === "object" ? (request.payload as { projectId?: unknown }).projectId : undefined;
+      return projectId === null || projectId === undefined ? { kind: "workspace" } : { kind: "project", projectId: String(projectId) };
+    }),
+    list: {
+      items: (payload) => {
+        const found = (payload as { conversations?: unknown } | null)?.conversations;
+        return Array.isArray(found) ? found : [];
+      },
+      ref: (item) => ({ kind: "project", projectId: (item as { projectId?: unknown } | null)?.projectId }),
+      replace: (payload, kept) => ({ ...(payload as object), conversations: kept })
+    },
     handler: async (request) => {
       const payload = conversationPayload<ConversationListRequest>(request.payload);
       const narrow = { subject: requestedSubject(payload.subjectKind, payload.subjectId), status: requestedStatus(payload.status), limit: payload.limit };
@@ -135,6 +150,9 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.openConversation,
     permission: "programs.write",
     classification: "authoring",
+    action: "studio:OpenConversation",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = conversationPayload<ConversationOpenRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -153,6 +171,9 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getConversation,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetConversation",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = conversationPayload<ConversationReadRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -172,6 +193,9 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
     permission: "programs.write",
     classification: "authoring",
+    action: "studio:AppendTurn",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = conversationPayload<ConversationTurnAppendRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -213,6 +237,9 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk,
     permission: "programs.write",
     classification: "authoring",
+    action: "studio:AnswerAsk",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = conversationPayload<ConversationAnswerRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
@@ -241,6 +268,9 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getConversationAttachment,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetConversationAttachment",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = conversationPayload<ConversationAttachmentRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");

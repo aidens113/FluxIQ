@@ -1,10 +1,15 @@
+import { randomInt } from "node:crypto";
 import type { ClientGatewayPairingChallenge } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "./config.ts";
+import { ClientGatewayPairingCapacityError, resolveClientGatewayPairingLimits, type ClientGatewayPairingLimits } from "./security/index.ts";
+
+/** The client address a pending challenge was asked for from: its requesting session's, or null when unknown. */
+export type ClientGatewayPairingAddressLookup = (sessionId: string) => string | null;
 
 /**
- * Owns the pending pairing challenges. Storage and expiry only: approving a
- * pairing is a flow across several collaborators and lives in
- * ClientGatewayPairingFlow.
+ * Owns the pending pairing challenges. Storage, expiry and the pending caps
+ * only: approving a pairing is a flow across several collaborators and lives
+ * in ClientGatewayPairingFlow.
  */
 export class ClientGatewayPairingRegistry {
   private readonly pairings = new Map<string, ClientGatewayPairingChallenge>();
@@ -12,9 +17,39 @@ export class ClientGatewayPairingRegistry {
   // they would have expired so an approval of one can say why it is gone.
   private readonly withdrawn = new Map<string, { reason: string; expiresAt: number }>();
   private readonly config: ClientGatewayConfig;
+  private readonly addressOf: ClientGatewayPairingAddressLookup;
+  private limits: ClientGatewayPairingLimits;
 
-  constructor(config: ClientGatewayConfig) {
+  /** `addressOf` reads a requesting session's client address, for the per-address cap; omitted, none is known. */
+  constructor(config: ClientGatewayConfig, addressOf: ClientGatewayPairingAddressLookup = () => null) {
     this.config = config;
+    this.addressOf = addressOf;
+    this.limits = config.pairingLimits;
+  }
+
+  /** Replaces the pending caps; challenges already waiting are kept, only new ones are refused. */
+  setLimits(limits: ClientGatewayPairingLimits): void {
+    this.limits = resolveClientGatewayPairingLimits(limits);
+  }
+
+  getLimits(): ClientGatewayPairingLimits {
+    return { ...this.limits };
+  }
+
+  /**
+   * The refusal a new challenge asked for by `requestedBySessionId` would meet,
+   * or nothing when it is within both caps. Counts only challenges still
+   * waiting: unconsumed and unexpired.
+   */
+  capacityRefusal(requestedBySessionId?: string): ClientGatewayPairingCapacityError | undefined {
+    this.pruneExpired();
+    const waiting = [...this.pairings.values()].filter((pairing) => !pairing.consumedAt);
+    if (waiting.length >= this.limits.total) return new ClientGatewayPairingCapacityError("total");
+    if (this.limits.perAddress === null || requestedBySessionId === undefined) return undefined;
+    const address = this.addressOf(requestedBySessionId);
+    if (address === null) return undefined;
+    const fromAddress = waiting.filter((pairing) => pairing.requestedBySessionId !== undefined && this.addressOf(pairing.requestedBySessionId) === address);
+    return fromAddress.length >= this.limits.perAddress ? new ClientGatewayPairingCapacityError("per_address") : undefined;
   }
 
   create(input: {
@@ -93,10 +128,12 @@ export class ClientGatewayPairingRegistry {
     }
   }
 
+  // Six digits from the operating system's cryptographic generator, never one
+  // still waiting or recently withdrawn.
   private nextCode(): string {
     let code = "";
     do {
-      code = String(Math.floor(100000 + Math.random() * 900000));
+      code = String(randomInt(100000, 1000000));
     } while (this.pairings.has(code) || this.withdrawn.has(code));
     return code;
   }

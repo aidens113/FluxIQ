@@ -11,6 +11,7 @@ import { automationStudioInstructedActOptionalScriptIssues } from "../instructed
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import { automationStudioResultKeptConditionsDropped, type AutomationStudioResultKeptConditionDrop, type AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapIssue, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../plan/index.ts";
+import { AutomationStudioCandidateNumericTextHint } from "../numeric-text/index.ts";
 import { automationStudioFlowPlanListedValuesAdvice, automationStudioFlowPlanToggleSteps, automationStudioFlowScriptWayOutIssues, type AutomationStudioExploredToggle } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
@@ -28,6 +29,8 @@ import { automationStudioCandidateExploredLayerHandlers, automationStudioDropped
 /** Session-local candidates, separate from discovery and the accepted Flow store. */
 export class AutomationStudioFlowCandidateSubmissionController {
   private revision = 0;
+  /** The refuted Flows (by the judge's finding) already told their diff and fix point: only the first refusal of each carries them (P1a). */
+  private readonly toldRefuted = new Set<string>();
   private current: AutomationStudioFlowCandidate | undefined;
   private previous: AutomationStudioFlowCandidate | undefined;
   /** Every revision accepted in this session, oldest first: what a renamed refuted Flow is found among (t493). */
@@ -36,6 +39,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
   private readonly keptRefused = new Set<string>();
   /** The one-time hints for a dropped step that chose the request's own words (t666, `./kept-step-hint.ts`). */
   private readonly keptSteps = new AutomationStudioCandidateKeptStepHint();
+  /** Numbers or dates tested by their characters, each refused once (t800, `../numeric-text/hint.ts`). */
+  private readonly numericText = new AutomationStudioCandidateNumericTextHint();
   /** The current revision's Flow as the script reader reads it (`submissionText`), to tell an unchanged resubmission (t464). */
   private currentText: string | undefined;
   private readonly originalSource: AutomationStudioCandidateOriginalSourceBinding | undefined;
@@ -227,7 +232,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const text = submissionText(result);
     // A Flow with a reversible lasting step is checked again even as the same text: its steps' reset witnesses are stamped as it is resolved, and a new stamp is a new Flow (t751).
     // Nor a Flow that a pace a trial learned has still to be written on (P6 CC8): the same script is a new revision once Core sets it.
-    if (last && text !== undefined && text === this.currentText && !restampable(last.buildPlan.plan) && !(holdKept && this.input.exploredPaces !== undefined && this.input.exploredPaces.lower(last.buildPlan.plan) !== last.buildPlan.plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest));
+    if (last && text !== undefined && text === this.currentText && !restampable(last.buildPlan.plan) && !(holdKept && this.input.exploredPaces !== undefined && this.input.exploredPaces.lower(last.buildPlan.plan) !== last.buildPlan.plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest), undefined, undefined, { submitted: last.buildPlan, refuted: last.buildPlan });
     // Even a refused revision invalidates any earlier candidate and receipt.
     const revision = ++this.revision;
     this.current = undefined;
@@ -274,13 +279,13 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // The same plan as the current revision's, written differently, or a Flow
     // the judge refuted: nothing new to test (header of `submit`).
     const refuted = history.refuted?.(digest);
-    if (last && digest === last.digest) return this.sameAsLast(standing, last, history, refuted, text);
+    if (last && digest === last.digest) return this.sameAsLast(standing, last, history, refuted, text, undefined, { submitted: plan, refuted: last.buildPlan });
     // The last revision's Flow with only its display words reworded does what it did: no new revision, no new trial (header).
-    if (last && automationStudioCandidateSameBehaviour(last.buildPlan, plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest), undefined, true);
-    if (refuted !== undefined) return this.unchanged(standing, undefined, history, refuted);
+    if (last && automationStudioCandidateSameBehaviour(last.buildPlan, plan)) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest), undefined, true, { submitted: plan, refuted: last.buildPlan });
+    if (refuted !== undefined) return this.unchanged(standing, undefined, history, refuted, undefined, undefined, undefined, { submitted: plan, refuted: plan });
     // A refuted Flow with only where it saves its rows renamed: still refuted (header).
     const renamedRefuted = this.renamedRefuted(plan, history);
-    if (renamedRefuted !== undefined) return this.unchanged(standing, undefined, history, renamedRefuted, undefined, undefined, true);
+    if (renamedRefuted !== undefined) return this.unchanged(standing, undefined, history, renamedRefuted.judged, undefined, undefined, true, { submitted: plan, refuted: renamedRefuted.plan });
     // A condition Core's record kept, no longer written as it was: refused once, and what stood still stands (header of `submit`, t641).
     const dropped = holdKept ? this.keptDropped(plan, history) : undefined;
     if (dropped) {
@@ -292,6 +297,12 @@ export class AutomationStudioFlowCandidateSubmissionController {
     if (hinted) {
       this.current = standing;
       return { ok: false, revision, check: hinted };
+    }
+    // A text test of numbers or dates by characters: refused once, sent again accepted (t800, `../numeric-text/hint.ts`).
+    const numeric = holdKept ? this.numericText.hint({ plan: plan.plan, standing }) : undefined;
+    if (numeric) {
+      this.current = standing;
+      return { ok: false, revision, check: numeric };
     }
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest, baseDependencyDigest: this.input.baseDependencyDigest,
@@ -306,7 +317,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     // Advice, never a refusal: a condition listing values the request never says (t785, `../script-statements/listed-values-advice.ts`).
     // And each step with no witness, said now rather than after its trial (t791 fix 2, `../reset-admission/unwitnessed-advice.ts`).
-    const advice = [...automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText), ...automationStudioCandidateUnwitnessedAdvice(plan.plan, this.input.permissionFor), ...automationStudioDroppedLayerHandlerAdvice(droppedHandlers)];
+    const advice = [...automationStudioFlowPlanListedValuesAdvice(plan.plan, this.input.instructionText, this.sampleRowsOf(history)), ...automationStudioCandidateUnwitnessedAdvice(plan.plan, this.input.permissionFor), ...automationStudioDroppedLayerHandlerAdvice(droppedHandlers)];
     return { ok: true, candidate, handleViews, ...(advice.length ? { advice } : {}) };
   }
 
@@ -320,6 +331,16 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const validation = validateAutomationStudioFlowBootstrapPlan({ plan, registry: this.input.registry, resolution: this.input.resolution, ...(this.input.size ? { size: this.input.size } : {}) });
     if (!validation.ok || !validation.validated) return { issues: validation.issues.filter((issue) => issue.severity === "error") };
     return { buildPlan: { ...buildPlan, plan: validation.validated.plan, risk: validation.validated.risk, subflows: validation.validated.subflows } };
+  }
+
+  /** The rows Core held of the latest accepted revision's judged trial that kept any (t800, `sampleRows` of the trial result); none without one. */
+  private sampleRowsOf(history: AutomationStudioFlowCandidateSubmissionHistory): Array<Record<string, string>>[] {
+    if (!history.trialOf) return [];
+    for (const earlier of [...this.accepted].reverse()) {
+      const rows = history.trialOf(earlier)?.sampleRows;
+      if (rows?.length) return rows;
+    }
+    return [];
   }
 
   /**
@@ -339,11 +360,11 @@ export class AutomationStudioFlowCandidateSubmissionController {
   }
 
   /** The judge's finding for an accepted revision the plan matches once its `datasetId` is set aside, the latest first; none when no such revision was refuted. */
-  private renamedRefuted(plan: AutomationStudioFlowCandidate["buildPlan"], history: AutomationStudioFlowCandidateSubmissionHistory): JsonObject | undefined {
+  private renamedRefuted(plan: AutomationStudioFlowCandidate["buildPlan"], history: AutomationStudioFlowCandidateSubmissionHistory): { judged: JsonObject; plan: AutomationStudioFlowCandidate["buildPlan"] } | undefined {
     if (!history.refuted) return undefined;
     for (const earlier of [...this.accepted].reverse()) {
       const judged = history.refuted(earlier.digest);
-      if (judged !== undefined && automationStudioCandidateSameBehaviour(earlier.buildPlan, plan, { datasetId: "set_aside" })) return judged;
+      if (judged !== undefined && automationStudioCandidateSameBehaviour(earlier.buildPlan, plan, { datasetId: "set_aside" })) return { judged, plan: earlier.buildPlan };
     }
     return undefined;
   }
@@ -353,8 +374,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * `submit`): that revision stands again, unless the judge refuted it, when
    * whatever stood before this submission still does.
    */
-  private sameAsLast(standing: AutomationStudioFlowCandidate | undefined, last: AutomationStudioFlowCandidate, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean): AutomationStudioFlowCandidateSubmission {
-    return this.unchanged(refuted === undefined ? structuredClone(last) : standing, last, history, refuted, text, reworded);
+  private sameAsLast(standing: AutomationStudioFlowCandidate | undefined, last: AutomationStudioFlowCandidate, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean, plans?: Plans): AutomationStudioFlowCandidateSubmission {
+    return this.unchanged(refuted === undefined ? structuredClone(last) : standing, last, history, refuted, text, reworded, undefined, plans);
   }
 
   /**
@@ -366,8 +387,12 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * the submission differs from `same` in display words alone; `datasetRenamed`
    * that it differs from a refuted Flow only in where it saves its rows.
    */
-  private unchanged(standing: AutomationStudioFlowCandidate | undefined, same: AutomationStudioFlowCandidate | undefined, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean, datasetRenamed?: boolean): AutomationStudioFlowCandidateSubmission {
+  private unchanged(standing: AutomationStudioFlowCandidate | undefined, same: AutomationStudioFlowCandidate | undefined, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string, reworded?: boolean, datasetRenamed?: boolean, plans?: Plans): AutomationStudioFlowCandidateSubmission {
     this.current = standing;
+    // The first refusal of a refuted Flow carries its diff and fix point (`./unchanged-submission.ts`, P1a); a Flow already told is not told again.
+    const told = refuted === undefined ? undefined : JSON.stringify(refuted);
+    const first = told !== undefined && !this.toldRefuted.has(told);
+    if (told !== undefined) this.toldRefuted.add(told);
     if (same && text !== undefined) this.currentText = text;
     // Beside a refuted Flow, the revision still standing when it is another, with its last trial (`./unchanged-submission.ts`, t632).
     const current = refuted !== undefined && standing && standing.digest !== same?.digest ? { revision: standing.revision, digest: standing.digest, lastTrial: history.trialOf?.(standing) } : undefined;
@@ -378,11 +403,16 @@ export class AutomationStudioFlowCandidateSubmissionController {
       reworded,
       datasetRenamed,
       tools: this.input.refusalTools,
-      current
+      current,
+      first,
+      plans
     });
     return { ok: false, revision: (same ?? standing)?.revision ?? this.revision, check };
   }
 }
+
+/** The submitted plan and the plan it is compared with in an unchanged refusal's diff. */
+type Plans = { submitted: AutomationStudioFlowBuildPlan; refuted: AutomationStudioFlowBuildPlan };
 
 /** The classes a site's own controls can reverse: a step declaring only these may be stamped with a reset witness (t751). */
 const REVERSIBLE: ReadonlySet<string> = new Set(["create_new", "modify_existing", "delete"]);

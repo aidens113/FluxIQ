@@ -3,7 +3,8 @@ import type { AutomationStudioResultRequestedOutput, AutomationStudioRunResultSu
 /**
  * What a run owes by the build's own declaration (`./index.ts`): `declared`
  * where the caller holds it, otherwise each part of the judge's task checklist
- * whose declared answer is records. Undefined where none is owed: a request
+ * whose declared answer is records, each with the rows it declares (K2) where
+ * it declares them. Undefined where none is owed: a request
  * for an act, or a build that declared nothing. Never read off the request's
  * words.
  */
@@ -12,6 +13,6 @@ export function automationStudioResultRequestedOutputOwed(
   declared?: AutomationStudioResultRequestedOutput | undefined
 ): AutomationStudioResultRequestedOutput | undefined {
   const parts = declared?.parts
-    ?? (summary.taskChecklist?.asked ?? []).flatMap((part) => (part.answer?.kind === "records" ? [{ part: part.part, columns: part.answer.columns }] : []));
-  return parts.length ? { parts: parts.map((part) => ({ part: part.part, columns: [...part.columns] })) } : undefined;
+    ?? (summary.taskChecklist?.asked ?? []).flatMap((part) => (part.answer?.kind === "records" ? [{ part: part.part, columns: part.answer.columns, ...(part.answer.rows ? { rows: part.answer.rows } : {}) }] : []));
+  return parts.length ? { parts: parts.map((part) => ({ part: part.part, columns: [...part.columns], ...(part.rows ? { rows: { ...part.rows } } : {}) })) } : undefined;
 }

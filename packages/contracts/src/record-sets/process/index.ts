@@ -5,10 +5,10 @@
 // words, with the date bound a condition may carry (t790, run
 // `run-mvswewhy-e4e469d4`). `cell-text.ts` is internal and not re-exported.
 export * from "./compares-dates.ts";
-export * from "./condition-holds.ts";
-export * from "./condition-text.ts";
 export * from "./count-unsortable-rows.ts";
+export * from "./condition/index.ts";
 export * from "./date-bound.ts";
+export * from "./date-within.ts";
 export * from "./parse-condition.ts";
 export * from "./parse-processing.ts";
 export * from "./process-rows.ts";

@@ -113,12 +113,54 @@
 // later read's condition left out that only such a set holds is held as any
 // left-out row is (above, t515): a yes that names only the answer's rows, and
 // settles that condition's rows with one quote of its bound, is not held.
+//
+// **Rows two or more conditions left out together are held as well (F1 a),
+// and a quote that names only another condition is that condition's reason
+// (F1 d).** Debug of `run-mvtdoyf3-47ffaac1`: a row conditions 3 and 4 left
+// out together was named by no condition's own rows, so nothing here held it,
+// and three yeses were taken that gave it a reason of their own beside a quote
+// of the request's one exclusion. Such a set is now one of the read's
+// conditions (`summary-reads.ts`), and its rows are held to the rule above.
+// And a quote whose own words (`request-wording.ts`) name another condition of
+// the read -- a word it tests by (`../asked-words/condition-words.ts`): its subject, its
+// tested text, its value -- and none of this condition's does not account for
+// this group's rows, whether in the rows' own sentence or lent from beside
+// it, as a quote beside another row is that row's reason. Only for such a
+// group: a condition's own rows keep t574's lending above, a quote of one
+// exclusion lent to rows the sentence beside it names. The settled rule and
+// the stored rule above are unchanged. A library's example: "leaving out
+// reference copies" names condition 1 (reference is absent) and not conditions
+// 2 and 3 (title not contains "Calendar"; title not contains "Wall"), so it is
+// no reason for the wall calendar they left out.
+//
+// **Except a group of conditions Core settles (t795 w1b).** Social runs
+// `run-mvskodlp-9966d618` and `run-mvswewhy-e4e469d4`: two correct builds'
+// yeses each quoted the request for every condition, in that condition's own
+// sentence, and were held for the rows those conditions left out together,
+// which no yes named one by one. Where every member of a group is a condition
+// Core settles (`settledMembers`, `summary-reads.ts`), the group's rows are
+// accounted for when any one settled member is -- each row of the group fails
+// every member, so one stated exclusion is enough for it -- by the settled rule above: a
+// sentence that itself names the member and itself quotes the request, no
+// quote lent -- and, as for any group, not by a quote whose own words name
+// only another condition of the read (F1 d). Its rows are then not named row
+// by row. A yes that accounts for no settled member is held for the group's
+// rows under each member, marked `bound`, where every member is settled, and
+// row by row, as above, where one is not; a group with no settled member is
+// held row by row, and a condition's own rows are judged as before. A
+// library's example: rows that "reference is absent" and `format equals
+// "Book"`, each settled, left out together are accounted for by "leaving out
+// reference copies" in the sentence naming condition 1, though nothing quotes
+// the request for condition 2.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
 import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRead, automationStudioRequestTextNamesRow, type AutomationStudioRequestRowNaming } from "./row-naming.ts";
 import { automationStudioRequestRowsReads, automationStudioRequestRowsStoredOf } from "./summary-reads.ts";
-import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsKept, AutomationStudioRequestRowsUnquoted } from "./types.ts";
+import { automationStudioRequestConditionWords } from "../asked-words/index.ts";
+import type {
+  AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsKept, AutomationStudioRequestRowsRead, AutomationStudioRequestRowsSettledMember, AutomationStudioRequestRowsTest, AutomationStudioRequestRowsUnquoted
+} from "./types.ts";
 import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords } from "./words.ts";
 // The leaf, not the barrel (`summary-reads.ts`).
 import { automationStudioResultReadWorkingSets } from "../read-account/working-sets.ts";
@@ -141,10 +183,11 @@ type Accounting = { text: string; beside: string; quotes: boolean };
 
 /** Each condition with the left-out rows the reply did not name beside a quote of the request's excluding words; none when it did for all. */
 export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStudioRunResultSummary, reply: string, wording: AutomationStudioRequestWording): AutomationStudioRequestRowsUnquoted[] {
-  const { reads } = automationStudioRequestRowsReads(summary);
+  // With the rows several conditions left out together, each set one group (header, F1 a).
+  const { reads } = automationStudioRequestRowsReads(summary, false, { together: true });
   const namings = reads.flatMap((read) => read.labels.map((label) => automationStudioRequestRowNaming(label, read.labels)));
-  const accountingFor = accountingSentences(reply, namings, (quote) => wording.says(quote) && wording.ownWords(quote).length > 0);
-  const accounting = accountingFor.map((sentence) => sentence.text);
+  const requestQuote = (quote: string): boolean => wording.says(quote) && wording.ownWords(quote).length > 0;
+  const accountingFor = accountingSentences(reply, namings, requestQuote);
   // A settled condition is accounted for by its own sentence's quote, never a lent one (header, t790).
   const quoting = accountingFor.filter((sentence) => sentence.quotes).map((sentence) => sentence.text);
   // A stored row is asked for by any of the request's words that carry something, as a kept row is (header, t663, t691).
@@ -155,6 +198,22 @@ export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStu
     const inResult = new Set(read.inResult.filter((label) => !elsewhere.has(label)));
     const where = { ...(read.step !== undefined ? { step: read.step } : {}), ...(read.nodeId !== undefined ? { nodeId: read.nodeId } : {}) };
     return read.conditions.flatMap((condition): AutomationStudioRequestRowsUnquoted[] => {
+      const stored = storedUnquoted(condition, elsewhere, storedAccounting, read.labels);
+      const storedHeld = stored.rows.length ? [{ ...where, condition: condition.condition, rows: stored.rows, stored: stored.by }] : [];
+      // A group of settled conditions is accounted for by each of them, never row by row (header, t795 w1b).
+      // Every row of a group fails every member, so one member's stated exclusion accounts for it (header).
+      if (condition.settledMembers) {
+        const rows = condition.rows.filter((_row, index) => !inResult.has(condition.labels[index]!));
+        const quoted = condition.settledMembers.some((member) => settledMemberQuoted(read, member, reply, namings, requestQuote, wording));
+        if (!rows.length || quoted) return storedHeld;
+        // With every member settled and none quoted, the group is held under each member; otherwise row by row, below.
+        if (condition.settledMembers.length === (condition.tests ?? []).length) {
+          return [...condition.settledMembers.map((member) => ({ ...where, condition: member.condition, rows, bound: true as const, boundKind: member.kind })), ...storedHeld];
+        }
+      }
+      // A quote that names only another condition of the read is no reason for this one's rows (header, F1 d).
+      const othersOnly = condition.together ? otherConditionQuote(read, condition.tests ?? [], wording) : undefined;
+      const accounting = (othersOnly ? accountingSentences(reply, namings, (quote) => requestQuote(quote) && !othersOnly(quote)) : accountingFor).map((sentence) => sentence.text);
       const settled = new Set(condition.settled?.labels ?? []);
       const rows = condition.rows.filter((_row, index) => {
         const label = condition.labels[index]!;
@@ -163,11 +222,10 @@ export function automationStudioResultLeftOutRowsUnquoted(summary: AutomationStu
         return !accounting.some((sentence) => automationStudioRequestTextNamesRow(sentence, naming));
       });
       const bound = boundUnquoted(condition, inResult, quoting);
-      const stored = storedUnquoted(condition, elsewhere, storedAccounting, read.labels);
       return [
         ...(rows.length ? [{ ...where, condition: condition.condition, rows }] : []),
         ...(bound.length ? [{ ...where, condition: condition.condition, rows: bound, bound: true as const, boundKind: condition.settled!.kind }] : []),
-        ...(stored.rows.length ? [{ ...where, condition: condition.condition, rows: stored.rows, stored: stored.by }] : [])
+        ...storedHeld
       ];
     });
   });
@@ -204,6 +262,29 @@ export function automationStudioResultKeptEveryRowFlagged(summary: AutomationStu
       return labels.length ? [{ kind: "every_row", datasetId: set.datasetId, nodeId: read.nodeId, missing: flag.narrowerRead, rows: labels, of: set.recordCount, pool: labels }] : [];
     });
   });
+}
+
+/**
+ * Whether a quote's own words name another condition of the read and none of
+ * this one's (header, F1 d); nothing where this condition's words, or every
+ * other condition's, are not known.
+ */
+function otherConditionQuote(read: AutomationStudioRequestRowsRead, mine: readonly AutomationStudioRequestRowsTest[], wording: AutomationStudioRequestWording): ((quote: string) => boolean) | undefined {
+  if (!mine.length) return undefined;
+  const key = (test: AutomationStudioRequestRowsTest): string => `${test.wording ?? ""}\n${test.field ?? ""}`;
+  const own = new Set(mine.map(key));
+  const wordsOf = (tests: readonly AutomationStudioRequestRowsTest[]): Set<string> => new Set(tests.flatMap((test) => {
+    const said = automationStudioRequestConditionWords(test);
+    return said ? wording.ownWords(said.text) : [];
+  }));
+  const these = wordsOf(mine);
+  const others = wordsOf([...(read.tests ?? []), ...read.conditions.flatMap((other) => other.tests ?? [])].filter((test) => !own.has(key(test))));
+  for (const word of these) others.delete(word);
+  if (!these.size || !others.size) return undefined;
+  return (quote) => {
+    const words = wording.ownWords(quote);
+    return words.some((word) => others.has(word)) && !words.some((word) => these.has(word));
+  };
 }
 
 /** Whether a quote is of the request's words that carry something, the words it searched by included (header, t663). */
@@ -253,11 +334,31 @@ function boundUnquoted(condition: AutomationStudioRequestRowsCondition, inResult
   if (!settled) return [];
   const rows = condition.rows.filter((_row, index) => settled.labels.includes(condition.labels[index]!) && !inResult.has(condition.labels[index]!));
   if (!rows.length) return [];
-  const named = accounting.some((sentence) => {
+  return namesCondition(accounting, settled.names) ? [] : rows;
+}
+
+/**
+ * Whether a group's settled member is accounted for by the settled rule
+ * (header, t795 w1b): some sentence that itself quotes the request -- by a
+ * quote whose own words do not name only another condition of the read (F1 d),
+ * no quote lent -- names the member as its `names` say.
+ */
+function settledMemberQuoted(
+  read: AutomationStudioRequestRowsRead, member: AutomationStudioRequestRowsSettledMember, reply: string,
+  namings: readonly AutomationStudioRequestRowNaming[], requestQuote: (quote: string) => boolean, wording: AutomationStudioRequestWording
+): boolean {
+  const othersOnly = otherConditionQuote(read, [member.test], wording);
+  const quotes = othersOnly ? (quote: string) => requestQuote(quote) && !othersOnly(quote) : requestQuote;
+  const quoting = accountingSentences(reply, namings, quotes).filter((sentence) => sentence.quotes).map((sentence) => sentence.text);
+  return namesCondition(quoting, member.names);
+}
+
+/** Whether a sentence names a condition by one of its word runs (t574, t790). */
+function namesCondition(sentences: readonly string[], names: readonly (readonly string[])[]): boolean {
+  return sentences.some((sentence) => {
     const words = automationStudioRequestRowWords(sentence).map((word) => word.word);
-    return settled.names.some((name) => contains(words, name));
+    return names.some((name) => contains(words, name));
   });
-  return named ? [] : rows;
 }
 
 /**

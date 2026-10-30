@@ -4,6 +4,7 @@
 // only a lasting consequence of one of its actions is asked about
 // (`permittedConsequences`).
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { resolveAutomationStudioBuildAuthoringMode } from "../../model/authoring-mode/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
@@ -24,6 +25,9 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.cancelFlowBootstrap,
     permission: "runtime.control", classification: "authoring",
+    action: "studio:CancelFlowBootstrap",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: (request) => {
       const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload) ? request.payload as Record<string, unknown> : {};
       const projectId = boundedIdentifier(payload.projectId, "Project"), flowId = boundedIdentifier(payload.flowId, "Flow");
@@ -36,6 +40,9 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowBootstrapGenerationReadiness",
+    accessLevel: "Read",
+    resource: endpointResource.workspace(),
     handler: (request) => {
       const payload = request.payload;
       // The web route adds `authSessionId` to a signed-in person's POST to this program, so a POST
@@ -52,6 +59,9 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:SaveFlowGenerationInstruction",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       if (!request.actor) return { ok: false, error: "Flow generation instruction is unavailable." };
       const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload)
@@ -69,6 +79,9 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:GenerateFlowBootstrapAdaptation",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       if (!request.actor) return { ok: false, error: "Flow bootstrap generation is unavailable." };
       const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload)
@@ -181,6 +194,9 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapFailure,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowBootstrapFailure",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload) ? request.payload as Record<string, unknown> : {};
       return { ok: true, payload: { failure: failedBuilds.latest(boundedIdentifier(payload.projectId, "Project"), boundedIdentifier(payload.flowId, "Flow")) ?? null } };

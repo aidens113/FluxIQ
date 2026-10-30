@@ -253,6 +253,16 @@ describe("site reset start check", () => {
       }
     });
 
+    // CC4 (P4): a read carries the client's raw effect record of the call just before it, unparsed: the act's place parses
+    // it (`../act-places.ts`). Without this, a client's effect record never reached the ledger. Made-up fixture: a library.
+    it("keeps a read's raw effect record, and adds none when the client gives none", async () => {
+      const effect = { places: [{ place: "pl:hold", before: "v:off", after: "v:on" }], inverse: { action: "press", control: "pl:hold", toState: "v:off" } };
+      const binding = { startState: async () => ({ state: { n: 1 }, differs: [], location: "https://library.test/entry/4", effect }), runsNodes: goes };
+      const check = new AutomationStudioSiteResetStartCheck({ binding, projectId: "p", flowId: "f", tools: [runNode], executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true } }) });
+      expect(await check.read()).toMatchObject({ effect });
+      expect(await looking(undefined).check.read()).not.toHaveProperty("effect");
+    });
+
     // t772 value witness: a read carries the page's shown values, each place and value an opaque token; any malformed
     // entry drops the whole map, never the read (`../../reset-settlement/values-of.ts`). Made-up fixture: a settings page.
     it("keeps a read's well-formed shown values, and drops them all when any entry is malformed while keeping the read", async () => {

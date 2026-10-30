@@ -103,6 +103,7 @@ import { automationStudioLlmStepLogReset } from "../../llm/step-log/index.ts";
 import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioResultStandingNoCarrier, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
+import { automationStudioTrialSampleRows } from "./row-mark.ts";
 import { automationStudioCandidateTrialAlreadyInState, automationStudioCandidateTrialLandedActs } from "./landed-acts.ts";
 import { automationStudioTrialActLedger } from "./act-ledger.ts";
 import { automationStudioTrialNotRun } from "./not-run.ts";
@@ -262,14 +263,14 @@ async function judged(request: AutomationStudioCandidateTrialRequest, ports: Aut
   const standingNo = (read.verdict === "no" && verdict.verdict === "no") || (read.verdict === "unsure" && verdict.verdict === "unknown") ? verdict.standingNo : undefined;
   // Whether the judge's yes was first-ask confirmed, on a yes the gate took as one: what promotion carries to the saved Flow (header, t677).
   const firstAsk = read.verdict === "yes" && verdict.verdict === "yes" && verdict.firstAskConfirmed !== undefined ? { firstAskConfirmed: verdict.firstAskConfirmed } : {};
-  const outcome = answerFor(request)(read.verdict, feedback, { trialRunId: shown.trialRunId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...(learnedPaces ? { learnedPaces } : {}), ...(again ? { judgedAgain: true as const } : {}), ...firstAsk, judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo);
+  const outcome = answerFor(request)(read.verdict, feedback, { trialRunId: shown.trialRunId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...(learnedPaces ? { learnedPaces } : {}), ...(again ? { judgedAgain: true as const } : {}), ...firstAsk, judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts, standingNo, automationStudioTrialSampleRows(summary));
   return verdict.verdict === "not_judged" ? { ...outcome, unjudged: evidence } : outcome;
 }
 
 /** The gate's answer and Core's record of one trial of `request`'s revision. */
 function answerFor(request: AutomationStudioCandidateTrialRequest) {
-  return (verdict: AutomationStudioCandidateTrialResult["verdict"], feedback: AutomationStudioCandidateTrialResult["feedback"], record: Omit<AutomationStudioCandidateTrialRecord, "candidateId" | "revision" | "digest" | "verdict">, acts: AutomationStudioCandidateTrialAct[] = [], standingNo?: AutomationStudioResultStandingNoCarrier["standingNo"]): AutomationStudioCandidateTrialOutcome => ({
-    result: { revision: request.revision, digest: request.digest, verdict, feedback, ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}), ...(acts.length ? { acts } : {}), ...(standingNo ? { standingNo: structuredClone(standingNo) } : {}) },
+  return (verdict: AutomationStudioCandidateTrialResult["verdict"], feedback: AutomationStudioCandidateTrialResult["feedback"], record: Omit<AutomationStudioCandidateTrialRecord, "candidateId" | "revision" | "digest" | "verdict">, acts: AutomationStudioCandidateTrialAct[] = [], standingNo?: AutomationStudioResultStandingNoCarrier["standingNo"], sampleRows: Array<Record<string, string>>[] = []): AutomationStudioCandidateTrialOutcome => ({
+    result: { revision: request.revision, digest: request.digest, verdict, feedback, ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}), ...(acts.length ? { acts } : {}), ...(standingNo ? { standingNo: structuredClone(standingNo) } : {}), ...(sampleRows.length ? { sampleRows } : {}) },
     record: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, verdict, ...record }
   });
 }

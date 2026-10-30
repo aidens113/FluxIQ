@@ -63,7 +63,7 @@ lanes in parallel to 11-08 (the extension's connection files merge 11-10); hoste
 11-12; store submission about 11-13; public when Google approves.
 
 **Next.** (1) Contracts frozen 2026-10-28 (t784, `@fluxiq/contracts` 0.3.0: `/platform`, `/iam`,
-gateway 0.2 additions; decisions in the paired document's ledger); lanes A, B1, B2 and C start with
+gateway 0.2 additions; decisions in the paired document's ledger); B1 (t789) and B2 (t788) merged 10-28; B3 (t803), lane A (t802) and C0 (t808) merged 10-29 (B3 inert on `service` until C wires it); C1 with the IAM wiring (t813) and E with D5 (t814) in flight; C starts with
 the H0 changes, each as its own task. (2) The
 user answers N1 to N7 and creates the VM, DNS and store developer account (paired U9). Nothing
 blocks H1.
@@ -491,15 +491,18 @@ a map of workspace to `{fluxiq, gateway, lastUsedAt, busy}`; lazy `FluxIQ.create
 the host module; idle eviction after 15 minutes under an LRU cap of 100
 (`FLUXIQ_WORKSPACE_CACHE_MAX`), a safety bound rather than a RAM fit (an idle instance is ~0.5 MB
 and 10 ms; the 3.5 to 7 s module load is per process, S3). **A workspace is pinned while a run,
-build, scheduled task, open socket or live key unlock exists.** Callers use
+build, scheduled task or open socket exists**; an idle workspace with a live key unlock may be
+evicted, and its keys stay held in the manager's `HeldKeys` until their own expiry (lead decision,
+2026-10-29: pinning every unlocked workspace keeps whole instances in memory, and locking keys on
+eviction forces a re-unlock). Callers use
 `workspaceFluxIQ(request or headers/cookies)`; pages, `lib/auth.ts` and login have no `Request` and
 resolve through the platform session store (S4 D1). Under `single` it holds one entry created
-exactly as today. **`close()` is not eviction yet** (S3, S5): the module-level activity hub keeps
-every closed instance reachable; `close()` runs `closeAll()` on the module-level
-`programStateConnections` pool, cutting other workspaces' runs; and it revokes every key unlock.
-**Lane C0 fixes these first:** a disposable hub subscription (or a per-instance hub, S4 D2); a
-per-instance connection pool; `HeldKeys` moved into the manager's entry, with an eviction mode of
-`close()` that skips `revokeAll`; a leak test (create, close, drop, gc, assert the WeakRef clears).
+exactly as today. **C0 (t808, merged 2026-10-29) made `close()` safe for eviction:** the hub
+subscription is removed on close (the hub stays shared, filtered by project id, so per-instance
+event isolation is C3's); `programStateConnections` is one pool per storage root; an injected
+`HeldKeys` survives `close({ mode: "evict" })` while an instance's own keys are revoked; a leak test
+proves nothing survives a closed instance. C1's manager calls `heldKeys.revokeAll()` on deletion
+and real shutdown.
 
 **Gateway per workspace.** One listener verifies the hello credential against the platform store,
 then hands the socket to that workspace's `ClientGatewayService`.
@@ -580,7 +583,7 @@ approving session is not the key handle: it ends within 12 hours, the credential
 and its id is the cookie. **Each model call resolves the user's live unlock in this workspace**,
 preferring the session the build started from, else raises a typed `secrets.locked`; a logout
 during a build no longer fails it while another unlock lives. An administrator's `revokeSession`
-also drops the unlock, as logout does. After a restart or an eviction, one message covers every
+also drops the unlock, as logout does. An eviction keeps the unlock (C0). After a restart or a key's own expiry, one message covers every
 locked path, "Sign in at app.getfluxiq.com to unlock your model key" (N4), and the panel offers a
 re-unlock with the password without signing out. H2 adds a browser-held unwrap key.
 
@@ -685,12 +688,7 @@ repositories, nested worktrees, `dev` merged in daily.
 
 | Lane | Owns (Core; may edit) | Dates | Agent-days |
 | --- | --- | --- | --- |
-| H0 (done 10-28, task t782): S1 tab flow (D0); S2 Caddy and `wss`; S3 instance cost; S4 call sites and singletons; S5 key release; S6 audit volume | spike worktrees; results in `hosted-production-plan/reports/h0*.md` | 10-28 | 3 (spent) |
-| Contracts: discovery, connect, provisioning, gateway 0.2, IAM policy grammar, FRN, action catalog format, `PanelProduct` | `packages/contracts/src/{platform,iam}/`, `client-gateway.ts` | 10-29 to 10-30 | 2 |
-| A hardening: profile resolution; public origin, `wss` URL, bundle path; Origin grammar (prefix match for `moz-extension://*`, the missing-Origin rule, no start without an allowlist on public binds); frame cap, hello deadline and rate limits (none exist); peer address and `X-Forwarded-For` into sessions and audit; pairing caps, crypto codes, pruning, audit ring; middleware and cookie naming; throttles; owner claim; "check nothing" endpoints; health, drain, logs; discovery route | `packages/fluxiq/src/platform/profile/`, `lib/fluxiq.ts`, `gateway-runtime/load.ts`, `client-gateway-websocket.ts`, `client-gateway/service/{pairings,sessions,audit-log}.ts`, `middleware.ts`, `api/auth/login/`, `lib/auth.ts`, `lib/login-attempts.ts`, `app/setup/`, `app/api/discovery/`, `SECURITY.md`, `docs/integrations/client-gateway-websocket.md` | 10-30 to 11-04 | 7 |
-| B1 platform store and provisioning: `PlatformStore`; operations; private listener; command line; welcome link, reset, `EmailSender`; key selection fix (Flow key or the caller's own, after `UseKey`); per-call unlock resolution and `secrets.locked`; administrator revoke drops the unlock | `packages/fluxiq/src/platform/{store,provisioning}/`, `apps/web/src/server/provisioning-listener/`, `app/{welcome,reset}/`, `identity-access/runtime/providers/`, `session-key.ts`, `llm/session-key-provider.ts`, `conversations/commands/caller.ts`, `api/handlers/{llm-generation,runtime-execution}.ts`, `identity-access/{api/handlers.ts,runtime/service.ts}` | 10-30 to 11-04 | 6 |
-| B2 IAM engine: FRN, grammar, evaluator, predefined policies, groups, roles, service identities, attachments store, decision audit (compact, day-partitioned, buffered), catalog generator, parity test | `packages/fluxiq/src/platform/iam/`, `identity-access/runtime/roles.ts` | 10-30 to 11-03 | 6 |
-| B3 IAM enforcement: `action`, `resource`, `accessLevel` on every registration (several workers, partitioned by program directory); registry and route integration; list filtering; project ownership migration; `docs/architecture/platform.md` | `programs/*/api/` registrations, `programs/_shared/api.ts`, `lib/{program-route,operational-route-contract}.ts`, the 15 routes, `automation-studio/api/contracts/project.ts` and its migration | 11-03 to 11-07 | 6 |
+| Done 10-28 to 10-29: H0 (t782), contracts (t784), B1 (t789), B2 (t788), B3 (t803), A (t802); their rows are in `hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md` | see the Work Ledger | 10-28 to 10-29 | 30 |
 | C tenancy: C0 eviction prerequisites (disposable activity-hub subscription, per-instance `programStateConnections`, `HeldKeys` out of the instance with an eviction mode of `close()`, leak test); C1 layout v3 and workspace manager (LRU cap 100, pinned while busy); C2 call-site migration in five S4 batches (auth, client-gateway, framework and recordings, programs API, pages: 18 files, 29 calls, 14 test files; parallel workers by file; C1 keeps `lib/fluxiq.ts`, `lib/auth.ts`, `instrumentation.ts`); C3 gateway routing by credential, browser-owner invariant, per-workspace singletons (with the four S4 added), `deleteAccount` wiring; route matrix | `framework/{storage-layout,index}.ts`, `automation-studio/runtime/activity/`, `programs/_shared/runtime.ts`, `secret-keys/runtime/{service,held-keys}.ts`, the module holding `programStateConnections`, `apps/web/src/lib/workspaces/`, the S4 call sites, `runtime/client-gateway-transport.ts`, `apps/web/src/app/tests/` | C0 10-31 to 11-03; C1 10-31 to 11-04; C2, C3 11-03 to 11-07; matrix 11-07 to 11-08 | 13 |
 | D connect: codes and tokens; credential with `approvingSessionId` as an audit digest; typed-code claim; connect, account and browsers pages; `revoked`, `going_away`, `runContext` (`startedFromSessionId` a digest); trusted-client migration | `packages/fluxiq/src/platform/connect/`, `trusted-clients.ts`, `lifecycle.ts`, `access.ts`, `pairing-flow.ts`, `app/connect/`, `app/account/`, `app/api/connect/` | 10-31 to 11-05 | 6 |
 | E product manifest and hooks: `PanelProduct` registry, multi-module host loading, `registerFluxIQPlatform`, assets route, branding, onboarding cards, fixture host module | `packages/fluxiq/src/platform/panel/`, `layout.tsx`, `AuthShell.tsx`, `app/product/`, host-module loader | 10-30 to 11-01 | 2 |
@@ -748,23 +746,25 @@ Chrome submission (about 11-13). getfluxiq.com sign-up opens on store approval.
 
 ## Work Ledger
 
-Compacted 2026-10-28 (the document was at the 800-line limit). The three earlier entries are
-merged into one below with their validation substance; the verbatim entries are in
-`hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`.
+The plan's history (2026-10-17 to 10-28) and the H0 fold moved on 2026-10-29 to
+`hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`, with B3 (t803, moved 2026-10-29); the contract freeze, B1 and B2 entries are in the paired document's ledger.
 
-### 2026-10-17 to 10-28 — Plan written, revised with the user's decisions, revised around FluxIQWebsite
-- Agent: lane lead hosted-production-planner; supervisor and a worker-heavy for the 10-28 revision (notes `!FluxIQWebExtension/docs/working/hosted-production-plan/reports/revision-2026-10-28-notes.md`)
-- Changed: created this document and the paired one; revised both on 10-18 (hosted with the Chrome release, provisioning API, bring-your-own-key, billing a port) and 10-28 (FluxIQWebsite is the public site, Core on app.getfluxiq.com behind a private provisioning listener, `apps/site` shrinks to `apps/product`, local website stand-in, AWS-IAM-style permissions with an inert-for-local parity test, parallel lanes, store submission about 11-13); no code, config or index edited
-- Validation: `node scripts/structure-audit.mjs` (Core), 10-17 and 10-18 -> "1 violation(s) across 1 rule(s)": only `[working-docs] docs/working/README.md is out of date` (index row left to the supervisor), no header, size or link findings; on 10-18 the document was 751 lines with a 73-line Current State. The 10-28 worker checked the cited Core facts in code (no `platform/` or provisioning yet; one permission check in `_shared/api.ts`; 289 permission declarations); its post-swap audit result was not recorded. Baseline re-read in `apps/web/package.json`, `client-gateway-websocket.ts:27-45`, `client-gateway-transport.ts:98-107`, `session-key.ts:33-43`, `project.ts:6-15`, `domains/index.ts:53-54`, `login/route.ts:116-122`, `held-keys.ts:12-88`, `conversations.ts:200-278`
-- Outcome: Partial (10-17, 10-18); revised, H0 startable (10-28)
-- Follow-up: the user's answers to the Open Questions; H0 (done below)
+### 2026-10-29 — Lane A merged: gateway and panel hardened for a public deployment (t802)
+- Agent: supervisor; t802 sub-supervisor (worker-heavy W2a transport, W2b gateway service, W4a owner claim; worker W1 profile, W3 runtime, W4b sessions and throttles, W5 middleware and discovery); report `hosted-production-plan/reports/t802-a.md`
+- Changed: `platform/profile/` resolves `FLUXIQ_PROFILE` once, and every rule follows it (no environment = today's local install). Gateway: the contract's Origin grammar (`moz-extension://*` by prefix), no public bind without an allowlist, a frame cap before buffering (1009), a hello deadline and a per-socket rate limit (1008), the client address in sessions with only its prefix in the audit, crypto pairing codes, pending-pairing caps, pruning, a 10,000-entry audit ring, drain with `server.going_away`. Panel: `__Host-` session cookie on https, admin/admin refused off `local`, a `/setup` owner claim by one-time code (only the code file's path is logged), form throttles, a cross-site write guard, discovery and `/.well-known/fluxiq`, `/api/health` and `/api/ready`, redacted logs, a persisted security audit. The provisioning listener starts under `service` with its address and token file; `FLUXIQ_EMAIL_SENDER` accepts `file:<dir>`.
+- Decisions (lead, accepted): the local frame cap is 256 MiB; the listener starts under `service` only (a self-hoster's own sign-up site waits); with an allowlist set, a missing Origin is accepted locally, as the N7 table says.
+- Validation: lead-run under the heavy-check lock on the tree merged with dev (B3 in): tsc clean; `pnpm test src/client-gateway src/platform src/programs/_shared src/programs/automation-studio/client-gateway src/programs/automation-studio/api src/programs/identity-access` -> "Tests 1075 passed (1075)", real-sql "Tests 131 passed (131)"; apps/web tsc clean and `vitest run src/server src/lib src/app src/tests` -> "Test Files 84 passed (84)", "Tests 616 passed (616)", including the wss lane test (pairing over wss, web and missing Origin 403, oversized frame 1009, silent socket 1008); `pnpm check` exit 0; docs current; structure passed; downstream domain "# pass 2457 / # fail 0", headed `e2e/site-reset/tests` "32 passed (36.0m)" through the hardened local gateway.
+- Outcome: Accepted. Follow-ups (one task): `welcomeUrl` in the file mail record (`platform/provisioning/email/file-email-sender.ts`); the PIN gate on the three "check nothing" handlers (`destructive-ungated` to `destructive` in deployment-sync and database-manager); drain refusing builds started through the program API; the owner's email verification and email-only username under `service`; the session record's address-prefix field (frozen contract) and the one-hour ended-session age on `service` (lane C's `runtime.ts`). Caddy itself not run (a Node TLS stand-in).
 
-### 2026-10-28 — H0 spikes folded in
-- Agent: supervisor; spikes by sub-supervisor t782 (S5 on Opus, the rest on Sonnet); this fold drafted by a worker (brief H0-fold)
-- Changed: this document: Current State; Audit of every decision; credential and gateway 0.2 fields; Gateway Transport (Origin rule, limits, client IP); Tenancy (workspace manager, `close()`, singletons); Model Calls (selection fix, unlock); Security rows 9 and 10; Testing; Phases (lanes A, B1, B2, C with new C0, D; optional lane P; totals); Risks; N7; baseline and old ledger moved to the archive
-- Validation: the sub-supervisor's re-runs, from `reports/h0.md`: S2 `node run.mjs list` -> two 101 upgrades to `server.pairing_required`, 403 for refused Origins and a direct evil Origin; S3 `node --expose-gc retain.mjs` -> `"alive":[true,true,true,true]` after close and gc; S5 `npx vitest run --dir ../../spikes/h0-s5` from `packages/fluxiq` -> 3 of 3 passed; S6 `bench-filter.cjs` and `volume.cjs` -> volume figures match, per-item SQLite rows 32 to 46 µs. S1 outputs read (3 accepted, 3 rejected per browser, boot ids change); S4 tables read, rg counts not re-run. This fold: not validated by command (plan text only); the supervisor runs `node scripts/structure-audit.mjs` after the swap
-- Outcome: Partial (S2 ran through a Node TLS stand-in; Caddy is not installed)
-- Follow-up: contract freeze with the H0 changes; C0; the user's answer on N7
+### 2026-10-29 — Lane C0 merged: a FluxIQ instance closes without leaving anything behind (t808)
+- Agent: supervisor; workers held-keys (worker-heavy), connections and leak-test (worker); report `hosted-production-plan/reports/t808-c0.md`. Changed: `createGlobalProgramRuntime` returns `detach()`, called first by `FluxIQ.close()`; `programStateConnections` one pool per storage root; `FluxIQOptions.heldKeys` and `close({ mode: "shutdown" | "evict" })`; session expiry timers in `HeldKeys` hold only an id (the old timer kept the unlock password up to 12 hours); `framework/tests/instance-leak.test.ts`. Decision (lead): evict idle workspaces and keep their keys held; pin only busy ones (Tenancy And Data).
+- Validation: lead-run under the heavy-check lock on the tree merged with dev: `pnpm test src/programs/secret-keys src/programs/_shared src/framework .../runtime/activity` -> "Tests 702 passed (702)", real-sql "Tests 67 passed (67)"; leak test "Tests 4 passed (4)" twice; `pnpm check` exit 0; docs current; structure passed; apps/web `vitest run src` -> "Test Files 435 passed (435)", "Tests 3370 passed (3370)" after the dev fix c5cb635b (B3's ownership needed `snapshot()` on the contract test's identity fake).
+- Outcome: Accepted. Open: one shared activity hub (per-instance events are C3's); the trace slots keep the last instance alive when tracing is on (C3); a storage directory outside `.fluxiq` gets a pool `close()` does not reach; `docs/architecture/platform.md` should name `FluxIQCloseOptions`, `heldKeys` and per-root pools.
+
+### 2026-10-29 — A and B3 follow-ups merged; the first sign-up round trip passes (t809)
+- Agent: supervisor (Sonnet), six workers and one worker-heavy; report `hosted-production-plan/reports/t809-followups.md`. Changed: `welcomeUrl` in the file mail record; the three "check nothing" handlers `destructive` (PIN), with the panel's dialog in `deployment-sync.tsx`; drain refuses program starts (`apps/web/src/server/drain/program-start-refusal.ts`); the IAM catalog regenerated after three mixed `custom` resources became `["project"]`; tests that usernames are email-shaped under `service`.
+- Validation: lead-run under the lock, merged with dev: `pnpm check` exit 0; `pnpm test src/platform src/programs/_shared src/programs/deployment-sync src/programs/database-manager src/programs/automation-studio/api src/programs/tests` -> "Tests 716 passed (716)", real-sql "Tests 151 passed (151)"; contracts "Tests 523 passed (523)"; apps/web `vitest run src` -> "Tests 3383 passed (3383)"; downstream `up.mjs --round-trip` against an isolated `service` Core -> "step 1 PASS site sign-up: status 202" through "step 5 PASS repeat sign-up", "round trip PASS".
+- Outcome: Accepted. Open: the owner cannot verify their email under `service` (options in the report); Caddy, Turnstile and a really draining server are not exercised.
 
 ## Open Questions
 

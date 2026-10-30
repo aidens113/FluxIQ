@@ -17,13 +17,21 @@ import type { AutomationStudioRequestWording } from "../request-rows/index.ts";
  * answered no by the words of the request naming what it asks for, which the
  * row is not (t628): narrowing to the request's own item excludes nothing the
  * request does not say.
+ *
+ * **Not where the request asks for every result (framework plan P5, F3).**
+ * Debug `run-mvtdoyf3-47ffaac1`: the request asked for every search result
+ * less one stated exclusion, and that clause invited a no holding a kept row to
+ * the words it searched by, which said where to look, not a kind the rows must
+ * be. Where `asksEveryResult` (`../asked-words/every-result.ts`), only the
+ * words that exclude a row are named; t628's request for a kind of thing keeps
+ * the clause.
  */
-export function exclusionRecheckWords(exclusions: readonly string[]): string {
+export function exclusionRecheckWords(exclusions: readonly string[], asksEveryResult = false): string {
   return "This same evidence was judged before, and that answer advised leaving out rows by words the request never states as an exclusion: "
     + `${quotedExclusions(exclusions)}. `
     + "A request excludes only what its own words state; the words it searches or navigates by say where to look and exclude nothing. "
     + "Answer again from the evidence, and answer no over a row the result keeps only where you quote words of the request that it fails: "
-    + "words that exclude it, or the words naming what the request asks for, which that row by its own words is not.";
+    + (asksEveryResult ? "words that exclude it." : "words that exclude it, or the words naming what the request asks for, which that row by its own words is not.");
 }
 
 function quotedExclusions(exclusions: readonly string[]): string {

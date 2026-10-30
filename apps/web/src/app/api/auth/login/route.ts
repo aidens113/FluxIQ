@@ -1,9 +1,11 @@
 import path from "node:path";
 import { DEFAULT_SESSION_TTL_MS, TotpRequiredError } from "fluxiq";
 import { NextResponse } from "next/server";
+import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../lib/auth";
 import { getFluxIQ } from "../../../../lib/fluxiq";
 import { DurableLoginAttemptTracker, loginClientAddress } from "../../../../lib/login-attempts";
+import { sessionCookieOptions } from "../../../../lib/session-cookie";
 
 const ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const LOCKOUT_MS = 60 * 1000;
@@ -13,8 +15,10 @@ const MAX_ATTEMPTS = 5;
 // no per-client address, and a shared placeholder would let any client lock out
 // every other.
 const ADDRESS_MAX_ATTEMPTS = 20;
-// Failed logins across the whole panel, whatever the address or username.
-const PANEL_MAX_ATTEMPTS = 100;
+// Failed logins across the whole panel, whatever the address or username, are
+// only counted: past this many in one window the route logs one warning. It
+// never locks anyone out, since that would let anyone lock out everyone.
+const PANEL_WARN_ATTEMPTS = 100;
 const PANEL_KEY = "panel";
 // loginClientAddress's placeholder for a proxied request that forwards no address.
 const UNKNOWN_PROXIED_ADDRESS = "proxy-unknown";
@@ -44,7 +48,7 @@ function addressAttempts(): DurableLoginAttemptTracker {
 }
 
 function panelAttempts(): DurableLoginAttemptTracker {
-  return attemptTracker("login-panel-attempts.json", PANEL_MAX_ATTEMPTS);
+  return attemptTracker("login-panel-attempts.json", Number.MAX_SAFE_INTEGER);
 }
 
 export async function POST(request: Request) {
@@ -64,10 +68,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, code: "invalid_totp", fieldErrors: { totp: totpError }, error: totpError }, { status: 400 });
   }
 
+  // A server nobody has claimed must not take the well-known default login.
+  if (resolveFluxIQDeploymentSettings(process.env).profile !== "local" && payload.username === "admin" && payload.password === "admin") {
+    return NextResponse.json(
+      { ok: false, code: "setup_required", error: "This server has not been claimed. Open /setup with the one-time setup code." },
+      { status: 403 },
+    );
+  }
+
   const attemptKey = rateLimitKey(request, payload.username);
   const addressKey = trustedClientAddress(request);
   const locked = Math.max(
-    await panelAttempts().remainingLockout(PANEL_KEY),
     addressKey ? await addressAttempts().remainingLockout(addressKey) : 0,
     await usernameAttempts().remainingLockout(attemptKey),
   );
@@ -116,13 +127,7 @@ export async function POST(request: Request) {
         requiresCredentialSetup: result.user.username === "admin" && payload.password === "admin",
       },
     });
-    response.cookies.set(FLUXIQ_SESSION_COOKIE, result.session.id, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: Math.floor(DEFAULT_SESSION_TTL_MS / 1000),
-    });
+    response.cookies.set(FLUXIQ_SESSION_COOKIE, result.session.id, sessionCookieOptions(Math.floor(DEFAULT_SESSION_TTL_MS / 1000)));
     return response;
   } catch (error) {
     const failed = await usernameAttempts().registerFailure(attemptKey);
@@ -130,8 +135,14 @@ export async function POST(request: Request) {
     // the staged login of an account with 2FA counts only against its username.
     const guess = !(error instanceof TotpRequiredError && !payload.totp);
     const addressFailed = guess && addressKey ? await addressAttempts().registerFailure(addressKey) : null;
-    const panelFailed = guess ? await panelAttempts().registerFailure(PANEL_KEY) : null;
-    const lockedUntilMs = Math.max(failed.lockedUntilMs, addressFailed?.lockedUntilMs ?? 0, panelFailed?.lockedUntilMs ?? 0);
+    if (guess) {
+      const panelFailed = await panelAttempts().registerFailure(PANEL_KEY);
+      // The count passes the threshold once per window, so this warns once per window.
+      if (panelFailed.count === PANEL_WARN_ATTEMPTS) {
+        console.warn(`Login anomaly: ${PANEL_WARN_ATTEMPTS} failed sign-ins across the panel within ${ATTEMPT_WINDOW_MS / 60_000} minutes.`);
+      }
+    }
+    const lockedUntilMs = Math.max(failed.lockedUntilMs, addressFailed?.lockedUntilMs ?? 0);
     const status = lockedUntilMs > Date.now() ? 429 : 401;
     const retryAfterMs = Math.max(0, lockedUntilMs - Date.now());
     const attemptsRemaining = Math.max(
@@ -139,7 +150,6 @@ export async function POST(request: Request) {
       Math.min(
         MAX_ATTEMPTS - failed.count,
         addressFailed ? ADDRESS_MAX_ATTEMPTS - addressFailed.count : MAX_ATTEMPTS,
-        panelFailed ? PANEL_MAX_ATTEMPTS - panelFailed.count : MAX_ATTEMPTS,
       ),
     );
     if (error instanceof TotpRequiredError) {
@@ -168,13 +178,13 @@ export async function POST(request: Request) {
 
 /** The client address a trusted proxy forwarded, or null when no per-client address exists to bound. */
 function trustedClientAddress(request: Request): string | null {
-  if (process.env.FLUXIQ_TRUST_PROXY !== "true") return null;
+  if (!resolveFluxIQDeploymentSettings(process.env).trustProxy) return null;
   const address = loginClientAddress(request, true);
   return address === UNKNOWN_PROXIED_ADDRESS ? null : address;
 }
 
 export function rateLimitKey(request: Request, username: string): string {
-  const address = loginClientAddress(request, process.env.FLUXIQ_TRUST_PROXY === "true");
+  const address = loginClientAddress(request, resolveFluxIQDeploymentSettings(process.env).trustProxy);
   return `${address}:${username.trim().toLowerCase()}`;
 }
 

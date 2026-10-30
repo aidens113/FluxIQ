@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../lib/auth";
+import { sessionCookieOptions } from "../../../../lib/session-cookie";
 import { getFluxIQ } from "../../../../lib/fluxiq";
 
 // Signing out revokes the cookie's session. Identity Access announces the
@@ -14,6 +15,6 @@ export async function POST() {
     await getFluxIQ().programs.identityAccess.revokeSession(sessionId);
   }
   const response = NextResponse.json({ ok: true });
-  response.cookies.delete(FLUXIQ_SESSION_COOKIE);
+  response.cookies.set(FLUXIQ_SESSION_COOKIE, "", { ...sessionCookieOptions(0), expires: new Date(0) });
   return response;
 }

@@ -17,6 +17,7 @@ import {
 } from "../../../../../lib/program-route";
 import { pairedClientProjectDomainRefusal, type PairedClientProjectDomainRefusal } from "../../../../../lib/paired-client-project-domain";
 import { programJsonResponse } from "../../../../../lib/program-json-response";
+import { programDrainRefusal } from "../../../../../server/drain";
 
 type RouteParams = {
   params: Promise<{
@@ -32,7 +33,10 @@ type ProgramActor = NonNullable<ProgramCall["actor"]>;
 /**
  * Who a request speaks for. The web panel's login cookie is the ordinary
  * caller; a paired client's bearer token is accepted only on the endpoints
- * `lib/program-route.ts` allowlists, and never alongside a valid cookie.
+ * `lib/program-route.ts` allowlists, and never alongside a valid cookie. Each
+ * actor names its channel (`panel`, `paired-client`), and the registry's
+ * `call` decides the endpoint through IAM by its registration's own action,
+ * permission and resources (`APP_ROUTES_DECIDED_BY_REGISTRY`).
  */
 type RouteCaller =
   | { kind: "person"; sessionId: string; userId: string; actor: ProgramActor; scope: ProgramCall["scope"] }
@@ -43,6 +47,8 @@ export async function GET(request: Request, context: RouteParams) {
   const fluxiq = getFluxIQ();
   const caller = await authenticate(request, fluxiq, programId, endpoint);
   if (caller instanceof NextResponse) return caller;
+  const draining = refuseWhileDraining(programId, endpoint);
+  if (draining) return draining;
   const narrowed = caller.kind === "paired-client" ? narrowPairedClientRequest(programId, endpoint, undefined) : { ok: true as const, payload: undefined };
   if (!narrowed.ok) return refuse(403, narrowed.error, narrowed.errorCode);
   const outside = caller.kind === "paired-client" ? await refuseProjectOutsideDomain(fluxiq, programId, caller, narrowed.payload) : null;
@@ -56,6 +62,8 @@ export async function POST(request: Request, context: RouteParams) {
   const fluxiq = getFluxIQ();
   const caller = await authenticate(request, fluxiq, programId, endpoint);
   if (caller instanceof NextResponse) return caller;
+  const draining = refuseWhileDraining(programId, endpoint);
+  if (draining) return draining;
   const payload = await request.json().catch(() => undefined);
   // A token call's body is narrowed before any handler sees it: a field that
   // would reach an LLM, an inline Flow or another reviewer is refused by name.
@@ -81,7 +89,7 @@ async function authenticate(request: Request, fluxiq: FluxIQ, programId: string,
       kind: "person",
       sessionId,
       userId: auth.user.id,
-      actor: { sessionId, userId: auth.user.id, roleId: auth.role.id, permissions: auth.role.permissions },
+      actor: { sessionId, userId: auth.user.id, roleId: auth.role.id, permissions: auth.role.permissions, channel: "panel" },
       scope: programDomainScope(request.url),
     };
   }
@@ -165,4 +173,12 @@ function withWebRuntimeStatus<TResponse extends { ok: boolean; payload?: unknown
       webRuntime: getFluxIQWebRuntimeStatus(operatorUserId),
     },
   };
+}
+
+// While the server drains, a call that would start a build or run is refused
+// before its handler can have any effect; reads and stops still go through.
+function refuseWhileDraining(programId: string, endpoint: string) {
+  const refusal = programDrainRefusal(programId, endpoint);
+  if (!refusal) return null;
+  return NextResponse.json(refusal.body, { status: refusal.status, headers: { "Retry-After": String(refusal.retryAfterSeconds) } });
 }

@@ -43,7 +43,6 @@
 // prose relies on the order to say it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
-  type AutomationNodePort,
   type AutomationStudioNodeDefinition,
   type AutomationStudioNodeRegistry,
   type AutomationStudioNodeRegistryResolution
@@ -63,8 +62,10 @@ import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./conseque
 import { authoringError, authoringWarning } from "./issue.ts";
 import { authoringCoreDerivedKey, authoringKey, authoringSymbol } from "./keys.ts";
 import { automationStudioFlowBootstrapWordInstead } from "../parameter-words/index.ts";
-import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining, matchAuthoringPort } from "./matching.ts";
+import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining } from "./matching.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
+import { automationStudioFlowScriptWire } from "../script-wiring/index.ts";
+import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, authoringWrittenValue, isJsonObject } from "./values.ts";
 import { routeAutomationStudioFlowScriptRepeats } from "./draft-routing.ts";
 import {
@@ -124,6 +125,8 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
   summary: string;
   /** The columns the instruction names, declared on an extraction whose author declared none (`./normalise.ts`). */
   namedColumns?: readonly string[] | undefined;
+  /** Which plan part a step serves, so a record output is derived from its answer (`../record-defaults/index.ts`). */
+  partOf?: AuthoringPartOfStep | undefined;
 }): { plan?: AutomationStudioFlowBootstrapPlan; refusedPlan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[]; locator?: AutomationStudioFlowBootstrapIssueLocator } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const library = input.registry.list(input.resolution);
@@ -202,8 +205,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
       subflowKey: subflowKeys[blockIndex]!,
       stepLabels,
       path: `plan.subflows.${subflows.length}`,
-      namedColumns: input.namedColumns,
-      partInputs
+      namedColumns: input.namedColumns, partOf: input.partOf, partInputs
     });
     issues.push(...built.issues);
     unplaced.push(...built.unplaced);
@@ -253,7 +255,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     subflows.push(subflow);
     graphs.set(blockIndex, graph);
   }
-  attachHandlers({ blocks, graphs, subflows, located, unplaced, issues, stepLabels, checkpoints, match, namedColumns: input.namedColumns, subflowKeys, registry: input.registry, resolution: input.resolution });
+  attachHandlers({ blocks, graphs, subflows, located, unplaced, issues, stepLabels, checkpoints, match, namedColumns: input.namedColumns, partOf: input.partOf, subflowKeys, registry: input.registry, resolution: input.resolution });
   if (!subflows.some((subflow) => subflow.role === "primary")) {
     const first = subflows.find((subflow) => subflow.role !== "recovery" && !subflow.interface);
     if (first) first.role = "primary";
@@ -302,6 +304,7 @@ function attachHandlers(input: {
   checkpoints: ReadonlyMap<string, string>;
   match(step: AutomationStudioFlowScriptStep): { definition?: AutomationStudioNodeDefinition | undefined; candidates: string[] };
   namedColumns: readonly string[] | undefined;
+  partOf: AuthoringPartOfStep | undefined;
   subflowKeys: readonly string[];
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
@@ -347,7 +350,7 @@ function attachHandlers(input: {
       path: `plan.subflows.${graph.index}`,
       nodeOffset: graph.subflow.nodes.length,
       keyPrefix: `h${written}-`,
-      namedColumns: input.namedColumns,
+      namedColumns: input.namedColumns, partOf: input.partOf,
       partInputs: lowered.automation ? undefined : graph.partInputs
     });
     input.issues.push(...built.issues);
@@ -466,6 +469,7 @@ function buildSubflow(input: {
   /** Put before every node and edge key, so a handler's never meet the block's own (`h1-s1`). */
   keyPrefix?: string;
   namedColumns: readonly string[] | undefined;
+  partOf: AuthoringPartOfStep | undefined;
   /** In a part, or a handler of one: the inputs it was given, the only `$input` its steps may read. */
   partInputs?: ReadonlySet<string> | undefined;
 }): {
@@ -515,7 +519,7 @@ function buildSubflow(input: {
       continue;
     }
     const key = `${prefix}s${index + 1}`;
-    const node = buildNode({ step, definition, key, subflowKey: input.subflowKey, path: nodePath, namedColumns: input.namedColumns, bindings });
+    const node = buildNode({ step, definition, key, subflowKey: input.subflowKey, path: nodePath, namedColumns: input.namedColumns, partOf: input.partOf, bindings });
     issues.push(...node.issues);
     nodes.push(node.node);
     placed.push(step);
@@ -525,7 +529,7 @@ function buildSubflow(input: {
   // A step whose node did not resolve has already refused the plan, and it
   // would put every later step's edges on the wrong node, so nothing is wired.
   if (nodes.length !== acting.length) return { nodes, edges: [], issues, placed, unplaced, keyByLabel, labelKeys };
-  const edges = wire({ steps: acting, nodes, definitionByKey, keyByLabel, stepLabels: input.stepLabels, blockIndex: input.blockIndex, issues, keyPrefix: prefix });
+  const edges = automationStudioFlowScriptWire({ steps: acting, nodes, definitionByKey, keyByLabel, stepLabels: input.stepLabels, blockIndex: input.blockIndex, issues, keyPrefix: prefix });
   return { nodes, edges, issues, placed, unplaced, keyByLabel, labelKeys };
 }
 
@@ -536,6 +540,7 @@ function buildNode(input: {
   subflowKey: string;
   path: string;
   namedColumns: readonly string[] | undefined;
+  partOf: AuthoringPartOfStep | undefined;
   bindings: AuthoringScriptBindingScope;
 }): { node: AutomationStudioFlowBootstrapNode; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
@@ -617,7 +622,7 @@ function buildNode(input: {
     // routing adding joins around it; otherwise its Subflow and node key, which
     // the same script assembles to every time.
     stepId: input.step.draftStepId ?? `${input.subflowKey}-${input.key}`,
-    namedColumns: input.namedColumns
+    namedColumns: input.namedColumns, partOf: input.partOf
   });
   issues.push(...normalised.issues);
   const derived = outputActionId ?? derivedOutputActionId(input.definition);
@@ -666,122 +671,6 @@ export function derivedOutputActionId(definition: AutomationStudioNodeDefinition
   if (!contract) return undefined;
   if (contract.fixedOutputId) return contract.fixedOutputId;
   return contract.allowedOutputIds?.length === 1 ? contract.allowedOutputIds[0] : undefined;
-}
-
-/** The edges the written order implies, and the ones the branches name. */
-function wire(input: {
-  steps: readonly AutomationStudioFlowScriptStep[];
-  nodes: readonly AutomationStudioFlowBootstrapNode[];
-  definitionByKey: ReadonlyMap<string, AutomationStudioNodeDefinition>;
-  keyByLabel: ReadonlyMap<string, string>;
-  stepLabels: ReadonlyMap<string, number>;
-  blockIndex: number;
-  issues: AutomationStudioFlowBootstrapIssue[];
-  keyPrefix: string;
-}): AutomationStudioFlowBootstrapEdge[] {
-  const edges: AutomationStudioFlowBootstrapEdge[] = [];
-  const claimed = new Map<string, Set<string>>(input.nodes.map((node) => [node.key, new Set<string>()]));
-  const used = new Map<string, Set<string>>(input.nodes.map((node) => [node.key, new Set<string>()]));
-  const branches: Array<{ sourceKey: string; port: AutomationNodePort; targetKey: string; targetPortId?: string }> = [];
-  for (const [index, step] of input.steps.entries()) {
-    const sourceKey = input.nodes[index]?.key;
-    const definition = sourceKey ? input.definitionByKey.get(sourceKey) : undefined;
-    if (!sourceKey || !definition) continue;
-    for (const branch of step.branches) {
-      const port = matchAuthoringPort(branch.port, definition.outputs);
-      if (!port) {
-        input.issues.push(authoringError("flow_script.unknown_port", `The branch at line ${branch.line} names the port "${branch.port}"; this node declares ${definition.outputs.map((candidate) => candidate.id).join(", ") || "no output port"}.`, `flow.line.${branch.line}`));
-        continue;
-      }
-      const targetKey = input.keyByLabel.get(branch.target);
-      if (!targetKey) {
-        const elsewhere = input.stepLabels.has(branch.target) && input.stepLabels.get(branch.target) !== input.blockIndex;
-        input.issues.push(authoringError(elsewhere ? "flow_script.branch_across_blocks" : "flow_script.unknown_label", elsewhere
-          ? `The branch at line ${branch.line} goes to "${branch.target}", which is in another block; a branch stays inside its own block.`
-          : `The branch at line ${branch.line} goes to "${branch.target}", which labels no step.`, `flow.line.${branch.line}`));
-        continue;
-      }
-      claimed.get(sourceKey)!.add(port.id);
-      branches.push({ sourceKey, port, targetKey, ...(branch.targetPort ? { targetPortId: branch.targetPort } : {}) });
-    }
-  }
-  // A branch to the step written next takes that step's one way in. When the
-  // source still has a port no branch claimed, that is the port it falls
-  // through on, and the fall-through would have nowhere to go: the run would
-  // stop there -- which is what a live build's "close it if it is showing;
-  // on failed: go to the next step" did on 2026-09-18. Branching every port
-  // of a step is fine; leaving one to fall into a taken step is refused.
-  //
-  // Two steps are not that mistake and are skipped. A `routed` step has no
-  // fall-through to strand, because the code that wrote it wrote every edge
-  // out of it. And a target that joins paths -- an input port declaring
-  // `multiple` -- has more than one way in by construction, which is how a
-  // branch and the path it left rejoin (`./assemble-draft.ts`).
-  for (const branch of branches) {
-    const index = input.nodes.findIndex((node) => node.key === branch.sourceKey);
-    if (branch.targetKey !== input.nodes[index + 1]?.key) continue;
-    if (input.steps[index]?.routed || joins(branch.targetKey, input.definitionByKey)) continue;
-    const outputs = input.definitionByKey.get(branch.sourceKey)?.outputs ?? [];
-    if (!outputs.some((port) => !claimed.get(branch.sourceKey)!.has(port.id))) continue;
-    const line = input.steps[index]?.branches.find((written) => input.keyByLabel.get(written.target) === branch.targetKey)?.line ?? input.steps[index]?.line ?? 0;
-    input.issues.push(authoringError("flow_script.branch_to_next_step", `The branch at line ${line} goes to the step written next, which the step already falls into; a step takes one way in, so the run would stop after this step. To do different things in different situations the run can start in, give each situation a \`subflow <label>:\` block with a \`when:\` line.`, `flow.line.${line}`));
-  }
-  for (const branch of branches) {
-    const target = targetPort(branch.targetKey, input.definitionByKey, used, branch.targetPortId);
-    if (!target) continue;
-    edges.push(edge(`${input.keyPrefix}e${edges.length + 1}`, branch.sourceKey, branch.port.id, branch.targetKey, target));
-  }
-  for (const [index, node] of input.nodes.entries()) {
-    const next = input.nodes[index + 1];
-    if (!next) break;
-    // A step that wrote all its own edges does not also fall into the next one.
-    if (input.steps[index]?.routed) continue;
-    const definition = input.definitionByKey.get(node.key);
-    const source = definition?.outputs.find((port) => !claimed.get(node.key)!.has(port.id));
-    const target = targetPort(next.key, input.definitionByKey, used);
-    if (!source || !target) continue;
-    claimed.get(node.key)!.add(source.id);
-    edges.push(edge(`${input.keyPrefix}e${edges.length + 1}`, node.key, source.id, next.key, target));
-  }
-  return edges;
-}
-
-/** Whether a node declares a way in that several paths may arrive at. */
-function joins(key: string, definitions: ReadonlyMap<string, AutomationStudioNodeDefinition>): boolean {
-  return (definitions.get(key)?.inputs ?? []).some((port) => port.multiple === true);
-}
-
-/**
- * Which of a target's input ports an edge arrives at: the one asked for, or
- * the first still free.
- *
- * A named port is taken as written and still marked used, so two edges naming
- * the same single-connection port are caught by validation rather than
- * silently redirected to another port that happened to be free.
- *
- * A port that declares `role: "data"` is reached only by name. It carries a
- * value, not the path -- a loop's current row, say -- and an edge that fell
- * into it because the control input was already taken would hand the node
- * a success signal where it expects a row, and leave the node with no way in.
- */
-function targetPort(key: string, definitions: ReadonlyMap<string, AutomationStudioNodeDefinition>, used: Map<string, Set<string>>, asked?: string): string | undefined {
-  const inputs = definitions.get(key)?.inputs ?? [];
-  const taken = used.get(key) ?? new Set<string>();
-  const port = asked
-    ? inputs.find((candidate) => candidate.id === asked)
-    : inputs.find((candidate) => candidate.role !== "data" && (candidate.multiple === true || !taken.has(candidate.id)));
-  if (!port) return undefined;
-  taken.add(port.id);
-  used.set(key, taken);
-  return port.id;
-}
-
-function edge(key: string, sourceKey: string, sourcePort: string, targetKey: string, targetPortId: string): AutomationStudioFlowBootstrapEdge {
-  return {
-    key,
-    source: { nodeKey: sourceKey, portId: sourcePort },
-    target: { nodeKey: targetKey, portId: targetPortId }
-  };
 }
 
 function uniqueKeys(candidates: string[]): string[] {

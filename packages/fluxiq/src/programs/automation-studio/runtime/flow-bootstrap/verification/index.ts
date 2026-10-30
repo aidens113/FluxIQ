@@ -7,3 +7,5 @@ export * from "./candidate-graphs.ts";
 export * from "./detached-subflow.ts";
 export * from "./arrival-node.ts";
 export * from "./durable-session.ts";
+export * from "./from-node.ts";
+export * from "./detached-subflow-from.ts";

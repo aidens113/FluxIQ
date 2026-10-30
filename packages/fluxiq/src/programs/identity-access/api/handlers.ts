@@ -1,4 +1,5 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { endpointResource } from "../../_shared/iam/index.ts";
 import {
   IDENTITY_ACCESS_ENDPOINTS,
   type CreateIdentityUserRequest,
@@ -61,6 +62,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.snapshot,
     permission: "programs.read",
     classification: "read",
+    action: "iam:Snapshot",
+    accessLevel: "Read",
+    resource: endpointResource.workspace(),
     handler: async () => ({
       ok: true,
       payload: await service.snapshot()
@@ -71,6 +75,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.createUser,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:CreateUser",
+    accessLevel: "PermissionsManagement",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       const payload = request.payload as CreateIdentityUserRequest | undefined;
       if (!payload?.username || !payload.displayName || !payload.roleId) return { ok: false, error: "username, displayName, and roleId are required" };
@@ -88,6 +95,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.updateUser,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:UpdateUser",
+    accessLevel: "PermissionsManagement",
+    resource: endpointResource.user("id"),
     handler: async (request) => {
       const payload = request.payload as UpdateIdentityUserRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -108,6 +118,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.setPassword,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:SetPassword",
+    accessLevel: "Write",
+    resource: endpointResource.user("userId"),
     handler: async (request) => {
       const payload = request.payload as SetIdentitySecretRequest | undefined;
       if (!payload?.userId || !payload.value) return { ok: false, error: "userId and value are required" };
@@ -126,6 +139,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.setPin,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:SetPin",
+    accessLevel: "Write",
+    resource: endpointResource.user("userId"),
     handler: async (request) => {
       const payload = request.payload as SetIdentitySecretRequest | undefined;
       if (!payload?.userId || !payload.value) return { ok: false, error: "userId and value are required" };
@@ -144,6 +160,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.beginTotp,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:BeginTotp",
+    accessLevel: "Write",
+    resource: endpointResource.user("userId"),
     handler: async (request) => {
       const payload = request.payload as ({ userId?: string } & CredentialRecheck) | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -159,6 +178,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.confirmTotp,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:ConfirmTotp",
+    accessLevel: "Write",
+    resource: endpointResource.user("userId"),
     handler: async (request) => {
       const payload = request.payload as TotpConfirmRequest | undefined;
       if (!payload?.userId || !payload.code) return { ok: false, error: "userId and code are required" };
@@ -175,6 +197,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.disableTotp,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:DisableTotp",
+    accessLevel: "Write",
+    resource: endpointResource.user("userId"),
     handler: async (request) => {
       const payload = request.payload as ({ userId?: string } & CredentialRecheck) | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -188,6 +213,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.createSession,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:CreateSession",
+    accessLevel: "Write",
+    resource: endpointResource.user("userId"),
     handler: async (request) => {
       const payload = request.payload as SessionRequest | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -203,6 +231,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.revokeSession,
     permission: "identity.manage",
     classification: "authoring",
+    action: "iam:RevokeSession",
+    accessLevel: "Write",
+    resource: endpointResource.workspace(),
     handler: async (request) => {
       const payload = request.payload as RevokeSessionRequest | undefined;
       const sessionId = typeof payload?.sessionId === "string" && payload.sessionId ? payload.sessionId : undefined;
@@ -223,6 +254,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.unlockVault,
     permission: "identity.manage",
     classification: "program-gated",
+    action: "iam:UnlockVault",
+    accessLevel: "Write",
+    resource: endpointResource.user("userId"),
     handler: async (request) => {
       const payload = request.payload as VaultUnlockRequest | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -238,6 +272,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     endpoint: IDENTITY_ACCESS_ENDPOINTS.lockVault,
     permission: "identity.manage",
     classification: "authoring",
+    action: "iam:LockVault",
+    accessLevel: "Write",
+    resource: endpointResource.selfUser(),
     // No recheck: locking only takes access away, and a lock must never be the
     // step that fails when an operator is trying to shut the vault.
     handler: async () => ({ ok: true, payload: await service.lockVault() })

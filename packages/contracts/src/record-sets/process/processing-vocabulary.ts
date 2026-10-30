@@ -8,6 +8,11 @@
 // numbers, wrote `posted matches "(19|20|21) September 2026"`, which drops every
 // row dated 22 September or later. A bound written as a date (text) compares
 // the date the value states, and `as: "date"` says so.
+//
+// **And relative to the run (t800, K1).** A date bound may be written as
+// `today`, `yesterday`, `now` or `<n> <unit> ago`, and `within: "<n> <unit>"`
+// keeps the rows dated in the last `n` units up to the run's `now`
+// (`date-bound.ts`, `date-within.ts`).
 
 /** Bounds `parseAutomationStudioRecordProcessing` enforces. A declaration that exceeds them is refused, not trimmed. */
 export const AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS = Object.freeze({
@@ -34,6 +39,23 @@ export const AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS = Object.freeze(["atLeast
 /** The comparisons a condition may put on the text of its value. */
 export const AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS = Object.freeze(["matches", "contains", "startsWith", "endsWith"] as const);
 
+/**
+ * The units a `within` names (t800, K1): `{field, within: "7 days"}` keeps the
+ * rows whose value states a date from 7 days before the run's `now` up to it.
+ * Singular or plural, one whole number of one unit. Months and years are not
+ * units here: neither is one fixed length of time.
+ */
+export const AUTOMATION_STUDIO_RECORD_CONDITION_WITHIN_UNITS = Object.freeze(["minutes", "hours", "days", "weeks"] as const);
+
+/** Milliseconds in one of each `within` unit, by its singular. */
+export const AUTOMATION_STUDIO_RECORD_CONDITION_UNIT_MS = Object.freeze({ minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000 } as const);
+
+/**
+ * The words a date bound may be written in relative to the run's `now` (t800,
+ * K1), besides `<n> <unit> ago` in a `within` unit: `today` and `yesterday`
+ * name their whole day, `now` the instant (`date-bound.ts`).
+ */
+export const AUTOMATION_STUDIO_RECORD_CONDITION_RELATIVE_DAYS = Object.freeze(["today", "yesterday", "now"] as const);
 
 /** What a condition's bounds compare (t790): the number the value states, or the date; a bound written as text is always a date. */
 export const AUTOMATION_STUDIO_RECORD_CONDITION_TYPES = Object.freeze(["number", "date"] as const);

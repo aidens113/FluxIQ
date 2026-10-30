@@ -34,6 +34,7 @@ describe("global program web route", () => {
       kind: "identity.users",
       authSessionId: "trusted",
     });
+    expect(withProgramAuthSession("deployment-sync", { targetId: "a", authSessionId: "spoofed" }, "trusted")).toEqual({ targetId: "a", authSessionId: "trusted" });
     expect(withProgramAuthSession("secret-keys", { id: "secret:one", authSessionId: "spoofed" }, "trusted")).toEqual({
       id: "secret:one",
       authSessionId: "trusted",
@@ -130,6 +131,8 @@ describe("a paired client on the program route", () => {
       userId: "user:owner",
       roleId: "role:admin",
       permissions: ["programs.read", "programs.write", "runtime.control", "flows.write"],
+      // Under the service profile the registry narrows a paired client by these permissions too.
+      channel: "paired-client",
     });
     expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:viewer" }, directory)?.permissions).toEqual(["programs.read"]);
   });

@@ -11,9 +11,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const authorizeToken = vi.fn();
 const receiveTraceArtifact = vi.fn();
 
-vi.mock("../../../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({ programs: { clientGateway: { authorizeToken, receiveTraceArtifact } } }),
-}));
+const snapshot = vi.fn();
+
+// A real registry on the local profile decides the route, as live; the token acts as the person who approved it.
+vi.mock("../../../../../../lib/fluxiq", async () => {
+  const { GlobalProgramApiRegistry } = await import("fluxiq");
+  const api = new GlobalProgramApiRegistry();
+  return { getFluxIQ: () => ({ programs: { api, identityAccess: { snapshot }, clientGateway: { authorizeToken, receiveTraceArtifact } } }) };
+});
 
 import { PUT } from "../route";
 
@@ -42,7 +47,9 @@ function upload(input: { sha256?: string; token?: string | null; mediaType?: str
 beforeEach(() => {
   authorizeToken.mockReset();
   receiveTraceArtifact.mockReset();
-  authorizeToken.mockResolvedValue({ sessionId: "gateway-session-1", clientId: "client-1", metadata: { domainId: "web-automation" } });
+  snapshot.mockReset();
+  snapshot.mockResolvedValue({ users: [{ id: "user:owner", roleId: "role:viewer", enabled: true }], roles: [{ id: "role:viewer", permissions: ["programs.read"] }] });
+  authorizeToken.mockResolvedValue({ sessionId: "gateway-session-1", clientId: "client-1", trustedClientId: "trusted-1", operatorUserId: "user:owner", metadata: { domainId: "web-automation" } });
   receiveTraceArtifact.mockImplementation((_sessionId: string, artifact: { sha256: string; bytes: Uint8Array }) =>
     createHash("sha256").update(artifact.bytes).digest("hex") === artifact.sha256 ? { status: "accepted", traces: 2 } : { status: "refused", reason: "digest_mismatch" },
   );

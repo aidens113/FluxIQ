@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireFluxIQUser } from "../../../../lib/auth";
 import { getFluxIQ, getFluxIQWebRuntimeStatus } from "../../../../lib/fluxiq";
+import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor, panelRouteActor } from "../../../../lib/app-route-iam";
+
+const ROUTE = appRouteIamContract("GET", "/api/client-gateway/snapshot");
 
 export async function GET(request: NextRequest) {
   const fluxiq = getFluxIQ();
@@ -9,6 +12,10 @@ export async function GET(request: NextRequest) {
   if (bearerToken) {
     const clientSession = await fluxiq.programs.clientGateway.authorizeToken(bearerToken);
     if (!clientSession) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+    const actor = await pairedClientRouteActor(fluxiq.programs.identityAccess, clientSession);
+    if (!actor) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+    const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "paired-client", actor);
+    if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
     return NextResponse.json({
       ok: true,
       payload: {
@@ -20,6 +27,8 @@ export async function GET(request: NextRequest) {
 
   const auth = await requireFluxIQUser();
   if (!auth) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+  const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "panel", panelRouteActor(auth));
+  if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
   return NextResponse.json({
     ok: true,
     payload: {

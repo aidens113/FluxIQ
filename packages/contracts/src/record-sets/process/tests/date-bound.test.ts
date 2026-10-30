@@ -23,8 +23,9 @@ describe("a date bound as written", () => {
     expect(readAutomationStudioRecordConditionDateBound("2026-09-19 18:30")).toEqual({ at: Date.UTC(2026, 8, 19, 18, 30), wholeDay: false });
   });
 
-  it("names none where it is relative, has no year, or reads either way", () => {
-    for (const written of ["Sep 19", "3 days ago", "today", "yesterday", "02/03/2026", "next week", "2026"]) {
+  // Since t800 (K1) "3 days ago", "today" and "yesterday" are bounds read against the run's now (`condition-date.test.ts`).
+  it("names none where it has no year, reads either way, or is relative in no word a bound takes", () => {
+    for (const written of ["Sep 19", "02/03/2026", "next week", "2026", "tomorrow", "3 months ago"]) {
       expect(readAutomationStudioRecordConditionDateBound(written), written).toBeUndefined();
     }
   });
@@ -89,7 +90,7 @@ describe("parsing a date bound", () => {
     for (const refused of [
       { field: "starts", atLeast: "Sep 19", as: "date" },
       { field: "starts", atLeast: "02/03/2026", as: "date" },
-      { field: "starts", atLeast: "3 days ago" },
+      { field: "starts", atLeast: "3 months ago" },
       { field: "starts", atLeast: "2026-09-19", atMost: 30 },
       { field: "starts", atLeast: 4, as: "date" },
       { field: "starts", atLeast: "2026-09-19", as: "number" },

@@ -156,7 +156,7 @@ describe("shape E: the trial's own act, and the retest after a settling look (of
   it("a trial act repeating an explored act shares its named list, and Core's look settles it with no model work", async () => {
     const ledger = boxed();
     explored(ledger);
-    // The explored act settled unchanged, so it is never returned as left (t772 w7, `../leftover.ts`); the trial's own is new.
+    // The explored act settled unchanged, so it is never returned as left (t772 w7, `../../reset-ledger/leftover.ts`); the trial's own is new.
     expect(ledger.trialRan([trialStep("demo.press")], "trial.1").map((act) => act.act)).toEqual(["act-2"]);
     const { looked, checks } = looking(ledger, { "loc:box": boxPage() });
     expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2", did: `trial step 5 "start the draft" on "Start a draft" (${WORDS.leftUnchanged()})` }] } });

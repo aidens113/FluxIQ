@@ -861,19 +861,14 @@ They require the caller's `flows.write` permission and are `authoring`.
 
 ### Declared gaps
 
-These destructive operations check no credential at all. They are recorded
-rather than gated, because no operator auth session reaches them:
-`withProgramAuthSession` (`apps/web/src/lib/program-route.ts`) stamps the
-trusted session id onto payloads for `automation-studio`, `identity-access`,
-`database-manager`, and `secret-keys` only, so a PIN could not be supplied to
-the others even if the registry demanded one.
-
-- `database-manager/run-migration` — runs or reverses a storage migration.
-  Its neighbours `put-record` and `delete-record` are `program-gated`, but only
-  the two sensitive stores (`identity.users`, `secret.keys`) actually trigger
-  that gate; every other store is writable on `data.manage` alone.
-- `deployment-sync/sync` and `deployment-sync/rollback` — perform and reverse a
-  deployment.
+None of the program endpoints is `destructive-ungated` any more (t809).
+`database-manager/run-migration` (runs or reverses a storage migration) and
+`deployment-sync/sync` and `deployment-sync/rollback` (perform and reverse a
+deployment) are `destructive`: the registry asks for the operator's session PIN.
+A caller must send `authorizationPin`, and the web route must stamp
+`authSessionId`: `withProgramAuthSession` (`apps/web/src/lib/program-route.ts`)
+stamps it for `automation-studio`, `identity-access`, `database-manager`, and
+`secret-keys`, and must also list `deployment-sync`.
 
 Seven write paths sit outside the program API entirely and are therefore
 outside `registry.call()`, so no classification covers them. They need a gate of

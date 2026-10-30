@@ -42,6 +42,7 @@ import { readAuthoringConsequences } from "./consequences.ts";
 import { authoringError } from "./issue.ts";
 import { authoringKey, authoringSymbol } from "./keys.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter } from "./matching.ts";
+import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
 import {
   AUTOMATION_STUDIO_AUTHORING_PLAN_SHAPES,
@@ -63,6 +64,8 @@ export function normaliseAutomationStudioFlowBootstrapJsonPlan(input: {
   summary: string;
   /** The columns the instruction names, declared on an extraction whose author declared none (`./normalise.ts`). */
   namedColumns?: readonly string[] | undefined;
+  /** Which plan part a step serves (`./part/answer.ts`). */
+  partOf?: AuthoringPartOfStep | undefined;
 }): { plan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const read = readAuthoringPlanSubflows(input.value);
@@ -75,7 +78,7 @@ export function normaliseAutomationStudioFlowBootstrapJsonPlan(input: {
   const subflows: AutomationStudioFlowBootstrapSubflow[] = [];
   for (const [index, subflow] of read.subflows.entries()) {
     const path = `plan.subflows.${index}`;
-    const built = buildSubflow({ written: subflow.written, definitions, key: keys[index]!, index, path, namedColumns: input.namedColumns });
+    const built = buildSubflow({ written: subflow.written, definitions, key: keys[index]!, index, path, namedColumns: input.namedColumns, partOf: input.partOf });
     issues.push(...built.issues);
     if (built.subflow) subflows.push(built.subflow);
   }
@@ -116,6 +119,7 @@ function buildSubflow(input: {
   index: number;
   path: string;
   namedColumns: readonly string[] | undefined;
+  partOf: AuthoringPartOfStep | undefined;
 }): { subflow?: AutomationStudioFlowBootstrapSubflow; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const writtenNodes = authoringNodeList(input.written) ?? [];
@@ -155,7 +159,8 @@ function buildSubflow(input: {
       // The same on every reading of the same plan, as `./assemble.ts` gives a
       // script's step, so two reads under one name never share a dataset.
       stepId: `${input.key}-${key}`,
-      namedColumns: input.namedColumns
+      namedColumns: input.namedColumns,
+      partOf: input.partOf
     });
     issues.push(...normalised.issues);
     const outputActionId = typeof value.outputActionId === "string" && value.outputActionId

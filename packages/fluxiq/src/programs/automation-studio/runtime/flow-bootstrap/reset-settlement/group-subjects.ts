@@ -11,7 +11,7 @@
 // two acts whose rows were gone were still named to undo). Its undo's admission
 // proves which row is its own there: a subject that list, named for the act and
 // read complete before it, did not hold, and holds after it
-// (`../site-reset/undo-admission.ts`, destination removal, t743). That row is
+// (`../reset-undo/admission.ts`, destination removal, t743). That row is
 // the act's own on that group, for the act's witness and for the acts a
 // difference there may be put down to (`./judge.ts`, `othersOn`), and on no
 // other group. Pure.

@@ -126,7 +126,7 @@ describe("a lasting press whose effect shows only as a value its page shows (t77
   });
 });
 
-// t772 w7: what the ledger reports as left of a value act is what its settlement answered (`../../site-reset/leftover.ts`).
+// t772 w7: what the ledger reports as left of a value act is what its settlement answered (`../../reset-ledger/leftover.ts`).
 describe("what the ledger reports as left of a value act (t772 w7)", () => {
   it("never reports a value act whose start value a fresh read shows back as left", () => {
     const ledger = saved();

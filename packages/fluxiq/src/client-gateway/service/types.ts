@@ -27,6 +27,19 @@ export type ClientGatewayServiceOptions = {
    */
   reconcileAnswerMs?: number;
   trustedClientTtlMs?: number;
+  /**
+   * Caps on pairing challenges still waiting for approval
+   * (`./security/pairing-limits.ts`): `total` 1,000 and `perAddress` off by
+   * default. The transport may replace them at start through
+   * `setPairingLimits`.
+   */
+  pairingLimits?: Partial<import("./security/index.ts").ClientGatewayPairingLimits>;
+  /** How many ended sessions are kept before the oldest-disconnected is dropped (`./sessions.ts`). 1,000. */
+  endedSessionLimit?: number;
+  /** How long an ended session is kept; `null` keeps it while `endedSessionLimit` allows. Default `null`. */
+  endedSessionMaxAgeMs?: number | null;
+  /** How many audit entries the ring keeps before the oldest is overwritten (`./audit-log.ts`). 10,000. */
+  auditLimit?: number;
   trustedClientStore?: ClientGatewayTrustedClientStore;
   createToken?: () => string;
   now?: () => number;
@@ -104,6 +117,8 @@ export type InternalSession = ClientGatewaySession & {
   pendingPairingCode?: string;
   /** The channel scope this session was attached under (`./channel-scope/`); absent for a live session. */
   channelScope?: string;
+  /** Where the transport says the connection came from; never public, audited as its prefix only. */
+  peer?: import("./security/index.ts").ClientGatewayPeer;
 };
 
 /** An action command dispatched to a client and still awaiting its result. */

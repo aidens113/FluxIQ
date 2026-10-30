@@ -87,6 +87,7 @@
 // last pass's, so a stale value from an earlier row is never sent.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AuthoringPartOfStep } from "../../flow-bootstrap/authoring/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import {
@@ -336,7 +337,8 @@ export function automationStudioFlowDraftReplayPassCall(
   row?: { item: JsonObject; takesRow: boolean },
   node?: AutomationStudioFlowDraftReplayNode,
   earlier?: Record<string, JsonValue>,
-  definition?: AutomationStudioNodeDefinition
+  definition?: AutomationStudioNodeDefinition,
+  partOf?: AuthoringPartOfStep
 ): { value: JsonObject } | { unresolved: string[] } | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   if (step.scheduledCandidate !== undefined && (!scheduled || !node?.outputAction?.fixed)) return undefined;
@@ -348,7 +350,7 @@ export function automationStudioFlowDraftReplayPassCall(
     pass.parameters = resolved.values;
   }
   if (row?.takesRow) pass.item = row.item;
-  const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step, pass, definition) : automationStudioNodeReplayStepCall(step, pass, definition);
+  const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step, pass, definition, partOf) : automationStudioNodeReplayStepCall(step, pass, definition, partOf);
   if (!value) return undefined;
   if (pass.item !== undefined) delete value.produced;
   return { value };
@@ -361,6 +363,8 @@ export type AutomationStudioFlowDraftReplaySpanRunInput = {
   nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
   /** Each member's full node definition, so a pass's read carries its assembled record output. */
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
+  /** Which plan part each member serves, so the test writes the record output the saved Flow has (`../../flow-bootstrap/record-defaults/`). */
+  partOf?: AuthoringPartOfStep | undefined;
   modeOf(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftReplayMode;
   callIdOf(step: AutomationStudioFlowDraftStep): string;
   send(callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject): Promise<AutomationStudioFlowDraftReplayAnswer>;
@@ -419,7 +423,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       const mode = input.modeOf(member);
       const node = input.nodeOf?.(member.actionId);
       const earlier = { ...(input.earlier ?? {}), ...automationStudioFlowDraftStepOutputsState(produced) };
-      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId));
+      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId), input.partOf);
       let answered: AutomationStudioFlowDraftReplayPass;
       if (built && "unresolved" in built) answered = { pass, status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE };
       else {

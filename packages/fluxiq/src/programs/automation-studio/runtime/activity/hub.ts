@@ -32,9 +32,19 @@ export class AutomationStudioActivityHub {
     return event;
   }
 
+  /**
+   * Adds a subscriber; the returned function removes it. A subscriber left
+   * behind keeps its owner reachable from this process-wide hub, so an owner
+   * that closes removes it (a FluxIQ instance's runtime does, t808).
+   */
   subscribe(listener: AutomationStudioActivityListener): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
+  }
+
+  /** How many subscribers are attached; the instance leak test checks that a closed runtime left none. */
+  subscriberCount(): number {
+    return this.listeners.size;
   }
 
   snapshot(projectId: string): AutomationStudioActivitySnapshot {

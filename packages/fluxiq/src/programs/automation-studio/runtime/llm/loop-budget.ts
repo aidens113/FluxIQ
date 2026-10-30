@@ -141,7 +141,7 @@ export const CANDIDATE_FINISHING_TOOL_IDS: ReadonlySet<string> = automationStudi
 /** The run tool and the key its undo names an act under, as plain strings so this module reaches into neither `./node-tools/` nor `../flow-bootstrap/site-reset/`. */
 const RUN_NODE_TOOL_ID = "core.run_node";
 const UNDOES_KEY = "undoes";
-/** The act ids `../flow-bootstrap/site-reset/undoes-tool.ts` accepts under `undoes`. */
+/** The act ids `../flow-bootstrap/reset-undo/undoes-tool.ts` accepts under `undoes`. */
 const ACT_ID = /^act-[1-9][0-9]{0,3}$/u;
 
 /** Whether a call undoes one of the build's own acts: a run naming an act id under `undoes` (header, t741). */

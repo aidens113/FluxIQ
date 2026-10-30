@@ -30,6 +30,12 @@ export type AutomationStudioSubflowScopePart = {
    * (`candidate.trial_starts_in_end_state`). Absent, the part is judged from the run alone.
    */
   effect?: AutomationStudioTrialPartEffect;
+  /**
+   * The records the task spec says this part hands back (K5, t800), when the dispatcher carries them: a step of this
+   * brief whose record output leaves its schema, label or columns out gets them from here
+   * (`../record-defaults/scope-part-of.ts`). Absent, the builder declares them, as before.
+   */
+  answer?: { columns: readonly string[] };
 };
 
 /**
@@ -144,7 +150,54 @@ export type AutomationStudioSubflowTrialResult = {
    * says and keeps it as it does its own kept answer.
    */
   checkedAgainst?: "recorded_run";
+  /**
+   * The plan key of the proposal's own step the trial stopped at, where it
+   * stopped at one of them (t804): the step a failed test is repaired on, and
+   * the step a from-step run must pass before the part is tested whole again.
+   * Absent where the run ended, or stopped before or outside the proposal.
+   */
+  stoppedAtKey?: string;
 };
+
+/**
+ * A from-step run (t804, the rule "build the whole Flow first; test it whole
+ * only when it should work"): the proposal's subflow run from the step `fromKey`
+ * names, on the page as it stands, with no start hook, site reset, arrival or
+ * earlier subflows, and no judge. It checks a repair; it is never the part's
+ * test and never satisfies a gate.
+ */
+export type AutomationStudioSubflowFromStepRequest = {
+  scope: AutomationStudioSubflowScope;
+  proposal: Readonly<AutomationStudioSubflowProposal>;
+  /** The plan key of the proposal's step the run starts at. */
+  fromKey: string;
+  signal: AbortSignal;
+};
+
+/** What a from-step run did. `fromStep: true` keeps it apart from a trial result by type. */
+export type AutomationStudioSubflowFromStepResult = {
+  fromStep: true;
+  identity: AutomationStudioSubflowScopeIdentity;
+  revision: number;
+  digest: string;
+  fromKey: string;
+  /** `ended`: it ran to the part's end; `stopped`: a step failed; `not_run`: it did not start (see `code`). */
+  status: "ended" | "stopped" | "not_run";
+  /** The plan keys of the proposal's steps that completed, in run order. */
+  passedKeys: readonly string[];
+  /** The plan key of the step it stopped at, where `status` is `stopped`. */
+  stoppedAtKey?: string;
+  /** Why it did not start or where it stopped, when it did not end. */
+  code?: string;
+  /** Bounded JSON for the model: the steps it ran and the stop. */
+  feedback: JsonObject;
+  trialRunId?: string;
+  /** Lasting acts that landed, each with where its step sat and what it made. */
+  acts?: Array<AutomationStudioCandidateTrialAct & AutomationStudioSiteResetTrialActPlace>;
+};
+
+/** Runs one from-step run; injected beside the trial port by the service that owns execution. */
+export type AutomationStudioSubflowFromStepPort = (request: AutomationStudioSubflowFromStepRequest) => Promise<AutomationStudioSubflowFromStepResult>;
 
 /**
  * Runs one partial trial; injected by the service that owns execution and
@@ -162,4 +215,6 @@ export type AutomationStudioSubflowTrialPort = ((request: AutomationStudioSubflo
    * anything else runs live in the same call. Absent, every trial is live.
    */
   readonly offlineFirst?: AutomationStudioTrialOfflineFirst<AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult> | undefined;
+  /** Runs the latest proposal from one of its steps on the page as it stands (t804). Absent, a builder cannot run from a step, and the gate's from-step-first rule does not apply. */
+  readonly fromStep?: AutomationStudioSubflowFromStepPort | undefined;
 };

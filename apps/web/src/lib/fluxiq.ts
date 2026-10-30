@@ -3,7 +3,14 @@ import { FluxIQ } from "fluxiq";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseAllowedOrigins, type ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
+import { resolveFluxIQDeploymentSettings, type FluxIQDeploymentSettings } from "fluxiq/platform/profile";
+import type { ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
+import { drainGateway, drainState } from "../server/drain";
+import { createLogger, type Logger } from "../server/log";
+import { evaluateReadiness, type Readiness } from "../server/readiness";
+import { attachGatewayAuditPersistence } from "../server/security-audit";
+import { announceOwnerClaim } from "../server/startup";
+import type { ProvisioningListenerHandle } from "../server/provisioning-listener";
 import { resolveAutomationStudioContext, resolveClientRecordingProject, setAutomationStudioContext, type AutomationStudioWebContext } from "./automation-studio-context";
 import { resolveFluxIQModelProvidersEnabled } from "./model-provider-admission";
 
@@ -17,6 +24,13 @@ type FluxIQWebGlobal = typeof globalThis & {
     instance: FluxIQ;
     hostModulePath: string | null;
     clientGatewayServer: ClientGatewayWebSocketServerHandle | null;
+    /** Set once storage is ready; the readiness probe reads it. */
+    initialized?: boolean;
+    provisioningListener?: ProvisioningListenerHandle | null;
+    provisioningListenerStart?: Promise<void> | null;
+    /** The instance whose gateway security events are persisted, and how to stop that. */
+    auditedInstance?: FluxIQ | null;
+    auditDetach?: (() => void) | null;
     runtimeId: string;
     automationStudioContexts: Record<string, AutomationStudioWebContext>;
     initializationPromise?: Promise<void> | null;
@@ -27,32 +41,57 @@ type FluxIQWebGlobal = typeof globalThis & {
 
 export function getFluxIQ(): FluxIQ {
   const state = getWebRuntimeState();
-  startSharedClientGateway(state);
+  startSharedRuntimeServices(state);
   return state.instance;
 }
 
 export async function initializeFluxIQWebRuntime(): Promise<FluxIQ> {
-  if (process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false") await gatewayServerRuntime.load();
+  const settings = resolveFluxIQDeploymentSettings(process.env);
+  if (settings.gateway.enabled) await gatewayServerRuntime.load();
   await loadFluxIQHostModule();
   const state = getWebRuntimeState();
   await initializeFluxIQWebRuntimeState(state);
-  startSharedClientGateway(state);
+  startSharedRuntimeServices(state);
+  const logger = createLogger({ format: settings.logFormat });
+  await announceOwnerClaim({
+    profile: settings.profile,
+    publicOrigin: settings.publicOrigin,
+    logger,
+    prepare: async () => {
+      const { prepareOwnerClaim } = await import("../server/owner-claim");
+      return prepareOwnerClaim({ settings, fluxiqDir: state.instance.paths.fluxiq });
+    }
+  });
+  await startSharedProvisioningListener(state, settings, logger);
   return state.instance;
+}
+
+/** Whether the readiness probe may answer 200; reads the runtime without creating one. */
+export function getFluxIQWebReadiness(): Readiness {
+  const state = (globalThis as FluxIQWebGlobal).__fluxiqWebRuntime;
+  const settings = resolveFluxIQDeploymentSettings(process.env);
+  return evaluateReadiness({
+    initialized: state?.initialized === true,
+    draining: drainState.isDraining(),
+    gatewayEnabled: settings.gateway.enabled,
+    gatewayListening: state?.clientGatewayServer?.status.listening === true
+  });
 }
 
 export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   const state = getWebRuntimeState();
+  const settings = resolveFluxIQDeploymentSettings(process.env);
   const context = operatorUserId ? resolveAutomationStudioContext(state.automationStudioContexts, operatorUserId) : undefined;
   const nativeRuntime = state.instance.programs.automationStudio.nativeRuntimeSummary(state.instance.activeDomainId);
   const { llmEvidenceRuntime } = state.instance.programs.automationStudio.getFlowBootstrapGenerationRuntimeReadiness();
   const reusableLlmContext = state.instance.programs.automationStudio.reusableLlmContextStatus();
   return {
     runtimeId: state.runtimeId,
-    hostRoot: state.instance.paths.root,
-    fluxiqDir: state.instance.paths.fluxiq,
+    // Host paths are not shown to a hosted service's callers.
+    ...(settings.profile === "service" ? {} : { hostRoot: state.instance.paths.root, fluxiqDir: state.instance.paths.fluxiq }),
     hostModulePath: state.hostModulePath,
     hostModuleLoaded: Boolean(state.hostModulePath),
-    clientGatewayPublicUrl: state.clientGatewayServer?.publicUrl ?? process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ?? null,
+    clientGatewayPublicUrl: settings.gateway.publicUrl,
     clientGatewayStarted: Boolean(state.clientGatewayServer),
     clientGatewayListening: state.clientGatewayServer?.status.listening ?? false,
     clientGatewayError: state.clientGatewayServer?.status.error ?? null,
@@ -92,13 +131,14 @@ export async function reloadFluxIQWebInstance(): Promise<FluxIQ> {
   await initializeFluxIQWebRuntimeState(state);
   state.closePromise = null;
   state.automationStudioContexts = {};
-  startSharedClientGateway(state);
+  startSharedRuntimeServices(state);
   return state.instance;
 }
 
 async function initializeFluxIQWebRuntimeState(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): Promise<void> {
   state.initializationPromise ??= initializeFluxIQWebStorage(state.instance);
   await state.initializationPromise;
+  state.initialized = true;
 }
 
 async function initializeFluxIQWebStorage(fluxiq: FluxIQ): Promise<void> {
@@ -118,6 +158,20 @@ export async function closeFluxIQWebRuntime(): Promise<void> {
   const state = globalState.__fluxiqWebRuntime;
   if (!state) return;
   state.closePromise ??= (async () => {
+    // The private listener first: nothing may provision while the rest shuts down.
+    const provisioningStart = state.provisioningListenerStart ?? null;
+    state.provisioningListenerStart = null;
+    try {
+      await provisioningStart;
+    } catch {
+      /* best-effort: a listener that failed to start has nothing to close */
+    }
+    const provisioningListener = state.provisioningListener ?? null;
+    state.provisioningListener = null;
+    if (provisioningListener) await provisioningListener.close();
+    state.auditDetach?.();
+    state.auditDetach = null;
+    state.auditedInstance = null;
     const gateway = state.clientGatewayServer;
     state.clientGatewayServer = null;
     try {
@@ -252,20 +306,59 @@ function explicitFluxIQDomainId(): string | null {
   return (process.env.FLUXIQ_DOMAIN_ID || process.env.FLUXIQ_HOST_DOMAIN || "").trim() || null;
 }
 
-function startSharedClientGateway(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): void {
-  if (state.clientGatewayServer || process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED === "false") return;
-  const host = process.env.FLUXIQ_CLIENT_GATEWAY_HOST || "127.0.0.1";
-  const port = Number(process.env.FLUXIQ_CLIENT_GATEWAY_PORT || 4777);
-  const gatewayPath = process.env.FLUXIQ_CLIENT_GATEWAY_PATH || "/client";
-  const publicHost = host === "0.0.0.0" ? "127.0.0.1" : host;
-  process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ??= `ws://${publicHost}:${port}${gatewayPath.startsWith("/") ? gatewayPath : `/${gatewayPath}`}`;
-  const allowedOrigins = parseAllowedOrigins(process.env.FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS);
+type WebRuntimeState = NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>;
+
+function startSharedRuntimeServices(state: WebRuntimeState): void {
+  const settings = resolveFluxIQDeploymentSettings(process.env);
+  const logger = createLogger({ format: settings.logFormat });
+  startSharedClientGateway(state, settings, logger);
+  persistGatewaySecurityEvents(state, settings, logger);
+}
+
+function startSharedClientGateway(state: WebRuntimeState, settings: FluxIQDeploymentSettings, logger: Logger): void {
+  if (state.clientGatewayServer || !settings.gateway.enabled) return;
+  const { gateway } = settings;
+  process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ??= gateway.publicUrl; // programs/_shared/runtime.ts still reads it.
   const { startClientGatewayWebSocketServer } = gatewayServerRuntime.read();
   state.instance.programs.clientGateway.bindTransportBuildIdentity(); // Legacy replacement clears active provenance, never its anchor.
-  state.clientGatewayServer = startClientGatewayWebSocketServer(allowedOrigins
-    ? { gateway: state.instance.programs.clientGateway, host, port, path: gatewayPath, allowedOrigins }
-    : { gateway: state.instance.programs.clientGateway, host, port, path: gatewayPath });
-  console.info(`[FluxIQ] Client gateway WebSocket bound to shared runtime ${state.runtimeId} at ${state.clientGatewayServer.publicUrl}`);
+  state.clientGatewayServer = startClientGatewayWebSocketServer({
+    gateway: state.instance.programs.clientGateway,
+    host: gateway.host,
+    port: gateway.port,
+    path: gateway.path,
+    publicUrl: gateway.publicUrl,
+    profile: settings.profile,
+    trustProxy: settings.trustProxy,
+    limits: gateway.limits,
+    ...(gateway.allowedOrigins ? { allowedOrigins: gateway.allowedOrigins } : {})
+  });
+  logger.info(`[FluxIQ] Client gateway WebSocket bound to shared runtime ${state.runtimeId} at ${state.clientGatewayServer.publicUrl}`);
+}
+
+/** Outside the local profile, gateway security events outlive the in-memory audit ring. */
+function persistGatewaySecurityEvents(state: WebRuntimeState, settings: FluxIQDeploymentSettings, logger: Logger): void {
+  if (settings.profile === "local" || state.auditedInstance === state.instance) return;
+  const gateway = state.instance.programs.clientGateway;
+  state.auditDetach?.();
+  state.auditedInstance = state.instance;
+  state.auditDetach = attachGatewayAuditPersistence(gateway, {
+    fluxiqDir: state.instance.paths.fluxiq,
+    onWriteError: (reason) => logger.warn("[FluxIQ] The gateway security audit could not be written.", { reason })
+  });
+}
+
+/** The private listener runs on the service profile only; the barrel is imported late because it imports this module. */
+async function startSharedProvisioningListener(state: WebRuntimeState, settings: FluxIQDeploymentSettings, logger: Logger): Promise<void> {
+  if (settings.profile !== "service") return;
+  state.provisioningListenerStart ??= (async () => {
+    const { getPlatformServices, startProvisioningListenerForProfile } = await import("../server/provisioning-listener");
+    state.provisioningListener = await startProvisioningListenerForProfile(settings, process.env, getPlatformServices, (line) => logger.info(line));
+    if (state.provisioningListener) logger.info(`[FluxIQ] Provisioning listener on ${state.provisioningListener.address.host}:${state.provisioningListener.address.port}`);
+  })().catch((error: unknown) => {
+    state.provisioningListenerStart = null;
+    throw error;
+  });
+  await state.provisioningListenerStart;
 }
 
 function registerFluxIQWebShutdownHooks(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): void {
@@ -274,7 +367,16 @@ function registerFluxIQWebShutdownHooks(state: NonNullable<FluxIQWebGlobal["__fl
     void closeFluxIQWebRuntime().finally(() => process.exit(exitCode));
   };
   const sigint = () => shutdown(130);
-  const sigterm = () => shutdown(143);
+  const sigterm = () => {
+    const drainSeconds = resolveDrainSeconds();
+    if (drainSeconds <= 0) return shutdown(143);
+    const logger = createLogger({ format: resolveFluxIQDeploymentSettings(process.env).logFormat });
+    logger.info(`[FluxIQ] Draining for up to ${drainSeconds} s before shutdown`);
+    void drainGateway({ gateway: state.clientGatewayServer, drainSeconds })
+      .then((drained) => logger.info(drained ? "[FluxIQ] Drain finished: no connections left" : "[FluxIQ] Drain time is up: closing with connections open"))
+      .catch((error: unknown) => logger.warn("[FluxIQ] The drain failed; closing now", { reason: error instanceof Error ? error.name : "unknown" }))
+      .finally(() => shutdown(143));
+  };
   state.shutdownHandlers = { sigint, sigterm };
   process.once("SIGINT", sigint);
   process.once("SIGTERM", sigterm);
@@ -318,4 +420,13 @@ function isFluxIQSourceCheckout(root: string): boolean {
   return existsSync(path.join(root, "pnpm-workspace.yaml"))
     && existsSync(path.join(root, "packages", "fluxiq", "src", "framework", "index.ts"))
     && existsSync(path.join(root, "apps", "web", "package.json"));
+}
+
+/** A bad deployment setting must not block a shutdown, so it falls back to closing at once. */
+function resolveDrainSeconds(): number {
+  try {
+    return resolveFluxIQDeploymentSettings(process.env).drainSeconds;
+  } catch {
+    return 0;
+  }
 }

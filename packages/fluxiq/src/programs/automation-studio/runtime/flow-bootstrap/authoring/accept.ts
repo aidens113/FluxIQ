@@ -16,6 +16,7 @@ import { assembleAutomationStudioFlowScriptPlan } from "./assemble.ts";
 import type { AutomationStudioFlowBootstrapAcceptance } from "./contracts.ts";
 import { normaliseAutomationStudioFlowBootstrapJsonPlan } from "./json-plan.ts";
 import { authoringKey } from "./keys.ts";
+import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { parseAutomationStudioFlowScript } from "./parse.ts";
 import { automationStudioFlowBootstrapPlanLocator } from "./plan-locator.ts";
 import { isJsonObject } from "./values.ts";
@@ -35,6 +36,8 @@ export function acceptAutomationStudioFlowBootstrapResult(input: {
    * declared none (`./instruction-record-columns.ts`); absent, nothing is.
    */
   instructionText?: string | undefined;
+  /** Which plan part a step serves (`./part/answer.ts`); a record output the model left parts out of is derived from it. */
+  partOf?: AuthoringPartOfStep | undefined;
 }): AutomationStudioFlowBootstrapAcceptance {
   const namedColumns = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
   const script = scriptText(input.result);
@@ -42,7 +45,7 @@ export function acceptAutomationStudioFlowBootstrapResult(input: {
   if (script !== undefined) {
     const read = parseAutomationStudioFlowScript(script);
     const summary = boundedSummary(stated ?? read.script.summary ?? read.script.blocks[0]?.steps[0]?.description);
-    const assembled = assembleAutomationStudioFlowScriptPlan({ script: read.script, registry: input.registry, resolution: input.resolution, summary, namedColumns });
+    const assembled = assembleAutomationStudioFlowScriptPlan({ script: read.script, registry: input.registry, resolution: input.resolution, summary, namedColumns, partOf: input.partOf });
     const issues = [...read.issues, ...assembled.issues];
     // Where each refusal from here on is in the script (`./script-locator.ts`).
     const located = assembled.locator ? { locator: assembled.locator } : {};
@@ -51,7 +54,7 @@ export function acceptAutomationStudioFlowBootstrapResult(input: {
   }
   const written = planValue(input.result);
   const summary = boundedSummary(stated);
-  const normalised = normaliseAutomationStudioFlowBootstrapJsonPlan({ value: written, registry: input.registry, resolution: input.resolution, summary, namedColumns });
+  const normalised = normaliseAutomationStudioFlowBootstrapJsonPlan({ value: written, registry: input.registry, resolution: input.resolution, summary, namedColumns, partOf: input.partOf });
   // A JSON plan has no lines: a refusal names the node by its name and key (`./plan-locator.ts`).
   return normalised.plan
     ? { ok: true, summary, plan: normalised.plan, issues: normalised.issues, locator: automationStudioFlowBootstrapPlanLocator(normalised.plan, written) }

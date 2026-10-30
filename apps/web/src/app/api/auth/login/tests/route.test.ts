@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
@@ -30,10 +30,10 @@ vi.mock("../../../../../lib/fluxiq", () => ({
 import { loginTotpError } from "../route";
 
 // The route's bounds: failed logins per username, per trusted client address,
-// and across the whole panel.
+// and a count of the whole panel that only warns.
 const USERNAME_MAX_ATTEMPTS = 5;
 const ADDRESS_MAX_ATTEMPTS = 20;
-const PANEL_MAX_ATTEMPTS = 100;
+const PANEL_WARN_ATTEMPTS = 100;
 // The whole-panel failures a case drives through the route, after seeding the rest.
 const DRIVEN_PANEL_FAILURES = 5;
 const GUESSED_PASSWORD = "dummy-password-guess";
@@ -72,6 +72,8 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
     vi.resetModules();
     ({ POST } = await import("../route"));
     delete process.env.FLUXIQ_TRUST_PROXY;
+    delete process.env.FLUXIQ_PROFILE;
+    delete process.env.FLUXIQ_PUBLIC_ORIGIN;
     fixture.authenticate.mockReset();
     fixture.revokeSession.mockReset();
     fixture.unlockSession.mockReset();
@@ -79,6 +81,8 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
   });
 
   afterEach(() => {
+    delete process.env.FLUXIQ_PROFILE;
+    delete process.env.FLUXIQ_PUBLIC_ORIGIN;
     if (trustProxy === undefined) delete process.env.FLUXIQ_TRUST_PROXY;
     else process.env.FLUXIQ_TRUST_PROXY = trustProxy;
   });
@@ -148,26 +152,49 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
   it.each([
     { name: "a trusted proxy, each failure from its own address", trust: true },
     { name: "no trusted proxy", trust: false },
-  ])("trips the whole-panel bound at 100 failures ($name)", async ({ trust }) => {
+  ])("never locks the panel out after 100 failures ($name), and warns once", async ({ trust }) => {
     const login = caseLogin();
     if (trust) process.env.FLUXIQ_TRUST_PROXY = "true";
     fixture.authenticate.mockRejectedValue(new Error("Invalid username or credentials"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    onTestFinished(() => warn.mockRestore());
 
     // The panel has already counted all but the last few failures; the rest come
-    // through the route, each from its own address and username. Were the seed
-    // not read, every one of them would answer 401 and the case would fail.
-    seedPanelFailures(PANEL_MAX_ATTEMPTS - DRIVEN_PANEL_FAILURES);
+    // through the route, each from its own address and username.
+    seedPanelFailures(PANEL_WARN_ATTEMPTS - DRIVEN_PANEL_FAILURES + 1);
     const statuses: number[] = [];
-    for (let attempt = 0; attempt < DRIVEN_PANEL_FAILURES; attempt += 1) {
+    for (let attempt = 0; attempt < DRIVEN_PANEL_FAILURES + 3; attempt += 1) {
       statuses.push((await login(trust ? `198.51.100.${attempt}` : undefined, `panel-${attempt}`)).status);
     }
-
-    expect(statuses.slice(0, -1)).toEqual(Array(DRIVEN_PANEL_FAILURES - 1).fill(401));
-    expect(statuses.at(-1)).toBe(429);
+    expect(statuses).toEqual(Array(DRIVEN_PANEL_FAILURES + 3).fill(401));
+    expect(warn).toHaveBeenCalledTimes(1);
 
     fixture.authenticate.mockResolvedValue(successfulLogin("after-panel"));
-    expect((await login(trust ? "198.51.100.200" : undefined, "after-panel")).status).toBe(429);
-    expect(fixture.authenticate).toHaveBeenCalledTimes(DRIVEN_PANEL_FAILURES);
+    expect((await login(trust ? "198.51.100.200" : undefined, "after-panel")).status).toBe(200);
+  });
+
+  it("refuses admin/admin before authenticating on a non-local profile, without counting a failure", async () => {
+    process.env.FLUXIQ_PROFILE = "self-hosted";
+    process.env.FLUXIQ_PUBLIC_ORIGIN = "https://panel.example.test";
+    vi.resetModules();
+    const { POST: selfHostedPost } = await import("../route");
+    const response = await selfHostedPost(rawLogin("admin", "admin"));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      code: "setup_required",
+      error: "This server has not been claimed. Open /setup with the one-time setup code.",
+    });
+    expect(fixture.authenticate).not.toHaveBeenCalled();
+    expect(existsSync(path.join(fixture.root, "security", "login-attempts.json"))).toBe(false);
+  });
+
+  it("accepts admin/admin on the local profile and flags the credential setup", async () => {
+    fixture.authenticate.mockResolvedValue(successfulLogin("admin"));
+    const response = await POST(rawLogin("admin", "admin"));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, payload: { requiresCredentialSetup: true } });
+    expect(response.headers.get("set-cookie")).toContain("fluxiq_session=dummy-session");
   });
 
   it("does not count an authenticator prompt for a correct password against the address", async () => {
@@ -218,6 +245,14 @@ function seedPanelFailures(count: number): void {
   const directory = path.join(fixture.root, "security");
   mkdirSync(directory, { recursive: true });
   writeFileSync(path.join(directory, "login-panel-attempts.json"), JSON.stringify({ schemaVersion: 1, attempts: { panel } }));
+}
+
+function rawLogin(username: string, password: string): Request {
+  return new Request("http://127.0.0.1/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
 }
 
 function successfulLogin(username: string) {

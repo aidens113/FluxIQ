@@ -37,6 +37,10 @@ import type { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.
 // `offlineFirst` and `environmentKind` are handed to the gate as they are (an offline port stays offline to it).
 // A trial the gate keeps from `offlineFirst` never reaches the port, so `weighed` is told an answer the port did not
 // give; it is listed as that brief's trial (`receipts.kept`), remembered and made the spend's last trial.
+//
+// **A run from one step is handed through (t804).** The port's `fromStep` -- the proposal run from one of its steps on
+// the page as it stands, with no judge (`../../service/subflow-trial/from-step.ts`) -- reaches the gate unchanged. It
+// is not a trial: no receipt lists it, no repair is shown it, and the spend's last trial stays the last trial.
 
 export function automationStudioProjectDispatchTrialPort(input: {
   /** The brief's own port, from its ports factory. */
@@ -67,6 +71,8 @@ export function automationStudioProjectDispatchTrialPort(input: {
   // An offline port stays offline to the gate (F3), and its offline-first check reaches the gate unchanged (trace plan P6).
   if (port.environmentKind) Object.assign(asked, { environmentKind: port.environmentKind });
   if (port.offlineFirst) Object.assign(asked, { offlineFirst: port.offlineFirst });
+  // A run from one step reaches the gate as the port offers it (header, t804): never a trial, so nothing of it is listed, remembered or spent.
+  if (port.fromStep) Object.assign(asked, { fromStep: port.fromStep });
   if (port.prepareStart) asked.prepareStart = port.prepareStart;
   if (port.admissionPredecessors) asked.admissionPredecessors = port.admissionPredecessors;
   // The gate's row check for a yes over a flagged read, answered by the brief's own port (t692).

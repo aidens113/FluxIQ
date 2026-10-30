@@ -35,7 +35,23 @@ const UNIT_MS: ReadonlyArray<readonly [RegExp, number]> = [
 ];
 
 const RELATIVE = /\b(\d+(?:\.\d+)?|an?|one)\+?\s*(seconds?|secs?|s|minutes?|mins?|hours?|hrs?|h|days?|d|weeks?|wks?|w|months?|mos?|years?|yrs?|y)\s+ago\b/iu;
-const NOW_WORDS = /^(?:(?:posted|active|updated)\s+)?(?:just now|just posted|right now|today|now)$/iu;
+/**
+ * A compact age as social pages print it: "1d", "3h", "2w", "45m", "45min", "5s",
+ * "1mo", "1y", with an optional "ago" and "Posted" style prefix. It must be the
+ * whole value, so "Apply in 3d" and "Size 5s" state none, and a bare number
+ * does too. A bare `m` is minutes ("1mo" is the month); a fraction is allowed.
+ */
+const COMPACT_AGE = /^(?:(?:posted|active|updated)\s+)?(\d+(?:\.\d+)?)\s*(s|sec|secs|m|min|mins|h|hr|hrs|d|w|wk|wks|mo|mos|y|yr|yrs)(?:\s+ago)?$/iu;
+const COMPACT_AGE_UNIT: Readonly<Record<string, number>> = {
+  s: 1_000, sec: 1_000, secs: 1_000,
+  m: 60_000, min: 60_000, mins: 60_000,
+  h: 3_600_000, hr: 3_600_000, hrs: 3_600_000,
+  d: DAY_MS,
+  w: 7 * DAY_MS, wk: 7 * DAY_MS, wks: 7 * DAY_MS,
+  mo: 30 * DAY_MS, mos: 30 * DAY_MS,
+  y: 365 * DAY_MS, yr: 365 * DAY_MS, yrs: 365 * DAY_MS
+};
+const NOW_WORDS =/^(?:(?:posted|active|updated)\s+)?(?:just now|just posted|right now|today|now)$/iu;
 const YESTERDAY = /^(?:(?:posted|active|updated)\s+)?yesterday$/iu;
 const ISO = /\b(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/u;
 const MONTH = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
@@ -65,6 +81,8 @@ export function readAutomationStudioRecordDate(text: string, now: number): numbe
     const ms = UNIT_MS.find(([pattern]) => pattern.test(unit))?.[1];
     return ms === undefined ? undefined : now - amount * ms;
   }
+  const compact = COMPACT_AGE.exec(collapsedText(text));
+  if (compact !== null) return now - Number(compact[1]) * COMPACT_AGE_UNIT[compact[2]!.toLowerCase()]!;
   const left = TIME_LEFT.exec(text);
   if (left !== null) {
     const ms = timeLeftMs(left[1] ?? left[2]!);
@@ -153,4 +171,29 @@ function startOfDay(now: number): number {
 
 function monthOf(word: string): number {
   return ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(word.slice(0, 3).toLowerCase()) + 1;
+}
+
+/** The units of a relative age that count whole days: a day-count age ("3 days ago", "2w", "1mo") names a day, not a moment in it. */
+const DAY_COUNT_UNIT = /^(?:days?|d|weeks?|wks?|w|months?|mos?|years?|yrs?|y)$/iu;
+
+/**
+ * Whether a value that states a date states only a day, not a time of day
+ * (G1): "2026-10-22", "22 Oct 2026", "Posted yesterday", "today", "3 days ago"
+ * or "2w" name a day; "2026-10-22 09:00", "Today 09:00", "5 hours ago", "just
+ * now", "45m" and a time left ("1d 0h left") name a moment. A value that reads
+ * no date is not day-only (`undefined` from `readAutomationStudioRecordDate`).
+ */
+export function automationStudioRecordDateStatesOnlyDay(text: string, now: number): boolean {
+  if (readAutomationStudioRecordDate(text, now) === undefined) return false;
+  const relative = RELATIVE.exec(text);
+  if (relative !== null) return DAY_COUNT_UNIT.test(relative[2]!);
+  const compact = COMPACT_AGE.exec(collapsedText(text));
+  if (compact !== null) return DAY_COUNT_UNIT.test(compact[2]!);
+  if (TIME_LEFT.test(text)) return false;
+  const whole = collapsedText(text);
+  if (YESTERDAY.test(whole)) return true;
+  if (ISO.exec(text)?.[4] !== undefined) return false;
+  if (timeOfDayMs(text) !== undefined) return false;
+  // What is left is a day, or "today" alone; "now" and "just posted" are moments.
+  return !NOW_WORDS.test(whole) || /\btoday$/iu.test(whole);
 }

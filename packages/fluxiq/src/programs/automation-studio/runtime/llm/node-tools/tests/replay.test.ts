@@ -8,6 +8,8 @@ import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { assembleAutomationStudioFlowDraftPlan } from "../../../flow-bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
+import { authoringScopePartOf } from "../../../flow-bootstrap/record-defaults/index.ts";
+import { automationStudioFlowDraftReplayPassCall } from "../replay-span.ts";
 import { automationStudioFlowBootstrapDraftNodeStep } from "../draft-step.ts";
 import {
   AUTOMATION_STUDIO_NODE_OUTPUTS_KEY,
@@ -149,5 +151,43 @@ describe("a replayed read that ran with no record output", () => {
     expect(automationStudioNodeReplayStepCall(step)!.parameters).toEqual({ extractList });
     expect(automationStudioNodeReplayStepCall(step, {}, click)!.parameters).toEqual({ extractList });
     expect(automationStudioNodeReplayStepCall(read({ extractList: { item: ".request" } }), {}, list)!.parameters).toEqual({ extractList: { item: ".request" } });
+  });
+});
+
+// A test pass sends the record output the saved Flow holds, part answer included (K5).
+const spanDefinitions = webDomainNodeDefinitionsFixture();
+const spanList = spanDefinitions.find((definition) => definition.id === "web.output.dom-extract_list")!;
+const spanRan = { node: spanList.id, parameters: { extractList: { item: ".entry", fields: { title: ".t", price: ".p", link: "a@href" } } }, consequences: [] };
+const spanStep: AutomationStudioFlowDraftStep = {
+  position: 2, id: "d2", iteration: 2, actionId: spanList.id, toolId: "core.run_node",
+  input: structuredClone(spanRan), ranWith: structuredClone(spanRan), effect: "observe", effectApplied: true, disposition: "kept",
+  replay: { from: { location: "https://a.example/" }, produced: { at: 2 } }
+};
+const spanPartOf = authoringScopePartOf([{ id: "p1", words: "Find the entries", columns: ["title", "price"] }]);
+
+function stored(withPart: typeof spanPartOf): JsonObject {
+  return assembleAutomationStudioFlowDraftPlan({
+    steps: [spanStep], write: automationStudioFlowBootstrapDraftNodeStep, registry: new AutomationStudioNodeRegistry(spanDefinitions),
+    resolution: { scope: { kind: "domain", domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] },
+    summary: "Read the entries", ...(withPart ? { partOf: withPart } : {})
+  }).plan!.subflows[0]!.nodes[0]!.parameters!.recordOutput as JsonObject;
+}
+
+function sent(withPart: typeof spanPartOf, mode: "replay" | "verify"): JsonObject {
+  const built = automationStudioFlowDraftReplayPassCall(spanStep, mode, undefined, undefined, undefined, spanList, withPart);
+  return (built as { value: JsonObject }).value.parameters as JsonObject;
+}
+
+describe("a span's pass call", () => {
+  it("sends the record output the saved Flow holds for the part its step serves", () => {
+    const assembled = stored(spanPartOf);
+    expect(assembled.process).toMatchObject({ columns: ["title", "price"] });
+    expect(sent(spanPartOf, "replay").recordOutput).toEqual(assembled);
+    expect(sent(spanPartOf, "verify").recordOutput).toEqual(assembled);
+  });
+
+  it("with no part is byte-identical to a pass given none", () => {
+    expect(JSON.stringify(sent(undefined, "replay"))).toBe(JSON.stringify(sent(authoringScopePartOf([]), "replay")));
+    expect(sent(undefined, "replay").recordOutput).toEqual(stored(undefined));
   });
 });

@@ -15,12 +15,21 @@
 //   again (Core does this itself first, `../site-reset/ledger.ts`, `beforeTrial`);
 // - `undo`: a list it could change still differs: undo it there;
 // - `reload`: a list it could change differs on a read made in place after an
-//   undo landed on an act that list witnesses (`./observations.ts`,
-//   `readInPlace`, t772 R1): many sites draw a removal only on the list's next
-//   load, so the read says nothing yet. Its page is to be opened again (Core
-//   loads it itself before a trial, `./judge.ts` `lookFirst`), and no rule
-//   judges the act unsettleable on that read;
-// - `toggle`: its control still shows the state it set: press it back;
+//   undo of any act of the ledger landed (`./observations.ts`, `readInPlace`,
+//   t772 R1; t797 P4 item 2: not only an undo of an act that list witnesses):
+//   many sites draw a removal only on the list's next load, so the read says
+//   nothing yet. Its page is to be opened again (Core loads it itself before a
+//   trial, `./judge.ts` `lookFirst`), and no rule judges the act -- or any
+//   other act that list witnesses -- unsettleable on that read: never an
+//   `undo`, never `no_admissible_undo` (`../reset-undo/reach.ts`);
+// - `toggle`: its own control still shows the state it set: press it back
+//   (the undo admission admits exactly that press, `./own-control.ts`);
+// - `control_other`: a fresh read shows its own control in neither the state
+//   the build found nor the state it set -- a third state, or no longer drawn
+//   at its place -- or no toggle of it is known (t797 P4 items 1 and 4): no
+//   press back can be admitted, so no call can meet it (`./judge.ts`,
+//   `no_admissible_undo`). It is closed, never left open as a press to make;
+//   a later fresh read showing the state it set opens it again;
 // - `baseline`: its control's place was never read before the build acted
 //   there (`./control-tracker.ts`, t751 R1): no read can show it put back, so
 //   no call can meet it (`./judge.ts`, `no_baseline`);
@@ -59,7 +68,7 @@ import type { AutomationStudioSiteResetGroupStanding } from "./group-witness.ts"
 import type { AutomationStudioSiteResetToggleStanding } from "./control-tracker.ts";
 
 /** Why an act is still open, and where (`ref` a destination's issued ref, `location` where to look or act, `group` the opaque group of a list witness, for Core alone). */
-export type AutomationStudioSiteResetOpenReason = { reason: "look" | "undo" | "reload" | "toggle" | "baseline" | "own_back" | "value" | "name" | "unreachable"; witness?: "group" | "toggle" | "value"; ref?: string; location?: string; group?: string };
+export type AutomationStudioSiteResetOpenReason = { reason: "look" | "undo" | "reload" | "toggle" | "control_other" | "baseline" | "own_back" | "value" | "name" | "unreachable"; witness?: "group" | "toggle" | "value"; ref?: string; location?: string; group?: string };
 
 /** `unread`: the refs of lists named for the act that Core could not read again (header); present only where there were any. */
 export type AutomationStudioSiteResetSettlement =
@@ -70,9 +79,9 @@ export type AutomationStudioSiteResetSettlement =
 export type AutomationStudioSiteResetJudgedGroup = AutomationStudioSiteResetGroupStanding & { ref?: string | undefined; location?: string | undefined; group?: string | undefined; unreachable?: boolean | undefined; inPlace?: boolean | undefined };
 
 /** The reason each standing of a toggle that is not back gives (header). */
-const TOGGLE_REASON = { stale: "look", unproven: "baseline", open: "toggle", own_back: "own_back" } as const;
-/** The reason each standing of a value witness that is not back gives (header, t772); it never stands `own_back`. */
-const VALUE_REASON = { stale: "look", unproven: "baseline", open: "value", own_back: "value" } as const;
+const TOGGLE_REASON = { stale: "look", unproven: "baseline", open: "toggle", own_back: "own_back", other: "control_other" } as const;
+/** The reason each standing of a value witness that is not back gives (header, t772); it never stands `own_back` or `other`. */
+const VALUE_REASON = { stale: "look", unproven: "baseline", open: "value", own_back: "value", other: "value" } as const;
 
 export function automationStudioSiteResetSettleDecision(input: {
   groups: readonly AutomationStudioSiteResetJudgedGroup[];

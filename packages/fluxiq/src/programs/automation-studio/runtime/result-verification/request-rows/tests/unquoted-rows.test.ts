@@ -13,6 +13,7 @@ import {
   REQUEST_WORDS_NAMES, REQUEST_WORDS_HANDLE, REQUEST_WORDS_OUT_OF_STOCK, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS,
   requestWordsRunSummary, requestWordsWording
 } from "./request-words-fixture.ts";
+import { WALL_CALENDAR_REQUEST, WALL_CALENDAR_REQUEST_STATED, WALL_CALENDAR_ROW, WALL_CALENDAR_TOGETHER, wallCalendarRunSummary, wallCalendarWording } from "./library-catalog/tests/wall-calendar-fixture.ts";
 import { AUDIOBOOKS_INSTRUCTION, AUDIOBOOKS_READ, AUDIOBOOKS_SAMPLER, audiobooksRunSummary } from "../../value-readings/tests/audiobooks-fixture.ts";
 
 const unquoted = (reply: string, wording = requestWordsWording()) => automationStudioResultLeftOutRowsUnquoted(requestWordsRunSummary(), reply, wording);
@@ -189,5 +190,41 @@ describe("every row a flagged read stored (t692)", () => {
   it("take a yes that names each beside that read with the request's words asking for it", async () => {
     const observed = `${RENEWALS_YES.diagnosis.observed} s14 stores ${TITLES.join(", ")} because the request asks for "every loan on the list, renewed or not".`;
     expect((await judged(flagged(), observed, RENEWALS_REQUEST_EVERY_LOAN)).verdict).toMatchObject({ verdict: "yes", firstAskConfirmed: true });
+  });
+});
+
+// Rows two or more conditions left out together (t655) are held to the request's own words as a row one
+// condition alone left out is, and a quote whose own words name another condition of the read, and none of
+// these conditions, is that other condition's reason (debug of `run-mvtdoyf3-47ffaac1`, F1 a and d). Three
+// yeses there named such a row beside a quote of the request's one exclusion, which the request's words never
+// extend to it, and were taken. A library catalog (`./wall-calendar-fixture.ts`).
+describe("rows several conditions left out together, held to the request's own words (F1)", () => {
+  const summary = wallCalendarRunSummary();
+  const together = (reply: string, request = WALL_CALENDAR_REQUEST) => automationStudioResultLeftOutRowsUnquoted(summary, reply, wallCalendarWording(request));
+  const HELD = [{ nodeId: "read", condition: WALL_CALENDAR_TOGETHER, rows: [WALL_CALENDAR_ROW] }];
+
+  it("holds the row named beside a quote that names only another condition, joined by a semicolon", () => {
+    expect(together(`Condition 1 (reference is absent) left out the reference copies, as the request says "leaving out reference copies"; the ${WALL_CALENDAR_ROW} row was excluded by conditions 2 and 3.`)).toEqual(HELD);
+  });
+
+  it("holds it joined by a comma too", () => {
+    expect(together(`Condition 1 (reference is absent) left out the reference copies, as the request says "leaving out reference copies", and the ${WALL_CALENDAR_ROW} row was excluded by conditions 2 and 3.`)).toEqual(HELD);
+  });
+
+  it("holds it named with a reason of the judge's own", () => {
+    expect(together([`Condition 1 (reference is absent) carries out "leaving out reference copies".`, `${WALL_CALENDAR_ROW} is a calendar, not a book, so conditions 2 and 3 rightly left it out.`].join("\n"))).toEqual(HELD);
+  });
+
+  it("takes it where the request states the exclusion and the yes quotes it beside the row", () => {
+    const reply = [
+      `Condition 1 (reference is absent) carries out "leaving out reference copies".`,
+      `The ${WALL_CALENDAR_ROW} row was left out by conditions 2 and 3, as the request says "leaving out reference copies and wall calendars".`
+    ].join("\n");
+    expect(together(reply, WALL_CALENDAR_REQUEST_STATED)).toEqual([]);
+  });
+
+  it("holds the same yes where the quote beside the row is the one it shares with condition 1, though the request states the exclusion", () => {
+    const reply = `Condition 1 (reference is absent) left out the reference copies, as the request says "leaving out reference copies"; the ${WALL_CALENDAR_ROW} row was excluded by conditions 2 and 3.`;
+    expect(together(reply, WALL_CALENDAR_REQUEST_STATED)).toEqual(HELD);
   });
 });

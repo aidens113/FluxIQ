@@ -31,7 +31,8 @@ import {
   ClientGatewayTransport,
   ClientGatewayTrustedClientRegistry,
   ClientGatewayViews,
-  resolveClientGatewayConfig
+  resolveClientGatewayConfig,
+  withoutClientGatewayAddresses
 } from "./service/index.ts";
 
 export type {
@@ -45,11 +46,20 @@ export type {
   ClientGatewaySummaryPage,
   ClientGatewayTraceArtifactIntake,
   ClientGatewayTraceArtifactUpload,
-  ClientGatewayTrustedClientStore
+  ClientGatewayTrustedClientStore,
+  ClientGatewayPeer,
+  ClientGatewayPairingLimits,
+  ClientGatewayPairingCapacityScope,
+  ClientGatewaySecurityEventListener
 } from "./service/index.ts";
-export { CLIENT_GATEWAY_TRACE_TAP_STREAMS } from "./service/index.ts";
+export {
+  CLIENT_GATEWAY_TRACE_TAP_STREAMS,
+  CLIENT_GATEWAY_SECURITY_EVENT_TYPES,
+  CLIENT_GATEWAY_TRANSPORT_EVENT_TYPES,
+  ClientGatewayPairingCapacityError
+} from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayLateActionResultListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
+import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -75,13 +85,15 @@ export class ClientGatewayService {
   private readonly audit: ClientGatewayAuditLog;
   private readonly activity: ClientGatewayActivityPublisher;
   private readonly trace: ClientGatewayTraceTap;
+  private readonly pairings: ClientGatewayPairingRegistry;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     const config = resolveClientGatewayConfig(options);
-    const audit = new ClientGatewayAuditLog(config.now);
+    const audit = new ClientGatewayAuditLog(config.now, config.auditLimit);
     const events = new ClientGatewayEventBus();
-    const sessions = new ClientGatewaySessionRegistry(config.now);
-    const pairings = new ClientGatewayPairingRegistry(config);
+    const sessions = new ClientGatewaySessionRegistry(config.now, config.sessionRetention);
+    // The per-address pairing cap reads the requesting session's peer address, which never leaves the gateway.
+    const pairings = new ClientGatewayPairingRegistry(config, (sessionId) => sessions.get(sessionId)?.peer?.address ?? null);
     const trustedClients = new ClientGatewayTrustedClientRegistry(config);
     // Routes what the gateway sends and receives into the traces of the episodes that claim it; inert without `options.trace`.
     const trace = new ClientGatewayTraceTap({ source: options.trace, clientIdOf: (sessionId) => sessions.get(sessionId)?.clientId, sessionViewOf: (sessionId) => sessions.get(sessionId) });
@@ -98,6 +110,7 @@ export class ClientGatewayService {
     const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
+    this.pairings = pairings;
     this.audit = audit;
     this.transport = transport;
     this.events = events;
@@ -158,8 +171,44 @@ export class ClientGatewayService {
     return this.pairingFlow.dismiss(pairingCode);
   }
 
-  connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello } = {}): ClientGatewaySession {
+  /**
+   * `peer` is where the transport says the connection came from. It is kept on
+   * the gateway's own session record for the per-address pairing cap and is
+   * never in the returned session, an event or the snapshot; the audit carries
+   * its prefix only.
+   */
+  connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello; peer?: ClientGatewayPeer } = {}): ClientGatewaySession {
     return this.lifecycle.connect(input);
+  }
+
+  /**
+   * Replaces the caps on pairing challenges waiting for approval; the
+   * transport calls it at start with its profile's limits. Challenges already
+   * waiting are kept. Throws on a value that is not a positive whole number.
+   */
+  setPairingLimits(limits: ClientGatewayPairingLimits): void {
+    this.pairings.setLimits(limits);
+  }
+
+  /**
+   * Hears every security event as it is recorded (`CLIENT_GATEWAY_SECURITY_EVENT_TYPES`
+   * and everything `recordTransportEvent` reports), so the web layer can
+   * persist what the bounded audit ring will overwrite. Returns the unsubscribe.
+   */
+  onSecurityEvent(listener: ClientGatewaySecurityEventListener): () => void {
+    return this.audit.onSecurityEvent(listener);
+  }
+
+  /**
+   * Audits a refusal the transport made before or beside the gateway (an
+   * Origin refused, a frame too large, a hello deadline missed, a rate limit;
+   * `CLIENT_GATEWAY_TRANSPORT_EVENT_TYPES`), into the same ring and to the
+   * security listeners. A full address in `metadata` is dropped and a `peer`
+   * is kept as its prefix.
+   */
+  recordTransportEvent(type: string, message: string, metadata?: JsonObject): void {
+    if (typeof type !== "string" || !type) throw new Error("client_gateway.transport_event_type_required");
+    this.audit.recordSecurity(type, message, withoutClientGatewayAddresses(metadata));
   }
 
   disconnect(sessionId: string, reason = "disconnected"): ClientGatewaySession | null {
