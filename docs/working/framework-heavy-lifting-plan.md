@@ -730,17 +730,8 @@ Each implementation lane's brief is in its dispatch and its report under the dow
 
 ## Work Ledger
 
-### 2026-10-29 - P0 and the check's library build (t793, t794)
-- Agent: lead; detail and validation in the paired downstream document's ledger.
-- Changed: P0 replaced the scenario-shaped examples in the model-facing judge, run-node, evidence, processed-out and repair text, and the downstream `scripts/check/model-text.mjs` now fails on any realistic scenario's fixture word in Core's model-facing literals. t794 made the root `check` build `contracts`, `fluxiq` and `client-gateway-websocket` first, with a registry test.
-- Validation: lead-run, quoted in full downstream: `node scripts/check/model-text.mjs` -> "model-text: ok (209 scenario tokens, 376 model-facing Core files, 11720 string literals)"; `node --test scripts/build-cache/tests/registry.test.mjs` -> "# pass 10 / # fail 0"; `pnpm check` -> exit 0.
-- Outcome: Accepted.
-
-### 2026-10-29 - Per-pass act ledger and `not_run` proof (t796)
-- Agent: supervisor (brief t796-ledger) with six workers; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t796-ledger.md`
-- Changed: `flow-bootstrap/instructed-acts/optional-act-steps.ts` refuses a requested act behind `optional:`, `only after:` or an optional step's `on success:`, matched by words or by the part's `lastingActs` class (`candidate/submission.ts`, `subflow-candidate/scoped-submission.ts`); `service/candidate-trial/act-ledger.ts` and `not-run.ts` record each pass's lasting and guarded steps, and `trial-change/proof.ts` proves a part `not_run` (with `notRun: [{nodeId, label, reason, after?, passes, of?}]`) when none of its acting steps ran, wired on the candidate and subflow trial paths; `layer-handlers/explored.ts` and `runtime-session/interruption-handler.ts` scope a cleared layer's handler to the subflow; `script-statements/repeat-order.ts` and `nodes/control-flow/for-each.ts` (`order`) sort a page-order listing's rows before `stopAfter`, and `listing-order-in-repeat.ts` admits a sort written on the listing; `project-build-ending/record-told.ts` names steps that never ran and each leftover's page.
-- Validation: lead-run under the heavy-check lock -> touched dirs "Tests 7622 passed | 2 skipped", real-sql passed, prompt contracts "45 passed", `pnpm check` exit 0, docs current, structure passed; downstream headed site-reset suite "32 passed (35.0m)" (detail downstream).
-- Outcome: Accepted. Hand-off: t795 makes `not_run` a Core no in `result-verification/site-change/held.ts` and defines it in the judge text.
+The P0, t794 and t796 entries moved on 2026-10-29 to
+[archive/2026-10-29-audit-briefs-and-p0.md](framework-heavy-lifting-plan/archive/2026-10-29-audit-briefs-and-p0.md).
 
 ### 2026-10-29 - P4: one truthful undo and reset answer (t797)
 - Agent: supervisor (brief t797-p4); workers split, settle, pair (worker-heavy), w4, defaults, docs (worker); report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t797-p4.md`
@@ -769,6 +760,12 @@ Each implementation lane's brief is in its dispatch and its report under the dow
 - Changed: `llm/unknown-tool/` refuses an unknown tool id with the offered ids and the nearest match, counted by the refused-in-a-row guard; `project-agents/brief-defaults/` fills a brief's missing `kind`, `parts` and repair `failingReceipt` (never over the model's), `project.repair_unchanged` checked first, `kind` optional in the dispatch schema; `flow-bootstrap/unchanged-fix-point/` gives the first `unchanged_after_no` its diff and fix point; `activity/folded-reason.ts` lets Core write a folded step's line (P1b calls it); `ending-told.ts` composes an empty done reason from the record.
 - Validation: lead-run under the lock, merged with dev: tsc clean; `pnpm test` over llm, project-agents, candidate, unchanged-fix-point, activity, project-build-ending, service-bootstrap -> "Tests 3522 passed (3522)", real-sql "Tests 142 passed (142)", "all groups passed"; prompt contracts "Tests 122 passed (122)"; `pnpm check` exit 0; docs current; structure passed (`provider-stopped.test.ts` fails only when run alone, "No test found in suite", and passes in its group).
 - Outcome: Accepted. `supervisor/guidance.ts` still names `kind` as required (pin-sensitive; left for P1b).
+
+### 2026-10-29 - P7 follow-ups: day-granular within, record defaults plumbing (t807)
+- Agent: supervisor (Sonnet) with three workers; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t807-p7-followups.md`
+- Changed: `contracts/.../date-within.ts`: a day-only value under a `within` bound in days or weeks compares by whole UTC days (minutes and hours stay instants); `llm/node-tools/{replay-draft,dry-run-gate}.ts` accept the plan part that owes records (callers in `evidence-loop.ts`, `single-subflow/rebuild.ts`, `supervisor-loop.ts` wired with P1b); the web picker keeps `mark` (downstream).
+- Validation: lead-run under the lock, merged with dev: contracts `vitest run src/record-sets` -> "Tests 259 passed (259)"; `pnpm check` exit 0; `pnpm test` over record-defaults, node-tools, plan, candidate, result-verification -> "Tests 2205 passed (2205)", real-sql "3 passed"; docs current; structure passed.
+- Outcome: Accepted.
 
 ## Open Questions
 
