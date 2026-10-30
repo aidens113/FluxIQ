@@ -63,7 +63,7 @@ lanes in parallel to 11-08 (the extension's connection files merge 11-10); hoste
 11-12; store submission about 11-13; public when Google approves.
 
 **Next.** (1) Contracts frozen 2026-10-28 (t784, `@fluxiq/contracts` 0.3.0: `/platform`, `/iam`,
-gateway 0.2 additions; decisions in the paired document's ledger); B1 (t789) and B2 (t788) merged 10-28; B3 (t803), lane A (t802) and C0 (t808) merged 10-29 (B3 inert on `service` until C wires it); C1 next; C starts with
+gateway 0.2 additions; decisions in the paired document's ledger); B1 (t789) and B2 (t788) merged 10-28; B3 (t803), lane A (t802) and C0 (t808) merged 10-29 (B3 inert on `service` until C wires it); C1 with the IAM wiring (t813) and E with D5 (t814) in flight; C starts with
 the H0 changes, each as its own task. (2) The
 user answers N1 to N7 and creates the VM, DNS and store developer account (paired U9). Nothing
 blocks H1.
@@ -760,6 +760,11 @@ The plan's history (2026-10-17 to 10-28) and the H0 fold moved on 2026-10-29 to
 - Agent: supervisor; workers held-keys (worker-heavy), connections and leak-test (worker); report `hosted-production-plan/reports/t808-c0.md`. Changed: `createGlobalProgramRuntime` returns `detach()`, called first by `FluxIQ.close()`; `programStateConnections` one pool per storage root; `FluxIQOptions.heldKeys` and `close({ mode: "shutdown" | "evict" })`; session expiry timers in `HeldKeys` hold only an id (the old timer kept the unlock password up to 12 hours); `framework/tests/instance-leak.test.ts`. Decision (lead): evict idle workspaces and keep their keys held; pin only busy ones (Tenancy And Data).
 - Validation: lead-run under the heavy-check lock on the tree merged with dev: `pnpm test src/programs/secret-keys src/programs/_shared src/framework .../runtime/activity` -> "Tests 702 passed (702)", real-sql "Tests 67 passed (67)"; leak test "Tests 4 passed (4)" twice; `pnpm check` exit 0; docs current; structure passed; apps/web `vitest run src` -> "Test Files 435 passed (435)", "Tests 3370 passed (3370)" after the dev fix c5cb635b (B3's ownership needed `snapshot()` on the contract test's identity fake).
 - Outcome: Accepted. Open: one shared activity hub (per-instance events are C3's); the trace slots keep the last instance alive when tracing is on (C3); a storage directory outside `.fluxiq` gets a pool `close()` does not reach; `docs/architecture/platform.md` should name `FluxIQCloseOptions`, `heldKeys` and per-root pools.
+
+### 2026-10-29 — A and B3 follow-ups merged; the first sign-up round trip passes (t809)
+- Agent: supervisor (Sonnet), six workers and one worker-heavy; report `hosted-production-plan/reports/t809-followups.md`. Changed: `welcomeUrl` in the file mail record; the three "check nothing" handlers `destructive` (PIN), with the panel's dialog in `deployment-sync.tsx`; drain refuses program starts (`apps/web/src/server/drain/program-start-refusal.ts`); the IAM catalog regenerated after three mixed `custom` resources became `["project"]`; tests that usernames are email-shaped under `service`.
+- Validation: lead-run under the lock, merged with dev: `pnpm check` exit 0; `pnpm test src/platform src/programs/_shared src/programs/deployment-sync src/programs/database-manager src/programs/automation-studio/api src/programs/tests` -> "Tests 716 passed (716)", real-sql "Tests 151 passed (151)"; contracts "Tests 523 passed (523)"; apps/web `vitest run src` -> "Tests 3383 passed (3383)"; downstream `up.mjs --round-trip` against an isolated `service` Core -> "step 1 PASS site sign-up: status 202" through "step 5 PASS repeat sign-up", "round trip PASS".
+- Outcome: Accepted. Open: the owner cannot verify their email under `service` (options in the report); Caddy, Turnstile and a really draining server are not exercised.
 
 ## Open Questions
 

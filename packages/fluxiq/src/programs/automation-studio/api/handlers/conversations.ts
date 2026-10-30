@@ -94,7 +94,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
     classification: "read",
     action: "studio:ListConversations",
     accessLevel: "List",
-    resource: endpointResource.custom(["project", "*"], (request) => {
+    resource: endpointResource.custom(["project"], (request) => {
       const projectId = request.payload !== null && typeof request.payload === "object" ? (request.payload as { projectId?: unknown }).projectId : undefined;
       return projectId === null || projectId === undefined ? { kind: "workspace" } : { kind: "project", projectId: String(projectId) };
     }),

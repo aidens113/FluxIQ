@@ -17,7 +17,7 @@ function payloadObject(request: ProgramApiRequest): Record<string, unknown> {
  * where nothing narrower is set, every recording the workspace holds) acts on
  * the workspace. "Names" is the handlers' own test, a truthy `projectId`.
  */
-export const projectOrWorkspaceResource = endpointResource.custom(["*", "project"], (request) => {
+export const projectOrWorkspaceResource = endpointResource.custom(["project"], (request) => {
   const projectId = payloadObject(request).projectId;
   return projectId ? { kind: "project", projectId } : { kind: "workspace" };
 });

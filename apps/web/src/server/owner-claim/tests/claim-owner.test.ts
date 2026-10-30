@@ -70,6 +70,24 @@ describe("claimOwner", () => {
     expect(await claimOwner({ ...FORM, username: "not-an-email" }, deps())).toEqual({ ok: false, code: "invalid_input", fields: ["username"] });
   });
 
+  it.each(["service", "self-hosted"])("on %s, signs the owner in by the normalised email and leaves that email unverified", { timeout: 60_000 }, async (profile) => {
+    const settings = instance.settings({ FLUXIQ_PROFILE: profile });
+    const outcome = await claimOwner({ ...FORM, username: "  Owner.Name@Example.TEST " }, { ...deps(), settings });
+    if (!outcome.ok) throw new Error(`expected a claim, got ${outcome.code}`);
+    const user = (await instance.fluxiq.programs.identityAccess.snapshot()).users.find((candidate) => candidate.id === outcome.userId);
+    const account = await instance.services.store.getAccount(outcome.userId);
+    expect(user?.username).toBe("owner.name@example.test");
+    expect(account?.email).toBe(user?.username);
+    // The setup code proves control of the server, not of the mailbox.
+    expect(account?.emailVerifiedAtMs).toBeNull();
+  });
+
+  it("refuses a username that is not an email on service", { timeout: 60_000 }, async () => {
+    const settings = instance.settings({ FLUXIQ_PROFILE: "service" });
+    expect(await claimOwner({ ...FORM, username: "owner" }, { ...deps(), settings })).toEqual({ ok: false, code: "invalid_input", fields: ["username"] });
+    expect((await instance.fluxiq.programs.identityAccess.snapshot()).users.map((user) => user.id)).toEqual(["admin"]);
+  });
+
   it("makes one owner from two concurrent claims", { timeout: 60_000 }, async () => {
     const [first, second] = await Promise.all([claimOwner(FORM, deps()), claimOwner({ ...FORM, username: "rival@example.test" }, deps())]);
     expect(first.ok).toBe(true);

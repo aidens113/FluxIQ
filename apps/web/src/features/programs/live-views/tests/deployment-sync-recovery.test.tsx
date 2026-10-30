@@ -7,7 +7,7 @@ import { DeploymentSyncLive } from "../deployment-sync";
 const context = vi.hoisted(() => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.mock("../../program-api", () => ({ useProgramApi: () => context.api }));
-vi.mock("../../shared-ui", async (original) => ({ ...(await original<typeof import("../../shared-ui")>()), Modal: ({ children, title, onClose }: { children: React.ReactNode; title: string; onClose(): void }) => <div data-modal={title}><button onClick={onClose}>Dismiss</button>{children}</div> }));
+vi.mock("../../components/overlays/Modal", () => ({ Modal: ({ children, title, onClose }: { children: React.ReactNode; title: string; onClose(): void }) => <div data-modal={title}><button onClick={onClose}>Dismiss</button>{children}</div> }));
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 function snapshot(id = "a"): DeploymentSyncSnapshotResponse { return { targets: [{ id, name: id, environment: "local", status: "idle" }], artifacts: [], runs: [], git: { rootDir: "/synthetic", available: true, dirty: false, status: [], branches: [], remotes: [], versions: [{ sha: "version", shortSha: "ver", author: "test", refs: [], message: "synthetic", committedAtMs: 1 }] } }; }
 const run = { id: "run-a", targetId: "a", status: "synced", startedAtMs: 1, message: "Acknowledged action" };
@@ -15,6 +15,13 @@ let view: ReactTestRenderer | undefined;
 const text = (node: unknown): string => Array.isArray(node) ? node.map(text).join("") : typeof node === "object" && node !== null && "children" in node ? text((node as { children: unknown }).children) : typeof node === "string" ? node : "";
 const button = (label: string) => view!.root.findAllByType("button").find((item) => text(item.children) === label)!;
 async function mount(payload = snapshot()) { context.api = { get: vi.fn().mockResolvedValue({ ok: true, payload }), post: vi.fn().mockResolvedValue({ ok: true, payload: run }) }; await act(async () => { view = create(<DeploymentSyncLive />); }); }
+const enterPin = async (pin: string) => {
+  await act(async () => view!.root.findByType("input").props.onChange({ target: { value: pin } }));
+};
+const pinned = async (label: string, pin = "1234") => {
+  await enterPin(pin);
+  await act(async () => button(label).props.onClick());
+};
 afterEach(async () => { if (view) await act(async () => view!.unmount()); view = undefined; vi.clearAllMocks(); });
 
 describe("Deployment recovery", () => {
@@ -53,6 +60,36 @@ describe("Deployment recovery", () => {
     await act(async () => button("Dry Run").props.onClick()); expect(button("Dry Run").props.disabled).toBe(false); expect(text(view!.toJSON())).toContain("Deployment action failed");
     context.api.post.mockResolvedValue({ ok: true, payload: run }); await act(async () => button("Dry Run").props.onClick()); expect(context.api.post).toHaveBeenCalledTimes(2);
   });
+  it.each([["Checkout Branch", "Checkout", "sync", undefined], ["Rollback", "Rollback", "rollback", "version"]] as const)("%s needs a PIN and sends it as authorizationPin", async (open, confirm, endpoint, versionSha) => {
+    await mount();
+    await act(async () => button(open).props.onClick());
+    const dialogConfirm = () => view!.root.findAllByType("button").filter((node) => text(node.children) === confirm).at(-1)!;
+    expect(dialogConfirm().props.disabled).toBe(true);
+    expect(context.api.post).not.toHaveBeenCalled();
+    await enterPin("123");
+    expect(dialogConfirm().props.disabled).toBe(true);
+    await enterPin("4821");
+    expect(dialogConfirm().props.disabled).toBe(false);
+    await act(async () => dialogConfirm().props.onClick());
+    expect(context.api.post).toHaveBeenCalledWith(endpoint, { targetId: "a", ...(versionSha ? { versionSha } : {}), authorizationPin: "4821" });
+  });
+  it("keeps the PIN prompt open and clears the PIN when the server refuses it", async () => {
+    await mount();
+    context.api.post.mockResolvedValue({ ok: false, error: "PIN is incorrect" });
+    await act(async () => button("Checkout Branch").props.onClick());
+    await pinned("Checkout", "0000");
+    expect(text(view!.toJSON())).toContain("PIN is incorrect");
+    expect(view!.root.findByType("input").props.value).toBe("");
+    context.api.post.mockResolvedValue({ ok: true, payload: run });
+    await pinned("Checkout", "4821");
+    expect(context.api.post).toHaveBeenCalledTimes(2);
+    expect(view!.root.findAllByType("input")).toHaveLength(0);
+  });
+  it("dry run sends no PIN", async () => {
+    await mount();
+    await act(async () => button("Dry Run").props.onClick());
+    expect(context.api.post).toHaveBeenCalledWith("dry-run", { targetId: "a" });
+  });
   it("unknown git never announces a clean repository", async () => {
     const payload = snapshot(); delete payload.git; await mount(payload); expect(text(view!.toJSON())).not.toContain("Clean");
     await act(async () => button("git").props.onClick()); expect(text(view!.toJSON())).not.toContain("Working tree clean");
@@ -69,12 +106,20 @@ describe("Deployment recovery", () => {
   it("confirmation captures target rather than following later selection", async () => {
     const payload = snapshot(); payload.targets.push({ id: "b", name: "b", environment: "local", status: "idle" }); await mount(payload);
     await act(async () => button("Checkout Branch").props.onClick()); await act(async () => view!.root.findByType("select").props.onChange({ target: { value: "b" } }));
-    await act(async () => button("Checkout").props.onClick()); expect(context.api.post).toHaveBeenCalledWith("sync", { targetId: "a" });
+    await pinned("Checkout");
+    expect(context.api.post).toHaveBeenCalledWith("sync", { targetId: "a", authorizationPin: "1234" });
   });
   it("duplicate captured confirmation submits once and holds the lock through deferred read", async () => {
     await mount(); await act(async () => button("Checkout Branch").props.onClick()); const activate = button("Checkout").props.onClick;
-    const reconciliation = deferred<unknown>(); context.api.get.mockReturnValue(reconciliation.promise);
-    await act(async () => { activate(); activate(); }); expect(context.api.post).toHaveBeenCalledTimes(1); expect(button("Dry Run").props.disabled).toBe(true);
+    const reconciliation = deferred<unknown>();
+    context.api.get.mockReturnValue(reconciliation.promise);
+    await enterPin("1234");
+    await act(async () => {
+      button("Checkout").props.onClick();
+      button("Checkout").props.onClick();
+    });
+    expect(context.api.post).toHaveBeenCalledTimes(1);
+    expect(button("Dry Run").props.disabled).toBe(true);
     await act(async () => reconciliation.resolve({ ok: true, payload: snapshot() })); expect(button("Dry Run").props.disabled).toBe(false);
   });
   it.each(["resolve", "reject"])("pending old-domain action %s cannot publish or refresh", async (completion) => {
