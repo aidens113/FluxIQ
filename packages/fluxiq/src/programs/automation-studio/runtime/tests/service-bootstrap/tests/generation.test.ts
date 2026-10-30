@@ -391,7 +391,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(stored?.auditEvents[0]?.detail).toMatchObject({ reusableContext: { status: "hit", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] } });
   });
 
-  it("returns the closed evidence-loop reason and content-free counts", async () => {
+  it("asks again after an unknown tool and returns the closed budget reason with content-free counts", async () => {
     const provider = mockProvider(async () => ({
       response: { kind: "evidence_tool_decision", summary: "Use a tool.", decision: { kind: "tool_call", callId: "call.unknown", toolId: "unregistered", input: {} } },
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
@@ -408,18 +408,18 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       caller: caller(),
       evidenceGuided: true
     }));
-    expect(diagnostic).toEqual({
-      code: "flow_bootstrap.evidence_unknown_tool",
+    // A tool the decision did not offer is refused and asked again (P1a), so the build is spent, not ended by the first such call.
+    expect(diagnostic).toMatchObject({
+      code: "flow_bootstrap.evidence_budget_exhausted",
       stage: "provider_output_validation",
-      retryable: false,
+      retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
       // What the build spent before it ended, so a failed run can be costed.
-      accounting: { requestId: expect.stringMatching(/^evidence\./), estimatedInputTokens: expect.any(Number), provider: "mock-production", model: "mock-bootstrap", inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 },
-      evidenceLoop: { iterationCount: 1, decisionCount: 0, toolCallCount: 0, evidenceBytes: 0 },
-      // Every logical question the build's purse settled (t262), apart from the
-      // loop's own decision count: the one decision whose tool was unknown.
-      totalProviderCallCount: 1
+      accounting: { requestId: expect.stringMatching(/^evidence\./), estimatedInputTokens: expect.any(Number), provider: "mock-production", model: "mock-bootstrap", inputTokens: 30, outputTokens: 15, totalTokens: 45, estimatedCostUsd: 0.003 },
+      evidenceLoop: { iterationCount: 3, decisionCount: 3, toolCallCount: 0 },
+      totalProviderCallCount: 3
     });
+    expect((diagnostic as unknown as { evidenceLoop: { steps: { resultCode: string }[] } }).evidenceLoop.steps.map((step) => step.resultCode)).toEqual(Array(3).fill("llm_evidence_loop.unknown_tool_refused"));
   });
 });

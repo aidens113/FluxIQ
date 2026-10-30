@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4320
+- Public declarations: 4321
 - Class: 149
 - Interface: 10
 - Object: 559
 - Type: 2301
 - Type Alias: 1
-- Value: 1300
+- Value: 1301
 
 ## Public Declarations
 
@@ -645,6 +645,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioActivityDraftEditCard` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/draft-edit-card.ts` | - |
 | `AutomationStudioActivityEmission` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/contracts.ts` | What an emission site says; the scope it runs under supplies the rest. |
 | `automationStudioActivityEndedReason` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/ended-reason.ts` | - |
+| `automationStudioActivityFoldedReason` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/folded-reason.ts` | - |
 | `AutomationStudioActivityFrame` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/contracts.ts` | What the scope storage holds for one unit of work. A run's id is known only once its session is admitted, so a run frame starts `pending` and emits nothing until it is bound. |
 | `automationStudioActivityHold` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/hold.ts` | - |
 | `automationStudioActivityHub` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/activity/default-hub.ts` | The one hub every emission in this process publishes to. |

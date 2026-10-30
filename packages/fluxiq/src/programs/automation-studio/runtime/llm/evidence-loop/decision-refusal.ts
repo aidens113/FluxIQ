@@ -15,6 +15,8 @@ import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
 import type { AutomationStudioFlowDraftBindingContext } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision } from "./decision.ts";
 import { automationStudioLlmEvidenceDecisionIssueCodes } from "../evidence-loop-decision.ts";
+import type { AutomationStudioLlmUnusableDecisionUnknownTool } from "../unusable-decision.ts";
+import { automationStudioLlmEvidenceUnknownToolRefusal } from "../unknown-tool/index.ts";
 
 /** A `complete` decision where completion was not offered. What it means to the model is in `../unusable-decision.ts`. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETE_NOT_OFFERED_CODE = "llm_evidence_loop.complete_not_offered";
@@ -35,10 +37,10 @@ export function automationStudioLlmEvidenceDecisionRefusal(
   raw: unknown,
   /** What the loop read out of it. */
   decision: AutomationStudioLlmEvidenceLoopDecision | undefined,
-  offered: { complete: boolean; amend: boolean },
+  offered: { complete: boolean; amend: boolean; unknownTool?: { known: ReadonlySet<string>; shown: readonly { toolId: string }[] } },
   /** The draft the reply was read against, as the parse was given it (`../evidence-loop-decision.ts`). */
   binding?: AutomationStudioFlowDraftBindingContext
-): { issueCodes: string[]; usage?: AutomationStudioLlmUsageSummary } | undefined {
+): { issueCodes: string[]; usage?: AutomationStudioLlmUsageSummary; unknownTool?: AutomationStudioLlmUnusableDecisionUnknownTool } | undefined {
   if (!decision) {
     const usage = usageOf(raw);
     // A reply the grammar read and refused for a reason it can name -- a
@@ -50,6 +52,8 @@ export function automationStudioLlmEvidenceDecisionRefusal(
   }
   if (decision.kind === "complete" && !offered.complete) return { issueCodes: [AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETE_NOT_OFFERED_CODE] };
   if (decision.kind === "amend_draft" && !offered.amend) return { issueCodes: [AUTOMATION_STUDIO_LLM_EVIDENCE_AMEND_NOT_OFFERED_CODE] };
+  // A call naming a tool this decision did not offer (`../unknown-tool/`), refused where a loop can ask again.
+  if (decision.kind === "tool_call" && offered.unknownTool && !offered.unknownTool.known.has(decision.toolId)) return automationStudioLlmEvidenceUnknownToolRefusal(decision.toolId, offered.unknownTool.shown);
   return undefined;
 }
 
