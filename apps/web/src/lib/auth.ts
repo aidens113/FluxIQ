@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { getFluxIQ } from "./fluxiq";
+import { FLUXIQ_SESSION_COOKIE } from "./session-cookie";
 
-export const FLUXIQ_SESSION_COOKIE = "fluxiq_session";
+export { FLUXIQ_SESSION_COOKIE };
 
 export async function currentFluxIQUser() {
   const cookieStore = await cookies();

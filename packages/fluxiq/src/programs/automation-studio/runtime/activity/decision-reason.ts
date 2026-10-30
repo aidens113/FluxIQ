@@ -12,12 +12,28 @@
 // carries it on, and the entry goes when the decision does.
 
 const reasons = new WeakMap<object, string>();
+const coreWritten = new WeakSet<object>();
 
 export const automationStudioActivityDecisionReason = Object.freeze({
   /** Keeps `reason` beside `decision` and returns `decision` itself, unchanged. */
   attach<T extends object>(decision: T, reason: unknown): T {
-    if (typeof reason === "string" && reason.trim()) reasons.set(decision, reason);
+    if (typeof reason === "string" && reason.trim()) {
+      reasons.set(decision, reason);
+      coreWritten.delete(decision);
+    }
     return decision;
+  },
+  /** Keeps a line Core wrote itself (a folded step, `./folded-reason.ts`) beside `decision`; `of` returns it as it returns a model reason. */
+  core<T extends object>(decision: T, line: unknown): T {
+    if (typeof line === "string" && line.trim()) {
+      reasons.set(decision, line);
+      coreWritten.add(decision);
+    }
+    return decision;
+  },
+  /** Whether the reason beside this decision is a line Core wrote. */
+  isCoreWritten(decision: unknown): boolean {
+    return decision !== null && typeof decision === "object" && coreWritten.has(decision);
   },
   /** The reason kept beside this exact decision object, if any. */
   of(decision: unknown): string | undefined {

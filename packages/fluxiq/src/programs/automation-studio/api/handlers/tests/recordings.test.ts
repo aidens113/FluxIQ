@@ -50,12 +50,12 @@ function serviceWith(removeRecordingEntries: (...args: any[]) => unknown) {
 
 describe("removing a recorded step", () => {
   it("is registered, under runtime.control, as authoring rather than destructive", () => {
-    expect(registryWith({}).endpoints()).toContainEqual({
+    expect(registryWith({}).endpoints()).toContainEqual(expect.objectContaining({
       programId: "automation-studio",
       endpoint: "remove-recording-entry",
       permission: "runtime.control",
       classification: "authoring"
-    });
+    }));
   });
 
   it("hands the service the recording and event, and answers the count and a summary with no entries", async () => {
@@ -106,12 +106,12 @@ describe("reading the recording-capture policy", () => {
 
   it("is registered as a read under programs.read", () => {
     expect(AUTOMATION_STUDIO_ENDPOINTS.getRecordingCapturePolicy).toBe("get-recording-capture-policy");
-    expect(registryWith({}).endpoints()).toContainEqual({
+    expect(registryWith({}).endpoints()).toContainEqual(expect.objectContaining({
       programId: "automation-studio",
       endpoint: "get-recording-capture-policy",
       permission: "programs.read",
       classification: "read"
-    });
+    }));
   });
 
   it("answers Core's default policy, with or without a project, touching no service", async () => {

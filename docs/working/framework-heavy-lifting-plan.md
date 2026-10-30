@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800) and the Core-no ending words (t805) merged; P6 (t799), the repair-from-step fix (t804) and P1a (t806) in flight; P1b (after t804) and P5b next.
+Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800), the Core-no ending words (t805) and P1a (t806) merged; P6 (t799) and the repair-from-step fix (t804) in flight; P1b (after t804) and P5b next.
 Created: 2026-10-28
 Last updated: 2026-10-29
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -763,6 +763,12 @@ Each implementation lane's brief is in its dispatch and its report under the dow
 - Decisions (lead): the separating-field note stays advice until a live round shows marks working; a `within` bound over a value that has only a day compares by whole calendar days (follow-up), since an instant span drops a row dated on the edge day and makes "in the last week" ambiguous.
 - Validation: lead-run under the heavy-check lock on the trees merged with dev (t795, t797, t805): contracts `vitest run src/record-sets` -> "Tests 258 passed (258)"; `pnpm test` over nodes, storage/project, flow-bootstrap, llm, project-agents/dispatch, service/candidate-trial, result-verification -> "Tests 1 failed | 7593 passed | 6 skipped", real-sql "476 passed"; the failure was t795's pin that a bare "1d" is no date, which this lane changed on purpose, updated to expect the order claim contradicted -> result-verification "Test Files 181 passed (181)", "Tests 1403 passed (1403)"; prompt contracts "Tests 127 passed (127)"; `pnpm check` exit 0; docs current; structure passed; downstream in its ledger.
 - Outcome: Accepted. Follow-ups: one shared run now across page, build test and run end (needs the native node context and executor, after t799); K5 in the dry-run replay and whole-Flow builds; day-granular `within`; the panel's field picker keeps `mark`.
+
+### 2026-10-29 - P1a: bookkeeping folded outside the trial gate (t806)
+- Agent: supervisor (brief t806-p1a), four workers; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t806-p1a.md`
+- Changed: `llm/unknown-tool/` refuses an unknown tool id with the offered ids and the nearest match, counted by the refused-in-a-row guard; `project-agents/brief-defaults/` fills a brief's missing `kind`, `parts` and repair `failingReceipt` (never over the model's), `project.repair_unchanged` checked first, `kind` optional in the dispatch schema; `flow-bootstrap/unchanged-fix-point/` gives the first `unchanged_after_no` its diff and fix point; `activity/folded-reason.ts` lets Core write a folded step's line (P1b calls it); `ending-told.ts` composes an empty done reason from the record.
+- Validation: lead-run under the lock, merged with dev: tsc clean; `pnpm test` over llm, project-agents, candidate, unchanged-fix-point, activity, project-build-ending, service-bootstrap -> "Tests 3522 passed (3522)", real-sql "Tests 142 passed (142)", "all groups passed"; prompt contracts "Tests 122 passed (122)"; `pnpm check` exit 0; docs current; structure passed (`provider-stopped.test.ts` fails only when run alone, "No test found in suite", and passes in its group).
+- Outcome: Accepted. `supervisor/guidance.ts` still names `kind` as required (pin-sensitive; left for P1b).
 
 ## Open Questions
 

@@ -17,6 +17,7 @@ export * from "./lifecycle.ts";
 export * from "./pairing-flow.ts";
 export * from "./pairings.ts";
 export * from "./protocol-version.ts";
+export * from "./security/index.ts";
 export * from "./sessions.ts";
 export * from "./transport.ts";
 export * from "./trusted-clients.ts";

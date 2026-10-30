@@ -87,10 +87,13 @@ describe("FluxIQUserAccess", () => {
     expect(outcome(decide(ALICE, user, "studio:GetFlow", otherWorkspaceProject))).toBe("deny:implicit-deny");
   });
 
-  it("creates and lists on the workspace FRN, and reads nothing else there", () => {
+  it("creates and calls the filtered lists on the workspace FRN, and reads nothing else there", () => {
     expect(outcome(decide(ALICE, user, "studio:CreateProject", workspace))).toBe("allow:allowed");
-    expect(outcome(decide(ALICE, user, "studio:ListFlows", workspace))).toBe("allow:allowed");
+    expect(outcome(decide(ALICE, user, "studio:Projects", workspace))).toBe("allow:allowed");
     expect(outcome(decide(ALICE, user, "secrets:CreateKey", workspace))).toBe("allow:allowed");
+    // An unfiltered list across the workspace would show other users' items.
+    expect(outcome(decide(ALICE, user, "studio:ListFlows", workspace))).toBe("deny:implicit-deny");
+    expect(outcome(decide(ALICE, user, "studio:ListClientGatewayItems", workspace))).toBe("deny:implicit-deny");
     expect(outcome(decide(ALICE, user, "studio:GetFlow", workspace))).toBe("deny:implicit-deny");
     expect(outcome(decide(ALICE, user, "studio:Snapshot", workspace))).toBe("deny:implicit-deny");
   });

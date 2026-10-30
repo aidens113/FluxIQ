@@ -6,6 +6,23 @@ import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, AUTOMATION_STUDIO_INTERVENTION_MOD
 import type { AutomationStudioService } from "../../runtime/index.ts";
 import { assertFlowLlmExecutionSettings } from "./llm-execution-settings.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { endpointResource, type ProgramResourceRef } from "../../../_shared/iam/index.ts";
+import type { ProgramApiRequest } from "../../../_shared/api.ts";
+
+function payloadObject(request: ProgramApiRequest): Record<string, unknown> {
+  return request.payload !== null && typeof request.payload === "object" && !Array.isArray(request.payload) ? request.payload as Record<string, unknown> : {};
+}
+
+function flowOfFlowObject(request: ProgramApiRequest, preferFlowId: boolean): ProgramResourceRef {
+  const payload = payloadObject(request);
+  const flow = payload.flow !== null && typeof payload.flow === "object" ? payload.flow as Record<string, unknown> : {};
+  return { kind: "project-child", projectId: payload.projectId, child: "flow", childId: preferFlowId ? payload.flowId ?? flow.flowId : flow.flowId };
+}
+
+/** save-flow names its Flow only by the Flow object it carries (the handler ignores `flowId`). */
+const savedFlowResource = endpointResource.custom(["project/flow"], (request) => flowOfFlowObject(request, false));
+/** update-flow-settings names its Flow by `flowId`, else by the Flow object it carries, as the handler does. */
+const flowSettingsResource = endpointResource.custom(["project/flow"], (request) => flowOfFlowObject(request, true));
 
 export function registerFlowEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
@@ -14,6 +31,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlows,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlows",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowProjectRequest> : {};
       return { ok: true, payload: { flows: await service.listFlows(String(payload.projectId ?? "")) } };
@@ -24,6 +44,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSummaries,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowSummaries",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowProjectRequest> : {};
       return { ok: true, payload: { flows: await service.listAutomationFlowSummaries(String(payload.projectId ?? "")) } };
@@ -34,6 +57,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowMetadataPage,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListFlowMetadataPage",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowMetadataPageRequest> : {};
       return { ok: true, payload: { page: await service.listFlowMetadataPage({ projectId: String(payload.projectId ?? ""), ...(typeof payload.status === "string" ? { status: payload.status } : {}), ...(typeof payload.limit === "number" ? { limit: payload.limit } : {}), ...(typeof payload.cursor === "string" ? { cursor: payload.cursor } : {}) }) } };
@@ -44,6 +70,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowMetadataDetail,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlowMetadataDetail",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowIdProjectRequest> : {};
       const projectId = String(payload.projectId ?? "");
@@ -59,6 +88,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createFlow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:CreateFlow",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<CreateFlowRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { flow: await service.createFlow({ projectId: String(payload.projectId ?? ""), name: payload.name, description: payload.description, ...(typeof payload.flowId === "string" ? { flowId: payload.flowId } : {}) }) } };
@@ -69,6 +101,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlow,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetFlow",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<FlowIdProjectRequest> : {};
       return { ok: true, payload: { flow: await service.getFlow(String(payload.projectId ?? ""), String(payload.flowId ?? "")) } };
@@ -79,6 +114,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlow,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:SaveFlow",
+    accessLevel: "Write",
+    resource: savedFlowResource,
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<SaveFlowRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
       if (!payload.flow || typeof payload.flow !== "object") return { ok: false, error: "Flow object is required." };
@@ -90,6 +128,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:UpdateFlowSettings",
+    accessLevel: "Write",
+    resource: flowSettingsResource,
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Record<string, any>;
       const projectId = String(payload.projectId ?? "");
@@ -125,6 +166,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.applyGraphPatch,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:ApplyGraphPatch",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<ApplyGraphPatchRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
       if (!Array.isArray(payload.operations)) return { ok: false, error: "Graph patch operations are required." };
@@ -150,6 +194,9 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetGraphViewport",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("flow", "flowId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<GraphViewportRequest>;
       const bounds = payload.bounds && typeof payload.bounds === "object" ? payload.bounds : null;

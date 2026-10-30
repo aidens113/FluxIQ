@@ -5,11 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({ approvePairing: async (_code: string, _input: { approvedByUserId: string }): Promise<unknown> => null }));
 
 vi.mock("../../../../../lib/auth", () => ({
-  requireFluxIQUser: async () => ({ user: { id: "user.web" }, role: { permissions: ["runtime.control"] } })
+  requireFluxIQUser: async () => ({ session: { id: "session.web" }, user: { id: "user.web" }, role: { id: "role.web", permissions: ["runtime.control"] } })
 }));
-vi.mock("../../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({ programs: { clientGateway: { approvePairing: (code: string, input: { approvedByUserId: string }) => fixture.approvePairing(code, input) } } })
-}));
+// A real registry on the local profile decides the route, as live.
+vi.mock("../../../../../lib/fluxiq", async () => {
+  const { GlobalProgramApiRegistry } = await import("fluxiq");
+  const api = new GlobalProgramApiRegistry();
+  return { getFluxIQ: () => ({ programs: { api, clientGateway: { approvePairing: (code: string, input: { approvedByUserId: string }) => fixture.approvePairing(code, input) } } }) };
+});
 
 import { POST } from "../route";
 

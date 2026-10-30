@@ -5,6 +5,22 @@ import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingEntryRequest, type App
 import { AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { endpointResource } from "../../../_shared/iam/index.ts";
+import type { ProgramApiRequest } from "../../../_shared/api.ts";
+
+function payloadObject(request: ProgramApiRequest): Record<string, unknown> {
+  return request.payload !== null && typeof request.payload === "object" && !Array.isArray(request.payload) ? request.payload as Record<string, unknown> : {};
+}
+
+/**
+ * A call that names a project acts inside it; one that names none (the policy
+ * where nothing narrower is set, every recording the workspace holds) acts on
+ * the workspace. "Names" is the handlers' own test, a truthy `projectId`.
+ */
+export const projectOrWorkspaceResource = endpointResource.custom(["*", "project"], (request) => {
+  const projectId = payloadObject(request).projectId;
+  return projectId ? { kind: "project", projectId } : { kind: "workspace" };
+});
 
 export function registerRecordingEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
@@ -13,6 +29,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecordingCapturePolicy,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetRecordingCapturePolicy",
+    accessLevel: "Read",
+    resource: projectOrWorkspaceResource,
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as GetRecordingCapturePolicyRequest : {};
       const projectId = typeof payload.projectId === "string" && payload.projectId.trim() ? payload.projectId.trim() : null;
@@ -26,6 +45,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecording,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetRecording",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest & { recordingId?: unknown } : {};
       return { ok: true, payload: { recording: await service.getRecordingSession(String(payload.recordingId ?? ""), payload.projectId) } };
@@ -36,6 +58,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecordingEntryState,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetRecordingEntryState",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<GetRecordingEntryStateRequest> : {};
       return {
@@ -56,6 +81,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getStateSnapshot,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetStateSnapshot",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<GetStateSnapshotRequest> : {};
       return {
@@ -74,6 +102,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.repairRecordingStateIndex,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:RepairRecordingStateIndex",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<RepairRecordingStateIndexRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
       return {
@@ -91,6 +122,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createRecording,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:CreateRecording",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as CreateRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { recording: await service.createRecording({ ...payload, domainId: request.scope.domainId ?? null }) } };
@@ -101,6 +135,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateRecording,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:UpdateRecording",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as UpdateRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { recording: await service.updateRecording(payload) } };
@@ -111,6 +148,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRecording,
     permission: "runtime.control",
     classification: "destructive",
+    action: "studio:DeleteRecording",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as DeleteRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: await service.deleteRecording(payload) };
@@ -121,6 +161,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRecordings,
     permission: "runtime.control",
     classification: "destructive",
+    action: "studio:DeleteRecordings",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as DeleteRecordingsRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: await service.deleteRecordings(payload) };
@@ -131,6 +174,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProposal,
     permission: "runtime.control",
     classification: "destructive",
+    action: "studio:DeleteProposal",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as { projectId?: unknown; proposalId?: unknown; kind?: unknown; authSessionId?: unknown; authorizationPin?: unknown };
       return {
@@ -148,6 +194,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProposal,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetProposal",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<GetProposalRequest> : {};
       return {
@@ -165,6 +214,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingEntry,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:AppendRecordingEntry",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingEntryRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { recording: await service.appendRecordingEvent(payload) } };
@@ -175,6 +227,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingNote,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:AppendRecordingNote",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingNoteRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { recording: await service.appendRecordingNoteEntry(payload) } };
@@ -185,6 +240,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingMarker,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:AppendRecordingMarker",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as AppendRecordingMarkerRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { recording: await service.appendRecordingMarkerEntry(payload) } };
@@ -200,6 +258,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.removeRecordingEntry,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:RemoveRecordingEntry",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<Record<keyof RemoveRecordingEntryRequest, unknown>>;
       const projectId = typeof payload.projectId === "string" ? payload.projectId.trim() : "";
@@ -216,6 +277,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.finalizeRecording,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:FinalizeRecording",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as FinalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { recording: service.summarizeRecordingSession(await service.finalizeRecording(payload)) } };
@@ -226,6 +290,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.processFinalizedRecording,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:ProcessFinalizedRecording",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProcessFinalizedRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { result: await service.processFinalizedRecording({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? ""), force: payload.force === true }) } };
@@ -236,6 +303,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateRecordingProposal,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:GenerateRecordingProposal",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as { projectId?: unknown; recordingId?: unknown; mode?: unknown; title?: unknown; instructions?: unknown; constraints?: unknown; replaceProposalId?: unknown };
       return {
@@ -259,6 +329,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.normalizeRecording,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:NormalizeRecording",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as NormalizeRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { normalizedTimeline: await service.normalizeRecording(payload) } };
@@ -269,6 +342,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createNormalizationReview,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:CreateNormalizationReview",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as RecordingIdProjectRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       return { ok: true, payload: { review: await service.createNormalizationReview({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? "") }) } };
@@ -279,6 +355,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNormalizedTimelines,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListNormalizedTimelines",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
       return { ok: true, payload: { normalizedTimelines: payload.projectId ? await service.listProjectNormalizedTimelines(payload.projectId) : [] } };
@@ -289,6 +368,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNormalizedTimelineSummaries,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListNormalizedTimelineSummaries",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
       return { ok: true, payload: { normalizedTimelines: payload.projectId ? await service.listProjectNormalizedTimelineSummaries(payload.projectId) : [] } };
@@ -299,6 +381,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getNormalizedTimeline,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetNormalizedTimeline",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as Partial<NormalizedTimelineProjectRequest> : {};
       return { ok: true, payload: { normalizedTimeline: await service.getProjectNormalizedTimeline(String(payload.projectId ?? ""), String(payload.normalizedTimelineId ?? "")) } };
@@ -309,6 +394,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listPipelineArtifacts,
     permission: "programs.read",
     classification: "read",
+    action: "studio:ListPipelineArtifacts",
+    accessLevel: "List",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as RecordingProjectRequest : {};
       return { ok: true, payload: await service.listPipelineArtifacts(String(payload.projectId ?? "")) };
@@ -319,6 +407,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.mineRecordingEvidence,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:MineRecordingEvidence",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as MineRecordingEvidenceRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       const input: Parameters<AutomationStudioService["mineRecordingEvidence"]>[0] = { projectId: String(payload.projectId ?? "") };
@@ -332,6 +423,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.learnTaskModel,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:LearnTaskModel",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as LearnTaskModelRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       const input: Parameters<AutomationStudioService["learnTaskModel"]>[0] = { projectId: String(payload.projectId ?? "") };
@@ -345,6 +439,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.proposePolicyFromModel,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:ProposePolicyFromModel",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ProposePolicyFromModelRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       const input: Parameters<AutomationStudioService["proposePolicyFromModel"]>[0] = { projectId: String(payload.projectId ?? "") };
@@ -359,6 +456,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.approvePolicyProposal,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:ApprovePolicyProposal",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ApprovePolicyProposalRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       const input: Parameters<AutomationStudioService["approvePolicyProposal"]>[0] = { projectId: String(payload.projectId ?? ""), proposalId: String(payload.proposalId ?? "") };
@@ -375,6 +475,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createRecordingFlowProposals,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:CreateRecordingFlowProposals",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Record<string, unknown>;
       return { ok: true, payload: await service.createRecordingFlowProposals({ projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? ""), ...(typeof payload.mapperId === "string" ? { mapperId: payload.mapperId } : {}), ...(payload.force === true ? { force: true } : {}) }) };
@@ -385,6 +488,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewRecordingFlowProposal,
     permission: "flows.write",
     classification: "authoring",
+    action: "studio:ReviewRecordingFlowProposal",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Record<string, unknown>;
       const decision = payload.decision === "rejected" ? "rejected" as const : "approved" as const;
@@ -398,6 +504,9 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.replayPolicyAgainstRecording,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:ReplayPolicyAgainstRecording",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("recording", "recordingId"),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as ReplayPolicyAgainstRecordingRequest & { authSessionId?: unknown; authorizationPin?: unknown };
       const input: Parameters<AutomationStudioService["replayPolicyAgainstRecording"]>[0] = { projectId: String(payload.projectId ?? ""), recordingId: String(payload.recordingId ?? "") };

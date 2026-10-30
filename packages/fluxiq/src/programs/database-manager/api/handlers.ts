@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { endpointResource } from "../../_shared/iam/index.ts";
 import { isJsonObject } from "../../_shared/storage.ts";
 import {
   DATABASE_MANAGER_ENDPOINTS,
@@ -22,6 +23,9 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     endpoint: DATABASE_MANAGER_ENDPOINTS.snapshot,
     permission: "programs.read",
     classification: "read",
+    action: "ops:Snapshot",
+    accessLevel: "Read",
+    resource: endpointResource.program(),
     handler: async (request) => ({
       ok: true,
       payload: await service.snapshot(request.scope)
@@ -32,6 +36,9 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     endpoint: DATABASE_MANAGER_ENDPOINTS.authorizeStore,
     permission: "programs.read",
     classification: "program-gated",
+    action: "ops:AuthorizeStore",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerStoreRequest | undefined;
       if (!payload?.kind || !isSensitiveStore(payload.kind)) return { ok: false, error: "A sensitive store kind is required" };
@@ -51,6 +58,9 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     endpoint: DATABASE_MANAGER_ENDPOINTS.listRecords,
     permission: "programs.read",
     classification: "program-gated",
+    action: "ops:ListRecords",
+    accessLevel: "List",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerStoreRequest | undefined;
       if (!payload?.kind) return { ok: false, error: "kind is required" };
@@ -65,6 +75,9 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     endpoint: DATABASE_MANAGER_ENDPOINTS.getRecord,
     permission: "programs.read",
     classification: "program-gated",
+    action: "ops:GetRecord",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -79,6 +92,9 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     endpoint: DATABASE_MANAGER_ENDPOINTS.putRecord,
     permission: "data.manage",
     classification: "program-gated",
+    action: "ops:PutRecord",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerPutRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -94,6 +110,9 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     endpoint: DATABASE_MANAGER_ENDPOINTS.deleteRecord,
     permission: "data.manage",
     classification: "program-gated",
+    action: "ops:DeleteRecord",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -108,6 +127,9 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     endpoint: DATABASE_MANAGER_ENDPOINTS.runMigration,
     permission: "data.manage",
     classification: "destructive-ungated",
+    action: "ops:RunMigration",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRunMigrationRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
