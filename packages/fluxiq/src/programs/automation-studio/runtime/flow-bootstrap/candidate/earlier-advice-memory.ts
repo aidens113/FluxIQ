@@ -8,8 +8,8 @@
 // to a read's condition; the next revision made exactly that change and stored
 // exactly the rows asked for, and its judges answered no for that very change.
 // The judge request carried nothing of the earlier trial. So each judged trial
-// with advice -- a no's, or an unsure's reading's -- is kept here as the builder
-// was shown it, with Core's record of the trial and the plan that ran, the
+// with a defect Core located in its record (P5b: never a judge's prose advice) is
+// kept here as Core's sentence for it, with Core's record of the trial and the plan that ran, the
 // every earlier revision; before the gate asks for a trial of another revision, Core says
 // what each advised and whether that revision changed what it named
 // (`../../result-verification/standing-no/earlier-advice.ts`), and the request
@@ -18,22 +18,19 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioResultEarlierAdvice } from "../../result-verification/contracts/index.ts";
-import { automationStudioResultEarlierAdvice, type AutomationStudioResultConditionPlan } from "../../result-verification/standing-no/index.ts";
+import { automationStudioResultEarlierAdvice, automationStudioResultLocatedAdvice, automationStudioResultStandingNoRecordOf, type AutomationStudioResultConditionPlan } from "../../result-verification/standing-no/index.ts";
 
 /** One judged trial with advice, as a gate keeps it (header). */
 export type AutomationStudioCandidateEarlierAdviceTrial = {
   revision: number;
   verdict: "no" | "unsure";
-  /** The advice as the builder was shown it, bounded. */
+  /** Core's sentence for the defects it located in its record of the trial (P5b), never a judge's advice. */
   advice: string;
   /** Core's record of the trial (`../../result-verification/standing-no/`), unread. */
   standingNo?: unknown;
   /** The plan of the revision that ran. */
   plan?: AutomationStudioResultConditionPlan;
 };
-
-/** The most characters of one advice kept. */
-const ADVICE_MOST = 800;
 
 /** One gate's memory of its build's judged trials' advice (header). */
 export class AutomationStudioCandidateEarlierAdviceMemory {
@@ -47,10 +44,13 @@ export class AutomationStudioCandidateEarlierAdviceMemory {
     }
   }
 
-  /** Keeps a judged trial's advice as the builder was shown it (header), and answers what it kept; nothing where it carries no advice. */
-  remember(trial: { revision: number; verdict: string; feedback: JsonObject; standingNo?: unknown; plan?: AutomationStudioResultConditionPlan | undefined }): AutomationStudioCandidateEarlierAdviceTrial | undefined {
+  /**
+   * Keeps what Core located in a judged trial's record (P5b, header), and answers what it kept; nothing where it
+   * located no defect. The feedback the builder was shown is not read: a judge's prose advice is never kept.
+   */
+  remember(trial: { revision: number; verdict: string; feedback?: JsonObject; standingNo?: unknown; plan?: AutomationStudioResultConditionPlan | undefined }): AutomationStudioCandidateEarlierAdviceTrial | undefined {
     if (trial.verdict !== "no" && trial.verdict !== "unsure") return undefined;
-    const advice = adviceOf(trial.verdict, trial.feedback);
+    const advice = automationStudioResultLocatedAdvice(automationStudioResultStandingNoRecordOf(trial.standingNo)?.located);
     if (!advice) return undefined;
     const kept: AutomationStudioCandidateEarlierAdviceTrial = {
       revision: trial.revision, verdict: trial.verdict, advice,
@@ -72,22 +72,15 @@ export class AutomationStudioCandidateEarlierAdviceMemory {
   }
 }
 
-/** The advice a trial's feedback showed the builder: a no's judge advice, an unsure's reading's (`../../service/candidate-trial/feedback.ts`). */
-function adviceOf(verdict: "no" | "unsure", feedback: JsonObject): string | undefined {
-  const readings = verdict === "no" ? [feedback.judge] : [feedback.unconfirmedReading, feedback.answeredReading];
-  for (const reading of readings) {
-    const advice = isRecord(reading) && typeof reading.advice === "string" ? reading.advice.trim() : "";
-    if (advice) return advice.length > ADVICE_MOST ? `${advice.slice(0, ADVICE_MOST - 3)}...` : advice;
-  }
-  return undefined;
-}
-
 /** A kept trial read back from a port (header): a copy where it has the shape, nothing otherwise. */
 function trialOf(value: unknown): AutomationStudioCandidateEarlierAdviceTrial | undefined {
-  if (!isRecord(value) || !Number.isSafeInteger(value.revision) || (value.verdict !== "no" && value.verdict !== "unsure") || typeof value.advice !== "string" || !value.advice.trim()) return undefined;
+  if (!isRecord(value) || !Number.isSafeInteger(value.revision) || (value.verdict !== "no" && value.verdict !== "unsure")) return undefined;
+  // Rebuilt from Core's located defects whatever advice the value carries: an earlier brief's prose advice is not carried on (P5b).
+  const advice = automationStudioResultLocatedAdvice(automationStudioResultStandingNoRecordOf(value.standingNo)?.located);
+  if (!advice) return undefined;
   const plan = isRecord(value.plan) && Array.isArray(value.plan.subflows) ? structuredClone(value.plan) as AutomationStudioResultConditionPlan : undefined;
   return {
-    revision: value.revision as number, verdict: value.verdict, advice: value.advice.slice(0, ADVICE_MOST),
+    revision: value.revision as number, verdict: value.verdict, advice,
     ...(value.standingNo !== undefined ? { standingNo: structuredClone(value.standingNo) } : {}),
     ...(plan ? { plan } : {})
   };

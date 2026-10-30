@@ -34,6 +34,7 @@ import type { AutomationStudioLlmDiagnosisFields } from "./structured-response.t
 import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmInRunRepairContext } from "./task-request.ts";
 import { automationStudioLlmWellFormedVerificationDefects } from "../verification-defects/index.ts";
+import { automationStudioLlmWellFormedVerificationChecked } from "../verification-checked/index.ts";
 
 export type AutomationStudioLlmContextPacket = {
   schemaVersion: "0.1";
@@ -492,6 +493,7 @@ function packDiagnosisFields(
     ...(verdict(diagnosis.stillAchievable) ? { stillAchievable: verdict(diagnosis.stillAchievable)! } : {}),
     ...(verdict(diagnosis.deterministicRecoveryPossible) ? { deterministicRecoveryPossible: verdict(diagnosis.deterministicRecoveryPossible)! } : {}),
     ...(diagnosis.defects !== undefined ? { defects } : {}),
+    ...(diagnosis.checked !== undefined ? { checked: automationStudioLlmWellFormedVerificationChecked(diagnosis.checked).kept } : {}),
     ...(flag(diagnosis.explorationNeeded) !== undefined ? { explorationNeeded: flag(diagnosis.explorationNeeded)! } : {}),
     ...(flag(diagnosis.patchNeeded) !== undefined ? { patchNeeded: flag(diagnosis.patchNeeded)! } : {})
   };

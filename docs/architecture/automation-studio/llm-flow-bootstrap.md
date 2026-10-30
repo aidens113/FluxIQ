@@ -3903,7 +3903,8 @@ cannot measure. Such claims remain unconfirmed; lack of a locatable row defect n
 
 After one recheck, a structured no that Core cannot ground becomes `unsure`, never an automatic
 yes. Promotion still requires independent model confirmation. Only explicit independent yeses on
-recheck may settle the result as yes. Persisted legacy diagnoses remain readable without a structured field. Every current negative
+recheck may settle the result as yes. The one exception is a no every row of which Core's record
+of that row refutes, below (t810). Persisted legacy diagnoses remain readable without a structured field. Every current negative
 verification passes a task-specific decoding flag: missing, malformed or partly malformed defect
 accounts are unusable and leave the result unsure, rather than being treated as legacy negatives.
 Positive and unrelated diagnosis replies retain their established decoder behavior.
@@ -3946,6 +3947,52 @@ confirm (lead decision, 2026-10-27): a second yes stands as yes, anything else i
 a no Core could not ground observed or advised is carried on: its unsure outcome's
 `unconfirmedReading` holds only what it read the request to ask and `recordContradicts`, and a
 later trial's judge is told the advice of earlier trials judged no only (`earlierAdvice`).
+
+### Refuted defect rows, cited yeses and located-only advice (framework plan P5b, t810)
+
+Demo run `run-mvud43a2-445c7f17` stored exactly the rows asked for and ended unverified: every judge
+said no, naming as missing posts of groups the person had not joined (each item offered the person
+a control to join) and a row whose own cell said something else than the judge claimed.
+
+**A defect row Core's record of that row refutes does not stand**
+(`result-verification/located-defects/row-refuted.ts`). Core never knows the kind of set or control;
+it knows the client's per-item mark `outside` (`AutomationStudioResultItemMark`: the item offered the
+person entry to its set, so the person is not in it; `said` quotes the control). The client reads it
+on each row a read leaves out and the read's summary carries it as `rejectedMarks`
+(`service/summaries/extraction-summary.ts`), placed as a condition's `leftOutMarks` and a
+`leftOutTogether` set's `marks`, aligned with the rows, and the judge sees them beside the cells.
+Three refutations, each with Core's quote of the evidence, recorded as the outcome's `refutedRows`:
+
+- `outside_mark`: an `asked_missing` row a read left out whose item carried an `outside` mark, where
+  the defect quotes first-person request words that negate nothing;
+- `cell_differs`: the row's own cell in the defect's column is not empty and neither is, holds, nor
+  is held by the value the defect claims;
+- `not_kept`: a `wrong_value` or `kept_not_asked` claim about a row the result does not hold.
+
+A refuted defect is never located. A no every defect of which is refuted is asked once more, in the
+t752 re-ask's place, with Core's evidence for each row, the rows in reverse order and the converse
+question (`refuted-no/refuted-rows-recheck.ts`), never the generic recheck. Then, if every call's
+latest answer is a wholly refuted no or a yes citing nothing Core refutes, the verdict is `answers`:
+the yes's own, or `core.result.no_refuted_by_record` where no yes came, so a temperature-0 flip
+between the two does not decide it. A re-ask no naming a defect Core finds, or a re-ask that did not
+come back usable, is weighed as before. A failing computed fact stays a Core no and the
+requested-output hold stays last.
+
+**A yes cites what it checked** (`result-verification/cited-yes/`, `llm/verification-checked/`).
+The verification's diagnosis offers `checked`: each stored row the yes checked, a stored column and
+that row's own value there. Core looks each up in the stored rows (not where it holds only a sample
+of the answer); a yes citing a cell the result does not hold is `unsure`,
+`core.result.yes_citation_refuted`, and the outcome records `yesCitations {cited, refuted}`. A yes
+with no `checked` is read as before.
+
+**Earlier advice is located-only** (`result-verification/standing-no/earlier-advice-located.ts`). A
+later trial's judge is told, as `earlierAdvice`, only the defects Core located in its record of an
+earlier trial judged no (the standing-no record's `located`), never a judge's prose, to cut
+anchoring; a no Core located nothing of leaves none. **Feedback keeps its provenance**
+(`service/candidate-trial/feedback.ts`): a judged trial's feedback carries `provenance`, naming each
+field `judge_said` (a judge's reading) or `core_found` (Core's own finding). **A Core no keeps a
+`standingNo` record** (`standing-no-record/core-record.ts`, `source: "core"`, with the failing facts'
+located defects), so the trial gate keeps Core's record of it as it keeps a judge's.
 
 A read that supplies a repeat loop and is superseded by a later read of the same target is working
 rows when the graph/run evidence establishes that relationship. Its record set is excluded from

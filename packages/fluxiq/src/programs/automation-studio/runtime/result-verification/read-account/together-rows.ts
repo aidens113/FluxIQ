@@ -22,7 +22,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultLeftOutTogether } from "../contracts/index.ts";
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
-import { automationStudioResultReadLeftOutCells } from "../left-out-cells/index.ts";
+import { automationStudioResultReadLeftOutCells, automationStudioResultReadLeftOutMarks } from "../left-out-cells/index.ts";
 
 /**
  * Each set of conditions that left rows out together, numbered from 1 in
@@ -42,7 +42,9 @@ export function automationStudioResultReadTogetherRows(value: JsonValue | undefi
     if (!rows || rows.length !== entry.rows.length) return undefined;
     // Each row's own cells beside its label (`../left-out-cells/`, t771).
     const cells = automationStudioResultReadLeftOutCells(entry.rows, rows.length, deniedKeys);
-    sets.push({ conditions: numbers, rows, ...(cells ? { cells } : {}) });
+    // And the marks the client read on those items, beside the cells (`../left-out-cells/`, t810).
+    const marks = automationStudioResultReadLeftOutMarks(entry.marks, rows.length, deniedKeys);
+    sets.push({ conditions: numbers, rows, ...(cells ? { cells } : {}), ...(marks ? { marks } : {}) });
   }
   return sets.length ? sets : undefined;
 }

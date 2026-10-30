@@ -14,6 +14,8 @@
 // nothing of it, answered no for that change. The gate that keeps the build's
 // trials hands each request `earlierAdvice` (`../../flow-bootstrap/candidate/earlier-advice-memory.ts`),
 // appended last here so the summary before it, the judge's cached prefix, is unchanged.
+// Each entry is located-only (P5b): the defects Core located in its record of that trial and
+// whether the revision changed what they trace to, never an earlier judge's prose advice.
 //
 // **And what the trial changed on the site (t775).** A trial is judged against
 // the site's state just before it and the change the task asks for (user,

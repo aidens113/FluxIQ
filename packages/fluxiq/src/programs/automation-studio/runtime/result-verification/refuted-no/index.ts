@@ -32,6 +32,10 @@
 // rows left out together telling labels apart (`named-rows.ts`, `record.ts`).
 // And (live-lane-1 fix 4) a clause granting that rows a condition left out came
 // back by another copy is no reason of a no (`weigh.ts`).
+// And (t810) the recheck of a no whose every defect row Core's record of that
+// row refutes (`../located-defects/row-refuted.ts`): Core's evidence for each
+// row, the rows in the reverse of the no's order, and the converse question
+// (`refuted-rows-recheck.ts`).
 export * from "./advice-condition.ts";
 export * from "./condition-references.ts";
 export * from "./condition-wording.ts";
@@ -46,6 +50,7 @@ export * from "./named-rows.ts";
 export * from "./node-ids.ts";
 export * from "./reask.ts";
 export * from "./recheck-words.ts";
+export * from "./refuted-rows-recheck.ts";
 export * from "./record.ts";
 export * from "./record-conditions.ts";
 export * from "./request-text-test.ts";

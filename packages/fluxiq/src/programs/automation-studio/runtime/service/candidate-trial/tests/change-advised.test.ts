@@ -38,7 +38,8 @@ describe("a not_judged after a held yes that advised a change (t636)", () => {
 
   it("adds nothing to any other not_judged: its feedback is as it was", () => {
     const plain = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "not_judged", why: WHY, yesUnconfirmed: true, spent: { ...SPENT_TWO } }, summary, trialRunId: "trial.2", start: "reset" });
-    expect(Object.keys(plain.feedback)).toEqual(["trialRunId", "start", "stored", "steps", "code", "why", "yesUnconfirmed"]);
+    expect(Object.keys(plain.feedback)).toEqual(["trialRunId", "start", "stored", "steps", "code", "why", "yesUnconfirmed", "provenance"]);
+    expect(plain.feedback.provenance).toEqual({ why: "core_found" });
     expect(plain.feedback).not.toHaveProperty("changeAdvised");
     expect(plain.feedback).not.toHaveProperty("answeredReading");
   });

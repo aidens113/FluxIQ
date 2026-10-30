@@ -194,6 +194,21 @@
 // (`unsupportedNo`): beside a no that names one the verdict stays no, and
 // otherwise the outcome is unsure (`refutationUnsupported`), never a no.
 //
+// **A no naming only rows Core's record of each refutes does not stand
+// (t810).** Run `run-mvud43a2-445c7f17`: every judge of a correct Flow called
+// left-out rows missing that Core's record of each row refutes -- items the
+// client marked outside the person's set, a row given a value its own cell
+// does not hold (`../located-defects/row-refuted.ts`). Asked the t752 recheck,
+// they repeated it on byte-identical requests, and the outcome was unsure.
+// In `unsupported-no.ts`, such a no -- every defect refuted, at least one -- is
+// asked once with Core's evidence for each row, reversed, and the converse
+// question (`../refuted-no/refuted-rows-recheck.ts`); where every call's
+// latest answer is then a no Core's record wholly refutes, or a yes citing no
+// cell Core refutes, the result answers (`noRefutedByRecord` where no yes
+// came), the rows recorded (`refutedRows`); a yes citing a cell Core refutes
+// is unsure (`yesCitationRefuted`); anything else is weighed as before. t607's
+// prose refutations keep their own unsure (`refutationContradicted`).
+//
 // The agreement itself is `verification-agreement.ts` over `agree.ts`; the
 // re-asks are `reask-contradicted.ts`, `reask-split-no.ts` and, last,
 // `unsupported-no.ts` over `located-defects/`; whether

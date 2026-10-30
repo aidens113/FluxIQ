@@ -180,6 +180,16 @@
 // holds (`./row-mark.ts`): the column of the read that marks the rows the listed
 // values pick out, or, where none does, where to look in the read's structure.
 //
+// **Each judged item says whose finding it is (P5b).** A judged trial's feedback
+// carries `provenance`, a map from each field it holds to `judge_said` (a judge's
+// reading, which can be mistaken: `judge`, `unconfirmedReading`,
+// `answeredReading`) or `core_found` (Core's own finding in its record, which
+// stands: `findings`, `fix`, `checked`, `rowMark`, `why`, `doubtContradicted`,
+// `changeAdvised`). A no Core made itself, with no judge asked (a computed fact
+// that fails, its standing-no record marked `source: "core"`), has even its
+// `judge` fields `core_found`. Only the fields present are listed; a yes and an
+// execution failure carry none.
+//
 // **A step a pass never ran is said, per pass (t796).** Run
 // `run-mvtdn37t-e1e4d0a7` wrote its act step `only after:` an optional step whose
 // control was absent on every pass, so a guard went past the act on all 21
@@ -257,6 +267,16 @@ const CHANGE_ADVISED = Object.freeze({
     + "answeredReading is what that call compared, and its advice the change it named. Weigh that advice against this trial's own reads, steps and stored rows: make the change where that evidence supports it; otherwise test this same revision again."
 });
 
+/** Whose finding a feedback field is (header, P5b). */
+type Provenance = "judge_said" | "core_found";
+
+/** `feedback` with `provenance` for each field of `claims` it holds (header, P5b). */
+function withProvenance(feedback: JsonObject, claims: Record<string, Provenance>): JsonObject {
+  const held: JsonObject = {};
+  for (const [field, whose] of Object.entries(claims)) if (feedback[field] !== undefined) held[field] = whose;
+  return { ...feedback, provenance: held };
+}
+
 /** The most steps a feedback lists; a longer run lists its first ones and the last it ran, and says how many it left out between (header, S5). */
 const MAX_STEPS = 40;
 
@@ -302,7 +322,9 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
       const advice = automationStudioResultAdviceShown(judged.advice);
       // The mark to test in place of a noted list of values (header, t790).
       const rowMark = automationStudioTrialRowMark(advice, input.summary);
-      return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice, stillAchievable: judged.stillAchievable }), ...(rowMark ? { rowMark } : {}), ...findings, ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
+      const whose: Provenance = judged.standingNo?.source === "core" ? "core_found" : "judge_said";
+      return { verdict: "no", code: "candidate.trial_judged_no", feedback: withProvenance({ ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice, stillAchievable: judged.stillAchievable }), ...(rowMark ? { rowMark } : {}), ...findings, ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) },
+        { judge: whose, findings: "core_found", fix: "core_found", checked: "core_found", rowMark: "core_found" }) };
     }
     if (judged.verdict === "unknown") {
       const split = judged.answeredReading !== undefined;
@@ -311,14 +333,16 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
       const advice = judged.unconfirmedReading ? automationStudioResultAdviceShown(judged.unconfirmedReading.advice) : undefined;
       // The mark to test in place of a noted list of values (header, t790).
       const rowMark = automationStudioTrialRowMark(advice, input.summary);
-      return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: { ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading, advice }) } : {}), ...(rowMark ? { rowMark } : {}),
+      return { verdict: "unsure", code: "candidate.trial_unconfirmed", feedback: withProvenance({ ...common, code: "candidate.trial_unconfirmed", why: judged.why, ...(judged.unconfirmedReading ? { unconfirmedReading: compact({ ...judged.unconfirmedReading, advice }) } : {}), ...(rowMark ? { rowMark } : {}),
         ...(doubt ? { doubtContradicted: doubt } : {}),
-        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") + (doubt ? DOUBT_NOTE : "") } : doubt ? { readings: DOUBT_ALONE_NOTE } : {}) } };
+        ...(split ? { answeredReading: compact({ ...judged.answeredReading }), readings: (judged.unconfirmedReading ? SPLIT_NOTE : UNREAD_SPLIT_NOTE) + (paged ? PAGING_SPLIT_NOTE : "") + (doubt ? DOUBT_NOTE : "") } : doubt ? { readings: DOUBT_ALONE_NOTE } : {}) },
+        { why: "core_found", unconfirmedReading: "judge_said", answeredReading: "judge_said", rowMark: "core_found", doubtContradicted: "core_found", readings: "core_found" }) };
     }
     // A not_judged whose every judge call answered yes, Core holding the yes, says so as a field a gate reads (header, t611).
     // A held yes that advised a change, with that yes's reading and the change it named (header, t636).
     const advised = judged.changeAdvised ? { changeAdvised: { ...CHANGE_ADVISED }, ...(judged.answeredReading ? { answeredReading: compact({ ...judged.answeredReading }) } : {}) } : {};
-    return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why, ...(judged.yesUnconfirmed ? { yesUnconfirmed: true } : {}), ...advised } };
+    return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: withProvenance({ ...common, code: "candidate.trial_not_judged", why: judged.why, ...(judged.yesUnconfirmed ? { yesUnconfirmed: true } : {}), ...advised },
+      { why: "core_found", changeAdvised: "core_found", answeredReading: "judge_said" }) };
   }
 });
 
