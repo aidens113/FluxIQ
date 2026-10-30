@@ -1,9 +1,9 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800), the Core-no ending words (t805), P1a (t806), the P7 follow-ups (t807) and the repair-from-step fix (t804) merged; P6 (t799) and P5b (t810) in flight; P1b next.
+Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800), the Core-no ending words (t805), P1a (t806), the P7 follow-ups (t807) and the repair-from-step fix (t804) merged; P6 (t799, verification stopped at the 2026-10-30 handoff), P5b (t810) and P1b (t811) in flight; the session handoff is in the paired downstream document's Current State.
 Created: 2026-10-28
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
 Scope: Every responsibility Core's model-facing loop leaves to the model, classified as semantic (model), computable or enforceable by Core for any client environment, or client-specific; with the generic contract each client would supply.
 Paired document: ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan.md (web-specific parts)
