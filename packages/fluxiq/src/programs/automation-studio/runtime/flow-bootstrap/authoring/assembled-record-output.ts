@@ -26,6 +26,7 @@ import { isAutomationNodeParameterStateBinding, type AutomationStudioNodeDefinit
 import { automationStudioFlowBootstrapDeclaredRecordsPath, type AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { authoringInstructionRecordColumns } from "./instruction-record-columns.ts";
 import { authoringWarning } from "./issue.ts";
+import type { AuthoringPartAnswer } from "../record-defaults/index.ts";
 import { normaliseAuthoringRecordOutput } from "./record-output.ts";
 import { isJsonObject } from "./values.ts";
 
@@ -46,12 +47,14 @@ export function automationStudioFlowBootstrapAssembledRecordOutput(input: {
   stepId?: string | undefined;
   /** The columns the instruction names (`./instruction-record-columns.ts`). */
   namedColumns?: readonly string[] | undefined;
+  /** The plan part the step serves, when its caller knows it (`./part/answer.ts`): its answer's columns stand for the instruction's. */
+  part?: AuthoringPartAnswer | undefined;
   /** Where the parameter sits in the plan, for the path an issue carries. */
   path: string;
 }): { value: JsonValue | undefined; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const fieldKeys = columnNames(input.parameters);
-  const asked = instructionColumns(input.definition, input.namedColumns, fieldKeys);
+  const asked = instructionColumns(input.definition, input.part?.columns.length ? input.part.columns : input.namedColumns, fieldKeys);
   const written = input.parameters[input.parameterId];
   const undeclared = written === undefined || written === null;
   const extraction = fieldKeys.length > 0 && automationStudioFlowBootstrapDeclaredRecordsPath(input.definition) !== undefined;
@@ -63,6 +66,8 @@ export function automationStudioFlowBootstrapAssembledRecordOutput(input: {
     fallbackName: input.fallbackName,
     stepId: input.stepId,
     labelFromFallback: undeclared,
+    part: input.part,
+    readableFields: fieldKeys,
     path: input.path
   });
   issues.push(...read.issues);

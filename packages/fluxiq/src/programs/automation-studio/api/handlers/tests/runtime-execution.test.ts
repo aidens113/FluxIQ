@@ -37,7 +37,7 @@ describe("the run endpoint and a run's model intent", () => {
   /** The run endpoint's handler, called directly so a request with no actor reaches it. */
   function runHandler(service: object) {
     const handlers = new Map<string, (request: unknown) => unknown>();
-    registerAutomationStudioApi({ register: (registration: { endpoint: string; handler: (request: unknown) => unknown }) => { handlers.set(registration.endpoint, registration.handler); } } as any, service as any);
+    registerAutomationStudioApi({ register: (registration: { endpoint: string; handler: (request: unknown) => unknown }) => { handlers.set(registration.endpoint, registration.handler); }, registerResourceOwners: () => undefined } as any, service as any);
     return handlers.get(AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession)!;
   }
 

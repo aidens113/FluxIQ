@@ -30,6 +30,12 @@ export type AutomationStudioSubflowScopePart = {
    * (`candidate.trial_starts_in_end_state`). Absent, the part is judged from the run alone.
    */
   effect?: AutomationStudioTrialPartEffect;
+  /**
+   * The records the task spec says this part hands back (K5, t800), when the dispatcher carries them: a step of this
+   * brief whose record output leaves its schema, label or columns out gets them from here
+   * (`../record-defaults/scope-part-of.ts`). Absent, the builder declares them, as before.
+   */
+  answer?: { columns: readonly string[] };
 };
 
 /**

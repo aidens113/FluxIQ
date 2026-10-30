@@ -129,9 +129,12 @@ describe("the vocabulary a model writes an extraction filter from", () => {
     // published the date bound of `where` (`as: "date"`, a bound with its
     // year, an unreadable row date never kept) in the same contract text, for
     // run-mvswewhy-e4e469d4's "on or after" request: 294 bytes on purpose, to
-    // 4,688. The bound sits just above the intended entry, not room for
-    // another addition.
-    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(4_700);
+    // 4,688. The bound was 4,700 until t800 (2026-10-29) published a date
+    // bound relative to the run's now (today, yesterday, now, <n> <unit> ago)
+    // and `within: "<n> minutes|hours|days|weeks"` in the same contract text
+    // (K1): 146 bytes on purpose, to 4,834. The bound sits just above the
+    // intended entry, not room for another addition.
+    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(4_850);
     expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBe(context.catalogSelection.usedBytes);
   });
 

@@ -39,7 +39,7 @@ describe("Automation Studio activity API", () => {
   it("registers get-activity as a read under programs.read", () => {
     const { registry } = activityApi();
     expect(AUTOMATION_STUDIO_ENDPOINTS.getActivity).toBe("get-activity");
-    expect(registry.endpoints()).toEqual([{ programId: "automation-studio", endpoint: "get-activity", permission: "programs.read", classification: "read" }]);
+    expect(registry.endpoints()).toEqual([expect.objectContaining({ programId: "automation-studio", endpoint: "get-activity", permission: "programs.read", classification: "read" })]);
   });
 
   it("answers with the named project's current event and the events before it, oldest first", async () => {
@@ -80,7 +80,7 @@ describe("Automation Studio activity API", () => {
     const service = vi.fn();
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, new Proxy({}, { get: () => service }) as unknown as AutomationStudioService);
-    expect(registry.endpoints()).toContainEqual({ programId: "automation-studio", endpoint: "get-activity", permission: "programs.read", classification: "read" });
+    expect(registry.endpoints()).toContainEqual(expect.objectContaining({ programId: "automation-studio", endpoint: "get-activity", permission: "programs.read", classification: "read" }));
     const response = await registry.call({ programId: "automation-studio", endpoint: "get-activity", scope: { domainId: null }, actor: readActor, payload: { projectId: "project.never-used-by-any-test" } });
     expect(response).toEqual({ ok: true, payload: { current: null, recent: [] } });
     expect(service).not.toHaveBeenCalled();

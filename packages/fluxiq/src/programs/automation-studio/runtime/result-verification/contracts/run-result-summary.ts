@@ -2,6 +2,7 @@ import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioTrialChangeFinding, AutomationStudioTrialSiteChange } from "../../flow-bootstrap/trial-change/index.ts";
 import type { AutomationStudioResultRecordSetSummary } from "../record-set-summary.ts";
 import type { AutomationStudioBuildTestAccount } from "./build-test.ts";
+import type { AutomationStudioResultComputedFact } from "./computed-facts.ts";
 import type { AutomationStudioResultEarlierAdvice } from "./earlier-advice.ts";
 import type { AutomationStudioResultFlowStepSummary } from "./flow-step-summary.ts";
 import type { AutomationStudioResultReadAccount } from "./read-account.ts";
@@ -154,6 +155,14 @@ export type AutomationStudioRunResultSummary = {
    * verdict. Absent when there are none.
    */
   siteChangeFindings?: AutomationStudioTrialChangeFinding[];
+  /**
+   * The facts Core settled before any judge was asked (`../computed-facts/`,
+   * framework plan P5): set by `../verify.ts` on the judge's copy only, and
+   * only the facts that hold, each said as settled so no judge decides it
+   * again. A fact that fails never reaches a judge: it is a Core no. Absent
+   * where Core computed none. Before `earlierAdvice`, which stays last.
+   */
+  computedFacts?: AutomationStudioResultComputedFact[];
   /**
    * A build test only (t752, `./earlier-advice.ts`): each earlier judged trial
    * of this build's advice, oldest first, at most three, with whether this

@@ -12,6 +12,7 @@
 // answers with the run as it ended, so pressing Pause or Continue twice, or
 // after the run finished, is never a failure.
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../contracts.ts";
 import { automationStudioRunControlOf, automationStudioRunProgress, type AutomationStudioRunControlSnapshot, type AutomationStudioRunProgress } from "../../runtime/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../model/index.ts";
@@ -60,6 +61,9 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.pauseRuntimeSession,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:PauseRuntimeSession",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = record(request.payload);
       const target = runTarget(payload);
@@ -78,6 +82,9 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.resumeRuntimeSession,
     permission: "runtime.control",
     classification: "authoring",
+    action: "studio:ResumeRuntimeSession",
+    accessLevel: "Write",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const payload = record(request.payload);
       const target = runTarget(payload);
@@ -95,6 +102,9 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRuntimeRunControl,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetRuntimeRunControl",
+    accessLevel: "Read",
+    resource: endpointResource.projectChild("run", "runId"),
     handler: async (request) => {
       const target = runTarget(record(request.payload));
       if (!target) return { ok: false, error: "Reading a run's control needs its project and run IDs." };

@@ -125,6 +125,8 @@ const CORPUS: CorpusCase[] = [
   { name: "a read that replaces its rows inside a repeat", lines: [...open, ...list("rows"), "  recordOutput.writeMode: replace", "  repeat while: more", "  repeat most: 3", ...click("more")], codes: ["record_output.replace_in_repeat"] },
   // A listing sorted only in its saved answer, walked by a repeat that acts lastingly (t741, `../../script-statements/listing-order-in-repeat.ts`).
   { name: "a listing sorted only in its saved answer under a lasting repeat", lines: [...open, ...list("rows"), "  recordOutput.process: {\"sort\": [{\"field\": \"name\", \"order\": \"asc\"}]}", "step: mark the row", "  node: web.dom.click", "  selector: .mark", "  consequences: modify_existing", "  repeat over: rows", "  repeat most: 2"], codes: ["record_output.process_order_in_repeat"] },
+  // A listing whose saved answer filters rows by a where, walked by a repeat that acts lastingly (t800, `../../repeat-where/repeat-where-in-process.ts`).
+  { name: "a listing filtered only in its saved answer under a lasting repeat", lines: [...open, ...list("rows"), "  recordOutput.process: {\"where\": [{\"field\": \"name\", \"equals\": \"a\"}]}", "step: mark the row", "  node: web.dom.click", "  selector: .mark", "  consequences: modify_existing", "  repeat over: rows", "  repeat most: 2"], codes: ["record_output.process_where_in_repeat"] },
   { name: "a branch inside a repeat", lines: [...open, ...click("more", ["  repeat while: check", "  repeat most: 3"]), ...click("buy", ["  on failed: go to done"]), ...wait("check"), ...click("done")], codes: ["flow_script.repeat_body_branches"] },
   { name: "a branch into a repeat", lines: [...open, ...click("skip", ["  on failed: go to check"]), ...click("more", ["  repeat while: check", "  repeat most: 3"]), ...wait("check")], codes: ["flow_script.branch_into_repeat"] },
   { name: "a repeat while a step that never ends it", lines: [...open, ...click("more", ["  repeat while: check"]), ...wait("check")], codes: ["flow_script.repeat_while_never_ends"] },
@@ -223,8 +225,8 @@ describe("a repeat inside a repeat", () => {
 describe("the refusal codes the authoring source raises", () => {
   // Every source file that lowers a written script: `authoring/`, and since t378
   // the statements beside it (`script-statements/`: optional, only after,
-  // repeat most, repeat pace), subdirectories included and none of the tests.
-  const roots = ["../../authoring/", "../../script-statements/"].map((root) => fileURLToPath(new URL(root, import.meta.url)));
+  // repeat most, repeat pace; `repeat-where/`, moved out of it by t800), subdirectories included and none of the tests.
+  const roots = ["../../authoring/", "../../script-statements/", "../../repeat-where/"].map((root) => fileURLToPath(new URL(root, import.meta.url)));
   const sources = roots.flatMap((root) => readdirSync(root, { recursive: true, encoding: "utf8" })
     .filter((name) => name.endsWith(".ts") && !name.split(/[\\/]/u).includes("tests"))
     .map((name) => join(root, name)));

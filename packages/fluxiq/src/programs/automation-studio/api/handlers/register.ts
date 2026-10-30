@@ -28,9 +28,12 @@ import { registerRuntimeExecutionEndpoints } from "./runtime-execution.ts";
 import { registerRunControlEndpoints } from "./run-control.ts";
 import { registerClientGatewayEndpoints } from "./client-gateway.ts";
 import { registerRuntimeIdentityEndpoint } from "./diagnostics/index.ts";
+import { AutomationStudioProjectOwnerships } from "../ownership/index.ts";
 
 export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService): void {
   const dependencies: AutomationStudioApiDependencies = { registry, service, identityAccess, clientGatewayBridge, clientGateway };
+  // Who owns each project, for `fluxiq:ResourceOwner`; a project's children are evaluated against it (`../ownership/`).
+  registry.registerResourceOwners("project", AutomationStudioProjectOwnerships.create(service, identityAccess));
   registerProjectEndpoints(dependencies);
   registerCacheEndpoints(dependencies);
   registerWorkspaceEndpoints(dependencies);

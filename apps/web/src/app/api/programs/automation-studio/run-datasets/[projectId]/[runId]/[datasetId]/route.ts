@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../../../../../lib/auth";
 import { getFluxIQ } from "../../../../../../../../lib/fluxiq";
+import { appRouteIamContract, authorizeAppRoute, panelRouteActor, routeParamId } from "../../../../../../../../lib/app-route-iam";
 import { programDomainScope } from "../../../../../../../../lib/program-route";
 
 // Streams one run dataset as CSV or JSON, for an export past the inline caps.
@@ -21,6 +22,8 @@ type RouteParams = {
   }>;
 };
 
+const ROUTE = appRouteIamContract("GET", "/api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]");
+
 // The id rule shared with the run dataset store (`runtime-stream-store.ts:620`).
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 const EXPORT_FORMATS = new Set(["csv", "json"]);
@@ -37,9 +40,10 @@ export async function GET(request: Request, context: RouteParams) {
   if (!sessionId) return authenticationRequired();
   const auth = await fluxiq.programs.identityAccess.validateSession(sessionId);
   if (!auth) return authenticationRequired();
-  if (!auth.role.permissions.includes("programs.read")) {
-    return NextResponse.json({ ok: false, error: "Permission required: programs.read" }, { status: 403 });
-  }
+  // Decided on the dataset under its project, before the ids are validated, as the permission was.
+  const actor = panelRouteActor({ session: { id: sessionId }, user: auth.user, role: auth.role });
+  const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "panel", actor, { projectId: routeParamId(projectId), datasetId: routeParamId(datasetId) });
+  if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
 
   const decodedProjectId = decodeURIComponent(projectId);
   const decodedRunId = decodeURIComponent(runId);

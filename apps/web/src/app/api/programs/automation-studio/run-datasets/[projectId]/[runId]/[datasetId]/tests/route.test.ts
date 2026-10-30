@@ -12,15 +12,21 @@ vi.mock("next/headers", () => ({
   })),
 }));
 
-vi.mock("../../../../../../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({
-    programs: {
-      identityAccess: { validateSession },
-      automationStudio: { assertProjectDomainAccess, runDatasets: { streamRunDataset } },
-    },
-  }),
-  getFluxIQWebRuntimeStatus: vi.fn(),
-}));
+// A real registry on the local profile decides the route, as live.
+vi.mock("../../../../../../../../../lib/fluxiq", async () => {
+  const { GlobalProgramApiRegistry } = await import("fluxiq");
+  const api = new GlobalProgramApiRegistry();
+  return {
+    getFluxIQ: () => ({
+      programs: {
+        api,
+        identityAccess: { validateSession },
+        automationStudio: { assertProjectDomainAccess, runDatasets: { streamRunDataset } },
+      },
+    }),
+    getFluxIQWebRuntimeStatus: vi.fn(),
+  };
+});
 
 import { GET } from "../route";
 

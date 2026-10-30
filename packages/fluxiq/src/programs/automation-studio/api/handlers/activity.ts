@@ -16,6 +16,7 @@
 // endpoints, so a test can hand it a hub without a service. The process's hub
 // is the default.
 
+import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ActivityReadRequest } from "../contracts.ts";
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import { automationStudioActivityHub, type AutomationStudioActivitySnapshot } from "../../runtime/activity/index.ts";
@@ -35,6 +36,9 @@ export function registerAutomationStudioActivityEndpoints(dependencies: Automati
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getActivity,
     permission: "programs.read",
     classification: "read",
+    action: "studio:GetActivity",
+    accessLevel: "Read",
+    resource: endpointResource.project(),
     handler: async (request) => {
       const payload: Partial<ActivityReadRequest> = request.payload && typeof request.payload === "object" ? request.payload as Partial<ActivityReadRequest> : {};
       const projectId = typeof payload.projectId === "string" ? payload.projectId.trim() : "";

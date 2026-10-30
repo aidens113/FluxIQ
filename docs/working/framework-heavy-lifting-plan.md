@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796) and P4 (t797) merged; P5 (t795), P6 (t799) and P7 (t800) in flight; P1 next.
+Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800) and the Core-no ending words (t805) merged; P6 (t799), the repair-from-step fix (t804) and P1a (t806) in flight; P1b (after t804) and P5b next.
 Created: 2026-10-28
 Last updated: 2026-10-29
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -12,8 +12,8 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 ## Current State
 
 **Mode 2, executing (2026-10-29).** P0 (t793, scenario-free model text with a downstream check) and the per-pass act
-ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`) and P4 (t797, one undo and reset answer) are merged; P5 (t795), P6 (t799) and P7 (t800) are in flight, and P1 starts
-after them because it shares their files. t796 gave trial proofs `not_run`; t795 makes it a Core no in `held.ts`.
+ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`), P4 (t797, one undo and reset answer), P5a (t795, computed facts before any judge) and P7 (t800, dates, marks, record defaults) are merged; P6 (t799), t804 (repair from the failing step) and P1a (t806, the parts of P1 outside t804's files) are in flight; P1b starts
+after t804, whose files it shares. t796 gave trial proofs `not_run`, and t795 made it a Core no.
 The rest of this section is the plan as written.
 
 The audit ran 2026-10-28 at the user's direction: make
@@ -749,6 +749,20 @@ Each implementation lane's brief is in its dispatch and its report under the dow
 - Decision (supervisor): `cannotUndo` defaults only to acts Core closed as unsettleable, not every listed act, which would tell the judge that undoable acts cannot be undone (5 project-build tests caught it).
 - Validation: lead-run under the heavy-check lock on the trees merged with dev (t796 in): `pnpm test` over flow-bootstrap, service, llm/harness-options, project-agents, result-verification and executor -> "Test Files 824 passed | 1 skipped (825)", "Tests 7605 passed | 2 skipped (7607)", real-sql "52 passed", "all groups passed"; prompt contracts "Tests 45 passed (45)"; `pnpm check` exit 0; docs current; `structure:check` passed; downstream domain tests "# pass 2444 / # fail 0", headed `e2e/site-reset/tests` "32 passed (40.6m)".
 - Outcome: Accepted. Open: the web domain does not fill the CC4 `effect` yet, so pairing uses control counts live; a press paired as an undo keeps its own `act-N` entry in the project ledger.
+
+### 2026-10-29 - P5a: Core settles what it can compute before any judge (t795)
+- Agent: supervisor (brief t795-p5); workers w1, w1b, w2, w3, w6 (worker-heavy), w4, w5, w7 (worker); report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t795-p5.md`
+- Changed: new `result-verification/computed-facts/` (columns the build declared, kept bounds, rows left out and accounted for, repeated rows, every repeat pass ran, order, verbatim) and `computed-no.ts`; a failing fact is a Core no with no judge call (`core.result.computed_fact_failed`), facts that hold reach the judge as `computedFacts`, and a pass still needs a model yes; `asked-words/` (search words under "every search result", request exclusions); `site-change/held.ts` and `act-passes.ts` give a Core no over t796's `not_run`, defined in `llm/diagnosis-instructions.ts`; K2 `answer.rows` in the task checklists.
+- Decisions (supervisor): only a column the build declared can fail (one read off the instruction's English stays information for the judge); a group of rows left out together is accounted for by one settled member condition quoted in its own sentence, which kept the correct social yeses while the stricter every-member rule held them.
+- Validation: lead-run under the heavy-check lock: on the tree merged with dev (t796) `pnpm test` over result-verification, llm, project-agents, recovery, service and flow-bootstrap -> "Test Files 978 passed | 1 skipped (979)", "Tests 9079 passed | 2 skipped (9081)", real-sql "53 passed", "all groups passed"; prompt contracts "Tests 45 passed (45)"; `pnpm check` exit 0; zero-call replays of the recorded judge replies (`scratchpad/t795-w6/replay.mts`, final rule): store runs mvswh11y and mvtdoyf3 -> every false-pass revision and playback 0137 `does_not_answer` / `core.result.computed_fact_failed` with 0 calls, rev 1 no longer refused (`unsure`); social runs mvskodlp and mvswewhy -> 0042 `answers` / `core.result.answers_request`, as before; after merging t797, the overlap dirs -> "Test Files 332 passed (332)", "Tests 2923 passed (2923)", real-sql "8 passed", `pnpm check` exit 0, structure passed; headed site-reset suite "32 passed (35.3m)" (downstream).
+- Outcome: Accepted (P5a). Not done: P5b (cited yes, re-asks with varied wording, located-only earlier advice, feedback provenance); a verbatim-cell fact (no stored cell carries its source text); date-order claims (dates are stored only when in the schema; sent to t800 under K5, with bare "1d"/"1w" in `read-date.ts`); a Core no keeps no `standingNo` record; after a Core no the extension's toast reads "the fix didn't finish" (fixed in t805).
+
+### 2026-10-29 - P7: relative dates, marks, record defaults (t800)
+- Agent: supervisor (brief t800-p7); workers H1 dates, H2 marks (worker-heavy) and ten worker; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t800-p7.md`. t790 had already shipped absolute date bounds, the undated count, the row-mark suggestion and `continues`; only the gap was built.
+- Changed: `packages/contracts/src/record-sets/process/` gains `within` and relative bounds read against the run's now, compact ages ("1d", "3h") and a shared date case table; `record-defaults/` fills a half-written record output from the one plan part that owes records (K5, wired for subflow briefs through `dispatch/scope.ts`); a field the record output's sort or where names stays in the schema, so its dates are stored; `numeric-text/` refuses a spelled-number text test once; `repeat-where/` refuses a lasting repeat over a listing filtered only at run end; `listed-values/` names a field that separates kept from left-out rows (advice).
+- Decisions (lead): the separating-field note stays advice until a live round shows marks working; a `within` bound over a value that has only a day compares by whole calendar days (follow-up), since an instant span drops a row dated on the edge day and makes "in the last week" ambiguous.
+- Validation: lead-run under the heavy-check lock on the trees merged with dev (t795, t797, t805): contracts `vitest run src/record-sets` -> "Tests 258 passed (258)"; `pnpm test` over nodes, storage/project, flow-bootstrap, llm, project-agents/dispatch, service/candidate-trial, result-verification -> "Tests 1 failed | 7593 passed | 6 skipped", real-sql "476 passed"; the failure was t795's pin that a bare "1d" is no date, which this lane changed on purpose, updated to expect the order claim contradicted -> result-verification "Test Files 181 passed (181)", "Tests 1403 passed (1403)"; prompt contracts "Tests 127 passed (127)"; `pnpm check` exit 0; docs current; structure passed; downstream in its ledger.
+- Outcome: Accepted. Follow-ups: one shared run now across page, build test and run end (needs the native node context and executor, after t799); K5 in the dry-run replay and whole-Flow builds; day-granular `within`; the panel's field picker keeps `mark`.
 
 ## Open Questions
 

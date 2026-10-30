@@ -38,8 +38,8 @@ describe("Automation Studio hierarchy page API", () => {
       expect(AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode).toBe("put-project-hierarchy-node");
       expect(AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode).toBe("delete-project-hierarchy-node");
       expect(registry.endpoints()).toEqual(expect.arrayContaining([
-        { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode, permission: "programs.write", classification: "authoring" },
-        { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode, permission: "programs.write", classification: "authoring" }
+        expect.objectContaining({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode, permission: "programs.write", classification: "authoring" }),
+        expect.objectContaining({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode, permission: "programs.write", classification: "authoring" })
       ]));
 
       const put = await registry.call({

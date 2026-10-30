@@ -5,7 +5,7 @@
 // condition vocabulary accepts is named in the rules, and the rules are inside
 // the loop format `core.submit_candidate` carries on its input schema. And they
 // name the date bound (t790, run `run-mvswewhy-e4e469d4`).
-import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS } from "@fluxiq/contracts/automation-studio";
+import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS, AUTOMATION_STUDIO_RECORD_CONDITION_WITHIN_UNITS } from "@fluxiq/contracts/automation-studio";
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_FLOW_CONDITION_RULES, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT } from "../index.ts";
 
@@ -27,6 +27,15 @@ describe("the where condition rules", () => {
     expect(AUTOMATION_STUDIO_FLOW_CONDITION_RULES).toContain("atLeast with atMost keeps the days between, both included");
     expect(AUTOMATION_STUDIO_FLOW_CONDITION_RULES).toContain("A row whose value states no date it can read is never kept");
     expect(AUTOMATION_STUDIO_FLOW_CONDITION_RULES).toContain("A date is always compared with a date bound, never a pattern");
+  });
+
+  // t800 (K1): a bound relative to the run's now, and `within` in every unit it takes.
+  it("say a bound may be relative to the run, and what within keeps, with every unit it takes", () => {
+    expect(AUTOMATION_STUDIO_FLOW_CONDITION_RULES).toContain("relative to the run as today, yesterday, now or \"<n> <unit> ago\"");
+    expect(AUTOMATION_STUDIO_FLOW_CONDITION_RULES).toContain("{\"field\": \"filed\", \"within\": \"7 days\"}");
+    expect(AUTOMATION_STUDIO_FLOW_CONDITION_RULES).toContain("keeps the rows dated from n units before the run's now up to it");
+    expect(AUTOMATION_STUDIO_FLOW_CONDITION_RULES).toContain("A day the request names is a bound with its year, never a within");
+    for (const unit of AUTOMATION_STUDIO_RECORD_CONDITION_WITHIN_UNITS) expect(AUTOMATION_STUDIO_FLOW_CONDITION_RULES).toContain(unit);
   });
 
   it("are carried whole by the loop format the submission's input schema carries", () => {
