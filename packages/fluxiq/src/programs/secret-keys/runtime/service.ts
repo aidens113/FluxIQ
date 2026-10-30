@@ -82,6 +82,14 @@ type RevealSecretKeyInput = {
   nowMs?: number;
 };
 
+/**
+ * How `SecretKeysService.close` ends. `shutdown` revokes and zeroes every held
+ * key. `evict` drops the instance but leaves a `HeldKeys` the service was given
+ * as it is, so the next service over the same repository releases the same
+ * unlocks; a service's own `HeldKeys` is revoked either way.
+ */
+export type SecretKeysCloseMode = "shutdown" | "evict";
+
 const MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS = 300_000;
 
 /**
@@ -93,14 +101,23 @@ const MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS = 300_000;
 export class SecretKeysService {
   static readonly storeKind = "secret.keys";
 
-  private readonly heldKeys = new HeldKeys();
+  private readonly heldKeys: HeldKeys;
+  /** False when `heldKeys` was given: the giver owns it, and an eviction leaves it held. */
+  private readonly ownsHeldKeys: boolean;
   private readonly sealer: SecretValueSealer;
   private readonly store: SecretKeyStore;
   private readonly upgrades: SealUpgrades;
   private readonly credentialChanges: CredentialChanges;
   private readonly now: () => number;
 
-  constructor(options: { repository?: Repository; now?: () => number; passwordKdf?: PasswordKdfOptions } = {}) {
+  /**
+   * `heldKeys`, when given, is custody that outlives this service (a workspace
+   * manager's): the service uses it and does not own it. Without it the service
+   * holds its keys itself, and they end with it.
+   */
+  constructor(options: { repository?: Repository; now?: () => number; passwordKdf?: PasswordKdfOptions; heldKeys?: HeldKeys | undefined } = {}) {
+    this.heldKeys = options.heldKeys ?? new HeldKeys();
+    this.ownsHeldKeys = options.heldKeys === undefined;
     this.now = options.now ?? Date.now;
     this.sealer = new SecretValueSealer(options.passwordKdf);
     this.store = new SecretKeyStore({ repository: options.repository, kind: SecretKeysService.storeKind, sealer: this.sealer });
@@ -261,8 +278,7 @@ export class SecretKeysService {
     // Settling may promote the pending seal, which revokes the old key's holders, so the key is held after it.
     const settling = this.credentialChanges.settle(current, opened.sealed);
     const authorizationId = `secret-reveal:${randomUUID()}`;
-    const expiryTimer = setTimeout(() => this.heldKeys.revokeAuthorization(authorizationId), ttlMs);
-    expiryTimer.unref?.();
+    const expiryTimer = this.heldKeys.authorizationExpiryTimer(authorizationId, ttlMs);
     const authorization: HeldRevealAuthorization = {
       authorizationId,
       keyId: current.id,
@@ -285,8 +301,8 @@ export class SecretKeysService {
       throw new Error("Secret key session unlock is invalid");
     }
     this.heldKeys.revokeSession(input.sessionId);
-    const expiryTimer = setTimeout(() => this.heldKeys.revokeSession(input.sessionId), input.expiresAtMs - nowMs);
-    expiryTimer.unref?.();
+    // The timer holds only the custody and the id: never this service, nor `input`, which carries the password.
+    const expiryTimer = this.heldKeys.sessionExpiryTimer(input.sessionId, input.expiresAtMs - nowMs);
     // Held before any derivation: each key joins the session as soon as it is
     // verified, so a concurrent upgrade replaces it along with every other holder.
     const unlock: HeldSessionUnlock = {
@@ -321,8 +337,7 @@ export class SecretKeysService {
       throw new Error("Secret reveal authorization TTL is invalid");
     }
     const authorizationId = `secret-reveal:${randomUUID()}`;
-    const expiryTimer = setTimeout(() => this.heldKeys.revokeAuthorization(authorizationId), ttlMs);
-    expiryTimer.unref?.();
+    const expiryTimer = this.heldKeys.authorizationExpiryTimer(authorizationId, ttlMs);
     const authorization: HeldRevealAuthorization = {
       authorizationId,
       keyId: existing.id,
@@ -433,9 +448,15 @@ export class SecretKeysService {
     return true;
   }
 
-  /** Revokes every held key and forgets in-flight credential changes; their stored pending seals are settled at the next unlock or reveal. */
-  close(): void {
-    this.heldKeys.revokeAll();
+  /**
+   * Forgets in-flight credential changes, whose stored pending seals are settled
+   * at the next unlock or reveal, and, on `shutdown` (the default), revokes every
+   * held key. `evict` leaves a given `HeldKeys` held for the next service over
+   * the same repository; a service's own `HeldKeys` is revoked in every mode, so
+   * no key buffer is left unreachable and unzeroed.
+   */
+  close(options: { mode?: SecretKeysCloseMode | undefined } = {}): void {
+    if (options.mode !== "evict" || this.ownsHeldKeys) this.heldKeys.revokeAll();
     this.credentialChanges.forgetAll();
   }
 
