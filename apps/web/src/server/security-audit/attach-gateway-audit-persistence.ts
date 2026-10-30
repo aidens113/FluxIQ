@@ -1,5 +1,6 @@
 import path from "node:path";
-import type { ClientGatewayAuditEntry } from "@fluxiq/contracts/client-gateway";
+// The web app reaches `@fluxiq/contracts` only through a `fluxiq` subpath: its production build cannot resolve it directly.
+import type { ClientGatewayAuditEntry } from "fluxiq/client-gateway";
 import { redactFields } from "../log";
 import { appendAuditLine } from "./append-audit-line";
 
