@@ -7,6 +7,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/e
 import { automationStudioProjectBuilderReturn, automationStudioProjectBuilderReturn as RETURN, automationStudioProjectEarlierAttempt as EARLIER, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectStructurePlan, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import { AutomationStudioProjectAssembledFrom, automationStudioProjectSingleSubflowPlan, automationStudioProjectSingleSubflowTrial } from "../single-subflow/index.ts";
+import { automationStudioProjectSupervisorBriefDefaults, automationStudioProjectSupervisorWholeTestReceipt } from "../brief-defaults/index.ts";
 import { automationStudioProjectSupervisorBriefInput } from "./brief-input.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
@@ -164,16 +165,21 @@ const EPSILON_USD = 1e-9;
  * take another path (`../dispatch/run-brief.ts`). A second such stop under the
  * same plan, and every other blocked return, is refused as before.
  */
-export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, value: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
+export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, written: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
   const structure = state.structure;
   const taskSpec = state.taskSpec;
   if (!structure || !taskSpec) return answer.refused("project.plan_missing", GUIDANCE.refusals.noPlan);
+  // The latest whole test, when it passed only on the run's own recovery (header), and whether this call only repairs it.
+  const rescued = state.rescuedTest(context.controller, context.gate);
+  // A brief's kind, parts and repair receipt left out are Core's to fill in (`../brief-defaults/`); what was sent stays as sent.
+  const latestFlow = context.controller.latest();
+  const wholeTest = automationStudioProjectSupervisorWholeTestReceipt(latestFlow, latestFlow ? context.gate.standing(latestFlow) : undefined, rescued !== undefined);
+  const value = automationStudioProjectSupervisorBriefDefaults({ value: written, structure, state, ...(wholeTest ? { wholeTest } : {}) });
   const sent = Array.isArray(value.briefs) ? value.briefs.filter((brief): brief is JsonObject => Boolean(brief) && typeof brief === "object" && !Array.isArray(brief)) : [];
   const repeated = Array.isArray(value.briefs) && sent.length === value.briefs.length && sent.length && sent.every((brief) => brief.kind === "reset") ? repeatedReset(context) : undefined;
   if (repeated) return repeated;
-  // The latest whole test, when it passed only on the run's own recovery (header), and whether this call only repairs it.
-  const rescued = state.rescuedTest(context.controller, context.gate);
+  // Whether this call only repairs the rescued whole test.
   const onlyRescue = rescued !== undefined && sent.length > 0 && sent.length === (Array.isArray(value.briefs) ? value.briefs.length : -1) && sent.every((brief) => repairsRescued(brief, rescued));
   // Only a list of objects is sized; anything else is refused by the reading below, by its place.
   const sizing = ports.purse && Array.isArray(value.briefs) && sent.length === value.briefs.length && sent.length
@@ -188,6 +194,9 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     const survey = read.issues.some((issue) => issue.code === "project.brief_survey_unavailable");
     return answer.refused(survey ? "project.brief_survey_unavailable" : "project.brief_refused", survey ? GUIDANCE.refusals.surveyUnavailable : GUIDANCE.refusals.briefRefused, { issues: read.issues.map(worded) });
   }
+  // A further brief of a subflow whose repair changed nothing is answered first, before any receipt is looked at (header).
+  const spent = unchangedAgain(context, read.briefs);
+  if (spent) return spent;
   // A build brief of a subflow whose proposal the plan in force carried starts from it (`./state.ts`, t658).
   const failing = carriedOnto(context, failingTrials(context, read.briefs, rescued));
   if (failing.issues.length) return answer.refused("project.brief_refused", GUIDANCE.refusals.briefRefused, { issues: failing.issues });
@@ -199,8 +208,6 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   const ids = state.briefIds();
   const sending = repeats.length ? failing.briefs.filter((_brief, index) => !repeats.some((entry) => entry.path === `briefs.${index}`)).map((brief) => ({ ...brief, briefId: ids() })) : failing.briefs;
   if (refusedWhole && sending.some((brief) => brief.entry.predecessors.some((key) => held.has(key)))) return refusedWhole;
-  const spent = unchangedAgain(context, sending);
-  if (spent) return spent;
   // A brief after a builder the no-progress guard stopped carries that attempt (header, lane-1 fix 1).
   const order = automationStudioProjectSupervisorDispatchOrder(withEarlierAttempt(context, sending), new Set(state.latestDone().keys()), state.droppedByEarlierPlans());
   if (!order.ok) return refusedWhole ?? answer.refused(order.code === "cycle" ? "project.dispatch_cycle" : "project.predecessor_not_done", order.code === "cycle" ? GUIDANCE.refusals.dispatchCycle : GUIDANCE.refusals.predecessorNotDone, { issues: order.issues });
@@ -340,7 +347,7 @@ function failingTrials(context: AutomationStudioProjectSupervisorContext, briefs
   const latest = controller.latest();
   const standing = latest ? gate.standing(latest) : undefined;
   // The whole test to name instead, when one stands that did not pass or passed only on the run's own recovery.
-  const wholeTest: JsonObject | undefined = latest && standing && (standing.verdict !== "yes" || rescued) ? { kind: "candidate_trial", receiptId: standing.trialRunId ?? `whole-test-${latest.revision}`, digest: latest.digest } : undefined;
+  const wholeTest = automationStudioProjectSupervisorWholeTestReceipt(latest, standing, rescued !== undefined);
   const issues: Issue[] = [];
   const refuse = (code: string, path: string, why: string, closest?: JsonObject) => {
     issues.push({ code, path, why, ...(wholeTest ? { wholeTest } : {}), ...(closest ? { closestTrial: closest } : {}) });

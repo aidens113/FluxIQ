@@ -1,5 +1,6 @@
-import type { ClientGatewayClientHello, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayClientHello, ClientGatewayPairingChallenge, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
+import { ClientGatewayPairingCapacityError, clientGatewayPeerAuditFields, type ClientGatewayPeer } from "./security/index.ts";
 import type { ClientGatewayConfig } from "./config.ts";
 import { declaredDomainId } from "./declared-domain.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
@@ -54,9 +55,9 @@ export class ClientGatewayLifecycle {
     this.trace = collaborators.trace;
   }
 
-  connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello } = {}): ClientGatewaySession {
+  connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello; peer?: ClientGatewayPeer } = {}): ClientGatewaySession {
     const session = this.sessions.create(input);
-    this.audit.record("session.connected", "Client connected.", { sessionId: session.sessionId, clientId: session.clientId });
+    this.audit.record("session.connected", "Client connected.", { sessionId: session.sessionId, clientId: session.clientId, ...clientGatewayPeerAuditFields(session.peer) });
     // A hello handed over with the connection goes to the traces claiming its client, its token redacted (D7).
     this.trace.lifecycle({ sessionId: session.sessionId, clientId: session.clientId }, "session.connected", { hello: input.hello ?? null }, [["hello", "token"]]);
     if (input.hello) void this.handleHello(session.sessionId, input.hello);
@@ -114,11 +115,30 @@ export class ClientGatewayLifecycle {
     this.applyHello(session, hello);
     if (hello.token && await this.resumeTrustedSession(session, hello.token)) return;
     session.status = "pairing_required";
-    const pairing = this.pairingFlow.ensureForSession(session);
+    let pairing: ClientGatewayPairingChallenge;
+    try {
+      pairing = this.pairingFlow.ensureForSession(session);
+    } catch (error) {
+      if (!(error instanceof ClientGatewayPairingCapacityError)) throw error;
+      await this.refuseOverCapacity(session, error);
+      return;
+    }
     await this.transport.send(sessionId, this.transport.message("server.pairing_required", {
       referenceCode: pairing.referenceCode ?? pairing.pairingCode,
       reason: "Approve this client in FluxIQ before sending data."
     }, session));
+  }
+
+  /**
+   * No pairing code could be offered because too many are waiting
+   * (`pairing.refused_capacity`, audited by the pairing flow). The client is
+   * told why with the error's code and the session is closed, as a refused
+   * protocol version is, so an unpaired socket does not sit open waiting.
+   */
+  private async refuseOverCapacity(session: InternalSession, error: ClientGatewayPairingCapacityError): Promise<void> {
+    await this.transport.send(session.sessionId, this.transport.message("server.error", { code: error.code, message: error.message }, session));
+    await this.transport.send(session.sessionId, this.transport.message("server.disconnect", { reason: error.message }, session));
+    this.facade.disconnect(session.sessionId, "pairing capacity reached");
   }
 
   private applyHello(session: InternalSession, hello: ClientGatewayClientHello): void {
@@ -162,6 +182,13 @@ export class ClientGatewayLifecycle {
       if (existing.sessionId === session.sessionId) continue;
       await this.transport.send(existing.sessionId, this.transport.message("server.disconnect", { reason: "Client reconnected in a newer session." }, existing));
       this.disconnect(existing.sessionId, "replaced by newer session");
+      this.audit.record("session.replaced", "A trusted client reconnected in a newer session; the older session was closed.", {
+        sessionId: existing.sessionId,
+        replacedBySessionId: session.sessionId,
+        trustedClientId: trustedClient.trustedClientId,
+        clientId: session.clientId,
+        ...clientGatewayPeerAuditFields(session.peer)
+      });
     }
     this.sessions.attachTrustedClient(session, trustedClient);
     await this.transport.send(session.sessionId, this.transport.message("server.session_ready", {
