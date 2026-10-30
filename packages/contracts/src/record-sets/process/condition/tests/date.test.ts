@@ -11,7 +11,8 @@ import {
   parseAutomationStudioRecordCondition,
   processAutomationStudioRecordRows,
   readAutomationStudioRecordConditionDateBound,
-  readAutomationStudioRecordConditionWithin
+  readAutomationStudioRecordConditionWithin,
+  automationStudioRecordDateStatesOnlyDay
 } from "../../index.ts";
 import type { AutomationStudioRecordConditionTest } from "../../types.ts";
 import type { AutomationStudioRecordSchema } from "../../../schema.ts";
@@ -68,9 +69,9 @@ describe("a relative date bound", () => {
 
 describe("a within", () => {
   it("is the span from n units before now up to now", () => {
-    expect(readAutomationStudioRecordConditionWithin("7 days", NOW)).toEqual({ from: NOW - 7 * DAY, to: NOW });
-    expect(readAutomationStudioRecordConditionWithin("1 Hour", NOW)).toEqual({ from: NOW - 3_600_000, to: NOW });
-    expect(readAutomationStudioRecordConditionWithin("2 weeks", NOW)).toEqual({ from: NOW - 14 * DAY, to: NOW });
+    expect(readAutomationStudioRecordConditionWithin("7 days", NOW)).toEqual({ from: NOW - 7 * DAY, to: NOW, wholeDays: true });
+    expect(readAutomationStudioRecordConditionWithin("1 Hour", NOW)).toEqual({ from: NOW - 3_600_000, to: NOW, wholeDays: false });
+    expect(readAutomationStudioRecordConditionWithin("2 weeks", NOW)).toEqual({ from: NOW - 14 * DAY, to: NOW, wholeDays: true });
     for (const written of ["7", "days", "0 days", "-1 days", "1.5 days", "3 months", "1 year", "a week", "7 days ago"]) {
       expect(readAutomationStudioRecordConditionWithin(written, NOW), written).toBeUndefined();
     }
@@ -93,5 +94,16 @@ describe("a within", () => {
     });
     expect(result.rows.map((kept) => kept.title)).toEqual(["Atlas of rivers"]);
     expect(result.account.conditions?.[0]).toMatchObject({ condition: "returned within \"7 days\" as a date", rejected: 2, undated: 1 });
+  });
+});
+
+describe("a value that states only a day", () => {
+  it("is told from one that states a moment", () => {
+    for (const day of ["2026-10-01", "1 Oct 2026", "Oct 1, 2026", "Posted yesterday", "Today", "3 days ago", "2w", "1mo"]) {
+      expect(automationStudioRecordDateStatesOnlyDay(day, NOW), day).toBe(true);
+    }
+    for (const moment of ["2026-10-01 09:00", "Today 09:00", "5 hours ago", "30 minutes ago", "45m", "just now", "1d 0h left", "Date to be confirmed"]) {
+      expect(automationStudioRecordDateStatesOnlyDay(moment, NOW), moment).toBe(false);
+    }
   });
 });
