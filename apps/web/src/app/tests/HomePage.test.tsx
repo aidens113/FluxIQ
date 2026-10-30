@@ -6,6 +6,7 @@ vi.mock("../../lib/auth", () => ({ currentFluxIQUser: async () => state.authenti
 vi.mock("../../lib/fluxiq", () => ({ getFluxIQ: () => ({ domains: { summaries: () => [] } }) }));
 vi.mock("fluxiq", () => ({ defaultGlobalProgramCatalog: () => [] }));
 vi.mock("../AuthShell", () => ({ GlobalTopbar: () => <nav>Topbar</nav>, LoginPanel: () => <div>Login required</div> }));
+vi.mock("../product/server", () => ({ OnboardingCards: () => null }));
 vi.mock("../ProgramLauncher", () => ({ ProgramLauncher: () => <section>Programs preserved</section> }));
 import HomePage from "../page";
 

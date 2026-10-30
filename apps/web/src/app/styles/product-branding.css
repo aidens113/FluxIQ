@@ -1,0 +1,53 @@
+/* Product branding additions: only rendered when a host module registers a product. */
+.brand-logo {
+  display: block;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: var(--radius-control);
+}
+
+.product-auth-links {
+  display: grid;
+  gap: var(--space-dense);
+  margin-top: var(--space-lg);
+  font-size: var(--font-size-compact);
+}
+
+.product-auth-links nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+}
+
+.onboarding-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.onboarding-card {
+  display: grid;
+  gap: var(--space-dense);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: var(--space-lg);
+}
+
+.onboarding-card h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.onboarding-card p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.onboarding-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-dense);
+}

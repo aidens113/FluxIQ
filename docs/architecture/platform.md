@@ -841,6 +841,40 @@ without dropping that user's unlock. The runtime also passes the resolver a
 `flowSecretKeyId` lookup (it reads the Flow, so a build uses the Flow's own key)
 and `instanceHost`, the host of `FLUXIQ_PUBLIC_ORIGIN` when set.
 
+## Panel product manifest and platform hooks
+
+A downstream product brands the panel without forking it. Everything lives in
+`packages/fluxiq/src/platform/panel/` (subpath `fluxiq/platform/panel`; `apps/web`
+never imports `@fluxiq/contracts`).
+
+- **Host modules.** `FLUXIQ_HOST_MODULE` is a comma list of ES module paths.
+  `loadPlatformHostModules` imports each in order and calls its
+  `registerFluxIQPlatform(platform)`; the web app does this lazily through
+  `ensurePlatformModulesLoaded()` (`apps/web/src/app/product/`, Node runtime
+  only, memoised on `globalThis`). The instrumentation hookup comes later.
+- **The registry** (`getPlatformRegistry()`, on `globalThis`) holds the product
+  (`setProduct(manifest, { assetsDir })`, validated by `panelProductSchema`,
+  once per process), the hooks (`account.created`, `workspace.created`,
+  `account.disabled`, `account.deleted`, `client.connected`, `client.revoked`;
+  asynchronous, failure-isolated, logged by name), email templates, and the
+  human-check, billing and entitlement ports.
+- **Branding.** `panelBranding(product)` gives name, logo, favicon, accent CSS
+  variables, links and sign-in copy, or the stock values without a product.
+  Accents must pass `checkPanelBrandContrast` against the panel's surfaces.
+  The root layout reads it on the server (`generateMetadata`, `<html style>`),
+  so no page flashes stock branding, and hands it to client components through
+  `PanelBrandingProvider`/`usePanelBranding()`, whose default is the stock
+  branding. With no product the markup and requests are unchanged.
+- **Assets.** `GET /product/assets/<name>` serves only a name the manifest
+  declares (`logo`, `favicon`, `signInArt`) from the registered `assetsDir`;
+  anything else is a bare 404. Types by extension, `nosniff`, one-hour public
+  cache, and a locked-down CSP on SVG. The route is outside `/api` and the
+  middleware does not gate it, so it works signed out.
+- **Onboarding.** `panelOnboardingCards` feeds the signed-in home
+  (`product/OnboardingCards.tsx`): "Get the extension" from the manifest's
+  stores, and "Add your model key" while the secret-keys snapshot is empty.
+  Cards render only when a product is registered.
+
 ## Not yet wired
 
 - **The registry's `iam` options** (`programs/_shared/runtime.ts`): the

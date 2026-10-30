@@ -4,3 +4,4 @@ export * from "./iam/index.ts";
 export * from "./store/index.ts";
 export * from "./provisioning/index.ts";
 export * from "./profile/index.ts";
+export * from "./panel/index.ts";

@@ -3,6 +3,7 @@ import { GlobalTopbar, LoginPanel } from "./AuthShell";
 import { ProgramLauncher, type LaunchDomain } from "./ProgramLauncher";
 import { currentFluxIQUser } from "../lib/auth";
 import { getFluxIQ } from "../lib/fluxiq";
+import { OnboardingCards } from "./product/server";
 
 export default async function HomePage() {
   const auth = await currentFluxIQUser();
@@ -20,6 +21,7 @@ export default async function HomePage() {
           <p className="page-copy">Open an automation workspace or framework service.</p>
           <a className="button button-secondary" href="/get-started">Get started</a>
         </header>
+        <OnboardingCards />
         <ProgramLauncher domains={domains} label="FluxIQ programs and domains" programs={programs} />
       </div>
     </main>
