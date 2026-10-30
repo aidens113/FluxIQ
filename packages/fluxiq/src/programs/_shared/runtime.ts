@@ -15,7 +15,7 @@ import { DocsService, registerDocsApi } from "../docs/index.ts";
 import { IdentityAccessService, registerIdentityAccessApi, type IdentityCredentialChangeSubscriber } from "../identity-access/index.ts";
 import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner/index.ts";
 import { registerRuntimeApi } from "../runtime-control/index.ts";
-import { registerSecretKeysApi, SecretKeysService } from "../secret-keys/index.ts";
+import { type HeldKeys, registerSecretKeysApi, SecretKeysService } from "../secret-keys/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
 import { ProgramJsonStore, programDataFile } from "./storage.ts";
@@ -34,16 +34,33 @@ export type GlobalProgramRuntime = {
   productionRunner: ProductionRunnerService;
   runtime: RuntimeService;
   secretKeys: SecretKeysService;
+  /**
+   * Removes what this runtime attached to process-wide state (its activity-hub
+   * subscription), so a closed instance is not kept reachable or fed another
+   * workspace's events. Idempotent; `FluxIQ.close()` calls it (t808).
+   */
+  detach(): void;
 };
 
-export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { modelProvidersEnabled?: boolean } = {}): GlobalProgramRuntime {
+/** How a program runtime is built; each field is optional, and absent means today's local behaviour. */
+export type GlobalProgramRuntimeOptions = {
+  modelProvidersEnabled?: boolean;
+  /**
+   * Key custody that outlives this runtime (a workspace manager's entry), so
+   * evicting an idle instance does not lock its users' keys. Absent, Secret
+   * Keys holds its own and every unlock ends when the instance closes.
+   */
+  heldKeys?: HeldKeys | undefined;
+};
+
+export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: GlobalProgramRuntimeOptions = {}): GlobalProgramRuntime {
   const modelProvidersEnabled = options.modelProvidersEnabled !== false;
   const storageLayoutVersion = paths && path.basename(paths.config) === "config.json" ? 2 : 1;
   const storageOptions = paths ? { dataDir: paths.data } : {};
   const secretKeysRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.storeKind, layoutVersion: storageLayoutVersion }) : undefined;
   // Built before Automation Studio, which takes the standing result-check
   // provider at construction.
-  const secretKeys = new SecretKeysService(secretKeysRepository ? { repository: secretKeysRepository } : {});
+  const secretKeys = new SecretKeysService({ ...(secretKeysRepository ? { repository: secretKeysRepository } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}) });
   // What a Flow's standing authorization buys, for a run nobody is watching:
   // the model that judges its result, and -- since the repair clause -- the
   // model that repairs it when it fails. One resolver serves both, because
@@ -113,7 +130,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
     await automationStudio.lateActionResults.record(late);
   });
   // What a build or run is doing reaches the paired clients of its project that asked for it (`server.activity`), never queued.
-  automationStudioActivityHub.subscribe((activity) => { clientGateway.publishActivity(activity, { projectId: activity.subject.projectId }); });
+  // The hub is process-wide, so the subscription is removed by `detach` when the instance closes (t808).
+  const stopActivity = automationStudioActivityHub.subscribe((activity) => { clientGateway.publishActivity(activity, { projectId: activity.subject.projectId }); });
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks", layoutVersion: storageLayoutVersion }) : undefined;
   const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users", layoutVersion: storageLayoutVersion }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
@@ -247,7 +265,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
     identityAccess,
     productionRunner,
     runtime,
-    secretKeys
+    secretKeys,
+    detach: stopActivity
   };
 }
 

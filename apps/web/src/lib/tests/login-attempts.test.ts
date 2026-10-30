@@ -264,7 +264,7 @@ describe("login attempt tracking", () => {
   it("ignores spoofable forwarding headers unless proxy trust is explicit", () => {
     const request = new Request("http://local/login", { headers: { "x-forwarded-for": "203.0.113.10, 10.0.0.2", "x-real-ip": "198.51.100.4" } });
     expect(loginClientAddress(request, false)).toBe("direct");
-    expect(loginClientAddress(request, true)).toBe("203.0.113.10");
+    expect(loginClientAddress(request, true)).toBe("10.0.0.2");
   });
 });
 
@@ -449,16 +449,16 @@ describe("poisoned login attempt stores", () => {
 describe("login client address", () => {
   const address = (headers: Record<string, string>) => loginClientAddress(new Request("http://local/login", { headers }), true);
 
-  it("falls back to the real-ip header when no forwarded list is present", () => {
-    expect(address({ "x-real-ip": "198.51.100.4" })).toBe("198.51.100.4");
+  it("ignores the real-ip header: only a forwarded entry counts", () => {
+    expect(address({ "x-real-ip": "198.51.100.4" })).toBe("proxy-unknown");
   });
 
-  it("does not let a blank forwarded list win over the real-ip header", () => {
-    expect(address({ "x-forwarded-for": "   ", "x-real-ip": "198.51.100.4" })).toBe("198.51.100.4");
+  it("does not let a non-address forwarded entry win", () => {
+    expect(address({ "x-forwarded-for": "not-an-ip", "x-real-ip": "198.51.100.4" })).toBe("proxy-unknown");
   });
 
-  it("trims the client entry out of a forwarded chain", () => {
-    expect(address({ "x-forwarded-for": "203.0.113.10 , 10.0.0.2" })).toBe("203.0.113.10");
+  it("takes the rightmost entry, the one the trusted proxy appended, so a client-supplied prefix is ignored", () => {
+    expect(address({ "x-forwarded-for": "198.51.100.99 , 203.0.113.10 " })).toBe("203.0.113.10");
   });
 
   it.each([

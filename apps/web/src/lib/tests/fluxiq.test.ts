@@ -4,7 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, initializeFluxIQWebRuntime, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
+import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, getFluxIQWebReadiness, getFluxIQWebRuntimeStatus, initializeFluxIQWebRuntime, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
+
+// The owner-claim module is built beside this one; the runtime only needs its answer.
+const ownerClaim = vi.hoisted(() => ({ prepare: vi.fn(async (_input: unknown) => ({ claimed: false, codeFile: "/setup-code-file" })) }));
+vi.mock("../../server/owner-claim", () => ({ prepareOwnerClaim: ownerClaim.prepare }));
 
 const originalEnv = {
   FLUXIQ_MODEL_PROVIDERS_ENABLED: process.env.FLUXIQ_MODEL_PROVIDERS_ENABLED,
@@ -15,7 +19,14 @@ const originalEnv = {
   FLUXIQ_HOST_MODULE: process.env.FLUXIQ_HOST_MODULE,
   FLUXIQ_HOST_ROOT: process.env.FLUXIQ_HOST_ROOT,
   FLUXIQ_IMPORTER_ROOT: process.env.FLUXIQ_IMPORTER_ROOT,
-  FLUXIQ_ROOT: process.env.FLUXIQ_ROOT
+  FLUXIQ_ROOT: process.env.FLUXIQ_ROOT,
+  FLUXIQ_PROFILE: process.env.FLUXIQ_PROFILE,
+  FLUXIQ_PUBLIC_ORIGIN: process.env.FLUXIQ_PUBLIC_ORIGIN,
+  FLUXIQ_PROVISIONING_LISTEN: process.env.FLUXIQ_PROVISIONING_LISTEN,
+  FLUXIQ_PROVISIONING_TOKEN_FILE: process.env.FLUXIQ_PROVISIONING_TOKEN_FILE,
+  FLUXIQ_PUBLIC_CLIENT_WS_URL: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL,
+  FLUXIQ_SETUP_CODE_FILE: process.env.FLUXIQ_SETUP_CODE_FILE,
+  FLUXIQ_DRAIN_SECONDS: process.env.FLUXIQ_DRAIN_SECONDS
 };
 
 afterEach(() => {
@@ -344,5 +355,177 @@ describe("web model-provider construction admission", () => {
     const create = vi.spyOn(FluxIQ, "create");
     try { expect(() => createFluxIQWebInstance()).toThrow("FLUXIQ_MODEL_PROVIDERS_ENABLED"); expect(create).not.toHaveBeenCalled(); }
     finally { for (const result of create.mock.results) if (result.type === "return") await result.value.close(); create.mockRestore(); rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
+describe("FluxIQ hosted runtime wiring", () => {
+  const globalState = globalThis as typeof globalThis & { __fluxiqWebRuntime?: unknown };
+
+  async function freePort(): Promise<number> {
+    const { createServer } = await import("node:net");
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as { port: number };
+    await new Promise((resolve) => server.close(resolve));
+    return port;
+  }
+
+  async function hostedEnv(profile: string | undefined, extra: Record<string, string> = {}): Promise<{ root: string; listen: string }> {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-web-hosted-"));
+    const tokenFile = path.join(root, "provisioning-token");
+    writeFileSync(tokenFile, `${"t".repeat(48)}\n`, { mode: 0o600 });
+    const listen = `127.0.0.1:${await freePort()}`;
+    process.env.FLUXIQ_IMPORTER_ROOT = root;
+    process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
+    process.env.FLUXIQ_PROVISIONING_TOKEN_FILE = tokenFile;
+    process.env.FLUXIQ_PROVISIONING_LISTEN = listen;
+    process.env.FLUXIQ_PUBLIC_ORIGIN = "https://panel.example.test";
+    if (profile === undefined) delete process.env.FLUXIQ_PROFILE;
+    else process.env.FLUXIQ_PROFILE = profile;
+    for (const [key, value] of Object.entries(extra)) process.env[key] = value;
+    delete globalState.__fluxiqWebRuntime;
+    ownerClaim.prepare.mockClear();
+    return { root, listen };
+  }
+
+  async function reachable(listen: string): Promise<boolean> {
+    const { connect } = await import("node:net");
+    const [host, port] = listen.split(":");
+    return new Promise((resolve) => {
+      const socket = connect({ host, port: Number(port) }, () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on("error", () => resolve(false));
+    });
+  }
+
+  async function cleanup(root: string): Promise<void> {
+    await closeFluxIQWebRuntime();
+    delete globalState.__fluxiqWebRuntime;
+    rmSync(root, { recursive: true, force: true });
+  }
+
+  it("starts the provisioning listener on the service profile and closes it first on shutdown", async () => {
+    const { root, listen } = await hostedEnv("service");
+    try {
+      await initializeFluxIQWebRuntime();
+      expect(await reachable(listen)).toBe(true);
+      await closeFluxIQWebRuntime();
+      expect(await reachable(listen)).toBe(false);
+    } finally {
+      await cleanup(root);
+    }
+  });
+
+  it.each([undefined, "local", "self-hosted"])("does not start the listener under profile %j", async (profile) => {
+    const { root, listen } = await hostedEnv(profile);
+    try {
+      await initializeFluxIQWebRuntime();
+      expect(await reachable(listen)).toBe(false);
+    } finally {
+      await cleanup(root);
+    }
+  });
+
+  it("refuses a public bind: the service profile fails to start on the panel's port", async () => {
+    const { root } = await hostedEnv("service", { FLUXIQ_PROVISIONING_LISTEN: "0.0.0.0:3000" });
+    try {
+      await expect(initializeFluxIQWebRuntime()).rejects.toThrow(/may not use port 3000/u);
+    } finally {
+      await cleanup(root);
+    }
+  });
+
+  it("prepares the owner claim off the local profile only, and logs where the code is, never the code", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const local = await hostedEnv("local");
+    try {
+      await initializeFluxIQWebRuntime();
+      expect(ownerClaim.prepare).not.toHaveBeenCalled();
+    } finally {
+      await cleanup(local.root);
+    }
+    const hosted = await hostedEnv("self-hosted");
+    try {
+      await initializeFluxIQWebRuntime();
+      expect(ownerClaim.prepare).toHaveBeenCalledTimes(1);
+      expect(ownerClaim.prepare.mock.calls[0]![0]).toMatchObject({ settings: { profile: "self-hosted" }, fluxiqDir: path.join(hosted.root, ".fluxiq") });
+      const lines = info.mock.calls.map((call) => String(call[0]));
+      expect(lines.some((line) => line.includes("/setup-code-file") && line.includes("https://panel.example.test/setup"))).toBe(true);
+    } finally {
+      info.mockRestore();
+      await cleanup(hosted.root);
+    }
+  });
+
+  it("keys the status off FLUXIQ_PROFILE: host paths only outside the service profile", async () => {
+    for (const [profile, hostPaths] of [["local", true], ["service", false]] as const) {
+      const { root } = await hostedEnv(profile, { FLUXIQ_PROVISIONING_LISTEN: "", FLUXIQ_PROVISIONING_TOKEN_FILE: "" });
+      try {
+        await initializeFluxIQWebRuntime();
+        const status = getFluxIQWebRuntimeStatus() as Record<string, unknown>;
+        expect("hostRoot" in status).toBe(hostPaths);
+        expect("fluxiqDir" in status).toBe(hostPaths);
+        expect(status.clientGatewayPublicUrl).toBe(profile === "service" ? "wss://panel.example.test/client" : "ws://127.0.0.1:4777/client");
+      } finally {
+        await cleanup(root);
+      }
+    }
+  });
+
+  it("is ready once initialized and not before", async () => {
+    const { root } = await hostedEnv("local");
+    try {
+      expect(getFluxIQWebReadiness()).toEqual({ ready: false, reason: "starting" });
+      await initializeFluxIQWebRuntime();
+      expect(getFluxIQWebReadiness()).toEqual({ ready: true });
+    } finally {
+      await cleanup(root);
+    }
+  });
+
+  it("persists gateway security events under the service profile and not under local", async () => {
+    for (const [profile, persisted] of [["local", false], ["service", true]] as const) {
+      const { root } = await hostedEnv(profile, { FLUXIQ_PROVISIONING_LISTEN: "", FLUXIQ_PROVISIONING_TOKEN_FILE: "" });
+      try {
+        const fluxiq = await initializeFluxIQWebRuntime();
+        fluxiq.programs.clientGateway.recordTransportEvent("transport.origin_refused", "Origin refused.");
+        expect(existsSync(path.join(root, ".fluxiq", "security", "gateway-audit.jsonl"))).toBe(persisted);
+      } finally {
+        await cleanup(root);
+      }
+    }
+  });
+
+  it("on SIGTERM with drainSeconds above 0 drains the gateway, then closes and exits 143; with the local default of 0 it closes at once", async () => {
+    const { drainState } = await import("../../server/drain");
+    for (const seconds of ["2", undefined]) {
+      const { root } = await hostedEnv("local", seconds === undefined ? {} : { FLUXIQ_DRAIN_SECONDS: seconds });
+      const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as typeof process.exit);
+      try {
+        await initializeFluxIQWebRuntime();
+        const state = globalState.__fluxiqWebRuntime as { clientGatewayServer: unknown; shutdownHandlers: { sigterm: () => void } };
+        let open = 2;
+        const beginDrain = vi.fn();
+        state.clientGatewayServer = { status: { listening: true }, close: async () => {}, beginDrain, openConnectionCount: () => open };
+        state.shutdownHandlers.sigterm();
+        if (seconds === "2") {
+          await vi.waitFor(() => expect(beginDrain).toHaveBeenCalledWith({ retryAfterMs: 2000, reason: "shutdown" }));
+          expect(drainState.isDraining()).toBe(true);
+          expect(getFluxIQWebReadiness()).toEqual({ ready: false, reason: "draining" });
+          expect(exit).not.toHaveBeenCalled();
+          open = 0;
+        } else {
+          expect(beginDrain).not.toHaveBeenCalled();
+        }
+        await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(143), { timeout: 5000 });
+      } finally {
+        exit.mockRestore();
+        drainState.reset();
+        delete process.env.FLUXIQ_DRAIN_SECONDS;
+        await cleanup(root);
+      }
+    }
   });
 });

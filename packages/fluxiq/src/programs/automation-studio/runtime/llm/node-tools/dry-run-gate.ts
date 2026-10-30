@@ -244,6 +244,8 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
   nodeOf?: AutomationStudioFlowDraftReplayInput["nodeOf"];
   /** Each step's full node definition, so a read sends the record output the stored Flow's read sends (`./replay-draft.ts`). */
   definitionOf?: AutomationStudioFlowDraftReplayInput["definitionOf"];
+  /** Which plan part each step serves, so the replay writes the record output the saved Flow has (`./replay-draft.ts`, K5). */
+  partOf?: AutomationStudioFlowDraftReplayInput["partOf"];
   signal?: AbortSignal;
 };
 
@@ -384,6 +386,7 @@ export function automationStudioFlowDraftDryRunGate(
         ...(lastingIds ? { lastingActs: lastingIds } : {}),
         ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
         ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
+        ...(input.partOf ? { partOf: input.partOf } : {}),
         ...(input.signal ? { signal: input.signal } : {})
       }), (ran) => `attempt=${attempts} ok=${ran.verdict.ok} steps=${ran.verdict.outcomes.length} reset=${ran.verdict.reset}`);
     } catch {

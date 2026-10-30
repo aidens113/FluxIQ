@@ -45,7 +45,8 @@ const NOTHING_LEFT = "The build left no change on the site that it knows of.";
  * is left and its person's words (`told`), as the supervisor named them.
  */
 export function automationStudioProjectBuildEndingTold(input: {
-  reason: string;
+  /** The supervisor's reason; empty or absent for a done build, whose why Core composes from its record. */
+  reason?: string | undefined;
   left: { note: string | undefined; told?: string } | undefined;
   record?: string | undefined;
   /** What Core last read of the pages the build acted on (header, t791). */
@@ -54,14 +55,18 @@ export function automationStudioProjectBuildEndingTold(input: {
   const { left, record } = input;
   const readings = input.readings ?? [];
   // Core's note goes after the model's words in the record: cut, and said last in a person's words (header).
-  const own = left?.note && input.reason.endsWith(left.note) ? input.reason.slice(0, -left.note.length) : input.reason;
+  const reason = input.reason ?? "";
+  const own = left?.note && reason.endsWith(left.note) ? reason.slice(0, -left.note.length) : reason;
   // A claim of the site's state that Core's own readings contradict gives way to the readings (t791).
   // A claim that nothing changed gives way where the ledger holds an act left on the site (t791, fix 5b).
   const owned = left?.note !== undefined ? automationStudioProjectBuildReasonNothingChanged(own) : own;
   const uncontradicted = readings.length ? automationStudioProjectBuildReasonContradicted(owned, readings) : owned;
   const checked = automationStudioProjectBuildReasonUnrepeated(record ? automationStudioProjectBuildReasonChecked(uncontradicted, /\bstored (?:\d+ rows?|no rows)\b/u.test(record)) : uncontradicted);
-  const why = checked ? automationStudioActivityEndedReason(checked, MAX_ENDED_REASON) : undefined;
+  const modelWhy = checked ? automationStudioActivityEndedReason(checked, MAX_ENDED_REASON) : undefined;
+  // With nothing of the supervisor's own to say, the why is Core's record, said once (header).
+  const fromRecord = !modelWhy && record ? record : undefined;
+  const why = modelWhy ?? fromRecord;
   const leftSaid = left?.note !== undefined ? left.told ?? left.note : NOTHING_LEFT;
-  const sentences = [why ? (/[.!?…]$/u.test(why) ? why : `${why}.`) : "", record ?? "", automationStudioProjectBuildReadingsTold(readings) ?? "", leftSaid].filter((sentence) => sentence);
+  const sentences = [why ? (/[.!?…]$/u.test(why) ? why : `${why}.`) : "", fromRecord ? "" : record ?? "", automationStudioProjectBuildReadingsTold(readings) ?? "", leftSaid].filter((sentence) => sentence);
   return { why: why || undefined, text: sentences.join(" "), left: leftSaid };
 }

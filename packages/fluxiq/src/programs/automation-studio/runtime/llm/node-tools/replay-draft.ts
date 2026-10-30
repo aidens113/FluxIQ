@@ -81,6 +81,7 @@
 // after the step it reads therefore cannot send it either.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AuthoringPartOfStep } from "../../flow-bootstrap/record-defaults/index.ts";
 import {
   automationStudioFlowDraftExemptStepIds,
   automationStudioFlowDraftConditionalStepReasons,
@@ -158,6 +159,12 @@ export type AutomationStudioFlowDraftReplayInput = {
    * call carries what the step ran with.
    */
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
+  /**
+   * Which plan part each step serves (`../../flow-bootstrap/record-defaults/`, K5): a read with a half-written
+   * record output is sent with the output assembly derives from the part, as the saved Flow has it. Absent, or
+   * `undefined` for a step, a call carries what assembly derives without a part.
+   */
+  partOf?: AuthoringPartOfStep | undefined;
   signal?: AbortSignal;
 };
 
@@ -237,13 +244,14 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     reanchor: true,
     ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
     ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
-    ...(input.definitionOf ? { definitionOf: input.definitionOf } : {})
+    ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
+    ...(input.partOf ? { partOf: input.partOf } : {})
   });
   return { verdict: verdictOf(input, "ok", done.outcomes), observations: done.observations, ...(done.evidence ? { evidence: done.evidence } : {}) };
 }
 
 /** What a run of steps done again needs: the executor, the draft, and the steps. */
-export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs" | "nodeOf" | "definitionOf"> & {
+export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs" | "nodeOf" | "definitionOf" | "partOf"> & {
   /** The whole draft: what says which steps the Flow would not always run. */
   steps: readonly AutomationStudioFlowDraftStep[];
   /** The proposed steps to do again, in order, from where the target now stands. */
@@ -317,6 +325,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
         plan,
         nodeOf: input.nodeOf,
         definitionOf: input.definitionOf,
+        partOf: input.partOf,
         modeOf: (member) => automationStudioFlowDraftStepReplayMode(member, input.lastingActs),
         callIdOf: input.callIdOf,
         send: (callId, member, value) => send(callId, member, value, passExcusable),
@@ -333,7 +342,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       continue;
     }
     const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
-    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId));
+    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId), input.partOf);
     const unresolved = built !== undefined && "unresolved" in built;
     const value = built && "value" in built ? built.value : undefined;
     const callId = input.callIdOf(step);

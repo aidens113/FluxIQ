@@ -82,6 +82,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialResult, AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
+import { automationStudioCandidateFixPoint, automationStudioCandidatePlanDiff } from "../unchanged-fix-point/index.ts";
 import { automationStudioCandidateRecordContradictsPart, automationStudioCandidateRetestAdvised } from "./trial-gate.ts";
 
 /** The parameter a step keeps its rows by, and its one display-only word; its `datasetId` decides where rows go (header). */
@@ -151,12 +152,21 @@ export function automationStudioCandidateUnchangedRefusal(input: {
   tools?: Tools | undefined;
   /** Where the Flow was refuted: the revision that still stands, with its last trial, when it is another (header, t632). */
   current?: Current | undefined;
+  /** Set on the first refusal of a refuted Flow: the refusal then carries `diff` and `fixPoint` (P1a). Later ones keep the shorter shape. */
+  first?: boolean | undefined;
+  /** The submitted plan and the refuted one it is compared with for `diff`; no `diff` when absent. */
+  plans?: { submitted: AutomationStudioFlowBuildPlan; refuted: AutomationStudioFlowBuildPlan } | undefined;
 }): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
   const { standing, lastTrial, refuted } = input;
   const tools = input.tools ?? CANDIDATE_TOOLS;
   const retest = refuted ? retestable(input.current) : undefined;
   const reworded = input.reworded === true && standing !== undefined;
   const code = refuted ? "candidate.unchanged_after_no" : "candidate.unchanged_submission";
+  // The first refusal of a refuted Flow also says what differs and where the record points (P1a); absent data adds nothing.
+  const diff = refuted && input.first === true && input.plans ? automationStudioCandidatePlanDiff(input.plans.submitted, input.plans.refuted) : undefined;
+  const fixPoint = refuted && input.first === true ? automationStudioCandidateFixPoint(refuted, lastTrial?.feedback) : undefined;
+  const pointer = !diff && !fixPoint ? ""
+    : ` ${diff && fixPoint ? "`diff` says what differs from the refuted Flow, and `fixPoint` names the steps the record points at" : diff ? "`diff` says what differs from the refuted Flow" : "`fixPoint` names the steps the record points at"}: change those steps, not names or where rows are saved.`;
   const same = reworded
     ? `Nothing the Flow does changed: this is the Flow of revision ${standing.revision} with only names reworded (the Flow's, its steps' or its saved list's), which no run acts on, so it was not made a new revision and revision ${standing.revision} keeps its own names`
     : standing
@@ -176,7 +186,9 @@ export function automationStudioCandidateUnchangedRefusal(input: {
       ...(lastTrial ? { lastTrial: { verdict: lastTrial.verdict, feedback: structuredClone(lastTrial.feedback) } } : {}),
       ...(refuted ? { judged: structuredClone(refuted) } : {}),
       ...(retest ? { standingRevision: { revision: retest.revision, digest: retest.digest, verdict: retest.verdict, retestAdvised: retest.advised } } : {}),
-      instruction: `${same}. ${whatFailed(standing, lastTrial, refuted, tools)}${retest ? retestWords(retest, tools) : ""}`
+      ...(diff ? { diff } : {}),
+      ...(fixPoint ? { fixPoint } : {}),
+      instruction: `${same}. ${whatFailed(standing, lastTrial, refuted, tools)}${retest ? retestWords(retest, tools) : ""}${pointer}`
     }
   };
 }
