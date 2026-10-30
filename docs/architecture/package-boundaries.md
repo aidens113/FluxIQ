@@ -832,10 +832,11 @@ inserts. Read the whole entry if a host:
 - **One new PIN prompt.** `delete-run-datasets` now asks for a PIN. It used to
   delete captured rows under `flows.write` alone. Send `authSessionId` and
   `authorizationPin`, or the call is refused.
-- **Declared gaps.** `database-manager/run-migration`, `deployment-sync/sync`
-  and `deployment-sync/rollback` are `destructive-ungated` and still check
-  nothing. [Declared gaps](automation-studio/persistence.md#declared-gaps) says
-  why.
+- **No declared gaps.** `database-manager/run-migration`,
+  `deployment-sync/sync` and `deployment-sync/rollback` were
+  `destructive-ungated`; they are now `destructive` and ask for the operator's
+  PIN like the rest (t809). [Declared gaps](automation-studio/persistence.md#declared-gaps)
+  lists none.
 
 **Identity Access re-proves the caller before it hands out authority.**
 `create-user`, `create-session`, `begin-totp`, `confirm-totp` and

@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { ClientGatewayAuditEntry } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayAuditEntry } from "fluxiq/client-gateway";
 import { redactFields } from "../log";
 import { appendAuditLine } from "./append-audit-line";
 

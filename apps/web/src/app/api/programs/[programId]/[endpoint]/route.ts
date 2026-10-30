@@ -17,6 +17,7 @@ import {
 } from "../../../../../lib/program-route";
 import { pairedClientProjectDomainRefusal, type PairedClientProjectDomainRefusal } from "../../../../../lib/paired-client-project-domain";
 import { programJsonResponse } from "../../../../../lib/program-json-response";
+import { programDrainRefusal } from "../../../../../server/drain";
 
 type RouteParams = {
   params: Promise<{
@@ -46,6 +47,8 @@ export async function GET(request: Request, context: RouteParams) {
   const fluxiq = getFluxIQ();
   const caller = await authenticate(request, fluxiq, programId, endpoint);
   if (caller instanceof NextResponse) return caller;
+  const draining = refuseWhileDraining(programId, endpoint);
+  if (draining) return draining;
   const narrowed = caller.kind === "paired-client" ? narrowPairedClientRequest(programId, endpoint, undefined) : { ok: true as const, payload: undefined };
   if (!narrowed.ok) return refuse(403, narrowed.error, narrowed.errorCode);
   const outside = caller.kind === "paired-client" ? await refuseProjectOutsideDomain(fluxiq, programId, caller, narrowed.payload) : null;
@@ -59,6 +62,8 @@ export async function POST(request: Request, context: RouteParams) {
   const fluxiq = getFluxIQ();
   const caller = await authenticate(request, fluxiq, programId, endpoint);
   if (caller instanceof NextResponse) return caller;
+  const draining = refuseWhileDraining(programId, endpoint);
+  if (draining) return draining;
   const payload = await request.json().catch(() => undefined);
   // A token call's body is narrowed before any handler sees it: a field that
   // would reach an LLM, an inline Flow or another reviewer is refused by name.
@@ -168,4 +173,12 @@ function withWebRuntimeStatus<TResponse extends { ok: boolean; payload?: unknown
       webRuntime: getFluxIQWebRuntimeStatus(operatorUserId),
     },
   };
+}
+
+// While the server drains, a call that would start a build or run is refused
+// before its handler can have any effect; reads and stops still go through.
+function refuseWhileDraining(programId: string, endpoint: string) {
+  const refusal = programDrainRefusal(programId, endpoint);
+  if (!refusal) return null;
+  return NextResponse.json(refusal.body, { status: refusal.status, headers: { "Retry-After": String(refusal.retryAfterSeconds) } });
 }

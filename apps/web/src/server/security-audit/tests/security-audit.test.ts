@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ClientGatewayAuditEntry } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayAuditEntry } from "fluxiq/client-gateway";
 import { afterEach, describe, expect, it } from "vitest";
 import { appendAuditLine, attachGatewayAuditPersistence } from "../index";
 
