@@ -105,6 +105,22 @@ describe("a closed FluxIQ instance", () => {
     }
   }, 120_000);
 
+  it("stops the background task scheduler of an instance whose tasks were loaded", async () => {
+    const baselineTimeouts = handleCounts().Timeout ?? 0;
+    const references: Array<WeakRef<object>> = [];
+    for (let cycle = 0; cycle < 5; cycle += 1) {
+      let opened: { fluxiq: FluxIQ; root: string } | undefined = await openAndUse();
+      // Loading the tasks starts the scheduler's interval.
+      expect((await opened.fluxiq.programs.backgroundTasks.snapshot()).scheduler.running).toBe(true);
+      references.push(new WeakRef(opened.fluxiq));
+      await opened.fluxiq.close({ mode: "evict" });
+      expect((await opened.fluxiq.programs.backgroundTasks.snapshot()).scheduler.running).toBe(false);
+      opened = undefined;
+    }
+    expect(await collected(references)).toBe(true);
+    expect(handleCounts().Timeout ?? 0).toBeLessThanOrEqual(baselineTimeouts);
+  }, 60_000);
+
   it("closing one of two live instances leaves the other subscribed and working", async () => {
     const baseline = automationStudioActivityHub.subscriberCount();
     const a = await openAndUse();

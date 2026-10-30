@@ -13,10 +13,12 @@ import {
   validateIoRequirements
 } from "../io/index.ts";
 import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, programStateConnections, registerHostDocumentationGenerators, type HeldKeys, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
+import type { ProgramApiIamOptions } from "../programs/_shared/iam/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
 import { migrateFluxIQStorage, rollbackFluxIQStorageMigration, type FluxIQStorageMigrationResult } from "./storage-migration.ts";
 
 export * from "./storage-layout.ts";
+export * from "./layout-v3/index.ts";
 export * from "./storage-migration.ts";
 export * from "./uncommitted-v2-adoption.ts";
 
@@ -85,6 +87,12 @@ export type FluxIQOptions = {
    * every key, as a single local install always has.
    */
   heldKeys?: HeldKeys;
+  /**
+   * How the program registry decides. Omitted, the profile comes from
+   * `FLUXIQ_PROFILE` (`local` when unset) and decisions are today's. A hosted
+   * `service` passes the per-workspace policy `source` and the decision `audit`.
+   */
+  iam?: ProgramApiIamOptions;
 };
 
 /**
@@ -191,7 +199,7 @@ export class FluxIQ {
       artifacts: resolveInside(root, path.join(fluxiqDir, "artifacts")),
       cache: resolveInside(root, path.join(fluxiqDir, "cache"))
     };
-    this.programs = createGlobalProgramRuntime(this.paths, { ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}) });
+    this.programs = createGlobalProgramRuntime(this.paths, { ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}), ...(options.iam ? { iam: options.iam } : {}) });
     this.runtime = this.programs.runtime;
     this.programs.automationStudio.bindIoRuntime(this.io, activeDomainId);
     if (options.nativeNodeRuntime) this.programs.automationStudio.bindNativeNodeRuntime(options.nativeNodeRuntime);
@@ -218,6 +226,7 @@ export class FluxIQ {
       const errors: unknown[] = [];
       // First, so a closed instance gets no more activity events and the process-wide hub no longer reaches it (t808).
       try { this.programs.detach(); } catch (error) { errors.push(error); }
+      try { await this.programs.backgroundTasks.close(); } catch (error) { errors.push(error); }
       try { await this.programs.clientGateway.close(); } catch (error) { errors.push(error); }
       try {
         await this.programs.automationStudio.close();

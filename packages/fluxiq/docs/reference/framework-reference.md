@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4329
+- Public declarations: 4338
 - Class: 150
 - Interface: 10
-- Object: 559
-- Type: 2305
+- Object: 560
+- Type: 2308
 - Type Alias: 1
-- Value: 1304
+- Value: 1309
 
 ## Public Declarations
 
@@ -3637,6 +3637,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FlowSubflowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/subflow.ts` | - |
 | `FlowValidationIssue` | Type | `packages/fluxiq/src/flows/index.ts` | - |
 | `FluxIQ` | Class | `packages/fluxiq/src/framework/index.ts` | - |
+| `FLUXIQ_LAYOUT_V3_VERSION` | Object | `packages/fluxiq/src/framework/layout-v3/version.ts` | - |
 | `FLUXIQ_RUNTIME_WITHHELD_VALUE` | Object | `packages/fluxiq/src/runtime/contracts.ts` | What a withheld value reads as in a command attempt the runtime keeps. A constant rather than a removed field, so a reader can tell a value that was withheld from one that was never there. |
 | `FLUXIQ_STORAGE_LAYOUT_VERSION` | Object | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `FluxIQCloseOptions` | Type | `packages/fluxiq/src/framework/index.ts` | How `FluxIQ.close()` ends an instance. `shutdown` (the default) is a real stop: every held key is revoked. `evict` drops an idle instance a host will create again: key custody given in `FluxIQOptions.heldKeys` stays held, so its users stay unlocked. Both close the instance's own connections and detach it from process-wide state, and neither touches another instance's. |
@@ -3646,6 +3647,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FluxIQEnvironmentKey` | Type | `packages/fluxiq/src/framework/index.ts` | - |
 | `FluxIQHostPaths` | Type | `packages/fluxiq/src/framework/index.ts` | - |
 | `FluxIQIconName` | Type | `packages/fluxiq/src/ui/index.ts` | - |
+| `FluxIQLayoutV3Inspection` | Type | `packages/fluxiq/src/framework/layout-v3/inspect.ts` | - |
+| `fluxiqLayoutV3Paths` | Value | `packages/fluxiq/src/framework/layout-v3/paths.ts` | - |
+| `FluxIQLayoutV3Paths` | Type | `packages/fluxiq/src/framework/layout-v3/paths-type.ts` | Where a multi-tenant (`service`) deployment keeps its platform state and workspaces. All paths are absolute. |
 | `FluxIQMigrationJournal` | Type | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `FluxIQOptions` | Type | `packages/fluxiq/src/framework/index.ts` | - |
 | `FluxIQPerformanceMetric` | Type | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
@@ -3682,6 +3686,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FluxIQTheme` | Type | `packages/fluxiq/src/ui/index.ts` | - |
 | `FluxIQThemeColorToken` | Type | `packages/fluxiq/src/ui/index.ts` | - |
 | `FluxIQUncommittedV2AdoptionResult` | Type | `packages/fluxiq/src/framework/uncommitted-v2-adoption.ts` | - |
+| `fluxiqWorkspaceRootDir` | Value | `packages/fluxiq/src/framework/layout-v3/workspace-root-dir.ts` | - |
 | `FrameworkResult` | Type | `packages/fluxiq/src/core/index.ts` | - |
 | `GATEWAY_TRACE_MANIFEST_MEDIA_TYPE` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/manifest-row.ts` | - |
 | `GATEWAY_TRACE_SEALED_MANIFEST_PREFIX` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/manifest-row.ts` | What a sealed manifest's `manifest_json` starts with: not JSON, so a reader that does not know the form fails to parse it. |
@@ -3709,6 +3714,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `GlobalProgramApiRegistry` | Class | `packages/fluxiq/src/programs/_shared/api.ts` | - |
 | `GlobalProgramDefinition` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `GlobalProgramRuntime` | Type | `packages/fluxiq/src/programs/_shared/runtime.ts` | - |
+| `GlobalProgramRuntimeActivity` | Type | `packages/fluxiq/src/programs/_shared/runtime.ts` | The work in flight in one runtime. Every count is zero when it is idle. - `openProjectDatabases`: Automation Studio project databases open. A run and a build hold theirs for as long as they work, so this is how one is seen; any other project operation holds one for its own length, and the pool closes an idle one within a second. - `backgroundTasksRunning`: background task runs not yet settled. - `backgroundTasksScheduled`: tasks outside the built-in `maintenance` queue that a person turned on with an interval through this runtime. - `openGatewaySessions`: client gateway sessions not disconnected. |
 | `GlobalProgramRuntimeOptions` | Type | `packages/fluxiq/src/programs/_shared/runtime.ts` | How a program runtime is built; each field is optional, and absent means today's local behaviour. |
 | `GraphPatchOperation` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/graph.ts` | - |
 | `GraphViewportRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/graph.ts` | - |
@@ -3736,11 +3742,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `IdentitySessionTarget` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A session to revoke: its raw id, or (administrators only) the digest the panel lists it by. |
 | `IdentityTwoFactorResetError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/two-factor-reset-error.ts` | The refusal of `resetPassword` (a welcome or reset link, or an operator's reset) for an account with two-factor sign-in whose credential is sealed and not unlocked in this process. The authenticator secret is inside the seal, so the reset could only go ahead by turning two-factor off, and a link or an operator command alone must never do that. Nothing is changed; a signed-in administrator resets such an account (`setPasswordAuthorized`). Its `code` is what platform provisioning matches on (answered as `two_factor`), never the message. |
 | `ingestAutomationStudioTrialEvidenceResult` | Value | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/derived-provenance.ts` | - |
+| `initializeFluxIQLayoutV3` | Value | `packages/fluxiq/src/framework/layout-v3/initialize.ts` | - |
 | `initializeFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `initialNodeStatePhases` | Object | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts` | - |
 | `InputAdapter` | Type | `packages/fluxiq/src/io/index.ts` | - |
 | `InputOutputBinding` | Type | `packages/fluxiq/src/io/index.ts` | - |
 | `InputReadRequest` | Type | `packages/fluxiq/src/io/index.ts` | - |
+| `inspectFluxIQLayoutV3` | Value | `packages/fluxiq/src/framework/layout-v3/inspect.ts` | - |
 | `inspectFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `InspectStateDiffRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts` | - |
 | `interpretAutomationStudioConversationTurn` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/interpret.ts` | - |
@@ -4039,6 +4047,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `registerSecretKeysApi` | Value | `packages/fluxiq/src/programs/secret-keys/api/handlers.ts` | - |
 | `releaseAutomationStudioSessionDeepSeekKey` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/session-key.ts` | - |
 | `ReleaseComputeLeaseRequest` | Type | `packages/fluxiq/src/programs/compute-control/api/contracts.ts` | - |
+| `removeFluxIQWorkspaceRoot` | Value | `packages/fluxiq/src/framework/layout-v3/remove-workspace-root.ts` | - |
 | `RemoveRecordingEntryRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts` | Removes every entry of a still-open recording that was recorded from one gateway event: each entry whose `metadata.eventId` is `eventId`, the id `runtime/io-bridge.ts` copies from the recorded event's envelope. A finalized recording is refused. |
 | `RemoveRecordingEntryResponse` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts` | How many entries were removed, and the recording as a summary: no timeline, notes or state. |
 | `RenameFlowSubflowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/subflow.ts` | - |

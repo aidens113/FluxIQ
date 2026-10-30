@@ -1,18 +1,12 @@
-import { isFluxIQProfile, isPublicClientGatewayBind, type FluxIQProfile } from "@fluxiq/contracts/platform";
+import { isPublicClientGatewayBind } from "@fluxiq/contracts/platform";
 import type { FluxIQDeploymentSettings } from "../types.ts";
 import { parseIntegerSetting } from "./parse-integer-setting.ts";
 import { resolveGatewayLimits } from "./gateway-limits.ts";
 import { resolveGatewayPublicUrl } from "./gateway-public-url.ts";
 import { resolvePublicOrigin } from "./public-origin.ts";
+import { resolveFluxIQProfile } from "./resolve-profile.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
-
-function resolveProfile(env: Env): FluxIQProfile {
-  const raw = env.FLUXIQ_PROFILE?.trim() ?? "";
-  if (raw === "") return "local";
-  if (!isFluxIQProfile(raw)) throw new Error("FLUXIQ_PROFILE must be local, self-hosted or service.");
-  return raw;
-}
 
 function isLoopbackHost(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
@@ -20,7 +14,7 @@ function isLoopbackHost(host: string): boolean {
 
 /** Resolves every lane-A deployment setting from the environment; `local` defaults equal today's behaviour. */
 export function resolveFluxIQDeploymentSettings(env: Env): FluxIQDeploymentSettings {
-  const profile = resolveProfile(env);
+  const profile = resolveFluxIQProfile(env);
   const host = env.FLUXIQ_CLIENT_GATEWAY_HOST?.trim() || "127.0.0.1";
   const port = parseIntegerSetting("FLUXIQ_CLIENT_GATEWAY_PORT", env.FLUXIQ_CLIENT_GATEWAY_PORT, 4777, false) as number;
   if (port > 65535) throw new Error("FLUXIQ_CLIENT_GATEWAY_PORT must be at most 65535.");

@@ -26,6 +26,8 @@ export class BackgroundTasksService {
   private readonly stateWriteIntervalMs: number;
   private schedulerRunning = true;
   private schedulerStartedAtMs: number | undefined;
+  private runsInProgress = 0;
+  private closed = false;
 
   constructor(options: { repository?: Repository; pollIntervalMs?: number; stateWriteIntervalMs?: number } = {}) {
     this.pollIntervalMs = options.pollIntervalMs ?? 5_000;
@@ -84,6 +86,52 @@ export class BackgroundTasksService {
   }
 
   async run(taskId: string, payload?: JsonObject, nowMs = Date.now()): Promise<BackgroundTaskRun> {
+    if (this.closed) throw new Error("Background tasks service is closed");
+    this.runsInProgress += 1;
+    try {
+      return await this.runOnce(taskId, payload, nowMs);
+    } finally {
+      this.runsInProgress -= 1;
+    }
+  }
+
+  /**
+   * What keeps this service busy, read without loading storage or starting the
+   * scheduler: nothing is scheduled before the tasks are loaded, and nothing
+   * runs then either. `scheduled` counts enabled tasks with an interval outside
+   * the built-in `maintenance` queue.
+   */
+  activity(): { running: number; scheduled: number } {
+    let scheduled = 0;
+    if (this.loaded && !this.closed) {
+      for (const task of this.tasks.values()) {
+        if (task.enabled && task.intervalMs && task.queue !== "maintenance") scheduled += 1;
+      }
+    }
+    return { running: this.runsInProgress, scheduled };
+  }
+
+  /**
+   * Stops the scheduler, flushes a pending debounced write, and refuses further
+   * runs. Idempotent. A run that settles after close is not persisted.
+   */
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    const pending = this.persistTimer !== null || this.persistInFlight !== null;
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    if (this.repository && this.loaded && pending) await this.flushPersist();
+    else if (this.persistInFlight) await this.persistInFlight;
+  }
+
+  private async runOnce(taskId: string, payload: JsonObject | undefined, nowMs: number): Promise<BackgroundTaskRun> {
     await this.load();
     const task = this.requireTask(taskId);
     if (!task.enabled) {
@@ -228,7 +276,7 @@ export class BackgroundTasksService {
   }
 
   private schedulePersist(): void {
-    if (!this.repository) return;
+    if (!this.repository || this.closed) return;
     if (this.stateWriteIntervalMs <= 0) {
       void this.flushPersist();
       return;
@@ -272,7 +320,7 @@ export class BackgroundTasksService {
   }
 
   private startTimer(): void {
-    if (this.timer) return;
+    if (this.timer || this.closed) return;
     this.schedulerStartedAtMs = Date.now();
     this.timer = setInterval(() => {
       void this.runDueTasks();

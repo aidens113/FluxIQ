@@ -20,10 +20,16 @@ the role check it replaced, by construction and by the parity tests (see
 [Parity](#parity)); only `service` narrows a `FluxIQUserAccess` user to their
 own resources.
 
-The running product still constructs the registry with no `iam` options, so it
-decides as `local` with a discarding audit sink; the profile, the per-workspace
-IAM store and the audit store are wired by lanes A and C (see
-[Not yet wired](#not-yet-wired)).
+`createGlobalProgramRuntime` builds the registry from the resolved deployment
+profile (`resolveFluxIQProfile(process.env)`, so `FLUXIQ_PROFILE` unset is
+`local`) and the `iam` option it is given (`FluxIQOptions.iam`): a local or
+self-hosted install decides exactly as before, and `service` decides by the
+policies `iam.source` attaches, recording each decision in `iam.audit`. Under
+`service` the same runtime also bounds the client gateway's ended sessions to
+one hour (`endedSessionMaxAgeMs`). `PlatformServices.workspaceIam(workspaceId)`
+returns the per-workspace `IamStore` provisioning attaches member policies to,
+which is what a hosted manager passes as `iam.source`. The web app's source and
+the audit store come in lane C1's manager (see [Not yet wired](#not-yet-wired)).
 
 The plan's terms (principals, FRNs, policy kinds, actions) are in the
 [hosted production plan](../working/hosted-production-plan.md), "Permissions
@@ -843,10 +849,10 @@ and `instanceHost`, the host of `FLUXIQ_PUBLIC_ORIGIN` when set.
 
 ## Not yet wired
 
-- **The registry's `iam` options** (`programs/_shared/runtime.ts`): the
-  profile (lane A), the per-workspace IAM store as `source` and the audit store
-  as `audit` (lane C). Until then every decision is the `local` one and no
-  decision is recorded.
+- **The registry's `iam` source and audit** in the web app: the profile and
+  the options are wired (see Enforcement), but nothing in `apps/web` passes a
+  `source` or an `audit` store yet (lane C1's manager). Until it does, `service`
+  without a source denies everything and records nowhere.
 - **A startup refusal** of an undeclared registration under public profiles:
   only the completeness test enforces declarations.
 

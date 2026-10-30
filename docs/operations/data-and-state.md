@@ -62,6 +62,33 @@ rename the importer-defined domain. Selecting another domain changes domain
 runtime paths and filters/targets data, but never relocates identity, trusted
 clients, or Automation Studio projects.
 
+## Layout v3 (multi-tenant `service`)
+
+Single tenancy is unchanged: one `.fluxiq` under the host root, laid out as v2
+above. Only a multi-tenant (`service`) deployment uses layout v3, described by
+`framework/layout-v3/` (`fluxiqLayoutV3Paths`, `fluxiqWorkspaceRootDir`,
+`inspectFluxIQLayoutV3`, `initializeFluxIQLayoutV3`,
+`removeFluxIQWorkspaceRoot`). Nothing calls it under single tenancy.
+
+```text
+<dataRoot>/                          # the platform instance's host root
+  .fluxiq/                           # the platform's state, exactly as today
+    platform/                        # IAM audit and outbox
+  workspaces/                        # overridable to an operator volume
+    layout.json                      # { layoutVersion: 3, createdBy, createdAt }
+    <workspaceId>/                   # a complete root for one tenant
+      .fluxiq/                       # that tenant's own v2 storage root
+```
+
+Storage roots are never nested: a store resolves to the nearest `config.json`
+above it, so `workspaces/` must not lie inside any storage root, and
+`inspectFluxIQLayoutV3` reports such a layout as `invalid`, as it does an
+unreadable marker or one with another version. A workspace id must match
+`^[a-z0-9][a-z0-9-]{0,62}$` (provisioning's `randomUUID()` and
+`workspace-main` both do); anything else is refused with
+`storage.workspace_id_invalid:`, so a root is always a direct child of
+`workspaces/`. Removing a workspace deletes only that child.
+
 ## Global SQLite Database
 
 The global framework database is:
