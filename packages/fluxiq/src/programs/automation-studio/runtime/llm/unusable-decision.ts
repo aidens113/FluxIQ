@@ -81,6 +81,23 @@ function acceptedDecision(offers: AutomationStudioLlmUnusableDecisionOffers | un
   return { oneOf: shapes, rule: "Answer with exactly one of these objects and no other keys." };
 }
 
+/** What a tool call named that the decision did not offer (`./evidence-loop/decision-refusal.ts`), and what it could have named. */
+export type AutomationStudioLlmUnusableDecisionUnknownTool = { toolId: string; offered: readonly string[]; nearest?: string };
+
+/** The most offered ids and characters of the asked id the model is shown back; the full list is already in the decision schema. */
+const UNKNOWN_TOOL_MAX_IDS = 40;
+const UNKNOWN_TOOL_MAX_ID_LENGTH = 80;
+
+/** What the model is told after it named a tool that was not offered. Ids only, each bounded. */
+function unknownToolInstruction(unknown: AutomationStudioLlmUnusableDecisionUnknownTool): string {
+  const clip = (id: string): string => id.slice(0, UNKNOWN_TOOL_MAX_ID_LENGTH);
+  const offered = unknown.offered.slice(0, UNKNOWN_TOOL_MAX_IDS).map(clip);
+  return `There is no tool "${clip(unknown.toolId)}" to call, and nothing ran. `
+    + (offered.length ? `The toolIds offered for this decision are: ${offered.map((id) => `"${id}"`).join(", ")}${unknown.offered.length > offered.length ? ", and more in the decision schema" : ""}. ` : "")
+    + (unknown.nearest ? `The nearest to the one you gave is "${clip(unknown.nearest)}"; if that is what you meant, send the same call with that toolId. ` : "")
+    + "Use a toolId exactly as the decision schema lists it.";
+}
+
 /** Which kinds of decision the loop offered the decision that could not be used. */
 export type AutomationStudioLlmUnusableDecisionOffers = { tools: boolean; complete: boolean; amend: boolean };
 
@@ -160,6 +177,8 @@ const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
   "llm_evidence_loop.amend_not_offered": "Editing the draft was not offered for this decision: the decision schema has no amend_draft variant, because there is no step in the draft to edit yet, this exploration's edits are used up, or this is its last decision. Run a tool call instead, with add true to put its step in the Flow (and act, if it does one), or complete if that is offered and the Flow already does what the person asked.",
   // `./evidence-loop/decision-refusal.ts`: a reply that was JSON, but not a decision of any accepted shape.
   "llm_evidence_loop.decision_shape_invalid": "The decision was JSON but not one of the accepted shapes: check its kind, write only the keys that shape lists, give input and result as objects, and give every amendment a step number and a change from the list.",
+  // `./evidence-loop/decision-refusal.ts`: a tool call naming a tool that was not offered; the ids come with the feedback (`unknownTool`).
+  "llm_evidence_loop.unknown_tool_refused": "Name a tool only by a toolId from the decision schema list.",
   // `./evidence-loop-decision.ts` (t194-w78): an amend_draft left with nothing because a rerun had no input.
   "llm_evidence_loop.rerun_needs_input": "A rerun needs input, and a rerun without it is dropped, so this amend_draft changed nothing: give the rerun an input -- the parameters to change, or {} to run the step again as it stands.",
   // `./evidence-loop-decision.ts` (t252, D1): a node call that runs now with a binding in its parameters.
@@ -262,6 +281,8 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
    * in place of the no-progress count, which such a reply does not move.
    */
   unreadable?: { reply?: AutomationStudioLlmProviderReplyAccount | undefined; inARow: number; maxInARow: number };
+  /** Present when the decision named a tool that was not offered: its instruction names the offered ids and the nearest. */
+  unknownTool?: AutomationStudioLlmUnusableDecisionUnknownTool;
 }): JsonObject {
   // Every well-formed issue code (2026-09-30): it was the first eight.
   const issueCodes = [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))];
@@ -292,6 +313,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     accepted: acceptedDecision(input.offers),
     instruction: [DECISION_FEEDBACK_INSTRUCTION,
       ...fieldIssues.map((issue) => FIELD_ISSUE_INSTRUCTIONS[issue.path]),
+      ...(input.unknownTool ? [unknownToolInstruction(input.unknownTool)] : []),
       ...[...new Set(input.issueCodes)].flatMap((code) => ISSUE_INSTRUCTIONS[code] ?? [])].join(" ")
   };
 }
