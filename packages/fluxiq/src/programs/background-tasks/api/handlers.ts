@@ -1,4 +1,5 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { endpointResource } from "../../_shared/iam/index.ts";
 import {
   BACKGROUND_TASKS_ENDPOINTS,
   type BackgroundTaskDetailRequest,
@@ -15,6 +16,9 @@ export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, s
     endpoint: BACKGROUND_TASKS_ENDPOINTS.snapshot,
     permission: "programs.read",
     classification: "read",
+    action: "ops:Snapshot",
+    accessLevel: "Read",
+    resource: endpointResource.program(),
     handler: async () => ({ ok: true, payload: await service.snapshot() })
   });
   registry.register({
@@ -22,6 +26,9 @@ export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, s
     endpoint: BACKGROUND_TASKS_ENDPOINTS.detail,
     permission: "programs.read",
     classification: "read",
+    action: "ops:Detail",
+    accessLevel: "Read",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as BackgroundTaskDetailRequest | undefined;
       if (!payload?.taskId) return { ok: false, error: "taskId is required" };
@@ -33,6 +40,9 @@ export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, s
     endpoint: BACKGROUND_TASKS_ENDPOINTS.run,
     permission: "runtime.control",
     classification: "authoring",
+    action: "ops:Run",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as RunBackgroundTaskRequest | undefined;
       if (!payload?.taskId) return { ok: false, error: "taskId is required" };
@@ -44,6 +54,9 @@ export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, s
     endpoint: BACKGROUND_TASKS_ENDPOINTS.setEnabled,
     permission: "runtime.control",
     classification: "authoring",
+    action: "ops:SetEnabled",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as SetBackgroundTaskEnabledRequest | undefined;
       if (!payload?.taskId) return { ok: false, error: "taskId is required" };
@@ -55,6 +68,9 @@ export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, s
     endpoint: BACKGROUND_TASKS_ENDPOINTS.saveSchedule,
     permission: "runtime.control",
     classification: "authoring",
+    action: "ops:SaveSchedule",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as SaveBackgroundTaskScheduleRequest | undefined;
       if (!payload?.taskId) return { ok: false, error: "taskId is required" };
@@ -66,6 +82,9 @@ export function registerBackgroundTasksApi(registry: GlobalProgramApiRegistry, s
     endpoint: BACKGROUND_TASKS_ENDPOINTS.control,
     permission: "runtime.control",
     classification: "authoring",
+    action: "ops:Control",
+    accessLevel: "Write",
+    resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as ControlBackgroundTaskRequest | undefined;
       if (payload?.action === "start") return { ok: true, payload: await service.start() };

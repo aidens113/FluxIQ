@@ -13,15 +13,22 @@ let cookieValue: string | undefined;
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({ get: vi.fn(() => (cookieValue === undefined ? undefined : { value: cookieValue })) })),
 }));
-vi.mock("../../../../../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({
-    programs: {
-      clientGateway: { authorizeToken },
-      identityAccess: { validateSession },
-      automationStudio: { assertProjectDomainAccess, writeProjectObjectAsset },
-    },
-  }),
-}));
+const snapshot = vi.fn(async () => ({ users: [{ id: "user:owner", roleId: "role:viewer", enabled: true }], roles: [{ id: "role:viewer", permissions: ["programs.read"] }] }));
+// A real registry on the local profile decides the route, as live; a token acts as the person who approved it.
+vi.mock("../../../../../../../../lib/fluxiq", async () => {
+  const { GlobalProgramApiRegistry } = await import("fluxiq");
+  const api = new GlobalProgramApiRegistry();
+  return {
+    getFluxIQ: () => ({
+      programs: {
+        api,
+        clientGateway: { authorizeToken },
+        identityAccess: { validateSession, snapshot },
+        automationStudio: { assertProjectDomainAccess, writeProjectObjectAsset },
+      },
+    }),
+  };
+});
 
 import { PUT } from "../route";
 

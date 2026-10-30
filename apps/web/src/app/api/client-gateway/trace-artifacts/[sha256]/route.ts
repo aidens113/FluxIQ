@@ -13,7 +13,10 @@
 
 import { NextResponse } from "next/server";
 import { getFluxIQ } from "../../../../../lib/fluxiq";
+import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor } from "../../../../../lib/app-route-iam";
 import { pairedClientDomainScope, readBearerToken } from "../../../../../lib/program-route";
+
+const ROUTE = appRouteIamContract("PUT", "/api/client-gateway/trace-artifacts/[sha256]");
 
 type RouteParams = {
   params: Promise<{
@@ -53,6 +56,11 @@ export async function PUT(request: Request, context: RouteParams) {
   if (!clientSession) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
   // The domain the pairing bound, as on the program and state-asset routes (t379).
   if (!pairedClientDomainScope(request.url, clientSession)) return NextResponse.json({ ok: false, error: "A paired client may only reach its own domain." }, { status: 403 });
+  // As the person who approved the pairing, on the client's own browser.
+  const actor = await pairedClientRouteActor(fluxiq.programs.identityAccess, clientSession);
+  if (!actor) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+  const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "paired-client", actor, { trustedClientId: clientSession.trustedClientId });
+  if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
 
   const normalizedSha = sha256.toLowerCase();
   if (!/^[a-f0-9]{64}$/.test(normalizedSha)) return NextResponse.json({ ok: false, error: "Invalid artifact digest" }, { status: 400 });
