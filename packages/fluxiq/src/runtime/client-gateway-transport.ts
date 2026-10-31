@@ -1,4 +1,5 @@
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { readRuntimeTargetActionability } from "./result-control/index.ts";
 import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../client-gateway/service/command-ledger/index.ts";
 import type {
   ClientGatewayActionCommand,
@@ -63,14 +64,14 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
         ClientGatewayCommandContext.owner(context.commandContext!);
         const outcome = await this.gateway.executeAction(session.sessionId, actionCommandFromRuntime(command), { context: context.commandContext!, ...(context.signal ? { signal: context.signal } : {}) }).result;
         if (outcome.status !== "completed") { await ClientGatewayCommandOutcome.stop(context.commandContext!, outcome.status); return { commandId: command.commandId ?? "unknown", status: "unknown", error: `Required command ${outcome.status}.` }; }
-        return outcome.result;
+        return hostResultFromGateway(outcome.result);
       }
       const response = this.gateway.executeAction(session.sessionId, actionCommandFromRuntime(command));
       // The client is untrusted: its failure record survives only when it parses.
       const { failure: reported, clearedWait: reportedWait, ...result }: ClientGatewayActionResult = await response.result;
       const clearedWait = readableClearedWait(reportedWait);
       const failure = parseAutomationStudioFailureRecord(reported);
-      return { ...result, ...(failure ? { failure } : {}), ...(clearedWait ? { clearedWait } : {}) };
+      return hostResultFromGateway({ ...result, ...(failure ? { failure } : {}), ...(clearedWait ? { clearedWait } : {}) });
     }
     if (command.kind === "capture_snapshot") {
       await this.gateway.captureSnapshot(session.sessionId, {
@@ -220,4 +221,10 @@ function readableClearedWait(value: unknown): { waitedMs: number } | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const waitedMs = (value as { waitedMs?: unknown }).waitedMs;
   return typeof waitedMs === "number" && Number.isSafeInteger(waitedMs) && waitedMs >= 0 ? { waitedMs } : undefined;
+}
+
+/** Lift only after acceptance; the raw gateway result remains the receipt's input. */
+function hostResultFromGateway(result: ClientGatewayActionResult): FluxIQRuntimeCommandResult {
+  const reading = readRuntimeTargetActionability(Object.getOwnPropertyDescriptor(result, "payload")?.value);
+  return { ...result, ...(reading.kind === "valid" ? { actionability: reading.record } : {}) };
 }

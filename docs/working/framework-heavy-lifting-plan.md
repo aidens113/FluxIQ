@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t826 integrated/verified Core0.18/contracts0.4, current local bundles and saved-once browser proof; next CC10/P8 remainder. No further full suites/paid calls; main held.
+Status detail: t827 runtime and three native browser proofs accepted; paired integration pending. Core 0.19/contracts 0.5; no full or paid calls.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Accepted t826; continuing P8, 2026-10-31:** typed temporary failure is integrated on dev (Core03e518b3/downstream59489463), Core0.18.0/contracts0.4.0. Strict optional CONTROL-only failure survives exploration/replay/amendments/capture/reset/throws, preserving original authority/ambiguity and every attempt; browser wire/constructors unchanged. Both authoring guards require transient+retryable+unacted and actual !effectApplied/!personNeeded; comparison text/digests excluded before serialization and raw dumps. Lead273unique named Core/contract tests plus70merge contracts pass. Initial235 domain tests231pass4legacy assertions; final82pass resolves those/new cautious cases, unchanged155 passed earlier. Package types, structure1144/615, all3Corelibs/domain/extension filtered builds pass; local Chrome/Firefox/e2e bundles current22files each. Chromium headless UTC job-board Save lost-ack1pass (2.6s test/about1.6min total), no duplicate/unsave/alternative; new host controls proven through public Core loop unit integration, not browser authoring. Reports p8-transient/, ignored MAIN HTML/logs retained. Next CC10 typed actionability, then identity re-find/unchanged-run guard/history per P8. Both daily full sweeps used/main held. Claude/$5 configured, no paid go/calls/panel; user .clinerules unchanged.
+**t827 implementation accepted, 2026-10-31; integration pending:** Core 0.19.0/contracts 0.5.0 carry a strict optional measured-target fact from the browser through dispatch, runtime, attempts and authoring history. Wire compatibility uses only existing payload.actionability; no new gateway top key, receipt or negotiation. Invalid optional data drops alone; unknown and current facts replace stale observations without changing effects, authority or uncertain-action safeguards. Lead acceptance: 338 unique Core/contract tests; 335 initial affected domain tests with all eight fixture failures corrected and 31 focused tests passing (then three after final fixture typing); 102 initial extension tests with all eight shared-command fixture failures corrected and 68 focused tests passing (seven queue tests rerun after typing). Domain/extension typechecks and filtered builds pass. Three native Chromium fixture proofs pass on job-board/company-website, including exactly one Save after lost acknowledgement. Chrome/Firefox/e2e bundles each verify 22 files; Firefox background/UI unexercised. Both structure audits pass with unchanged baselines (Core 1144, Down 615). SDK rebuilt privately; main stays 0.18 until integration/refresh. Both daily full sweeps used; main promotion held. Claude/$5 configured, no paid go/calls or panel management; user clinerules preserved. Exact failures, commands and report locations: downstream p8-actionability/lead-acceptance.md.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -373,7 +373,7 @@ interprets them. Shapes are domain-neutral. The web fill for each is in the pair
 | CC7 Obstruction | extend `AutomationStudioClearedLayer` and the failure record | `obstruction?: {id?, name?, kind: overlay\|notice\|rate_limit\|assistant\|other, covers?: targetRef, dismiss: {controlRef, definitionId?, intent: dismiss\|accept\|neutral, action?: back}[]}` on a covered or failed attempt and as a standing view fact | `clear_interference` rung, handler builder, handler condition | Explored-layer handlers only and no rung (today); old layer kinds accepted and mapped |
 | CC8 Transient and rate limit | reuse failure `retryable`, `retryAfterMs`, `effect`; add a flag | `transient?: true`; `rate_limit` obstruction with optional `retryAfterMs` | pacing, retry-later, defensive assess | Cautious: not transient; transport codes stay; pace grows only with a hint (today) |
 | CC9 Stateful controls | reuse `controls` on reads and `ensureState`; additive | per control at look time `stateful?: true; state?: string; idempotentWith?` | `toggle-idempotent.ts`, run-time ensure-state | Control treated as stateless; no `ensureState` written beyond explored toggles |
-| CC10 Actionability | new on the dispatch result | `actionable?: {ok; reason?: hidden\|disabled\|covered\|offscreen\|busy; coveredBy?: obstructionRef}` | ladder rung choice, retry wait | Core attempts and reads the failure record (today) |
+| CC10 Actionability | optional on actual dispatch/runtime/tool results | `actionability?: {actionable:true} \| {actionable:false; cause:hidden\|disabled\|covered}`; strict portable parser; wire only existing payload | target observation, never effect/permission/readiness proof | t827 native browser proof accepted; absence stays unknown |
 | CC11 Control intent | new | `intent?: dismiss\|accept\|neutral\|navigate` per control at look time | `way-out-steps.ts` replacement | No accepting-word refusal for a client without intent; the web domain supplies its list, so web behaviour is unchanged |
 | CC12 Action effect class | implemented t824 on canonical NodeDefinition.actionEffect and trusted resolveActionEffect; pure public subpath | observe/state/commit, explicit repeatSafe:true and known permission classes; parameter predicates resolve conservatively | native/output/graph/outside-graph retry floors and authoring permission union; child uncertainty terminal;0.17.1 typed skipped-act truth and unsettled-target route admission | absent contract retains legacy behavior; state alone never proves repeat safety |
 | CC13 Medium vocabulary | reuse binding `systemInstructions` (`llm/harness-options/binding.ts:135`) and `nodeDescriptions` | node ids, medium words and examples for the script format | `flow-script-format.ts` assembly | Core's generic grammar with no node examples; the web binding supplies today's text |
@@ -763,13 +763,15 @@ Settled accepted client effect floor is preserved verbatim in [the accepted arch
 
 Accepted t825 evidence and its compaction record are preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
-### 2026-10-31 - t826 typed transient signal
-- Agent: Codex lead; contract worker gpt-6.1-sol max, readers first.
-- Changed: strict transient reader and public CONTROL projection, tool optional failure reader; contracts0.4/Core0.18. Consumer/producer disjoint source work released after interface verification.
-- Why: structured temporary failure is lost before authoring guards; preserve uncertainty and private comparisons while making the control path typed.
-- Validation: `pnpm.cmd --filter fluxiq check` ->exit0,52.7s; `node scripts/structure-audit.mjs` ->passed1144unchanged after one test statement-packing fix; `node scripts/build-cache/cli.mjs contracts:build fluxiq:build client-gateway-websocket:build` ->exit0. Lead named134 reader/contract tests plus70 consumer tests (204unique), dump6 repeated after formatting passes; exact commands in paired lead-acceptance.md.
-- Outcome: Accepted; paired dev merged Core03e518b3/downstream59489463, Core mandatory70merge contracts pass, local SDK/domain/extension builds current. Host235initial231pass4fail, final82pass covers4/new cases; Chromium compatibility1pass. No full/API/model calls.
-- Follow-up: paired dev pushes then CC10/P8 remainder; evidence retained. Lead273unique named tests/types/audits pass, both full sweep slots used/main held, no paid go.
+Accepted t826 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+
+### 2026-10-31 - t827 typed actionability discovery
+- Agent: Codex lead; discovery worker SolMax for mixed-version action safety.
+- Changed: paired setup; frozen portable exact actionability API/pure export, source0.5/0.19; readers first; t826 accepted evidence archived verbatim. Wire stays nested payload.
+- Why: portable actionability must survive strict readers without losing executed results or becoming act permission.
+- Validation: `pnpm.cmd task start runtime-actionability-signal --worktree --core --skip-workspace-build` ->exit0, both task trees created, mandatory3CoreSDK builds pass (Core87.2s); exact owning commands in downstream p8-actionability/lead-acceptance.md ->338 Core/contract tests accepted, 31 domain/final68 extension reruns pass, native Chromium three tests pass, both final audits pass1144/615 unchanged.
+- Outcome: Implementation accepted; 338 Core/contract tests, affected domain/extension reruns, types/builds and three native fixture proofs pass. Both final audits pass; paired integration pending.
+- Follow-up: final audit, paired dev integration and main SDK/bundle refresh; then remaining P8 identity/repeat/history work. No paid go/full suite.
 
 ## Open Questions
 

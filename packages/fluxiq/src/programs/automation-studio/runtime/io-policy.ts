@@ -8,6 +8,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { ClientGatewayCommandContext } from "../../../client-gateway/service/command-ledger/index.ts";
 import { IoRegistry } from "../../../io/index.ts";
 import type { FluxIQRuntimeCommandStatus, FluxIQRuntimeWithheldValues, RuntimeService } from "../../../runtime/index.ts";
+import { readRuntimeTargetActionability } from "../../../runtime/result-control/index.ts";
 import { normalizeAutomationStudioElementTarget, type AutomationStudioElementTarget, type PolicyAction } from "../model/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution } from "../nodes/contracts.ts";
@@ -52,12 +53,12 @@ export async function dispatchPolicyOutput(
     ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
     ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
   };
-  if (result.ok && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: dispatchedRoute(result.payload), outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait) };
+  if (result.ok && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: dispatchedRoute(result.payload), outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait), ...actionabilityField(result) };
   return { ...failedDispatchResult(outputs, {
     message: confirmationFailureMessage(confirmationResult) ?? result.error,
     failure: dispatchFailure(result.ok, result.status, result.failure, confirmationResult),
     resolution: prepared.resolution
-  }), ...clearedWaitField(result.clearedWait) };
+  }), ...clearedWaitField(result.clearedWait), ...actionabilityField(result) };
 }
 
 export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined) {
@@ -123,12 +124,12 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
       ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
     };
-    if (result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: dispatchedRoute(result.payload), outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait) };
+    if (result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: dispatchedRoute(result.payload), outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait), ...actionabilityField(result) };
     return { ...failedDispatchResult(outputs, {
       message: confirmationFailureMessage(confirmationResult) ?? result.message ?? result.error,
       failure: dispatchFailure(result.status === "succeeded", result.status, result.failure, confirmationResult),
       resolution: prepared.resolution
-    }), ...clearedWaitField(result.clearedWait) };
+    }), ...clearedWaitField(result.clearedWait), ...actionabilityField(result) };
   };
 }
 
@@ -218,6 +219,11 @@ function targetResolutionField(resolution: AutomationNodeTargetResolution | unde
 // there, so a failed dispatch carries it too. Absent stays absent.
 function clearedWaitField(clearedWait: AutomationNodeExecutionResult["clearedWait"]): Pick<AutomationNodeExecutionResult, "clearedWait"> {
   return clearedWait !== undefined ? { clearedWait } : {};
+}
+
+function actionabilityField(result: unknown): Pick<AutomationNodeExecutionResult, "actionability"> {
+  const reading = readRuntimeTargetActionability(result);
+  return reading.kind === "valid" ? { actionability: reading.record } : {};
 }
 
 function prepareElementTargetAction(

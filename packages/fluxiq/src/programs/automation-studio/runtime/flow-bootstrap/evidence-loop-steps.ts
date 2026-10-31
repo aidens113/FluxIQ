@@ -25,6 +25,8 @@
 // on an audit detail that no redaction rule covers.
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
+import { readRuntimeTargetActionability } from "../../../../runtime/result-control/index.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "../llm/evidence-diagnostic/index.ts";
 import type {
   AutomationStudioLlmEvidenceRestoredStep,
@@ -85,6 +87,8 @@ export type AutomationStudioFlowBootstrapEvidenceStep = {
    */
   callId?: string;
   effectApplied?: boolean;
+  /** Measured target observation from this call, never an execution permission. */
+  actionability?: AutomationStudioTargetActionabilityRecord;
   resultCode?: string;
   /**
    * Why the call came to that code, in the domain's own closed vocabulary.
@@ -232,6 +236,7 @@ export function automationStudioFlowBootstrapEvidenceSteps(
 }
 
 function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBootstrapEvidenceTraceRow): AutomationStudioFlowBootstrapEvidenceStep[] {
+  const actionability = readRuntimeTargetActionability(entry);
   const usage = stepUsage(entry.usage);
   const diagnostic = automationStudioLlmEvidenceDiagnostic(entry.diagnostic);
   const amendmentsRefused = stepAmendmentRefusals(entry.amendmentsRefused);
@@ -249,6 +254,7 @@ function automationStudioFlowBootstrapEvidenceStep(entry: AutomationStudioFlowBo
     // arrive from a domain that could always put a sentence in one.
     ...(entry.resultReason && EVIDENCE_STEP_CODE.test(entry.resultReason) ? { resultReason: entry.resultReason } : {}),
     ...(diagnostic ? { diagnostic } : {}),
+    ...(actionability.kind === "valid" ? { actionability: actionability.record } : {}),
     ...(entry.nodeId && EVIDENCE_STEP_ID.test(entry.nodeId) ? { nodeId: entry.nodeId } : {}),
     ...(nonNegative(entry.evidenceBytes) ? { evidenceBytes: entry.evidenceBytes as number } : {}),
     ...(nonNegative(entry.amended) ? { amended: entry.amended as number } : {}),
@@ -324,7 +330,7 @@ const EVIDENCE_STEP_ID = /^[a-z0-9_.:-]{1,200}$/i;
  * transport failure in its place. They were in two files, which is how a step
  * came to publish three of the eight fields the trace had already kept.
  */
-const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "resultCode", "resultReason", "diagnostic", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "amendmentRefusals", "progress", "draftChange", "draft", "answerability", "restoredStep", "at", "usage"];
+const EVIDENCE_STEP_FIELDS: Array<keyof AutomationStudioFlowBootstrapEvidenceStep> = ["toolId", "iteration", "callId", "effectApplied", "actionability", "resultCode", "resultReason", "diagnostic", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "amendmentRefusals", "progress", "draftChange", "draft", "answerability", "restoredStep", "at", "usage"];
 /** The provider's figures a step may carry, each bounded the way the build's accounting is. */
 const EVIDENCE_STEP_USAGE_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
 
@@ -349,6 +355,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       || (step.at !== undefined && !boundedInteger(step.at, EVIDENCE_STEP_MAX_TIMESTAMP_MS))) return null;
     const usage = parseStepUsage(step.usage);
     const diagnostic = automationStudioLlmEvidenceDiagnostic(step.diagnostic);
+    const actionability = readRuntimeTargetActionability(step);
     if (step.usage !== undefined && !usage) return null;
     const amendmentsRefused = parseStepAmendmentRefusals(step.amendmentsRefused);
     if (step.amendmentsRefused !== undefined && !amendmentsRefused) return null;
@@ -372,6 +379,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       ...(step.resultCode !== undefined ? { resultCode: step.resultCode } : {}),
       ...(step.resultReason !== undefined ? { resultReason: step.resultReason } : {}),
       ...(diagnostic ? { diagnostic } : {}),
+      ...(actionability.kind === "valid" ? { actionability: actionability.record } : {}),
       ...(step.nodeId !== undefined ? { nodeId: step.nodeId } : {}),
       ...(step.evidenceBytes !== undefined ? { evidenceBytes: step.evidenceBytes as number } : {}),
       ...(step.amended !== undefined ? { amended: step.amended as number } : {}),

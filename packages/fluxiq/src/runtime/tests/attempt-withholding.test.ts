@@ -10,6 +10,14 @@ const W = FLUXIQ_RUNTIME_WITHHELD_VALUE;
 const lookup = () => withheldLookup({ texts: [SUPPLIED], numbers: [SUPPLIED_NUMBER] });
 
 describe("attempt withholding", () => {
+  it("keeps closed target observations separate from echoed data and payload withholding", () => {
+    const result: FluxIQRuntimeCommandResult = { commandId: "control", status: "failed", payload: { echo: "covered" }, actionability: { actionable: false, cause: "covered" } };
+    const values = withheldLookup({ texts: ["covered"], numbers: [] });
+    expect(withheldResult(result, values, false)).toMatchObject({ payload: { echo: W }, actionability: { actionable: false, cause: "covered" } });
+    expect(withheldResult(result, values, true)).toMatchObject({ payload: W, actionability: { actionable: false, cause: "covered" } });
+    expect(result.payload).toEqual({ echo: "covered" });
+  });
+
   it("is null when nothing usable is withheld", () => {
     expect(withheldLookup(undefined)).toBeNull();
     expect(withheldLookup({ texts: [""], numbers: [Number.NaN, Number.POSITIVE_INFINITY] })).toBeNull();

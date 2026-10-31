@@ -6,6 +6,36 @@ const node: AutomationStudioFlowNode = { id: "click", definitionId: "builtin.pol
 const timeoutFailure = { category: "timeout", code: "web.action.timed_out", retryable: true } as const;
 
 describe("nodeAttemptFromResult", () => {
+  it("records exact target observations independently of success/failure and ignores authored facts", () => {
+    for (const status of ["success", "failed", "waiting"] as const) {
+      const actionability = { actionable: false, cause: "covered" } as const;
+      const result = { status, outputs: { actual: 1 }, actionability };
+      const attempt = nodeAttemptFromResult({ ...node, metadata: { actionability: { actionable: true } } }, 1, 2, 1, {}, result);
+      expect(attempt.actionability).toEqual(actionability);
+      expect(attempt.actionability).not.toBe(actionability);
+      expect(attempt.outputs).toBe(result.outputs);
+      const absent = nodeAttemptFromResult({ ...node, metadata: { actionability: { actionable: true } } }, 1, 2, 1, {}, { status });
+      expect(absent).not.toHaveProperty("actionability");
+    }
+  });
+
+  it("drops malformed/accessor target controls alone", () => {
+    let reads = 0;
+    const result = Object.defineProperty({ status: "failed" as const, outputs: { actual: 1 }, failure: timeoutFailure }, "actionability", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return { actionable: true };
+      }
+    });
+    const attempt = nodeAttemptFromResult(node, 1, 2, 1, {}, result);
+    expect(attempt).toMatchObject({ status: "failed", outputs: { actual: 1 }, failure: timeoutFailure });
+    expect(attempt).not.toHaveProperty("actionability");
+    expect(reads).toBe(0);
+    const malformed = { actionable: true, geometry: "PRIVATE" } as const;
+    expect(nodeAttemptFromResult(node, 1, 2, 1, {}, { status: "failed", actionability: malformed })).not.toHaveProperty("actionability");
+  });
+
   it("carries the message, structured failure, and target resolution of a failed result", () => {
     const attempt = nodeAttemptFromResult(node, 1, 2, 1, {}, {
       status: "failed",

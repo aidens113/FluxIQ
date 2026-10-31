@@ -1,8 +1,54 @@
 import { describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage, type ClientGatewaySession } from "../../client-gateway/index.ts";
 import { RuntimeService, ClientGatewayRuntimeTransport } from "../index.ts";
+import { ClientGatewayCommandContext, ClientGatewayCommandLedgerController, ClientGatewayCommandOutcome, type ClientGatewayCommandRecord } from "../../client-gateway/service/command-ledger/index.ts";
 
 describe("ClientGatewayRuntimeTransport", () => {
+  it("lifts a measured payload fact from ordinary and completed durable results without changing the wire result", async () => {
+    for (const durable of [false, true]) {
+      let record: ClientGatewayCommandRecord | null = null;
+      const observer = { completed: async (_proof: object) => undefined, uncertain: async () => undefined };
+      const gateway = new ClientGatewayService({ commandTimeoutMs: 1000, resolveCommandLedger: async () => ({
+        outcomeObserver: observer, close: async () => undefined,
+        ledger: {
+          claim: async (claim) => {
+            record = { claim, claimedAt: Date.now(), state: "pending", unknownReason: null, receipt: null, committedAt: null };
+            return { sendAllowed: true, record: structuredClone(record) };
+          },
+          commitReceipt: async (_claim, receipt) => {
+            record = { ...record!, receipt, state: "committed", committedAt: Date.now() };
+            return structuredClone(record);
+          },
+          markUnknown: async (_claim, reason) => {
+            record = { ...record!, state: "unknown", unknownReason: reason };
+            return structuredClone(record);
+          },
+          read: async () => record && structuredClone(record)
+        }
+      }) });
+      const paired = await pairGatewayClient(gateway, `extension.control.${durable}`, "user.web", { socket: durable });
+      const transport = new ClientGatewayRuntimeTransport({ gateway });
+      const context = ClientGatewayCommandContext.issue({ projectId: "project.control", runId: "run.control", flowId: "flow.control", invocationId: "invoke.control", attemptId: "attempt.control", effectOrdinal: 0 });
+      ClientGatewayCommandOutcome.require(context, observer);
+      const pending = transport.dispatch({ kind: "execute_action", actionType: "web.dom.click" }, durable ? { commandContext: context } : {});
+      let commandId = "";
+      for (let turn = 0; turn < 50 && !commandId; turn += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        commandId = lastExecuteCommandId(gateway, paired.sessionId);
+      }
+      expect(commandId).not.toBe("");
+      const raw = { commandId, status: "failed" as const, failure: { category: "action_failed" as const, code: "client.declined", retryable: false }, payload: { actionability: { actionable: false, cause: "covered" }, actual: "retained" } };
+      const before = JSON.stringify(raw);
+      await gateway.receive(paired.sessionId, clientMessage("client.action_result", raw));
+      const result = await pending;
+      expect(result).toMatchObject({ status: "failed", failure: raw.failure, payload: raw.payload, actionability: { actionable: false, cause: "covered" } });
+      expect(JSON.stringify(raw)).toBe(before);
+      expect(raw).not.toHaveProperty("actionability");
+      if (durable) expect(record).toMatchObject({ state: "committed", receipt: { redaction: "receipt_only", status: "failed", resultDigest: ClientGatewayCommandLedgerController.digest(raw) } });
+      await gateway.close();
+    }
+  });
+
   it("projects paired gateway sessions as runtime clients", async () => {
     const gateway = new ClientGatewayService();
     await pairGatewayClient(gateway, "extension.web", "user.web");
@@ -249,8 +295,8 @@ function gatewaySession(overrides: Partial<ClientGatewaySession> & { sessionId: 
   };
 }
 
-async function pairGatewayClient(gateway: ClientGatewayService, clientId: string, approvedByUserId: string, options: { sessionDomain?: boolean } = {}) {
-  const session = gateway.connect();
+async function pairGatewayClient(gateway: ClientGatewayService, clientId: string, approvedByUserId: string, options: { sessionDomain?: boolean; socket?: boolean } = {}) {
+  const session = gateway.connect(options.socket ? { socket: { send: () => undefined } } : {});
   await gateway.receive(session.sessionId, clientMessage("client.hello", {
     clientId,
     clientType: "extension",

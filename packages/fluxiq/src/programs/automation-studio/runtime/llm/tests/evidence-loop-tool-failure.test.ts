@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { OutputDispatchResult } from "../../../../../io/index.ts";
+import type { FluxIQRuntimeCommandResult } from "../../../../../runtime/index.ts";
+import type { AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import { projectAutomationStudioFailureControlRecord } from "../../../index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
@@ -463,6 +466,107 @@ describe("optional control-only failure on an executed tool result", () => {
     for (const marker of [failure.expected, failure.actual, failure.evidenceDigest]) {
       expect(JSON.stringify(decide.mock.calls)).not.toContain(marker);
       expect(JSON.stringify(result.trace)).not.toContain(marker);
+    }
+  });
+});
+
+describe("optional exact-target actionability on an executed tool result", () => {
+  const records: AutomationStudioTargetActionabilityRecord[] = [
+    { actionable: true },
+    { actionable: false, cause: "hidden" },
+    { actionable: false, cause: "disabled" },
+    { actionable: false, cause: "covered" }
+  ];
+  const failure = { category: "action_failed", code: "example.actual_call", retryable: false, effect: "ambiguous" } as const;
+  const evidence = { ok: false, code: "example.actual_call" };
+  const outputs = { answer: "kept" };
+  const privateMarker = "PRIVATE_TARGET_GEOMETRY_TEXT_MARKER";
+
+  it.each(records)("accepts and copies %j without changing an executed call's authority", (actionability) => {
+    for (const effectApplied of [true, false]) {
+      const executed: AutomationStudioLlmEvidenceToolExecutionResult = {
+        kind: "llm_evidence_tool_execution", evidence, effectApplied, personNeeded: true,
+        resultCode: "example.actual_call", failure, outputs, actionability
+      };
+      const parsed = automationStudioLlmEvidenceParseToolExecutionResult(executed, "mutate");
+      expect(AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS).toContain("actionability");
+      expect(automationStudioLlmEvidenceToolResultInvalidCode(executed, "mutate")).toBeUndefined();
+      expect(parsed).toEqual({ evidence, effectApplied, personNeeded: true, resultCode: "example.actual_call", failure, outputs, actionability });
+      expect(parsed?.actionability).not.toBe(actionability);
+      expect(parsed?.evidence).toBe(evidence);
+      expect(parsed?.outputs).toBe(outputs);
+    }
+  });
+
+  it("retains legacy IO/runtime result declarations and accepts the optional public fact", () => {
+    const legacyIo: OutputDispatchResult = { ok: true, outputId: "example.press" };
+    const legacyRuntime: FluxIQRuntimeCommandResult = { commandId: "example.command", status: "succeeded" };
+    const io: OutputDispatchResult = { ...legacyIo, actionability: { actionable: false, cause: "covered" } };
+    const runtime: FluxIQRuntimeCommandResult = { ...legacyRuntime, actionability: { actionable: true } };
+    for (const result of [legacyIo, legacyRuntime, io, runtime]) {
+      const executed: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, ...(result.actionability ? { actionability: result.actionability } : {}) };
+      expect(automationStudioLlmEvidenceParseToolExecutionResult(executed, "mutate")).toEqual({ evidence: {}, effectApplied: true, ...(result.actionability ? { actionability: result.actionability } : {}) });
+    }
+    expect(legacyIo).not.toHaveProperty("actionability");
+    expect(legacyRuntime).not.toHaveProperty("actionability");
+  });
+
+  it("drops malformed measurements alone and never changes effect, failure, outputs or person-needed", () => {
+    const malformed: JsonValue[] = [
+      null, [], {}, { actionable: "true" }, { actionable: true, cause: "covered" },
+      { actionable: false }, { actionable: false, cause: "unknown" },
+      { actionable: false, cause: "covered", geometry: privateMarker, text: privateMarker },
+      { actionable: false, cause: "disabled", effect: "unacted", transient: true }
+    ];
+    for (const effectApplied of [true, false]) {
+      for (const actionability of malformed) {
+        const executed: JsonObject = { kind: "llm_evidence_tool_execution", evidence, effectApplied, personNeeded: true, resultCode: "example.actual_call", failure, outputs, actionability };
+        const parsed = automationStudioLlmEvidenceParseToolExecutionResult(executed, "mutate");
+        expect(parsed).toEqual({ evidence, effectApplied, personNeeded: true, resultCode: "example.actual_call", failure, outputs });
+        expect(automationStudioLlmEvidenceToolResultInvalidCode(executed, "mutate")).toBeUndefined();
+        expect(JSON.stringify(parsed)).not.toContain(privateMarker);
+      }
+    }
+  });
+
+  it("ignores hostile optional data and accessors without relaxing unknown outer keys", () => {
+    const getter = vi.fn(() => { throw new Error(privateMarker); });
+    const executed: JsonObject = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, personNeeded: true, failure, outputs };
+    const expected = { evidence, effectApplied: true, personNeeded: true, failure, outputs };
+    const unreadableSlot = new Proxy(executed, { getOwnPropertyDescriptor: (target, key) => {
+      if (key === "actionability") throw new Error(privateMarker);
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    } });
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(unreadableSlot, "mutate")).toEqual(expected);
+    const hostile = new Proxy({}, { ownKeys: () => { throw new Error(privateMarker); } });
+    expect(automationStudioLlmEvidenceParseToolExecutionResult({ ...executed, actionability: hostile }, "mutate")).toEqual(expected);
+    const nested = Object.defineProperty({ actionable: false }, "cause", { enumerable: true, get: getter });
+    expect(automationStudioLlmEvidenceParseToolExecutionResult({ ...executed, actionability: nested }, "mutate")).toEqual(expected);
+    Object.defineProperty(executed, "actionability", { enumerable: true, get: getter });
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(executed, "mutate")).toEqual(expected);
+    expect(automationStudioLlmEvidenceToolResultInvalidCode(executed, "mutate")).toBeUndefined();
+    expect(getter).not.toHaveBeenCalled();
+    expect(automationStudioLlmEvidenceToolResultInvalidCode({ ...expected, kind: "llm_evidence_tool_execution", actionability: records[0], unknownOuterKey: true }, "mutate")).toBe("llm_evidence_loop.tool_result_invalid.unknown_key");
+  });
+
+  it.each([true, false])("records one actual call with effectApplied=%s, keeping private target detail out of model evidence and trace", async (effectApplied) => {
+    for (const actionability of [...records, { actionable: false, cause: "covered", geometry: privateMarker, text: privateMarker }]) {
+      const decide = vi.fn()
+        .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "press", input: { target: "target.1" } })
+        .mockResolvedValueOnce({ kind: "complete", result: { finished: true } });
+      const executeTool = vi.fn(async (): Promise<JsonValue> => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, code: "example.actual_call" }, resultCode: "example.actual_call", effectApplied, failure, outputs, actionability }));
+      const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], minToolCalls: 1, draft: false, decide, executeTool, unusableDecisions: { stalled } });
+      expect(executeTool).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 1 } });
+      const toolTrace = result.trace.find((entry) => entry.callId === "call.1");
+      expect(toolTrace).toMatchObject({ decision: "tool_call", callId: "call.1", resultCode: "example.actual_call" });
+      expect(toolTrace?.effectApplied === true).toBe(effectApplied);
+      const shown = decide.mock.calls[1]?.[0].evidence;
+      expect(shown.find((entry: { callId: string }) => entry.callId === "call.1")?.value).toEqual({ ok: true, code: "example.actual_call" });
+      for (const serialized of [JSON.stringify(shown), JSON.stringify(result.trace)]) {
+        expect(serialized).not.toContain(privateMarker);
+      }
+      expect(JSON.stringify(shown)).not.toContain("actionability");
     }
   });
 });

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandContext } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import { AUTOMATION_STUDIO_REQUIRED_COMMAND_NOT_SENT, AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN, type AutomationStudioExecutorCommandRun, type AutomationStudioExecutorNodeEntry } from "../command-scope/index.ts";
 import type { JsonValue } from "../../../../../core/index.ts";
+import { projectRuntimeTargetActionability, readRuntimeTargetActionability } from "../../../../../runtime/result-control/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator, AutomationNodePort } from "../../../nodes/index.ts";
 import { combineAutomationStudioResolvedActionEffects, getAutomationNodeDefinition, readAutomationStudioResolvedActionEffect, resolveAutomationNodeParameterValues } from "../../../nodes/index.ts";
@@ -273,7 +274,7 @@ export class AutomationStudioNodeAttemptExecution {
   // value lies is filled from it (`./result-path-outputs.ts`).
   private static async dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding, target: RecordCaptureTarget, declaredOutputs: readonly AutomationNodePort[] | undefined): Promise<AutomationNodeExecutionResult> {
     const branchRoutes = this.declaredBranchRoutes(declaredOutputs);
-    let result = initial;
+    let result = projectRuntimeTargetActionability(initial);
     for (const [index, effect] of (initial.effects ?? []).entries()) {
       await options.commandRun?.checkpoint();
       // A question for a person is the executor's to raise, not a domain's to
@@ -303,8 +304,10 @@ export class AutomationStudioNodeAttemptExecution {
         }
         const dispatchContext = this.effectDispatchContext(options, withholding);
         target.runState.dispatchedActions.add(target.nodeId);
-        const answer = await options.effectDispatcher(effect, issued ? { ...dispatchContext, commandContext: issued.context } : dispatchContext);
-        if (!answer) { if (issued) throw new Error("executor.required_result_missing"); continue; }
+        const reported = await options.effectDispatcher(effect, issued ? { ...dispatchContext, commandContext: issued.context } : dispatchContext);
+        if (!reported) { if (issued) throw new Error("executor.required_result_missing"); continue; }
+        const answer = projectRuntimeTargetActionability(reported);
+        result = this.withTargetObservation(result, answer, effect.type);
         // A check on the page that cleared by itself while this output waited is
         // told as the pair a tool call's would be; an absent or unreadable figure
         // says nothing.
@@ -388,6 +391,16 @@ export class AutomationStudioNodeAttemptExecution {
   /** The ids of the branch outputs a node's definition declares: the only routes a dispatch may answer for it. */
   private static declaredBranchRoutes(outputs: readonly AutomationNodePort[] | undefined): ReadonlySet<string> {
     return new Set((outputs ?? []).filter((port) => port.role === "branch").map((port) => port.id));
+  }
+
+  /** A new target dispatch replaces an earlier target's fact, including unknown. */
+  private static withTargetObservation(result: AutomationNodeExecutionResult, dispatched: AutomationNodeExecutionResult, effectType: string): AutomationNodeExecutionResult {
+    if (effectType !== "policy.output.dispatch") return result;
+    const current = { ...result };
+    delete current.actionability;
+    const reading = readRuntimeTargetActionability(dispatched);
+    if (reading.kind === "valid") current.actionability = reading.record;
+    return current;
   }
 
   // The layers an attempt's dispatches closed are said once, as one step

@@ -8,7 +8,7 @@
 // the audit detail built from it carried no steps at all.
 
 import { describe, expect, it } from "vitest";
-import { bootstrapAdaptationAsFlowAdaptation, type AutomationStudioBootstrapAdaptation } from "../../../flow-bootstrap/index.ts";
+import { bootstrapAdaptationAsFlowAdaptation, parseAutomationStudioFlowBootstrapEvidenceSteps, type AutomationStudioBootstrapAdaptation } from "../../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { bootstrapAdaptationAuditEvent } from "../audit-event.ts";
@@ -56,6 +56,7 @@ describe("the trace stored on a build", () => {
       toolId: "core.run_node",
       evidenceBytes: 649,
       effectApplied: false,
+      actionability: { actionable: false, cause: "covered" },
       resultCode: "web.action.rejected.invalid_input",
       resultReason: "node_not_runnable_here",
       nodeId: "web.output.dom-extract_list",
@@ -74,12 +75,23 @@ describe("the trace stored on a build", () => {
       expect(cleaned[member], `sanitizeEvidenceLoopTrace dropped \`${member}\``).toBeDefined();
     }
     const [published] = evidenceTraceAuditDetail([{ ...full, at: 1_700_000_000_000 }]).steps as Array<Record<string, unknown>>;
-    for (const member of ["toolId", "iteration", "effectApplied", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "progress", "draftChange", "draft", "answerability", "restoredStep", "at", "usage"]) {
+    for (const member of ["toolId", "iteration", "effectApplied", "actionability", "resultCode", "resultReason", "nodeId", "evidenceBytes", "amended", "amendmentsRefused", "progress", "draftChange", "draft", "answerability", "restoredStep", "at", "usage"]) {
       expect(published?.[member], `the published step dropped \`${member}\``).toBeDefined();
     }
     expect(published?.resultReason).toBe("node_not_runnable_here");
     expect(published?.nodeId).toBe("web.output.dom-extract_list");
     expect(published?.restoredStep).toEqual({ step: 1, withdrawnAs: "exploratory" });
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([published])).toMatchObject([{ actionability: { actionable: false, cause: "covered" }, effectApplied: false }]);
+  });
+
+  it("drops a bad optional stored target observation while keeping the completed call's actual row", () => {
+    const actionability = { actionable: true, geometry: "PRIVATE_GEOMETRY", source: "PRIVATE_SOURCE" } as const;
+    const original: AutomationStudioLlmEvidenceLoopTrace = { iteration: 1, decision: "tool_call", toolId: "act", effectApplied: true, resultCode: "client.succeeded", actionability };
+    const [cleaned] = sanitizeEvidenceLoopTrace([original]);
+    expect(cleaned).toEqual({ iteration: 1, decision: "tool_call", toolId: "act", effectApplied: true, resultCode: "client.succeeded" });
+    expect(evidenceTraceAuditDetail([original]).steps).toMatchObject([{ toolId: "act", effectApplied: true, resultCode: "client.succeeded" }]);
+    expect(JSON.stringify(cleaned)).not.toContain("PRIVATE");
+    expect(original.actionability).toBe(actionability);
   });
 
   it("keeps the code each decision came to and whether its effect was applied", () => {

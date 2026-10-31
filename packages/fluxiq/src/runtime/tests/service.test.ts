@@ -21,6 +21,44 @@ const SUPPLIED = "synthetic-runtime-value-that-must-never-be-persisted";
 const SUPPLIED_NUMBER = 7310452;
 
 describe("RuntimeService", () => {
+  it("normalizes direct adapter controls before events and saved attempts, preserving withholding and actual results", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-runtime-actionability-"));
+    try {
+      const runtime = new RuntimeService({ store: new FileRuntimeStore({ rootDir: root }) });
+      const events: unknown[] = [];
+      runtime.onEvent((event) => { if (event.type === "command.result") events.push(event.result); });
+      let reads = 0;
+      const original = Object.defineProperty({ commandId: "control.getter", status: "failed" as const, payload: { actual: SUPPLIED }, failure: { category: "action_failed" as const, code: "client.refused", retryable: false } }, "actionability", {
+        enumerable: true,
+        get: () => {
+          reads += 1;
+          return { actionable: true, geometry: "PRIVATE_CONTROL" };
+        }
+      });
+      runtime.registerAdapter({ adapterId: "control", label: "Control", transport: "direct", capabilities: () => [{ id: "control", kind: "action", actionTypes: ["control"] }], execute: (command) => command.commandId === "control.getter" ? original : { commandId: command.commandId!, status: "succeeded", payload: { actual: SUPPLIED }, actionability: { actionable: false, cause: "disabled" } } });
+      const rejected = await runtime.dispatch({ commandId: "control.getter", kind: "execute_action", actionType: "control" }, { withheldValues: { texts: [SUPPLIED], numbers: [] } });
+      const measured = await runtime.dispatch({ commandId: "control.valid", kind: "execute_action", actionType: "control" }, { withheldResultPayload: true });
+      await runtime.ready();
+      expect(reads).toBe(0);
+      expect(rejected).not.toHaveProperty("actionability");
+      expect(rejected.payload).toBe(original.payload);
+      expect(measured).toMatchObject({ status: "succeeded", actionability: { actionable: false, cause: "disabled" }, payload: { actual: SUPPLIED } });
+      expect(events).toEqual([rejected, measured]);
+      const attempts = runtime.commandAttemptsList();
+      expect(attempts[0]!.result).toMatchObject({ failure: original.failure, payload: { actual: FLUXIQ_RUNTIME_WITHHELD_VALUE } });
+      expect(attempts[0]!.result).not.toHaveProperty("actionability");
+      expect(attempts[1]!.result).toMatchObject({ actionability: { actionable: false, cause: "disabled" }, payload: FLUXIQ_RUNTIME_WITHHELD_VALUE });
+      for (const attempt of attempts) {
+        const saved = await readFile(path.join(root, "command-attempts", attempt.attemptId, "attempt.json"), "utf8");
+        expect(saved).not.toContain("PRIVATE_CONTROL");
+        expect(saved).not.toContain(SUPPLIED);
+      }
+      expect(Object.getOwnPropertyDescriptor(original, "actionability")?.get).toBeTypeOf("function");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("required context refuses a registered legacy handler before its effect", async () => {
     const runtime = new RuntimeService(), execute = vi.fn((command: FluxIQRuntimeCommand) => ({ commandId: command.commandId!, status: "succeeded" as const })), context = ClientGatewayCommandContext.issue({ projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "attempt.1", effectOrdinal: 0 }), uncertain = vi.fn(async () => undefined);
     ClientGatewayCommandOutcome.require(context, { completed: async () => undefined, uncertain });

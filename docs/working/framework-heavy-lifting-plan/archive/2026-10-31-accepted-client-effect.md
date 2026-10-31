@@ -38,4 +38,15 @@ Moved verbatim from framework-heavy-lifting-plan.md on 2026-10-31.
 - Outcome: Accepted; merged/pushed Core62c18d24/downstream2e1c90be;301/28lead tests/types/audits,70merge contracts, filtered builds and Chromium1/1pass. No full/paid calls; main held.
 - Follow-up: CC8 typed transient end to end with host-side production and privacy-safe failure propagation, then CC10; live Claude comparison awaits user go.
 
+
+### Accepted t826 ledger
+
+### 2026-10-31 - t826 typed transient signal
+- Agent: Codex lead; contract worker gpt-6.1-sol max, readers first.
+- Changed: strict transient reader and public CONTROL projection, tool optional failure reader; contracts0.4/Core0.18. Consumer/producer disjoint source work released after interface verification.
+- Why: structured temporary failure is lost before authoring guards; preserve uncertainty and private comparisons while making the control path typed.
+- Validation: `pnpm.cmd --filter fluxiq check` ->exit0,52.7s; `node scripts/structure-audit.mjs` ->passed1144unchanged after one test statement-packing fix; `node scripts/build-cache/cli.mjs contracts:build fluxiq:build client-gateway-websocket:build` ->exit0. Lead named134 reader/contract tests plus70 consumer tests (204unique), dump6 repeated after formatting passes; exact commands in paired lead-acceptance.md.
+- Outcome: Accepted; paired dev merged Core03e518b3/downstream59489463, Core mandatory70merge contracts pass, local SDK/domain/extension builds current. Host235initial231pass4fail, final82pass covers4/new cases; Chromium compatibility1pass. No full/API/model calls.
+- Follow-up: paired dev pushes then CC10/P8 remainder; evidence retained. Lead273unique named tests/types/audits pass, both full sweep slots used/main held, no paid go.
+
 End of preserved source blocks.

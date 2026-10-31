@@ -1,5 +1,6 @@
 export * from "./api/index.ts";
 export { projectAutomationStudioFailureControlRecord } from "@fluxiq/contracts/automation-studio";
+export * from "./runtime/actionability/index.ts";
 export type { AutomationStudioChangeFeedOperation } from "./api/index.ts";
 export * from "./client-gateway/index.ts";
 export * from "./dsl/index.ts";

@@ -17,6 +17,7 @@ import type {
 } from "./contracts.ts";
 import { type WithheldLookup, withheldCommand, withheldLookup, withheldResult } from "./attempt-withholding.ts";
 import type { RuntimeStore } from "./storage.ts";
+import { projectRuntimeTargetActionability } from "./result-control/index.ts";
 
 export type RuntimeServiceOptions = {
   runtimeId?: string;
@@ -226,9 +227,10 @@ export class RuntimeService {
     this.persistCommandAttempt(attempt);
     await this.emit({ type: "command.dispatched", ...(context.runId ? { runId: context.runId } : {}), command: normalizedCommand });
 
-    const result = target
+    const dispatched = target
       ? await this.dispatchToTarget(target, normalizedCommand, dispatchContext)
       : rejectedResult(commandId, "No runtime adapter or transport client matches the requested command.", this.now());
+    const result = projectRuntimeTargetActionability(dispatched);
     if (!target && context.commandContext) await ClientGatewayCommandOutcome.stop(context.commandContext, "runtime.missing_target");
     const settled = this.settleAttempt(attempt.attemptId, result, withheld, withheldResultPayload === true);
     await this.emit({ type: "command.result", ...(context.runId ? { runId: context.runId } : {}), result });

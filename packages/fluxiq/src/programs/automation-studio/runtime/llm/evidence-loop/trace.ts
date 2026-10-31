@@ -21,6 +21,7 @@
 
 import { AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, type AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioLlmEvidenceRowTransition } from "../decision-handlers/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerability.ts";
@@ -44,6 +45,8 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
   toolId?: string;
   evidenceBytes?: number;
   effectApplied?: boolean;
+  /** The call's runtime target observation, independent of its effect/result. */
+  actionability?: AutomationStudioTargetActionabilityRecord;
   resultCode?: string;
   /**
    * Why the call came to that code, in the caller's own closed vocabulary.

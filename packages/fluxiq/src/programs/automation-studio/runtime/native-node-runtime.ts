@@ -4,6 +4,7 @@ import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../mod
 import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort } from "../nodes/contracts.ts";
 import { automationStudioReferenceNow } from "./reference-now/index.ts";
+import { projectRuntimeTargetActionability } from "../../../runtime/result-control/index.ts";
 
 export type AutomationStudioNativeRuntimeGrants = {
   permissions?: Iterable<string>;
@@ -119,7 +120,7 @@ export class AutomationStudioNativeNodeRuntime {
       const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), ...(host ? { host } : {}), elementMatcher: this.elementMatcher, resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) }));
       const result = await Promise.race([execution, new Promise<AutomationNodeExecutionResult>((resolve) => { timer = setTimeout(() => { resolve({ status: "failed", route: "failed", outputs: { error: `Native node exceeded ${timeoutMs}ms timeout.` } }); controller.abort(new Error("Native node timeout.")); }, timeoutMs); })]);
       const boundaryError = validateResultBoundary(definition, result); if (boundaryError) return { ...failed(boundaryError), logs };
-      return { result, logs, declaredOutputs: definition.outputs };
+      return { result: projectRuntimeTargetActionability(result), logs, declaredOutputs: definition.outputs };
     } catch (error) { return { ...failed(error instanceof Error ? error.message : "Native node execution failed."), logs }; }
     finally { if (timer) clearTimeout(timer); signal?.removeEventListener("abort", abort); }
 }
