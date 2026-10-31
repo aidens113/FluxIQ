@@ -1,7 +1,7 @@
 # Claude Live Provider Plan
 
-Status: Active
-Status detail: Claude runtime, keys/settings and $5 Lab defaults validated; paired integration in progress.
+Status: Complete
+Status detail: Claude runtime, keys/settings and $5 live-test defaults validated and integrated in both repositories.
 Created: 2026-10-30
 Last updated: 2026-10-30
 Owner: Senior supervisor agent
@@ -14,14 +14,12 @@ Related: [Framework continuation](framework-heavy-lifting-plan.md)
 The user requested Claude for every live model-backed test and explicitly asked that preference be recorded.
 Both repositories' AGENTS.md now hold it. Never silently fall back to DeepSeek. Provider-free tests remain provider-free.
 CLAUDE_API_KEY is present in the main downstream .env.local; its value was not printed, copied or committed.
-Anthropic originally appeared in the keys UI without runtime support. Core now implements the native provider, per-call encrypted-key resolution and matching model/settings controls; the Lab migration is under acceptance.
-Paired task t816 owns implementation in isolated checkouts. The lead owns downstream paths; a heavy worker owns Core.
+Anthropic originally appeared in the keys UI without runtime support. Core now implements the native provider, per-call encrypted-key resolution and matching model/settings controls; the Lab migration passed its owning checks.
+Paired task t816 is integrated: Core61d29c1f and downstream fa99782d, with Core library version0.9.0. No paid model call has run.
 Live default: claude-sonnet-5-5, provider anthropic, selected for agentic task quality and speed; explicit model selection remains available.
 The user raised Claude live tests to $5 per whole Flow build, not each call. Explicit lower limits remain effective; ordinary product defaults remain separate.
 Lead independently observed native Claude tests: 4 files / 33 passed; legacy DeepSeek/session/settings: 19 files / 196 passed. All use fake transports/credentials, with no paid calls.
-Core source/library version0.9.0 is frozen pending downstream acceptance. A stale private root workspace dependency was changed from0.7.0 to workspace:* and its lockfile regenerated offline.
-The user raised Claude live tests to $5 per build on 2026-10-30. The Lab injects this test-scoped ceiling; normal
-product defaults remain separate, and native output limits are never reduced to save money.
+A stale private root workspace dependency was changed from0.7.0 to workspace:* and its lockfile regenerated offline. Native output limits are preserved.
 Keep identical realistic task instructions/oracles and record model, verdict, calls, provider-reported usage/cost and runtime.
 No paid run is started by implementation or unit validation; existing supervised paid-launch requirements remain.
 
@@ -62,3 +60,10 @@ Messages schema output uses output_config.format; refusals and truncation requir
 - Validation: downstream test-runner `check` and `build` -> `both passed`; compiled live-llm owning tests -> `150 passed`; non-live owning files/commands/interactive-session -> `241 passed`; contract/default checks -> `11 passed`; launcher/key-source checks -> `7 passed`.
 - Validation: `node scripts/structure-audit.mjs --update` -> `1144 entries, 4 lowered, 8 removed, none added`; `git diff --check` -> `passed`. Native output limits and ordinary product defaults remain separate from the isolated $5 whole-build allowance.
 - Not verified: paid Claude calls, browser key-entry roundtrip or a performance comparison. No panel management or full sweep.
+
+### 2026-10-30 - Paired integration
+- Agent: lead
+- Validation: `pnpm.cmd task finish t816 'Claude runtime and five-dollar live-test allowance' --skip-checks` -> mandatory contract gate `3 files, 70 tests passed`, merged61d29c1f. Narrow package types, owning tests and library/UI checks passed above; no full sweep repeated at merge.
+- Validation: downstream task finish -> structure gate passed and mergedfa99782d; final backup push and local merged-branch cleanup passed after resolving an upstream-tip lag. Remote task backups retained.
+- Validation: `git log -1 --oneline` in both repositories -> paired merge commits confirmed.
+- Not verified: main promotion or paid/browser Claude quality; existing supervised-launch requirements remain.
