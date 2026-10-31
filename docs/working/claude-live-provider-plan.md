@@ -1,7 +1,7 @@
 # Claude Live Provider Plan
 
 Status: Active
-Status detail: Claude runtime and keys/settings support implemented; lead acceptance and paired integration in progress.
+Status detail: Claude runtime, keys/settings and $5 Lab defaults validated; paired integration in progress.
 Created: 2026-10-30
 Last updated: 2026-10-30
 Owner: Senior supervisor agent
@@ -54,3 +54,11 @@ Messages schema output uses output_config.format; refusals and truncation requir
 - Finding: key variable present; UI lists Anthropic; runtime and Lab are DeepSeek-only.
 - Validation: `node -e` credential-presence probe -> `CLAUDE_API_KEY: present`; no value emitted.
 - Not verified: any Claude request, product key roundtrip or live task.
+
+### 2026-10-30 - Independent implementation acceptance
+- Agent: lead
+- Validation: native Claude owning tests -> `4 files, 33 passed`; legacy DeepSeek/session/settings -> `19 files, 196 passed`; Claude settings and Secret Keys UI interactions -> `2 files, 33 passed`.
+- Validation: `pnpm.cmd --filter @fluxiq/contracts --filter fluxiq --filter @fluxiq/client-gateway-websocket build` -> `all passed` after regenerating the root workspace pin/lockfile. Worker package/web typechecks also passed; lead inspected their output and independently reran the behavior checks above.
+- Validation: downstream test-runner `check` and `build` -> `both passed`; compiled live-llm owning tests -> `150 passed`; non-live owning files/commands/interactive-session -> `241 passed`; contract/default checks -> `11 passed`; launcher/key-source checks -> `7 passed`.
+- Validation: `node scripts/structure-audit.mjs --update` -> `1144 entries, 4 lowered, 8 removed, none added`; `git diff --check` -> `passed`. Native output limits and ordinary product defaults remain separate from the isolated $5 whole-build allowance.
+- Not verified: paid Claude calls, browser key-entry roundtrip or a performance comparison. No panel management or full sweep.
