@@ -88,3 +88,15 @@ Verbatim ledger entries moved during the P5b continuation; decisions and validat
 - Validation correction: t821 also contained the hidden module-load failure; t822 install/build/check0, test1. No third full suite today; no main promotion or paid calls. Both structure gates pass; paired task finishes merged Core26973484/downstream2ec3dc42; mandatory Core contract gate70/70 passed. Core finish used --skip-checks to honour the daily limit. The temporary downstream tree was removed; detached Core tree is left for normal age-gated pruning.
 
 
+
+### 2026-10-31 - t823 shared-clock continuation assigned
+- Changed: three disjoint briefs and optional Core execution/native clock types. Discovery found existing persisted starts and browser extractList.now, but dispatch/judge readers drift to wall time.
+- Validation: read-only source discovery -> concrete propagation gaps; task setup automatic workspace build ->exit1 (Core inputs changed, not stamped); this unintended full-build attempt is not acceptance and will not be rerun today. Implementation/narrow acceptance pending.
+
+
+### 2026-10-31 - t823 shared clock lead acceptance
+- Changed: optional fixed reference through runtime/replay/judge/browser; live timers unchanged. Validator moved to a light module, options contract extracted with compatibility exports, tests consolidated without weaker assertions/baselines. Task setup can skip full workspace build.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run @clockOwnerTests src/programs/automation-studio/runtime/result-verification/computed-facts/tests src/programs/automation-studio/runtime/result-verification/agreement/tests src/programs/automation-studio/runtime/result-verification/value-readings/tests --maxWorkers=2 --minWorkers=1` ->46files/500passed; clockOwnerTests was18changed owning files. Core check and filtered3libs ->exit0; full Core audit ->passed.
+- Validation: named domain clock4files ->38passed and native/adapter2files ->51passed; named order/date extension tests ->12passed; named task argument/CLI/start tests ->27passed. Domain/extension check ->exit0 after domain-only build supplied missing compiled domain/node. Focused test:content job-board date-reference ->1passed in headless Chromium134.0.6998.35 UTC; exact positive2vs1 rows. Logs ignored in test-runs/2026-10-31-t823-*.
+- Outcome: accepted and merged Core41adfa49/downstreamda2f4301; Core finish --skip-checks passed70 mandatory contracts. Downstream structure gate passed; its finished tree removed and leftover merged local branch removed by task abandon after unmerged0/Core:null verification. Source reports under downstream codex-1031/shared-clock-*. No paid/model calls, panel launch, full-suite rerun or main promotion; initial setup automatic build refusal is recorded above.
+

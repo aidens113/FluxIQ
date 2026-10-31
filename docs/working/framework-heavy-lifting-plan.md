@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t823 merged on both dev branches (Core41adfa49/downstreamda2f4301); Core0.16.0 shared run clock passed focused acceptance, Chromium proof and70merge contracts. Next P8 runtime robustness. Full-suite allowance exhausted; no paid calls; main held.
+Status detail: t824 Core trusted floor passed initial narrow acceptance; downstream139/145 exposed6 state-setter retry regressions. Trusted repeatSafe follow-up passes lead93tests/types/audits; filtered SDK rebuild underway, downstream/browser proof pending. No paid/full suites; main held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -10,6 +10,8 @@ Paired document: ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-pla
 Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/ (fhl-debug-notes, fhl-step-workload, fhl-core-surface, fhl-domain-surface)
 
 ## Current State
+
+**Active continuation, 2026-10-31:** t824 initial Core26 files276 tests, permission11 files230 tests (overlap), Core/domain types and both audits pass; filtered0.17.0 libraries built and pure browser bundle15 files5368bytes passes. Core checkpoint690d0b2f backed up. Downstream targeted tests139/145 pass;6 existing plain type/navigation/check retry assertions now stop because state alone is mutating/unsafe. Preserve those assertions: workers add explicit trusted repeatSafe?:true for inspected deterministic setters, never inferred from state/model metadata; commit/known or declared lasting classes dominate. Navigation newTab true/unresolved commits. Core/web sources frozen again; repeatSafe follow-up passes lead9files93tests and final Core types/audits;2 fixture inference errors corrected by explicit array type, owning6tests pass. Core3d790f7e committed, filtered SDK rebuilding; generated downstream tests remain held until ready. Extension check also rejected unregistered pure browser entry; lead added it to Core browserBundles.entries. Earlier child-uncertainty bug was reproduced/fixed: Call Flow3 commits plus alternatives now1/no alternatives; required latch behavior tested. Reports/briefs under downstream p8-effect/. No browser proof yet, daily full-suite allowance exhausted, no paid go/calls/panel/main promotion.
 
 **Continuing, 2026-10-31:** t823 implements a fixed referenceNow across executor/native/runtime dispatch, trials, resumed/child runs, browser filtering/sorting, replay and final judging. Fresh execution captures its start; reused evidence retains it; live timers still advance. Core0.16.0 adds optional fields and preserves old exports after extracting graph options. Lead500 Core tests/89 domain/12 extension/27 tooling tests pass; Chromium134.0.6998.35 headless UTC job-board proof passes exact2 supplied-reference rows versus1 wall-clock row after midnight. Core/domain/extension types pass; Core full audit passes and downstream remaining targeted rule passes, final merge gate pending. Extension first check lacked fresh compiled domain/node; building only domain fixed it. Setup now offers downstream --skip-workspace-build with Core safety gates retained; both AGENTS files document it. Initial setup unexpectedly attempted a full workspace build and was refused after Core inputs changed; no further full command ran. Merged Core41adfa49/downstreamda2f4301 after final structure gates and70 Core merge-contract tests; next P8 runtime robustness discovery. Remote task backups retained. Main needs a later permitted full sweep. No paid go/API calls or panel management.
 
@@ -756,22 +758,18 @@ Accepted t819/t820 evidence is preserved verbatim in [the continuation archive](
 
 ### 2026-10-30 - Accepted evidence retained while making room for sweep results
 - Changed: t811/t817 settled detail moved to the existing continuation archive with a pointer; Current State and all open questions remain.
-- Validation: Node extraction ->two headings archived verbatim; exact appended bytes compared before source replacement. Continued with t819/t820, settled sweep2 and accepted t822 using the same exact-byte comparison.
+- Validation: Node extraction ->two headings archived verbatim; exact appended bytes compared before source replacement. Continued with t819/t820, settled sweep2 and accepted t822/t823 using the same exact-byte comparison.
 
 The settled sweep2 result is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
 Accepted t822 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
-### 2026-10-31 - t823 shared-clock continuation assigned
-- Changed: three disjoint briefs and optional Core execution/native clock types. Discovery found existing persisted starts and browser extractList.now, but dispatch/judge readers drift to wall time.
-- Validation: read-only source discovery -> concrete propagation gaps; task setup automatic workspace build ->exit1 (Core inputs changed, not stamped); this unintended full-build attempt is not acceptance and will not be rerun today. Implementation/narrow acceptance pending.
+Accepted t823 assignment and lead acceptance are preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
-
-### 2026-10-31 - t823 shared clock lead acceptance
-- Changed: optional fixed reference through runtime/replay/judge/browser; live timers unchanged. Validator moved to a light module, options contract extracted with compatibility exports, tests consolidated without weaker assertions/baselines. Task setup can skip full workspace build.
-- Validation: `pnpm.cmd --filter fluxiq exec vitest run @clockOwnerTests src/programs/automation-studio/runtime/result-verification/computed-facts/tests src/programs/automation-studio/runtime/result-verification/agreement/tests src/programs/automation-studio/runtime/result-verification/value-readings/tests --maxWorkers=2 --minWorkers=1` ->46files/500passed; clockOwnerTests was18changed owning files. Core check and filtered3libs ->exit0; full Core audit ->passed.
-- Validation: named domain clock4files ->38passed and native/adapter2files ->51passed; named order/date extension tests ->12passed; named task argument/CLI/start tests ->27passed. Domain/extension check ->exit0 after domain-only build supplied missing compiled domain/node. Focused test:content job-board date-reference ->1passed in headless Chromium134.0.6998.35 UTC; exact positive2vs1 rows. Logs ignored in test-runs/2026-10-31-t823-*.
-- Outcome: accepted and merged Core41adfa49/downstreamda2f4301; Core finish --skip-checks passed70 mandatory contracts. Downstream structure gate passed; its finished tree removed and leftover merged local branch removed by task abandon after unmerged0/Core:null verification. Source reports under downstream codex-1031/shared-clock-*. No paid/model calls, panel launch, full-suite rerun or main promotion; initial setup automatic build refusal is recorded above.
+### 2026-10-31 t824 independent acceptance in progress
+- Changed: Phase1 typed contracts backed up as Coree00fc7d9; Phase2 isolated. Fixed reproduced whole-child retries/failed alternatives after an uncertain commit; exact sources and worker regression evidence in p8-effect/contract-runtime.md.
+- Validation: `pnpm.cmd exec vitest run src/programs/automation-studio/runtime/action-permissions/tests/client-floor.test.ts src/programs/automation-studio/runtime/action-permissions/tests/gate.test.ts src/programs/automation-studio/runtime/action-permissions/plan/tests/projection.test.ts src/programs/automation-studio/runtime/flow-bootstrap/tests/action-permissions.test.ts src/programs/automation-studio/runtime/flow-bootstrap/tests/action-permissions-witness-notes.test.ts src/programs/automation-studio/runtime/llm/harness-options/tests/plan-parameter-resolution.test.ts src/programs/automation-studio/runtime/llm/harness-options/tests/plan-step-consequences.test.ts src/programs/automation-studio/runtime/llm/harness-options/tests/bootstrap-completion.test.ts src/programs/automation-studio/runtime/recovery/annotation/tests/step-evidence-resolution.test.ts src/programs/automation-studio/runtime/service/runtime-session/tests/interruption-learning.test.ts src/programs/automation-studio/runtime/service/runtime-session/tests/in-run-repair.test.ts --maxWorkers=2 --minWorkers=1` -> 11 files,230 tests passed; `pnpm.cmd --filter fluxiq check` ->exit0 after4 type fixes; `node scripts/structure-audit.mjs` ->passed in both trees after scoped corrections, no baseline increases. Lead additional26 named Core files276/276 pass; exact paths/command retained in p8-effect/lead-acceptance.md. No full suite/API/browser run yet.
+- Outcome: Partial; downstream139/145 exposed6 state-setter retry regressions; explicit trusted repeatSafe fix now passes lead93tests/types/audits, Core3d790f7e; written scope p8-effect/repeat-safety-brief.md. Browser entry registration fixed. Rebuild/recheck/browser acceptance pending; main and paid runs held.
 
 ## Open Questions
 
