@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t823 shared reference clock implementation in three disjoint worker lanes (executor, judging/replay, downstream). Fixed epoch referenceNow is separate from live now(). No paid calls; daily full-suite allowance exhausted; main held.
+Status detail: t823 shared date reference passes lead500 Core/89domain/12extension/27tooling tests and1realistic Chromium proof; affected types pass. Core0.16.0 paired integration pending. No paid calls; full-suite allowance exhausted; main held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Continuing, 2026-10-31:** t823 paired task implements a single date reference across browser filters, build trials and final judging. Stable optional epoch-ms seams: GraphExecutionOptions.referenceNow, effect dispatch context.referenceNow, native hostContext.referenceNow and SDK context.host.referenceNow. Live now() keeps advancing for timers. Executor/native/session, judge/replay and downstream lanes have disjoint written briefs under reports/codex-1031/shared-clock-*. Fresh execution captures its start; resume/children/cached replay retain it. t822 is pushed Core60cb07fe/downstreamcb2ca736. No paid go or panel management. Task creation unexpectedly attempted its automatic workspace build after the daily allowance was used; currency guard refused changed/unstamped Core inputs. Do not rerun setup. Only named tests, package type checks and filtered library builds follow.
+**Continuing, 2026-10-31:** t823 implements a fixed referenceNow across executor/native/runtime dispatch, trials, resumed/child runs, browser filtering/sorting, replay and final judging. Fresh execution captures its start; reused evidence retains it; live timers still advance. Core0.16.0 adds optional fields and preserves old exports after extracting graph options. Lead500 Core tests/89 domain/12 extension/27 tooling tests pass; Chromium134.0.6998.35 headless UTC job-board proof passes exact2 supplied-reference rows versus1 wall-clock row after midnight. Core/domain/extension types pass; Core full audit passes and downstream remaining targeted rule passes, final merge gate pending. Extension first check lacked fresh compiled domain/node; building only domain fixed it. Setup now offers downstream --skip-workspace-build with Core safety gates retained; both AGENTS files document it. Initial setup unexpectedly attempted a full workspace build and was refused after Core inputs changed; no further full command ran. Paired commits/merge next, then P8 runtime robustness discovery. Main needs a later permitted full sweep. No paid go/API calls or panel management.
 
 **Current fix-forward, 2026-10-31:** t822 ended exit1 despite2488 registered domain passes: src/tests/domain.test.ts failed during module load. The same hidden failure existed in t821, so the earlier claim that its robot-watch assertion was the only failure was incomplete. Core had mistaken incidental 'Choose ensureState' help for selection capability. The fix uses declared node id/label/tags/output identities only; the web domain explicitly declares check/select, type/submit and tab/open. Original integration assertions now run as named tests, with denied-operation expectations strengthened. Lead275 Core plan and42 domain tests pass; both package type checks exit0. Final catalog consolidation30/30 passes. Paired dev integration completed: Core26973484/downstream2ec3dc42; final pushes follow this memory update. Both full structure audits pass; Core merge gate70/70 passed with the default full check explicitly skipped. Both Oct31 full-suite slots are used: narrow checks only; main needs a later permitted full sweep. Coreb72e4214's20683/7-skipped proof is historical and cannot qualify this classifier change. Claude/$5 is configured, but no paid go or calls occurred.
 
@@ -765,6 +765,13 @@ Accepted t822 evidence is preserved verbatim in [the continuation archive](frame
 ### 2026-10-31 - t823 shared-clock continuation assigned
 - Changed: three disjoint briefs and optional Core execution/native clock types. Discovery found existing persisted starts and browser extractList.now, but dispatch/judge readers drift to wall time.
 - Validation: read-only source discovery -> concrete propagation gaps; task setup automatic workspace build ->exit1 (Core inputs changed, not stamped); this unintended full-build attempt is not acceptance and will not be rerun today. Implementation/narrow acceptance pending.
+
+
+### 2026-10-31 - t823 shared clock lead acceptance
+- Changed: optional fixed reference through runtime/replay/judge/browser; live timers unchanged. Validator moved to a light module, options contract extracted with compatibility exports, tests consolidated without weaker assertions/baselines. Task setup can skip full workspace build.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run @clockOwnerTests src/programs/automation-studio/runtime/result-verification/computed-facts/tests src/programs/automation-studio/runtime/result-verification/agreement/tests src/programs/automation-studio/runtime/result-verification/value-readings/tests --maxWorkers=2 --minWorkers=1` ->46files/500passed; clockOwnerTests was18changed owning files. Core check and filtered3libs ->exit0; full Core audit ->passed.
+- Validation: named domain clock4files ->38passed and native/adapter2files ->51passed; named order/date extension tests ->12passed; named task argument/CLI/start tests ->27passed. Domain/extension check ->exit0 after domain-only build supplied missing compiled domain/node. Focused test:content job-board date-reference ->1passed in headless Chromium134.0.6998.35 UTC; exact positive2vs1 rows. Logs ignored in test-runs/2026-10-31-t823-*.
+- Outcome: narrow acceptance passes; paired integration next. Source reports under downstream codex-1031/shared-clock-*. No paid/model calls, panel launch, full-suite rerun or main promotion; initial setup automatic build refusal is recorded above.
 
 ## Open Questions
 
