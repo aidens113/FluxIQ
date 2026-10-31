@@ -10,6 +10,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFactEvaluationContext } from "../../host-runtime.ts";
 import { chooseAutomationStudioEdge } from "../graph-navigation.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioStateRouteDirection } from "../contracts.ts";
+import { automationStudioTargetFailureProvesUnacted } from "../target-evidence/index.ts";
 import { automationStudioAbsentStepSkip, automationStudioSkippedStepDoesAct } from "../step-skip/index.ts";
 import { automationStudioStateRouteFactGate, type AutomationStudioStateRouteFactRefusal } from "./checkpoint-facts.ts";
 import { AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioRunProgressMark, type AutomationStudioStateRouteGuard } from "./progress-guard.ts";
@@ -51,7 +52,7 @@ export type AutomationStudioStateRouteInput = {
   /** The step that cannot run. */
   node: AutomationStudioFlowNode;
   /** Its failed attempt, or the one synthesized when its readiness gate did not hold; `outputs` carry the domain's measurement of its control (`./target-not-shown.ts`). */
-  attempt: Pick<AutomationStudioNodeAttemptTrace, "status" | "failure"> & { outputs?: AutomationStudioNodeAttemptTrace["outputs"] | undefined };
+  attempt: Parameters<typeof automationStudioTargetFailureProvesUnacted>[0] & { outputs?: AutomationStudioNodeAttemptTrace["outputs"] | undefined };
   /** Every attempt of the run so far. */
   attempts: readonly AutomationStudioNodeAttemptTrace[];
   /** `inputs` are the run's own values, which no step passed over has to set. */
@@ -100,8 +101,14 @@ export type AutomationStudioStateRouteInput = {
  * the failing step's own success edge, as if the step had run.
  */
 export async function decideAutomationStudioStateRoute(input: AutomationStudioStateRouteInput): Promise<AutomationStudioStateRouteDecision> {
+  if (!automationStudioTargetFailureProvesUnacted(input.attempt)) return none("no_match", 0, "The target failure does not prove the act was unacted; its effect must be settled before routing.");
   const declared = automationStudioAbsentStepSkip(input.flow, input.node, input.attempt);
-  if (declared) return automationStudioSkippedStepDoesAct(input.node) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
+  if (declared) {
+    // Synthetic readiness skips have no resolved dispatch pass. Resolve current
+    // raw slots conservatively, never a previous loop pass's node-id cache.
+    const actionEffect = input.options.resolveActionEffect?.(input.node, input.node.parameterValues ?? {});
+    return automationStudioSkippedStepDoesAct(input.node, actionEffect) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
+  }
   const candidates = input.flow.nodes
     .filter((node) => node.id !== input.node.id)
     .map((node) => ({ node, signatures: automationStudioNodeRouteSignatures(node) }))

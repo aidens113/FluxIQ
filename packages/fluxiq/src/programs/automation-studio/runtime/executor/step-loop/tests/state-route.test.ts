@@ -86,4 +86,36 @@ describe("a step whose own effect is already on the page", () => {
     for (const attempt of choose) expect(attempt).toMatchObject({ status: "failed", stateRouting: { outcome: "no_match" } });
     expect(observed.count).toBe(4);
   });
+
+  it.each(["unknown", "not_landed"] as const)("settles an ambiguous missing target as %s before its positive route witness or retry handler", async (proof) => {
+    const current = page({ popup: true });
+    const observed = { count: 0 };
+    let checks = 0;
+    const flow = line("graph.main", [chooseStore()], [closeAndRetry()]);
+    const options = pageOptions(current, {
+      resolveActionEffect: (node) => ({ effectClass: node.id === "choose" ? "commit" : "observe", permissionConsequences: [] }),
+      hostRuntime: {
+        ...storeHost(current, "Millbrook", observed),
+        actLanded: () => {
+          checks += 1;
+          return proof;
+        }
+      }
+    });
+    const dispatch = options.effectDispatcher!;
+    options.effectDispatcher = async (effect, context) => {
+      const result = await dispatch(effect, context);
+      if (JSON.stringify(effect.payload).includes('"elementId":"choose"') && result?.status === "failed") {
+        return { ...result, failure: { category: "target_not_found", code: "example.target.missing", retryable: true, stage: "target_resolution", effect: "ambiguous" } };
+      }
+      return result;
+    };
+    const { trace } = await framedRun(flow, options);
+    expect(checks).toBe(1);
+    expect(observed.count).toBe(0);
+    expect(current.presses).toEqual(proof === "unknown" ? ["choose"] : ["choose", "dismiss", "choose"]);
+    expect(trace.failure?.code).toBe(proof === "unknown" ? "run.outcome_uncertain" : undefined);
+    expect(trace.status).toBe(proof === "unknown" ? "failed" : "succeeded");
+    expect(trace.attempts[0]?.skipped).toBeUndefined();
+  });
 });

@@ -1,11 +1,12 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import { nodeAttemptWithAdaptationIds } from "../attempt-trace.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
+import { automationStudioTargetFailureProvesUnacted } from "../target-evidence/index.ts";
 
 /**
  * Whether an attempt says its step **cannot run**: it failed, and the failure
- * category is `target_not_found`, the one category that says the target was
- * not on the page. That includes the attempt a readiness gate that did not
+ * category is `target_not_found`, with no stronger evidence that the act ran
+ * or remains unsettled. That includes the attempt a readiness gate that did not
  * hold synthesizes (`automationStudioNotShownAttempt`).
  *
  * `target_ambiguous` is not: something matched, so the page has the target.
@@ -14,8 +15,8 @@ import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
  * recovery ladder, whose `clear_interference` rung owns the covered case.
  * Only Core's own failure vocabulary is read.
  */
-export function automationStudioCouldNotRun(attempt: Pick<AutomationStudioNodeAttemptTrace, "status" | "failure">): boolean {
-  return attempt.status === "failed" && attempt.failure?.category === "target_not_found";
+export function automationStudioCouldNotRun(attempt: Parameters<typeof automationStudioTargetFailureProvesUnacted>[0]): boolean {
+  return attempt.failure?.category === "target_not_found" && automationStudioTargetFailureProvesUnacted(attempt);
 }
 
 /**
