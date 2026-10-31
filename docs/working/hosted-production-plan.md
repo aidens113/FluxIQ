@@ -1,7 +1,7 @@
 # Hosted Production Plan
 
 Status: Active
-Status detail: C1 workspace/runtime foundation merged; E/D5 product and owned seed independently verified and ready to integrate. C2/C3 caller migration/routing and deployment gates remain.
+Status detail: C1 workspace/runtime and E/D5 product foundations independently verified and merged on dev. C2/C3 caller migration/routing and deployment gates remain.
 Created: 2026-10-17
 Last updated: 2026-10-30
 Owner: Lane lead hosted-production-planner (plan); the senior supervisor agent owns execution
@@ -14,7 +14,7 @@ Related: [package boundaries](../architecture/package-boundaries.md), [current s
 ## Current State
 
 **What is true now, 2026-10-30.** Profiles, platform/IAM/provisioning foundations, gateway hardening and C0 closure are merged.
-C1 workspace lifecycle and E/D5 product foundations are in final acceptance; C2/C3 caller migration/routing are next.
+C1 workspace lifecycle and E/D5 product foundations are merged (E: Core4a522cd8/downstream6c88f928);70 merge-contract tests pass. C2/C3 caller migration/routing are next.
 H0 evidence (2026-10-28) remains in `hosted-production-plan/reports/h0.md` and `h0-s1.md` to `h0-s6.md`.
 The earlier baseline/ledger is archived at `hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`; the original H0 findings below are historical evidence.
 
