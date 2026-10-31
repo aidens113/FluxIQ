@@ -262,7 +262,7 @@ function validSecretSnapshot(value: unknown): value is SecretKeysSnapshotRespons
 
 function SecretFormFields(props: { form: SecretForm; includeValue?: boolean; scopeOptions?: string[]; scopeCatalog?: { domains: Array<{ id: string; label: string }>; projects: Array<{ id: string; label: string }>; flows: Array<{ id: string; label: string }>; projectId: string; loading: boolean; error: string }; onCatalogRetry?(): void; onProjectRetry?(): void; onProjectChange?(projectId: string): void; onChange(form: SecretForm): void }) {
   const { form, onChange } = props;
-  const llmProviderValue = isKnownLlmProvider(form.provider) ? form.provider : "Other";
+  const llmProviderValue = llmProviderChoice(form.provider) ?? "Other";
   return (
     <div className="secret-form-sections">
       <div className="secret-form-section">
@@ -270,8 +270,8 @@ function SecretFormFields(props: { form: SecretForm; includeValue?: boolean; sco
           <Field label="Name"><input value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} /></Field>
           {props.includeValue ? <Field label="Secret value"><input type="password" value={form.value} onChange={(event) => onChange({ ...form, value: event.target.value })} /></Field> : null}
           <Field label="Type"><select value={form.kind} onChange={(event) => onChange(changeKind(form, event.target.value as SecretForm["kind"]))}><option value="llm">LLM</option><option value="custom">Custom</option></select></Field>
-          {form.kind === "llm" ? <Field label="Provider"><select value={llmProviderValue} onChange={(event) => onChange(changeLlmProvider(form, event.target.value))}>{llmProviders.map((provider) => <option key={provider} value={provider}>{provider}</option>)}</select></Field> : <Field label="Provider"><input placeholder="Internal service, vendor, app name" value={form.provider} onChange={(event) => onChange({ ...form, provider: event.target.value })} /></Field>}
-          {form.kind === "llm" && llmProviderValue === "Other" ? <Field label="Custom provider"><input value={isKnownLlmProvider(form.provider) ? "" : form.provider} onChange={(event) => onChange({ ...form, provider: event.target.value })} /></Field> : null}
+          {form.kind === "llm" ? <Field label="Provider"><select value={llmProviderValue} onChange={(event) => onChange(changeLlmProvider(form, event.target.value))}>{llmProviders.map((provider) => <option key={provider} value={provider}>{provider === "Anthropic" ? "Anthropic (Claude)" : provider}</option>)}</select></Field> : <Field label="Provider"><input placeholder="Internal service, vendor, app name" value={form.provider} onChange={(event) => onChange({ ...form, provider: event.target.value })} /></Field>}
+          {form.kind === "llm" && llmProviderValue === "Other" ? <Field label="Custom provider"><input value={llmProviderChoice(form.provider) ? "" : form.provider} onChange={(event) => onChange({ ...form, provider: event.target.value })} /></Field> : null}
           {form.kind === "llm" ? <Field hint="Optional; leave blank to allow any compatible model." label="Model"><input placeholder="Model name" value={form.model} onChange={(event) => onChange({ ...form, model: event.target.value })} /></Field> : null}
         </div>
       </div>
@@ -366,8 +366,10 @@ function changeLlmProvider(form: SecretForm, provider: string): SecretForm {
   return { ...form, provider: provider === "Other" ? "" : provider };
 }
 
-function isKnownLlmProvider(value: string): boolean {
-  return llmProviders.includes(value as (typeof llmProviders)[number]) && value !== "Other";
+function llmProviderChoice(value: string): (typeof llmProviders)[number] | undefined {
+  const label = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalized = label === "anthropicclaude" ? "anthropic" : label;
+  return llmProviders.find((provider) => provider !== "Other" && provider.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized);
 }
 export function filterSecretKeys(keys: SecretKeySummary[], query: string, kind: "all" | "llm" | "custom", enabled: "all" | "enabled" | "disabled"): SecretKeySummary[] {
   const normalized = query.trim().toLocaleLowerCase();
@@ -387,6 +389,7 @@ export function secretRevealIsStale(revealed: SecretKeySummary, current: SecretK
 export function providerRuntimeSupport(provider: string | undefined): { label: string; detail: string } {
   if (!provider) return { label: "Provider required", detail: "Set a provider before this LLM key can be resolved." };
   if (provider === "Ollama") return { label: "Local provider", detail: "Ollama normally uses a host-configured local endpoint and may not require an API key." };
-  if (isKnownLlmProvider(provider)) return { label: "Built-in provider", detail: "FluxIQ can match this key to the built-in " + provider + " provider adapter." };
+  const normalized = provider.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (["deepseek", "anthropic", "anthropicclaude"].includes(normalized)) return { label: "Built-in provider", detail: "FluxIQ can match this key to the built-in " + (normalized.startsWith("anthropic") ? "Anthropic (Claude)" : "DeepSeek") + " provider adapter." };
   return { label: "Custom adapter required", detail: "The host must register an adapter for this provider name before runtime resolution can use it." };
 }

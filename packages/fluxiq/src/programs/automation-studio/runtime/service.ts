@@ -1541,7 +1541,7 @@ export class AutomationStudioService {
         // The Flow's own settings name the model, the spend limit and the call-count and per-call cost limits (`llm/flow-execution-limits/`); the caller's key pays.
         const flowSettings = mergedFlowSettingsMetadata(parent.metadata);
         const modelId = typeof flowSettings.llmModel === "string" && flowSettings.llmModel.trim() ? flowSettings.llmModel.trim() : undefined;
-        const unresolvedProvider = automationStudioLlmResolutionWithinFlowSettings(await this.llmProviderResolver({ projectId, flowId, caller, ...(modelId ? { modelId } : {}) }), parent.metadata);
+        const unresolvedProvider = automationStudioLlmResolutionWithinFlowSettings(await this.llmProviderResolver({ projectId, flowId, caller, ...(modelId ? { modelId } : {}), ...(typeof parent.metadata?.llmProvider === "string" ? { providerId: parent.metadata.llmProvider } : {}), ...(parent.metadata ? { metadata: parent.metadata } : {}) }), parent.metadata);
         if (!unresolvedProvider || !("provider" in unresolvedProvider)) {
           throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_invalid");
         }

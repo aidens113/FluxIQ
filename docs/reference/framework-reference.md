@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4343
+- Public declarations: 4367
 - Class: 151
 - Interface: 10
-- Object: 560
-- Type: 2313
+- Object: 567
+- Type: 2318
 - Type Alias: 1
-- Value: 1308
+- Value: 1320
 
 ## Public Declarations
 
@@ -116,6 +116,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `assertAutomationStudioCompiledPlan` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/compiled-plan.ts` | - |
 | `assertAutomationStudioFlowBootstrapPlanHandlesResolved` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/plan-parameter-resolution.ts` | - |
 | `assertAutomationStudioLlmDomainSystemInstructions` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/domain-instructions/validate.ts` | - |
+| `assertAutomationStudioLlmModelBinding` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
 | `assertAutomationStudioNormalEditorGraphEndpoint` | Value | `packages/fluxiq/src/programs/automation-studio/api/contracts/endpoints.ts` | - |
 | `assertAutomationStudioReadPathDoesNotRepair` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts` | - |
 | `assertAutomationStudioScaleCertificationPasses` | Value | `packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts` | - |
@@ -153,6 +154,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/left-told.ts` | What is said when the build knows of nothing it left (header). |
 | `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES` | Object | `packages/contracts/src/failure/adaptive-class.ts` | FluxIQ's one failure-category list. Core names every member and classifies failed attempts into them; a domain decides which member applies and reports it in an `AutomationStudioFailureRecord`. No second list exists in Core or in an importing domain. Adding a member breaks exhaustive consumers, so before 1.0 it is a minor version bump with a migration note. |
 | `AUTOMATION_STUDIO_AES_GCM_PROJECT_CONTENT_PROTECTION_ID` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts` | - |
+| `AUTOMATION_STUDIO_ANTHROPIC_BUILT_IN_DEFAULT_MODEL` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/anthropic.ts` | - |
+| `AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
+| `AUTOMATION_STUDIO_ANTHROPIC_MAX_CONTEXT_TOKENS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/anthropic.ts` | - |
+| `AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/anthropic.ts` | - |
+| `AUTOMATION_STUDIO_ANTHROPIC_MODELS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/anthropic.ts` | - |
 | `AUTOMATION_STUDIO_ARRIVAL_STEP_KEY` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/arrival-node.ts` | The arrival step's key in the subflow it opens. |
 | `AUTOMATION_STUDIO_ASK_EFFECT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/parking/ask-effect.ts` | The effect anything executing inside a run emits to ask the person something. An effect rather than a field on the node result, so the capability is open to every part of a run at once: a built-in node, a domain adapter answering a dispatch, a permission gate. The executor reads it where it reads the rest of an attempt's effects, and never hands it to a host dispatcher -- no domain is asked to know what an ask is. |
 | `AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT` | Object | `packages/fluxiq/src/programs/automation-studio/model/authoring-mode/authoring-mode.ts` | The mode when nothing is set. |
@@ -228,7 +234,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/instructions.ts` | Core's default instruction for each stage: what the work of that stage is, said without naming any medium. A domain replaces one of these when its stage genuinely means something else, and adds beside them when it means the same thing with more detail. "gather" used to be the evidence loop's decision policy verbatim. That text is about choosing between offered tools -- which one to call, when not to call one, when to stop -- and the first production caller of the protocol is a runtime diagnosis, which is offered no tools at all. So every diagnosis was told how to use tools it did not have, and referred to a decision schema that was not in its request. The stage's own meaning is what stays here; the tool policy moved to AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION below, which is added only to a request that actually carries tools. |
 | `AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/lasting-act.ts` | Where a Flow node keeps its step's declared consequences: the plan's plain strings, `[]` when the step declared `none`. Written by the build (`../../flow-bootstrap/adaptation.ts`) and read here. |
 | `AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/models.ts` | The default model when `FLUXIQ_LLM_DEFAULT_MODEL` is unset: `deepseek-flash`, served by DeepSeek-V4.1-Flash. It is the cheaper of the two by roughly four and a half times on every axis, and the one every measurement in this repository was taken against once the retired alias was replaced. What a caller who names no model actually gets is AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, at the end of this file. |
-| `AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/models.ts` | What a caller who names no model gets, a new Flow's builds among them: resolveAutomationStudioLlmDefaultModel, read once when this module loads -- `deepseek-flash` unless `FLUXIQ_LLM_DEFAULT_MODEL` says otherwise. |
+| `AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/models.ts` | - |
+| `AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/model-limits/max-context-tokens.ts` | The largest context window of any model Core sends to: the most any one request may carry. |
 | `AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/model-limits/model-limits.ts` | These are the only per-request size limits Core holds a request to. Core's own ceiling, `AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST`, is derived from them (`AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS`), and a request over its model's window is refused before it is sent, with its measured size (`../deepseek/provider.ts`). Spend is bounded separately, by the run's cost ceiling. |
 | `AUTOMATION_STUDIO_DEEPSEEK_MODELS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/models.ts` | Every model id Core will accept. DeepSeek's current line, newest first. |
 | `AUTOMATION_STUDIO_DEEPSEEK_OFF_PEAK_RATE_MULTIPLIER` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/pricing.ts` | How much less an off-peak call costs: exactly half, on every rate and every model. |
@@ -342,7 +349,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_LLM_BUILD_CALL_LIMIT_ENV` | Object | `packages/fluxiq/src/programs/automation-studio/model/build-call-limit/env.ts` | - |
 | `AUTOMATION_STUDIO_LLM_BUILD_CALL_LIMIT_SCOPE_ENV` | Object | `packages/fluxiq/src/programs/automation-studio/model/build-call-limit/scope-env.ts` | - |
 | `AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/token-limits.ts` | - |
-| `AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/models.ts` | The environment variable that sets Core's default DeepSeek model. |
+| `AUTOMATION_STUDIO_LLM_DEFAULT_MODEL` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
+| `AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
 | `AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/token-limits.ts` | What one call sets aside for the model's reply in its context-window check when its caller names no output limit: 8,000 tokens, the reply reserve the live session-key profile has used since the window became the request bound (`../session-key-provider.ts`). It is never sent as a cap (t254). |
 | `AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts` | - |
 | `AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/token-limits.ts` | One call's limits when the caller names none: the model's context window, with the reply reserve taken out of it for the reply and the rest the input's. Until 2026-09-30 these were 8,000 input, 2,000 output and 10,000 total tokens, so a call through a resolver that named no limits was refused at 8,000 input tokens -- far below a whole page. The user's order that day leaves the window as the only bound on a request, so the defaults are the window: 992,000 input, 8,000 output and 1,000,000 total for DeepSeek today. A limit a caller names still binds, and the missing ones are derived from it: an output limit with no input limit leaves the input the window less that output, and a total limit with neither leaves the input the total less the reply reserve. |
@@ -701,6 +709,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioAdaptiveFailureClass` | Type | `packages/contracts/src/failure/adaptive-class.ts` | - |
 | `AutomationStudioAdaptiveFailureInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/adaptive-orchestrator.ts` | - |
 | `AutomationStudioAesGcmProjectContentProtection` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/content-protection.ts` | AES-256-GCM adapter whose host-owned resolver controls key creation, persistence, rotation, and retirement. |
+| `AutomationStudioAnthropicModel` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/anthropic.ts` | - |
+| `automationStudioAnthropicModelRefusal` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/anthropic.ts` | - |
+| `AutomationStudioAnthropicPanelCommandOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/anthropic/panel-command.ts` | - |
+| `AutomationStudioAnthropicProviderOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/anthropic/provider.ts` | - |
 | `AutomationStudioAppliedAdaptationResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/adaptation-store.ts` | - |
 | `automationStudioAppliedJudgedBuildTrial` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-version/judged-build-trial/applied.ts` | - |
 | `AutomationStudioAppliedJudgedBuildTrialAdaptation` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-version/judged-build-trial/applied.ts` | What apply hands over of the adaptation it is applying: its id, its audit trail and the graphs it saves. |
@@ -1893,13 +1905,16 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmInRunRepairUnit` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/task-request.ts` | The unit an in-run repair is held to (state-aware recovery plan, C6 step 8, C12): the failing node, the handler that failed, or the part whose contract the failure broke, by its kind and its id. |
 | `AutomationStudioLlmInvocationGateDecision` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/training-modes.ts` | - |
 | `AutomationStudioLlmInvocationGateInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/training-modes.ts` | - |
+| `AutomationStudioLlmModel` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
 | `AutomationStudioLlmModelCaller` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/model-caller.ts` | The person a model call is made for: whose unlocked Secret Keys key pays. Not an authorization. A model call made while building, exploring, repairing, verifying, diagnosing or adapting a Flow needs no grant: nothing is issued, held, digest-checked, confirmed or revoked around it. What stays gated is a lasting real-world consequence of an *action* -- moving money, deleting, sending -- which the action permission gate asks the person about one act at a time. Spend is bounded by the run's own budget and the Flow's configured cost ceiling. |
+| `automationStudioLlmModelProvider` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
 | `automationStudioLlmNodeDescriptions` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/node-descriptions.ts` | - |
 | `AutomationStudioLlmNodeDescriptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/node-descriptions.ts` | One build's described-node memory. |
 | `AutomationStudioLlmOpaqueSecretResolver` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts` | - |
 | `AutomationStudioLlmProvider` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/provider.ts` | - |
 | `automationStudioLlmProviderCall` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-retry/call.ts` | - |
 | `AutomationStudioLlmProviderCallOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-retry/call.ts` | - |
+| `automationStudioLlmProviderDefaultModel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
 | `automationStudioLlmProviderEndpointLoad` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-retry/endpoint-load.ts` | Core's own, counted by every call whose caller names no other. |
 | `AutomationStudioLlmProviderEndpointLoad` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-retry/endpoint-load.ts` | - |
 | `AutomationStudioLlmProviderError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts` | - |
@@ -1908,8 +1923,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmProviderFailureDisposition` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/failure-disposition.ts` | What a failed call does to the rest of the model's calls in the run. |
 | `AutomationStudioLlmProviderFailureProvenance` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts` | - |
 | `automationStudioLlmProviderFailureSpendsCall` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/failure-disposition.ts` | - |
+| `AutomationStudioLlmProviderId` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
 | `AutomationStudioLlmProviderInputSize` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts` | The size of a request a provider refused as too large (`llm.provider_input_budget_exceeded`), in numbers only. A size is safe to record where the check's own sentence is not, so this is the one pre-flight refusal whose recorded message says more than that it happened: a request over the model's window fails loudly, with its size, wherever it is caught. |
 | `AutomationStudioLlmProviderInvocationState` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts` | - |
+| `automationStudioLlmProviderLabel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
 | `AutomationStudioLlmProviderMetadata` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/provider.ts` | - |
 | `automationStudioLlmProviderPaidUsage` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts` | - |
 | `AutomationStudioLlmProviderPreflightErrorCode` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-contract.ts` | - |
@@ -1932,7 +1949,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmProviderThrowWithheld` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/throw-account/read.ts` | Why part of a throw was not carried, one word per reason. |
 | `automationStudioLlmProviderUnanswered` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unanswered-calls.ts` | - |
 | `automationStudioLlmProviderWithDomainInstructions` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/domain-instructions/provider.ts` | - |
-| `AutomationStudioLlmRecentActionContext` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/context-packet.ts` | - |
+| `AutomationStudioLlmRecentActionContext` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/recent-actions/record.ts` | - |
 | `automationStudioLlmRequestEvidenceRefusal` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/request-evidence-check.ts` | - |
 | `AutomationStudioLlmRequestRefusalCode` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/request-refusal.ts` | - |
 | `AutomationStudioLlmRequestRefusedError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/request-refusal.ts` | The error a request guard throws. Recognised by `name` and `code` rather than by `instanceof`, so a reader in a directory that must not import this one as a value (the build's failure projection, which `runtime/llm` already imports from) can still name it. |
@@ -2834,8 +2851,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioServiceOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service.ts` | - |
 | `automationStudioServiceWholeTrialPorts` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/service/trial-ports/service-ports.ts` | - |
 | `AutomationStudioServiceWholeTrialPortsInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/trial-ports/service-ports.ts` | What the trial ports are made for: the build's Flow, its instructions and start, and the judge every trial asks. |
-| `AutomationStudioSessionKeyOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/session-key.ts` | What a call adds to the caller: the Flow's own key, and the host the locked sentence names. |
-| `AutomationStudioSessionKeyPorts` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/session-key.ts` | The Secret Keys operations releasing a person's key needs. |
+| `AutomationStudioSessionKeyOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/session-keys/key.ts` | What a call adds to the caller: the Flow's own key, and the host the locked sentence names. |
+| `AutomationStudioSessionKeyPorts` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/session-keys/key.ts` | The Secret Keys operations releasing a person's key needs. |
+| `automationStudioSessionKeyProvider` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/session-keys/key.ts` | - |
 | `AutomationStudioSnapshot` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/project.ts` | - |
 | `AutomationStudioSoakEvidence` | Type | `packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts` | - |
 | `automationStudioSourceNodeRoot` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/layout.ts` | - |
@@ -3362,6 +3380,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `convertCodeOwnedFlowToVisual` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/source.ts` | - |
 | `correctAutomationStudioFlowBootstrapPlanNames` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/name-correction.ts` | - |
 | `countAutomationStudioRecordUnsortableRows` | Value | `packages/contracts/src/record-sets/process/count-unsortable-rows.ts` | - |
+| `createAutomationStudioAnthropicPanelCommandModel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/anthropic/panel-command.ts` | - |
+| `createAutomationStudioAnthropicProvider` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/anthropic/provider.ts` | - |
 | `createAutomationStudioDeepSeekPanelCommandModel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/panel-command.ts` | - |
 | `createAutomationStudioDeepSeekProvider` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/provider.ts` | - |
 | `createAutomationStudioElementMatcher` | Value | `packages/fluxiq/src/programs/automation-studio/fingerprinting/element-fingerprint.ts` | - |
@@ -3560,6 +3580,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `endingKindOf` | Value | `packages/fluxiq/src/ui/activity-status/ending-kind.ts` | - |
 | `endsOnDoubt` | Value | `packages/fluxiq/src/ui/activity-status/doubted-ending.ts` | - |
 | `EnvironmentDescriptor` | Type | `packages/fluxiq/src/programs/automation-studio/model/descriptors.ts` | - |
+| `estimateAutomationStudioAnthropicCostUsd` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/anthropic/pricing.ts` | - |
 | `estimateAutomationStudioDeepSeekCostUsd` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/pricing.ts` | - |
 | `estimateAutomationStudioDeepSeekInputTokens` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/request-body.ts` | - |
 | `evaluateAutomationStudioCandidateRequirements` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/predicates.ts` | - |
@@ -3772,6 +3793,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `isAutomationStudioActionPermissionCarriedName` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/request.ts` | - |
 | `isAutomationStudioAdaptationId` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/node-adaptation/ids.ts` | - |
 | `isAutomationStudioAdaptiveFailureClass` | Value | `packages/contracts/src/failure/adaptive-class.ts` | - |
+| `isAutomationStudioAnthropicModel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/anthropic.ts` | - |
 | `isAutomationStudioAuthoringMode` | Value | `packages/fluxiq/src/programs/automation-studio/model/authoring-mode/authoring-mode.ts` | - |
 | `isAutomationStudioConversationAuthor` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/turn.ts` | - |
 | `isAutomationStudioConversationStatus` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/thread.ts` | - |
@@ -3784,7 +3806,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `isAutomationStudioExplorationOutcome` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/exploration-outcome.ts` | - |
 | `isAutomationStudioExplorationStepReplayable` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/exploration-reduction/step.ts` | - |
 | `isAutomationStudioExploredEvidenceLabel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/explored-evidence-label.ts` | - |
-| `isAutomationStudioLlmRecentActionContext` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/context-packet.ts` | - |
+| `isAutomationStudioLlmProviderId` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
+| `isAutomationStudioLlmRecentActionContext` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/recent-actions/record.ts` | - |
 | `isAutomationStudioLoopStage` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/protocol.ts` | - |
 | `isAutomationStudioModelAuthoredTargetOverrideTarget` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/structured-response.ts` | - |
 | `isAutomationStudioNoRepairReason` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/structured-response.ts` | - |
@@ -4051,6 +4074,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `registerRuntimeApi` | Value | `packages/fluxiq/src/programs/runtime-control/api/handlers.ts` | - |
 | `registerSecretKeysApi` | Value | `packages/fluxiq/src/programs/secret-keys/api/handlers.ts` | - |
 | `releaseAutomationStudioSessionDeepSeekKey` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/session-key.ts` | - |
+| `releaseAutomationStudioSessionProviderKey` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/session-keys/key.ts` | - |
 | `ReleaseComputeLeaseRequest` | Type | `packages/fluxiq/src/programs/compute-control/api/contracts.ts` | - |
 | `RemoveRecordingEntryRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts` | Removes every entry of a still-open recording that was recorded from one gateway event: each entry whose `metadata.eventId` is `eventId`, the id `runtime/io-bridge.ts` copies from the recorded event's envelope. A finalized recording is refused. |
 | `RemoveRecordingEntryResponse` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts` | How many entries were removed, and the recording as a summary: no timeline, notes or state. |
@@ -4080,7 +4104,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `resolveAutomationStudioFlowCatalog` | Value | `packages/fluxiq/src/programs/automation-studio/model/flow-compatibility.ts` | - |
 | `ResolveAutomationStudioFlowCatalogInput` | Type | `packages/fluxiq/src/programs/automation-studio/model/flow-compatibility.ts` | - |
 | `resolveAutomationStudioLlmBuildCallLimit` | Value | `packages/fluxiq/src/programs/automation-studio/model/build-call-limit/resolve.ts` | - |
-| `resolveAutomationStudioLlmDefaultModel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/models.ts` | - |
+| `resolveAutomationStudioLlmDefaultModel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/models/default-model.ts` | - |
 | `resolveAutomationStudioLlmInstructions` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/instruction.ts` | - |
 | `resolveAutomationStudioLlmRunCostCeilingUsd` | Value | `packages/fluxiq/src/programs/automation-studio/model/run-cost-ceiling/run-cost-ceiling-env.ts` | - |
 | `resolveAutomationStudioLlmTestRunCostCeilingUsd` | Value | `packages/fluxiq/src/programs/automation-studio/model/run-cost-ceiling/run-cost-ceiling-env.ts` | - |
