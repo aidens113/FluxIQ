@@ -18,6 +18,35 @@ const action = { actionType: "activate-element", outputId: "activate-element", p
 const unmatchedTarget = { kind: "element", fingerprint: { visibleText: "Save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel" }] };
 
 describe("policy output dispatch failures", () => {
+  it("retains measured target facts independently of IO/runtime success and failure", async () => {
+    const actionability = { actionable: false, cause: "covered" } as const;
+    for (const ok of [false, true]) {
+      const result = await dispatchPolicyOutput(ioWith(() => ({ ok, outputId: "activate-element", actionability, payload: { actual: 1 } })), "example", action);
+      expect(result).toMatchObject({ status: ok ? "success" : "failed", actionability, outputs: { ok, result: { actual: 1 } } });
+      const runtimeResult = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: ok ? "succeeded" : "failed", actionability, payload: { actual: 2 } }))(effect);
+      expect(runtimeResult).toMatchObject({ status: ok ? "success" : "failed", actionability, outputs: { ok, result: { actual: 2 } } });
+    }
+  });
+
+  it("drops malformed/accessor target metadata alone and never invokes its getter", async () => {
+    let reads = 0;
+    const supplied = Object.defineProperty({ ok: true, outputId: "activate-element", payload: { actual: 1 } }, "actionability", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return { actionable: true };
+      }
+    });
+    const result = await dispatchPolicyOutput(ioWith(() => supplied), "example", action);
+    expect(reads).toBe(0);
+    expect(result).toMatchObject({ status: "success", outputs: { result: { actual: 1 } } });
+    expect(result).not.toHaveProperty("actionability");
+    const malformed = { actionable: true, geometry: "PRIVATE_GEOMETRY" } as const;
+    const runtimeResult = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded", actionability: malformed }))(effect);
+    expect(runtimeResult).toMatchObject({ status: "success" });
+    expect(runtimeResult).not.toHaveProperty("actionability");
+  });
+
   it("passes the run reference to a runtime adapter while command timestamps stay live", async () => {
     const referenceNow = Date.UTC(2026, 9, 30, 23, 59, 59);
     const contexts: Array<{ referenceNow?: number; now?: () => number }> = [];
@@ -103,7 +132,7 @@ describe("policy output dispatch failures", () => {
       outputs: [defineOutput({
         definition: { id: "activate-element", title: "Activate element" },
         mode: "request",
-        dispatch: (request) => ({ ok: true, outputId: request.outputId })
+        dispatch: (request) => ({ ok: true, outputId: request.outputId, actionability: { actionable: true } })
       })]
     }));
 
@@ -115,6 +144,11 @@ describe("policy output dispatch failures", () => {
       outputs: { confirmation: false }
     });
     expect(result.message).toContain("element-activated");
+    expect(result.actionability).toEqual({ actionable: true });
+    const runtimeResult = await createRuntimePolicyEffectDispatcher(io, "example", runtimeReturning({ status: "succeeded", actionability: { actionable: false, cause: "disabled" } }))({ type: effect.type, payload: { ...effect.payload, confirmationInputId: "element-activated", confirmationTimeoutMs: 5 } });
+    expect(runtimeResult).toMatchObject({ status: "failed", actionability: { actionable: false, cause: "disabled" }, failure: { code: "output_confirmation.not_received", stage: "confirmation" } });
+    expect(runtimeResult?.failure).not.toHaveProperty("effect");
+    expect(runtimeResult?.failure).not.toHaveProperty("transient");
   });
 
   it("records a typed target resolution for no match, a weak match, and a confident match", async () => {
@@ -166,6 +200,18 @@ describe("a wait the target reports clearing by itself", () => {
 });
 
 describe("failure propagation from dispatch to diagnosis", () => {
+  it("records the runtime observation on the actual attempt and public run record without using authored metadata", async () => {
+    const actionability = { actionable: false, cause: "disabled" } as const;
+    const flow = actionFlow({ elementId: "confirm" });
+    flow.nodes[0]!.metadata = { actionability: { actionable: true } };
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "failed", actionability, failure: { category: "action_failed", code: "client.refused", retryable: false } })) });
+    expect(trace.attempts[0]).toMatchObject({ status: "failed", actionability, failure: { code: "client.refused", retryable: false } });
+    const detail = runtimeSessionToFlowRunDetail(session(flow, trace), "project.failure");
+    expect(detail.actionAttempts?.[0]).toMatchObject({ status: "failed", actionability, failure: { code: "client.refused" } });
+    const unobserved = await runAutomationStudioGraph(flow, { effectDispatcher: createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded" })) });
+    expect(unobserved.attempts[0]).not.toHaveProperty("actionability");
+  });
+
   it("carries a timed-out runtime action to classification, the run record, and the LLM context", async () => {
     const flow = actionFlow({ elementId: "confirm" });
     const trace = await runAutomationStudioGraph(flow, {

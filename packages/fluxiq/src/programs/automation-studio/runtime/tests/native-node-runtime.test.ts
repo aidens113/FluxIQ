@@ -24,6 +24,39 @@ function effectFlow(instance: AutomationStudioFlowNode): AutomationStudioFlowDoc
 }
 
 describe("trusted-local native node runtime", () => {
+  it("normalizes native target controls without changing actual outputs/logs or reading authored metadata", async () => {
+    let reads = 0;
+    const accessor = Object.defineProperty({ outputs: { result: 7 } }, "actionability", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return { actionable: true };
+      }
+    });
+    const answers: AutomationNodeExecutionResult[] = [
+      { outputs: { result: 7 }, actionability: { actionable: false, cause: "hidden" } },
+      { outputs: { result: 7 } }, accessor
+    ];
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), {
+      packageId: "example.package", packageVersion: "1.0.0",
+      implementations: { transform: ({ log }) => {
+        log({ level: "info", message: "actual native execution" });
+        return answers.shift()!;
+      } }
+    });
+    const instance = { id: "native", definitionId: "example.transform", metadata: { actionability: { actionable: true } } };
+    const measured = await runtime.execute(instance, {});
+    expect(measured).toMatchObject({ result: { outputs: { result: 7 }, actionability: { actionable: false, cause: "hidden" } }, logs: [{ message: "actual native execution" }] });
+    for (let index = 0; index < 2; index += 1) {
+      const unobserved = await runtime.execute(instance, {});
+      expect(unobserved?.result.outputs).toEqual({ result: 7 });
+      expect(unobserved?.result).not.toHaveProperty("actionability");
+      expect(unobserved?.logs).toHaveLength(1);
+    }
+    expect(reads).toBe(0);
+    expect(Object.getOwnPropertyDescriptor(accessor, "actionability")?.get).toBeTypeOf("function");
+  });
+
   it("retains the trusted effect floor through manifest serialization, SDK copies and getDefinition without execution", () => {
     const declared = node({
       actionEffect: { effectClass: "state", commitWhen: "apply", permissionConsequences: ["create_new"] },

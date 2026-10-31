@@ -1,4 +1,4 @@
-import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../client-gateway/service/command-ledger/index.ts";
 import type { JsonObject } from "../core/index.ts";
 import type { DomainInputDefinition, DomainManifest, DomainOutputDefinition } from "../domains/index.ts";
@@ -41,6 +41,8 @@ export type OutputDispatchResult<TPayload = unknown> = {
   status?: FluxIQRuntimeCommandStatus;
   /** Structured failure the adapter reports; Automation Studio keeps it only when it parses. */
   failure?: AutomationStudioFailureRecord;
+  /** Validated exact-target measurement; absence is unknown, with no effect or retry claim. */
+  actionability?: AutomationStudioTargetActionabilityRecord;
   /**
    * A wait on the target that cleared by itself while the output ran -- a check
    * the page stood up and then took down, with nobody asked -- and how long it

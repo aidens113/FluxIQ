@@ -14,7 +14,7 @@
 // could not read ends the run or is fed back.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { projectAutomationStudioFailureControlRecord, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { parseAutomationStudioTargetActionabilityRecord, projectAutomationStudioFailureControlRecord, type AutomationStudioFailureRecord, type AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID,
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES,
@@ -123,10 +123,10 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
  * (live run `run-mup2u8o3-6697c4be`, call `search2`).
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS: readonly string[] = [
-  "kind", "evidence", "effectApplied", "failure", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "draft"
+  "kind", "evidence", "effectApplied", "failure", "actionability", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "draft"
 ];
 
-type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
+type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
 
 /** The result read from what a tool returned, or nothing when it is not one. */
 export function automationStudioLlmEvidenceParseToolExecutionResult(
@@ -211,10 +211,31 @@ function readToolExecution(
     // Optional metadata is data: an accessor cannot erase an executed call.
     const failure = projectAutomationStudioFailureControlRecord(Object.getOwnPropertyDescriptor(value, "failure")?.value);
     if (failure) result.failure = failure;
+    const actionability = readTargetActionability(value);
+    if (actionability.kind === "valid") result.actionability = actionability.record;
     return { result };
   }
   if (!isJsonValue(value)) return { refused: "not_json" };
   return { result: { evidence: value, effectApplied: effect !== "mutate" } };
+}
+
+type TargetActionabilityRead =
+  | { kind: "valid"; record: AutomationStudioTargetActionabilityRecord }
+  | { kind: "absent" }
+  | { kind: "rejected"; reason: "accessor_property" | "invalid_record" }
+  | { kind: "unreadable"; reason: "property_descriptor_failed" };
+
+/** Optional control data cannot invoke a getter or erase an executed call. */
+function readTargetActionability(value: object): TargetActionabilityRead {
+  try {
+    const property = Object.getOwnPropertyDescriptor(value, "actionability");
+    if (!property) return { kind: "absent" };
+    if (!("value" in property)) return { kind: "rejected", reason: "accessor_property" };
+    const record = parseAutomationStudioTargetActionabilityRecord(property.value);
+    return record ? { kind: "valid", record } : { kind: "rejected", reason: "invalid_record" };
+  } catch {
+    return { kind: "unreadable", reason: "property_descriptor_failed" };
+  }
 }
 
 /** The code-shaped digests a call reported, or nothing when it reported none that are. */

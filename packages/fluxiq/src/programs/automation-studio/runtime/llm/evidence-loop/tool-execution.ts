@@ -6,7 +6,7 @@
 // call -- which is what lets one tool run a whole library of actions.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
 
 export type AutomationStudioLlmEvidenceToolExecutionResult = {
@@ -16,6 +16,9 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
   /** Optional control-only failure; the reader strips comparison text/digests.
    * Malformed metadata is dropped without erasing the call's actual facts. */
   failure?: AutomationStudioFailureRecord;
+  /** Control-only exact-target measurement, independent of effects and authority.
+   * Malformed metadata is dropped without erasing the call's actual facts. */
+  actionability?: AutomationStudioTargetActionabilityRecord;
   /** True only when every target handle from before this mutation still names
    * the same target afterwards. Consumers may omit it and stay conservative. */
   targetsUnchanged?: boolean;

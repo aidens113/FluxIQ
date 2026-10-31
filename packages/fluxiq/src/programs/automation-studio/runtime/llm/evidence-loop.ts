@@ -475,7 +475,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       ? "unobserved"
       : stateBefore === stateAfter ? "unchanged" : "changed";
     recordRow(
-      { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...settled?.row, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
+      { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...settled?.row, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(execution.actionability ? { actionability: execution.actionability } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
       { draftChanged: draftChanged && settled?.unchanged !== true, pageState } // A rerun that changed nothing left the draft as it was (R3-2).
     );
     // **What the loop learned, not what it ran.** The whole rule -- the four
@@ -583,7 +583,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
         ? "unobserved"
         : stateBefore === stateAfter ? "unchanged" : "changed";
-      recordRow({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}), ...callDiagnostic(execution) }, { draftChanged, pageState });
+      recordRow({ iteration: 0, decision: "tool_call", callId, toolId: initialTool.toolId, evidenceBytes, ...(execution.actionability ? { actionability: execution.actionability } : {}), ...(execution.resultCode ? { resultCode: execution.resultCode } : {}), ...callDiagnostic(execution) }, { draftChanged, pageState });
     }
   }
   // A continuation: told what it owes, and carried on live from where the page

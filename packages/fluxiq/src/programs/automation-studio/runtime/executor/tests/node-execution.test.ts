@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../../core/index.ts";
+import { ClientGatewayCommandContext } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../../nodes/index.ts";
 import {
@@ -51,6 +52,53 @@ vi.mock("../../../nodes/index.ts", async (importOriginal) => {
 const matched = { status: "matched", candidateCount: 1, minimumConfidence: 0.5, candidateId: "confirm", confidence: 1 } as const;
 
 describe("effect dispatch results in the attempt trace", () => {
+  it("retains the measured current target beside stronger required-command unknown and not-sent failures", async () => {
+    for (const neverSent of [false, true]) {
+      const consume = vi.fn(async () => undefined);
+      const commandRun: NonNullable<AutomationStudioGraphExecutionOptions["commandRun"]> = {
+        signal: new AbortController().signal,
+        acceptsComposite: () => false,
+        own: (start) => start(),
+        checkpoint: async () => undefined,
+        context: async (_consumer, effectOrdinal) => ({ capability: {}, context: ClientGatewayCommandContext.issue({ projectId: "project.control", runId: "run.control", flowId: flow.flowId, invocationId: "invoke.control", attemptId: "output.attempt.1", effectOrdinal }) }),
+        consume,
+        stop: async () => undefined,
+        receipted: () => false,
+        withdraw: () => neverSent
+      };
+      const effectDispatcher = vi.fn(() => ({ status: "failed" as const, outputs: { actual: 1 }, actionability: { actionable: true } as const, failure: { category: "action_failed" as const, code: "client.refused", retryable: false } }));
+      const trace = await runAutomationStudioGraph(flow, { commandRun, effectDispatcher, delay: async () => undefined, now: () => 1_000 });
+      expect(effectDispatcher).toHaveBeenCalledTimes(1);
+      expect(consume).not.toHaveBeenCalled();
+      expect(trace.attempts[0]).toMatchObject({ status: "failed", outputs: { actual: 1 }, actionability: { actionable: true }, failure: { retryable: false, effect: neverSent ? "unacted" : "ambiguous" } });
+      expect(trace.attempts[0]?.failure).not.toHaveProperty("transient");
+      if (!neverSent) expect(trace.attempts[0]?.failure?.category).toBe("ambiguous_or_unknown");
+    }
+  });
+
+  it("retains a target observation without satisfying a failed recorded readiness check", async () => {
+    const trace = await runAutomationStudioGraph({ ...flow, nodes: [{ ...flow.nodes[0]!, parameterValues: { ...flow.nodes[0]!.parameterValues, readyState: { conditions: [{ path: "page.ready" }] } } }] }, {
+      effectDispatcher: () => ({ status: "success", outputs: {}, actionability: { actionable: true } }),
+      hostRuntime: { capabilities: ["expectation-evaluation"], expectationEvaluator: () => ({ passed: false, checkedConditionCount: 1, message: "Not ready." }) }
+    });
+    expect(trace.attempts[0]).toMatchObject({ status: "succeeded", actionability: { actionable: true }, readiness: { satisfied: false, checkedConditionCount: 1, message: "Not ready." } });
+  });
+
+  it("replaces the latest dispatched target observation, including absence, and preserves it across internal record writes", async () => {
+    for (const second of [undefined, { actionable: false, cause: "disabled" } as const]) {
+      const trace = await runAutomationStudioGraph({ ...flow, nodes: [{ id: "native", definitionId: "importer.example.multi" }] }, {
+        nativeNodeExecutor: async () => ({ result: { status: "success", effects: [{ type: "policy.output.dispatch", payload: { outputId: "first" } }, { type: "policy.output.dispatch", payload: { outputId: "second" } }] } }),
+        effectDispatcher: (effect) => ({ status: "success", outputs: { actual: 1 }, ...((effect.payload as { outputId: string }).outputId === "first" ? { actionability: { actionable: true } as const } : second ? { actionability: second } : {}) })
+      });
+      expect(trace.attempts[0]?.actionability).toEqual(second);
+    }
+    const trace = await runAutomationStudioGraph({ ...flow, nodes: [{ id: "native", definitionId: "importer.example.multi" }] }, {
+      nativeNodeExecutor: async () => ({ result: { status: "success", effects: [{ type: "policy.output.dispatch", payload: { outputId: "first" } }, { type: "records.write", payload: { records: [{ name: "Synthetic row" }], recordOutput } }] } }),
+      effectDispatcher: () => ({ status: "success", outputs: {}, actionability: { actionable: false, cause: "covered" } })
+    });
+    expect(trace.attempts[0]?.actionability).toEqual({ actionable: false, cause: "covered" });
+  });
+
   it("carries a failed dispatcher's failure record, message, and target resolution onto the attempt", async () => {
     const failure = { category: "timeout", code: "web.action.timed_out", retryable: true } as const;
     const trace = await runAutomationStudioGraph(flow, {

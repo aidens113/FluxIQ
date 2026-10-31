@@ -1,4 +1,4 @@
-import type { AutomationStudioFailureRecord, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord, AutomationStudioRunDatasetSummary, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationConditionExpression } from "./conditions.ts";
 import type { EvidenceReference, StateFactReference } from "./evidence.ts";
@@ -366,6 +366,8 @@ export type AutomationStudioFlowIntervention = {
 };
 
 export type AutomationStudioFlowRunActionAttemptRecord = {
+  /** Exact-target observation from the performed attempt, independent of its outcome. */
+  actionability?: AutomationStudioTargetActionabilityRecord;
   attemptId: string;
   nodeId: string;
   definitionId: string;

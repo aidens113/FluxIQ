@@ -5,6 +5,7 @@ import type { JsonObject, JsonValue } from "./core.js";
 // `.ts` specifier so bundlers compiling this source through tsconfig paths can
 // resolve them; the package build rewrites them to `.js`.
 export * from "./failure/index.ts";
+export * from "./actionability/index.ts";
 // Record sets: the dataset schema, record output, run dataset summary and page,
 // their parsers, row validation, and CSV encoding.
 export * from "./record-sets/index.ts";

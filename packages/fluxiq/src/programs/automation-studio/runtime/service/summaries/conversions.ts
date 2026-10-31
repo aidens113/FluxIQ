@@ -1,4 +1,5 @@
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { readRuntimeTargetActionability } from "../../../../../runtime/result-control/index.ts";
 import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioAdaptationSummary } from "../indexes/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -176,6 +177,7 @@ function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, pla
   const durationMs = attempt.finishedAt === undefined ? undefined : Math.max(0, attempt.finishedAt - attempt.startedAt);
   // Session traces are read back from storage, so the record is parsed again.
   const failure = parseAutomationStudioFailureRecord(attempt.failure);
+  const actionability = readRuntimeTargetActionability(attempt);
   const adaptiveFailure = attempt.status === "failed"
     ? compactAutomationStudioAdaptiveFailure(classifyAutomationStudioAdaptiveFailure({
       projectId: session.projectId ?? "",
@@ -208,6 +210,7 @@ function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, pla
     ...(attempt.transitionComparison?.status ? { comparisonStatus: attempt.transitionComparison.status } : {}),
     ...(attempt.message ? { message: attempt.message } : {}),
     ...(failure ? { failure } : {}),
+    ...(actionability.kind === "valid" ? { actionability: actionability.record } : {}),
     // A sometimes-present step the run passed over because its target was
     // observed absent (`executor/step-skip/absent-step.ts`). The attempt reads
     // `succeeded` down `route: "skipped"`, which alone a reader cannot tell

@@ -3,12 +3,33 @@
 // behaviour is held by `./progress.test.ts`; these pin the recorder itself.
 import { describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceLoopTraceRecorder, type AutomationStudioLlmEvidenceLoopTrace } from "../index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 
 const answerable = { recordsRequested: true, recordProducerPresent: true, recordStorePresent: false };
 const shown = { bytes: 120, budget: 120, steps: 2, instructionBytes: 40 };
 const draftChange = { targetedStepIds: ["d1"], appliedCount: 1, refusedCount: 0, keptStepCount: 2 };
 
 describe("the evidence loop's row recorder", () => {
+  it("records an actual tool's target observation separately from its unchanged opaque evidence and effect", async () => {
+    let calls = 0;
+    const shown: unknown[] = [];
+    const evidence = { ok: true, actual: "opaque actual execution evidence" };
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: [{ toolId: "act", description: "Act", inputSchema: { type: "object" }, effect: "mutate" }],
+      decide: async (request) => {
+        shown.push(structuredClone(request.evidence));
+        return calls++ === 0 ? { kind: "tool_call", callId: "c1", toolId: "act", input: {} } : { kind: "complete", result: { done: true } };
+      },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence, effectApplied: true, actionability: { actionable: false, cause: "covered" }, resultCode: "client.succeeded" }),
+      maxIterations: 4, maxToolCalls: 4, dryRun: false
+    });
+    expect(result.ok).toBe(true);
+    expect(result.accounting.toolCalls).toBe(1);
+    expect(result.trace.find((row) => row.callId === "c1")).toMatchObject({ effectApplied: true, actionability: { actionable: false, cause: "covered" }, resultCode: "client.succeeded" });
+    expect((shown[1] as Array<{ toolId: string; value: unknown }>).find((entry) => entry.toolId === "act")?.value).toEqual(evidence);
+    expect(evidence).not.toHaveProperty("actionability");
+  });
+
   it("stamps an unremarkable row with its progress and its moment, and nothing it did not observe", () => {
     const trace: AutomationStudioLlmEvidenceLoopTrace[] = [];
     const rows = automationStudioLlmEvidenceLoopTraceRecorder(trace);

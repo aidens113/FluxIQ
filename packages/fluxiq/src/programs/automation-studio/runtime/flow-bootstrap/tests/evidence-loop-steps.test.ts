@@ -20,6 +20,25 @@ function amendRow(row: Partial<AutomationStudioFlowBootstrapEvidenceTraceRow> = 
 }
 
 describe("Flow Bootstrap evidence steps: refused amendments", () => {
+  it("round-trips exact target controls and drops malformed/accessor controls alone", () => {
+    const [measured] = automationStudioFlowBootstrapEvidenceSteps([{ iteration: 1, decision: "tool_call", toolId: "act", effectApplied: true, actionability: { actionable: false, cause: "covered" } }]);
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([measured])).toEqual([measured]);
+    expect(measured).toMatchObject({ effectApplied: true, actionability: { actionable: false, cause: "covered" } });
+    const malformed = { ...measured, actionability: { actionable: true, geometry: "PRIVATE_GEOMETRY" } };
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([malformed])).toEqual([{ ...measured, actionability: undefined }].map(({ actionability: _dropped, ...rest }) => rest));
+    let reads = 0;
+    const accessor = Object.defineProperty({ ...measured }, "actionability", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return { actionable: true };
+      }
+    });
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([accessor])?.[0]).toMatchObject({ toolId: "act", effectApplied: true });
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([accessor])?.[0]).not.toHaveProperty("actionability");
+    expect(reads).toBe(0);
+  });
+
   // The loop's trace has carried these since t140 and a step dropped them, so
   // seven decisions that applied nothing published one word between them.
   it("carries every refused amendment out of the trace row onto the step", () => {

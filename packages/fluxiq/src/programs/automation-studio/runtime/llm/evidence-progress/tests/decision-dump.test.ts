@@ -82,12 +82,12 @@ describe("the build's decision dump", () => {
     const dir = directory(), steps = directory();
     const failure = Object.freeze({ category: "action_failed", code: "service.capacity", retryable: true, effect: "unacted", transient: true, expected: "PRIVATE_FAILURE_EXPECTED", actual: "PRIVATE_FAILURE_ACTUAL", evidenceDigest: "a".repeat(64) });
     const evidence = { ok: false, rows: [{ label: "public execution evidence" }] };
-    const original = Object.freeze({ kind: "llm_evidence_tool_execution", evidence, effectApplied: false, resultCode: "service.declined", resultReason: "capacity", personNeeded: true, failure });
+    const original = Object.freeze({ kind: "llm_evidence_tool_execution", evidence, effectApplied: false, resultCode: "service.declined", resultReason: "capacity", personNeeded: true, failure, actionability: { actionable: false, cause: "covered" } });
     const traced = automationStudioLlmEvidenceLoopProgressTrace({ ...loopInput(), executeTool: async (_input: { callId: string; toolId: string; value: { node: string } }) => original }, { FLUXIQ_BUILD_DECISION_DUMP: dir, FLUXIQ_LLM_STEP_LOG_DIR: steps });
     const result = await traced.executeTool({ callId: "c2", toolId: "core.run_node", value: { node: "fixture.action" } });
     expect(result).not.toBe(original);
     expect(result.evidence).toBe(evidence);
-    expect(result).toMatchObject({ effectApplied: false, personNeeded: true, failure: { category: "action_failed", code: "service.capacity", retryable: true, effect: "unacted", transient: true } });
+    expect(result).toMatchObject({ effectApplied: false, personNeeded: true, failure: { category: "action_failed", code: "service.capacity", retryable: true, effect: "unacted", transient: true }, actionability: { actionable: false, cause: "covered" } });
     expect(Object.keys(result.failure)).toEqual(["category", "code", "retryable", "effect", "transient"]);
     expect(original.failure).toBe(failure);
     expect(original.failure.expected).toBe("PRIVATE_FAILURE_EXPECTED");
@@ -137,5 +137,49 @@ describe("the build's decision dump", () => {
     expect(automationStudioLlmEvidenceToolExecutionControl(opaque)).toBe(opaque);
     dump.tool({ callId: "c3", toolId: "tool", ms: 1, request: {}, result: opaque });
     expect(records(dir)[2]).toMatchObject({ result: opaque });
+  });
+
+  it("sanitizes actionability without any failure before step logging and raw dumping", async () => {
+    const dir = directory(), steps = directory();
+    let reads = 0;
+    const evidence = { ok: false, actual: "retained call evidence" };
+    const base = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, personNeeded: true };
+    const privateControl = { actionable: false, cause: "covered", geometry: "PRIVATE_GEOMETRY", text: "PRIVATE_TARGET_TEXT", source: "PRIVATE_SOURCE" };
+    const accessor = Object.defineProperty({ ...base }, "actionability", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return privateControl;
+      }
+    });
+    const originals = [{ ...base, actionability: { actionable: true } }, { ...base, actionability: privateControl }, accessor];
+    let next = 0;
+    const traced = automationStudioLlmEvidenceLoopProgressTrace({ ...loopInput(), executeTool: async (_input: { callId: string; toolId: string; value: { node: string } }) => originals[next++]! }, { FLUXIQ_BUILD_DECISION_DUMP: dir, FLUXIQ_LLM_STEP_LOG_DIR: steps });
+    for (let index = 0; index < originals.length; index += 1) {
+      const result = await traced.executeTool({ callId: `c${index + 1}`, toolId: "core.run_node", value: { node: "fixture.action" } });
+      expect(result).toMatchObject(base);
+      if (index === 0) expect(result).toMatchObject({ actionability: { actionable: true } });
+      else expect(result).not.toHaveProperty("actionability");
+    }
+    expect(reads).toBe(0);
+    expect((originals[1] as { actionability: unknown }).actionability).toBe(privateControl);
+    const serialized = JSON.stringify(records(dir));
+    for (const marker of ["PRIVATE_GEOMETRY", "PRIVATE_TARGET_TEXT", "PRIVATE_SOURCE"]) expect(serialized).not.toContain(marker);
+    expect(records(dir).map((record) => record.result)).toMatchObject([base, base, base]);
+    for (const folder of readdirSync(steps).filter((name) => name.includes("-tool-"))) {
+      expect(JSON.parse(readFileSync(path.join(steps, folder, "result.json"), "utf8"))).toEqual(evidence);
+    }
+  });
+
+  it("drops private actionability from direct dump results while retaining actual facts and opaque values", () => {
+    const dir = directory();
+    const dump = automationStudioLlmEvidenceDecisionDump({ FLUXIQ_BUILD_DECISION_DUMP: dir })!;
+    const original = { kind: "llm_evidence_tool_execution", evidence: { actual: 1 }, effectApplied: false, actionability: { actionable: true, geometry: "PRIVATE_DIRECT_GEOMETRY" } };
+    dump.tool({ callId: "c1", toolId: "act", ms: 1, request: { actual: 2 }, result: original });
+    expect(records(dir)[0]).toMatchObject({ request: { actual: 2 }, result: { evidence: { actual: 1 }, effectApplied: false } });
+    expect(JSON.stringify(records(dir))).not.toContain("PRIVATE_DIRECT_GEOMETRY");
+    expect(original.actionability.geometry).toBe("PRIVATE_DIRECT_GEOMETRY");
+    const opaque = { evidence: 1, actionability: { arbitrary: "opaque result" } };
+    expect(automationStudioLlmEvidenceToolExecutionControl(opaque)).toBe(opaque);
   });
 });

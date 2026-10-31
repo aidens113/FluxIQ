@@ -11,6 +11,7 @@ import {
 } from "../../flow-bootstrap/index.ts";
 import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../llm/index.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "../../llm/evidence-diagnostic/index.ts";
+import { readRuntimeTargetActionability } from "../../../../../runtime/result-control/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
 
@@ -118,6 +119,8 @@ export function sanitizeEvidenceLoopTrace(
     if (item.resultReason !== undefined && typeof item.resultReason === "string" && EVIDENCE_RESULT_CODE.test(item.resultReason)) clean.resultReason = item.resultReason;
     const diagnostic = automationStudioLlmEvidenceDiagnostic(item.diagnostic);
     if (diagnostic) clean.diagnostic = diagnostic;
+    const actionability = readRuntimeTargetActionability(item);
+    if (actionability.kind === "valid") clean.actionability = actionability.record;
     if (item.nodeId !== undefined && typeof item.nodeId === "string" && EVIDENCE_RESULT_CODE.test(item.nodeId)) clean.nodeId = item.nodeId;
     // How many steps an amendment decision edited. The fourth rebuilder learns
     // a member as the others do; the test below holds every one of them.

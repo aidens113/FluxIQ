@@ -68,6 +68,7 @@ export const CONFIG = {
     entries: [
       "packages/fluxiq/src/programs/automation-studio/nodes/index.ts",
       "packages/fluxiq/src/programs/automation-studio/nodes/action-effect/index.ts",
+      "packages/fluxiq/src/programs/automation-studio/runtime/actionability/index.ts",
       "packages/fluxiq/src/programs/automation-studio/fingerprinting/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/llm/models/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/client/index.ts",

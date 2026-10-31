@@ -1,4 +1,4 @@
-import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../core/index.ts";
 
 export type AutomationNodeScope = "policy" | "routine" | "both";
@@ -173,6 +173,8 @@ export type AutomationNodeTargetResolution =
   };
 
 export type AutomationNodeExecutionResult = {
+  /** The runtime's observation of this call's target; no readiness/effect authority. */
+  actionability?: AutomationStudioTargetActionabilityRecord;
   outputs?: Record<string, JsonValue>;
   route?: string;
   status?: "success" | "failed" | "waiting" | "skipped";

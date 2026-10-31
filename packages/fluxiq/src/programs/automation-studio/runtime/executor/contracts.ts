@@ -1,4 +1,4 @@
-import type { AutomationStudioFailureRecord, AutomationStudioRecordProcessing, AutomationStudioRecordSchema, AutomationStudioRecordWriteMode } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord, AutomationStudioRecordProcessing, AutomationStudioRecordSchema, AutomationStudioRecordWriteMode, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowRunHandlerExecutionRecord } from "../../model/index.ts";
 import type { AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
@@ -372,6 +372,8 @@ export type AutomationStudioNodeAttemptTrace = {
   message?: string;
   /** Structured failure from the node result; comparison and classification read it before `message`. */
   failure?: AutomationStudioFailureRecord;
+  /** The performed call's target observation; does not satisfy recorded readiness. */
+  actionability?: AutomationStudioTargetActionabilityRecord;
   /**
    * How the default defensive policy read this attempt's failure: what the fault
    * was, whether the run absorbs it, and why either way.

@@ -1,4 +1,5 @@
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { readRuntimeTargetActionability } from "../../../../runtime/result-control/index.ts";
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult } from "../../nodes/index.ts";
@@ -20,6 +21,7 @@ export function nodeAttemptFromResult(
   // failure record is parsed here, where results become attempts. A record on
   // a success contradicts it, and one that does not parse is dropped whole.
   const failure = finishedStatus === "succeeded" ? null : parseAutomationStudioFailureRecord(result.failure);
+  const actionability = readRuntimeTargetActionability(result);
   const attempt: AutomationStudioNodeAttemptTrace = {
     attemptId: `${node.id}.attempt.${attemptNumber}`,
     nodeId: node.id,
@@ -33,6 +35,7 @@ export function nodeAttemptFromResult(
     effects: result.effects ?? [],
     ...(result.message ? { message: result.message } : {}),
     ...(failure ? { failure } : {}),
+    ...(actionability.kind === "valid" ? { actionability: actionability.record } : {}),
     ...(result.targetResolution ? { targetResolution: result.targetResolution } : {})
   };
   return { ...attempt, transitionComparison: compareAutomationStudioTransition(node, attempt) };
