@@ -1,6 +1,6 @@
 import type { LoadedPlatformHostModules } from "./types.ts";
 
-type LoadedState = { key: string; result: LoadedPlatformHostModules };
+type LoadedState = { key: string; result: Promise<LoadedPlatformHostModules> };
 
 const LOADED_KEY = Symbol.for("fluxiq.platformHostModules");
 

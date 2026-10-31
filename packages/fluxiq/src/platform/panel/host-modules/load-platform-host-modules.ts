@@ -16,7 +16,8 @@ function pick<T>(namespace: Record<string, unknown>, name: string, allowDefault:
 /**
  * Imports each module of a comma list in order, hands the platform to its
  * `registerFluxIQPlatform` and collects its `registerFluxIQHost`. Idempotent
- * for the same list in one process; a different list throws.
+ * for the same list in one process, including concurrent calls; a different
+ * list throws. A failed load stays failed to avoid repeating partial registrations.
  */
 export async function loadPlatformHostModules(input: { value: string | undefined; importModule?: (modulePath: string) => Promise<Record<string, unknown>> }): Promise<LoadedPlatformHostModules> {
   const paths = parseHostModulePaths(input.value);
@@ -30,6 +31,14 @@ export async function loadPlatformHostModules(input: { value: string | undefined
     if (!existsSync(modulePath)) throw new Error(`Host module points to a missing file: ${modulePath}`);
   }
   const importModule = input.importModule ?? importHostModule;
+  const result = loadModules(paths, importModule);
+  // Publish the promise before an import resumes, so startup and route callers
+  // share both the registration work and its eventual failure or result.
+  loadedHostModulesStore.write({ key, result });
+  return result;
+}
+
+async function loadModules(paths: string[], importModule: (modulePath: string) => Promise<Record<string, unknown>>): Promise<LoadedPlatformHostModules> {
   const platform = getPlatformRegistry().platform;
   const instanceRegistrations: HostInstanceRegistration[] = [];
   for (const modulePath of paths) {
@@ -46,7 +55,5 @@ export async function loadPlatformHostModules(input: { value: string | undefined
     const instance = pick<HostInstanceRegistration>(namespace, "registerFluxIQHost", true);
     if (instance) instanceRegistrations.push(instance);
   }
-  const result = { paths, instanceRegistrations };
-  loadedHostModulesStore.write({ key, result });
-  return result;
+  return { paths, instanceRegistrations };
 }

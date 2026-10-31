@@ -69,6 +69,35 @@ describe("loadPlatformHostModules", () => {
     const missing = path.join(tmp, "missing.mjs");
     await expect(loadPlatformHostModules({ value: missing })).rejects.toThrow(missing);
   });
+  it("shares an in-flight load so concurrent callers register the platform once", async () => {
+    let registrations = 0;
+    const input = {
+      value: FIXTURE,
+      importModule: async () => {
+        await Promise.resolve();
+        return {
+          registerFluxIQPlatform: () => { registrations += 1; }
+        };
+      }
+    };
+    const [first, second] = await Promise.all([loadPlatformHostModules(input), loadPlatformHostModules(input)]);
+    expect(first).toBe(second);
+    expect(registrations).toBe(1);
+  });
+  it("retains a failed load instead of repeating partial registrations", async () => {
+    let imports = 0;
+    const error = new Error("startup failed");
+    const input = {
+      value: FIXTURE,
+      importModule: async () => {
+        imports += 1;
+        throw error;
+      }
+    };
+    await expect(loadPlatformHostModules(input)).rejects.toBe(error);
+    await expect(loadPlatformHostModules(input)).rejects.toBe(error);
+    expect(imports).toBe(1);
+  });
   it("uses an injected importer and the default-object fallback", async () => {
     const seen: string[] = [];
     const loaded = await loadPlatformHostModules({

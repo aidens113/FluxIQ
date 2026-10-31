@@ -851,7 +851,9 @@ never imports `@fluxiq/contracts`).
   `loadPlatformHostModules` imports each in order and calls its
   `registerFluxIQPlatform(platform)`; the web app does this lazily through
   `ensurePlatformModulesLoaded()` (`apps/web/src/app/product/`, Node runtime
-  only, memoised on `globalThis`). The instrumentation hookup comes later.
+  only, memoised on `globalThis`). Concurrent callers share the same load;
+  failures are retained so partial registrations cannot run again. The
+  instrumentation hookup comes later.
 - **The registry** (`getPlatformRegistry()`, on `globalThis`) holds the product
   (`setProduct(manifest, { assetsDir })`, validated by `panelProductSchema`,
   once per process), the hooks (`account.created`, `workspace.created`,
