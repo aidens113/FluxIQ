@@ -15,6 +15,11 @@ export const CONFIG = {
     {
       pattern: /fluxiq-web-extension|FluxIQWebExtension/i,
       reason: "FluxIQ Core must never import a downstream domain repository."
+    },
+    {
+      from: "apps/web/src",
+      pattern: /^@fluxiq\/contracts(\/|$)/,
+      reason: "apps/web does not depend on @fluxiq/contracts: tsc passes through tsconfig.base paths, but the Next.js production build (tsconfig.build.json, no paths) fails with TS2307 and every Lab run fails at setup. Import through a fluxiq subpath instead (for example fluxiq/client-gateway re-exports @fluxiq/contracts/client-gateway). Type-only imports and tests count too."
     }
   ],
 
@@ -63,6 +68,7 @@ export const CONFIG = {
     entries: [
       "packages/fluxiq/src/programs/automation-studio/nodes/index.ts",
       "packages/fluxiq/src/programs/automation-studio/fingerprinting/index.ts",
+      "packages/fluxiq/src/programs/automation-studio/runtime/llm/models/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/client/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/panel-capabilities/client/index.ts",
       "packages/fluxiq/src/client-gateway/contracts.ts",
@@ -171,6 +177,9 @@ export const CONFIG = {
       from: [
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/model-facing/",
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/system-prompt.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-task/system-prompt.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-task/request-messages.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/anthropic/request.ts",
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/domain-instructions/",
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/diagnosis-instructions.ts",
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/instructions.ts",

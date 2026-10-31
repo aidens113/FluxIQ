@@ -1,3 +1,4 @@
+import { automationStudioSessionKeyProvider } from "../llm/session-keys/index.ts";
 // Releasing the configured key for one unattended verification call.
 //
 // This is the only place a standing authorization touches a credential, and it
@@ -35,6 +36,8 @@ export const AUTOMATION_STUDIO_RESULT_CHECK_REVEAL_TTL_MS = 10_000;
 export async function revealAutomationStudioResultCheckSecret(input: {
   ports: AutomationStudioResultCheckProviderPorts;
   scope: AutomationStudioResultCheckProviderScope;
+  providerId?: "anthropic" | "deepseek";
+  model?: string;
   request: { projectId: string; flowId: string; outboundBody: string };
 }): Promise<string> {
   const scope = input.scope;
@@ -43,6 +46,7 @@ export async function revealAutomationStudioResultCheckSecret(input: {
   }
   const key = await input.ports.getKeySummary(scope.keyId);
   if (!key || !key.enabled || key.kind !== "llm") throw new Error("The key a result check was authorized against is unavailable.");
+  if (input.providerId && automationStudioSessionKeyProvider(key) !== input.providerId || input.model && key.metadata?.model && key.metadata.model !== input.model) throw new Error("The result-check key does not match the selected provider and model.");
   const authorization = await input.ports.createSessionRevealAuthorization({
     id: scope.keyId,
     sessionId: scope.unlockSessionId,

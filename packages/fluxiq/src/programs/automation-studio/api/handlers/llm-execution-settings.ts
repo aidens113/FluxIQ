@@ -2,7 +2,7 @@
 // provider and model, and hold every limit inside its bound.
 
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, automationStudioDeepSeekModelRefusal, isAutomationStudioDeepSeekModel } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, assertAutomationStudioLlmModelBinding } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 
 // The most provider calls a Flow may pin: Core's own runaway backstop
@@ -13,8 +13,7 @@ import { boundedWholeNumber } from "./bounded-whole-number.ts";
 const FLOW_LLM_EXECUTION_MAX_CALLS = AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
 
 export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>): void {
-  if (metadata.llmProvider !== undefined && metadata.llmProvider !== "deepseek") throw new Error("Only DeepSeek is supported for live LLM execution.");
-  if (metadata.llmModel !== undefined && !isAutomationStudioDeepSeekModel(metadata.llmModel)) throw new Error(automationStudioDeepSeekModelRefusal(metadata.llmModel));
+  assertAutomationStudioLlmModelBinding(metadata.llmProvider, metadata.llmModel);
   if (metadata.llmExecutionSettings === undefined) return;
   const execution = metadata.llmExecutionSettings;
   if (!execution || typeof execution !== "object" || Array.isArray(execution)) throw new Error("LLM execution settings are invalid.");

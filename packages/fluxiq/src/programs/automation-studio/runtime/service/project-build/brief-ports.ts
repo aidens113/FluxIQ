@@ -3,7 +3,7 @@ import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
-import { AutomationStudioExploredInterruptions, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
+import { AutomationStudioExploredInterruptions, AutomationStudioLearnedPaces, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetIssuedRef, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../flow-bootstrap/site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
@@ -267,7 +267,9 @@ export function automationStudioProjectBuildBriefPorts(input: {
   const exploredToggles = AutomationStudioProjectBuildTogglesRecord.toggles(project.trialEnvironment);
   const togglesWritten = AutomationStudioProjectBuildTogglesRecord.of(exploredToggles);
   /** The presses any brief of this build explored that the domain answered as clearing a layer over the page, shared as the toggles are (t787). */
-  const exploredInterruptions = new AutomationStudioExploredInterruptions();
+  const exploredInterruptions = AutomationStudioExploredInterruptions.of(project.trialEnvironment);
+  /** The paces any trial of this build learned, shared as the toggles are: Core writes them on the next submission of every brief (P6 CC8, `../../flow-bootstrap/learned-paces.ts`). */
+  const exploredPaces = AutomationStudioLearnedPaces.of(project.trialEnvironment);
   const environment = async (request: AutomationStudioProjectBriefPortRequest, siteReset: AutomationStudioSiteResetCalls, task?: () => AutomationStudioFlowInstruction[]) => {
     const registry = draft.submission.registry ?? new AutomationStudioNodeRegistry();
     const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution });
@@ -341,7 +343,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
       // `moves`: the reader's count of the times its looks moved the target, so a test refused after one says where it stands (t738).
       // `issuedRefs`: every ref the build issued, with where it was read, which the dispatcher puts on the opening call as `places` (header, t743).
-      const ports: AutomationStudioProjectBuilderPorts & { issuedRefs: () => AutomationStudioSiteResetIssuedRef[] } = { loop, submission: { ...submission, permissionFor: built.permissions.planStep, exploredToggles: built.permissions.exploredToggles, exploredInterruptions: built.permissions.exploredInterruptions }, trial, reset, moves: () => reader.moves, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys, issuedRefs: () => project.ledger.issuedRefs() };
+      const ports: AutomationStudioProjectBuilderPorts & { issuedRefs: () => AutomationStudioSiteResetIssuedRef[] } = { loop, submission: { ...submission, permissionFor: built.permissions.planStep, exploredToggles: built.permissions.exploredToggles, exploredInterruptions: built.permissions.exploredInterruptions, exploredPaces }, trial, reset, moves: () => reader.moves, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys, issuedRefs: () => project.ledger.issuedRefs() };
       return ports;
     },
     reset: async (request) => {

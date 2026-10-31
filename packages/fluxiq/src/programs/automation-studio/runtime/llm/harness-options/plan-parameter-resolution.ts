@@ -134,6 +134,18 @@
 // the stamp's only writer: every node it asks about leaves with the latest
 // stamp its check was told, or none, whatever the plan arrived with, so a stamp
 // a model wrote never survives resolution. A missing witness never refuses here.
+//
+// **A handle's view may say its control is stateful (CC9, t799).** A view in
+// `handleViews` may carry `control`: what the domain read of the control at
+// that look, `{stateful: true, state?, ensures?, idempotentWith?}`
+// (`./binding.ts`). It is the domain's and opaque, so it is only bounded here:
+// `stateful` exactly `true`, `state` a short word, `ensures` a small non-empty
+// plain JSON object, `idempotentWith` a node id. A field outside its bound is
+// dropped and the rest kept; a `control` with any other key, or not stateful,
+// is dropped whole. Neither ever refuses the node: an unreadable look is the
+// stateless control of before. It is kept on a step's own views alone, never a
+// page fact's: a fact names an element to read, not a control the step
+// presses (`../../flow-bootstrap/script-statements/toggle-idempotent.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -143,7 +155,7 @@ import type { AutomationStudioSiteResetWitnessStamp } from "../../flow-bootstrap
 import { automationStudioFlowBootstrapIssueDetailSentence } from "../../flow-bootstrap/plan/index.ts";
 // From the module that owns them: `../harness.ts` and the harness barrel both lead back into this module's import cycle, and through them the two read as undefined when this module loads inside it.
 import { AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN } from "../harness/structured-response.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach, AutomationStudioPlanHandleView } from "./binding.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanControlState, AutomationStudioPlanHandleReach, AutomationStudioPlanHandleView } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, automationStudioPlanFactTargetSites, automationStudioPlanFactTargetsNotNamingHandles, automationStudioPlanMetadataFactHandlePaths } from "./plan-fact-targets.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";
@@ -182,6 +194,10 @@ const MAX_RESOLVED_PARAMETER_BYTES = 16_384;
 /** Bounds on a node's `handleViews` (header): as many as a node may name handles, each location as long as a handle reference's. */
 const MAX_HANDLE_VIEWS = 64;
 const MAX_VIEW_LOCATION_LENGTH = 2_048;
+/** Bounds on a view's `control` (header, CC9): its `state` a short word, its `ensures` a state's digest as JSON, never a page, its `idempotentWith` a node id. */
+const MAX_CONTROL_STATE_LENGTH = 40;
+const MAX_CONTROL_ENSURES_CHARS = 4_096;
+const CONTROL_NODE_ID = /^[A-Za-z0-9_.:-]{1,200}$/u;
 /** The most steps before a node it is told of (header, t748 U1b); a node with more is told none. */
 const MAX_PRECEDING_STEPS = 200;
 const handleToken = (): RegExp => new RegExp(AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN, "u");
@@ -267,6 +283,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       continue;
     }
     site.replace(outcome.parameters);
+    // A fact's view keeps no `control`: a fact reads an element, it presses none (header, CC9).
     for (const view of outcome.handleViews ?? []) handleViews.push({ node: site.ref, handle: view.handle, view: view.view, location: view.location });
   }
   for (const [subflowIndex, subflow] of plan.subflows.entries()) {
@@ -302,7 +319,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       // What the act on its control made true, where the build signed no effect of its own (header, t447).
       if (outcome.effect && !node.routeSignatures?.effect) node.routeSignatures = { ...node.routeSignatures, effect: outcome.effect };
       resolvedNodeKeys.push(node.key);
-      for (const view of outcome.handleViews ?? []) handleViews.push({ node: ref, handle: view.handle, view: view.view, location: view.location });
+      for (const view of outcome.handleViews ?? []) handleViews.push({ node: ref, handle: view.handle, view: view.view, location: view.location, ...(view.control ? { control: view.control } : {}) });
     }
   }
   if (issues.length) return { ok: false, issues };
@@ -409,7 +426,7 @@ async function resolveNode(
     outcome = {
       status: "resolved",
       parameters: structuredClone(answer.parameters),
-      ...(isHandleViews(answer.handleViews) ? { handleViews: answer.handleViews.map((view) => ({ handle: view.handle, view: view.view, location: view.location })) } : {}),
+      ...(isHandleViews(answer.handleViews) ? { handleViews: answer.handleViews.map(ownView) } : {}),
       ...(effect?.ok ? { effect: effect.signature } : {})
     };
   } else return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
@@ -516,13 +533,29 @@ function permissionIssue(outcome: { missing: string[]; requestId: string | null 
   };
 }
 
-/** A domain's `handleViews` (header): a short list of exactly `{handle, view, location}`, each a handle token, a capture number from 1, and a bounded location. */
+/** A domain's `handleViews` (header): a short list of `{handle, view, location, control?}`, each a handle token, a capture number from 1, and a bounded location; `control` is read apart (`controlOf`) and never refuses. */
 function isHandleViews(value: unknown): value is AutomationStudioPlanHandleView[] {
   return Array.isArray(value) && value.length > 0 && value.length <= MAX_HANDLE_VIEWS && value.every((view) =>
-    isRecord(view) && exactKeys(view, ["handle", "view", "location"])
+    isRecord(view) && keysWithin(view, ["handle", "view", "location"], ["control"])
     && typeof view.handle === "string" && view.handle.length <= AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH && handleToken().test(view.handle)
     && typeof view.view === "number" && Number.isSafeInteger(view.view) && view.view >= 1
     && typeof view.location === "string" && view.location !== "" && view.location.length <= MAX_VIEW_LOCATION_LENGTH);
+}
+
+/** One accepted view, Core's own copy, with its `control` where one is readable (header, CC9). */
+function ownView(view: AutomationStudioPlanHandleView): AutomationStudioPlanHandleView {
+  const control = controlOf(view.control);
+  return { handle: view.handle, view: view.view, location: view.location, ...(control ? { control } : {}) };
+}
+
+/** A view's `control` within its bounds (header, CC9): a field outside its bound dropped, the whole dropped when not stateful or with any other key. */
+function controlOf(value: unknown): AutomationStudioPlanControlState | undefined {
+  if (!isRecord(value) || value.stateful !== true || !keysWithin(value, ["stateful"], ["state", "ensures", "idempotentWith"])) return undefined;
+  const state = typeof value.state === "string" && value.state.trim() !== "" && value.state.length <= MAX_CONTROL_STATE_LENGTH && !/\p{Cc}/u.test(value.state) ? value.state : undefined;
+  const ensures = isRecord(value.ensures) && Object.keys(value.ensures).length > 0 && isPlainJson(value.ensures) && JSON.stringify(value.ensures).length <= MAX_CONTROL_ENSURES_CHARS
+    ? structuredClone(value.ensures) as JsonObject : undefined;
+  const idempotentWith = typeof value.idempotentWith === "string" && CONTROL_NODE_ID.test(value.idempotentWith) ? value.idempotentWith : undefined;
+  return { stateful: true, ...(state !== undefined ? { state } : {}), ...(ensures ? { ensures } : {}), ...(idempotentWith ? { idempotentWith } : {}) };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

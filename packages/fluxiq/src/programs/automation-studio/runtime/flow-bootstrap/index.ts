@@ -21,6 +21,7 @@
 export * from "./action-permissions.ts";
 export * from "./explored-toggles.ts";
 export * from "./explored-interruptions.ts";
+export * from "./learned-paces.ts";
 export * from "./layer-handlers/index.ts";
 export * from "./adaptation.ts";
 export * from "./answerability/index.ts";

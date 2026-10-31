@@ -17,6 +17,8 @@ describe("SecretKeysLive view model", () => {
 
   it("distinguishes built-in, local, and host-required providers", () => {
     expect(providerRuntimeSupport("DeepSeek").label).toBe("Built-in provider");
+    expect(providerRuntimeSupport("Anthropic")).toMatchObject({ label: "Built-in provider", detail: expect.stringContaining("Anthropic (Claude)") });
+    expect(providerRuntimeSupport("OpenAI").label).toBe("Custom adapter required");
     expect(providerRuntimeSupport("Ollama").label).toBe("Local provider");
     expect(providerRuntimeSupport("Private LLM").label).toBe("Custom adapter required");
   });

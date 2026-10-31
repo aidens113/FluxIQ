@@ -1,6 +1,7 @@
 // Imports stay inside their allowed graph. Three checks over every module
 // specifier in every script file: specifiers matching CONFIG.forbiddenImports
-// are banned outright; relative specifiers crossing a CONFIG.importBoundaries
+// are banned outright (an entry may set `from` to apply only to files under
+// that directory); relative specifiers crossing a CONFIG.importBoundaries
 // edge are banned outright; and relative specifiers that reach past another
 // directory's index barrel into one of its files are counted per importer and
 // ratcheted -- unless the import binds a value and that barrel's own imports
@@ -114,7 +115,9 @@ export function run(ctx) {
     let firstSkip = null;
 
     for (const { text, line, typeOnly } of collectSpecifiers(ctx, file)) {
-      const rule = forbidden.find((entry) => entry.pattern.test(text));
+      const rule = forbidden.find(
+        (entry) => (entry.from === undefined || file.startsWith(`${entry.from}/`)) && entry.pattern.test(text)
+      );
       if (rule) {
         findings.push({
           rule: id, key: `${file}:${line}`, value: 1, limit: 0, path: file, line,

@@ -63,7 +63,7 @@ lanes in parallel to 11-08 (the extension's connection files merge 11-10); hoste
 11-12; store submission about 11-13; public when Google approves.
 
 **Next.** (1) Contracts frozen 2026-10-28 (t784, `@fluxiq/contracts` 0.3.0: `/platform`, `/iam`,
-gateway 0.2 additions; decisions in the paired document's ledger); B1 (t789) and B2 (t788) merged 10-28; B3 (t803), lane A (t802) and C0 (t808) merged 10-29 (B3 inert on `service` until C wires it); C1 next; C starts with
+gateway 0.2 additions; decisions in the paired document's ledger); B1 (t789) and B2 (t788) merged 10-28; B3 (t803), lane A (t802) and C0 (t808) merged 10-29 (B3 inert on `service` until C wires it); C1 with the IAM wiring (t813) and E with D5 (t814) in flight; C starts with
 the H0 changes, each as its own task. (2) The
 user answers N1 to N7 and creates the VM, DNS and store developer account (paired U9). Nothing
 blocks H1.

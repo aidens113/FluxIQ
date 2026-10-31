@@ -1,8 +1,8 @@
-import { isAutomationStudioDeepSeekModel } from "fluxiq/automation-studio/llm-models";
+import { automationStudioLlmModelProvider } from "fluxiq/automation-studio/llm-models";
 
 /**
  * The part of a build request every build shares, whatever it does to the
- * Flow: the Flow must name a DeepSeek model and a turned-on key, and the
+ * Flow: the Flow must name a configured provider and matching model and a turned-on key, and the
  * request names the Flow. Creating a Flow and improving one differ only in
  * which Flows they accept, so that rule is the caller's and this is the rest.
  */
@@ -13,7 +13,7 @@ export type FlowModelBinding =
 export function flowModelBinding(projectId: string | null, flow: any): FlowModelBinding {
   const metadata = flow?.metadata && typeof flow.metadata === "object" ? flow.metadata : {};
   if (!projectId || !flow?.flowId
-    || metadata.llmProvider !== "deepseek" || !isAutomationStudioDeepSeekModel(metadata.llmModel)
+    || !automationStudioLlmModelProvider(metadata.llmModel) || automationStudioLlmModelProvider(metadata.llmModel) !== metadata.llmProvider
     || typeof metadata.llmSecretKeyId !== "string" || !metadata.llmSecretKeyId) return { ok: false };
   return { ok: true, payload: { projectId, flowId: flow.flowId } };
 }

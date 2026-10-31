@@ -20,12 +20,29 @@
 // step was taught backwards: its trial pressed nothing, "already in the asked
 // state", on a control that was not.
 //
-// - it named `idempotentWith`: the step is refused
+// - the step's node declares `ensureState`: Core gives it the press's
+//   signature as `ensureState`, and the domain presses only where the page is
+//   not already so. A loop's step carries it on its node, so every pass is held
+//   to it. This is the step's idempotent form whether or not the press named
+//   `idempotentWith` (t799): a node that takes the asked state is already the
+//   press that sets it, so a model round trip to rewrite it is not needed;
+// - its node does not, and the press named `idempotentWith`: the step is refused
 //   `candidate.toggle_not_idempotent`, at its own place, saying to write it with
-//   that node set to the asked state;
-// - otherwise Core gives the node the parameter `ensureState`, the press's
-//   signature, and the domain presses only where the page is not already so.
-//   A loop's step carries it on its node, so every pass is held to it.
+//   that node set to the asked state. Core does not rewrite the step to that
+//   node itself: what to set it to is inside the signature and in the other
+//   node's own parameters, both the domain's, which Core never reads or names;
+// - neither: a plain press, as before.
+//
+// **A look that showed a stateful control ties the step too (CC9, t799).** A
+// handle's view may say its control is stateful and which signature a press of
+// it leaves (`control.ensures`, `../../llm/harness-options/binding.ts`). A step
+// resolved from such a handle whose node takes `ensureState` is given it,
+// though the build never pressed it. It is the lowest tie: an explored or a
+// trial press decides first, since a press is what the control did, a look only
+// what it showed. The step's own views decide only when they agree: views of
+// one step naming two different signatures tie nothing. A look never refuses: it
+// is not evidence that the step's node flips the control, so a node that cannot
+// take `ensureState` stays the plain press it was.
 //
 // Only a node whose definition declares `ensureState` is given it. A plan is
 // validated again before it runs (`../verification/detached-execution.ts`),
@@ -47,7 +64,9 @@
 // The model never writes `ensureState`: one it wrote is taken off first. Pure;
 // returns a new plan.
 
+import { isDeepStrictEqual } from "node:util";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioPlanControlState } from "../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioExploredToggleTie } from "./toggle-tie.ts";
 
@@ -88,8 +107,8 @@ const ENSURE_STATE = "ensureState";
 /** The plan with each toggle step given its `ensureState`, and each step refused for a node that sets the state (header). */
 export function automationStudioFlowPlanToggleSteps(input: {
   plan: AutomationStudioFlowBootstrapPlan;
-  /** Which handle each node was resolved from, the node named `<subflow key>.<node key>`. */
-  handleViews?: readonly { node: string; handle: string }[] | undefined;
+  /** Which handle each node was resolved from, the node named `<subflow key>.<node key>`, and what its view showed of a stateful control (header, CC9). */
+  handleViews?: readonly { node: string; handle: string; control?: AutomationStudioPlanControlState | undefined }[] | undefined;
   explored: readonly AutomationStudioExploredToggle[];
   /** Whether a node's definition declares `ensureState` (header); absent, every node is taken to. */
   takesEnsureState?: ((definitionId: string) => boolean) | undefined;
@@ -104,20 +123,32 @@ export function automationStudioFlowPlanToggleSteps(input: {
       }
       if (node.consequences?.length !== 1 || node.consequences[0] !== "modify_existing") continue;
       const ref = `${subflow.key}.${node.key}`;
-      const handles = new Set((input.handleViews ?? []).filter((view) => view.node === ref).map((view) => view.handle));
+      const views = (input.handleViews ?? []).filter((view) => view.node === ref);
+      const handles = new Set(views.map((view) => view.handle));
       // The earliest tied press, never a later reversal; a trial's press by the step's identity, never its key (header, t792).
       const others = plan.subflows.flatMap((each) => each.nodes.filter((other) => other !== node));
       const press = automationStudioExploredToggleTie({ node: node.definitionId, handles, target: node.parameters?.target, step: { ref, parameters: node.parameters, others } }, input.explored);
-      if (!press) continue;
-      if (press.idempotentWith) {
-        issues.push({ severity: "error", code: NOT_IDEMPOTENT, message: refusal(press.idempotentWith), path: `plan.subflows.${subflowIndex}.nodes.${nodeIndex}` });
+      // A look at a stateful control ties last, and only where the step's node takes the state (header, CC9).
+      const takes = input.takesEnsureState?.(node.definitionId) !== false;
+      const signature = press?.signature ?? (takes ? lookedState(views) : undefined);
+      if (!signature) continue;
+      if (takes) {
+        node.parameters = { ...node.parameters, [ENSURE_STATE]: structuredClone(signature) };
         continue;
       }
-      if (input.takesEnsureState?.(node.definitionId) === false) continue;
-      node.parameters = { ...node.parameters, [ENSURE_STATE]: structuredClone(press.signature) };
+      // A node that cannot take the state, where the domain has one that sets it: refused, never rewritten (header).
+      if (press?.idempotentWith && press.idempotentWith !== node.definitionId) {
+        issues.push({ severity: "error", code: NOT_IDEMPOTENT, message: refusal(press.idempotentWith), path: `plan.subflows.${subflowIndex}.nodes.${nodeIndex}` });
+      }
     }
   }
   return { plan, issues };
+}
+
+/** The signature the step's own views say a press of its stateful control leaves, when they name exactly one (header, CC9). */
+function lookedState(views: readonly { control?: AutomationStudioPlanControlState | undefined }[]): JsonObject | undefined {
+  const named = views.flatMap((view) => view.control?.stateful === true && view.control.ensures ? [view.control.ensures] : []);
+  return named.length && named.every((ensures) => isDeepStrictEqual(ensures, named[0])) ? named[0] : undefined;
 }
 
 /** Core's sentence for a toggle step written as a plain press, naming only the node to use (header). */

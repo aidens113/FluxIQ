@@ -128,3 +128,7 @@ export * from "./step-log/index.ts";
 // The build trace's lines for a build's steps outside its loop -- its judges,
 // the build call and the apply (`evidence-progress/build-trace.ts`, t174-w116).
 export { automationStudioLlmBuildTrace } from "./evidence-progress/index.ts";
+
+export * from "./models/index.ts";
+export { createAutomationStudioAnthropicPanelCommandModel, estimateAutomationStudioAnthropicCostUsd, type AutomationStudioAnthropicPanelCommandOptions } from "./anthropic/index.ts";
+export { releaseAutomationStudioSessionProviderKey, automationStudioSessionKeyProvider } from "./session-keys/index.ts";
