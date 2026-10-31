@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t828 initial narrow checks pass; proved receipt hash defect repaired in intake/observer, focused validation active. Browser acceptance pending; no full/paid calls.
+Status detail: t828 lead checks and real browser proof pass; final commits and paired dev integration pending. No full/paid calls; main held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active t828, 2026-10-31:** Core0.20 independently accepted122tests/14files, typecheck, full audit and compiled SDK smoke; imports ratchet removed1 old violation, baseline1143. Identity SDK0.20 was built; receipt-fix SDK rebuild is active. Down domain source/tests types and build pass after optional-field/copy fixes; first selection142/143 passed, all corrected/additional91 pass and final18 fixture/contract tests pass; native16 rerun passes. Extension84owning tests/typecheck/build and Lab typecheck/build/four trace-reader tests pass. Source/producer/identity APIs frozen. Installed browser attempts1-2 stopped on test locators, corrected using persistent fixture identity; attempts3-5 reached Core but stopped safely with required_outcome_unknown. Attempt5 actual browser target-not-found failure arrived in4837ms, retryable true, gateway errors0; Attempt6 proves353656-byte click result suppressed as invalid_result by Core256KiB canonical hash guard; Dedicated exact full-result hash now replaces small-record hashing at intake and required observer; claims retain original bounds, full result integrity and uncertainty protection remain, Lead independently accepts62receipt tests, controller13rerun, Coretypecheck56.093s and audit; packing allowance lowered15to10. Fresh SDK rebuild and browser rerun pending. No browser acceptance or integration claimed. Private SDK0.20/shared-checkout SDK0.19. Full suites exhausted today; no paid calls/panel management. Reports in private Core p8-identity; ignored browser attempts1-6 preserved in main.
+**Active t828, 2026-10-31:** Source-less identity recovery and full-result receipt integrity accepted locally. Lead Core122identity+62receipt tests, domain affected selections/native16, extension84, Labtrace4, affected types/builds and both audits pass; Corepacking allowance15to10/1143baseline, Down615 unchanged. Real Chromium134.0.6998.35 e2e-chromium social-network-feed proof8 passes1test/body45.6s: four actual target-not-found/unacted attempts with accepted ~354KB replies, fourth identity unmatched, zero gateway suppression/errors; Undo then explicit original-target refresh returns only selector/element patches, one required Like, exact unchanged other-post map. This proves automatic negative recovery and explicit positive refresh, not automatic fourth-attempt browser success (Core units cover that). Initial receipt hash256KiB rejection fixed at intake/observer with exact full-payload hashing; small authority bounds/unknown safety unchanged. Earlier locator/trace-field assertion mistakes and failed attempts recorded; artifacts1-8 ignored in main. Final extensioncheck21.723s passes; private SDK0.20 current, shared checkout0.19 until merge/refresh. Core taskd91ff313/Down09592ecd backups pushed; final docs/E2E commits and paired integration pending. Main held: both full-suite slots used. No paid/API calls/panel management; user clinerules preserved. NextP8repeatguard/history.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -766,13 +766,13 @@ Accepted t825 evidence and its compaction record are preserved verbatim in [the 
 Accepted t826 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 Accepted t827 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
-### 2026-10-31 - t828 source-less target discovery
-- Agent: Codex lead; two bounded read-only discovery workers.
-- Changed: paired task setup, discovery briefs; accepted t827 ledger archived verbatim.
-- Why: source-less literal targets currently lack the source-step retry path.
-- Validation: `pnpm.cmd task start runtime-target-identity --worktree --core --skip-workspace-build` ->exit0, both private trees created and all three mandatory SDK libraries built (Core73.93s); no new runtime tests.
-- Outcome: Partial; Core122, domain affected91/final18/native16, extension84 and trace-reader4 tests pass; affected types/builds/audits pass. Installed browser rerun pending.
-- Follow-up: reconcile Core and web findings, freeze an additive interface, then implement and run owning checks; no full suite/paid calls.
+### 2026-10-31 - t828 source-less target recovery and receipt integrity
+- Agent: Codex lead; bounded Core, shared identity, native host, capture, structural and discovery workers.
+- Changed: trusted target-refresh flags/hooks and resolved-parameter overlays; shared record gates/private capture provenance; native/authoring scoped recovery; exact full-result receipt hashing; owning tests, browser proof and architecture/status docs.
+- Why: recover a stale literal target without source lineage or wrong-record action; preserve legitimate large failed-result receipts without weakening authority or uncertain-effect safety.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/client-gateway/service/command-ledger/tests/controller.test.ts src/client-gateway/service/command-ledger/tests/dispatch.test.ts src/client-gateway/service/command-ledger/tests/dispatch-host-lease.test.ts src/programs/automation-studio/runtime/service/command-run/tests/controller.test.ts --maxWorkers=2 --minWorkers=1` ->62passed/4files; `pnpm.cmd --filter fluxiq check` ->exit0/56.093s; `node scripts/structure-audit.mjs` ->passed481warnings/1143baseline; earlier identity122passed/14files and SDKbuild pass, detailed lead report.
+- Outcome: Ready to integrate; strict real-browser negative/explicit-positive identity oracle passes; initial setup/test assertion failures and real receipt-size defect fixed/proven. No automatic positive fourth-attempt browser or paid qualification claimed.
+- Follow-up: commit/push task work, finish downstream then Core under narrow gates, refresh shared SDK/bundles; continue P8 repeat guard and bounded repair history. Main awaits later permitted full sweep; no paid go.
 
 ## Open Questions
 
