@@ -9,6 +9,8 @@ export { AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioCouldNotRun
 // A Wait node's pause and each node's pace between starts (t378); the metadata key is what a Flow authors a pace under.
 export { AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, AUTOMATION_STUDIO_PACE_METADATA_KEY, automationStudioAuthoredPaceMs } from "./pacing/index.ts";
 export { runAutomationStudioGraph, resumeAutomationStudioGraphRun, type AutomationStudioGraphRunSeed } from "./graph-run.ts";
+export { automationStudioRuntimeRepeatStoppedTrace } from "../runtime-repeat/index.ts";
+export type { AutomationStudioRunState } from "./run-state.ts";
 export { resumeAutomationStudioGraph, type AutomationStudioResumeOutcome, type AutomationStudioRunResumption } from "./resume.ts";
 export { AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN, automationStudioAttemptNeedsPerson, automationStudioIsPersonNeededAsk, automationStudioPersonNeededEnding, automationStudioPersonNeededStep, type AutomationStudioPersonNeededStep } from "./person-needed.ts";
 export { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder, type AutomationStudioLadderOutcome, type AutomationStudioReadinessOutcome } from "./ladder-run.ts";

@@ -1,2 +1,13 @@
 export type { AutomationStudioRuntimeRepeatObservation } from "./observation.ts";
 export type { AutomationStudioRuntimeRepeatObservationInput } from "./observation-input.ts";
+export type { AutomationStudioRuntimeRepeatSample } from "./sample.ts";
+export { automationStudioRuntimeRepeatDigest } from "./digest.ts";
+export { automationStudioReadRuntimeRepeatObservation } from "./read-observation.ts";
+export { automationStudioRuntimeRepeatExecutionKind } from "./execution-kind.ts";
+export { automationStudioRuntimeRepeatComponent } from "./component.ts";
+export { automationStudioRuntimeRepeatCheckpoint } from "./checkpoint.ts";
+export { automationStudioRuntimeRepeatGuard } from "./guard.ts";
+export { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP } from "./stop.ts";
+export type { AutomationStudioRuntimeRepeatEvidence } from "./evidence.ts";
+export { automationStudioRuntimeRepeatTraceProvenance } from "./trace-provenance.ts";
+export { automationStudioRuntimeRepeatStoppedTrace } from "./stopped-trace.ts";

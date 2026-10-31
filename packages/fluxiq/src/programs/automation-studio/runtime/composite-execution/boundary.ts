@@ -7,6 +7,7 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioCallFlowConfiguration, AutomationStudioPublishedFlowSnapshot } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../executor.ts";
+import { automationStudioRuntimeRepeatStoppedTrace } from "../runtime-repeat/index.ts";
 import type { AutomationStudioInvocationOptions } from "../executor/frames/index.ts";
 import { runAutomationStudioChildWithBounds } from "./child-bounds.ts";
 
@@ -79,6 +80,8 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
     // The child already failed closed on an unresolved lasting act. A whole
     // child retry or a latched run's checkpoint cannot settle that act.
     if (childUncertain) break;
+    // A real private no-progress stop is terminal before authored whole-child retries.
+    if (automationStudioRuntimeRepeatStoppedTrace(childTrace, parentOptions.invocation)) break;
     await parentOptions.commandRun?.checkpoint();
     if (childTrace.status === "succeeded" || childTrace.status === "waiting" || childTrace.status === "cancelled") break;
   }

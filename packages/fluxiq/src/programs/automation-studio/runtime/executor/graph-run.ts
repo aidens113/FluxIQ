@@ -49,6 +49,7 @@ import { automationStudioExecutedLocations } from "./executed-locations/index.ts
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepAnnounced, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../activity/index.ts";
 import { automationStudioReferenceNow } from "../reference-now/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP, automationStudioRuntimeRepeatGuard, automationStudioRuntimeRepeatStoppedTrace, automationStudioRuntimeRepeatTraceProvenance, type AutomationStudioRuntimeRepeatSample } from "../runtime-repeat/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -181,6 +182,7 @@ async function runGraphToTrace(
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const withholding = automationStudioTraceWithholding();
   const runState = automationStudioRunState(options);
+  const repeatTraceProvenance = automationStudioRuntimeRepeatTraceProvenance.frame(options.invocation);
   if (seed) seedRunState(runState, seed);
   // Every run input is run-time data of unknown sensitivity whether or not a
   // binding reads it, and a node may copy one into an output under another key.
@@ -189,7 +191,7 @@ async function runGraphToTrace(
   recordDeclaredStateBindings(flow, options, withholding);
   // What lifecycle dispatch keeps for this frame's trace: handler bodies' attempts, and the run's records at its root.
   const lifecycle = automationStudioStepLifecycleFrame();
-  const start = () => executeAutomationStudioGraph(flow, options, startedAt, withholding, runState, lifecycle, seed);
+  const start = () => executeAutomationStudioGraph(flow, options, startedAt, withholding, runState, lifecycle, repeatTraceProvenance, seed);
   const running = options.commandRun ? options.commandRun.own(start) : start();
   const trace = await running;
   const executed = automationStudioTraceInFrame(options.referenceNow !== undefined && options.referenceNow !== trace.startedAt ? { ...trace, referenceNow: options.referenceNow } : trace, options.invocation);
@@ -213,6 +215,8 @@ async function runGraphToTrace(
   const defended = defence || pace ? { ...executed, ...(defence ? { defence } : {}), ...(pace ? { pace } : {}) } : executed;
   const withheld = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(automationStudioTraceWithSharedInputs(defended, options.inputs ?? {})), options.inputs ?? {}));
   const saved = automationStudioTraceWithLifecycle(withheld, lifecycle, options.invocation);
+  repeatTraceProvenance.copy(trace, defended);
+  repeatTraceProvenance.copy(trace, saved);
   withheldBySavedTrace.set(saved, withholding.values());
   capturedBySavedTrace.set(saved, runState.records.captured());
   // A step's page address the saved trace withheld, read back by a trial act alone (`./executed-locations/`, t738).
@@ -298,6 +302,7 @@ async function executeAutomationStudioGraph(
   withholding: AutomationStudioTraceWithholding,
   runState: AutomationStudioRunState,
   lifecycle: AutomationStudioStepLifecycleFrame,
+  repeatTraceProvenance: ReturnType<typeof automationStudioRuntimeRepeatTraceProvenance.frame>,
   seed?: AutomationStudioGraphRunSeed
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const now = options.now ?? Date.now;
@@ -342,6 +347,7 @@ async function executeAutomationStudioGraph(
     nextAttemptNumber: () => (options.priorAttemptCount ?? 0) + attempts.length + 1,
     stoppedAt: (nodeId, message) => ({ status: "succeeded", startedAt, finishedAt: now(), currentNodeId: nodeId, attempts, values, effects, regionTransitions, stopReason: "stopped_at_node", message }),
     lifecycle,
+    runtimeRepeat: automationStudioRuntimeRepeatGuard(),
     maxSteps: seed ? seed.maxSteps : Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, Math.max(1, options.maxSteps ?? 250)),
     step: seed?.stepsTaken ?? 0,
     // Reset the moment the run moves to a different node, so a node reached
@@ -390,12 +396,14 @@ async function executeAutomationStudioGraph(
     const regionId = options.regionRuntime?.nodeRegionIds[currentNode.id] ?? options.nodeRegionIds?.[currentNode.id];
     const region = options.regionRuntime?.regions.find((candidate) => candidate.id === regionId);
     let route = resumedRoute;
+    let repeatSample: AutomationStudioRuntimeRepeatSample | undefined;
     resumedRoute = undefined;
     if (route === undefined) {
       // The region's checks, the arrival count, the node's pace and its readiness gate (`step-loop/arrival.ts`).
       const arrived = await automationStudioStepArrival(ctx, currentNode, regionId, region);
       if (arrived.kind === "return") return arrived.trace;
       if (arrived.kind === "next") {
+        ctx.runtimeRepeat.barrier();
         currentNode = arrived.node;
         continue;
       }
@@ -404,6 +412,7 @@ async function executeAutomationStudioGraph(
         const completed = await automationStudioStepAlreadyDone(ctx, currentNode, regionId, ctx.lifecycle.pendingAct);
         if (completed?.kind === "return") return completed.trace;
         if (completed?.kind === "next") {
+          ctx.runtimeRepeat.barrier();
           currentNode = completed.node;
           continue;
         }
@@ -418,6 +427,7 @@ async function executeAutomationStudioGraph(
       const cleared: AutomationStudioStepLifecycleOutcome | undefined = notShown ? (await automationStudioStepRetryBeforeRouting(ctx, { node, attempt: notShown, attemptIndex: undefined, retryPolicy }))?.outcome : undefined;
       if (cleared?.kind === "return") return cleared.trace;
       if (cleared?.kind === "route") {
+        ctx.runtimeRepeat.barrier();
         currentNode = cleared.node;
         continue;
       }
@@ -426,13 +436,16 @@ async function executeAutomationStudioGraph(
       if (!gone && (!notShown || routing?.kind === "none")) runState.pace.started(node, now());
       // A stale target found again from its source is laid over its binding for this node's remaining attempts.
       const nodeValues = ctx.arrival.overlay ? { ...values, ...ctx.arrival.overlay } : values;
+      if (ctx.pendingRetry || reacquired || lifecycle.pending || notShown || gone || (readiness?.checkedConditionCount ?? 0) > 0) ctx.runtimeRepeat.barrier();
+      const repeatFlow = ctx.flow;
+      repeatSample = ctx.runtimeRepeat.sample(repeatFlow, node, nodeValues, runState, options);
       // A timeout belongs to this logical pass, even if its timer fires before
       // the attempt reaches its first checkpoint.
       runState.dispatchedActions.delete(node.id);
       const executed = gone ?? (notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
-        ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay)
+        ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample)
         : await executeWithRegionTimeout(
-          (signal) => executeAutomationStudioNode(ctx.flow, node, nodeValues, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay),
+          (signal) => executeAutomationStudioNode(ctx.flow, node, nodeValues, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample),
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
@@ -441,6 +454,7 @@ async function executeAutomationStudioGraph(
       // A required command whose outcome stayed unknown latched the run, so no checkpoint is asked before it stops (`step-loop/uncertain-stop.ts`).
       const outcomeUnknown = executed.failure?.code === AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN.code;
       const childOutcomeUnknown = executed.childTrace?.status === "failed" && executed.childTrace.failure?.code === "run.outcome_uncertain";
+      const childRepeatStopped = executed.childTrace !== undefined && automationStudioRuntimeRepeatStoppedTrace(executed.childTrace, options.invocation);
       if (!outcomeUnknown && !childOutcomeUnknown) await options.commandRun?.checkpoint();
       // What the ladder and the recorded state contributed is stamped once, here,
       // so every attempt carries it however the node was executed.
@@ -471,10 +485,17 @@ async function executeAutomationStudioGraph(
       attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
       if (outcomeUnknown) return await automationStudioStepRequiredOutcomeStop(ctx, node, attemptIndex);
       if (childOutcomeUnknown) return automationStudioStepChildOutcomeStop(ctx, node, attemptIndex);
+      // Public failure fields cannot mint this disposition: only the private sample can.
+      if (repeatSample.stopped() || childRepeatStopped) {
+        const stopped = { ...automationStudioEndedTrace(ctx, "failed", node.id, AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP.message), failure: { ...AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP.failure } };
+        repeatTraceProvenance.remember(stopped);
+        return stopped;
+      }
       // A child that handed the run back to a checkpoint: here, or in a frame that called this one (`step-loop/checkpoint-route.ts`).
       const handedBack = automationStudioStepCheckpointRoute(ctx, node, attemptIndex);
       if (handedBack?.kind === "return") return handedBack.trace;
       if (handedBack?.kind === "next") {
+        ctx.runtimeRepeat.barrier();
         currentNode = handedBack.node;
         continue;
       }
@@ -490,12 +511,17 @@ async function executeAutomationStudioGraph(
       const asked = await automationStudioStepAskOrPark(ctx, { node, attempt, attemptIndex, stepIndex: step, remainingMs });
       if (asked.kind === "return") return asked.trace;
       let routeOverride = asked.routeOverride;
+      if (routeOverride !== undefined) ctx.runtimeRepeat.barrier();
       // A step that cannot run continues where the page is (`step-loop/state-route.ts`); an item found gone goes straight to its failure path.
       if (routeOverride === undefined && automationStudioCouldNotRun(attempt) && !gone) {
         const routed = await automationStudioStepStateRoute(ctx, { node, attempt, attemptIndex, regionId, routing, retryPolicy });
         if (routed.kind === "return") return routed.trace;
-        if (routed.kind === "retry") continue;
+        if (routed.kind === "retry") {
+          ctx.runtimeRepeat.barrier();
+          continue;
+        }
         if (routed.kind === "next") {
+          ctx.runtimeRepeat.barrier();
           currentNode = routed.node;
           continue;
         }
@@ -504,8 +530,12 @@ async function executeAutomationStudioGraph(
       if (routeOverride === undefined && attempt.status === "failed") {
         const recovered = await automationStudioStepFailedAttempt(ctx, { node, attempt, attemptIndex, regionId, retryPolicy });
         if (recovered.kind === "return") return recovered.trace;
-        if (recovered.kind === "retry") continue;
+        if (recovered.kind === "retry") {
+          ctx.runtimeRepeat.barrier();
+          continue;
+        }
         if (recovered.kind === "next") {
+          ctx.runtimeRepeat.barrier();
           currentNode = recovered.node;
           continue;
         }
@@ -521,10 +551,14 @@ async function executeAutomationStudioGraph(
         const onward = await automationStudioStepBeforeNext(ctx, node, attemptIndex);
         if (onward?.kind === "return") return onward.trace;
         if (onward?.kind === "next") {
+          ctx.runtimeRepeat.barrier();
           currentNode = onward.node;
           continue;
         }
       }
+      const settled = attempts[attemptIndex]!;
+      if (settled.lifecycle || settled.skipped || settled.stateRouting || settled.repair || ctx.flow !== repeatFlow) ctx.runtimeRepeat.barrier();
+      else repeatSample.settle();
     }
 
     // The frame's graph as it runs now: an in-run repair may have overlaid a fix on it (`step-loop/incident-repair.ts`).

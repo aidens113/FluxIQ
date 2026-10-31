@@ -8,6 +8,7 @@ import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refre
 import type { automationStudioStateRouteGuard } from "../state-routing/index.ts";
 import type { AutomationStudioTraceWithholding } from "../trace-withholding.ts";
 import type { AutomationStudioStepLifecycleFrame } from "./lifecycle-frame.ts";
+import type { automationStudioRuntimeRepeatGuard } from "../../runtime-repeat/index.ts";
 
 /**
  * What one graph run's step loop (`graph-run.ts`) carries from step to step,
@@ -46,6 +47,8 @@ export type AutomationStudioStepLoopContext = {
   readonly stoppedAt: (nodeId: string, message: string) => AutomationStudioGraphExecutionTrace;
   /** This frame's lifecycle dispatch bookkeeping (`./lifecycle-frame.ts`). */
   readonly lifecycle: AutomationStudioStepLifecycleFrame;
+  /** Private frame evidence; never spread to child options or source rereads. */
+  readonly runtimeRepeat: ReturnType<typeof automationStudioRuntimeRepeatGuard>;
   maxSteps: number;
   /** The loop's step index now, which a handler body's steps are counted from. */
   step: number;
