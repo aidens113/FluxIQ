@@ -1302,7 +1302,12 @@ trimmed (`runtime/llm/harness/run.ts`). The instruction is still read for one
 thing: a capability it asks for (to enter, choose, press, verify and so on) that
 no offered node provides is recorded in `catalogSelection.missingRequiredTerms`
 (`runtime/flow-bootstrap/plan/required-terms.ts`), and generation fails before
-provider or secret resolution.
+provider or secret resolution. Provided capabilities come from a node's id,
+label, declared tags and registered fixed/allowed output ids. Descriptions,
+parameter names, data ports, categories and trait names do not declare an
+operation. Catalog help remains visible to the model in full. From 0.15,
+catalogs that previously relied only on prose must name their operations in
+one of those existing identity fields.
 The provider independently estimates model-visible system and user message
 content as `ceil(UTF-8 bytes / 3)` plus a fixed chat-framing reserve, and rejects
 a request above either the configured input ceiling or combined input/output
