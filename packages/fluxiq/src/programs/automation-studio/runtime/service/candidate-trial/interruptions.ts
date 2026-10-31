@@ -38,6 +38,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioClearedLayerKind, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
+import { automationStudioLayerKindOf } from "../../executor/node-execution/index.ts";
 
 /** The most closed layers one step lists. */
 const MAX_INTERRUPTIONS = 4;
@@ -45,10 +46,10 @@ const MAX_INTERRUPTIONS = 4;
 /** What each kind of layer is called, as the model reads it. */
 const LAYER_WORDS: Readonly<Record<AutomationStudioClearedLayerKind, string>> = Object.freeze({
   rate_limit: "the site's notice asking the run to slow down",
-  consent: "a cookie or consent notice",
-  promotion: "a promotion",
+  overlay: "a layer covering the page",
+  notice: "a notice",
   assistant: "a chat or assistant panel",
-  dialog: "a dialog"
+  other: "a dialog"
 });
 
 /** The most of a layer's own name quoted back. */
@@ -87,7 +88,13 @@ export function automationStudioTrialInterruptions(attempts: readonly Automation
   return said;
 }
 
-/** The kind and way out of each layer the dispatches' own reports mark `runOpened: true` (header); malformed entries are skipped. */
+/**
+ * The kind and way out of each layer the dispatches' own reports mark
+ * `runOpened: true` (header); malformed entries are skipped. The raw report
+ * may still say an old kind word, so it is read in Core's generic word first
+ * (`automationStudioLayerKindOf`), the word the parsed layer it is matched
+ * against carries (t799).
+ */
 function runOpenedLayers(attempts: readonly AutomationStudioNodeAttemptTrace[]): Set<string> {
   const marked = new Set<string>();
   for (const attempt of attempts) {
@@ -97,7 +104,8 @@ function runOpenedLayers(attempts: readonly AutomationStudioNodeAttemptTrace[]):
     for (const entry of reported) {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
       const { kind, wayOut, runOpened } = entry as Readonly<Record<string, unknown>>;
-      if (runOpened === true && typeof kind === "string") marked.add(`${kind}\0${typeof wayOut === "string" ? wayOut : ""}`);
+      const generic = automationStudioLayerKindOf(kind);
+      if (runOpened === true && generic) marked.add(`${generic}\0${typeof wayOut === "string" ? wayOut : ""}`);
     }
   }
   return marked;

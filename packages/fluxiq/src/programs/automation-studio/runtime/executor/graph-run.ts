@@ -8,6 +8,7 @@ import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingT
 import { automationStudioFaultFromThrownError, automationStudioThrownErrorText } from "./defensive/index.ts";
 import { automationStudioTraceInFrame, runAutomationStudioGraphInFrame } from "./frames/index.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
+import { automationStudioPaceAfterRateLimit } from "./pacing/index.ts";
 import { automationStudioTraceWithSharedInputs } from "./node-execution/index.ts";
 import { automationStudioPersonNeededEnding } from "./person-needed.ts";
 import type { AutomationStudioCapturedRecords } from "./record-summary.ts";
@@ -490,6 +491,8 @@ async function executeAutomationStudioGraph(
       route = routeOverride ?? attempt.route ?? "success";
       // Before Next, on a verified success only, before the edge is chosen (`step-loop/before-next.ts`).
       if (routeOverride === undefined && route === "success" && attempt.status === "succeeded" && !attempt.skipped) {
+        // A slow-down notice the client closed so the step went through slows the node too (`pacing/rate-limit-pace.ts`, P6 CC8).
+        attempts[attemptIndex] = automationStudioPaceAfterRateLimit(runState.pace, node, attempts[attemptIndex]!);
         // A layer the client's defence closed on the way is learned as a handler first (`step-loop/incident-repair.ts`, t516).
         await automationStudioStepLearnInterruption(ctx, node, attemptIndex);
         const onward = await automationStudioStepBeforeNext(ctx, node, attemptIndex);

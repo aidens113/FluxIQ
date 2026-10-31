@@ -769,16 +769,20 @@ the protocol version is unchanged; a client that does not know it reads the
 row as a plain step.
 
 An `interference` recovery says the client closed layers the page put over
-itself while a step's output ran: a consent notice, a rate-limit notice, a
-promotion, an assistant, or a dialog no classifier named. Core says one row per
+itself while a step's output ran: an overlay (a consent wall, say), a rate-limit
+notice, a notice, an assistant, or a layer no classifier named (`other`). Core
+says one row per
 node attempt that closed any, from the attempt's `clearedLayers`
 (`runtime/activity/step/interference.ts`), with `outcome: "succeeded"` and no
 `event` or `targetId`. Its `subject` is Core's own words by layer kind ("Closed
-a notice the page put in the way", "Closed a promotion the page put in the
-way"), or "Closed N notices the page put in the way" for several; it never
+a notice the page put in the way"), or "Closed N notices the page put in the
+way" for several; it never
 carries the dismiss control's words or any other page text, which stay on the
 attempt trace. The kind is additive like the field: a client that does not
-know it reads the row as a plain step.
+know it reads the row as a plain step. The `clear_interference` rung (a press of
+an attempt's reported `obstruction`) says the same kind of row about the failed
+step, with `outcome: "failed"` and "Tried to close ..." wording when the press
+did not work; when the rung retries the step, no failed card is shown first.
 
 Two activity fields say how a unit of work stopped or holds (t376):
 

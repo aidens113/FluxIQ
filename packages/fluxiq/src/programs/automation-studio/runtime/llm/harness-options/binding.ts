@@ -506,8 +506,22 @@ export type AutomationStudioPlanHandleReach = "view_history";
  * captures (from 1, in the order exploration took them), and the location that
  * view reported. A record of where a candidate's target was learned, never
  * authority to act.
+ *
+ * `control` (P6, client contract CC9, t799): what that view showed of the
+ * control itself, when the domain could tell it switches between states.
+ * Absent, the control is taken as stateless, as before.
  */
-export type AutomationStudioPlanHandleView = { handle: string; view: number; location: string };
+export type AutomationStudioPlanHandleView = { handle: string; view: number; location: string; control?: AutomationStudioPlanControlState };
+
+/**
+ * A stateful control as one view showed it (CC9). Every field is the domain's
+ * and opaque to Core, which compares and passes them back and never reads
+ * inside: `state`, a short word for the state it showed; `ensures`, the
+ * domain's own toggle signature a press of it would leave from that state, in
+ * the form its press node takes as `ensureState`; `idempotentWith`, the node
+ * that sets the asked state itself, where the domain's library has one.
+ */
+export type AutomationStudioPlanControlState = { stateful: true; state?: string; ensures?: JsonObject; idempotentWith?: string };
 
 /** A domain answer about one plan node. May be awaited: asking permission is. */
 export type AutomationStudioPlanNodeResolution =

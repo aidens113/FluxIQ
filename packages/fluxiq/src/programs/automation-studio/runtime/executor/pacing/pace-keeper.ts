@@ -27,6 +27,13 @@
 // run's clock as `before` was handed it, which errs towards a longer pace. No
 // limit a page states is read: no record reaching Core carries one.
 //
+// **A rate limit that stated no wait still slows the node (P6, CC8).** A page
+// that refuses an act as too fast and says nothing about how long gives nothing
+// to measure, so `learnUnhinted` raises the pace by half again, from a floor of
+// a second, up to the same ceiling, and never below an authored pace. A rate
+// limit that did state a wait (`retryAfterMs`, Retry-After) goes through
+// `learn`, as before.
+//
 // The pace holds a node's *arrivals*, not the retries of one arrival: those
 // wait under the defensive policy's own bound, which already honours the hint
 // (`../graph-run.ts`), and pacing them too would wait the same hint twice.
@@ -48,6 +55,9 @@ export const AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS = 60_000;
 /** How much a further hinted failure grows a pace that was already in force. */
 const GROWTH = 1.5;
 
+/** What a rate limit that stated no wait raises a node with no pace to: the site gave nothing to measure, so the run starts at a second and grows by half. */
+const UNHINTED_FLOOR_MS = 1_000;
+
 /** The most starts of one node kept to infer a limit from; a limit that needs more is answered by growth. */
 const MAX_STARTS_KEPT = 32;
 
@@ -64,6 +74,8 @@ export type AutomationStudioPaceKeeper = {
   started(node: AutomationStudioFlowNode, at: number): void;
   /** Raises the node's pace after its latest start was refused at `refusedAt` with `hintMs` (header); answers the pace now in force when it rose. */
   learn(node: AutomationStudioFlowNode, hintMs: number, refusedAt?: number): number | undefined;
+  /** Raises the node's pace after a rate limit that stated no wait (header, P6 CC8); answers the pace now in force when it rose. */
+  learnUnhinted(node: AutomationStudioFlowNode, at?: number): number | undefined;
   /** Every node held to a pace, for the trace; nothing when none was. */
   summary(): AutomationStudioNodePace[] | undefined;
 };
@@ -111,6 +123,17 @@ export function automationStudioPaceKeeper(): AutomationStudioPaceKeeper {
       // A pace already in force was not enough, so it grows; the hint alone stands only when no start explains the refusal (header).
       const grown = Math.ceil(state.paceMs * GROWTH);
       const next = Math.max(state.authoredMs ?? 0, Math.min(AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, Math.max(sustainable ?? Math.round(hintMs), grown)));
+      if (next <= state.paceMs) return undefined;
+      state.paceMs = next;
+      state.raisedCount += 1;
+      return next;
+    },
+    learnUnhinted(node) {
+      const state = stateOf(node);
+      // The start refused is the node's latest; the site let the others through (as `learn` notes it).
+      const latest = state.starts.at(-1);
+      if (latest) latest.refused = true;
+      const next = Math.max(state.authoredMs ?? 0, Math.min(AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, Math.max(UNHINTED_FLOOR_MS, Math.ceil(state.paceMs * GROWTH))));
       if (next <= state.paceMs) return undefined;
       state.paceMs = next;
       state.raisedCount += 1;
