@@ -1,13 +1,22 @@
 import type { AutomationStudioLlmEvidenceLoopInput } from "../loop-configuration.ts";
-import type { AutomationStudioLlmRerunProvenance, AutomationStudioLlmRerunRecord } from "../rerun-provenance/index.ts";
+import type { AutomationStudioLlmRerunOutcome, AutomationStudioLlmRerunProvenance, AutomationStudioLlmRerunRecord } from "../rerun-provenance/index.ts";
 
 /** Private execution transport; public arguments remain the original model request. */
-export function automationStudioLlmEvidenceBatchMember(provenance: AutomationStudioLlmRerunProvenance, record: AutomationStudioLlmRerunRecord, admitted: () => boolean) {
+export function automationStudioLlmEvidenceBatchMember(provenance: AutomationStudioLlmRerunProvenance, record: AutomationStudioLlmRerunRecord, admitted: () => boolean): {
+  executeTool: AutomationStudioLlmEvidenceLoopInput["executeTool"];
+  readonly main: AutomationStudioLlmRerunOutcome["main"];
+  readonly dispatched: boolean;
+  readonly outcome: AutomationStudioLlmRerunOutcome | undefined;
+  readonly result: unknown;
+  readonly failure: unknown;
+  readonly stopped: boolean;
+  stop(): void;
+} {
   let main: "unacted" | "unproven" | "receipt" = "unacted";
   let stopped = false;
   let result: unknown;
   let failure: unknown;
-  let outcome: Awaited<ReturnType<AutomationStudioLlmRerunProvenance["execute"]>> | undefined;
+  let outcome: AutomationStudioLlmRerunOutcome | undefined;
   const executeTool: AutomationStudioLlmEvidenceLoopInput["executeTool"] = async (request) => {
     if (request.signal?.aborted || !admitted()) {
       stopped = true;
