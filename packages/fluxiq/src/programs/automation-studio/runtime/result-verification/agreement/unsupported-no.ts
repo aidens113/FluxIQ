@@ -1,12 +1,15 @@
 import type { AutomationStudioResultEarlierAdvice, AutomationStudioResultRepairDirective, AutomationStudioResultVerdict, AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioResultRefutedReading, type AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
+import { automationStudioResultRefutedReading, automationStudioResultRefutedRowsRecheck, type AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "../unsettled/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict/index.ts";
-import { automationStudioResultDefectsLocated } from "../located-defects/index.ts";
+import { automationStudioResultDefectsLocated, type AutomationStudioResultRefutedDefect } from "../located-defects/index.ts";
 
 type Verification = AutomationStudioResultVerification;
 type Reading = NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
+type RefutedRow = NonNullable<Verification["refutedRows"]>[number];
+/** What Core's record says of one no: whether it names a defect Core finds, Core's words for each it does not, and each defect Core's record of its row refutes, `wholly` where that is every defect, at least one (t810). */
+type Support = { supported: boolean; findings: string[]; refuted: AutomationStudioResultRefutedDefect[]; wholly: boolean };
 
 /** Core's own findings that locate a defect themselves: rows a yes passed over, and rows a text condition left out that state a kept number (`../verdict/`). */
 const CORE_LOCATED: ReadonlySet<string> = new Set([
@@ -57,6 +60,24 @@ const CORE_LOCATED: ReadonlySet<string> = new Set([
  * repair as the unconfirmed reading, and the repair dropped the right
  * condition. The unsure outcome's `unconfirmedReading` holds only what that no
  * read the request to ask (`expected`); Core's findings stay in `unsupportedNo`.
+ *
+ * **A no whose every defect row Core's record of that row refutes (t810,
+ * framework plan P5b).** Run `run-mvud43a2-445c7f17`: a correct Flow, and
+ * every judge called left-out rows missing that were items marked outside the
+ * person's set, or a row given a value its own cell does not hold, or a
+ * claim about a kept row naming a row the result never held (`not_kept`,
+ * `../located-defects/row-refuted.ts`). Asked the generic recheck below, they
+ * repeated it, and the outcome was unsure. Such a no -- naming at least one
+ * defect, every one refuted, none merely not found -- is asked once more with
+ * Core's evidence for each row, in the reverse of its order, and the converse
+ * question (`../refuted-no/refuted-rows-recheck.ts`), never the generic one.
+ * Then (`byRowRecord`): where every call's latest answer is a no every defect
+ * of which Core's record refutes, or a yes citing no cell Core refutes, the
+ * result answers the request -- the yes's own outcome where one came, else
+ * `noRefutedByRecord` -- with the rows recorded (`refutedRows`); a re-ask yes
+ * whose citation Core refutes is unsure (`yesCitationRefuted`); a re-ask no
+ * naming a defect Core finds, or one that did not come back usable, is weighed
+ * as every other re-ask is, below. Nothing of the refuted nos is carried on.
  */
 export async function automationStudioResultVerificationReaskUnsupportedNo(input: {
   settled: Verification;
@@ -80,14 +101,22 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   const weigh = (verification: Verification) => supportOf(verification, record, summary, input.requestText);
   const before = new Map(nos.map((call) => [call, { verification: calls[call - 1]!, ...weigh(calls[call - 1]!) }]));
   if ([...before.values()].some((one) => one.supported)) return settled;
+  // The rows Core's record refutes, of every no weighed here (t810), and the calls asked with them.
+  const refutedRows: RefutedRow[] = [];
+  const rowAsked = new Set<1 | 2>();
+  const reasked = new Map<1 | 2, Verification>();
   const asked: AutomationStudioResultVerdict[] = [];
   const notTaken = new Map<1 | 2, string[]>();
   // How many defects each refused no's re-ask listed, or `undefined` where it gave no answer that could be read: the reason's words (header, t790).
   const named = new Map<1 | 2, number | undefined>();
   for (const call of nos) {
     const was = before.get(call)!;
-    const again = await input.ask(recheckWords(was.findings, summary.earlierAdvice), call);
+    recordRows(refutedRows, call, was.refuted);
+    // A no whose every defect row Core's record refutes is asked with that record and the converse (header, t810).
+    if (was.wholly) rowAsked.add(call);
+    const again = await input.ask(was.wholly ? rowsRecheck(was.refuted) : recheckWords(was.findings, summary.earlierAdvice), call);
     asked.push(again.verdict);
+    reasked.set(call, again);
     if (again.basis !== "model") {
       notTaken.set(call, was.findings);
       named.set(call, undefined);
@@ -95,23 +124,29 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
     }
     calls[call - 1] = again;
     const now = modelNo(again) ? weigh(again) : undefined;
+    if (now) recordRows(refutedRows, call, now.refuted);
     if (now && !now.supported) {
       notTaken.set(call, now.findings);
       named.set(call, again.repair?.judgement?.defects?.length ?? 0);
     }
   }
   const verdicts = [...(settled.verdicts ?? []), ...asked];
+  // Where a no was asked with Core's record of its rows, what every call's latest answer comes to (header, t810).
+  const byRecord = rowAsked.size ? byRowRecord({ settled, calls, reasked, rowAsked, verdicts, refutedRows, wholly: (verification) => weigh(verification).wholly }) : undefined;
+  if (byRecord) return byRecord;
+  // Otherwise weighed as below, the rows Core refuted kept on the outcome wherever a no was asked with them (t810 follow-up 2).
+  const rowsKept = rowAsked.size && refutedRows.length ? { refutedRows } : {};
   if (!notTaken.size) {
     const again = input.agree(calls[0], calls[1]);
     // A no asked again that answered yes leaves its concern as that yes's advice, as a split's no does (`./reask-split-no.ts`).
     const concern = again.verdict === "answers" ? nos.map((call) => concernOf(before.get(call)!.verification)).find(Boolean) : undefined;
-    return { ...again, verdicts, calls: verdicts.length, ...(concern ? { answeredReading: { ...again.answeredReading, advice: concern } } : {}) };
+    return { ...again, verdicts, calls: verdicts.length, ...(concern ? { answeredReading: { ...again.answeredReading, advice: concern } } : {}), ...rowsKept };
   }
   const unsupportedNo = { calls: [...notTaken.keys()].sort(), findings: [...notTaken].flatMap(([call, findings]) => findings.map((finding) => `Judge call ${call}: ${finding}`)), reasked: true as const };
   const taken = ([1, 2] as const).filter((call) => !notTaken.has(call)).map((call) => calls[call - 1]!);
   // One no that names a defect Core finds keeps the verdict no, weighed as the agreement weighs a no both calls gave.
   const standing = taken.find(modelNo);
-  if (standing) return { ...input.agree(standing, standing), verdicts, calls: verdicts.length, unsupportedNo };
+  if (standing) return { ...input.agree(standing, standing), verdicts, calls: verdicts.length, unsupportedNo, ...rowsKept };
   const yes = taken.find(modelYes);
   // A lone yes beside nos Core refused every one of is asked once more to confirm; a second yes stands (header, t771).
   // Every call Core takes is a yes and every other a refused no: a split, or a double no whose re-asks split (t790);
@@ -120,7 +155,7 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
     const call = [...notTaken.keys()][0]!;
     const confirming = await input.ask(CONFIRM_LONE_YES, call);
     verdicts.push(confirming.verdict);
-    if (modelYes(confirming)) return { ...input.agree(yes, confirming), verdicts, calls: verdicts.length, unsupportedNo };
+    if (modelYes(confirming)) return { ...input.agree(yes, confirming), verdicts, calls: verdicts.length, unsupportedNo, ...rowsKept };
   }
   const basis = yes ? "model_disagreed" as const : "model_unconfirmed" as const;
   // Nothing of a no Core could not ground is carried on: no reading, no advice (header, t771).
@@ -140,7 +175,8 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
     ...(reading ? { unconfirmedReading: reading } : {}),
     ...(yes?.answeredReading ? { answeredReading: { ...yes.answeredReading } } : {}),
     // Core's record of the judged build test, for the gate that keeps the build's trials (`./standing-record.ts`); never model-facing.
-    ...(settled.standingNo ? { standingNo: settled.standingNo } : {})
+    ...(settled.standingNo ? { standingNo: settled.standingNo } : {}),
+    ...rowsKept
   };
 }
 
@@ -157,14 +193,78 @@ function modelYes(verification: Verification): boolean {
  * words for each it does not. A no Core made itself, refusing a yes over rows
  * it found, stands on Core's own finding.
  */
-function supportOf(verification: Verification, record: AutomationStudioResultNoRecord, summary: AutomationStudioRunResultSummary, requestText: string | undefined): { supported: boolean; findings: string[] } {
-  if ((verification.repair?.findings ?? []).some((finding) => CORE_LOCATED.has(finding.code))) return { supported: true, findings: [] };
+function supportOf(verification: Verification, record: AutomationStudioResultNoRecord, summary: AutomationStudioRunResultSummary, requestText: string | undefined): Support {
+  if ((verification.repair?.findings ?? []).some((finding) => CORE_LOCATED.has(finding.code))) return { supported: true, findings: [], refuted: [], wholly: false };
   // Persisted legacy diagnoses may omit this optional list and keep the existing prose-weighing rules. Current negative replies cannot reach here without a list: the task-specific harness decoder rejects omission.
   const defects = verification.repair?.judgement?.defects;
-  if (defects === undefined) return { supported: true, findings: [] };
-  if (!defects.length) return { supported: false, findings: ["It listed no defect."] };
+  if (defects === undefined) return { supported: true, findings: [], refuted: [], wholly: false };
+  if (!defects.length) return { supported: false, findings: ["It listed no defect."], refuted: [], wholly: false };
   const found = automationStudioResultDefectsLocated(defects, { record, summary, requestText });
-  return { supported: found.located.length > 0, findings: found.findings };
+  const refuted = found.refuted ?? [];
+  return { supported: found.located.length > 0, findings: found.findings, refuted, wholly: refuted.length === defects.length };
+}
+
+/**
+ * What a check comes to where a no was asked once more with Core's record of
+ * its rows (header, t810), or nothing where the rule above weighs it: a re-ask
+ * that did not come back usable, or a call whose latest answer is neither a
+ * yes nor a no every defect of which Core's record refutes.
+ */
+function byRowRecord(input: {
+  settled: Verification;
+  calls: readonly [Verification, Verification];
+  reasked: ReadonlyMap<1 | 2, Verification>;
+  rowAsked: ReadonlySet<1 | 2>;
+  verdicts: AutomationStudioResultVerdict[];
+  refutedRows: RefutedRow[];
+  wholly: (verification: Verification) => boolean;
+}): Verification | undefined {
+  const { settled, calls, reasked, verdicts, refutedRows } = input;
+  const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
+  if ([...reasked.values()].some((again) => again.basis !== "model")) return undefined;
+  const citedWrongly = [...reasked.values()].find(citationRefuted);
+  if (citedWrongly) {
+    return {
+      schemaVersion: settled.schemaVersion, verdict: "unsure", basis: "model_unconfirmed", code: codes.yesCitationRefuted,
+      reason: `This result was checked with the same evidence, and every check that answered that it does not do what was asked named only rows Core's own record of each row contradicts. Asked once more with that record named, a check answered that it does, but cited a cell Core's record of the result does not hold, so its yes is not taken. ${UNSETTLED.model_unconfirmed.run}`,
+      observation: settled.observation, verdicts, calls: verdicts.length, refutedRows,
+      ...(citedWrongly.yesCitations ? { yesCitations: citedWrongly.yesCitations } : {})
+    };
+  }
+  // A generic unsupported-no question cannot substitute for the mandatory
+  // evidence prompt when its reply introduces refuted rows for the first time.
+  if (!([1, 2] as const).every((call) => {
+    const latest = calls[call - 1]!;
+    return modelYes(latest) || (modelNo(latest) && input.rowAsked.has(call) && input.wholly(latest));
+  })) return undefined;
+  // The yes a call gave, a re-asked one first: the outcome is that yes's, with the rows Core refuted beside it.
+  const yes = [...reasked.values(), ...calls].find(modelYes);
+  if (yes) return { ...yes, verdicts, calls: verdicts.length, refutedRows };
+  return {
+    schemaVersion: settled.schemaVersion, verdict: "answers", basis: "model", code: codes.noRefutedByRecord,
+    reason: "This result was checked with the same evidence, and every check answered that it does not do what was asked, naming only rows Core's own record of each row contradicts: an item marked as outside the person's set, a row whose own cell does not hold the value claimed, or a row the result does not hold called kept. Asked once more with that record named, each named only such rows again, so no answer that it does not do what was asked stands, and the result is taken to answer the request.",
+    observation: settled.observation, verdicts, calls: verdicts.length, refutedRows
+  };
+}
+
+/** Whether a yes cited a cell Core's record of the result does not hold (`../cited-yes/`, t810): held unsure there, or a yes still carrying a refuted citation. */
+function citationRefuted(verification: Verification): boolean {
+  return verification.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.yesCitationRefuted || (verification.verdict === "answers" && (verification.yesCitations?.refuted.length ?? 0) > 0);
+}
+
+/** Each refuted defect of one call's no, as the verification records it, once (header, t810). */
+function recordRows(rows: RefutedRow[], call: 1 | 2, refuted: readonly AutomationStudioResultRefutedDefect[]): void {
+  for (const one of refuted) {
+    const kind = one.defect.kind;
+    if (kind !== "asked_missing" && kind !== "kept_not_asked" && kind !== "wrong_value") continue;
+    const row = { call, row: one.defect.row, kind, evidence: one.evidence, quote: one.quote };
+    if (!rows.some((known) => known.call === call && known.row === row.row && known.kind === kind && known.evidence === row.evidence)) rows.push(row);
+  }
+}
+
+/** The recheck of a no whose every defect row Core's record refutes (header, t810): Core's evidence for each row, quoted. */
+function rowsRecheck(refuted: readonly AutomationStudioResultRefutedDefect[]): string {
+  return automationStudioResultRefutedRowsRecheck(refuted.map((one) => ({ row: one.defect.row, evidence: one.evidence, quote: one.quote, ...(one.defect.value !== undefined ? { value: one.defect.value } : {}) })));
 }
 
 /**

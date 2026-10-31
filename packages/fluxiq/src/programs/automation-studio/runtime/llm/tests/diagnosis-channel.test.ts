@@ -74,7 +74,7 @@ describe("complete quantity and cohort guidance in the actual verification reque
     expect(user.outputSchema.properties.diagnosis.additionalProperties).toBe(false);
     // A verification's diagnosis also names each defect its no rests on (t752); no other diagnosis is offered it.
     expect(Object.keys(user.outputSchema.properties.diagnosis.properties)).toEqual([
-      "expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "explorationNeeded", "patchNeeded"
+      "expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "checked", "explorationNeeded", "patchNeeded"
     ]);
     expect(answered.response.diagnosis.answersRequest).toBe("unknown");
   });

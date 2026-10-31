@@ -62,8 +62,30 @@ export type AutomationStudioResultStandingNoCall = {
   drops?: string[] | undefined;
 };
 
+/**
+ * One defect Core located in its own record (P5b), in the shape a judge's
+ * located defect has: the kind and row as Core located them, and nothing of the
+ * judge's prose. What a later judge is told of an earlier trial
+ * (`./earlier-advice.ts`) is made of these alone.
+ */
+export type AutomationStudioResultStandingNoLocated = {
+  kind: "kept_not_asked" | "asked_missing" | "wrong_value" | "act_missing" | "act_wrong" | "other";
+  row: string;
+  column?: string | undefined;
+  value?: string | undefined;
+  step?: string | undefined;
+};
+
 /** Core's record of one build test that was judged no (header). */
 export type AutomationStudioResultStandingNoRecord = {
+  /**
+   * `core` where the no was Core's own, with no judge asked (a computed fact
+   * that fails, `../computed-facts/computed-no.ts`); absent for a judge's no.
+   * Marks whose finding the record is.
+   */
+  source?: "core" | undefined;
+  /** The defects the no named that Core located in its record, as Core located them (P5b); absent where none. */
+  located?: AutomationStudioResultStandingNoLocated[] | undefined;
   /** The labels of the rows the judged result stored. */
   stored: string[];
   /** True when `stored` is every row the result stored: no record set cut short, every one's rows read back whole. */

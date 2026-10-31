@@ -5,6 +5,7 @@ import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { automationStudioFlowBootstrapOutputSchema } from "../../flow-bootstrap/plan/index.ts";
 import { automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-bootstrap/plan/index.ts";
 import { AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA } from "../verification-defects/index.ts";
+import { AUTOMATION_STUDIO_LLM_VERIFICATION_CHECKED_SCHEMA } from "../verification-checked/index.ts";
 
 /** The longest summary an evidence decision may answer with. */
 export const AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH = 240;
@@ -55,11 +56,12 @@ const DIAGNOSIS_OUTPUT_SCHEMA = {
 // right after the verdict: each defect of the result a no rests on, so Core can
 // find it in its own record rather than read it out of prose. No other
 // diagnosis is offered it.
+// `checked` optionally cites stored cells; Core verifies the citations before a yes stands.
 const { explorationNeeded, patchNeeded, ...JUDGED_FIELDS } = DIAGNOSIS_FIELDS_SCHEMA.properties;
 const VERIFICATION_FIELDS_SCHEMA = {
   ...DIAGNOSIS_FIELDS_SCHEMA,
   required: ["answersRequest", "defects"],
-  properties: { ...JUDGED_FIELDS, defects: AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA, explorationNeeded, patchNeeded }
+  properties: { ...JUDGED_FIELDS, defects: AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA, checked: AUTOMATION_STUDIO_LLM_VERIFICATION_CHECKED_SCHEMA, explorationNeeded, patchNeeded }
 } as const;
 const VERIFICATION_OUTPUT_SCHEMA = {
   type: "object",

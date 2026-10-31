@@ -95,6 +95,21 @@
 // latest usable answer read as the agreement left it (`current`); a no still
 // naming none is never a no.
 //
+// **A no naming only rows Core's record of each refutes is asked conversely,
+// and a no still naming only such rows does not stand (t810, framework plan
+// P5b).** Run `run-mvud43a2-445c7f17`: a Flow stored exactly the rows asked
+// for, and every judge called left-out rows missing -- items the client marked
+// outside the person's set, and a row given a value its own cell does not hold
+// (`./located-defects/row-refuted.ts`). In that same last re-ask, such a no is
+// asked with Core's evidence for each row, the rows reversed and the converse
+// question (`./refuted-no/refuted-rows-recheck.ts`), through this
+// verification's own `ask`; where every call's latest answer is then a no
+// Core's record wholly refutes, or a yes citing no cell Core refutes, the
+// result answers (`noRefutedByRecord` where no yes came), with the rows
+// recorded (`refutedRows`). A computed fact that fails is still a Core no
+// before any judge, and the requested-output hold (`held`) still has the last
+// word.
+//
 // **Core's own counts are asked first and cost nothing.** A run whose every row
 // was refused, or whose rows lack a value their own schema requires, is settled
 // before a provider is even resolved.
