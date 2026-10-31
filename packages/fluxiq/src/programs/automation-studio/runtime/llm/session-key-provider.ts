@@ -89,7 +89,10 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     const caller = input.caller;
     if (!caller) return undefined;
     const selectedModel = input.modelId ?? (typeof input.metadata?.llmModel === "string" ? input.metadata.llmModel : undefined);
-    const selectedProvider = input.providerId ?? (typeof input.metadata?.llmProvider === "string" ? input.metadata.llmProvider : undefined);
+    // `host` is the persisted legacy choice for an unspecified provider, not a provider id.
+    const explicitProvider = input.providerId === "host" ? undefined : input.providerId;
+    const metadataProvider = typeof input.metadata?.llmProvider === "string" && input.metadata.llmProvider !== "host" ? input.metadata.llmProvider : undefined;
+    const selectedProvider = explicitProvider ?? metadataProvider;
     assertAutomationStudioLlmModelBinding(selectedProvider, selectedModel);
     const providerId = selectedProvider as "anthropic" | "deepseek" | undefined ?? automationStudioLlmModelProvider(selectedModel ?? AUTOMATION_STUDIO_LLM_DEFAULT_MODEL)!;
     const model = selectedModel ?? automationStudioLlmProviderDefaultModel(providerId);

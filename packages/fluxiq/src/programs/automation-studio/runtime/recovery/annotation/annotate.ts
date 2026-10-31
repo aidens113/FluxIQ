@@ -186,16 +186,17 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
       }
     };
   }
-  const providerId = settingString(input.context.policy.metadata?.llmProvider, settingString(input.context.policy.policyId, "host"));
+  const providerMetadata = input.context.policy.metadata;
   let provider: AutomationStudioLlmProvider | undefined;
   let providerResolution: AutomationStudioLlmProviderResolution | undefined;
   try {
     const resolvedProvider = await ports.resolveLlmProvider?.({
       projectId: input.context.projectId,
       flowId: input.context.flowId,
-      providerId,
+      ...(typeof providerMetadata?.llmProvider === "string" && providerMetadata.llmProvider !== "host" ? { providerId: providerMetadata.llmProvider } : {}),
+      ...(typeof providerMetadata?.llmModel === "string" ? { modelId: providerMetadata.llmModel } : {}),
       ...(input.llmExecution ? { caller: { actorUserId: input.llmExecution.actorUserId, actorSessionId: input.llmExecution.actorSessionId } } : {}),
-      ...(input.context.policy.metadata ? { metadata: input.context.policy.metadata } : {})
+      ...(providerMetadata ? { metadata: providerMetadata } : {})
     });
     if (resolvedProvider && "provider" in resolvedProvider) {
       providerResolution = resolvedProvider;
@@ -767,9 +768,4 @@ function intentSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosi
     return `A diagnose_and_adapt run asks for only a target override, and ${AUTOMATION_STUDIO_NO_REPAIR_REASONS.several_alike}, so no patch was requested.`;
   }
   return undefined;
-}
-
-/** A configured string, or the fallback when the setting is absent or blank. */
-function settingString(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }

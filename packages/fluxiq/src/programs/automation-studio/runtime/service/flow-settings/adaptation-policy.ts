@@ -39,7 +39,9 @@ export function adaptationPolicyFromFlowMetadata(flow: AutomationStudioFlowArtif
     updatedAt: now,
     metadata: {
       source: "flow.metadata",
-      ...(stringSetting(metadata.llmProvider, "") ? { llmProvider: stringSetting(metadata.llmProvider, "") } : {})
+      ...(stringSetting(metadata.llmProvider, "") ? { llmProvider: stringSetting(metadata.llmProvider, "") } : {}),
+      ...(stringSetting(metadata.llmModel, "") ? { llmModel: stringSetting(metadata.llmModel, "") } : {}),
+      ...(stringSetting(metadata.llmSecretKeyId, "") ? { llmSecretKeyId: stringSetting(metadata.llmSecretKeyId, "") } : {})
     }
   };
 }

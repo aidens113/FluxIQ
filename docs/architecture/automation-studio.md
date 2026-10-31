@@ -370,7 +370,7 @@ gets no key and the call fails as `llm.provider_secret_unavailable`. The
 provider refuses an outbound body that contains the secret. The model is the
 request's supported `modelId`, the selected provider's default when only a
 provider is pinned, or Core's configured default. An unknown explicit model is
-refused. The resolution carries Core's default per-call token,
+refused. Recovery and caller-paid judging preserve the Flow's provider, model and named-key settings; the legacy `host` value means unspecified. The resolution carries Core's default per-call token,
 timeout and cost limits (USD 0.25 per call, USD 2 per run) as defaults the run
 budget applies, not as checks of their own. Provider secrets are decrypted just
 in time at dispatch and never retained or persisted. Core never reads a

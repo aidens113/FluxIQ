@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: All resumed units and grounded toggle t817 are verified and merged; Core0.14.0. Final isolated full sweep pending; paid Claude comparison waits for the user's go. Downstream Current State owns the handoff.
+Status detail: Resumed units and grounded toggle t817 are merged. Sweep2 Core build/check passed but exposed provider-ID regressions; t819 Core0.14.1 fixes pass217 targeted tests, types and audit. Main promotion held pending a corrected-source sweep; paid Claude comparison waits for the user's go. Downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -19,7 +19,7 @@ unrefuted new defects must not pass. This does not authorise bypassing the judge
 also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
 native installed-extension proof in the paired repository). P5b, P1b and t817 are merged (t817: Coreae354e9d/downstreamdf58a48e); native grounded-state oracle/replay passes. Paired t816 is merged and pushed:
 Claude runtime, keys/settings UI and live-test routing with the user's $5 whole-build allowance; no paid run has started.
-The rest of this section is the plan as written.
+Sweep2 on Core803f3c81/downstream16dd9ad3 found six recovery tests and one SQL repair/replay test with zero fake-provider calls. Policy IDs and the legacy host sentinel reached strict provider validation; recovery also dropped explicit model/key metadata. Task t819 repairs caller propagation and legacy compatibility without weakening provider binding or key custody; lead217 focused tests, types and full structure audit pass. The rest of this section is the plan as written.
 
 The audit ran 2026-10-28 at the user's direction: make
 Core do the heavy lifting the build model now carries, for any client environment (web, desktop, mobile, API). Eleven
@@ -761,6 +761,12 @@ Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledge
 - Validation: native first-row saved replay ->15-to15callbacks,3skips,0transitions,3ordered official-oracle records and1saved explicit state; lead JSON assertions accepted. Obstruction-only native ->1passed(1.9m),4recoveries,6UIchecks,exact6controlled uncertainty rows,0failed action/recovery cards and finalyes.
 - Outcome: Coreae354e9d/downstreamdf58a48e merged with Core0.14.0;70 Core contracts and downstream structure pass;3JSONs retained in downstream ignored test-runs/2026-10-30-t817-final.
 - Not verified: paid Claude behavior/performance, native Firefox or full sweep. No paid calls, panel operation, fixture/oracle changes or registry publish.
+
+### 2026-10-30 - Provider binding repaired after sweep failures (t819)
+- Cause: recovery supplied policy IDs and caller-paid judging supplied host as concrete providers; strict binding stopped both before key release/fetch. Recovery also lost model/key metadata.
+- Changed: actual configured settings propagate on both paths; only legacy host normalizes to unspecified. Unknown providers and mismatched models still refuse before key access; Core0.14.1.
+- Validation: lead `vitest run` on the two failing integrations plus resolver/caller regressions ->41 passed; recovery annotation and flow-settings directories ->176 passed; `pnpm --filter fluxiq check` ->exit0; `node scripts/structure-audit.mjs` ->passed476 warnings/1144 baseline. One new statement-packing violation was corrected and its rule passed.
+- Outcome: narrow acceptance passed; sweep2 remains frozen on old source and is not promotion evidence for this fix. No paid calls; main held pending corrected-source sweep within the daily limit.
 
 ## Open Questions
 

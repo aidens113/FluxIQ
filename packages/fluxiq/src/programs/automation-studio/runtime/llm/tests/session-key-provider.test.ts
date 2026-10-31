@@ -7,6 +7,8 @@ import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, createAutomationStudio
 import { AutomationStudioSecretsLockedError } from "../deepseek/index.ts";
 import { IdentityAccessService } from "../../../../identity-access/index.ts";
 import { SecretKeysService } from "../../../../secret-keys/index.ts";
+import { DIAGNOSIS, envelope, jsonReply, textFor } from "../anthropic/tests/fixtures.ts";
+import type { AutomationStudioLlmProviderResolverInput } from "../index.ts";
 
 const WEAK_KDF = { testOnlyWeakParameters: { N: 2 ** 10, r: 8, p: 1, keyLength: 32 } as const };
 const PASSWORD_A = "dummy-password-a";
@@ -82,6 +84,67 @@ describe("session-key provider resolver", () => {
     const caller = { actorUserId: "user.one", actorSessionId: "session.one" };
     expect(resolve({ projectId: "p", flowId: "f", caller, modelId: "deepseek-flash" })!.provider.metadata).toMatchObject({ provider: "deepseek", model: "deepseek-flash" });
     expect(() => resolve({ projectId: "p", flowId: "f", caller, modelId: "not-a-model" })).toThrow(/Unsupported/);
+  });
+
+  it.each<Pick<AutomationStudioLlmProviderResolverInput, "providerId" | "metadata">>([
+    { providerId: "host" },
+    { metadata: { llmProvider: "host" } },
+    { providerId: "host", metadata: { llmProvider: "host" } }
+  ])("treats the persisted host selector as unspecified: %j", (selection) => {
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: ports() });
+    const scope = { projectId: "project.one", flowId: "flow.one", caller: { actorUserId: "user.one", actorSessionId: "session.one" } };
+    expect(resolve({ ...scope, ...selection })!.provider.metadata).toEqual(resolve(scope)!.provider.metadata);
+  });
+
+  it("uses the explicit Claude model and named key through a legacy host selection", async () => {
+    const model = "claude-haiku-5-5";
+    const chosenId = "secret:claude-chosen";
+    const reveals: string[] = [];
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body)).model).toBe(model);
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fake-claude-chosen");
+      return jsonReply(envelope(textFor(DIAGNOSIS), { model }));
+    });
+    const resolve = createAutomationStudioSessionKeyProviderResolver({
+      ports: {
+        snapshot: async () => ({ keys: [
+          { id: "secret:claude-newest", kind: "llm", provider: "anthropic", enabled: true, updatedAtMs: 2, metadata: { model } },
+          { id: chosenId, kind: "llm", provider: "anthropic", enabled: true, updatedAtMs: 1, metadata: { model } }
+        ] }),
+        createSessionRevealAuthorization: async (input) => ({ authorizationId: "reveal.chosen", keyId: input.id, keyUpdatedAtMs: 1 }),
+        revealKeyWithAuthorization: async (input) => {
+          reveals.push(input.id);
+          return { value: "fake-claude-chosen" };
+        },
+        revokeRevealAuthorization: () => undefined
+      },
+      fetchImpl: fetchImpl as typeof fetch
+    });
+    const resolved = resolve({
+      projectId: "project.one", flowId: "flow.one", caller: { actorUserId: "user.one", actorSessionId: "session.one" },
+      providerId: "host", metadata: { llmProvider: "host", llmModel: model, llmSecretKeyId: chosenId }
+    })!;
+    expect(resolved.provider.metadata).toMatchObject({ provider: "anthropic", model });
+    await expect(resolved.provider.runTask(request())).resolves.toMatchObject({ response: DIAGNOSIS });
+    expect(reveals).toEqual([chosenId]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<Pick<AutomationStudioLlmProviderResolverInput, "providerId" | "modelId" | "metadata">>([
+    { providerId: "policy.checkout" },
+    { metadata: { llmProvider: "unknown" } },
+    { providerId: "host", metadata: { llmProvider: "unknown" } },
+    { providerId: "deepseek", modelId: "claude-haiku-5-5" }
+  ])("refuses invalid concrete provider/model bindings before releasing a key or fetching: %j", (selection) => {
+    const keys = ports();
+    const snapshot = vi.fn(keys.snapshot);
+    const reveal = vi.fn(keys.revealKeyWithAuthorization);
+    const fetchImpl = vi.fn();
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: { ...keys, snapshot, revealKeyWithAuthorization: reveal }, fetchImpl: fetchImpl as typeof fetch });
+    expect(() => resolve({ projectId: "project.one", flowId: "flow.one", caller: { actorUserId: "user.one", actorSessionId: "session.one" }, ...selection })).toThrow();
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(reveal).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("fails the call, in words a person can act on, when the session has not unlocked the key", async () => {
