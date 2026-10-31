@@ -3,10 +3,12 @@ import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } fro
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID } from "../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "../../plan/index.ts";
+import { automationStudioCandidateRetestAdvised as gateRetestAdvised } from "../trial-gate.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID,
   AutomationStudioFlowCandidateTrialGate,
+  automationStudioCandidateRetestAdvised,
   type AutomationStudioFlowCandidate,
   runAutomationStudioFlowCandidateAuthoringLoop,
   type AutomationStudioCandidateTrialRequest,
@@ -75,6 +77,10 @@ function loopOf(outcome: Awaited<ReturnType<typeof run>>["outcome"]) {
 }
 
 describe("candidate trial gate", () => {
+  it("keeps its existing retest-advice export identical to the candidate barrel's", () => {
+    expect(gateRetestAdvised).toBe(automationStudioCandidateRetestAdvised);
+  });
+
   it("refuses completion without a trial as candidate.trial_required, and an untested candidate carries no verdict", async () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
     const { outcome, seen } = await run([submit(), complete, complete], verdictPort([], asked));

@@ -287,6 +287,9 @@ import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteR
 import { automationStudioTrialChangeContradictedNo, automationStudioTrialChangeSteps, type AutomationStudioTrialChangeOutcome, type AutomationStudioTrialChangePart, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 import { automationStudioCandidateTestPair } from "../test-call-pair.ts";
+import { automationStudioCandidateRetestAdvised } from "../retest-advised/index.ts";
+
+export { automationStudioCandidateRetestAdvised } from "../retest-advised/index.ts";
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
 
@@ -759,19 +762,6 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
 export function automationStudioCandidateRecordContradictsPart(answer: { feedback: JsonObject }): boolean {
   const reading = answer.feedback.unconfirmedReading;
   return isJsonObject(reading) && reading.recordContradicts === "part";
-}
-
-/**
- * Whether Core's record contradicts what kept an unsure from a yes (header,
- * t641): the no's reading wholly (`unconfirmedReading.recordContradicts`, Core's
- * field beside its label), or the unsure call's doubt (`doubtContradicted`).
- * Read as fields Core set, never off the words; one judge's yes is none.
- * Exported for the subflow trial gate, which advises a re-test the same way.
- */
-export function automationStudioCandidateRetestAdvised(answer: { feedback: JsonObject }): boolean {
-  const reading = answer.feedback.unconfirmedReading;
-  if (isJsonObject(reading) && reading.recordContradicts === "whole") return true;
-  return typeof answer.feedback.doubtContradicted === "string" && answer.feedback.doubtContradicted.length > 0;
 }
 
 /** What the model is told once a revision stopped at the same step twice, from the latest trial of it. */
