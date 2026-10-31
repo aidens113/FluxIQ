@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P6 t799, Claude/$5 t816 and P5b t810 merged/pushed. P1b t811 is in final acceptance; paired t817 implements grounded toggle state choice. Paired downstream Current State owns the handoff.
+Status detail: P6 t799, Claude/$5 t816, P5b t810 and P1b t811 verified and merged. Paired t817 source is frozen for grounded toggle choice acceptance. Downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -17,7 +17,7 @@ unrefuted new defects must not pass. This does not authorise bypassing the judge
 
 **Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
 also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
-native installed-extension proof in the paired repository). P5b t810 is merged; P1b t811 is in final acceptance and t817 fixes toggle polarity. Paired t816 is merged and pushed:
+native installed-extension proof in the paired repository). P5b and P1b are merged (P1b: Coreb4a8f453/downstream01da7fa3); t817 source is frozen pending combined acceptance. Paired t816 is merged and pushed:
 Claude runtime, keys/settings UI and live-test routing with the user's $5 whole-build allowance; no paid run has started.
 The rest of this section is the plan as written.
 
@@ -738,7 +738,7 @@ Each implementation lane's brief is in its dispatch and its report under the dow
 The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10-29 to
 [archive/2026-10-29-audit-briefs-and-p0.md](framework-heavy-lifting-plan/archive/2026-10-29-audit-briefs-and-p0.md).
 
-Accepted P1a, P7 follow-ups, repair-from-step, P6 and Claude-provider ledger entries moved verbatim to
+Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledger entries moved verbatim to
 [archive/2026-10-30-accepted-continuation.md](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
 ### 2026-10-30 - Accepted history compacted for continuing P5b/P1b
@@ -746,13 +746,13 @@ Accepted P1a, P7 follow-ups, repair-from-step, P6 and Claude-provider ledger ent
 - Changed: archived five accepted entries; Current State retains merged outcomes and all open decisions remain here.
 - Validation: Node archive extraction -> five entries preserved verbatim, byte equality checked before replacing their source range.
 
-### 2026-10-30 - P5b evidence-specific judge rechecks verified (t810)
-- Agent: Codex lead; worker resume_t813, report in paired downstream `reports/codex-1030/t810-result.md`.
-- Changed: every no Core overrides must have received its row-evidence re-prompt; new unrefuted defects and missing/failed/unusable rechecks remain nonpassing. Optional checked-cell schema is shared by Claude and DeepSeek; replay rows preserve screened marks and provenance.
-- Validation: lead `pnpm.cmd --filter fluxiq exec vitest run` over required recheck agreement/route, native Claude, shared schema and prompt pins -> `8 files, 119 passed`; owning domain left-out/replay-mark tests -> `8 passed`.
-- Validation: lead `pnpm.cmd --filter fluxiq check` -> content-matched reuse, exit0; final structure -> `failures: [], 473 warnings, 1144 baselined`. Worker owning RV1467, callers805, domain541 and extension501 passed; affected types, reference/freshness and model-text passed.
-- Not verified: new live judge responses. Strict original-artifact replay remains unsure when mandatory replies were never recorded; repeating a saved no is only a scripted acceptance-path test. Provider calls0/cost0. No full sweep or panel management.
-- Validation: paired task finish -> downstream structure passed and Core contract gate70 passed; merged Core31713e1d and downstream ad01bd0b.
+### 2026-10-30 - P1b and consistent live invocation context accepted (t811)
+- Agent: Codex lead; worker resume_t811, report in paired downstream reports/codex-1030/t811-result.md.
+- Changed: folded submit/test, labelled repair, Core completion and backend proposal-aware keys; downstream CLI context now reaches planning and actual child model/purse/mode with provider secrets removed.
+- Validation: lead helper/gate Vitest ->42 passed; compiled CLI/auth/topology `node --test` ->26 passed; post-parent Core/runner/extension types passed; worker narrowed233 and observer1 passed.
+- Validation: headed Chromium two-spec command ->2 passed(4.1m); lead JSON gate ->accepted:true,24rows/2whole/1partial,12-to9 decisions,6supervisor/2Core-completions each; JSON retained in downstream ignored test-runs/2026-10-30-t811-final.
+- Outcome: Coreb4a8f453/downstream01da7fa3 merged with Core0.13.0; Core merge contracts70 and downstream structure passed; remote task backups retained.
+- Not verified: paid Claude performance, native Firefox or full sweep. No paid calls or panel management.
 
 ## Open Questions
 
