@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t827 runtime and three native browser proofs accepted; paired integration pending. Core 0.19/contracts 0.5; no full or paid calls.
+Status detail: t827 integrated and verified on paired dev; main SDK/bundles current. Core 0.19/contracts 0.5; no full or paid calls.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**t827 implementation accepted, 2026-10-31; integration pending:** Core 0.19.0/contracts 0.5.0 carry a strict optional measured-target fact from the browser through dispatch, runtime, attempts and authoring history. Wire compatibility uses only existing payload.actionability; no new gateway top key, receipt or negotiation. Invalid optional data drops alone; unknown and current facts replace stale observations without changing effects, authority or uncertain-action safeguards. Lead acceptance: 338 unique Core/contract tests; 335 initial affected domain tests with all eight fixture failures corrected and 31 focused tests passing (then three after final fixture typing); 102 initial extension tests with all eight shared-command fixture failures corrected and 68 focused tests passing (seven queue tests rerun after typing). Domain/extension typechecks and filtered builds pass. Three native Chromium fixture proofs pass on job-board/company-website, including exactly one Save after lost acknowledgement. Chrome/Firefox/e2e bundles each verify 22 files; Firefox background/UI unexercised. Both structure audits pass with unchanged baselines (Core 1144, Down 615). SDK rebuilt privately; main stays 0.18 until integration/refresh. Both daily full sweeps used; main promotion held. Claude/$5 configured, no paid go/calls or panel management; user clinerules preserved. Exact failures, commands and report locations: downstream p8-actionability/lead-acceptance.md.
+**t827 accepted and integrated, 2026-10-31:** Core 0.19.0/contracts 0.5.0 carry a strict optional measured-target fact from the browser through dispatch, runtime, attempts and authoring history. Wire compatibility uses only existing payload.actionability; no new gateway top key, receipt or negotiation. Invalid optional data drops alone; unknown and current facts replace stale observations without changing effects, authority or uncertain-action safeguards. Lead acceptance: 338 unique Core/contract tests; 335 initial affected domain tests with all eight fixture failures corrected and 31 focused tests passing (then three after final fixture typing); 102 initial extension tests with all eight shared-command fixture failures corrected and 68 focused tests passing (seven queue tests rerun after typing). Domain/extension typechecks and filtered builds pass. Three native Chromium fixture proofs pass on job-board/company-website, including exactly one Save after lost acknowledgement. Chrome/Firefox/e2e bundles each verify 22 files; Firefox background/UI unexercised. Both structure audits pass with unchanged baselines (Core 1144, Down 615). Paired dev merges Core78400cec/downstreamf8c70bf3 passed the final Down structure gate and Core70 merge-contract tests. All three main SDK libraries, domain and Chrome/Firefox/e2e bundles are rebuilt at 0.19/0.5 (22 files per browser target). Both daily full sweeps used; main promotion held. Claude/$5 configured, no paid go/calls or panel management; user clinerules preserved. Exact failures, commands and report locations: downstream p8-actionability/lead-acceptance.md.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -770,8 +770,8 @@ Accepted t826 ledger preserved verbatim in [the accepted archive](framework-heav
 - Changed: paired setup; frozen portable exact actionability API/pure export, source0.5/0.19; readers first; t826 accepted evidence archived verbatim. Wire stays nested payload.
 - Why: portable actionability must survive strict readers without losing executed results or becoming act permission.
 - Validation: `pnpm.cmd task start runtime-actionability-signal --worktree --core --skip-workspace-build` ->exit0, both task trees created, mandatory3CoreSDK builds pass (Core87.2s); exact owning commands in downstream p8-actionability/lead-acceptance.md ->338 Core/contract tests accepted, 31 domain/final68 extension reruns pass, native Chromium three tests pass, both final audits pass1144/615 unchanged.
-- Outcome: Implementation accepted; 338 Core/contract tests, affected domain/extension reruns, types/builds and three native fixture proofs pass. Both final audits pass; paired integration pending.
-- Follow-up: final audit, paired dev integration and main SDK/bundle refresh; then remaining P8 identity/repeat/history work. No paid go/full suite.
+- Outcome: Implementation accepted; 338 Core/contract tests, affected domain/extension reruns, types/builds and three native fixture proofs pass. Both final audits and paired dev integration pass; main filtered SDK/domain/extension bundles current.
+- Follow-up: push both dev branches, then remaining P8 identity/repeat/history work. Main held for next permitted full sweep; no paid go/full suite.
 
 ## Open Questions
 
