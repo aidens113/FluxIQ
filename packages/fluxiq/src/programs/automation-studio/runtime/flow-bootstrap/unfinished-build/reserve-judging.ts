@@ -36,10 +36,11 @@
 // named the fix buys one more round the purse can fund.
 //
 // Nothing is judged where there is nothing to judge: an empty Flow, one no
-// replay can run, one whose test did not run clean (the judge reads a passing
-// test), or one the caller cannot build as it stands (`accept`) -- a yes could
-// finish none of them, so nothing is spent on one. Those go on as before, with
-// what the test found. Which Flows are not judged again -- the one a judge of
+// replay can run, or one whose test did not run clean (the judge reads a passing
+// test). The caller checks whether the stopped draft can be built before its
+// whole test and retains that accepted snapshot: refusing after replay was too
+// late to prevent a known-unresolved draft from running. No second resolution
+// against the page the test left is needed. Which Flows are not judged again -- the one a judge of
 // this build last said no to, unchanged -- is the caller's (`./phases.ts`).
 //
 // **Nor where the judging can no longer be paid for whole.** A judgement is a
@@ -53,20 +54,13 @@
 // the whole judging now (`judgingFits`), nothing is started: neither `accept`
 // nor the judge is asked, and a reserve-stopped round ends at its budget
 // unjudged (`./phases.ts`).
-import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature } from "../../flow-draft/index.ts";
 import { automationStudioLlmCurrentBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResult } from "../../llm/index.ts";
-import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapRoundProgress, AutomationStudioFlowBootstrapTestVerdict } from "./contracts.ts";
+import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapTestVerdict } from "./contracts.ts";
 import { automationStudioFlowBootstrapWithJudgeAccount, automationStudioFlowBootstrapYesNotAboutThisFlow } from "./judgement.ts";
 
 type FinishedLoop = Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>;
-
-/** What the Flow such a round left is said to be when it is built, by what stopped the round: it never had a completion of its own. */
-const JUDGED_SUMMARY = {
-  cost: "Flow built from the steps that ran before the build reached its spending limit.",
-  calls: "Flow built from the steps that ran before the build reached its model call allowance.",
-  short: "Flow built from the steps that ran before the build stopped short of finishing it."
-} as const;
 
 /** How judging the Flow a stopped round left went. */
 export type AutomationStudioFlowBootstrapReserveJudging =
@@ -85,19 +79,15 @@ export type AutomationStudioFlowBootstrapReserveJudging =
 
 /**
  * Judges the Flow a round left when it stopped before its Flow was judged:
- * `stopped` says why -- the judging reserve, on money (`cost`) or on calls
- * (`calls`), or short of a completion (`short`). `judgement` and `seed` are
- * that round's tested judgement and the Flow it tested
+ * `judgement` and `loop` are that round's tested judgement and its accepted
+ * completion snapshot, with the Flow the test ran
  * (`automationStudioFlowBootstrapJudgeUnfinished`); `judge` is the build's,
  * with its spend already accounted by the caller.
  */
 export async function automationStudioFlowBootstrapJudgeAtReserve(input: {
-  stopped: keyof typeof JUDGED_SUMMARY;
   judgement: AutomationStudioFlowBootstrapJudgement;
-  seed: AutomationStudioFlowDraftStep[];
-  progress: AutomationStudioFlowBootstrapRoundProgress;
-  /** Whether the caller can build the Flow as it stands, and makes it the plan it will build if the build finishes. Absent: it can. */
-  accept?: ((loop: FinishedLoop) => Promise<boolean>) | undefined;
+  /** Already accepted before its whole test; only the test's replay evidence was added since. */
+  loop: FinishedLoop;
   judge(loop: FinishedLoop): Promise<AutomationStudioFlowBootstrapTestVerdict | "cancelled">;
 }): Promise<AutomationStudioFlowBootstrapReserveJudging> {
   if (!input.judgement.stepsInFlow || input.judgement.tested !== "replayed_clean") return { kind: "not_judged" };
@@ -105,11 +95,10 @@ export async function automationStudioFlowBootstrapJudgeAtReserve(input: {
   const purse = automationStudioLlmCurrentBuildPurse();
   if (purse && !purse.judgingFits()) return { kind: "not_judged" };
   // The round's own record, and the Flow as its test ran it: the judge's test report numbers steps as the seed does.
-  const loop: FinishedLoop = { ok: true, result: { summary: JUDGED_SUMMARY[input.stopped] }, trace: [...input.progress.trace], steps: input.seed, accounting: { ...input.progress.accounting } };
-  if (input.accept && !(await input.accept(loop))) return { kind: "not_judged" };
+  const loop = input.loop;
   const verdict = await input.judge(loop);
   if (verdict === "cancelled") return { kind: "cancelled" };
-  if (verdict.verdict === "yes" && verdict.flowSignature === automationStudioFlowDraftFlowSignature(input.seed)) return { kind: "finished", loop, verdict };
+  if (verdict.verdict === "yes" && verdict.flowSignature === automationStudioFlowDraftFlowSignature(loop.steps)) return { kind: "finished", loop, verdict };
   const wrong = verdict.verdict === "yes" ? automationStudioFlowBootstrapYesNotAboutThisFlow(verdict) : verdict;
   return { kind: "judged", judgement: automationStudioFlowBootstrapWithJudgeAccount(input.judgement, wrong), judgingUsd: verdict.spent.estimatedCostUsd, verdict: wrong };
 }

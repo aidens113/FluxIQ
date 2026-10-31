@@ -63,7 +63,7 @@ import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapIssue, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { assembleAutomationStudioFlowScriptPlan } from "./assemble.ts";
-import type { AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from "./contracts.ts";
+import type { AutomationStudioFlowBootstrapIssueLocator, AutomationStudioFlowScript, AutomationStudioFlowScriptPlace, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { authoringDraftBindingIssues, authoringPlanGraph } from "./draft-bindings.ts";
 import { routeAutomationStudioFlowDraftSteps, type AutomationStudioFlowDraftRoutedStep } from "./draft-routing.ts";
 import { authoringError } from "./issue.ts";
@@ -124,6 +124,8 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
    * routing added was written from no step (`./draft-routing.ts`).
    */
   draftStepIdByNodeKey?: Record<string, string>;
+  /** Refusal paths placed at their original draft steps, including after routing inserted nodes. */
+  locator?: AutomationStudioFlowBootstrapIssueLocator;
 } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const routable: AutomationStudioFlowDraftRoutedStep[] = [];
@@ -165,7 +167,7 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
   }));
   if (!steps.length) {
     issues.push(authoringError("flow_draft.no_steps", "The draft named no step the result could contain.", "draft"));
-    return { issues };
+    return { issues, locator: draftLocator(input.steps, steps, undefined, issues) };
   }
   const script: AutomationStudioFlowScript = { summary: input.summary, blocks: [{ name: input.summary, steps, line: 1 }] };
   const namedColumns = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
@@ -199,18 +201,59 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
     ));
   }
   const all = [...issues, ...assembled.issues];
+  const locator = draftLocator(input.steps, steps, built, all);
   // A step nothing could write down refuses the plan: it is a step that was
   // performed and would be absent from the result, which is the one outcome
   // the draft exists to make impossible. So does a binding the graph cannot
   // honour, since the Flow would run the step on nothing or on the wrong value,
   // and an input tested with two values.
-  if (issues.length) return { issues: all, ...(built ? { refusedPlan: built } : {}) };
+  if (issues.length) return { issues: all, locator, ...(built ? { refusedPlan: built } : {}) };
   const plan = assembled.plan ? withNodeOutputReferences(assembled.plan, draftStepIdByNodeKey(steps, assembled.plan)) : undefined;
   return {
     ...(plan ? { plan, draftStepIdByNodeKey: draftStepIdByNodeKey(steps, plan) } : {}),
     ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}),
-    issues: all
+    issues: all,
+    locator
   };
+}
+
+/** Only an actual draft step's assembly mapping may identify its original position; derived joins and loops name none. */
+function draftLocator(draft: readonly AutomationStudioFlowDraftStep[], written: readonly AutomationStudioFlowScriptStep[], plan: AutomationStudioFlowBootstrapPlan | undefined, issues: readonly AutomationStudioFlowBootstrapIssue[]): AutomationStudioFlowBootstrapIssueLocator {
+  const byId = new Map(draft.map((step) => [automationStudioFlowDraftStepId(step), step] as const));
+  const place = (step: AutomationStudioFlowDraftStep, nodeDefinition?: string): AutomationStudioFlowScriptPlace => ({
+    step: step.actionId,
+    draftStep: step.position,
+    draftStepId: automationStudioFlowDraftStepId(step),
+    ...(nodeDefinition === undefined ? {} : { nodeDefinition })
+  });
+  const locator: AutomationStudioFlowBootstrapIssueLocator = { paths: {}, nodes: {}, edges: {}, subflows: {}, rules: {}, lines: [] };
+  for (const step of draft) locator.paths[`draft.steps.${step.position}`] = place(step);
+  // Synthetic assembly lines are useful only when the routed step carries an
+  // original id. They are not authored script lines and are not shown as such.
+  for (const issue of issues) {
+    const line = /^flow\.line\.(\d+)$/u.exec(issue.path ?? "");
+    const id = line ? written[Number(line[1]) - 1]?.draftStepId : undefined;
+    const step = id === undefined ? undefined : byId.get(id);
+    if (step && issue.path) locator.paths[issue.path] = place(step);
+  }
+  if (!plan) return locator;
+  const ids = draftStepIdByNodeKey(written, plan);
+  for (const [subflowIndex, subflow] of plan.subflows.entries()) {
+    const placed = new Map<string, AutomationStudioFlowScriptPlace>();
+    for (const [nodeIndex, node] of subflow.nodes.entries()) {
+      const id = ids[node.key];
+      const step = id === undefined ? undefined : byId.get(id);
+      if (!step) continue;
+      const found = place(step, node.definitionId);
+      locator.nodes[`${subflowIndex}.${nodeIndex}`] = found;
+      placed.set(node.key, found);
+    }
+    for (const [edgeIndex, edge] of subflow.edges.entries()) {
+      const found = placed.get(edge.source.nodeKey);
+      if (found) locator.edges[`${subflowIndex}.${edgeIndex}`] = found;
+    }
+  }
+  return locator;
 }
 
 /**

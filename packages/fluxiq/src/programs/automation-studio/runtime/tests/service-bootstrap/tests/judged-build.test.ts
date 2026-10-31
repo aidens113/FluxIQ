@@ -19,15 +19,16 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
+import { buildAutomationStudioFlowBootstrapContext } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
-import { blankFixture, caller, copyDataDirSeed, expectNoTopology, isJudgeRequest, JUDGE_USAGE, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { blankFixture, caller, copyDataDirSeed, expectNoTopology, isJudgeRequest, JUDGE_USAGE, judgeReply, mockProvider, permissionScopedNativeRuntime, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const SEEDING_TIMEOUT_MS = 60_000;
 
@@ -119,7 +120,7 @@ async function build(script: {
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.25 })) as never,
     llmEvidenceRuntime: shop.binding
-  });
+  }).bindNativeNodeRuntime(shop.native);
   services.add(instance);
   const instruction = await instance.getFlowInstruction(project.id, "instruction.build");
   await instance.saveFlowInstruction(project.id, { ...instruction!, body: script.instruction, updatedAt: Date.now() });
@@ -134,10 +135,11 @@ async function build(script: {
  * Flow again from its start: a read is read again, a press that changes the
  * cart (`modify_existing`) is only checked, and anything else is run again.
  */
-function shopBinding(): { binding: AutomationStudioLlmEvidenceRuntimeBinding; replays: JsonObject[] } {
+function shopBinding(): { binding: AutomationStudioLlmEvidenceRuntimeBinding; replays: JsonObject[]; native: AutomationStudioNativeNodeRuntime } {
   const replays: JsonObject[] = [];
   let page = "shop/home";
   const from = () => ({ location: page });
+  const selectControl = (control: unknown) => { page = `shop/${String(control).toLowerCase().replace(/[^a-z0-9]+/gu, "-")}`; };
   const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
     domainId: "example",
     deniedEvidenceKeys: [],
@@ -165,11 +167,24 @@ function shopBinding(): { binding: AutomationStudioLlmEvidenceRuntimeBinding; re
       }
       const found = from();
       const ranWith: JsonObject = { ...value };
-      if (toolId === "shop.press") page = `shop/${String(value.control).toLowerCase().replace(/[^a-z0-9]+/gu, "-")}`;
+      if (toolId === "shop.press") selectControl(value.control);
       return { kind: "llm_evidence_tool_execution", evidence: { page }, effectApplied: true, draft: { ranWith, replay: { from: found } } };
     }
   };
-  return { binding, replays };
+  // The shop's press already selects controls (including product options).
+  // Advertise that actual capability with an adapter to the same transition,
+  // rather than relying on the empty built-in-only catalog.
+  const selectId = "domain.example.select";
+  const native = new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["example.actions"] }).register({
+    schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "example.package", packageVersion: "1.0.0", domainId: "example",
+    nodes: [reserveDefinition(selectId, "Select")]
+  }, { packageId: "example.package", packageVersion: "1.0.0", implementations: {
+    [selectId]: ({ parameters }) => {
+      selectControl(parameters.where);
+      return { status: "success", route: "success", outputs: { success: true } };
+    }
+  } });
+  return { binding, replays, native };
 }
 
 const read = (call: string): JsonObject => ({ kind: "tool_call", callId: call, toolId: "shop.read", input: { list: "shelf" }, add: true });
@@ -308,6 +323,9 @@ describe("lane A's run 40: the napkins claimed on the towels' Add to cart", () =
   };
 
   it("is no longer refused at completion: it reaches the judge, whose packet shows no step naming the napkins", async () => {
+    const withoutShop = buildAutomationStudioFlowBootstrapContext({ instructionText: PICKUP_CART,
+      resolution: { scope: { kind: "domain", domainId: "example" }, runtimeCapabilities: [], permissions: [] } });
+    expect(withoutShop.catalogSelection.missingRequiredTerms).toEqual(["select"]);
     const run = await build({
       instruction: PICKUP_CART,
       decisions: [...towels, complete(claims), ...napkins, complete([...claims.slice(0, 2), { action: "a3", step: "12" }])],
@@ -467,4 +485,114 @@ describe("a build the judging reserve stopped, through the service (t254 stage 2
     expect(diagnostic.ending?.message).toContain(`What is left to change: ${RESERVE_SAID.changed.replace(/\.$/u, "")}.`);
     expect(diagnostic.ending?.message).toContain("The steps I found so far were kept as a draft");
   }, 60_000);
+});
+
+// Actual public generation wiring: a call allowance cannot turn a refused
+// completion of the unchanged draft into a whole test. Reuse this file's
+// closed seed and per-test service lifetime; the finite Lab purse is scoped
+// to these readiness cases alone.
+describe("completion readiness through the public service", () => {
+  const NODE = "domain.example.click";
+  const REFUSAL = "example.handle.ambiguous:parameters";
+
+  beforeEach(() => {
+    vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT_SCOPE", "test");
+    vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT", "4");
+  });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  async function buildReadyDraft(ready: boolean, finish = true) {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    const events: string[] = [];
+    let decisions = 0;
+    let resolutions = 0;
+    const scripted = mockProvider(async (request) => {
+      if (request.metadata?.source === "instructionAuthority") return {
+        response: { kind: "evidence_tool_decision", summary: "Inspect.", decision: { kind: "complete", result: { instructed: [] } } }
+      };
+      requests.push(request);
+      if (isJudgeRequest(request)) {
+        events.push("judge");
+        return judgeReply();
+      }
+      decisions += 1;
+      const decision: JsonObject = decisions === 1
+        ? { kind: "tool_call", callId: "call.inspect", toolId: "core.run_node", input: { node: NODE, parameters: {}, consequences: [] }, add: true }
+        : finish ? { kind: "complete", result: { summary: "Inspect the specimen." } }
+          : { kind: "tool_call", callId: `call.look.${decisions}`, toolId: "example.inspect", input: { area: decisions } };
+      return { response: { kind: "evidence_tool_decision", summary: "Inspect.", decision },
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
+    });
+    // This is a scripted provider under the supported test-owned build purse;
+    // pricing establishes its reserve without an external provider request.
+    const provider: AutomationStudioLlmProvider = { ...scripted, estimateCostUsd: ({ inputTokens, outputTokens }) => (inputTokens + outputTokens) * 1e-6 };
+    const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
+      domainId: "example", deniedEvidenceKeys: [], runsNodes: {},
+      tools: [{ toolId: "example.inspect", description: "Inspect the active target.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
+      executeTool: async ({ toolId, value }) => toolId === "core.run_node"
+        ? { kind: "llm_evidence_tool_execution", evidence: { inspected: true }, effectApplied: true,
+          draft: { actionId: String(value.node), input: value, proposes: true } }
+        : { available: true },
+      resolvePlanNodeParameters: ({ nodeDefinitionId, parameters }) => {
+        if (nodeDefinitionId !== NODE) return { status: "unchanged" };
+        resolutions += 1;
+        events.push("resolve");
+        return ready ? { status: "resolved", parameters } : { status: "refused", issueCodes: [REFUSAL] };
+      }
+    };
+    const replaying = automationStudioReplayingBinding(binding);
+    const executeTool = replaying.executeTool.bind(replaying);
+    replaying.executeTool = async (input) => {
+      if (input.value.replay === "reset" || input.value.replay === "step" || input.value.replay === "verify") events.push("replay");
+      return await executeTool(input);
+    };
+    const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
+    const instance = new AutomationStudioService({ dataDir: tempRoot,
+      llmProviderResolver: () => ({ provider, maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1 }),
+      llmEvidenceRuntime: replaying
+    }).bindNativeNodeRuntime(permissionScopedNativeRuntime(["example.action"]));
+    services.add(instance);
+    const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
+    return { instance, project, flow, requests, replays: replaying.replays, events, resolutions: () => resolutions, generation };
+  }
+
+  it("preserves a refused draft at its call allowance without any fallback replay or judging", async () => {
+    const run = await buildReadyDraft(false);
+    const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false]);
+    expect(run.resolutions()).toBe(2);
+    expect(run.events).toEqual(["resolve", "resolve"]);
+    expect(run.replays).toEqual([]);
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", issueCodes: [REFUSAL],
+      ending: { kind: "budget_exhausted", bound: "calls", tried: { tested: "not_tested", stepsInFlow: 1 } } });
+    expect(diagnostic.evidenceLoop?.incompleteDraft).toMatchObject({ steps: 1 });
+    await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
+  });
+
+  it("still tests and judges a model-ready draft without an extra resolving pass after the test moved the target", async () => {
+    const run = await buildReadyDraft(true);
+    const result = await run.generation;
+    expect(result.status).toBe("proposed");
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true, true]);
+    expect(run.resolutions()).toBe(1);
+    expect(run.events[0]).toBe("resolve");
+    expect(run.events.slice(1)).toContain("replay");
+    expect(run.events.slice(-2)).toEqual(["judge", "judge"]);
+    const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
+    expect(stored?.buildPlan.plan.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual([NODE]);
+  });
+
+  it("preflights a ready draft at the call reserve and reuses that accepted plan through its whole test and final judges", async () => {
+    const run = await buildReadyDraft(true, false);
+    const result = await run.generation;
+    expect(result.status).toBe("proposed");
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true, true]);
+    expect(run.resolutions()).toBe(1);
+    expect(run.events[0]).toBe("resolve");
+    expect(run.events.slice(1)).toContain("replay");
+    expect(run.events.slice(-2)).toEqual(["judge", "judge"]);
+    const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
+    expect(stored?.buildPlan.plan.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual([NODE]);
+    expect(stored?.summary).toContain("model call allowance");
+  });
 });

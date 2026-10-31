@@ -76,7 +76,7 @@
 // (`flow-bootstrap/authoring/draft-routing.ts`) with a sentence that names the
 // amendment fixing this draft. The issue feedback carries only its listed
 // authored codes' sentences, so the routing codes' sentences are put back here
-// (`withCoreSentence`, below).
+// (`completion-issue-feedback.ts`).
 //
 // **Every issue names the step it is about (t378).** A refusal used to name a
 // plan path and nothing else, and a script's steps do not become nodes one for
@@ -86,7 +86,7 @@
 // carries a locator read off what the model wrote (`flow-bootstrap/authoring/
 // script-locator.ts`), and every issue of every failure -- assembly, the
 // domain's resolution, registry validation -- is placed with it: `step` as the
-// model wrote it, its `label`, and the script `line` (`located`, below). The
+// model wrote it, its `label`, and the script `line` (`completion-issue-feedback.ts`). The
 // verdict carries the locator on, for the checks that run after it.
 //
 // None costs a provider call, and each refusal carries its own account of what
@@ -110,7 +110,7 @@
 // which the same run stored as 0 of 17. It is refused here, after the plan
 // validated, for every shape a Flow arrives in
 // (`flow-bootstrap/script-statements/record-replace-in-repeat.ts`), and its
-// sentence is put back like the routing codes' (`withCoreSentence`). Since t741
+// sentence is put back like the routing codes' (`completion-issue-feedback.ts`). Since t741
 // a second: a repeat over a listing that makes a lasting act, where the listing
 // sorts or limits its rows only in `recordOutput.process`, which shapes the
 // saved answer and never the rows the repeat visits
@@ -158,6 +158,7 @@ import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView, type AutomationStudioFlowBootstrapPlanParameterResolution } from "./plan-parameter-resolution.ts";
 import { automationStudioFlowPlanListingOrderInRepeatIssues, automationStudioFlowPlanRecordReplaceInRepeatIssues } from "../../flow-bootstrap/script-statements/index.ts";
 import { automationStudioFlowPlanRepeatWhereInProcessIssues } from "../../flow-bootstrap/repeat-where/index.ts";
+import { automationStudioFlowBootstrapCompletionIssueFeedback } from "./completion-issue-feedback.ts";
 
 // `evidence_completion_cannot_answer` is still produced, by the two act rules
 // that refuse (an undeclared consequence a person is asked about, and an act
@@ -654,14 +655,14 @@ function fromDraft(
     partOf
   });
   if (!assembled.plan) {
-    return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script: DRAFT_SCRIPT_NOTE };
+    return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), ...(assembled.locator ? { locator: assembled.locator } : {}), script: DRAFT_SCRIPT_NOTE };
   }
   // The steps the Flow being extended already runs, untouched, which the gate
   // has nothing new to ask about (`./inherited-plan-nodes.ts`).
   const inheritedNodeRefs = automationStudioInheritedPlanNodeRefs({ plan: assembled.plan, steps, draftStepIdByNodeKey: assembled.draftStepIdByNodeKey ?? {} });
   // What amendments wrote over the steps, which is the model's writing (`./amended-plan-parameters.ts`, t432).
   const amendedParameters = automationStudioAmendedPlanParameters({ plan: assembled.plan, steps, draftStepIdByNodeKey: assembled.draftStepIdByNodeKey ?? {} });
-  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE, inheritedNodeRefs, amendedParameters };
+  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, ...(assembled.locator ? { locator: assembled.locator } : {}), script: DRAFT_SCRIPT_NOTE, inheritedNodeRefs, amendedParameters };
 }
 
 /**
@@ -706,7 +707,9 @@ function refused(
   // was shown the first 16 issues, and the script only under 6,000 characters.
   const feedbackIssues = all.flatMap((failure) => failure.issues.length
     ? automationStudioFlowBootstrapIssueFeedback({ issues: failure.issues, ...(failure.about ? { plan: failure.about.plan, registry: failure.about.registry, resolution: failure.about.resolution } : {}) })
-      .map((entry, index) => located(withCoreSentence(entry, failure.issues[index]), failure.issues[index], locator))
+      .map((entry, index) => automationStudioFlowBootstrapCompletionIssueFeedback(
+        entry, failure.issues[index], automationStudioFlowBootstrapIssuePlace(locator, failure.issues[index]?.path)
+      ))
     : []);
   const codes = [...new Set(all.map((failure) => failure.code))];
   const details = Object.fromEntries(all.flatMap((failure) => failure.detail ? [[failure.detail.key, failure.detail.value]] : []));
@@ -735,57 +738,6 @@ function refused(
     ? baseCheck
     : { ...baseCheck, answerability };
   return { ok: false, code: codes[0]!, codes, issues: all.flatMap((failure) => failure.issues), check, ...(locator ? { locator } : {}) };
-}
-
-/** A feedback entry with the step its issue is about, as the model wrote it, where the locator can place it (header). */
-function located(entry: JsonObject, source: AutomationStudioFlowBootstrapIssue | undefined, locator: AutomationStudioFlowBootstrapIssueLocator | undefined): JsonObject {
-  const place = automationStudioFlowBootstrapIssuePlace(locator, source?.path);
-  if (!place) return entry;
-  const { code, path, message, ...rest } = entry;
-  return {
-    ...(code === undefined ? {} : { code }),
-    ...(path === undefined ? {} : { path }),
-    ...(message === undefined ? {} : { message }),
-    step: place.step,
-    ...(place.label === undefined ? {} : { label: place.label }),
-    ...(place.line === undefined ? {} : { line: place.line }),
-    ...rest
-  };
-}
-
-/**
- * The refusals of a draft's routing (`flow-bootstrap/authoring/draft-routing.ts`):
- * a repeat, guard or recovery that cannot be wired as stated. Each sentence is
- * Core's own and quotes nothing but step numbers and the amendment that fixes
- * it, so it may travel with the code. The issue feedback carries only its listed
- * authored codes' sentences, and these were not among them: run
- * `run-musr9pv3-f4bf6256` (decision 0072) was shown
- * `repeat_not_after_its_source` at two paths and nothing else, and looped
- * fifteen turns on a fix the sentence named.
- */
-const DRAFT_ROUTING_CODES: ReadonlySet<string> = new Set([
-  "flow_draft.check_not_before_step",
-  "flow_draft.recovery_behind_step",
-  "flow_draft.recovery_is_routed",
-  "flow_draft.repeat_span_unknown",
-  "flow_draft.repeat_not_after_its_source",
-  "flow_draft.repeat_body_is_routed"
-]);
-
-/**
- * The refusals of the plan checks made after registry validation (header): a
- * step inside a loop whose record output replaces the run's rows (t498), and a
- * lasting repeat over a listing ordered only in its saved answer (t741). Each sentence
- * is Core's own and quotes nothing the model or the page wrote, so it travels
- * with the code, as the routing codes' do.
- */
-const PLAN_CHECK_CODES: ReadonlySet<string> = new Set(["record_output.replace_in_repeat", "record_output.process_order_in_repeat"]);
-
-/** A routing or plan-check refusal's feedback entry with its sentence, where the feedback left it out. */
-function withCoreSentence(entry: JsonObject, source: AutomationStudioFlowBootstrapIssue | undefined): JsonObject {
-  if (!source || entry.message !== undefined || !source.message || entry.code !== source.code) return entry;
-  if (!DRAFT_ROUTING_CODES.has(source.code) && !PLAN_CHECK_CODES.has(source.code)) return entry;
-  return { ...entry, message: source.message };
 }
 
 function errors(issues: AutomationStudioFlowBootstrapIssue[]): AutomationStudioFlowBootstrapIssue[] {

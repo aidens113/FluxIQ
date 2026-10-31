@@ -92,6 +92,40 @@ async function build(rounds: Array<(request: AutomationStudioFlowBootstrapRoundR
 }
 
 describe("a round that stopped short with a clean test of a changed Flow (run-musp474o-e0ed7432)", () => {
+  it("preflights a stopped-short draft and skips its whole test when it cannot be built", async () => {
+    const accepted: string[][] = [];
+    const { outcome, tests, judged } = await build([() => repeatsRefused(firstFlow())], [], {
+      maxRounds: 1,
+      acceptStopped: async (loop) => {
+        accepted.push(loop.steps.map((item) => item.id ?? ""));
+        return false;
+      }
+    });
+    expect(accepted).toEqual([["d1", "d2", "d3"]]);
+    expect(tests).toEqual([]);
+    expect(judged).toEqual([]);
+    expect(outcome).toMatchObject({ kind: "unfinished", ending: { tried: { tested: "not_tested" } } });
+  });
+
+  it("rechecks a repaired draft on its next round and reuses that successful preflight after the test", async () => {
+    const accepted: string[][] = [];
+    const events: string[] = [];
+    const { outcome, tests, judged } = await build([() => repeatsRefused(firstFlow()), (request) => repeatsRefused(changed(request.repair!.seed))], [YES], {
+      acceptStopped: async (loop) => {
+        const ids = loop.steps.map((item) => item.id ?? "");
+        accepted.push(ids);
+        events.push(ids.join(","));
+        // The draft is buildable only after the repair changed the last step.
+        // Its successful acceptance is never asked again after the trial.
+        return ids.includes("d9") && events.length === 2;
+      }
+    });
+    expect(accepted).toEqual([["d1", "d2", "d3"], ["d1", "d2", "d9"]]);
+    expect(tests).toEqual([{ steps: ["d1", "d2", "d9"], judged: true }]);
+    expect(judged).toEqual([{ round: 1, steps: ["d1", "d2", "d9"] }]);
+    expect(outcome).toMatchObject({ kind: "finished", rounds: 2, judged: { verdict: "yes" } });
+  });
+
   it("is put to the judge, its test run for the judge, and a yes about that Flow finishes the build", async () => {
     const { outcome, judged, tests } = await build([() => finished(firstFlow()), (request) => repeatsRefused(changed(request.repair!.seed))], [NO_WITH_ADVICE, YES]);
 
