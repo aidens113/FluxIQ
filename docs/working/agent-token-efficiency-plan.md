@@ -17,6 +17,12 @@ the paired downstream document. This document does not restate it.
 
 ## Current State
 
+**Final 2026-10-30 refresh:** MeritPrompts source is `d96e347`. Both runtime
+installations were refreshed; Codex now includes the final routing policy:
+Sol Max is the ceiling and Astra is forbidden for every role, fallback and
+review. Root AGENTS.md states the ban; CODEX.md delegates role assignments
+and escalation to the shared guide. No model table is copied into projects.
+
 **2026-10-30: MeritPrompts 0.2.0 project integration is refreshed.**
 
 - Shared runtime rules, hooks and lessons live at
@@ -46,6 +52,15 @@ the downstream plan.
 ---
 
 ## Work Ledger
+
+### 2026-10-30 ? Final MeritPrompts routing refresh
+
+- Agent: senior supervisor, serial instruction-only edit; no workers dispatched.
+- Changed: root AGENTS.md and CODEX.md; this current-state record and generated index.
+- Why: the user published the final MeritPrompts update banning Astra; synchronize both local projects and the global Codex snapshot.
+- Validation: `node install.mjs --apply` -> Claude already current; `node install.mjs --codex --apply` -> snapshot refreshed with backup; both `--check` commands passed; `node --test tests/install.test.mjs` -> 10 passed, 0 failed. `git diff --check` -> passed in both projects. `node scripts/structure-audit.mjs --json` -> exit 0 with no failures in both repositories; final routing/source assertions passed; all 357 preservation hashes and Claude settings remain unchanged. `git ls-remote origin refs/heads/main` matched the installed source d96e347.
+- Outcome: Accepted; both projects and the global snapshot match the final routing policy.
+- Follow-up: no full-suite sweep or main promotion for this instruction-only update.
 
 ### 2026-10-30 ? MeritPrompts project runtime integration (t815)
 
