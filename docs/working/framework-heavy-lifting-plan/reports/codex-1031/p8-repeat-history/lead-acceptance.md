@@ -49,3 +49,9 @@ No browser outcome, final behavior acceptance or performance claim yet.
 - Attempts1-3 HTML/log/artifacts copied to main ignored `test-runs/2026-10-31-t829-browser-attempt-*` before any overwrite. No real user data/profile, paid provider, panel management or additional full suite used.
 
 P9/P10 read-only executable designs are source claims for next units, not accepted implementations. They correct earlier light discovery: offered-only submission schema and validated systemInstructions already exist; append-only replaced-view prefix is not yet implemented.
+
+## Integration acceptance
+
+Source merges Core6c45c83b/Down77e8b284. `pnpm.cmd task finish t829` ->Down audit passes and private worktree removed; root preserved/restored only its own main handoff notes with explicit clean file diffs. User clinerules hash remains B052F0E6B0E6C6DE0BA973810C7632EDA04AADFDD5314EAAA73710EDD1101A8D.
+Private Core fully backed up ea3a0126 then cleanly detached; `pnpm.cmd task finish t829 --skip-checks` in main Core ->mandatory70/3files contracts pass8.59s, no full sweep. Remote task backups retained (Down ee502b5e).
+Shared Core three-library build ->fluxiq75.536s/other2reuse; domain build19.934s; extension build21.948s/22files each3targets. Build-info compare reports current all3; compiled0.21 repeat guard exists; public compiled SDK refresh and domain observer functions import successfully with0dispatches. Ignored main validation/shared-build-state.json stores that result. No user panel changes or paid calls. Main not promoted; final paired dev push follows this memory commit.
