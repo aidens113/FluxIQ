@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4367
+- Public declarations: 4381
 - Class: 151
 - Interface: 10
-- Object: 567
-- Type: 2318
+- Object: 568
+- Type: 2323
 - Type Alias: 1
-- Value: 1320
+- Value: 1328
 
 ## Public Declarations
 
@@ -2010,6 +2010,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmUnusableDecisionError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unusable-decision.ts` | Thrown by a decision callback to say "the provider was asked and its answer cannot be acted on, for a reason another attempt could fix". It carries issue codes only, never a model's words. Where the provider's reply arrived and could not be read, it also carries the reply's account: which malformed case it was, its finish reason, its length and what it cost (`./reply-account.ts`). One code for seven cases is what left 14 refused decisions of `run-munw7ffn-fe1cecd2` unexplained; the loop writes this onto the decision's row. |
 | `AutomationStudioLlmUsageSummary` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/provider.ts` | - |
 | `automationStudioLlmValueWithoutDeniedKeys` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/draft-screen.ts` | - |
+| `AutomationStudioLlmVerificationChecked` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/structured-response.ts` | One stored cell a `loop_verification` yes cites as checked (t810): the row by its label, a stored column and the cell's value. |
 | `AutomationStudioLlmVerificationDefect` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/structured-response.ts` | One defect a `loop_verification` no names (t752): `kept_not_asked`, a row the result keeps that the request does not ask for; `asked_missing`, a row the request asks for that the result lacks (`row` may be "rows not read" for rows the run never read); `wrong_value`, a kept row whose `column` holds a wrong value; for an act the request asks for (t766), `act_missing`, an act the request asks for that no step does (`row` names what it is done to), and `act_wrong`, a step (`step`) that did its act to the wrong thing, with the wrong value or with no effect the evidence shows; `other` names an ordering, formatting, required column or other requirement that neither rows nor the run's steps can measure, which remains unsure. `row` names the row as the evidence does (Core's row id or its label); `requestWords` quotes the request's words the row or act fails. |
 | `AutomationStudioLoadedCompiledPlan` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/compiled-plan-store.ts` | - |
 | `automationStudioLocatorShapedText` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/locator-text.ts` | - |
@@ -2498,7 +2499,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultCoreObservation` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/core-observation.ts` | - |
 | `automationStudioResultCountFact` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/computed-facts/count.ts` | - |
 | `automationStudioResultEarlierAdvice` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/earlier-advice.ts` | - |
-| `AutomationStudioResultEarlierAdvice` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/earlier-advice.ts` | One earlier judged trial's advice, as the judge of a later trial of the same build is told it (header). |
+| `AutomationStudioResultEarlierAdvice` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/earlier-advice.ts` | One earlier judged trial's located defects, as the judge of a later trial of the same build is told them (header). |
 | `automationStudioResultEndView` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/result-summary.ts` | - |
 | `AutomationStudioResultEndView` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/run-result-summary.ts` | The view of its target -- for the web domain, the page -- a run or a test ended on, as the domain produced it (t174-w87). Run `run-murwd8le-79e735a8`'s judges never saw `Cart (3)`, the coupon's "Collected" or the quantity field, and one of them invented a quantity that was never committed. |
 | `automationStudioResultEndViewRead` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/result-summary.ts` | - |
@@ -2537,6 +2538,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultLeftOutRowsUnquoted` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/request-rows/unquoted-rows.ts` | - |
 | `automationStudioResultLeftOutStatingAKeptNumber` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/request-rows/left-out-stating-a-kept-number.ts` | - |
 | `AutomationStudioResultLeftOutTogether` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/read-account.ts` | One set of conditions that left rows out together (`AutomationStudioResultReadAccount.leftOutTogether`): their numbers, from 1, and the rows by label. |
+| `automationStudioResultLocatedAdvice` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/earlier-advice-located.ts` | - |
 | `automationStudioResultNamedStoredLabels` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no-record/named-stored.ts` | - |
 | `automationStudioResultNarrowedBefore` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/narrowed-before.ts` | - |
 | `AutomationStudioResultNarrowingStep` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts/read-account.ts` | One step that acted on the page before a read (`AutomationStudioResultReadAccount.narrowedBefore`). `control` is the words of what it pressed or chose, as a model may read them (`../llm/model-facing/control-words.ts`), absent where it names no control or no denied-keys declaration was made. `effect`: `new_page`, it went to another page; `same_page`, it changed the page it stayed on; `already_shown`, its try found the page already showing what it does; absent where the run recorded no comparison of the page before and after it. |
@@ -2558,6 +2560,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultReadEmptiedColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/emptied-columns.ts` | - |
 | `automationStudioResultReadKeptEveryRow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/kept-every-row.ts` | - |
 | `automationStudioResultReadLeftOutCells` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/left-out-cells/left-out-cells.ts` | - |
+| `automationStudioResultReadLeftOutMarks` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/left-out-cells/left-out-marks.ts` | - |
 | `automationStudioResultReadListContinues` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/list-continues.ts` | - |
 | `automationStudioResultReadLoopedAccount` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/looped-account.ts` | - |
 | `AutomationStudioResultReadLoopedAccountInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/looped-account.ts` | - |
@@ -2620,7 +2623,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioResultStandingNoCondition` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/types.ts` | One condition the judged result was read with, as Core's account gives it (`../refuted-no/record-conditions.ts`). |
 | `automationStudioResultStandingNoContradicted` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/contradiction.ts` | - |
 | `AutomationStudioResultStandingNoContradiction` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/types.ts` | Core's finding that a later no's remedy would take back what an earlier standing no upheld (`./contradiction.ts`). |
+| `automationStudioResultStandingNoCoreRecord` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no-record/core-record.ts` | - |
 | `AutomationStudioResultStandingNoKeptOutRow` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/types.ts` | One row a condition alone left out that Core's record accounts for (t641, `../refuted-no/types.ts`, `AutomationStudioResultNoAccounted`): `also_in_result`, another copy of it kept; `request_words`, a value Core read on it failing the request's own words, `texts`. |
+| `AutomationStudioResultStandingNoLocated` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/types.ts` | One defect Core located in its own record (P5b), in the shape a judge's located defect has: the kind and row as Core located them, and nothing of the judge's prose. What a later judge is told of an earlier trial (`./earlier-advice.ts`) is made of these alone. |
 | `AutomationStudioResultStandingNoMemory` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/memory.ts` | One gate's memory of its build's standing nos (header). |
 | `automationStudioResultStandingNoRecord` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no-record/record.ts` | - |
 | `AutomationStudioResultStandingNoRecord` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/standing-no/types.ts` | Core's record of one build test that was judged no (header). |
@@ -3671,6 +3676,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FlowSubflowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/subflow.ts` | - |
 | `FlowValidationIssue` | Type | `packages/fluxiq/src/flows/index.ts` | - |
 | `FluxIQ` | Class | `packages/fluxiq/src/framework/index.ts` | - |
+| `FLUXIQ_LAYOUT_V3_VERSION` | Object | `packages/fluxiq/src/framework/layout-v3/version.ts` | - |
 | `FLUXIQ_RUNTIME_WITHHELD_VALUE` | Object | `packages/fluxiq/src/runtime/contracts.ts` | What a withheld value reads as in a command attempt the runtime keeps. A constant rather than a removed field, so a reader can tell a value that was withheld from one that was never there. |
 | `FLUXIQ_STORAGE_LAYOUT_VERSION` | Object | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `FluxIQCloseOptions` | Type | `packages/fluxiq/src/framework/index.ts` | How `FluxIQ.close()` ends an instance. `shutdown` (the default) is a real stop: every held key is revoked. `evict` drops an idle instance a host will create again: key custody given in `FluxIQOptions.heldKeys` stays held, so its users stay unlocked. Both close the instance's own connections and detach it from process-wide state, and neither touches another instance's. |
@@ -3680,6 +3686,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FluxIQEnvironmentKey` | Type | `packages/fluxiq/src/framework/index.ts` | - |
 | `FluxIQHostPaths` | Type | `packages/fluxiq/src/framework/index.ts` | - |
 | `FluxIQIconName` | Type | `packages/fluxiq/src/ui/index.ts` | - |
+| `FluxIQLayoutV3Inspection` | Type | `packages/fluxiq/src/framework/layout-v3/inspect.ts` | - |
+| `fluxiqLayoutV3Paths` | Value | `packages/fluxiq/src/framework/layout-v3/paths.ts` | - |
+| `FluxIQLayoutV3Paths` | Type | `packages/fluxiq/src/framework/layout-v3/paths-type.ts` | Where a multi-tenant (`service`) deployment keeps its platform state and workspaces. All paths are absolute. |
 | `FluxIQMigrationJournal` | Type | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `FluxIQOptions` | Type | `packages/fluxiq/src/framework/index.ts` | - |
 | `FluxIQPerformanceMetric` | Type | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
@@ -3716,6 +3725,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FluxIQTheme` | Type | `packages/fluxiq/src/ui/index.ts` | - |
 | `FluxIQThemeColorToken` | Type | `packages/fluxiq/src/ui/index.ts` | - |
 | `FluxIQUncommittedV2AdoptionResult` | Type | `packages/fluxiq/src/framework/uncommitted-v2-adoption.ts` | - |
+| `fluxiqWorkspaceRootDir` | Value | `packages/fluxiq/src/framework/layout-v3/workspace-root-dir.ts` | - |
 | `FrameworkResult` | Type | `packages/fluxiq/src/core/index.ts` | - |
 | `GATEWAY_TRACE_MANIFEST_MEDIA_TYPE` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/manifest-row.ts` | - |
 | `GATEWAY_TRACE_SEALED_MANIFEST_PREFIX` | Object | `packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/manifest-row.ts` | What a sealed manifest's `manifest_json` starts with: not JSON, so a reader that does not know the form fails to parse it. |
@@ -3743,6 +3753,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `GlobalProgramApiRegistry` | Class | `packages/fluxiq/src/programs/_shared/api.ts` | - |
 | `GlobalProgramDefinition` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `GlobalProgramRuntime` | Type | `packages/fluxiq/src/programs/_shared/runtime.ts` | - |
+| `GlobalProgramRuntimeActivity` | Type | `packages/fluxiq/src/programs/_shared/runtime.ts` | The work in flight in one runtime. Every count is zero when it is idle. - `openProjectDatabases`: Automation Studio project databases open. A run and a build hold theirs for as long as they work, so this is how one is seen; any other project operation holds one for its own length, and the pool closes an idle one within a second. - `backgroundTasksRunning`: background task runs not yet settled. - `backgroundTasksScheduled`: tasks outside the built-in `maintenance` queue that a person turned on with an interval through this runtime. - `openGatewaySessions`: client gateway sessions not disconnected. |
 | `GlobalProgramRuntimeOptions` | Type | `packages/fluxiq/src/programs/_shared/runtime.ts` | How a program runtime is built; each field is optional, and absent means today's local behaviour. |
 | `GraphPatchOperation` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/graph.ts` | - |
 | `GraphViewportRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/graph.ts` | - |
@@ -3770,11 +3781,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `IdentitySessionTarget` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A session to revoke: its raw id, or (administrators only) the digest the panel lists it by. |
 | `IdentityTwoFactorResetError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/two-factor-reset-error.ts` | The refusal of `resetPassword` (a welcome or reset link, or an operator's reset) for an account with two-factor sign-in whose credential is sealed and not unlocked in this process. The authenticator secret is inside the seal, so the reset could only go ahead by turning two-factor off, and a link or an operator command alone must never do that. Nothing is changed; a signed-in administrator resets such an account (`setPasswordAuthorized`). Its `code` is what platform provisioning matches on (answered as `two_factor`), never the message. |
 | `ingestAutomationStudioTrialEvidenceResult` | Value | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/derived-provenance.ts` | - |
+| `initializeFluxIQLayoutV3` | Value | `packages/fluxiq/src/framework/layout-v3/initialize.ts` | - |
 | `initializeFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `initialNodeStatePhases` | Object | `packages/fluxiq/src/programs/automation-studio/model/node-state.ts` | - |
 | `InputAdapter` | Type | `packages/fluxiq/src/io/index.ts` | - |
 | `InputOutputBinding` | Type | `packages/fluxiq/src/io/index.ts` | - |
 | `InputReadRequest` | Type | `packages/fluxiq/src/io/index.ts` | - |
+| `inspectFluxIQLayoutV3` | Value | `packages/fluxiq/src/framework/layout-v3/inspect.ts` | - |
 | `inspectFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `InspectStateDiffRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts` | - |
 | `interpretAutomationStudioConversationTurn` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/interpret.ts` | - |
@@ -4076,6 +4089,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `releaseAutomationStudioSessionDeepSeekKey` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/session-key.ts` | - |
 | `releaseAutomationStudioSessionProviderKey` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/session-keys/key.ts` | - |
 | `ReleaseComputeLeaseRequest` | Type | `packages/fluxiq/src/programs/compute-control/api/contracts.ts` | - |
+| `removeFluxIQWorkspaceRoot` | Value | `packages/fluxiq/src/framework/layout-v3/remove-workspace-root.ts` | - |
 | `RemoveRecordingEntryRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts` | Removes every entry of a still-open recording that was recorded from one gateway event: each entry whose `metadata.eventId` is `eventId`, the id `runtime/io-bridge.ts` copies from the recorded event's envelope. A finalized recording is refused. |
 | `RemoveRecordingEntryResponse` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/recording.ts` | How many entries were removed, and the recording as a summary: no timeline, notes or state. |
 | `RenameFlowSubflowRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/subflow.ts` | - |

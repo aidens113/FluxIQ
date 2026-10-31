@@ -1,4 +1,5 @@
 import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerification } from "../contracts/index.ts";
+import { automationStudioResultYesCitations } from "../cited-yes/index.ts";
 import { automationStudioResultScreenedJudgement } from "../judgement-screen.ts";
 import { automationStudioResultRepairDirective } from "../repair-directive.ts";
 import { automationStudioResultCheckedRows, automationStudioResultKeptRowsUnquoted, automationStudioResultLeftOutRowsUnaccounted, automationStudioResultLeftOutRowsUnquoted, automationStudioResultLeftOutStatingAKeptNumber } from "../request-rows/index.ts";
@@ -49,6 +50,9 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     // What the yes compared, screened as a no's is: a split shows it beside the no's (`../agreement/`, t477), and a held yes keeps it (t636).
     const read = automationStudioResultScreenedJudgement({ expected: input.diagnosis?.expected, observed: input.diagnosis?.observed }).judgement;
     const answeredReading = { ...(read?.expected ? { expected: read.expected } : {}), ...(read?.observed ? { observed: read.observed } : {}) };
+    // What the yes cited it checked, held to Core's record of the stored rows (`../cited-yes/`, t810); nothing where it cited none.
+    const citations = automationStudioResultYesCitations(input.summary, input.diagnosis?.checked);
+    const yesCitations = citations ? { yesCitations: citations } : {};
     const advised = input.diagnosis?.patchNeeded === true;
     // A held yes that advised a change keeps the change it named, screened as a no's advice is (header, t636).
     const advisedChange = advised ? automationStudioResultScreenedJudgement({ advice: advice(input) }).judgement?.advice : undefined;
@@ -60,7 +64,7 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
         schemaVersion: "automation-studio.result-verification.v1", verdict: "unsure", basis: "model_unconfirmed",
         code: "core.result.exclusion_evidence_missing",
         reason: heldYesReason(unquoted.length > 0, kept.length > 0),
-        observation, exclusionEvidenceMissing: proof.checked ?? [],
+        observation, exclusionEvidenceMissing: proof.checked ?? [], ...yesCitations,
         // The call answered a plain yes and Core held it: said as a field, never left to the reason's words (t611). A yes advising a change is no plain yes.
         ...(advised ? { changeAdvised: true as const } : { yesUnconfirmed: true as const }),
         ...(Object.keys(heldReading).length ? { answeredReading: heldReading } : {})
@@ -75,6 +79,14 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
         checked: [...unaccounted.map(unaccountedLine), ...unquoted.map(unquotedLine), ...keptNumber.map(keptNumberLine)]
       }));
     }
+    // A yes citing a cell Core's record of the result does not hold is not a yes (`../cited-yes/`, t810): unsure, with Core's sentence for each citation it cannot find.
+    if (citations?.refuted.length) {
+      return {
+        ...failed("unsure", "model", codes.yesCitationRefuted, `The result was judged to answer the request, but Core could not find ${citations.refuted.length === 1 ? "the cell the judgement cited" : `${citations.refuted.length} of the ${citations.cited} cells the judgement cited`} in the stored rows, so the result remains unconfirmed.`, observation),
+        ...(Object.keys(answeredReading).length ? { answeredReading } : {}),
+        ...yesCitations
+      };
+    }
     return {
       schemaVersion: "automation-studio.result-verification.v1",
       verdict,
@@ -83,7 +95,8 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
       code: advised ? codes.answersWithChangeAdvised : codes.answers,
       reason: "The result was judged to answer the request.",
       observation,
-      ...(Object.keys(answeredReading).length ? { answeredReading } : {})
+      ...(Object.keys(answeredReading).length ? { answeredReading } : {}),
+      ...yesCitations
     };
   }
   if (verdict === "does_not_answer") {

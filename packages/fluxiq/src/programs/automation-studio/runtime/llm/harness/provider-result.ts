@@ -20,6 +20,7 @@ import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } 
 import { AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS } from "./runtime-patch-schema.ts";
 import { automationStudioLlmToolCallKeysFolded } from "../tool-call-keys/index.ts";
 import { automationStudioLlmWellFormedVerificationDefects } from "../verification-defects/index.ts";
+import { automationStudioLlmWellFormedVerificationChecked } from "../verification-checked/index.ts";
 
 /** Every runtime patch kind a model may answer with; the in-run repair's two are offered only when a request declares them. */
 const RUNTIME_PATCH_KINDS: readonly string[] = ["temporary_action_sequence", "temporary_wait_retry", "temporary_target_override", "temporary_recovery_subflow_call", "temporary_reroute", "add_handler", "replace_unit"];
@@ -189,6 +190,7 @@ function readDiagnosisText(diagnosis: Record<string, unknown>): Record<string, u
     const { kept } = automationStudioLlmWellFormedVerificationDefects(copy.defects);
     copy.defects = kept;
   }
+  if (copy.checked !== undefined) copy.checked = automationStudioLlmWellFormedVerificationChecked(copy.checked).kept;
   return copy;
 }
 
@@ -207,13 +209,19 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
     diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_fields", message: "Diagnosis fields must be an object.", path });
     return;
   }
-  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "explorationNeeded", "patchNeeded"], path, diagnostics);
+  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "checked", "explorationNeeded", "patchNeeded"], path, diagnostics);
   // A malformed defect is dropped with a warning naming its place, never the
   // reply (t752): the verdict and every other defect stand. The warning says
   // nothing the model wrote.
   if (value.defects !== undefined) {
     for (const index of automationStudioLlmWellFormedVerificationDefects(value.defects).dropped) {
       diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_defect_dropped", message: index === undefined ? "Diagnosis defects must be a list, and were dropped." : "A diagnosis defect was not a kind Core knows with its row and the request's words as bounded text, or came past the twelfth, and was dropped.", path: index === undefined ? `${path}.defects` : `${path}.defects[${index}]` });
+    }
+  }
+  // Likewise a malformed cited cell (t810): dropped with a warning naming its place.
+  if (value.checked !== undefined) {
+    for (const index of automationStudioLlmWellFormedVerificationChecked(value.checked).dropped) {
+      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_checked_dropped", message: index === undefined ? "Diagnosis checked cells must be a list, and were dropped." : "A cited cell was not a row, a column and a value as bounded text, or came past the twelfth, and was dropped.", path: index === undefined ? `${path}.checked` : `${path}.checked[${index}]` });
     }
   }
   for (const field of DIAGNOSIS_TEXT_FIELDS) {

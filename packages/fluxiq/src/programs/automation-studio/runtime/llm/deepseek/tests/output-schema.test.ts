@@ -28,7 +28,7 @@ describe("automationStudioDeepSeekOutputSchema for a result verification", () =>
     const { properties: { diagnosis: orderedFields, ...ordered } } = automationStudioDeepSeekOutputSchema(verification) as { properties: Record<string, { properties: Record<string, unknown> }> };
     const { properties: { diagnosis: plainFields, ...plain } } = automationStudioDeepSeekOutputSchema(diagnosis) as { properties: Record<string, { properties: Record<string, unknown> }> };
     expect(ordered).toEqual(plain);
-    const { defects: _defects, ...judged } = orderedFields!.properties;
+    const { defects: _defects, checked: _checked, ...judged } = orderedFields!.properties;
     expect({ ...orderedFields, required: undefined, properties: judged }).toEqual({ ...plainFields, required: undefined });
     expect((orderedFields as { required?: string[] }).required).toEqual(["answersRequest", "defects"]);
   });
@@ -56,7 +56,7 @@ describe("a verification's defects (t752)", () => {
   const fieldsOf = (request: AutomationStudioLlmTaskRequest) => (automationStudioDeepSeekOutputSchema(request) as { properties: { diagnosis: { properties: Record<string, unknown> } } }).properties.diagnosis.properties;
 
   it("offers at most 12 closed defects, each a kind, the row, an optional column, value and step, and the request's words, right after the verdict", () => {
-    expect(Object.keys(fieldsOf(verification))).toEqual(["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "explorationNeeded", "patchNeeded"]);
+    expect(Object.keys(fieldsOf(verification))).toEqual(["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "checked", "explorationNeeded", "patchNeeded"]);
     expect(fieldsOf(verification).defects).toEqual({
       type: "array",
       maxItems: 12,
@@ -129,3 +129,19 @@ function patchKindsOffered(request: AutomationStudioLlmTaskRequest): string[] {
   const schema = automationStudioDeepSeekOutputSchema(request) as { oneOf: Array<{ properties: { patches?: { items: { oneOf: Array<{ properties: { kind: { const: string } } }> } } } }> };
   return schema.oneOf[0]?.properties.patches?.items.oneOf.map((variant) => variant.properties.kind.const) ?? [];
 }
+
+// t810: a verification's diagnosis offers `checked`, beside `defects`, not required.
+describe("automationStudioDeepSeekOutputSchema offers the cells a yes cites", () => {
+  it("offers a closed, bounded, optional list on a verification only", () => {
+    const verification = { taskKind: "loop_verification", expectedOutput: "diagnosis", context: {} } as unknown as AutomationStudioLlmTaskRequest;
+    const diagnosis = { taskKind: "runtime_diagnosis", expectedOutput: "diagnosis", context: {} } as unknown as AutomationStudioLlmTaskRequest;
+    type Fields = { required?: string[]; properties: Record<string, { maxItems?: number; items?: { additionalProperties: boolean; required: string[] } }> };
+    const fieldsOf = (request: AutomationStudioLlmTaskRequest) => (automationStudioDeepSeekOutputSchema(request) as { properties: { diagnosis: Fields } }).properties.diagnosis;
+    const offered = fieldsOf(verification);
+    expect(offered.properties.checked?.maxItems).toBe(12);
+    expect(offered.properties.checked?.items?.additionalProperties).toBe(false);
+    expect(offered.properties.checked?.items?.required).toEqual(["row", "column", "value"]);
+    expect(offered.required).not.toContain("checked");
+    expect(fieldsOf(diagnosis).properties.checked).toBeUndefined();
+  });
+});

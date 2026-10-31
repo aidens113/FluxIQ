@@ -16,8 +16,10 @@ import { IdentityAccessService, registerIdentityAccessApi, type IdentityCredenti
 import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner/index.ts";
 import { registerRuntimeApi } from "../runtime-control/index.ts";
 import { type HeldKeys, registerSecretKeysApi, SecretKeysService } from "../secret-keys/index.ts";
+import { resolveFluxIQProfile } from "../../platform/profile/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
+import type { ProgramApiIamOptions } from "./iam/index.ts";
 import { ProgramJsonStore, programDataFile } from "./storage.ts";
 
 export type GlobalProgramRuntime = {
@@ -40,6 +42,27 @@ export type GlobalProgramRuntime = {
    * workspace's events. Idempotent; `FluxIQ.close()` calls it (t808).
    */
   detach(): void;
+  /** What keeps this runtime busy now, read without touching storage or starting anything; a workspace manager never evicts a busy one (t813). */
+  activity(): GlobalProgramRuntimeActivity;
+};
+
+/**
+ * The work in flight in one runtime. Every count is zero when it is idle.
+ *
+ * - `openProjectDatabases`: Automation Studio project databases open. A run
+ *   and a build hold theirs for as long as they work, so this is how one is
+ *   seen; any other project operation holds one for its own length, and the
+ *   pool closes an idle one within a second.
+ * - `backgroundTasksRunning`: background task runs not yet settled.
+ * - `backgroundTasksScheduled`: tasks outside the built-in `maintenance` queue
+ *   that a person turned on with an interval through this runtime.
+ * - `openGatewaySessions`: client gateway sessions not disconnected.
+ */
+export type GlobalProgramRuntimeActivity = {
+  openProjectDatabases: number;
+  backgroundTasksRunning: number;
+  backgroundTasksScheduled: number;
+  openGatewaySessions: number;
 };
 
 /** How a program runtime is built; each field is optional, and absent means today's local behaviour. */
@@ -51,9 +74,20 @@ export type GlobalProgramRuntimeOptions = {
    * Keys holds its own and every unlock ends when the instance closes.
    */
   heldKeys?: HeldKeys | undefined;
+  /**
+   * How the registry decides. `profile` defaults to the one `FLUXIQ_PROFILE`
+   * resolves (`local` when unset), so a local or self-hosted install decides
+   * as it always has; `service` decides by the policies `source` attaches and
+   * records each decision in `audit`.
+   */
+  iam?: ProgramApiIamOptions | undefined;
 };
 
+/** How long the gateway keeps an ended session under `service`; other profiles keep the default. */
+const SERVICE_ENDED_SESSION_MAX_AGE_MS = 3_600_000;
+
 export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: GlobalProgramRuntimeOptions = {}): GlobalProgramRuntime {
+  const iamProfile = options.iam?.profile ?? resolveFluxIQProfile(process.env);
   const modelProvidersEnabled = options.modelProvidersEnabled !== false;
   const storageLayoutVersion = paths && path.basename(paths.config) === "config.json" ? 2 : 1;
   const storageOptions = paths ? { dataDir: paths.data } : {};
@@ -128,6 +162,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
     ...(paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
     ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),
+    ...(iamProfile === "service" ? { endedSessionMaxAgeMs: SERVICE_ENDED_SESSION_MAX_AGE_MS } : {}),
     ...(process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ? { publicUrl: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL } : {})
   });
   // Offline-first trials in builds (trace plan P6, D44): on whenever tracing is, over this gateway and the trace host's stores; `FLUXIQ_OFFLINE_TRIALS=0` turns them off. The trace host's `uninstall` removes them with its episodes.
@@ -168,7 +203,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   });
   // The registry, not each handler, asks for the operator's PIN before a
   // `destructive` endpoint runs, so it is built once Identity Access exists.
-  const api = new GlobalProgramApiRegistry({ identityAccess });
+  const api = new GlobalProgramApiRegistry({ identityAccess, iam: { ...options.iam, profile: iamProfile } });
   // Every model call made for a person -- a build, an exploration, a run's
   // diagnosis and repair, the check of its result -- runs on that person's own
   // key, released per call to their unlocked session. No grant is issued,
@@ -286,7 +321,13 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     productionRunner,
     runtime,
     secretKeys,
-    detach: stopActivity
+    detach: stopActivity,
+    activity: () => ({
+      openProjectDatabases: AutomationStudioGatewayTraceServicePools.of(automationStudio)?.stats().openProjects ?? 0,
+      backgroundTasksRunning: backgroundTasks.activity().running,
+      backgroundTasksScheduled: backgroundTasks.activity().scheduled,
+      openGatewaySessions: clientGateway.snapshot().sessions.filter((session) => session.status !== "disconnected").length
+    })
   };
 }
 

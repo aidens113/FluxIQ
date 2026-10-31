@@ -107,7 +107,7 @@ import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
 import { automationStudioResultReadKeptEveryRow } from "./kept-every-row.ts";
-import { automationStudioResultReadLeftOutCells } from "../left-out-cells/index.ts";
+import { automationStudioResultReadLeftOutCells, automationStudioResultReadLeftOutMarks } from "../left-out-cells/index.ts";
 import { automationStudioResultReadLoopedAccount } from "./looped-account.ts";
 import { automationStudioResultReadParameters } from "./read-parameters.ts";
 import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
@@ -314,6 +314,8 @@ function conditionAccounts(
   // The rows each condition removed by itself, by label, positionally like the counts; absent from a read that did not send them (`alone-rows.ts`).
   const aloneRows = Array.isArray(filter?.aloneRows) ? filter.aloneRows : [];
   const aloneObservations = Array.isArray(filter?.aloneObservations) && filter.aloneObservations.length === aloneRows.length ? filter.aloneObservations : [];
+  // The marks the client read on those rows, aligned with them; absent from a read that sent none (t810).
+  const aloneMarks = Array.isArray(filter?.aloneMarks) && filter.aloneMarks.length === aloneRows.length ? filter.aloneMarks : [];
   const written = Array.isArray(authored?.where) ? authored.where : [];
   const columns = isRecord(authored?.fields) ? authored.fields : undefined;
   const total = Math.max(rejected.length, written.length);
@@ -336,6 +338,8 @@ function conditionAccounts(
       : undefined;
     // Each of those rows by its own cells, beside its label (`../left-out-cells/`, t771).
     const leftOutCells = deniedKeys && leftOutOnlyByThis ? automationStudioResultReadLeftOutCells(aloneRows[index], leftOutOnlyByThis.length, deniedKeys) : undefined;
+    // And by the marks the client read on each item, beside its cells (`../left-out-cells/`, t810).
+    const leftOutMarks = deniedKeys && leftOutOnlyByThis ? automationStudioResultReadLeftOutMarks(aloneMarks[index], leftOutOnlyByThis.length, deniedKeys) : undefined;
     // A presence test of its own read is said by the word it found on a row it left out, screened as those rows are (`condition.ts`, t482 N3).
     const leftOutSeen = leftOutObservations?.find((observation) => observation?.state === "present")?.value;
     const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index], stored, leftOutSeen) : undefined;
@@ -347,6 +351,7 @@ function conditionAccounts(
       ...(leftOutOnlyByThis ? { leftOutOnlyByThis } : {}),
       ...(leftOutObservations ? { leftOutObservations: leftOutObservations.map(underItsCondition) } : {}),
       ...(leftOutCells ? { leftOutCells } : {}),
+      ...(leftOutMarks ? { leftOutMarks } : {}),
       ...(leftOutOnlyByThis?.length && labelledBy(aloneRows[index], tested) ? { testedLabel: true as const } : {}),
       ...(presence && leftOutOnlyByThis?.length ? { presence } : {})
     });

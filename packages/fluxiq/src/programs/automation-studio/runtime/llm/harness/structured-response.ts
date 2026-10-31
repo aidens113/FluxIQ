@@ -106,7 +106,12 @@ export type AutomationStudioLlmDiagnosisFields = {
    * verification replies require a well-formed list, including an explicit empty one.
    */
   defects?: AutomationStudioLlmVerificationDefect[];
+  /** A `loop_verification` yes only (t810): the stored cells it checked, which Core finds in its own record (`../../result-verification/cited-yes/`). */
+  checked?: AutomationStudioLlmVerificationChecked[];
 };
+
+/** One stored cell a `loop_verification` yes cites as checked (t810): the row by its label, a stored column and the cell's value. */
+export type AutomationStudioLlmVerificationChecked = { row: string; column: string; value: string };
 
 /**
  * One defect a `loop_verification` no names (t752): `kept_not_asked`, a row the

@@ -7,6 +7,7 @@ export * from "./host-target-resolution.ts";
 export * from "./instruction-scope-kind.ts";
 export * from "./ordering.ts";
 export * from "./recovery-trace.ts";
+export * from "./rejected-marks.ts";
 export * from "./run-audit.ts";
 export * from "./run-detail-lock.ts";
 export * from "./run-detail-merge.ts";

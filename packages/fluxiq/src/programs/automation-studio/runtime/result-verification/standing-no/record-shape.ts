@@ -9,6 +9,7 @@ import type {
   AutomationStudioResultStandingNoCall,
   AutomationStudioResultStandingNoCondition,
   AutomationStudioResultStandingNoKeptOutRow,
+  AutomationStudioResultStandingNoLocated,
   AutomationStudioResultStandingNoRecord,
   AutomationStudioResultStandingNoTogether
 } from "./types.ts";
@@ -17,18 +18,37 @@ import type {
 export function automationStudioResultStandingNoRecordOf(value: unknown): AutomationStudioResultStandingNoRecord | undefined {
   if (!isObject(value) || !strings(value.stored) || typeof value.storedWhole !== "boolean" || !Array.isArray(value.conditions) || !Array.isArray(value.standing)) return undefined;
   if (value.upheldKind !== undefined && !strings(value.upheldKind)) return undefined;
+  if (value.source !== undefined && value.source !== "core") return undefined;
+  const located = value.located === undefined ? [] : Array.isArray(value.located) ? value.located.map(locatedOf) : [undefined];
+  if (located.some((defect) => !defect)) return undefined;
   const conditions = value.conditions.map(conditionOf);
   const standing = value.standing.map(callOf);
   if (conditions.some((condition) => !condition) || standing.some((call) => !call)) return undefined;
   const together = value.together === undefined ? [] : Array.isArray(value.together) ? value.together.map(togetherOf) : [undefined];
   if (together.some((set) => !set)) return undefined;
   return {
+    ...(value.source === "core" ? { source: "core" as const } : {}),
+    ...(located.length ? { located: located as AutomationStudioResultStandingNoLocated[] } : {}),
     stored: [...value.stored],
     storedWhole: value.storedWhole,
     conditions: conditions as AutomationStudioResultStandingNoCondition[],
     ...(value.upheldKind?.length ? { upheldKind: [...value.upheldKind] } : {}),
     standing: standing as AutomationStudioResultStandingNoCall[],
     ...(together.length ? { together: together as AutomationStudioResultStandingNoTogether[] } : {})
+  };
+}
+
+const LOCATED_KINDS = new Set(["kept_not_asked", "asked_missing", "wrong_value", "act_missing", "act_wrong", "other"]);
+
+/** A copy of one located defect (`./types.ts`); nothing where it is not of the shape. */
+function locatedOf(value: unknown): AutomationStudioResultStandingNoLocated | undefined {
+  if (!isObject(value) || typeof value.kind !== "string" || !LOCATED_KINDS.has(value.kind) || typeof value.row !== "string") return undefined;
+  for (const key of ["column", "value", "step"] as const) if (value[key] !== undefined && typeof value[key] !== "string") return undefined;
+  return {
+    kind: value.kind as AutomationStudioResultStandingNoLocated["kind"], row: value.row,
+    ...(typeof value.column === "string" ? { column: value.column } : {}),
+    ...(typeof value.value === "string" ? { value: value.value } : {}),
+    ...(typeof value.step === "string" ? { step: value.step } : {})
   };
 }
 
@@ -76,7 +96,7 @@ function callOf(value: unknown): AutomationStudioResultStandingNoCall | undefine
   return { call: value.call, ...(value.drops !== undefined ? { drops: [...value.drops] } : {}) };
 }
 
-function isObject(value: unknown): value is Record<string, unknown> & { stored?: unknown; storedWhole?: unknown; conditions?: unknown; standing?: unknown; upheldKind?: unknown; together?: unknown } {
+function isObject(value: unknown): value is Record<string, unknown> & { stored?: unknown; storedWhole?: unknown; conditions?: unknown; standing?: unknown; upheldKind?: unknown; together?: unknown; source?: unknown; located?: unknown } {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 

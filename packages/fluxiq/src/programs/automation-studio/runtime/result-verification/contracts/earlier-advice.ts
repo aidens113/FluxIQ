@@ -14,13 +14,18 @@
 // `followed` and `named` are Core's own reading of the two revisions' plans,
 // never a model's.
 
-/** One earlier judged trial's advice, as the judge of a later trial of the same build is told it (header). */
+// **Located-only (P5b).** `advice` and `said` are Core's words for the defects it
+// located in its record of that trial (`../standing-no/earlier-advice-located.ts`),
+// never an earlier judge's prose advice or a claim Core did not locate, to cut
+// anchoring. The shape is as before, so its readers are unchanged.
+
+/** One earlier judged trial's located defects, as the judge of a later trial of the same build is told them (header). */
 export type AutomationStudioResultEarlierAdvice = {
   /** The revision whose trial gave the advice. */
   revision: number;
   /** That trial's verdict as the gate kept it. */
   verdict: "no" | "unsure";
-  /** The advice as the builder was shown it, screened and bounded. */
+  /** Core's sentence for the defects it located in that trial's record (P5b), bounded; never a judge's advice. */
   advice: string;
   /**
    * Whether the revision now judged changed the conditions or steps the advice

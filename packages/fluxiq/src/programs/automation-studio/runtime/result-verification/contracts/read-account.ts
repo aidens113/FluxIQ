@@ -1,4 +1,4 @@
-import type { AutomationStudioResultReadCondition } from "../read-condition.ts";
+import type { AutomationStudioResultItemMark, AutomationStudioResultReadCondition } from "../read-condition.ts";
 
 /**
  * How one read of a list went, as the judgement and the repair read it.
@@ -242,4 +242,6 @@ export type AutomationStudioResultLeftOutTogether = {
   conditions: number[]; rows: string[];
   /** Each row's own cells, in `rows`' order, screened as a condition's `leftOutCells` are (t771); absent where the read sent labels only. */
   cells?: Array<Record<string, string>>;
+  /** Each row's marks, in `rows`' order, as a condition's `leftOutMarks` are (t810); absent where the read sent none. */
+  marks?: Array<AutomationStudioResultItemMark[] | null>;
 };

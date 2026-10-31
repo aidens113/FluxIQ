@@ -13,14 +13,16 @@ Related: [Framework continuation](framework-heavy-lifting-plan.md)
 
 The user requested Claude for every live model-backed test and explicitly asked that preference be recorded.
 Both repositories' AGENTS.md now hold it. Never silently fall back to DeepSeek. Provider-free tests remain provider-free.
-CLAUDE_API_KEY is present in the main downstream .env.local; its value was not printed, copied or committed.
+CLAUDE_API_KEY is present in the main downstream .env.local; its value was never printed or committed.
+Standard task provisioning copies ignored local environment into authoring worktrees; provider-free tests reject its credentials. Remove a new sweep's disposable copy before checks; preserve the main file.
 Anthropic originally appeared in the keys UI without runtime support. Core now implements the native provider, per-call encrypted-key resolution and matching model/settings controls; the Lab migration passed its owning checks.
 Paired task t816 is integrated: Core61d29c1f and downstream fa99782d, with Core library version0.9.0. No paid model call has run.
 Live default: claude-sonnet-5-5, provider anthropic, selected for agentic task quality and speed; explicit model selection remains available.
 The user raised Claude live tests to $5 per whole Flow build, not each call. Explicit lower limits remain effective; ordinary product defaults remain separate.
 Lead independently observed native Claude tests: 4 files / 33 passed; legacy DeepSeek/session/settings: 19 files / 196 passed. All use fake transports/credentials, with no paid calls.
 A stale private root workspace dependency was changed from0.7.0 to workspace:* and its lockfile regenerated offline. Native output limits are preserved.
-Keep identical realistic task instructions/oracles and record model, verdict, calls, provider-reported usage/cost and runtime.
+Keep identical realistic task instructions/oracles and record both source commits, model, verdict, calls, provider-reported usage/cost and runtime.
+Historical DeepSeek runs predate these Core fixes, so comparison with them cannot isolate the provider's effect.
 No paid run is started by implementation or unit validation; existing supervised paid-launch requirements remain.
 
 ## Implementation

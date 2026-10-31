@@ -1,9 +1,9 @@
 import { gatewayServerRuntime } from "../server/gateway-runtime";
-import { FluxIQ } from "fluxiq";
+import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { resolveFluxIQDeploymentSettings, type FluxIQDeploymentSettings } from "fluxiq/platform/profile";
+import { resolveFluxIQDeploymentSettings, resolveFluxIQProfile, type FluxIQDeploymentSettings } from "fluxiq/platform/profile";
 import type { ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
 import { drainGateway, drainState } from "../server/drain";
 import { createLogger, type Logger } from "../server/log";
@@ -13,15 +13,27 @@ import { announceOwnerClaim } from "../server/startup";
 import type { ProvisioningListenerHandle } from "../server/provisioning-listener";
 import { resolveAutomationStudioContext, resolveClientRecordingProject, setAutomationStudioContext, type AutomationStudioWebContext } from "./automation-studio-context";
 import { resolveFluxIQModelProvidersEnabled } from "./model-provider-admission";
+import { createTenantFluxIQ, DeferredIamAuditSink, FluxIQWorkspaceManager, initializeFluxIQWebStorage, primaryWorkspaceId, serviceWorkspaceIam, workspaceManagerLimits, workspaceTenancyOfProfile } from "./workspaces";
 
 type FluxIQHostModuleRegistration = (fluxiq: FluxIQ) => FluxIQ | void;
 
 type FluxIQWebGlobal = typeof globalThis & {
   // Held on globalThis because Next.js bundles src/instrumentation.ts, which
   // loads the host, separately from the routes that apply it.
-  __fluxiqWebHostModule?: { path: string; register: FluxIQHostModuleRegistration };
+  __fluxiqWebHostModule?: { path: string; register: FluxIQHostModuleRegistration; domain?: { rootDir: string; id: string | null }; preparingDomain?: Promise<void> };
+  __fluxiqWebPreparation?: Promise<WebRuntimeState> | null;
   __fluxiqWebRuntime?: {
-    instance: FluxIQ;
+    /**
+     * Every workspace's instance (t813). The primary is the instance this
+     * runtime serves, carries the shared WebSocket listener, the audit
+     * persistence and the provisioning listener, and is the only one under a
+     * single-tenancy profile; `getFluxIQ()` returns it.
+     */
+    workspaces: FluxIQWorkspaceManager;
+    /** Builds the primary instance; a reload builds the next one with it. */
+    createPrimary: () => FluxIQ;
+    /** The IAM decision audit every registry records into under the service profile, until the platform's own sink opens. */
+    iamAudit: DeferredIamAuditSink | null;
     hostModulePath: string | null;
     clientGatewayServer: ClientGatewayWebSocketServerHandle | null;
     /** Set once storage is ready; the readiness probe reads it. */
@@ -34,6 +46,7 @@ type FluxIQWebGlobal = typeof globalThis & {
     runtimeId: string;
     automationStudioContexts: Record<string, AutomationStudioWebContext>;
     initializationPromise?: Promise<void> | null;
+    reloadPromise?: Promise<FluxIQ> | null;
     closePromise?: Promise<void> | null;
     shutdownHandlers?: { sigint: () => void; sigterm: () => void } | null;
   };
@@ -42,15 +55,51 @@ type FluxIQWebGlobal = typeof globalThis & {
 export function getFluxIQ(): FluxIQ {
   const state = getWebRuntimeState();
   startSharedRuntimeServices(state);
-  return state.instance;
+  return primaryOf(state);
+}
+
+/** Platform composition waits for a primary reload rather than opening its old root during domain-probe cleanup. */
+export async function getFluxIQAfterReload(options: { allowDuringShutdown?: boolean } = {}): Promise<FluxIQ> {
+  const state = getWebRuntimeState();
+  try {
+    await state.reloadPromise;
+  } catch (error) {
+    if (!(options.allowDuringShutdown && error instanceof Error && error.message.startsWith("workspaces.closed:"))) throw error;
+  }
+  if (state.closePromise && !options.allowDuringShutdown) throw new Error("workspaces.closed: the web server is shutting down");
+  // Do not start shared listeners here: the audit may resolve its existing
+  // composition while shutdown is draining records before closing the manager.
+  return primaryOf(state);
+}
+
+/**
+ * The process's workspace manager: the primary instance, and under the
+ * service profile one instance per tenant workspace. Routes and pages reach a
+ * caller's workspace through `workspaceFluxIQ` (`./workspaces`), not this.
+ */
+export function getFluxIQWorkspaces(): FluxIQWorkspaceManager {
+  const state = getWebRuntimeState();
+  startSharedRuntimeServices(state);
+  return state.workspaces;
 }
 
 export async function initializeFluxIQWebRuntime(): Promise<FluxIQ> {
   const settings = resolveFluxIQDeploymentSettings(process.env);
-  if (settings.gateway.enabled) await gatewayServerRuntime.load();
-  await loadFluxIQHostModule();
-  const state = getWebRuntimeState();
+  const globalState = globalThis as FluxIQWebGlobal;
+  globalState.__fluxiqWebPreparation ??= (async () => {
+    if (settings.gateway.enabled) await gatewayServerRuntime.load();
+    await loadFluxIQHostModule();
+    await prepareFluxIQWebHostDomain();
+    return getWebRuntimeState();
+  })();
+  let state: WebRuntimeState;
+  try {
+    state = await globalState.__fluxiqWebPreparation;
+  } finally {
+    globalState.__fluxiqWebPreparation = null;
+  }
   await initializeFluxIQWebRuntimeState(state);
+  if (state.closePromise) throw new Error("workspaces.closed: the web server is shutting down");
   startSharedRuntimeServices(state);
   const logger = createLogger({ format: settings.logFormat });
   await announceOwnerClaim({
@@ -59,11 +108,11 @@ export async function initializeFluxIQWebRuntime(): Promise<FluxIQ> {
     logger,
     prepare: async () => {
       const { prepareOwnerClaim } = await import("../server/owner-claim");
-      return prepareOwnerClaim({ settings, fluxiqDir: state.instance.paths.fluxiq });
+      return prepareOwnerClaim({ settings, fluxiqDir: primaryOf(state).paths.fluxiq });
     }
   });
   await startSharedProvisioningListener(state, settings, logger);
-  return state.instance;
+  return primaryOf(state);
 }
 
 /** Whether the readiness probe may answer 200; reads the runtime without creating one. */
@@ -80,15 +129,16 @@ export function getFluxIQWebReadiness(): Readiness {
 
 export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   const state = getWebRuntimeState();
+  const instance = primaryOf(state);
   const settings = resolveFluxIQDeploymentSettings(process.env);
   const context = operatorUserId ? resolveAutomationStudioContext(state.automationStudioContexts, operatorUserId) : undefined;
-  const nativeRuntime = state.instance.programs.automationStudio.nativeRuntimeSummary(state.instance.activeDomainId);
-  const { llmEvidenceRuntime } = state.instance.programs.automationStudio.getFlowBootstrapGenerationRuntimeReadiness();
-  const reusableLlmContext = state.instance.programs.automationStudio.reusableLlmContextStatus();
+  const nativeRuntime = instance.programs.automationStudio.nativeRuntimeSummary(instance.activeDomainId);
+  const { llmEvidenceRuntime } = instance.programs.automationStudio.getFlowBootstrapGenerationRuntimeReadiness();
+  const reusableLlmContext = instance.programs.automationStudio.reusableLlmContextStatus();
   return {
     runtimeId: state.runtimeId,
     // Host paths are not shown to a hosted service's callers.
-    ...(settings.profile === "service" ? {} : { hostRoot: state.instance.paths.root, fluxiqDir: state.instance.paths.fluxiq }),
+    ...(settings.profile === "service" ? {} : { hostRoot: instance.paths.root, fluxiqDir: instance.paths.fluxiq }),
     hostModulePath: state.hostModulePath,
     hostModuleLoaded: Boolean(state.hostModulePath),
     clientGatewayPublicUrl: settings.gateway.publicUrl,
@@ -114,50 +164,67 @@ export function setAutomationStudioWebContext(input: { operatorUserId: string; c
   setAutomationStudioContext(state.automationStudioContexts, input);
 }
 
+/** Replaces the primary instance with a new one built from the current host module; tenant workspaces are left as they are. */
 export async function reloadFluxIQWebInstance(): Promise<FluxIQ> {
+  const state = getWebRuntimeState();
+  if (state.closePromise) throw new Error("workspaces.closed: the web server is shutting down");
+  state.reloadPromise ??= reloadPrimary(state).finally(() => { state.reloadPromise = null; });
+  return await state.reloadPromise;
+}
+
+async function reloadPrimary(state: WebRuntimeState): Promise<FluxIQ> {
   resolveFluxIQModelProvidersEnabled();
+  if (resolveFluxIQWebHostRoot(process.cwd()) !== primaryOf(state).paths.root) {
+    throw new Error("workspaces.root_changed: restart the web runtime to change its host root; reload keeps every workspace on its existing root");
+  }
   // Before anything closes, so a host that fails to load leaves the old runtime serving.
   await loadFluxIQHostModule();
-  const state = getWebRuntimeState();
+  if (state.closePromise) throw new Error("workspaces.closed: the web server is shutting down");
   const gateway = state.clientGatewayServer;
   state.clientGatewayServer = null;
   try {
     if (gateway) await gateway.close();
   } finally {
-    await state.instance.close();
+    await primaryOf(state).close();
   }
-  state.instance = createFluxIQWebInstance();
+  await prepareFluxIQWebHostDomain(true);
+  if (state.closePromise) throw new Error("workspaces.closed: the web server is shutting down");
+  state.workspaces.replacePrimary(state.createPrimary());
   state.initializationPromise = null;
   await initializeFluxIQWebRuntimeState(state);
-  state.closePromise = null;
+  if (state.closePromise) throw new Error("workspaces.closed: the web server is shutting down");
   state.automationStudioContexts = {};
   startSharedRuntimeServices(state);
-  return state.instance;
+  return primaryOf(state);
 }
 
-async function initializeFluxIQWebRuntimeState(state: NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]>): Promise<void> {
-  state.initializationPromise ??= initializeFluxIQWebStorage(state.instance);
+async function initializeFluxIQWebRuntimeState(state: WebRuntimeState): Promise<void> {
+  state.initializationPromise ??= initializeFluxIQWebStorage(primaryOf(state));
   await state.initializationPromise;
-  state.initialized = true;
-}
-
-async function initializeFluxIQWebStorage(fluxiq: FluxIQ): Promise<void> {
-  const initial = fluxiq.inspectStorage();
-  if (initial.layout === "fresh") await fluxiq.setup();
-  else if (initial.layout !== "v2") {
-    throw new Error(`FluxIQ web runtime requires storage layout v2; found ${initial.layout}. Use the protected framework storage migration before starting the panel.`);
-  }
-  const ready = fluxiq.inspectStorage();
-  if (ready.layout !== "v2") {
-    throw new Error(`FluxIQ web runtime storage initialization did not reach layout v2; found ${ready.layout}.`);
-  }
+  state.initialized = !state.closePromise;
 }
 
 export async function closeFluxIQWebRuntime(): Promise<void> {
   const globalState = globalThis as FluxIQWebGlobal;
+  // Startup may still be closing its host-domain probe before the runtime
+  // record exists. Await it so shutdown cannot miss a later-created primary.
+  if (!globalState.__fluxiqWebRuntime && globalState.__fluxiqWebPreparation) {
+    // Only waits for preparation; its caller owns any startup failure.
+    await globalState.__fluxiqWebPreparation.then(() => undefined, () => undefined);
+  }
   const state = globalState.__fluxiqWebRuntime;
   if (!state) return;
   state.closePromise ??= (async () => {
+    state.initialized = false;
+    const errors: unknown[] = [];
+    try {
+      await state.reloadPromise;
+    } catch (error) {
+      // A reload cancelled by this shutdown leaves its primary for the manager to close.
+      if (!(error instanceof Error && error.message.startsWith("workspaces.closed:"))) errors.push(error);
+    }
+    const primary = primaryOf(state);
+    await flushIamAudit(state);
     // The private listener first: nothing may provision while the rest shuts down.
     const provisioningStart = state.provisioningListenerStart ?? null;
     state.provisioningListenerStart = null;
@@ -168,37 +235,45 @@ export async function closeFluxIQWebRuntime(): Promise<void> {
     }
     const provisioningListener = state.provisioningListener ?? null;
     state.provisioningListener = null;
-    if (provisioningListener) await provisioningListener.close();
+    try {
+      if (provisioningListener) await provisioningListener.close();
+    } catch (error) {
+      errors.push(error);
+    }
     state.auditDetach?.();
     state.auditDetach = null;
     state.auditedInstance = null;
     const gateway = state.clientGatewayServer;
     state.clientGatewayServer = null;
+    try { if (gateway) await gateway.close(); } catch (error) { errors.push(error); }
+    // The startup caller observes initialization rejection. Wait for its IO
+    // before cleanup without treating that same rejection as a close failure.
+    await state.initializationPromise?.then(() => undefined, () => undefined);
+    // Every workspace, tenants first and the primary last; admitted work drains
+    // before the last IAM audit flush and the root-owned audit store close.
+    try { await state.workspaces.close(); } catch (error) { errors.push(error); }
+    await flushIamAudit(state);
     try {
-      if (gateway) await gateway.close();
+      const { closePlatformServices } = await import("../server/provisioning-listener");
+      await closePlatformServices(primary);
+    } catch (error) {
+      errors.push(error);
     } finally {
-      try {
-        await state.instance.close();
-      } finally {
-        removeFluxIQWebShutdownHooks(state);
-      }
+      removeFluxIQWebShutdownHooks(state);
     }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "web_runtime.close_failed");
   })();
   await state.closePromise;
 }
 
-function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]> {
+function getWebRuntimeState(): WebRuntimeState {
   const globalState = globalThis as FluxIQWebGlobal;
-  globalState.__fluxiqWebRuntime ??= {
-    instance: createFluxIQWebInstance(),
-    hostModulePath: resolveFluxIQHostModulePath(),
-    clientGatewayServer: null,
-    runtimeId: `web.${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`,
-    automationStudioContexts: {}
-  };
+  globalState.__fluxiqWebRuntime ??= createWebRuntimeState();
   globalState.__fluxiqWebRuntime.automationStudioContexts ??= {};
+  const primary = primaryOf(globalState.__fluxiqWebRuntime);
   registerFluxIQWebShutdownHooks(globalState.__fluxiqWebRuntime);
-  globalState.__fluxiqWebRuntime.instance.programs.automationStudioClientGateway.setClientRecordingContextProvider(({ session, request }) => {
+  primary.programs.automationStudioClientGateway.setClientRecordingContextProvider(({ session, request }) => {
     const contexts = globalState.__fluxiqWebRuntime?.automationStudioContexts ?? {};
     const resolved = resolveClientRecordingProject(contexts, {
       ...(session.operatorUserId ? { operatorUserId: session.operatorUserId } : {}),
@@ -222,15 +297,142 @@ function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]
   return globalState.__fluxiqWebRuntime;
 }
 
-export function createFluxIQWebInstance(): FluxIQ {
+/**
+ * The runtime record and its workspace manager. The deployment profile picks
+ * the tenancy: `service` is multi-tenant, and every instance (the primary
+ * included) then decides by its workspace's IAM policies and records into the
+ * platform's audit; `local` and `self-hosted` keep one instance, created
+ * exactly as before.
+ */
+function createWebRuntimeState(): WebRuntimeState {
+  const tenancy = workspaceTenancyOfProfile(resolveFluxIQProfile(process.env));
+  const primaryId = primaryWorkspaceId();
+  const iamAudit = tenancy === "multi"
+    ? new DeferredIamAuditSink(async () => (await import("../server/provisioning-listener")).getPlatformIamAuditSink(), {
+      onError: (error) => webLogger().warn("[FluxIQ] The IAM audit could not be opened; decisions wait in memory until it opens.", { reason: error.name })
+    })
+    : null;
+  const iamOf = (workspaceId: string): Pick<FluxIQOptions, "iam"> => iamAudit
+    ? { iam: serviceWorkspaceIam(workspaceId, { platformServices: async () => (await import("../server/provisioning-listener")).getPlatformServices(), audit: iamAudit }) }
+    : {};
+  const createPrimary = () => createFluxIQWebInstance(iamOf(primaryId));
+  const workspaces = new FluxIQWorkspaceManager({
+    tenancy,
+    primaryWorkspaceId: primaryId,
+    createPrimary,
+    ...(tenancy === "multi" ? {
+      createTenant: ({ workspaceId, heldKeys, primary }) => createTenantFluxIQ({ workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId), instantiate: createTenantFluxIQInstance }),
+      removeTenantRoot: async ({ workspaceId, primary }) => {
+        await removeFluxIQWorkspaceRoot(fluxiqLayoutV3Paths(primary.paths.root), workspaceId);
+      }
+    } : {}),
+    ...workspaceManagerLimits(process.env),
+    warn: (message, fields) => webLogger().warn(message, fields)
+  });
+  return {
+    workspaces,
+    createPrimary,
+    iamAudit,
+    hostModulePath: resolveFluxIQHostModulePath(),
+    clientGatewayServer: null,
+    runtimeId: `web.${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`,
+    automationStudioContexts: {}
+  };
+}
+
+export function createFluxIQWebInstance(options: Pick<FluxIQOptions, "iam"> = {}): FluxIQ {
   const modelProvidersEnabled = resolveFluxIQModelProvidersEnabled();
   const rootDir = resolveFluxIQWebHostRoot(process.cwd());
-  const fluxiq = applyFluxIQHostModule(FluxIQ.create({ rootDir, modelProvidersEnabled }));
-  if (fluxiq.activeDomainId) return fluxiq;
-  if (explicitFluxIQDomainId()) return fluxiq;
+  const extra = options.iam ? { iam: options.iam } : {};
+  const host = (globalThis as FluxIQWebGlobal).__fluxiqWebHostModule;
+  const hostPath = resolveFluxIQHostModulePath();
+  if (hostPath && !explicitFluxIQDomainId() && (host?.path !== hostPath || host.domain?.rootDir !== rootDir)) {
+    throw new Error("The host's domain has not been prepared; await initializeFluxIQWebRuntime() before creating its primary instance.");
+  }
+  const domainId = hostPath && !explicitFluxIQDomainId() ? host?.domain?.id : null;
+  return applyFluxIQHostModule(FluxIQ.create({ rootDir, ...(domainId ? { domainId } : {}), modelProvidersEnabled, ...extra }));
+}
+
+/** Resolve and fully close the host's probe before a synchronous primary can open storage on the same root. */
+async function prepareFluxIQWebHostDomain(refresh = false): Promise<void> {
+  const host = (globalThis as FluxIQWebGlobal).__fluxiqWebHostModule;
+  if (!resolveFluxIQHostModulePath() || explicitFluxIQDomainId() || !host) return;
+  const rootDir = resolveFluxIQWebHostRoot(process.cwd());
+  if (host.preparingDomain) await host.preparingDomain;
+  if (!refresh && host.domain?.rootDir === rootDir) return;
+  const preparing = (async () => {
+    const probe = await withHostModule(FluxIQ.create({ rootDir, modelProvidersEnabled: resolveFluxIQModelProvidersEnabled() }));
+    let id: string | null;
+    try {
+      id = soleHostDomainId(probe);
+    } finally {
+      await probe.close({ mode: "evict" });
+    }
+    host.domain = { rootDir, id };
+  })();
+  host.preparingDomain = preparing;
+  try {
+    await preparing;
+  } finally {
+    if (host.preparingDomain === preparing) delete host.preparingDomain;
+  }
+}
+
+/**
+ * A tenant workspace's instance, built as the primary is (the host module
+ * applied, the one host domain picked when no domain is named), on the options
+ * the manager gives. The instance built to read the host's domains is closed
+ * before the one that keeps the domain is built on the same root.
+ */
+async function createTenantFluxIQInstance(options: FluxIQOptions): Promise<FluxIQ> {
+  const modelProvidersEnabled = resolveFluxIQModelProvidersEnabled();
+  const first = await withHostModule(FluxIQ.create({ ...options, modelProvidersEnabled }));
+  const domainId = soleHostDomainId(first);
+  if (!domainId) return first;
+  await first.close({ mode: "evict" });
+  return await withHostModule(FluxIQ.create({ ...options, domainId, modelProvidersEnabled }));
+}
+
+/** Applies the host module; an instance the host refused is closed rather than left attached to the process. */
+async function withHostModule(fluxiq: FluxIQ): Promise<FluxIQ> {
+  try {
+    return applyFluxIQHostModule(fluxiq);
+  } catch (error) {
+    await fluxiq.close({ mode: "evict" });
+    throw error;
+  }
+}
+
+/** The host's one registered domain, when the instance has none active and none is named in the environment. */
+function soleHostDomainId(fluxiq: FluxIQ): string | null {
+  if (fluxiq.activeDomainId) return null;
+  if (explicitFluxIQDomainId()) return null;
   const domains = fluxiq.domains.summaries();
-  if (domains.length !== 1) return fluxiq;
-  return applyFluxIQHostModule(FluxIQ.create({ rootDir, domainId: domains[0]!.id, modelProvidersEnabled }));
+  return domains.length === 1 ? domains[0]!.id : null;
+}
+
+function primaryOf(state: WebRuntimeState): FluxIQ {
+  return state.workspaces.primary().fluxiq;
+}
+
+/** Writes the IAM decisions still held; a failure is reported, never allowed to stop the shutdown. */
+async function flushIamAudit(state: WebRuntimeState): Promise<void> {
+  try {
+    await state.iamAudit?.flush();
+  } catch (error) {
+    webLogger().warn("[FluxIQ] The IAM audit could not be written before shutdown.", { reason: error instanceof Error ? error.name : "unknown" });
+  }
+}
+
+/** A logger for the runtime's own lines; a bad log setting falls back to text rather than failing the line. */
+function webLogger(): Logger {
+  try {
+    return createLogger({ format: resolveFluxIQDeploymentSettings(process.env).logFormat });
+  } catch (error) {
+    const fallback = createLogger({ format: "text" });
+    fallback.warn("[FluxIQ] The deployment settings could not be read for the log format.", { reason: error instanceof Error ? error.name : "unknown" });
+    return fallback;
+  }
 }
 
 /**
@@ -320,9 +522,10 @@ function startSharedClientGateway(state: WebRuntimeState, settings: FluxIQDeploy
   const { gateway } = settings;
   process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ??= gateway.publicUrl; // programs/_shared/runtime.ts still reads it.
   const { startClientGatewayWebSocketServer } = gatewayServerRuntime.read();
-  state.instance.programs.clientGateway.bindTransportBuildIdentity(); // Legacy replacement clears active provenance, never its anchor.
+  const instance = primaryOf(state);
+  instance.programs.clientGateway.bindTransportBuildIdentity(); // Legacy replacement clears active provenance, never its anchor.
   state.clientGatewayServer = startClientGatewayWebSocketServer({
-    gateway: state.instance.programs.clientGateway,
+    gateway: instance.programs.clientGateway,
     host: gateway.host,
     port: gateway.port,
     path: gateway.path,
@@ -337,12 +540,13 @@ function startSharedClientGateway(state: WebRuntimeState, settings: FluxIQDeploy
 
 /** Outside the local profile, gateway security events outlive the in-memory audit ring. */
 function persistGatewaySecurityEvents(state: WebRuntimeState, settings: FluxIQDeploymentSettings, logger: Logger): void {
-  if (settings.profile === "local" || state.auditedInstance === state.instance) return;
-  const gateway = state.instance.programs.clientGateway;
+  const instance = primaryOf(state);
+  if (settings.profile === "local" || state.auditedInstance === instance) return;
+  const gateway = instance.programs.clientGateway;
   state.auditDetach?.();
-  state.auditedInstance = state.instance;
+  state.auditedInstance = instance;
   state.auditDetach = attachGatewayAuditPersistence(gateway, {
-    fluxiqDir: state.instance.paths.fluxiq,
+    fluxiqDir: instance.paths.fluxiq,
     onWriteError: (reason) => logger.warn("[FluxIQ] The gateway security audit could not be written.", { reason })
   });
 }
