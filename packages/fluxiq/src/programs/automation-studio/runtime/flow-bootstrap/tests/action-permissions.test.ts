@@ -723,7 +723,7 @@ describe("a plan step's reset witness", () => {
   });
 });
 
-// t792: an exploration press on a control this build already flipped is held to the earliest such press.
+// Exploration knows the available states, but needs an explicit observed choice.
 describe("an exploration press on a control this build flipped", () => {
   const PINNED = { via: "name", gains: ["unpin"], loses: ["pin"] };
   const UNPINNED = { via: "name", gains: ["pin"], loses: ["unpin"] };
@@ -740,19 +740,23 @@ describe("an exploration press on a control this build flipped", () => {
         const verdict = await call.permission!({ consequences: ["modify_existing"], control: { name: pinned ? "Unpin" : "Pin", kind: "button" }, verb: "press" });
         if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false }, effectApplied: false };
         pinned = !pinned;
-        return { kind: "llm_evidence_tool_execution", evidence: { ok: true, toggle: { signature: pinned ? PINNED : UNPINNED } }, effectApplied: true, draft: { ranWith: { node: "domain.demo.press", parameters: { target: { selector: "#note-3 .pin" } } } } };
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: true, toggle: { signature: pinned ? PINNED : UNPINNED, beforeSignature: pinned ? UNPINNED : PINNED } }, effectApplied: true, draft: { ranWith: { node: "domain.demo.press", parameters: { target: { selector: "#note-3 .pin" } } } } };
       }
     });
     const press = (callId: string, target: JsonObject, extra: JsonObject = {}) => permissions.executeTool({ callId, toolId: "core.run_node", value: { node: "domain.demo.press", parameters: { target }, consequences: ["modify_existing"], ...extra } });
     return { permissions, ran, press, pinned: () => pinned };
   }
 
-  it("a second exploration press on a control this build flipped is run with its ensureState", async () => {
+  it("refuses a repeated unchosen press before dispatch, and skips an explicit already-satisfied state", async () => {
     const run = board();
     expect(await run.press("pin", { handle: "t7" })).toMatchObject({ effectApplied: true });
     // Pressed again by handle, and by the target as the domain resolved it: the board stays pinned and nothing new is recorded.
-    expect(await run.press("again", { handle: "t7" })).toMatchObject({ evidence: { skipped: "already_in_state" } });
-    expect(await run.press("by-target", { selector: "#note-3 .pin" })).toMatchObject({ evidence: { skipped: "already_in_state" } });
+    expect(await run.press("missing", { handle: "t7" })).toMatchObject({ evidence: { code: "candidate.toggle_state_required" }, effectApplied: false, targetsUnchanged: true });
+    expect(run.ran).toHaveLength(1);
+    expect(await run.press("invented", { handle: "t7" }, { parameters: { target: { handle: "t7" }, ensureState: { state: "invented" } } })).toMatchObject({ evidence: { code: "candidate.toggle_state_unobserved" }, effectApplied: false, targetsUnchanged: true });
+    expect(run.ran).toHaveLength(1);
+    expect(await run.press("again", { handle: "t7" }, { parameters: { target: { handle: "t7" }, ensureState: PINNED } })).toMatchObject({ evidence: { skipped: "already_in_state" } });
+    expect(await run.press("by-target", { selector: "#note-3 .pin" }, { parameters: { target: { selector: "#note-3 .pin" }, ensureState: PINNED } })).toMatchObject({ evidence: { skipped: "already_in_state" } });
     expect(run.pinned()).toBe(true);
     expect(run.ran.map((value) => (value.parameters as JsonObject).ensureState)).toEqual([undefined, PINNED, PINNED]);
     expect(run.permissions.exploredToggles.list()).toMatchObject([{ callId: "pin", signature: PINNED }]);
@@ -770,7 +774,8 @@ describe("an exploration press on a control this build flipped", () => {
       explored: (call) => undoes.push(call.undoes)
     });
     await run.press("pin", { handle: "t7" });
-    expect(await run.press("again", { handle: "t7" })).toMatchObject({ evidence: { skipped: "already_in_state" } });
+    expect(await run.press("missing", { handle: "t7" })).toMatchObject({ evidence: { code: "candidate.toggle_state_required" }, effectApplied: false });
+    expect(await run.press("again", { handle: "t7" }, { parameters: { target: { handle: "t7" }, ensureState: PINNED } })).toMatchObject({ evidence: { skipped: "already_in_state" } });
     expect(run.pinned()).toBe(true);
     expect(await run.press("undo", { handle: "t7" }, { undoes: "act-1" })).toMatchObject({ effectApplied: true });
     expect(run.ran.map((value) => (value.parameters as JsonObject).ensureState)).toEqual([undefined, PINNED, undefined]);

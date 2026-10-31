@@ -23,6 +23,11 @@ import { savedFlowValidation, webDomainNodeDefinitionsFixture } from "./index.ts
 const REPLAY_PREMISE = "nothing you did while gathering evidence is still in effect then";
 
 describe("the Flow script format's replay premise", () => {
+  it("asks for an explicit observed toggle end-state without inferring intent from a press", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE).toContain("write ensureState as an exact copy of an observed signature tied to this step");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE).toContain("a shown state and the state a press would leave may differ");
+  });
+
   it("says the Flow runs without the model and without anything exploration changed", () => {
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain("The Flow runs later on its own, with no model, from the page the run starts on");
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain(REPLAY_PREMISE);

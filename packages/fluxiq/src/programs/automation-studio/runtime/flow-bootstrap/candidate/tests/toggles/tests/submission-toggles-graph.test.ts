@@ -13,6 +13,7 @@ import type { JsonObject } from "../../../../../../../../core/index.ts";
 import { createBlankAutomationStudioFlowArtifact } from "../../../../../../model/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../../nodes/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../../executor/index.ts";
+import { runAutomationStudioGraph } from "../../../../../executor/index.ts";
 import { normalizeAutomationStudioFlowBuildPlan } from "../../../../adaptation.ts";
 import { AutomationStudioExploredToggles } from "../../../../explored-toggles.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../../../../plan/index.ts";
@@ -88,7 +89,9 @@ describe("a toggle step's ensureState in the graph that is run and saved", () =>
     // The trial pressed `primary.n0`, and the domain said that press flipped its control; the trial's graph says how that step was written.
     const ran = graphOf(first.candidate.buildPlan);
     toggles.trial([trialPress(SIGNATURE, ran.nodes.find((node) => String(node.id).endsWith(".primary.n0"))!.id)], ran);
-    const second = await submissions.submit(candidate());
+    const missing = await submissions.submit(candidate());
+    expect(missing).toMatchObject({ ok: false, check: { issueCodes: ["candidate.toggle_state_required"], feedback: { code: "candidate.toggle_state_required" } } });
+    const second = await submissions.submit(candidate(SIGNATURE));
     expect(second.ok, JSON.stringify(second)).toBe(true);
     if (!second.ok) return;
     expect(second.candidate.revision).toBeGreaterThan(first.candidate.revision);
@@ -100,14 +103,22 @@ describe("a toggle step's ensureState in the graph that is run and saved", () =>
     expect(graph.n0).toEqual({ target: { selector: "#t9" }, ensureState: SIGNATURE });
     // Another control of the same node is an ordinary press.
     expect(graph.n1).toEqual({ target: { selector: "#t3" } });
+    // The persisted representation is the graph a replay actually executes,
+    // not a parameter assertion against the transient authoring plan.
+    const saved = JSON.parse(JSON.stringify(graphOf(second.candidate.buildPlan)));
+    const executed: Array<JsonObject | undefined> = [];
+    const trace = await runAutomationStudioGraph(saved, {
+      nativeNodeExecutor: async ({ node }) => {
+        executed.push(node.parameterValues);
+        return { result: { status: "success", route: "success", outputs: {} } };
+      }
+    });
+    expect(trace.status).toBe("succeeded");
+    expect(executed).toEqual([{ target: { selector: "#t9" }, ensureState: SIGNATURE }, { target: { selector: "#t3" } }]);
   });
 
-  it("never keeps an ensureState the model wrote in the graph either", async () => {
+  it("never builds a runnable graph from an unobserved written ensureState", async () => {
     const submitted = await controller().submit(candidate({ state: "made.up" }));
-    expect(submitted.ok, JSON.stringify(submitted)).toBe(true);
-    if (!submitted.ok) return;
-    expect(submitted.candidate.buildPlan.subflows[0]!.nodes[0]!.parameters).toEqual({ target: { selector: "#t9" } });
-    expect(runsAsSubmitted(submitted.candidate.buildPlan)).toBe(true);
-    expect(graphParameters(submitted.candidate.buildPlan).n0).toEqual({ target: { selector: "#t9" } });
+    expect(submitted).toMatchObject({ ok: false, check: { issueCodes: ["candidate.toggle_state_unobserved"], feedback: { code: "candidate.toggle_state_unobserved" } } });
   });
 });

@@ -174,13 +174,14 @@ export class AutomationStudioFlowCandidateSubmissionController {
    *
    * **A step on a control explored as a toggle is safe to run again (t775).**
    * Once resolved, a model's step that repeats an explored press the domain
-   * answered as a toggle carries `ensureState`, or is refused
-   * `candidate.toggle_not_idempotent` naming the node that sets the state
+   * answered as a toggle must explicitly choose an observed `ensureState`.
+   * Missing, unobserved or conflicting choices are refused with bounded
+   * evidence; a node unable to take it is `candidate.toggle_not_idempotent`
    * (`../script-statements/toggle-idempotent.ts`). A composed Flow keeps what
    * its parts' submissions gave it. A step is tied to a trial pass of its own
    * node the domain answered as a toggle too (t787), so a looped step whose
-   * handle was never pressed while exploring carries it from the revision after
-   * its first trial. The plan so changed is validated and laid out again, as
+   * handle was never pressed while exploring can choose either actually
+   * observed state after its first trial. The plan is validated and laid out again, as
    * the layer handlers' is: a trial runs, and a promotion saves, the graph
    * built from the laid-out parts, not the plan, and a trial refuses a
    * candidate whose plan lays out otherwise (`candidate.execution_plan_rewritten`,
@@ -262,7 +263,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // A step on a control explored as a toggle: given `ensureState`, or refused for the node that sets the state (header of `submit`, t775).
     const toggled = holdKept ? automationStudioFlowPlanToggleSteps({ plan: verdict.buildPlan.plan, handleViews: verdict.handleViews, explored: this.input.exploredToggles?.list() ?? [],
       takesEnsureState: (definitionId) => this.input.registry.get(definitionId, this.input.resolution)?.parameters.some((parameter) => parameter.id === "ensureState") === true }) : undefined;
-    if (toggled?.issues.length) return { ok: false, revision, check: bindingRefusal(toggled.issues, verdict.locator, "candidate.toggle_not_idempotent") };
+    if (toggled?.issues.length) return { ok: false, revision, check: bindingRefusal(toggled.issues, verdict.locator, toggled.issues[0]!.code) };
     // Laid out again, so the parts a trial runs and a promotion saves carry what the plan does (header of `submit`, t787).
     // And each step a trial slowed down given the pace it learned, tied by the step's identity (header of `submit`, P6 CC8).
     const paced = holdKept ? this.input.exploredPaces?.lower(toggled?.plan ?? verdict.buildPlan.plan) : undefined;

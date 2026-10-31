@@ -22,6 +22,7 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "../../project
 const REF = { projectId: "project.notes", flowId: "flow.notes", buildId: "build.notes" };
 const SOURCE = "Pin the second saved note.";
 const PINNED = { via: "name", gains: ["unpin"], loses: ["pin"] };
+const UNPINNED = { via: "name", gains: ["pin"], loses: ["unpin"] };
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -49,13 +50,13 @@ async function recorded() {
 function explore(toggles: AutomationStudioExploredToggles): void {
   toggles.explored(
     { callId: "call.4", toolId: "core.run_node", value: { node: "demo.press", parameters: { target: { handle: "t4" } }, consequences: ["modify_existing"] } },
-    { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, outputs: { toggle: { signature: PINNED } }, draft: { actionId: "demo.press", ranWith: { node: "demo.press", parameters: { target: { selector: "li:nth-of-type(1) button.pin" } } } } }
+    { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, outputs: { toggle: { signature: PINNED, beforeSignature: UNPINNED } }, draft: { actionId: "demo.press", ranWith: { node: "demo.press", parameters: { target: { selector: "li:nth-of-type(1) button.pin" } } } } }
   );
 }
 
 /** A trial's pass of the subflow's `pin` step, its outputs as the web domain's runtime path returns them (`../../project-build/tests/project-build-shared-toggles.test.ts`). */
 function trialPress(): AutomationStudioNodeAttemptTrace {
-  const result: JsonObject = { status: "succeeded", message: "Element clicked.", result: { actionType: "web.dom.click", status: "succeeded", toggle: PINNED }, toggle: { signature: PINNED } };
+  const result: JsonObject = { status: "succeeded", message: "Element clicked.", result: { actionType: "web.dom.click", status: "succeeded", toggle: PINNED }, toggle: { signature: PINNED, beforeSignature: UNPINNED } };
   return {
     attemptId: "attempt.7", nodeId: "node.bootstrap.0123456789abcdef.pin_notes.pin", definitionId: "demo.press", startedAt: 1, finishedAt: 2, status: "succeeded", route: "success",
     inputs: {}, outputs: { outputId: "web.dom.click", ok: true, runtimeCommandId: "command.7", runtimeStatus: "succeeded", result }, effects: []
@@ -79,8 +80,8 @@ describe("the build's toggles in the build record", () => {
     const fresh = new AutomationStudioProjectBuildRecordStore(projects, new AutomationStudioFlowPaths(projects));
     const written = (await fresh.read(REF))?.record.toggles;
     expect(written?.map(({ recordedAt: _at, ...toggle }) => toggle)).toEqual([
-      { from: "explored", node: "demo.press", callId: "call.4", handles: ["t4"], target: { selector: "li:nth-of-type(1) button.pin" }, signature: PINNED },
-      { from: "trial", node: "demo.press", handles: [], trialNodes: ["node.bootstrap.0123456789abcdef.pin_notes.pin"], signature: PINNED }
+      { from: "explored", node: "demo.press", callId: "call.4", handles: ["t4"], target: { selector: "li:nth-of-type(1) button.pin" }, signature: PINNED, beforeSignature: UNPINNED },
+      { from: "trial", node: "demo.press", handles: [], trialNodes: ["node.bootstrap.0123456789abcdef.pin_notes.pin"], signature: PINNED, beforeSignature: UNPINNED }
     ]);
     expect(writer.unrecorded()).toEqual([]);
   });
@@ -106,11 +107,11 @@ describe("the build's toggles in the build record", () => {
       schemaVersion: "0.1", router: { name: "Notes", rules: [], fallback: { kind: "subflow", targetSubflowKey: "pin_notes" } },
       subflows: [{ key: "pin_notes", name: "Pin notes", role: "primary", edges: [], nodes: [
         { key: "pin", definitionId: "demo.press", definitionVersion: "1.0.0", consequences: ["modify_existing"], parameters: { target: { selector: "li:nth-of-type(2) button.archive" } } },
-        { key: "s2", definitionId: "demo.press", definitionVersion: "1.0.0", consequences: ["modify_existing"], parameters: pin }
+        { key: "s2", definitionId: "demo.press", definitionVersion: "1.0.0", consequences: ["modify_existing"], parameters: { ...pin, ensureState: UNPINNED } }
       ] }]
     } as unknown as AutomationStudioFlowBootstrapPlan;
     const tied = (explored: AutomationStudioExploredToggles) => automationStudioFlowPlanToggleSteps({ plan, explored: explored.list() }).plan.subflows[0]!.nodes.map((node) => node.parameters?.ensureState);
-    expect(tied(reloaded)).toEqual([undefined, PINNED]);
+    expect(tied(reloaded)).toEqual([undefined, UNPINNED]);
     expect(tied(reloaded)).toEqual(tied(toggles));
     // Parameters on an exploration press are refused, as an edited record is.
     await expect(store.recordToggle(REF, { from: "explored", node: "demo.press", handles: ["t4"], trialParameters: pin, signature: PINNED })).rejects.toMatchObject({ code: "project.toggle_origin" });

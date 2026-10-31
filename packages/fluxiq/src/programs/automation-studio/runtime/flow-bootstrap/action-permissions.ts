@@ -101,16 +101,12 @@
 // t787), which a submission makes a handler of each of
 // (`./layer-handlers/explored.ts`).
 //
-// **A control this build already flipped is held to that press (t792).** An
-// exploration press of a node on a control a recorded toggle ties to -- by the
-// handle the call names, or the call's target equal to the press's resolved
-// target (`./script-statements/toggle-tie.ts`) -- runs with `ensureState` set
-// to the earliest tied press's signature, so a second press toward the state
-// the build already reached presses nothing and the domain answers
-// `already_in_state`. Run `run-mvswfjbq-d0a95f6e` pressed such a control once
-// more while exploring, flipped it back, and the step was taught the reversal.
-// An undo of the build's own act is how a build means to put a control back,
-// and goes through the site reset's undo path unheld.
+// Known toggles need an explicit observed end-state choice, grounded by the
+// handle or whole resolved target (`./script-statements/toggle-tie.ts`). All
+// tied observations are evidence; neither their order nor a majority supplies
+// intent. A missing or ungrounded choice refuses before dispatch with actual
+// bounded choices. A first unknown press may reveal states. An admitted undo
+// of this build's own act retains its bypass and supplies no toggle evidence.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import {
@@ -150,6 +146,7 @@ import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
 import { AutomationStudioExploredToggles } from "./explored-toggles.ts";
 import { AutomationStudioExploredInterruptions } from "./explored-interruptions.ts";
 import { automationStudioExploredToggleTie } from "./script-statements/index.ts";
+import { automationStudioToggleStateChoice } from "../toggle-state/index.ts";
 import { automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetWitness, type AutomationStudioSiteResetWitnessStamp } from "./reset-admission/index.ts";
 
 /**
@@ -375,8 +372,10 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
           }
           return await check(declaration);
         };
-        // On a control this build already flipped, held to that press (header, t792).
-        const held = { ...call, value: heldToToggle(call.toolId, call.value, exploredToggles) };
+        // Known toggles need a grounded choice; a first unknown press may reveal one.
+        const toggled = heldToToggle(call.toolId, call.value, exploredToggles);
+        if ("refusal" in toggled) return toggled.refusal;
+        const held = { ...call, value: toggled.value };
         const execution = await input.executeTool({ ...held, permission });
         gate.observe(execution);
         exploredToggles.explored(held, execution);
@@ -395,8 +394,10 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         return { kind: "llm_evidence_tool_execution", evidence: claim.evidence, effectApplied: false, targetsUnchanged: true, ...(typeof code === "string" ? { resultCode: code } : {}) };
       }
       const undo = claim.kind === "undo" ? claim.undo : undefined;
-      // On a control this build already flipped, held to that press; an undo is the build putting it back, and is not (header, t792).
-      const value = undo ? claimedValue : heldToToggle(call.toolId, claimedValue, exploredToggles);
+      // An admitted undo restores this build's act and keeps its existing bypass.
+      const toggled = undo ? { value: claimedValue } : heldToToggle(call.toolId, claimedValue, exploredToggles);
+      if ("refusal" in toggled) return toggled.refusal;
+      const value = toggled.value;
       if (automationStudioFlowDraftDeclaresLasting(value.consequences)) await read();
       const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
       // The last action the domain put to the gate for this call, as the gate read it.
@@ -615,16 +616,19 @@ function isExecutionResult(execution: JsonValue | AutomationStudioLlmEvidenceToo
 }
 
 /**
- * A node call's input with `ensureState` set to the signature of the earliest recorded toggle tied to its control, by
- * the handle its `target` names or that whole `target` (header, t792); any other call's input as it was.
+ * A node call's explicit state grounded in all observations tied to its control.
+ * Refusal is ordinary answerable evidence, never a permission request.
  */
-function heldToToggle(toolId: string, value: JsonObject, exploredToggles: AutomationStudioExploredToggles): JsonObject {
+function heldToToggle(toolId: string, value: JsonObject, exploredToggles: AutomationStudioExploredToggles): { value: JsonObject } | { refusal: AutomationStudioLlmEvidenceToolExecutionResult } {
   const parameters = value.parameters;
-  if (toolId !== RUN_NODE_TOOL_ID || typeof value.node !== "string" || !parameters || typeof parameters !== "object" || Array.isArray(parameters)) return value;
+  if (toolId !== RUN_NODE_TOOL_ID || typeof value.node !== "string" || !parameters || typeof parameters !== "object" || Array.isArray(parameters)
+    || !Array.isArray(value.consequences) || value.consequences.length !== 1 || value.consequences[0] !== "modify_existing") return { value };
   const target = parameters.target;
   const handle = target && typeof target === "object" && !Array.isArray(target) ? target.handle : undefined;
-  const press = automationStudioExploredToggleTie({ node: value.node, handles: new Set(typeof handle === "string" && handle.length ? [handle] : []), target }, exploredToggles.list());
-  return press ? { ...value, parameters: { ...parameters, ensureState: structuredClone(press.signature) } } : value;
+  const presses = automationStudioExploredToggleTie({ node: value.node, handles: new Set(typeof handle === "string" && handle.length ? [handle] : []), target }, exploredToggles.list());
+  const choice = automationStudioToggleStateChoice({ parameters, explored: presses });
+  if (choice.kind === "refused") return { refusal: { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: choice.code, instruction: choice.message }, effectApplied: false, targetsUnchanged: true, resultCode: choice.code } };
+  return { value: choice.kind === "selected" ? { ...value, parameters: { ...parameters, ensureState: choice.signature } } : value };
 }
 
 /** The call applied an effect and did not answer `ok: false`: what the ledger counts as an act having landed. */

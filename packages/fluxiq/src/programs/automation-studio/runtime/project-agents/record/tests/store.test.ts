@@ -36,6 +36,22 @@ async function withRoot(sqlite: boolean, run: (root: string) => Promise<void>): 
 }
 
 describe.each([false, true])("the build record on disk (SQLite=%s)", (sqlite) => {
+  it("reopens paired toggle evidence and legacy singleton records without inventing a pre-state", async () => {
+    await withRoot(sqlite, async (root) => {
+      const store = storeAt(root);
+      await store.create(created);
+      const signature = { state: "opaque.b" };
+      const beforeSignature = { state: "opaque.a" };
+      await store.recordToggle(ref, { from: "explored", node: "demo.press", handles: ["t1"], signature, beforeSignature });
+      await store.recordToggle(ref, { from: "explored", node: "demo.press", handles: ["t2"], signature });
+      await store.recordToggle(ref, { from: "explored", node: "demo.press", handles: ["t3"], signature, beforeSignature: {} });
+      await store.recordToggle(ref, { from: "explored", node: "demo.press", handles: ["t4"], signature, beforeSignature: { state: "x".repeat(4_100) } });
+      const records = (await storeAt(root).read(ref))!.record.toggles!;
+      expect(records.map((record) => record.beforeSignature)).toEqual([beforeSignature, undefined, undefined, undefined]);
+      expect(records.map((record) => record.signature)).toEqual([signature, signature, signature, signature]);
+    });
+  });
+
   it("is written as the build proceeds: a fresh store sees each step as soon as it is recorded", async () => {
     await withRoot(sqlite, async (root) => {
       const writer = storeAt(root);

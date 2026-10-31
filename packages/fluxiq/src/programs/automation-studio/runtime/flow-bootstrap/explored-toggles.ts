@@ -36,13 +36,12 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
 import type { AutomationStudioExploredToggle } from "./script-statements/index.ts";
+import { automationStudioToggleStateSignature, automationStudioToggleStateValueKey } from "../toggle-state/index.ts";
 
 /** The tool an exploration press is run through (`../llm/node-tools/run-node.ts`). */
 const RUN_NODE_TOOL_ID = "core.run_node";
 /** A node id, as the registry names one. */
 const NODE_ID = /^[A-Za-z0-9_.:-]{1,200}$/u;
-/** The longest signature kept, as JSON: a state's digest, never a page. */
-const MAX_SIGNATURE_CHARS = 4_096;
 /** The most presses kept; the oldest goes first. */
 const MAX_RECORDS = 256;
 /** The longest trial node's parameters kept as its step's identity, as JSON; longer, the press ties no step. */
@@ -68,8 +67,9 @@ export class AutomationStudioExploredToggles {
     const result = objectOf(execution);
     if (!result || result.kind !== "llm_evidence_tool_execution" || objectOf(result.evidence)?.ok === false) return;
     const toggle = objectOf(objectOf(result.evidence)?.toggle) ?? objectOf(objectOf(result.outputs)?.toggle);
-    const signature = objectOf(toggle?.signature);
-    if (!toggle || !signature || !Object.keys(signature).length || JSON.stringify(signature).length > MAX_SIGNATURE_CHARS) return;
+    const signature = automationStudioToggleStateSignature(toggle?.signature);
+    if (!toggle || !signature) return;
+    const beforeSignature = automationStudioToggleStateSignature(toggle.beforeSignature);
     const idempotentWith = typeof toggle.idempotentWith === "string" && NODE_ID.test(toggle.idempotentWith) ? toggle.idempotentWith : undefined;
     const handle = objectOf(objectOf(call.value.parameters)?.target)?.handle;
     const target = objectOf(objectOf(objectOf(result.draft)?.ranWith)?.parameters)?.target;
@@ -79,21 +79,24 @@ export class AutomationStudioExploredToggles {
       handles: typeof handle === "string" && handle.length ? [handle] : [],
       ...(target !== undefined ? { target: structuredClone(target) } : {}),
       signature: structuredClone(signature),
+      ...(beforeSignature ? { beforeSignature } : {}),
       ...(idempotentWith ? { idempotentWith } : {})
     });
     if (this.records.length > MAX_RECORDS) this.records.shift();
   }
 
-  /** Records each succeeded, unskipped attempt of a trial whose outputs carry a well-formed `toggle`, with its node's parameters from `graph` (header, t787, t792); the same node, parameters and signature twice is kept once. */
+  /** Records succeeded unskipped trial transitions with written node parameters; deduplication includes both observed states, so richer evidence survives legacy records. */
   trial(attempts: readonly AutomationStudioNodeAttemptTrace[], graph?: TrialGraph | undefined): void {
     const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node] as const));
     for (const attempt of attempts) {
       if (attempt.status !== "succeeded" || attempt.skipped) continue;
       const toggle = objectOf(attempt.outputs.toggle) ?? objectOf(objectOf(attempt.outputs.result)?.toggle);
-      const signature = objectOf(toggle?.signature);
-      if (!toggle || !signature || !Object.keys(signature).length || JSON.stringify(signature).length > MAX_SIGNATURE_CHARS) continue;
+      const signature = automationStudioToggleStateSignature(toggle?.signature);
+      if (!toggle || !signature) continue;
+      const beforeSignature = automationStudioToggleStateSignature(toggle.beforeSignature);
       const trialParameters = stepParameters(nodes.get(attempt.nodeId));
-      if (this.records.some((record) => record.trialNodes?.includes(attempt.nodeId) && JSON.stringify(record.signature) === JSON.stringify(signature)
+      if (this.records.some((record) => record.trialNodes?.includes(attempt.nodeId) && automationStudioToggleStateValueKey(record.signature) === automationStudioToggleStateValueKey(signature)
+        && automationStudioToggleStateValueKey(record.beforeSignature ?? null) === automationStudioToggleStateValueKey(beforeSignature ?? null)
         && JSON.stringify(record.trialParameters) === JSON.stringify(trialParameters))) continue;
       const idempotentWith = typeof toggle.idempotentWith === "string" && NODE_ID.test(toggle.idempotentWith) ? toggle.idempotentWith : undefined;
       this.records.push({
@@ -102,6 +105,7 @@ export class AutomationStudioExploredToggles {
         trialNodes: [attempt.nodeId],
         ...(trialParameters ? { trialParameters } : {}),
         signature: structuredClone(signature),
+        ...(beforeSignature ? { beforeSignature } : {}),
         ...(idempotentWith ? { idempotentWith } : {})
       });
       if (this.records.length > MAX_RECORDS) this.records.shift();

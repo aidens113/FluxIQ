@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import { automationStudioExploredToggleTie } from "../toggle-tie.ts";
-import { automationStudioFlowPlanToggleSteps, type AutomationStudioExploredToggle } from "../toggle-idempotent.ts";
+import type { AutomationStudioExploredToggle } from "../toggle-idempotent.ts";
 
 // t792: a toggle a trial pass learned is tied to the step written as the
 // trial's node was -- its parameters, compared whole -- never to whichever step
@@ -32,11 +32,15 @@ const trialPress = (key: string, parameters: JsonObject, signature: JsonObject):
   node: NODE, handles: [], trialNodes: [`node.bootstrap.b1.primary.${key}`], trialParameters: structuredClone(parameters), signature
 });
 
-/** Each step's `ensureState`, by key; a step given none is absent. */
+/** Each uniquely tied observation, by step key. Matching never selects intent. */
 function ensured(steps: readonly JsonObject[], explored: readonly AutomationStudioExploredToggle[]): Record<string, unknown> {
-  const result = automationStudioFlowPlanToggleSteps({ plan: plan(steps), explored });
-  expect(result.issues).toEqual([]);
-  return Object.fromEntries(result.plan.subflows[0]!.nodes.flatMap((node) => node.parameters?.ensureState === undefined ? [] : [[node.key, node.parameters.ensureState]]));
+  const nodes = plan(steps).subflows[0]!.nodes;
+  return Object.fromEntries(nodes.flatMap((node) => {
+    const tied = automationStudioExploredToggleTie({ node: NODE, handles: new Set(), target: node.parameters?.target,
+      step: { ref: `primary.${node.key}`, parameters: node.parameters, others: nodes.filter((other) => other !== node) } }, explored);
+    expect(tied.length).toBeLessThanOrEqual(1);
+    return tied.map((press) => [node.key, press.signature]);
+  }));
 }
 
 describe("a toggle a trial learned, tied to its step by identity (t792)", () => {
@@ -74,7 +78,7 @@ describe("a toggle a trial learned, tied to its step by identity (t792)", () => 
   it("ties no step to a trial press recorded without its node's parameters, and no exploration call to any trial press", () => {
     const unknown: AutomationStudioExploredToggle = { node: NODE, handles: [], trialNodes: ["node.bootstrap.b1.primary.s1"], signature: PINNED };
     expect(ensured([PIN], [unknown])).toEqual({});
-    expect(automationStudioExploredToggleTie({ node: NODE, handles: new Set(), target: PIN.target }, [trialPress("s1", PIN, PINNED)])).toBeUndefined();
+    expect(automationStudioExploredToggleTie({ node: NODE, handles: new Set(), target: PIN.target }, [trialPress("s1", PIN, PINNED)])).toEqual([]);
   });
 });
 

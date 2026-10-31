@@ -262,66 +262,62 @@ toggle and the skip record.
   the build began is never touched; the run is judged on leaving it as it is. An
   undo no call can make never blocks a trial: it runs with the act disclosed and
   the part `unproven`.
-- **Idempotent toggles.** A step that sets a state must be safe to run on a site
-  already in that state. A control that states its state (checkbox, radio,
-  `aria-pressed`, `aria-checked`, `aria-selected`) uses `web.dom.check`. A control
-  that shows its state only by name is handled by the toggle signature: the
-  domain answers an exploration press with `toggle: { signature,
-  idempotentWith? }`, and a trial pass's press carries the same answer on its
-  action result (`outputs.result.toggle`, t787); `flow-bootstrap/explored-toggles.ts`
-  records both, and a `modify_existing` step repeating an explored press, or the
-  same step's press from an earlier trial, gets the node parameter
-  `ensureState` written by Core, never by the model. A trial's press is tied to
-  a step by the step's identity, never its key (t792): the same node written
-  with the same parameters, compared whole with `ensureState` taken off, as the
-  trial's graph recorded them (`trialParameters`). That is the identity Core
-  already uses for a step across revisions (`result-verification/standing-no/written-conditions.ts`,
-  t666); a label is display words, and the web domain drops a resolved
-  `target`. A step's key (`s10`) is its place in the script, which a repair
-  renumbers when it inserts or removes an earlier step, so the key decides only
-  between two steps written the same, and a step whose parameters match no
-  trial press gets none (`script-statements/toggle-tie.ts`). A toggle's own
-  words change with its state ("Like" and "Unlike"), so a step whose parameters
-  differ only by the words that press's own signature gained and lost
-  (`gains`, `loses`, the one place Core reads inside a signature) is the same
-  step, unless another step of the plan on that node matches the press too
-  (`script-statements/toggle-state-words.ts`). The submission re-validates
-  the rewritten plan, so `ensureState` reaches the laid-out subflows the trial and
-  the saved graph are built from, not only the plan. The click node then presses
-  only when the target does not already show the signature, and otherwise answers
-  `skipped: "already_in_state"`, which the executor records as a skipped attempt
-  with no landed act. A plain press that repeats a toggle whose signature names
-  `idempotentWith`, on a node that cannot take `ensureState`, is refused
-  `candidate.toggle_not_idempotent` at submission
-  (`script-statements/toggle-idempotent.ts`). A toggle with no signature has no
-  idempotent form and falls under the targeted-reset case.
-  A look can tie a step as well (t799, CC9): a handle view of the domain's
-  resolved answer may carry `control: { stateful: true, state?, ensures?,
-  idempotentWith? }` (`state` at most 40 characters, `ensures` a plain JSON
-  object of at most 4,096 characters in the form the press node's `ensureState`
-  takes; a field out of bound is dropped and the rest kept, and `control` is
-  read only on a step's own views, never on a page fact's). A step whose own
-  views all agree on `ensures` is tied to a toggle press, with the lowest
-  precedence after explored and trial presses, and its node gets
-  `ensureState := ensures` (`llm/harness-options/plan-parameter-resolution.ts`,
-  `script-statements/toggle-idempotent.ts`). A tie from a look never refuses:
-  a look is not evidence that the node flips the control, so a node that cannot
-  take `ensureState` stays a plain press. Where an explored or trial press named
-  an `idempotentWith`, a press node that takes `ensureState` is that idempotent
-  form and gets `ensureState` in place of the refusal; only a node that cannot
-  take it is refused `candidate.toggle_not_idempotent`.
-  When several presses are tied to one step and their signatures disagree, the
-  earliest decides (`script-statements/toggle-tie.ts`, t792): a later opposite
-  press reversed the build's own act and names the site's before-state, never
-  the asked state. An exploration press on a control the build already flipped
-  runs with the earliest tied press's signature as `ensureState`
-  (`flow-bootstrap/action-permissions.ts`), so pressing toward the asked state
-  again presses nothing; an undo goes through the undo path as before. A trial
-  names a subflow's nodes under the brief's key while the submission names them
-  as written (a script's own steps as `main`), so a subflow builder's
-  controller reads the build's toggles with each trial node also under the
-  written key (`subflow-candidate/scoped-submission.ts`, t792), which the key
-  tie between two steps written the same still needs.
+- **Explicit observed toggle states.** A `modify_existing` step that switches a
+  control between states must explicitly write `ensureState` as an exact copy
+  of a bounded signature observed for that step. Core never infers the requested
+  direction from the first press, a majority of loop passes, a state word, the
+  action's wording, or the result a press would leave. A control may already
+  show the instruction's requested state before the first press.
+  The domain answers a successful changing press with
+  `toggle: { signature, beforeSignature?, idempotentWith? }`: `signature` is
+  always the actual after-state and optional `beforeSignature` the actual
+  pre-state. Both are opaque nonempty plain JSON objects of at most 4,096
+  characters. Exploration and trial attempts (`outputs.toggle` or
+  `outputs.result.toggle`) preserve both; skipped and failed attempts add no
+  observations. Deduplication includes the pre-state, so legacy after-only
+  records cannot hide richer evidence. Build records persist and restore the
+  additive field; old records stay readable without a fabricated inverse.
+  `script-statements/toggle-tie.ts` collects every tied observation. Handles,
+  whole resolved targets, and a trial step's written node/parameters establish
+  the tie; `ensureState` is excluded from identity. A renumbered step still
+  matches, duplicate steps use the existing key disambiguation, and a toggle's
+  own observed changed words preserve its other-state identity. Matching does
+  not establish intent or durable identity of individual loop rows.
+  CC9 handle views add `control: { stateful: true, state?, shown?, ensures?,
+  idempotentWith? }`. The bounded `state` word describes the shown state;
+  `shown` is its actual signature and `ensures` the signature a press would
+  leave. They are distinct. Invalid optional evidence is dropped; controls
+  with unknown fields are dropped whole. Only the step's own views contribute,
+  never a page fact's. A stateful control with no readable signature refuses
+  as unresolved rather than assigning a press direction.
+  `runtime/toggle-state/` grounds the explicit choice in the collected states.
+  Complete pairs must agree irrespective of direction or frequency; incompatible
+  pairs, more than two states, and legacy singleton evidence outside a known
+  pair refuse as `candidate.toggle_state_unresolved`. An after-only legacy
+  signature grounds only that observed state. No selection refuses as
+  `candidate.toggle_state_required`; a made-up, malformed, oversized or untied
+  selection is `candidate.toggle_state_unobserved`. Feedback names the step
+  and offers bounded signatures labelled as shown, before press, after press,
+  or the state a press would leave. The model chooses the state requested by
+  the instruction; Core returns the exact stored object. Where the node's own
+  press evidence names another state-setting node and it cannot take
+  `ensureState`, it refuses `candidate.toggle_not_idempotent` with that node's
+  guidance. A stateful target alone does not prove its node toggles it: an
+  explicit state setter keeps its own parameters and the established
+  no-`ensureState` path remains unchanged.
+  The chosen parameter stays on the loop body node for every pass, survives
+  reversals, and reaches the revalidated laid-out graph that trials execute
+  and promotion saves. The domain presses only when the target does not
+  already match; otherwise it reports `already_in_state` without an effect.
+  A new authored revision must state its own choice again, while ordinary
+  saved Flow replay keeps its executable `ensureState`.
+  The exploration gate uses the same reader before dispatching a known
+  repeated toggle call. Missing or invalid choices return ordinary evidence
+  refusal with `effectApplied:false` and `targetsUnchanged:true`; no person
+  needs to grant permission. The first unknown press can reveal its states.
+  An admitted undo of the build's own act keeps its bypass and never teaches
+  an ordinary step's toggle direction. Scoped subflow submissions preserve the
+  existing trial-node aliasing for duplicate-step disambiguation.
 - **Layers cleared while exploring become handlers.** A press while exploring
   that cleared a covering layer (the domain's `evidence.layerCleared`: the
   layer's signature and the control pressed) is recorded by
@@ -2173,9 +2169,9 @@ entry carries `said`, the sentence the judge of the build's test also reads in
 
 Check 6 is the only one that reads the instruction rather than the node library,
 and it is what stops a build proposing a Flow that cannot produce what the
-sentence asked for. Four live builds against one instruction — every pair of
+sentence asked for. Four live builds against one instruction â€” every pair of
 wireless earbuds matching three conditions across every page of results, as a
-table with four named columns — proposed four different Flows as finished, one
+table with four named columns â€” proposed four different Flows as finished, one
 of which navigated twice, typed three times and read nothing. Checks 1 to 5
 confirmed all four parsed, resolved and validated.
 
@@ -2184,7 +2180,7 @@ instructions' own text, with no provider call on any path. It reads what the
 instruction asks to be given back from a short list of unambiguous words
 (`records`, `rows`, `columns`, `as a table`, `scrape`, `extract` and a few
 more), and notes only where the instruction plainly asks for a set of records
-and no step of the Flow produces or saves one — a step whose definition declares
+and no step of the Flow produces or saves one â€” a step whose definition declares
 where its own result keeps rows, or one whose record output names a dataset. It
 judges capability, never a chain: a Flow that reaches a search by URL rather
 than typing into a field is accepted, as is an extraction that may find nothing,
@@ -2195,7 +2191,7 @@ its own, where a refusal would ask for a node that does not exist.
 
 Check 7 asks the other question none of checks 1 to 5 asks: not whether the Flow
 could answer, but whether it could run. `run-muht9lpw-a39aa056` built a Flow of
-one node — a single list extraction, with no navigation anywhere in it — and
+one node â€” a single list extraction, with no navigation anywhere in it â€” and
 replay failed before its first step with `Cannot access contents of url
 "about:blank"`. Its exploration had navigated, dismissed the page's
 interruptions and read the list; the amendments that followed reduced the draft
@@ -2206,15 +2202,15 @@ a step that returns rows is present; it simply has nowhere to do it.
 the build was given (`flow-bootstrap/start-location.ts`), with no provider call
 on any path. It notes only when all three hold: the build was given a start
 location, the plan holds at least one step that acts on the bound domain's own
-target — a node the domain registered, or one of Core's told to dispatch a
-domain output — and no step of the plan carries where the Flow starts. Core
+target â€” a node the domain registered, or one of Core's told to dispatch a
+domain output â€” and no step of the plan carries where the Flow starts. Core
 never parses a start location, so "carries" is a text comparison and a loose
 one: a value counts when it agrees with the start location from the first
 character for twelve characters, or for the whole of it when it is shorter, so
 the site's front page, a deeper page and a neighbouring one all count. This is
 the plan-side statement of the rule the bound domain already enforces while a
-build explores — the node that goes to the start location is also the Flow's own
-first step, because the Flow is built from the steps that ran — so a Flow refused
+build explores â€” the node that goes to the start location is also the Flow's own
+first step, because the Flow is built from the steps that ran â€” so a Flow refused
 here could not have run under the rule its own build ran under. Three cases are
 left alone outright: a build given no start location, which begins already
 there; a Flow of Core nodes, which touches no target; and a node library that
@@ -2307,7 +2303,7 @@ the way, such as a listing opened and left again -- is left out; the state a
 step left and the state the next one found are compared as one moment, because
 a page can go on changing between two calls. Until t174/F41 the rule brought at
 most two steps back: live run `run-muqk4u32-0b36e58f` added 7-in-1 on an item
-page reached by a ×, a search, a listing in a new tab, a consent and a colour;
+page reached by a Ã—, a search, a listing in a new tab, a consent and a colour;
 the colour and the consent were kept and the rest were not, and two dry runs
 ran the item-page steps on the home page. For the same reason a refused dry
 run, given the draft, names the taken steps that changed the page on the way
@@ -2900,7 +2896,7 @@ instruction, every decision, the test and the judge are all held against it.
   interpretationCalls ?? 0 }`: the interpreter counts its priced attempts
   (`pricedCalls`), and the client carries the count as `interpretationCalls`
   beside `interpretationCostUsd` on `generate-flow-bootstrap-adaptation` and
-  `run-runtime-session` (a whole number ≥ 0, else refused; an older client that
+  `run-runtime-session` (a whole number â‰¥ 0, else refused; an older client that
   sends none records 0 calls, not an invented count). The record gains `calls`
   and `byPhase` (`{ calls, usd }` per phase), always together; `byPhase` sums to
   `spentUsd` unless the record held unitemised spend when itemising began. A
@@ -3459,8 +3455,8 @@ hint.
 calls declare their own effect (`perCallEffect`, the run-node tool) may carry
 `initialObservation: { input, arrival }`, where `arrival` is an input of the
 same tool that takes the target to the start location. A binding declares it as
-`runsNodes.arrival: { node, parameter }` — the node that goes somewhere and the
-parameter the location is written into — and the registry puts the build's
+`runsNodes.arrival: { node, parameter }` â€” the node that goes somewhere and the
+parameter the location is written into â€” and the registry puts the build's
 `startLocation` there, without reading it, when the build has one and the node
 is offered (`runtime/llm/harness-options/binding.ts`,
 `runtime/llm/node-tools/run-node.ts`). The loop then runs the arrival instead of

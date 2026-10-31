@@ -13,6 +13,18 @@ const answer = (outputs: JsonObject | undefined, extra: JsonObject = {}): JsonOb
 });
 
 describe("the explored toggles record", () => {
+  it("keeps actual paired evidence and drops only an invalid optional pre-state", () => {
+    const toggles = new AutomationStudioExploredToggles();
+    const signature = { state: "s.on" };
+    const beforeSignature = { state: "s.off" };
+    toggles.explored({ toolId: "core.run_node", value: PRESS }, answer({ toggle: { signature, beforeSignature } }));
+    toggles.explored({ toolId: "core.run_node", value: PRESS }, answer({ toggle: { signature, beforeSignature: {} } }));
+    toggles.explored({ toolId: "core.run_node", value: PRESS }, answer({ toggle: { signature, beforeSignature: { state: "x".repeat(4_100) } } }));
+    expect(toggles.list().map((record) => record.beforeSignature)).toEqual([beforeSignature, undefined, undefined]);
+    beforeSignature.state = "changed.after.recording";
+    expect(toggles.list()[0]!.beforeSignature).toEqual({ state: "s.off" });
+  });
+
   it("keeps the press's node, written handle, resolved target, signature and the node that sets the state", () => {
     const toggles = new AutomationStudioExploredToggles();
     toggles.explored({ callId: "c1", toolId: "core.run_node", value: PRESS }, answer({ toggle: { signature: { state: "s.on" }, idempotentWith: "domain.demo.set_state" } }));
@@ -69,6 +81,16 @@ describe("the explored toggles record from a trial (t787)", () => {
     attemptId: "a1", nodeId: "node.bootstrap.b1.primary.s6", definitionId: "domain.demo.press", startedAt: 0, status: "succeeded",
     inputs: {}, outputs: { toggle: { signature: { state: "s.on" } } }, effects: [], ...extra
   }) as unknown as Parameters<AutomationStudioExploredToggles["trial"]>[0][number];
+
+  it("keeps richer paired evidence after a legacy singleton and deduplicates the whole transition", () => {
+    const toggles = new AutomationStudioExploredToggles();
+    const signature = { state: "s.on" };
+    const beforeSignature = { state: "s.off" };
+    toggles.trial([attempt(), attempt({ outputs: { result: { toggle: { signature, beforeSignature } } } }), attempt({ outputs: { toggle: { beforeSignature, signature } } })]);
+    expect(toggles.list().map((record) => ({ signature: record.signature, beforeSignature: record.beforeSignature }))).toEqual([
+      { signature, beforeSignature: undefined }, { signature, beforeSignature }
+    ]);
+  });
 
   it("records the toggle a trial pass's attempt answered, under the trial node, once however many passes", () => {
     const toggles = new AutomationStudioExploredToggles();

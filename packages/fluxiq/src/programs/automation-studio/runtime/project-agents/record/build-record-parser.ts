@@ -12,6 +12,7 @@ import {
   type AutomationStudioProjectSubflowBrief
 } from "../contracts/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioToggleStateSignature } from "../../toggle-state/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDINGS, type AutomationStudioProjectBuildActOwner, type AutomationStudioProjectBuildLastingAct, type AutomationStudioProjectBuildRecord, type AutomationStudioProjectBuildRef, type AutomationStudioProjectBuildReturnRecord, type AutomationStudioProjectBuildToggle } from "./build-record.ts";
 
 // Reads a stored build record back, trusting nothing in it. A record reopened
@@ -148,11 +149,12 @@ function readLastingActs(value: unknown, knownBrief: (briefId: unknown, at: stri
 function readToggles(value: unknown): AutomationStudioProjectBuildToggle[] {
   return shape.array(value, "record.toggles", LIMITS.entries).map((item, index) => {
     const at = `record.toggles.${index}`;
-    const entry = shape.object(item, at, ["recordedAt", "from", "node", "handles", "signature"], ["callId", "target", "trialNodes", "trialParameters", "idempotentWith"]);
+    const entry = shape.object(item, at, ["recordedAt", "from", "node", "handles", "signature"], ["callId", "target", "trialNodes", "trialParameters", "beforeSignature", "idempotentWith"]);
     const from = shape.oneOf(entry.from, `${at}.from`, ["explored", "trial"] as const);
     const signature = shape.json(entry.signature, `${at}.signature`);
     if (!signature || typeof signature !== "object" || Array.isArray(signature) || !Object.keys(signature).length) return shape.refuse("project.not_object", `${at}.signature`);
     if (JSON.stringify(signature).length > MAX_SIGNATURE_CHARS) return shape.refuse("project.too_long", `${at}.signature`);
+    const beforeSignature = automationStudioToggleStateSignature(entry.beforeSignature);
     const trialNodes = entry.trialNodes === undefined ? undefined : shape.ids(entry.trialNodes, `${at}.trialNodes`, MAX_TOGGLE_IDS);
     if ((from === "trial") !== (trialNodes !== undefined && trialNodes.length > 0)) return shape.refuse("project.toggle_origin", `${at}.trialNodes`);
     // A trial node's parameters, a JSON object of bounded size, only on a trial's press (t792).
@@ -172,6 +174,7 @@ function readToggles(value: unknown): AutomationStudioProjectBuildToggle[] {
       ...(trialNodes ? { trialNodes } : {}),
       ...(trialParameters !== undefined ? { trialParameters: trialParameters as JsonObject } : {}),
       signature: signature as JsonObject,
+      ...(beforeSignature ? { beforeSignature } : {}),
       ...(entry.idempotentWith === undefined ? {} : { idempotentWith: shape.id(entry.idempotentWith, `${at}.idempotentWith`) })
     };
   });

@@ -12,6 +12,7 @@ import { runAutomationStudioCandidateTrial } from "../../../index.ts";
 import { trialFixture } from "../../fixtures.ts";
 
 const SIGNATURE = { via: "name", gains: ["on"], loses: ["off"] };
+const BEFORE = { via: "name", gains: ["off"], loses: ["on"] };
 
 /** Every press answers `outputs`. */
 function pressing(fixture: ReturnType<typeof trialFixture>, outputs: JsonObject): void {
@@ -21,14 +22,14 @@ function pressing(fixture: ReturnType<typeof trialFixture>, outputs: JsonObject)
 describe("a candidate trial's toggles", () => {
   it("are recorded from a press the domain answered as a toggle, under the node id the step's plan key ends", async () => {
     const fixture = trialFixture(["modify_existing"]);
-    pressing(fixture, { result: { status: "succeeded", toggle: { signature: SIGNATURE } } });
+    pressing(fixture, { result: { status: "succeeded", toggle: { signature: SIGNATURE, beforeSignature: BEFORE } } });
     fixture.ports.deniedEvidenceKeys = [];
     const toggles = new AutomationStudioExploredToggles();
     fixture.ports.exploredToggles = toggles;
     await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
     const recorded = toggles.list();
     expect(recorded).toHaveLength(1);
-    expect(recorded[0]).toMatchObject({ node: "custom.press", handles: [], signature: SIGNATURE });
+    expect(recorded[0]).toMatchObject({ node: "custom.press", handles: [], signature: SIGNATURE, beforeSignature: BEFORE });
     // The executed id ends with the step's `<subflow key>.<node key>`, which is how a later revision's step is tied to it.
     expect(recorded[0]!.trialNodes).toHaveLength(1);
     expect(recorded[0]!.trialNodes![0]).toMatch(/\.primary\.press$/u);
