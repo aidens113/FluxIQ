@@ -54,6 +54,8 @@
 // several conditions left out together (leftOutTogether), and that computedFacts are
 // Core's to settle; and in t810 (P5b) both verification pins by the located-only
 // earlierAdvice sentence and the appended checked stored-cell citation sentence.
+// In t830 only evidence_tool_decision was re-pinned for immutable own-call
+// view references/current-view groups, route baseline/deltas and offered exact-call reuse.
 // With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of

@@ -24,3 +24,5 @@ First browser run reached completed batch/two successful fresh TYPEs but failed 
 ## Integration and limits
 
 Both Oct31 full-suite slots remain used; no main promotion until permitted full passing sweep. Future paid tests Claude/CLAUDE_API_KEY/$5 whole build/no fallback; paid GO still held. Preserve user main clinerules. Copy ignored evidence to main before task finish removes private Down. Finish Down first then Core under owning gates/mandatory70contract tests, push both dev branches, refresh shared builds. No remote branch deletion or unapproved release. Remaining P10 discovery/design reports are follow-up planning, not implemented scope.
+
+Mandatory Core merge first attempt ->67/70pass,3old evidence_tool_decision pin comparisons fail. Lead verified only intended P9 prose differs, corrected just that JSONpin plus testcomment, and owning45prompt tests pass9.15s. Full70mandatory gate retried; see prompt-pin-correction.md. No runtime relaxation/full suite.
