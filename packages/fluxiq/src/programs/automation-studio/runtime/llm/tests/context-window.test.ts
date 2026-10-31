@@ -42,69 +42,8 @@ describe("the evidence one decision is shown", () => {
   });
 });
 
-// B1 (2026-10-01): the current view of the target whole, and every view it has
-// left replaced by a reference to the result that replaced it. Run
-// `run-mup2i28c-6c7fc209` sent three whole pages of one store in its fifth
-// decision, 214,853 input tokens.
-describe("a view of the target that a newer view replaced", () => {
-  const KEYS = ["elements", "dialogs"];
-  const act = (callId: string, extra: JsonObject = {}): AutomationStudioLlmEvidenceEntry =>
-    ({ callId, toolId: "core.run_node", value: { ok: true, status: "succeeded", control: `pressed in ${callId}`, elements: [{ target: "t1", name: "x".repeat(2_000) }], dialogs: [{ target: "t2" }], ...extra } });
-  const refusal = (callId: string): AutomationStudioLlmEvidenceEntry =>
-    ({ callId, toolId: "core.run_node", value: { ok: false, code: "target_unobserved", detail: { reason: "handle_not_in_packet", target: "t9" } } });
-
-  it("shows the newest view whole and replaces each earlier one by the call that replaced it, keeping the rest in its order", () => {
-    const records = [act("call.1", { read: { rows: [1, 2] } }), refusal("call.2"), act("call.3"), act("call.4", { pageChanged: true })];
-    const window = automationStudioLlmEvidenceContextWindow(records, KEYS);
-    expect(window.map((entry) => entry.callId)).toEqual(["call.1", "call.2", "call.3", "call.4"]);
-    // Named by the result that replaced it directly, never by the newest.
-    expect(window[0]!.value).toEqual({ ok: true, status: "succeeded", control: "pressed in call.1", read: { rows: [1, 2] }, supersededBy: "call.3" });
-    expect(Object.keys(window[0]!.value as JsonObject)).toEqual(["ok", "status", "control", "read", "supersededBy"]);
-    // A result that carried no view is neither replaced nor replaces one.
-    expect(window[1]!.value).toEqual(records[1]!.value);
-    expect(window[2]!.value).toEqual({ ok: true, status: "succeeded", control: "pressed in call.3", supersededBy: "call.4" });
-    expect(window[3]!.value).toEqual(records[3]!.value);
-    // What the loop holds is untouched: only what is shown changes.
-    expect((records[0]!.value as JsonObject).elements).toBeDefined();
-  });
-
-  it("writes each reference once: a later decision shows every earlier one byte for byte", () => {
-    const records = [act("call.1"), refusal("call.2"), act("call.3"), act("call.4"), act("call.5")];
-    for (let count = 1; count < records.length; count += 1) {
-      const now = automationStudioLlmEvidenceContextWindow(records.slice(0, count), KEYS);
-      const next = automationStudioLlmEvidenceContextWindow(records.slice(0, count + 1), KEYS);
-      // Everything before the view this decision shows whole is shown the same next time.
-      const view = now.map((entry) => "elements" in (entry.value as JsonObject)).lastIndexOf(true);
-      expect(JSON.stringify(next.slice(0, view)), `decision ${count} -> ${count + 1}`).toBe(JSON.stringify(now.slice(0, view)));
-    }
-  });
-
-  it("counts a view in a Core entry, as a dry run's page, and touches keys only at the top level", () => {
-    const records: AutomationStudioLlmEvidenceEntry[] = [
-      act("call.1"),
-      { callId: "core.dry_run.page.1", toolId: "core.dry_run.page", value: { elements: [{ target: "t1" }] } },
-      { callId: "call.3", toolId: "core.run_node", value: { ok: false, code: "blocked", detail: { elements: ["nested"] } } }
-    ];
-    const window = automationStudioLlmEvidenceContextWindow(records, KEYS);
-    expect(window[0]!.value).toEqual({ ok: true, status: "succeeded", control: "pressed in call.1", supersededBy: "core.dry_run.page.1" });
-    expect(window[1]!.value).toEqual(records[1]!.value);
-    expect(window[2]!.value).toEqual(records[2]!.value);
-  });
-
-  it("shows every entry whole when the domain declared no view", () => {
-    const records = [act("call.1"), act("call.2")];
-    expect(automationStudioLlmEvidenceContextWindow(records)).toEqual(records);
-    expect(automationStudioLlmEvidenceContextWindow(records, [])).toEqual(records);
-  });
-
-  it("cuts a long build's window to one page and a reference per step", () => {
-    const records = Array.from({ length: 30 }, (_, index) => act(`call.${index + 1}`));
-    const whole = bytes(automationStudioLlmEvidenceContextWindow(records));
-    const shown = bytes(automationStudioLlmEvidenceContextWindow(records, KEYS));
-    expect(whole).toBeGreaterThan(30 * 2_000);
-    expect(shown).toBeLessThan(bytes(records[0]) + 30 * 150);
-  });
-});
+// Immutable declared-view/reference oracles follow below. Successor-reference
+// expectations were replaced because the first result is already projected.
 
 describe("what one decision is shown beside the evidence", () => {
   const press = (position: number): AutomationStudioFlowDraftStep => ({
@@ -231,157 +170,6 @@ describe("a request over the model's context window", () => {
   });
 });
 
-// A read's rows as a view of their own (t194 w48): declared `read.extracted`,
-// replaced inside the read only by the next read, never by a page or a click.
-// Live run 13 (`run-muqbzu32-8691a65e`) carried three whole reads of one list
-// in its last request, 164,577 of its 290,929 characters.
-describe("held views", () => {
-const HELD_KEYS = ["page", "read.extracted", "read.rejectedRows"];
-const rows = (callId: string) => [{ name: `${callId} row 1` }, { name: `${callId} row 2` }];
-const listRead = (callId: string): AutomationStudioLlmEvidenceEntry => ({
-  callId,
-  toolId: "core.run_node",
-  value: { ok: true, page: `page of ${callId}`, read: { actionType: "list", extracted: rows(callId), extraction: { recordCount: 2 }, rejectedRows: { fields: ["name"] }, firstRows: [rows(callId)[0]!] }, inFlow: true }
-});
-const click = (callId: string): AutomationStudioLlmEvidenceEntry => ({
-  callId,
-  toolId: "core.run_node",
-  value: { ok: true, page: `page of ${callId}`, read: { actionType: "click", message: "Element clicked." } }
-});
-const readOf = (entry: AutomationStudioLlmEvidenceEntry) => (entry.value as JsonObject).read;
-
-describe("a read's rows a newer read replaced", () => {
-  it("are replaced inside the read by the next read, keeping the rest of the read in its order", () => {
-    const window = automationStudioLlmEvidenceContextWindow([listRead("read.1"), listRead("read.2"), listRead("read.3")], HELD_KEYS);
-    expect(window[0]!.value).toEqual({
-      ok: true,
-      read: { actionType: "list", extraction: { recordCount: 2 }, firstRows: [{ name: "read.1 row 1" }], supersededBy: "read.2" },
-      inFlow: true,
-      supersededBy: "read.2"
-    });
-    expect(JSON.stringify(window[0]!.value)).toBe(JSON.stringify({
-      ok: true,
-      read: { actionType: "list", extraction: { recordCount: 2 }, firstRows: [{ name: "read.1 row 1" }], supersededBy: "read.2" },
-      inFlow: true,
-      supersededBy: "read.2"
-    }));
-    expect(readOf(window[1]!)).toEqual({ actionType: "list", extraction: { recordCount: 2 }, firstRows: [{ name: "read.2 row 1" }], supersededBy: "read.3" });
-    // The newest read is whole, page and rows.
-    expect(window[2]!.value).toEqual(listRead("read.3").value);
-  });
-
-  it("stay whole when only a click or a page view followed: those replace the page, never the rows", () => {
-    const look: AutomationStudioLlmEvidenceEntry = { callId: "look.3", toolId: "core.run_node", value: { ok: true, page: "page of look.3" } };
-    const window = automationStudioLlmEvidenceContextWindow([listRead("read.1"), click("click.2"), look], HELD_KEYS);
-    expect(readOf(window[0]!)).toEqual(readOf(listRead("read.1")));
-    expect((window[0]!.value as JsonObject).supersededBy).toBe("click.2");
-    expect(window[0]!.value).not.toHaveProperty("page");
-    // A click's own read holds no declared member, so it is no read view.
-    expect(readOf(window[1]!)).toEqual({ actionType: "click", message: "Element clicked." });
-  });
-
-  it("name the read that replaced them directly, so a reference once written never changes", () => {
-    const records = [listRead("read.1"), click("click.2"), listRead("read.3"), click("click.4"), listRead("read.5")];
-    const shown = (count: number) => automationStudioLlmEvidenceContextWindow(records.slice(0, count), HELD_KEYS);
-    expect((readOf(shown(5)[0]!) as JsonObject).supersededBy).toBe("read.3");
-    expect((readOf(shown(5)[2]!) as JsonObject).supersededBy).toBe("read.5");
-    // Each entry the fourth decision showed with both its views replaced is the same, byte for byte, in the fifth.
-    expect(JSON.stringify(shown(5)[0])).toBe(JSON.stringify(shown(4)[0]));
-    expect(JSON.stringify(shown(5)[1])).toBe(JSON.stringify(shown(4)[1]));
-  });
-
-  it("are a holder's own: a member named at the top level, or a holder that is no object, is never touched", () => {
-    const records: AutomationStudioLlmEvidenceEntry[] = [
-      { callId: "a", toolId: "x", value: { extracted: [1], read: "not an object" } },
-      { callId: "b", toolId: "x", value: { extracted: [2], detail: { read: { extracted: [3] } } } }
-    ];
-    expect(automationStudioLlmEvidenceContextWindow(records, ["read.extracted"])).toEqual(records);
-  });
-
-  it("show a recall's newest answer whole and replace each earlier answer by the next", () => {
-    const recall = (callId: string, of: string): AutomationStudioLlmEvidenceEntry =>
-      ({ callId, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: { recalled: of, restored: { read: { extracted: rows(of) } } } });
-    const window = automationStudioLlmEvidenceContextWindow([listRead("read.1"), listRead("read.2"), recall("recall.3", "read.1"), recall("recall.4", "read.1")], HELD_KEYS);
-    expect(window[2]!.value).toEqual({ recalled: "read.1", supersededBy: "recall.4" });
-    expect(window[3]!.value).toEqual(recall("recall.4", "read.1").value);
-  });
-
-  it("are never replaced where no held key was declared", () => {
-    const records = [listRead("read.1"), listRead("read.2")];
-    const window = automationStudioLlmEvidenceContextWindow(records, ["page"]);
-    expect(readOf(window[0]!)).toEqual(readOf(records[0]!));
-  });
-});
-});
-
-// t484 (W1 cause 2 of `run-mv62icw0-070f88ad`): a request's bytes change only
-// where the content truly changed. Measured over the lab builds of 2026-10-11
-// and 10-12, every entry the window rewrote between consecutive decisions was
-// a view replaced by a reference: a page view in 464 decision pairs, and a
-// second view of the same result -- a read's rows after its page, or the other
-// way round -- in 55. No kept value changed. Each rewrite re-bills the entries
-// already sent after it, 1.17M characters across both days, mostly the route
-// state after the replaced call. Removing it means not showing the newest view
-// in place, which changes what a model is told (`../evidence-loop-decision.ts`:
-// "only the newest view of the target is shown whole"), so the invariant is
-// held here instead: nothing else is ever rewritten.
-describe("what a growing window rewrites between one decision and the next", () => {
-  const KEYS = ["page", "read.extracted"];
-  const view = (callId: string): AutomationStudioLlmEvidenceEntry => ({ callId, toolId: "core.run_node", value: { ok: true, node: "web.click", page: { title: callId, text: "x".repeat(500) } } });
-  const read = (callId: string): AutomationStudioLlmEvidenceEntry => ({ callId, toolId: "core.run_node", value: { ok: true, node: "web.read", page: { title: callId }, read: { count: 2, extracted: [{ name: "a" }, { name: "b" }], firstRows: [{ name: "a" }] } } });
-  const look = (callId: string): AutomationStudioLlmEvidenceEntry => ({ callId, toolId: "web.find_on_page", value: { matches: 3 } });
-  const situation = (index: number): AutomationStudioLlmEvidenceEntry => ({ callId: `core.route_state.${index}`, toolId: "core.route_state", value: { seen: "after exploring", state: { "state.page.path": `/${index}` } } });
-  const log = [view("open"), situation(1), look("find-1"), read("read-1"), situation(2), view("press-1"), situation(3), recallOf("read-1"), read("read-2"), look("find-2"), view("press-2"), situation(4), recallOf("read-2")];
-
-  function recallOf(callId: string): AutomationStudioLlmEvidenceEntry {
-    return { callId: `recall-${callId}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: { ok: true, of: callId, restored: [{ name: "a" }, { name: "b" }] } };
-  }
-
-  it("changes an entry already sent only by replacing a view with the call that replaced it, and never again for that view", () => {
-    const stubbed = new Map<string, Set<string>>();
-    for (let count = 1; count < log.length; count += 1) {
-      const earlier = automationStudioLlmEvidenceContextWindow(log.slice(0, count), KEYS);
-      const later = automationStudioLlmEvidenceContextWindow(log.slice(0, count + 1), KEYS);
-      for (const [index, before] of earlier.entries()) {
-        const after = later[index]!;
-        expect(after.callId, `${count}: order`).toBe(before.callId);
-        if (JSON.stringify(after) === JSON.stringify(before)) continue;
-        // What changed is views, each replaced by a reference to a newer entry; every other value is byte for byte the same, in order.
-        const changed = viewChanges(before.value as JsonObject, after.value as JsonObject);
-        expect(changed.length, `${count}: ${before.callId} changed for no view`).toBeGreaterThan(0);
-        for (const { at, by } of changed) {
-          expect(log.findIndex((entry) => entry.callId === by), `${count}: ${before.callId}.${at} names a newer entry`).toBeGreaterThan(index);
-          const seen = stubbed.get(before.callId) ?? new Set<string>();
-          expect(seen.has(at), `${count}: ${before.callId}.${at} replaced twice`).toBe(false);
-          stubbed.set(before.callId, seen.add(at));
-        }
-      }
-    }
-    // The fixture exercised both kinds of view, the recall's answers, and an entry with two.
-    expect([...stubbed.entries()].map(([callId, at]) => `${callId}:${[...at].sort().join("+")}`).sort()).toEqual(["open:page", "press-1:page", "read-1:page+read", "read-2:page", "recall-read-1:restored"].sort());
-  });
-
-  /** Where `after` differs from `before`: a level whose view keys were removed and `supersededBy` added, every other key unchanged and in order. */
-  function viewChanges(before: JsonObject, after: JsonObject, at = ""): Array<{ at: string; by: string }> {
-    const found: Array<{ at: string; by: string }> = [];
-    const kept = Object.keys(before).filter((key) => key in after);
-    const referenced = typeof after.supersededBy === "string" && before.supersededBy === undefined;
-    // The reference, when newly written, goes last.
-    expect(Object.keys(after), `${at}: keys kept in order`).toEqual(referenced ? [...kept, "supersededBy"] : kept);
-    for (const key of kept) {
-      if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue;
-      const inner = before[key], outer = after[key];
-      expect(typeof inner === "object" && inner !== null && !Array.isArray(inner) && typeof outer === "object" && outer !== null && !Array.isArray(outer), `${at}${key}: only a holder changes`).toBe(true);
-      found.push(...viewChanges(inner as JsonObject, outer as JsonObject, `${at}${key}.`));
-    }
-    if (referenced) {
-      expect(Object.keys(before).length, `${at}: a view was removed`).toBeGreaterThan(kept.length);
-      found.push({ at: at.replace(/\.$/u, "") || Object.keys(before).find((key) => !(key in after))!, by: String(after.supersededBy) });
-    }
-    return found;
-  }
-});
-
 // One current Flow in what a decision is shown (t498), named once, at the end
 // (t501, t503). An entry once shown is never rewritten, because the provider
 // caches a request by its byte prefix (live runs `run-mv6i27oi-a87fb247` W5,
@@ -437,5 +225,189 @@ describe("a candidate's scripts in the window", () => {
   it("adds nothing where no submission was accepted", () => {
     const records = [refused("submit.1", 1), refused("submit.2", 2)];
     expect(automationStudioLlmEvidenceContextWindow(records)).toEqual(records);
+  });
+});
+
+// Append-only historical projection, full dynamic views and raw recall safety.
+
+const keys = ["page", "elements", "read.rows", "read.rejected"];
+const entry = (callId: string, value: JsonObject, toolId = "core.run_node"): AutomationStudioLlmEvidenceEntry => ({ callId, toolId, value });
+const reference = (callId: string, group: string) => ({ "core.view_reference": { callId, group } });
+const utf8 = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8");
+const groups = (window: AutomationStudioLlmEvidenceEntry[]) => (window.find(({ toolId }) => toolId === "core.current_view")!.value as { groups: JsonObject[] }).groups;
+const read = (callId: string) => entry(callId, {
+  ok: true,
+  page: { title: `page-${callId}`, text: "???".repeat(300) },
+  read: { action: "read", rows: [{ name: `row-${callId}-1` }, { name: `row-${callId}-2` }], count: 2, rejected: [], firstRows: [{ name: `summary-${callId}` }] },
+  inFlow: true
+});
+const recall = (callId: string, original: string) => entry(callId, { ok: true, of: original, restored: { read: { rows: [{ name: `restored-${original}` }] } } }, AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID);
+
+function frozen<T>(value: T): T {
+  if (value !== null && typeof value === "object") {
+    for (const member of Object.values(value)) frozen(member);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+describe("immutable view history from its first appearance", () => {
+  it("projects the very first result in place, preserving non-view keys, values and their order", () => {
+    const raw = entry("a", { before: "kept", page: { title: "whole" }, middle: { nested: { page: "undeclared" } }, elements: [], supersededBy: "client metadata", "core.view_reference": "client field", after: 3 });
+    const before = utf8(raw);
+    const window = automationStudioLlmEvidenceContextWindow(frozen([raw]), keys);
+    expect(window[0]!.value).toEqual({ before: "kept", page: reference("a", "top"), middle: { nested: { page: "undeclared" } }, elements: reference("a", "top"), supersededBy: "client metadata", "core.view_reference": "client field", after: 3 });
+    expect(Object.keys(window[0]!.value as JsonObject)).toEqual(Object.keys(raw.value as JsonObject));
+    expect(groups(window)).toEqual([{ group: "top", callId: "a", value: { page: { title: "whole" }, elements: [] } }]);
+    expect(utf8(raw)).toEqual(before);
+  });
+
+  it("keeps every historical UTF-8 byte when views replace, appear later, interleave, or are recalled", () => {
+    const log = frozen([
+      read("read-1"),
+      entry("route-1", { state: { path: "/?" } }, "core.route_state"),
+      entry("refused", { ok: false, code: "blocked", detail: { elements: ["nested"] } }),
+      entry("page-2", { page: { title: "changed" }, read: { action: "press", message: "done" } }),
+      recall("recall-1", "read-1"),
+      read("read-2"),
+      entry("other", { matches: 3 }),
+      recall("recall-2", "read-2"),
+      entry("empty", { read: { rows: [], count: 0 } }),
+      entry("late", { elements: ["new group member"] })
+    ]);
+    const raw = utf8(log);
+    for (let count = 1; count < log.length; count += 1) {
+      const before = automationStudioLlmEvidenceContextWindow(log.slice(0, count), keys);
+      const after = automationStudioLlmEvidenceContextWindow(log.slice(0, count + 1), keys);
+      expect(utf8(after.slice(0, count)), `history after ${count}`).toEqual(utf8(before.slice(0, count)));
+      expect(after.slice(0, count).map(({ callId }) => callId)).toEqual(log.slice(0, count).map(({ callId }) => callId));
+    }
+    expect(utf8(log)).toEqual(raw);
+  });
+
+  it("shows the latest whole page and rows once and keeps each holder's metadata whole", () => {
+    const raw = [read("r1"), read("r2"), entry("p3", { page: { title: "newest-page" }, elements: ["newest-control"] })];
+    const window = automationStudioLlmEvidenceContextWindow(raw, keys);
+    expect(window.map(({ callId }) => callId)).toEqual(["r1", "r2", "p3", "core.current_view"]);
+    expect(groups(window)).toEqual([
+      { group: "top", callId: "p3", value: { page: { title: "newest-page" }, elements: ["newest-control"] } },
+      { group: "holder:read", callId: "r2", holder: "read", value: { rows: [{ name: "row-r2-1" }, { name: "row-r2-2" }], rejected: [] } }
+    ]);
+    const historical = window[1]!.value as JsonObject;
+    expect(historical.read).toEqual({ action: "read", rows: reference("r2", "holder:read"), count: 2, rejected: reference("r2", "holder:read"), firstRows: [{ name: "summary-r2" }] });
+    expect(Object.keys(historical.read as JsonObject)).toEqual(Object.keys((raw[1]!.value as JsonObject).read as JsonObject));
+    const serialized = JSON.stringify(window);
+    for (const unique of ["newest-page", "newest-control", "row-r2-1", "row-r2-2"]) expect(serialized.split(unique)).toHaveLength(2);
+    expect(serialized).not.toContain("row-r1-1");
+    expect(serialized).toContain("summary-r1");
+    expect((raw[0]!.value as JsonObject).read).toEqual((read("r1").value as JsonObject).read);
+  });
+
+  it("replaces each group as a whole, including empty or null members, and never invents absent members", () => {
+    const raw = [read("r1"), entry("r2", { read: { rejected: null, count: 0 } }), entry("p3", { page: null })];
+    expect(groups(automationStudioLlmEvidenceContextWindow(raw, keys))).toEqual([
+      { group: "top", callId: "p3", value: { page: null } },
+      { group: "holder:read", callId: "r2", holder: "read", value: { rejected: null } }
+    ]);
+    const empty = automationStudioLlmEvidenceContextWindow([...raw, entry("r4", { read: { rows: [] } })], keys);
+    expect(groups(empty)[1]).toEqual({ group: "holder:read", callId: "r4", holder: "read", value: { rows: [] } });
+  });
+
+  it("keeps overlapping top holders and independent rows without duplication through partial updates", () => {
+    const overlapKeys = ["page", "read", "read.rows"];
+    const log = [
+      entry("a", { page: "first", read: { rows: [{ id: "old-row" }], count: 1, label: "initial" } }),
+      entry("b", { page: "page-only" }),
+      entry("c", { read: { count: 7, label: "metadata-only" } }),
+      entry("d", { read: { rows: [{ id: "new-row" }], count: 1, label: "new-metadata" } })
+    ];
+    const first = automationStudioLlmEvidenceContextWindow(log.slice(0, 1), overlapKeys);
+    expect(groups(first)).toEqual([
+      { group: "top", callId: "a", value: { page: "first", read: { rows: reference("a", "holder:read"), count: 1, label: "initial" } } },
+      { group: "holder:read", callId: "a", holder: "read", value: { rows: [{ id: "old-row" }] } }
+    ]);
+    const afterPage = automationStudioLlmEvidenceContextWindow(log.slice(0, 2), overlapKeys);
+    expect(groups(afterPage)).toEqual([
+      { group: "top", callId: "b", value: { page: "page-only" } },
+      { group: "holder:read", callId: "a", holder: "read", value: { rows: [{ id: "old-row" }] } }
+    ]);
+    const afterMetadata = automationStudioLlmEvidenceContextWindow(log.slice(0, 3), overlapKeys);
+    expect(groups(afterMetadata)).toEqual([
+      { group: "top", callId: "c", value: { read: { count: 7, label: "metadata-only" } } },
+      { group: "holder:read", callId: "a", holder: "read", value: { rows: [{ id: "old-row" }] } }
+    ]);
+    const final = automationStudioLlmEvidenceContextWindow(log, overlapKeys);
+    expect(groups(final)).toEqual([
+      { group: "top", callId: "d", value: { read: { rows: reference("d", "holder:read"), count: 1, label: "new-metadata" } } },
+      { group: "holder:read", callId: "d", holder: "read", value: { rows: [{ id: "new-row" }] } }
+    ]);
+    expect(JSON.stringify(final).split("new-row")).toHaveLength(2);
+    expect(JSON.stringify(final)).not.toContain("old-row");
+    expect(utf8(final.slice(0, 3))).toEqual(utf8(afterMetadata.slice(0, 3)));
+    const top = groups(final)[0]!.value as JsonObject;
+    const held = groups(final)[1]!.value as JsonObject;
+    expect({ ...(top.read as JsonObject), ...held }).toEqual({ rows: [{ id: "new-row" }], count: 1, label: "new-metadata" });
+  });
+
+  it("keeps recalled restored views separate from the current client views and keeps recall metadata", () => {
+    const raw = frozen([read("r1"), read("r2"), recall("c1", "r1"), recall("c2", "r1")]);
+    const window = automationStudioLlmEvidenceContextWindow(raw, keys);
+    const group = `tool:${AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID}:restored`;
+    expect(window[2]!.value).toEqual({ ok: true, of: "r1", restored: reference("c1", group) });
+    expect(window[3]!.value).toEqual({ ok: true, of: "r1", restored: reference("c2", group) });
+    expect(groups(window).map(({ callId }) => callId)).toEqual(["r2", "r2", "c2"]);
+    expect(groups(window)[2]).toEqual({ group, callId: "c2", value: { restored: { read: { rows: [{ name: "restored-r1" }] } } } });
+    expect((raw[2]!.value as JsonObject).restored).toEqual({ read: { rows: [{ name: "restored-r1" }] } });
+  });
+
+  it("does not treat ordinary restored data as a Core recall", () => {
+    const raw = [entry("a", { restored: [1], page: "page" })];
+    expect(automationStudioLlmEvidenceContextWindow(raw, keys)[0]!.value).toEqual({ restored: [1], page: reference("a", "top") });
+  });
+
+  it("keeps undeclared, invalid, missing, nested and non-object holders whole without inventing a view", () => {
+    const raw: AutomationStudioLlmEvidenceEntry[] = [
+      entry("a", { rows: [1], read: "not an object", detail: { read: { rows: [3] } } }),
+      entry("b", { read: {}, payload: { page: "nested" } }),
+      { callId: "c", toolId: "x", value: null },
+      { callId: "d", toolId: "x", value: [1, 2] }
+    ];
+    expect(automationStudioLlmEvidenceContextWindow(raw, ["read.rows", "a.b.c", ".x", "x."])).toEqual(raw);
+    expect(automationStudioLlmEvidenceContextWindow([read("a"), read("b"), recall("c", "a")])).toEqual([read("a"), read("b"), recall("c", "a")]);
+    const pageOnly = automationStudioLlmEvidenceContextWindow([read("a"), read("b")], ["page"]);
+    expect((pageOnly[0]!.value as JsonObject).read).toEqual((read("a").value as JsonObject).read);
+  });
+
+  it("keeps all large current view members, with no cap, sample or summary", () => {
+    const rows = Array.from({ length: 1000 }, (_, id) => ({ id, text: "?".repeat(100) }));
+    const payload = { page: "x".repeat(50_000), read: { rows } };
+    const window = automationStudioLlmEvidenceContextWindow([entry("a", payload)], keys);
+    expect(groups(window)[0]!.value).toEqual({ page: payload.page });
+    expect(groups(window)[1]!.value).toEqual({ rows });
+  });
+
+  it("keeps a long build to one full view and stable references per result", () => {
+    const log = Array.from({ length: 30 }, (_, index) => entry(`call.${index}`, { ok: true, control: `pressed-${index}`, page: "x".repeat(2000) }));
+    const whole = utf8(automationStudioLlmEvidenceContextWindow(log));
+    const projected = automationStudioLlmEvidenceContextWindow(log, ["page"]);
+    expect(whole.length).toBeGreaterThan(30 * 2000);
+    expect(utf8(projected).length).toBeLessThan(utf8(log[0]).length + 30 * 200);
+    expect(groups(projected)).toEqual([{ group: "top", callId: "call.29", value: { page: "x".repeat(2000) } }]);
+  });
+
+  it("orders current view before current Flow, history, draft and budget, keeping accepted/refused results stable", () => {
+    const submit = (callId: string, revision: number, ok: boolean) => entry(callId, { ok, revision, digest: `d${revision}`, script: `whole-${revision}` }, "core.submit_candidate");
+    const before = [read("r1"), submit("s1", 1, true), submit("s2", 2, false)];
+    const after = [...before, submit("s3", 3, true), entry("page", { page: "latest" })];
+    const shownBefore = automationStudioLlmEvidenceContextWindow(before, keys);
+    const shownAfter = automationStudioLlmEvidenceContextWindow(after, keys);
+    expect(utf8(shownAfter.slice(0, before.length))).toEqual(utf8(shownBefore.slice(0, before.length)));
+    expect(shownBefore.at(-1)!.value).toMatchObject({ revision: 1, call: "s1" });
+    expect(shownAfter.at(-1)!.value).toMatchObject({ revision: 3, call: "s3" });
+    const recorder = new AutomationStudioLlmDecisionContextRecorder();
+    recorder.record(1, { kind: "call", signature: "read-signature", callId: "r1", toolId: "core.run_node", actionId: "read", resultCode: "read.succeeded", changed: "yes" });
+    const step: AutomationStudioFlowDraftStep = { position: 1, iteration: 1, callId: "r1", actionId: "press", input: {}, effect: "mutate", effectApplied: true, disposition: "kept" };
+    const { shown } = automationStudioLlmDecisionContextShown({ evidence: after, records: recorder.records(), observedStateKeys: keys, draft: { steps: [step] }, budgetEntry: entry("budget", { left: 1 }, "core.budget") });
+    expect(shown.slice(after.length).map(({ toolId }) => toolId)).toEqual(["core.current_view", "core.current_flow", "core.evidence_history", "core.flow_draft", "core.budget"]);
   });
 });

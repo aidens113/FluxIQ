@@ -1,0 +1,18 @@
+﻿# D2 initial acceptance and safety corrections
+Role Heavy worker gpt-6.1-sol max. Source-only; no agents/git/check/build/audit/browser/provider/shared-doc edits.
+Private t830 Core. All initial gates ended; source released. Read actual test-runs/t830-d2-initial-{tests,types,audit}.log in paired Down.
+Own prior D2 files + focused llm/prior-nodes helpers/tests; Root E request-prefix/decision/recall sources frozen, C/D0 stable and must not change. No Down, versions/baselines.
+Initial136tests113pass/23fail; all23 actual-loop cases stop invalid_configuration at0iterations/0dispatches. Diagnose fixture configuration against actual validator; correct valid fixture, preserve guards/all behavior assertions. Actual service wiring2/authority3/admission3/E UTF8+recall+C98 passed.
+Type errors: evidence-loop776 refusal code typed string instead of closed union; tool-admission test missing required proposes. Fix precise discriminants/valid fixtures, no casts/widening/suppressions.
+Audit8: evidence-loop directory26files; service4317>baseline4315; new withdrawal/index cycles;7cross-directory leaf imports; empty swallowed controller catch. Fix structural ownership/cycle/import directions, no baseline growth/packing/comment removal to cheat size.
+Move private withdrawal under cohesive prior-nodes if needed so evidence-loop returns25files. Extract genuine added service authority wiring responsibility rather than growing oversized coordinator. Existing lean-leaf exception only for actual cycles.
+CRITICAL root-review confirmed: controller.remember manufactured consequences:[] and discarded original lasting declarations/control flags while D0.execute reuses original public request.
+Implement closed eligibility reader over actual sealed originalValue: require explicit present empty consequences array and allowed ordinary node-call keys; reject all nonempty/missing/malformed declarations, write/replay/undoes/reset/other execution-control shapes. Preserve actual empty declaration in C input; never synthesize none from unsafe/unknown input.
+Positive fixtures must explicitly declare[]. Actual-loop negative cases must first seal positive safe-floor original with lasting declaration/forbidden control, then guessed batch: no offer/member dispatch, prior ordinary receipts/accounting intact, private data absent.
+Do not weaken trust/effect/permission/retry/receipt/no-draft/no-recovery/purse/quota gates. Missing trusted normalized declaration remains unproven, not inferred from nested model JSON.
+Inspect C observedEffect handling against actual settled trusted result companions; do not drop an actual lasting classification when one is available, never derive safe from raw model claims.
+Replace swallowed eligibility failure with explicit closed unproven/refusal result; no raw errors/params/identity in history or envelope.
+All source acceptance remains provisional until lead reruns real loops. Report actual fixture cause and every safety/structure correction in d2-corrections.md; freeze before returning with exact selectors.
+Lead then runs narrowed D2 tests/types/audit, then broader affected loop safety regressions, freshSDK and paired Down/browser checks. Main dev now has t831; root later syncs/bump0.23, not worker.
+Return standard Outcome/Changed/Validation/Not verified/Report/Notes.
+Root clarification: fix all D2 declaration/control, fixture/type/structure findings now. A separate read-only worker designs actual settled permission/effect attestation; leave observed-floor wiring pending stable root interface. Do not weaken actual floors or manufacture safe observedEffect from current registry. New behavior remains unaccepted/unshipped.

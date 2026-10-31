@@ -24,6 +24,9 @@ export * from "./project-agents/host-resources/index.ts";
 export * from "./io-bridge.ts";
 export * from "./io-policy.ts";
 export * from "./llm/index.ts";
+// Host-local adapter readers only. Capture/frozen-call factories remain Core-private.
+export { automationStudioLlmRerunCapture, automationStudioLlmRerunExecution } from "./llm/rerun-provenance/index.ts";
+export type { AutomationStudioLlmRerunCaptureAccess, AutomationStudioLlmRerunCaptureSnapshot, AutomationStudioLlmRerunDispatchAttempt, AutomationStudioLlmRerunExecutionAccess, AutomationStudioLlmRerunExecutionInput, AutomationStudioLlmRerunExecutionRefused, AutomationStudioLlmRerunUnavailable, AutomationStudioLlmRerunUnavailableReason } from "./llm/rerun-provenance/index.ts";
 // A project build's bound, published so a reader that waits for one (the web Lab's chat) waits Core's number (t592).
 export { AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "./loop-limits/index.ts";
 export * from "./panel-capabilities/index.ts";

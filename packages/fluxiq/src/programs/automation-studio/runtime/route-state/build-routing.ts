@@ -1,7 +1,8 @@
 // The routing context a Flow build is shown, kept current as its exploration
 // moves the page.
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { screenAutomationStudioLlmEvidence } from "../llm/harness/index.ts";
+import { automationStudioRouteSituationDelta } from "./delta.ts";
+import { automationStudioScreenRouteSituation } from "./screen-situation.ts";
 import type { AutomationStudioFlowPort } from "../../model/index.ts";
 import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudioFlowBootstrapRoutingContext } from "../flow-bootstrap/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
@@ -94,7 +95,7 @@ export type AutomationStudioBuildRouting = {
 export const AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID = "core.route_state";
 
 /** Said in the routing context in place of its situations, which the window carries. */
-const SITUATIONS_SHOWN = "Each core.route_state entry of your evidence is one situation: the state observed where a run starts, and after the call it follows.";
+const SITUATIONS_SHOWN = "Each core.route_state entry of your evidence is one situation: the state observed where a run starts, and after the call it follows. The first entry's state is the full screened baseline. Each later entry names the prior situation's callId in baseSituation: reconstruct its state by copying that prior state, deleting every flattened key in removed, then setting every flattened key in updates. An omitted key is unchanged; a null update is a value, not a removal. Earlier entries never change.";
 
 /** How the evidence loop names its free first look (`../llm/evidence-loop.ts`): `initial.<toolId>`. */
 const FREE_FIRST_LOOK_CALL_PREFIX = "initial.";
@@ -172,6 +173,9 @@ export async function startAutomationStudioBuildRouting(input: {
   let ranSinceObserved = false;
   // Where each situation was first shown: after the entry with this call id, or `null` before every entry (`shown`).
   const placed: Array<string | null> = [];
+  // Snapshot a situation only when first shown; later decisions reuse its bytes.
+  const projected: Array<{ callId: string; toolId: string; value: JsonObject }> = [];
+  let priorShown: { callId: string; state: JsonObject } | undefined;
   // The window the previous decision was shown, each entry as its bytes, before any situation was placed in it.
   let previouslyShown: string[] = [];
   const contextOf = (seen: ReadonlyArray<{ seen: string; state: JsonObject }>) => buildAutomationStudioFlowBootstrapRoutingContext({
@@ -203,11 +207,16 @@ export async function startAutomationStudioBuildRouting(input: {
         for (let index = placed.length; index < whole.situations.length; index += 1) placed.push(firstPlacement(evidence, anchors[index], index, sent));
       }
       previouslyShown = window;
-      const entries = whole.situations.map((situation, index) => ({
-        callId: `${AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID}.${index + 1}`,
-        toolId: AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID,
-        value: { seen: situation.seen, state: Object.fromEntries(Object.entries(situation.state).filter(([, value]) => !screenAutomationStudioLlmEvidence(value, deniedKeys).secretShaped)) } as JsonObject
-      }));
+      for (let index = projected.length; index < whole.situations.length; index += 1) {
+        const situation = whole.situations[index]!;
+        const state = automationStudioScreenRouteSituation(situation.state, deniedKeys);
+        const callId = `${AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID}.${index + 1}`;
+        const value = automationStudioRouteSituationDelta({ seen: situation.seen, state, ...(priorShown ? { prior: priorShown } : {}) });
+        projected.push({ callId, toolId: AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID, value });
+        priorShown = { callId, state };
+      }
+      // Callers may transform the window; they cannot rewrite cached projections.
+      const entries = projected.map((entry) => ({ ...entry, value: JSON.parse(JSON.stringify(entry.value)) as JsonObject }));
       return { evidence: placedAfterTheirCalls(evidence, entries, placed), context: { ...whole, situations: [], situationsShown: SITUATIONS_SHOWN } };
     },
     recording: <C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>) => async (call: C): Promise<X> => {

@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P10 worked-example unit shipped on paired dev with refreshed SDK/domain; P9 actual settled-safety/loop acceptance active privately. Full/paid calls held.
+Status detail: P9 owning/paired/installed-browser acceptance passes; final paired integration in progress. Full/paid held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,21 +11,25 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Accepted merged t831, 2026-10-31:** Source merges Coreaa9afcca/Down16ae8b7f, Core0.22. Workbranch backups87cb2678/bbb1900a retained. Core137owning tests then corrected63tests, typecheck20.623s/audit pass; Down79example tests, typecheck12.959s/audit pass; all eleven examples use real public handle resolution and strict saved graph validators with three missing-source negatives. Four full UTF8 byte/hash pins and full completion digest unchanged. Core mandatory70merge-contract tests9.12s pass; Down task structure gate pass. Shared SDK131.247s/domain21.260s refreshed; compiled actual web binding verifies all four original section hashes with zero gateway/provider calls. Paired dev e77268a5/8a081369 pushed and equal origin/dev before this memory update. Private Down removed through task finish; private Core clean/detached for normal age-prune. No browser/live model performance claim.
+**Accepted private t830, 2026-10-31; integration in progress:** P9 append-only views/routes and guarded prior-call reuse pass owning/paired/browser acceptance. Core0.23 owns missing original reference before full executor, pins exact publication/reuse, and excludes only raw clock metadata from semantic list authority. Root179Core tests/8files pass68.21s, types93.033s, SDK129.098s; backed up24cbb7dc before final docs. Down191affected runtime tests pass114.385s, post-parent79example tests retain original byte pins/save proofs, Domain types20.372s and final extension types/audit pass. Domain21.307s/host3.706s and allthree extension bundles31.931s built. Actual public Native/Gate/web paired cases prove target A survives handle-map replacement/old t1becomes B, changed document blocks another main, exact node accounting/no added steps. Installed Chromium company-website proof PASS34.8s: completed1member batch,2fresh successful typing replies,13distinct successful command/replies (10snapshots,1declared-start preparation navigation strictly before first TYPE,2TYPE); no navigation after original, submission/new subscription/URL change, gateway error, judge or real provider call. Build intentionally cancelled after transport proof; no finished judged Flow/performance claim. Parent P10 code merged; Down31old cycle allowances removed614to583. Complete Down plan restored with exact original normalized body proof after CRLF-sensitive doc edit error. Final reports/evidence next, paired task integration pending; no full/paid/panel operation.
 
-**Shipped P10 scope:** Worked-example ownership only: optional strict client metadata, web-authored original tails and explicit candidate/subflow/completion rendering. Missing metadata gives grammar without inferred examples. Parser/executor/registry contracts remain unchanged. Inline medium-specific guidance, facts, intent classification and fingerprints remain subsequent P10 migrations; this unit does not finish medium neutrality.
+**Accepted t829:** Private observed-repeat/history protection is merged and pushed. Core31 owning+190 affected safety/history tests, typecheck/audit and70 mandatory merge-contract tests pass; Down135domain+98extension tests and affected types/builds pass. Browser Chromium134.0.6998.35 company-website proof3 passes2cases42.3s: two actual reads then pre-third unacted refusal, versus seven intentional ForEach reads;19observations/0unavailable/0extra observer commands,28fresh successful replies, no repairs/gateway errors/page changes. Core native registry units and canonical policy-output required-receipt browser paths are distinct verified seams; direct importer execution remains intentionally refused in required mode. Shared0.21 SDK/domain/three extension bundles current; public observer smoke sends0commands. Remote task backups ea3a0126/ee502b5e retained; source merges6c45c83b/77e8b284; final dev5bf93be1/069fdfe9 verified equal origin/dev. Evidence main Down ignored test-runs/2026-10-31-t829-*; reports p8-repeat-history/.
 
-**Active private t830:** P9 under fxwork/t830 owns append-only views/routes and guarded prior-call batches. Core foundations/D0 accepted and backed up1bd5aafc; D2 actual loop/service authority and accounting source active, not accepted. D1 initial regression/structure defects corrected in frozen source; final audit passes and31old cycle allowances removed (Down614to583), behavior/type reruns await fresh paired SDK after D2 freeze. Root E generic instructions and actual UTF8 request-prefix source authored, not checked. Private Core source currently0.22 must merge this dev and advance next appropriate version before integration. Reports/Core Current State in that private checkout are authoritative; no paid or full sweeps.
+**Prior accepted runtime work:** t828 source-less identity recovery preserves source-bound precedence, effect floors and four attempts; full admitted command replies use exact hashing separate from small authority limits. t827 actionability and t826 typed temporary facts are accepted. Their full context and prior dated handoffs are preserved in the archive below, not repeated as current blockers.
 
-**Accepted baseline:** t829 runtime/history merged and pushed Core5bf93be1/Down069fdfe9, Core221focused+70merge contracts/Down233focused pass; real Chromium proof2passes42.3s (2reads then prethird stop vs7ForEach), all28replies fresh/successful, no observer commands. Shared0.21 SDK/domain/three extension targets current. Full evidence/context is preserved in the linked archive and owning p8-repeat-history reports.
+**Remaining P9:** Final reports/evidence and paired task integration only. A/B immutable views/routes, C guarded primitive, D0/D2/D3 authority/permission/fresh receipts, D1 web producer and E generic guidance/actual UTF8 prefix proof have owning validation; real public paired cases and installed realistic browser transport pass. Browser cancellation is deliberate after the measured property, not a finished judged Flow claim. P10 worked examples shipped in t831; inline medium/facts/intent/vocabulary/fingerprint migrations follow separately.
 
-Both Oct31 full-suite slots used, main held. No paid GO: future live tests Claude via CLAUDE_API_KEY, $5 whole build, no fallback. No provider/API calls, panel management or real user data/profiles. Preserve main user clinerules hash b052f0e6b0e6c6de0ba973810c7632eda04aadfdd5314eaaa73710edd1101a8d. Product examples remain generic and never mirror realistic fixture tasks.
+**Standing constraints:** Both Oct31 full-suite slots are used: owning tests/types/builds and audits only; main promotion waits a complete permitted passing sweep. No paid GO: future live model tests use CLAUDE_API_KEY/Claude/$5 whole build, no fallback; no model/API calls now. Do not manage the user's panel or touch real data/profiles. Preserve main Down .clinerules/fluxiq.md hash b052f0e6b0e6c6de0ba973810c7632eda04aadfdd5314eaaa73710edd1101a8d. Product model guidance stays generic and never teaches realistic scenarios.
 
-Reports/briefs: Core framework-heavy-lifting-plan/reports/codex-1031/p10-client-examples/. [Accepted historical context](framework-heavy-lifting-plan/archive/2026-10-31-runtime-context.md); Core owns the paired compaction proof in that report directory. Current project state is above, not the original audit below.
+Core owns generic P9 algorithms/tool admission; Down owns its observed-state explanation compatibility and any allowed fixture proof. Workers edit only briefed files/reports; root owns shared state, verification, version and git. Reports/briefs for this unit: framework-heavy-lifting-plan/reports/codex-1031/p9-append-only/.
+
+[Accepted dated context and ledger](framework-heavy-lifting-plan/archive/2026-10-31-runtime-context.md); [compaction proof](framework-heavy-lifting-plan/reports/codex-1031/p9-append-only/compaction-proof.md).
+
+[Accepted P10 context preserved during parent sync](framework-heavy-lifting-plan/archive/2026-10-31-p10-integration.md).
 
 ## Original audit baseline and recommendations (2026-10-28)
 
-The dated audit below explains the original plan; current acceptance and remaining work are above.
+The dated audit below explains the original plan; current acceptance and remaining work are recorded above.
 
 ### What is true
 
@@ -733,35 +737,30 @@ Current t829 bounded briefs are under `reports/codex-1031/p8-repeat-history/`: C
 Accepted prior ledger index and t828 evidence moved verbatim to [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
 
-Accepted dated ledger moved verbatim to [the runtime context archive](framework-heavy-lifting-plan/archive/2026-10-31-runtime-context.md).
+Accepted runtime ledger moved verbatim to [the runtime context archive](framework-heavy-lifting-plan/archive/2026-10-31-runtime-context.md).
 
-### 2026-10-31 - t831 client-examples setup and accepted-memory compaction
-- Agent: Codex lead; first Core contract worker briefed by file.
-- Changed: isolated paired t831 setup; accepted context/ledger preserved identically with four checksums, current P10 scope separated from original audit.
-- Validation: `pnpm.cmd task start client-flow-examples --worktree --core --skip-workspace-build` ->exit0, compiled SDK0.21 restored from shared cache8.094s, workspace build skipped; `python -` archived substring/SHA256 probe ->all4blocks match.
-- Outcome: Partial; first optional contract/validation unit starts, no prompt change or code acceptance yet.
-- Follow-up: Core contract -> Down authored exact tails -> Core consumer extraction/parity; serialize shared public/service/tools files against t830. No full/paid calls.
+### 2026-10-31 - t830 scoped setup and accepted-context compaction
+- Agent: Codex lead; three file-owned initial worker briefs dispatched after setup.
+- Changed: active P9 scope; dated accepted Current State/ledger moved verbatim to archive, checksummed in Core p9-append-only/compaction-proof.md.
+- Why: keep current execution state separate from historical audit/handoff text without discarding evidence.
+- Validation: `python -` (paired archive SHA256/exact-substring probe) ->all4blocks match; `pnpm.cmd task start append-only-evidence --worktree --core --skip-workspace-build` ->exit0, Core83.268s, other2SDK caches reused, workspace build skipped; no implementation acceptance.
+- Outcome: Partial; P9 setup complete, A/B/C implemented next; source0.22/private SDK0.21; full-suite/paid/panel constraints preserved.
+- Follow-up: finish setup, freeze interfaces/briefs; dispatch A/B/C by file, then owning checks before D/E integration.
 
-### 2026-10-31 - t831 optional contract acceptance
-- Agent: Codex lead; standard contract worker, root receiver-compatibility review.
-- Changed: optional copied/frozen flowScriptExamples, strict renderer/validation and receiver-preserving checked binding, owning public export; existing prompts unchanged.
-- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/script-examples/tests src/programs/automation-studio/runtime/llm/domain-instructions/tests --maxWorkers=2 --minWorkers=1` ->58/4files pass43.55s; `pnpm.cmd --filter fluxiq check` ->exit0,18.453s; `node scripts/structure-audit.mjs` ->passed. Initial fixture optional-type/as-never errors corrected without production weakening.
-- Outcome: Partial; unit1 accepted, SDK0.22 rebuild running; Down exact authored tails and Core consumer extraction/parity not yet implemented. No model/public prompt change claimed.
-- Follow-up: freeze Down producer from original current strings before removing examples from Core. Merge t830/dev and choose next version before final integration. No full/paid calls.
+### 2026-10-31 - t830 foundation/private boundary acceptance
+- Agent: Codex lead; file-owned A/B/C/D0 workers, D1 producer source frozen.
+- Changed: immutable current-view projection, screened route deltas, safe non-lasting prior-call coordinator and private actual-dispatch capture/consumed execution channel. Tool not exposed in loop yet.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/llm/tests/context-window.test.ts src/programs/automation-studio/runtime/llm/decision-context/tests/view-groups.test.ts src/programs/automation-studio/runtime/route-state/tests src/programs/automation-studio/runtime/llm/node-reruns/tests/run-nodes.test.ts --maxWorkers=2 --minWorkers=1` ->157/8files pass29.92s; initial147/148 failed an empty fixture, corrected without weakening tail order.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/llm/rerun-provenance/tests/provenance.test.ts src/programs/automation-studio/runtime/llm/node-reruns/tests/run-nodes.test.ts --maxWorkers=2 --minWorkers=1` ->155/2files pass26.68s (57new+98regression); `pnpm.cmd --filter fluxiq check` ->exit0,59.273s; structure audit ->passed483warnings/1143baseline, two old entries lowerable.
+- Outcome: Partial; Core components accepted, SDK0.22 rebuild running; Down D1 not verified and C tool unoffered. Original cycles/depth/fixture/type/packing findings corrected and recorded in reports/logs.
+- Follow-up: paired producer tests against fresh SDK, Core D2 admission/accounting and E actual serialized provider-prefix proof; no paid GO, full suites exhausted.
 
-### 2026-10-31 ? P10 consumer extraction owning acceptance
+### 2026-10-31 ? P9 actual settled safety and batch owning gates
 
-- Changes: removed four worked-example tails from Core grammar; explicit examples reach candidate/subflow/completion consumers. Missing metadata never infers a web fallback. Down migrated original eleven-example graph/parser tests; acceptance pending fresh SDK.
-- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/candidate/tests/authoring-loop.test.ts src/programs/automation-studio/runtime/flow-bootstrap/subflow-candidate/tests/builder-loop.test.ts src/programs/automation-studio/runtime/flow-bootstrap/plan/tests/flow-script-format.test.ts --maxWorkers=2 --minWorkers=1` ->63tests/3files pass30.83s; prior broader owning selection137tests/13files pass60.86s. `pnpm.cmd --filter fluxiq check` ->exit0,20.623s; `node scripts/structure-audit.mjs` ->exit0, no baseline growth. Exact selectors/logs in lead-acceptance.md.
-- Outcome: Partial; Core source accepted narrowly, private SDK rebuild in flight. Down complete byte/hash/parser/actual-registry acceptance still pending; no full/paid calls.
-- Follow-up: check actual web examples against refreshed public SDK and real definitions; retain all old oracles and fix evidenced incompatibilities before paired integration.
-
-### 2026-10-31 ? P10 exact web examples accepted
-
-- Changes: web owns four original worked-example tails; actual Core candidate/subflow/completion consumers use explicit validated binding metadata. All eleven examples resolve through real domain stores before strict saved validation.
-- Validation: `pnpm.cmd --filter @fluxiq-web-extension/domain test runtime/llm-evidence/script-examples` ->79tests pass912.3482ms; `pnpm.cmd --filter @fluxiq-web-extension/domain check` ->exit0,12.959s; `node scripts/structure-audit.mjs` ->exit0. Core owning gates and exact commands recorded above and in lead-acceptance.md.
-- Outcome: Done for this bounded unit; paired integration pending. Subflow byte parity is compositional Core actual-schema/Down original-byte proof, not browser or live model acceptance.
-- Follow-up: integrate/push paired dev, refresh shared SDK/domain, continue t830 P9. Broader P10 inline medium/facts/intent/fingerprint migrations remain. No full/paid calls or panel management.
+- Changes: neutral private assessment/veto scope, trusted primary effect proof, explicit original[]/closed controls, fresh producer receipt main accounting, no raw private errors, terminal list-guard loss; normal permission behavior preserved.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/llm/prior-nodes/tests src/programs/automation-studio/runtime/llm/rerun-provenance/tests/settled-safety.test.ts --maxWorkers=2 --minWorkers=1` ->111tests/6files pass44.38s; `pnpm.cmd --filter fluxiq check` ->exit0,59.177s; `node scripts/structure-audit.mjs` ->exit0. Prior414selection412pass,2malformed fixtures corrected without production weakening; exact commands/logs in lead-acceptance.md.
+- Outcome: Partial; Core owning accepted narrowly, existing loop regressions/parent sync/freshSDK/paired Domain/browser proof still required. No batch release yet.
+- Follow-up: preserve P10 main changes when syncing both task branches; advance next Core0.23, rerun relevant compatibility checks, then actual paired adapter and installed realistic browser acceptance.
 
 ## Open Questions
 

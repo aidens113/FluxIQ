@@ -5,6 +5,7 @@
 // beside the window, how a superseded Core note leaves it, and how declared
 // view keys group by where each view lives. The row grouping
 // and the full telling are the entry's own and stay internal.
+export * from "./current-view.ts";
 export * from "./closed-code.ts";
 export * from "./closed-detail.ts";
 export * from "./decision.ts";

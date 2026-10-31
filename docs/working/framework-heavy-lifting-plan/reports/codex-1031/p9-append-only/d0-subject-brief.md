@@ -1,0 +1,6 @@
+# D0 private semantic-subject identity completion
+Role: Heavy worker gpt-6.1-sol max; same D0 source/tests only. No active t830 Core checks.
+Goal: make already captured opaque subject available to Core's PRIVATE sealed record for C/D2 semantic list identity. Actual implicit resource/query/subject must not disappear when logical parameters are identical.
+Add readonly subject:object to private AutomationStudioLlmRerunRecord, stored directly from captured.snapshot.subject as a nonenumerable field with the other private values. No new PUBLIC snapshot or adapter API field; subject already exists there.
+Tests: record.subject is exactly the trusted captured subject reference, cannot be rewritten; JSON/spread still disclose no subject/private data; distinct trusted subjects remain distinct. D1 will intern stable subject objects by actual resource/document + semantic element/query identity, not per-call nonce. D2 may combine a private WeakMap identity/reference instant with canonical list scope; never serialize/hash object fields as authority or show private key material to model.
+No other semantic changes, factory/public export exposure, loop/Down/P10 edits, shared docs/version/baseline/git/checks/builds/audits. Preserve corrected typed narrowing. Report d0-subject-contract.md and source freeze promptly. Standard return contract.

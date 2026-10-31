@@ -9,6 +9,7 @@ export * from "./creation-spend.ts";
 export * from "./datasets/index.ts";
 export * from "./error-message.ts";
 export * from "./evidence/index.ts";
+export * from "./execution-authority/index.ts";
 export * from "./facade-ports.ts";
 export * from "./flow-graph-judgements.ts";
 export * from "./flows/index.ts";

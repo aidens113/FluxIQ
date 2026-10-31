@@ -1,14 +1,11 @@
 // What one decision is shown: every evidence entry, and beside them the
 // decision history, the draft and the budget.
 //
-// Order is `[...evidence, history, draft, budget]`: what happened, then the
-// record of every decision, then the plan it has come to, and last what is
-// left to spend. Every entry is shown whole: the history in its full form and
-// the draft with every step and every argument, and every result -- save that
-// a view of the target a newer view replaced is shown as a reference to it
-// (`../context-window.ts`). There is no byte allowance to divide between them;
-// the only bound on the request is the model's context window, which the
-// harness and the provider enforce loudly.
+// Order is [...immutable evidence, current view, current Flow, history, draft,
+// budget]. Declared view members are references from their first appearance;
+// one dynamic current-view tail carries each latest whole group. History,
+// draft and budget remain whole. There is no byte allowance to divide between
+// them; the harness and provider enforce the model context window loudly.
 //
 // The draft is measured as it goes out (`../evidence-loop/draft-shown.ts`),
 // so a run's record says what the model was shown of its own draft.

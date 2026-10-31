@@ -1,0 +1,8 @@
+# C concrete-input contract completion
+Role: Heavy worker gpt-6.1-sol max, same C ownership at runtime/llm/node-reruns/.
+Goal: retain explicitly attested effective node-port inputs as well as resolved parameters; never silently omit a real consumed input from identity.
+Current C report lists only input parameters in PriorCall/Original and canonical list key. Add mandatory private effectiveInputs: JsonObject to prior/original snapshots; explicit {} is valid, missing/unknown provenance is unproven. Include in deep freeze, revalidation and canonical semantic list identity; no model input/schema field added.
+runMember already receives original; it can use opaque D context and original effectiveInputs. Do not add inputs to model-facing core.run_node arguments or invent rebinding. Existing resolver need not inspect inputs if its authoritative declarations only depend on params, but D gets original record and must refuse unaccounted input dependencies.
+Add cases equal params/different effectiveInputs ->different key; missing inputs refuses before dispatch; source mutation cannot change frozen inputs; alias/key order canonicalization still works.
+Document C value/identity/result objects are INTERNAL and may contain private resolved data; D must publish only a closed summary and ordinary already-screened member evidence, never serialize the coordinator result wholesale. D reuses original public request for trace/wrappers and carries frozen dispatch through a private scope, not raw selector-bearing decision JSON.
+No loop/provenance/service/Down/shared doc/version/baseline/git/checks/builds/audits edits. All root Core checks ended; source edits authorized. Report c-input-contract.md and freeze promptly. Standard return contract.
