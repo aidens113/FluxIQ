@@ -67,6 +67,8 @@ export type AutomationStudioHarnessOptionExecution = {
   optionId: string;
   value: JsonObject;
   signal?: AbortSignal;
+  /** Fixed execution date reference, separate from live elapsed-time clocks. */
+  referenceNow?: number;
   /**
    * Ask before doing anything that outlasts the action. An option whose action
    * would move money, delete, send or publish, change what already exists or

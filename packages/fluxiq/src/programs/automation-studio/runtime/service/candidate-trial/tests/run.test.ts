@@ -259,3 +259,27 @@ describe("the lasting acts a trial left on the site (t462)", () => {
     expect((await runAutomationStudioCandidateTrial(unstarted.request(), unstarted.ports)).result).not.toHaveProperty("acts");
   });
 });
+
+describe("a candidate trial's persisted date reference", () => {
+  it("passes its session start to a delayed detached runner and captures anew for the next trial", async () => {
+    const f = trialFixture();
+    let startedAt = Date.UTC(2026, 9, 30, 23, 59, 59);
+    const references: Array<number | undefined> = [];
+    f.ports.now = () => startedAt;
+    f.ports.graphOptions = ({ signal }) => ({
+      signal, referenceNow: 1, now: () => startedAt + 2_000,
+      nativeNodeExecutor: async ({ hostContext }) => {
+        references.push(hostContext?.referenceNow);
+        return { result: { status: "success", route: "success", outputs: {} } };
+      }
+    });
+    const first = await runAutomationStudioCandidateTrial(f.request(), f.ports);
+    const firstSession = f.sessions.at(-1)!;
+    expect(first.record.execution).toBe("succeeded");
+    expect(firstSession.startedAt).toBe(startedAt);
+    expect(firstSession.trace).toMatchObject({ startedAt: startedAt + 2_000, referenceNow: startedAt });
+    startedAt += 86_400_000;
+    expect((await runAutomationStudioCandidateTrial(f.request(), f.ports)).record.execution).toBe("succeeded");
+    expect(references).toEqual([firstSession.startedAt, startedAt]);
+  });
+});

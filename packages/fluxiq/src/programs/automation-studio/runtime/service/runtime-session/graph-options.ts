@@ -25,13 +25,16 @@
 import type { IoRegistry } from "../../../../../io/index.ts";
 import type { RuntimeService } from "../../../../../runtime/index.ts";
 import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
-import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
+import { type AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "../../io-policy.ts";
 import type { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
 
 /** One run's executor options: what reaches the world, and where its rows and questions go. */
 export function automationStudioRunGraphOptions(input: {
   inputs?: Record<string, any> | undefined;
+  /** The enclosing session's persisted start, separate from its live clock. */
+  referenceNow?: number;
   signal: AbortSignal;
   io?: { io: IoRegistry; domainId: string | null } | undefined;
   runtimeService?: RuntimeService | undefined;
@@ -46,6 +49,8 @@ export function automationStudioRunGraphOptions(input: {
   environment?: AutomationStudioRunEnvironment | undefined;
 }): AutomationStudioGraphExecutionOptions {
   const options: AutomationStudioGraphExecutionOptions = { inputs: input.inputs ?? {}, signal: input.signal };
+  const referenceNow = automationStudioReferenceNow(input.referenceNow);
+  if (referenceNow !== undefined) options.referenceNow = referenceNow;
   const bound = input.io;
   if (bound) {
     options.effectDispatcher = input.runtimeService

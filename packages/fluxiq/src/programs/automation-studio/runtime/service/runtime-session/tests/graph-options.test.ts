@@ -17,6 +17,17 @@ const base = () => {
 };
 
 describe("a run's executor options and its environment", () => {
+  it("keeps the session's reference beside an independently advancing live environment clock", async () => {
+    const referenceNow = Date.UTC(2026, 9, 30, 23, 59, 59);
+    const clock = new AutomationStudioVirtualClock(referenceNow);
+    const environment = createAutomationStudioScopedRunEnvironment({ kind: "fixture", clock });
+    const options = automationStudioRunGraphOptions({ ...base(), referenceNow, environment });
+    await options.delay!(2_000);
+    expect(options.referenceNow).toBe(referenceNow);
+    expect(options.now!()).toBe(referenceNow + 2_000);
+    expect(automationStudioRunGraphOptions({ ...base(), referenceNow: NaN, environment })).not.toHaveProperty("referenceNow");
+  });
+
   it("take an offline environment's clock, waits, randomness and region timer", async () => {
     const clock = new AutomationStudioVirtualClock(5_000);
     const random = () => 0.25;

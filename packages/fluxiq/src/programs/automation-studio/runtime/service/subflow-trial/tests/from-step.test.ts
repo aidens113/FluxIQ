@@ -45,6 +45,26 @@ function fixture(subflow: AutomationStudioFlowBootstrapSubflow = chain("add")) {
 }
 
 describe("a from-step run", () => {
+  it("uses the partial trial's persisted start when its detached repair starts later", async () => {
+    const f = fixture();
+    const startedAt = Date.UTC(2026, 9, 30, 23, 59, 59);
+    const references: Array<number | undefined> = [];
+    const graphOptions = f.ports.graphOptions;
+    f.ports.now = () => startedAt;
+    f.ports.graphOptions = (input) => {
+      const options = graphOptions(input);
+      return { ...options, now: () => startedAt + 2_000, nativeNodeExecutor: async (request) => {
+        references.push(request.hostContext?.referenceNow);
+        return await options.nativeNodeExecutor!(request);
+      } };
+    };
+    const result = await runAutomationStudioSubflowFromStep(f.request("b"), f.ports);
+    expect(result.status).toBe("ended");
+    expect(f.sessions.at(-1)?.startedAt).toBe(startedAt);
+    expect(f.sessions.at(-1)?.trace).toMatchObject({ referenceNow: startedAt, startedAt: startedAt + 2_000 });
+    expect(references).toEqual([startedAt, startedAt]);
+  });
+
   it("starts at the named step on a subflow the router runs, with no reset, arrival, predecessor or judge", async () => {
     const run = fixture();
     const answer = await runAutomationStudioSubflowFromStep(run.request("b"), run.ports);

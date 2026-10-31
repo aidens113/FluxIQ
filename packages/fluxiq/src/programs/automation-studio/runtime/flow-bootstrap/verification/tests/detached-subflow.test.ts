@@ -62,6 +62,31 @@ function fixture() {
 }
 
 describe("detached subflow partial trial", () => {
+  it("keeps one reference while predecessor and router-target roots start on opposite sides of midnight", async () => {
+    const { input, add } = fixture();
+    const referenceNow = Date.UTC(2026, 9, 30, 23, 59, 59);
+    let live = referenceNow;
+    const references: Array<number | undefined> = [];
+    const { interface: _interface, ...routerTarget } = add;
+    routerTarget.nodes[1] = { ...routerTarget.nodes[1]!, parameters: { value: "target" } };
+    input.target = { ...input.target, subflows: [routerTarget] };
+    const native = input.options!.nativeNodeExecutor!;
+    input.options = {
+      ...input.options, now: () => live,
+      nativeNodeExecutor: async (request) => {
+        references.push(request.hostContext?.referenceNow);
+        const result = await native(request);
+        live += 2_000;
+        return result;
+      }
+    };
+    const result = await runAutomationStudioDetachedSubflow(input);
+    expect(result.receipt.status).toBe("succeeded");
+    expect(result.receipt.finishedAt).toBeGreaterThan(Date.UTC(2026, 9, 31));
+    expect(references).toEqual([referenceNow, referenceNow]);
+    expect(result.trace?.referenceNow ?? result.trace?.startedAt).toBe(referenceNow);
+  });
+
   it("runs the predecessor's proposal, then the target with its input read from the predecessor's output, from the candidate topology alone", async () => {
     const { input, seen } = fixture();
     const accepted = acceptedSource();

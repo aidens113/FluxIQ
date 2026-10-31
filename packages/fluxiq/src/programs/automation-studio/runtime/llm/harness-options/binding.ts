@@ -295,6 +295,8 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     toolId: string;
     value: JsonObject;
     signal?: AbortSignal;
+    /** Fixed execution date reference carried by Core, never model-authored. */
+    referenceNow?: number;
     /**
      * Where the Flow being built starts, when the build was told
      * (`../../flow-bootstrap/start-location.ts`). Core carries the domain's own
@@ -692,6 +694,7 @@ function executionFor(binding: AutomationStudioLlmEvidenceRuntimeBinding, toolId
     toolId,
     value: input.value,
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    ...(input.referenceNow !== undefined ? { referenceNow: input.referenceNow } : {}),
     // Every call of this build, including the opening call the loop makes
     // before the first paid decision: the arrival at it when the binding
     // declares one, and otherwise the free look, which is where a domain says

@@ -129,6 +129,16 @@ describe("builtin.control.for-each", () => {
   // t796 (`run-mvtdn37t-e1e4d0a7`): a listing that hands its rows on in page order put featured rows first, and
   // "the N most recent" had no way to be said. Core orders the rows a For Each walks, then takes its first N.
   describe("its order option", () => {
+    it("orders relative dates against the run reference when the live clock crosses midnight", async () => {
+      const referenceNow = Date.UTC(2026, 9, 30, 23, 59, 59);
+      const items = [{ title: "relative", published: "today 09:00" }, { title: "absolute", published: "2026-10-30T12:00:00Z" }];
+      const context = { inputs: { items }, parameters: { order: [{ field: "published", order: "asc", as: "date" }] }, now: () => referenceNow + 2_000 };
+      const fixed = await pass({ ...context, referenceNow, iteration: keptPlace() });
+      const live = await pass({ ...context, iteration: keptPlace() });
+      expect(fixed.outputs?.item).toBe(items[0]);
+      expect(live.outputs?.item).toBe(items[1]);
+    });
+
     const NOW = Date.parse("2026-10-01T12:00:00Z");
     // A library catalogue that lists two featured books first, then the rest, one with no date it can read.
     const books: JsonValue[] = [

@@ -32,7 +32,8 @@
 // packet's `acts`, which the caller's read is given.
 
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
-import type { AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 import { automationStudioResultEndViewRead, summarizeAutomationStudioRunResult, type AutomationStudioResultEarlierAdvice, type AutomationStudioResultEndView, type AutomationStudioResultRecordSetInput, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioTrialChangeFinding, AutomationStudioTrialSiteChange } from "../../flow-bootstrap/trial-change/index.ts";
 import { automationStudioResultSiteChangeScreened } from "../../result-verification/site-change/index.ts";
@@ -43,6 +44,8 @@ export async function automationStudioCandidateTrialSummary(input: {
   recordSets: readonly AutomationStudioResultRecordSetInput[];
   graph: AutomationStudioFlowArtifact | undefined;
   trace: AutomationStudioGraphExecutionTrace | undefined;
+  /** The enclosing persisted trial start, including where execution returned no trace. */
+  referenceNow?: number | undefined;
   readEndView?: (() => Promise<AutomationStudioResultEndView | undefined>) | undefined;
   actionAttempts?: readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined;
   observedStateKeys?: readonly string[] | undefined;
@@ -66,6 +69,7 @@ export async function automationStudioCandidateTrialSummary(input: {
   const frames = automationStudioCandidateFrameEvidence(input.trace?.attempts ?? [], input.graph);
   const summary = summarizeAutomationStudioRunResult({
     recordSets: input.recordSets,
+    referenceNow: automationStudioReferenceNow(input.referenceNow) ?? automationStudioReferenceNow(input.trace?.referenceNow) ?? input.trace?.startedAt,
     ...(input.graph ? { flowNodes: input.graph.nodes, flowEdges: input.graph.edges } : {}),
     ...ended,
     ...(input.actionAttempts ? { actionAttempts: input.actionAttempts.filter((attempt) => !attempt.subflowTarget) } : {}),

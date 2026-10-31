@@ -172,16 +172,16 @@ describe("what an effect dispatcher is told to withhold", () => {
     expect(contexts[0]?.withheldValues?.texts).toContain(SUPPLIED);
   });
 
-  it("gives a dispatcher no context when the run withholds nothing and has no signal", async () => {
+  it("gives only the fixed date reference when the run withholds nothing and has no signal", async () => {
     const contexts: DispatchContext[] = [];
-    await runAutomationStudioGraph(flow, {
+    const trace = await runAutomationStudioGraph(flow, {
       effectDispatcher: (_effect, context) => {
         contexts.push(context);
         return succeeded;
       }
     });
 
-    expect(contexts).toEqual([undefined]);
+    expect(contexts).toEqual([{ referenceNow: trace.startedAt }]);
   });
 });
 

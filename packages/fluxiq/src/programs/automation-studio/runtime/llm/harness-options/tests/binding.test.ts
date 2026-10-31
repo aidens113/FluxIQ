@@ -40,6 +40,16 @@ const UNDECLARED_BINDING: AutomationStudioLlmEvidenceRuntimeBinding = {
 void UNDECLARED_BINDING;
 
 describe("Automation Studio harness option binding", () => {
+  it("carries a replay's reference in host metadata without changing the model's input", async () => {
+    const executeTool = vi.fn(async () => ({ observed: true }));
+    const registry = automationStudioHarnessOptionRegistry({ host, binding: slot(executeTool) });
+    const binding = registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, SCOPE);
+    const referenceNow = Date.UTC(2026, 9, 31, 23, 59);
+    await binding.executeTool({ callId: "dryrun.1.1", toolId: "erp.inspect", value: { period: "current" }, referenceNow });
+    expect(executeTool).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", callId: "dryrun.1.1", toolId: "erp.inspect", value: { period: "current" }, referenceNow, permission: expect.any(Function) });
+    expect(JSON.stringify(binding.tools)).not.toContain("referenceNow");
+  });
+
   it("offers the model only the nodes the domain said it runs", async () => {
     // The defect this holds shut: the names offered were the whole registry for
     // the build's resolution, and Core's own built-ins are available in every

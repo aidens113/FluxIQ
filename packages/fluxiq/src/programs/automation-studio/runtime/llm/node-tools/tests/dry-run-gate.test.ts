@@ -350,7 +350,7 @@ describe("what a passing test reports", () => {
     // Completed again unchanged: not replayed, and reported as the first replay's.
     expect(await run.complete()).toEqual({ answer: undefined, ran: [] });
     expect(run.reports).toHaveLength(2);
-    expect(run.reports[1]).toEqual({ verdict: first.verdict, observations: first.observations, reused: true, signature: first.signature });
+    expect(run.reports[1]).toEqual({ verdict: first.verdict, observations: first.observations, reused: true, signature: first.signature, referenceNow: first.referenceNow });
     expect(first.signature).toBe(automationStudioFlowDraftFlowSignature(steps));
   });
 
@@ -403,6 +403,38 @@ describe("what a passing test reports", () => {
 // a verdict about the Flow -- routing and settings included -- not only about
 // the steps a replay sends.
 describe("a clean verdict is about the Flow as it stands", () => {
+  it("uses one reference across midnight, retains it on reuse, and captures a fresh reference for a changed Flow", async () => {
+    const beforeMidnight = Date.UTC(2026, 9, 31, 23, 59);
+    const afterMidnight = Date.UTC(2026, 10, 1, 0, 1);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(beforeMidnight);
+    const references: Array<number | undefined> = [];
+    const steps = [step(2), step(3)];
+    const reports: AutomationStudioFlowDraftTestReport[] = [];
+    const gate = automationStudioFlowDraftDryRunGate({
+      enabled: true, steps,
+      executeTool: async ({ referenceNow }) => {
+        references.push(referenceNow);
+        clock.mockReturnValue(afterMidnight);
+        return { kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, resultCode: REPLAYED };
+      },
+      accountEvidence: () => 0, showEvidence: () => {}, targetMoved: () => {}, observed: (report) => reports.push(report)
+    });
+    try {
+      expect(await gate()).toBeUndefined();
+      expect(references).toEqual([beforeMidnight, beforeMidnight, beforeMidnight]);
+      expect(reports[0]?.referenceNow).toBe(beforeMidnight);
+      expect(await gate()).toBeUndefined();
+      expect(references).toHaveLength(3);
+      expect(reports[1]).toMatchObject({ reused: true, referenceNow: beforeMidnight });
+      steps[0]!.settings = { waitMs: 500 };
+      expect(await gate()).toBeUndefined();
+      expect(references.slice(3)).toEqual([afterMidnight, afterMidnight, afterMidnight]);
+      expect(reports[2]).toMatchObject({ reused: false, referenceNow: afterMidnight });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("replays again when routing changes after a clean replay", async () => {
     const steps = [step(2), step(3), step(4)];
     const run = harness(steps, {});

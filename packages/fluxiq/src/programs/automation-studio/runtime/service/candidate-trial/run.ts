@@ -180,7 +180,7 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
       ...(ports.registry ? { registry: ports.registry } : {}), resolution: ports.resolution, snapshots: await ports.snapshots(), deprecatedPublicationIds: await ports.deprecatedPublicationIds(),
       sourceInstructionIds: [...ports.sourceInstructionIds], runId, start: receipt,
       // The signal rides on the options alone: the runner refuses two different signals.
-      options: automationStudioTrialExecutorOptions(ports.graphOptions({ runId, signal }), ports.environment)
+      options: automationStudioTrialExecutorOptions({ ...ports.graphOptions({ runId, signal }), referenceNow: startedAt }, ports.environment)
     });
   } catch (error) {
     // Not left running: a session that threw is ended failed, and the throw goes on to the trial gate.
@@ -220,7 +220,7 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
   }
   let summary: AutomationStudioRunResultSummary;
   try {
-    summary = await automationStudioCandidateTrialSummary({ recordSets: await ports.recordSets(runId), graph: frames.graph, trace: executed.trace,
+    summary = await automationStudioCandidateTrialSummary({ recordSets: await ports.recordSets(runId), graph: frames.graph, trace: executed.trace, referenceNow: startedAt,
       ...(ports.readEndView ? { readEndView: () => ports.readEndView!({ runId }) } : {}), actionAttempts: ports.actionAttempts?.(ended),
       observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}),
       ...(request.earlierAdvice?.length ? { earlierAdvice: request.earlierAdvice } : {}),

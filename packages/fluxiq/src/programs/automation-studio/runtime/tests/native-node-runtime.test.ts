@@ -6,6 +6,7 @@ import type { AutomationStudioRecordBatch } from "../executor/index.ts";
 import { runAutomationStudioGraph } from "../executor.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
+import { automationStudioRunGraphOptions } from "../service/runtime-session/index.ts";
 
 function node(overrides: Partial<AutomationStudioNodeDefinition> = {}): AutomationStudioNodeDefinition {
   return {
@@ -17,6 +18,26 @@ function node(overrides: Partial<AutomationStudioNodeDefinition> = {}): Automati
 function manifest(nodes = [node()]): AutomationStudioImporterSdkManifest { return { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "example.package", packageVersion: "1.0.0", domainId: "example", nodes }; }
 
 describe("trusted-local native node runtime", () => {
+  it("passes a session reference through the canonical native host adapter and drops malformed direct references", async () => {
+    const references: Array<number | undefined> = [];
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), {
+      packageId: "example.package", packageVersion: "1.0.0",
+      implementations: { transform: ({ host }) => {
+        references.push(host?.referenceNow);
+        return { outputs: { result: 1 } };
+      } }
+    });
+    const instance = { id: "native", definitionId: "example.transform" };
+    const flow: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: "flow.reference", ownerKind: "routine", ownerId: "flow.reference", name: "Reference", createdAt: 1, updatedAt: 1, nodes: [instance], edges: [] };
+    const referenceNow = Date.UTC(2026, 9, 30, 23, 59, 59);
+    const options = automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime, referenceNow });
+    const trace = await runAutomationStudioGraph(flow, { ...options, now: () => referenceNow + 2_000 });
+    expect(trace.status).toBe("succeeded");
+    await runtime.execute(instance, {});
+    await runtime.execute(instance, {}, undefined, { referenceNow: NaN, capabilityIds: [], sideEffectClass: "none" });
+    expect(references).toEqual([referenceNow, undefined, undefined]);
+  });
+
   it("registers manifests and isolates implementation inputs to declared ports", async () => {
     let received: Record<string, unknown> = {};
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: ({ inputs, log }) => { received = inputs; log({ level: "info", message: "done", data: { token: "secret", visible: "yes" } }); return { outputs: { result: Number(inputs.in) * 2 } }; } } });
@@ -98,7 +119,7 @@ describe("trusted-local native node runtime", () => {
 
   it("bounds cooperative timeout and cancellation", async () => {
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: ({ signal }) => new Promise((resolve) => signal.addEventListener("abort", () => resolve({ status: "failed" }), { once: true })) } });
-    await expect(runtime.execute({ id: "native", definitionId: "example.transform", metadata: { timeoutMs: 10 } }, {})).resolves.toMatchObject({ result: { status: "failed", outputs: { error: expect.stringContaining("exceeded 10ms") } } });
+    await expect(runtime.execute({ id: "native", definitionId: "example.transform", metadata: { timeoutMs: 10 } }, {}, undefined, { referenceNow: 1, capabilityIds: [], sideEffectClass: "none" })).resolves.toMatchObject({ result: { status: "failed", outputs: { error: expect.stringContaining("exceeded 10ms") } } });
     const controller = new AbortController(); const execution = runtime.execute({ id: "native", definitionId: "example.transform" }, {}, controller.signal); controller.abort();
     await expect(execution).resolves.toMatchObject({ result: { status: "failed" } });
   });

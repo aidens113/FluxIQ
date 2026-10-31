@@ -70,7 +70,7 @@ export function agree(input: AutomationStudioResultVerificationAgreementInput, r
     // stored rows that were wrong, and only the first was forwarded.
     return {
       // The agreed nos' advice keeps its words; a list of values the request never says gets a note (t785, `./exclusion-words.ts`).
-      ...notedAdvice(bothReadings(first, second, input.reads, input.recordSets, weighed), input.wording),
+      ...notedAdvice(bothReadings(first, second, input.reads, input.recordSets, weighed, input.summary?.referenceNow), input.wording),
       // Each call's weighing as a field a gate reads (`../build-yes-hold/`, t664), never from the labels above; absent without the record.
       ...(noRecordOf(input) ? { weighedNos: ([1, 2] as const).map((call) => ({ call, ...(weighed.has(call) ? { recordContradicts: weighed.get(call)!.wholly ? "whole" as const : "part" as const } : {}) })) } : {}),
       // Nothing about the steps: this file reads only the two verdicts, and a

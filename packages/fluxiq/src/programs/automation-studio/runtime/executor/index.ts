@@ -1,4 +1,5 @@
 export * from "./contracts.ts";
+export { automationStudioReferenceNow } from "../reference-now/index.ts";
 // The default defensive policy every node executes under. Exported whole because
 // a host, a domain and a test all need to read the same numbers the runtime
 // enforces rather than restate them.

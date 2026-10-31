@@ -14,6 +14,7 @@
 import type { AutomationStudioResultComputedFact, AutomationStudioResultComputedFactsInput } from "../contracts/index.ts";
 import type { AutomationStudioResultRecordSetSummary } from "../record-set-summary.ts";
 import { automationStudioResultKeptDateOrders } from "../value-readings/index.ts";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 
 /** A phrase of the request that asks for an order. */
 const ORDER_WORDS = /\b(?:(?:newest|latest|most\s+recent|oldest|earliest|highest|lowest|largest|smallest|cheapest)[\s-]+first|(?:sorted|ordered|ranked)\s+by\s+[^.,;\n]{1,40}|in\s+(?:descending|ascending|alphabetical|chronological)\s+order|(?:descending|ascending)\b)/iu;
@@ -43,7 +44,7 @@ export function automationStudioResultOrderFact(input: AutomationStudioResultCom
   const down = NEWEST_FIRST.test(input.requestText);
   const up = OLDEST_FIRST.test(input.requestText);
   if (down === up) return [];
-  const now = Date.now();
+  const now = automationStudioReferenceNow(input.summary.referenceNow) ?? Date.now();
   const dated = sets.filter((set) => set.recordCount > 1).map((set) => ({ set, kept: automationStudioResultKeptDateOrders(set, now).find((order) => order.nothingCut && order.order === (down ? "desc" : "asc")) }));
   if (!dated.length || dated.some((entry) => entry.kept === undefined)) return [];
   return [{ kind: "order", status: "holds", said: `The request asks for ${down ? "newest" : "oldest"} first, and the dates in the stored rows run that way: ${dated.map((entry) => `${labelOf(entry.set)} by ${entry.kept!.field}`).join("; ")}.` }];

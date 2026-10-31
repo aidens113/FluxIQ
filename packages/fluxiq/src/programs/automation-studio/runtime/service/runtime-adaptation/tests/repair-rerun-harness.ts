@@ -78,6 +78,8 @@ export const readFails: NonNullable<AutomationStudioGraphExecutionOptions["effec
 
 export async function rerun(options: {
   dispatcher?: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>;
+  referenceNow?: number;
+  sessionReferenceNow?: number;
   detailMetadata?: NonNullable<AutomationStudioFlowRunDetail["metadata"]>;
   sessionMetadata?: NonNullable<AutomationStudioRuntimeSession["metadata"]>;
   adaptations?: AutomationStudioFlowAdaptation[];
@@ -93,6 +95,7 @@ export async function rerun(options: {
 } = {}) {
   const context = await adaptationContext();
   const first = await refutedSession();
+  if (first.trace && options.sessionReferenceNow !== undefined) first.trace = { ...first.trace, referenceNow: options.sessionReferenceNow };
   const session = options.sessionMetadata ? { ...first, metadata: { ...(first.metadata ?? {}), ...options.sessionMetadata } } : first;
   const firstDetail = runtimeSessionToFlowRunDetail(session, PROJECT_ID);
   const reauthorMarker = (options.from ?? "start") === "start" && options.reauthored !== false ? { resultReauthor: options.reauthorMarker ?? { routed: true, applied: true, adaptationId: "adaptation.bootstrap.1", attempt: 1, attempts: [] } } : {};
@@ -124,7 +127,7 @@ export async function rerun(options: {
     projectId: PROJECT_ID,
     session,
     detail: { ...firstDetail, metadata: { ...(firstDetail.metadata ?? {}), ...reauthorMarker, ...(options.detailMetadata ?? {}) } },
-    graphOptions: { effectDispatcher: options.dispatcher ?? checkPassed, delay: async () => undefined, recoveryBudget: recoveryBudgetFromRuntimeAdaptationContext(context) },
+    graphOptions: { effectDispatcher: options.dispatcher ?? checkPassed, ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}), delay: async () => undefined, recoveryBudget: recoveryBudgetFromRuntimeAdaptationContext(context) },
     adaptationContext: context,
     ...(options.subflow ? { subflowId: options.subflow.subflowId } : {}),
     from: options.from ?? "start"

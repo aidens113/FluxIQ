@@ -98,6 +98,7 @@ import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../model/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
+import { automationStudioReferenceNow } from "../reference-now/index.ts";
 import { automationStudioScreenedNodeParameters } from "../recovery/repair-context/index.ts";
 import type {
   AutomationStudioResultEndView,
@@ -202,8 +203,10 @@ export type AutomationStudioRunResultSummaryInput = {
    * no declaration was made, and no row is carried at all.
    */
   deniedEvidenceKeys?: readonly string[] | undefined;
-  /** The instant relative dates are read against for `sortRead` (`./value-readings/`). Absent, the time the summary is made. */
+  /** Numeric override for relative dates in value readings. Absent, use the execution reference, then summary time. */
   now?: number | undefined;
+  /** The execution's fixed reference. A caller's numeric `now` override still wins. */
+  referenceNow?: number | undefined;
 };
 
 /**
@@ -214,6 +217,7 @@ export type AutomationStudioRunResultSummaryInput = {
  * that reads as a whole one.
  */
 export function summarizeAutomationStudioRunResult(input: AutomationStudioRunResultSummaryInput): AutomationStudioRunResultSummaryWithEndView {
+  const referenceNow = input.now ?? automationStudioReferenceNow(input.referenceNow) ?? Date.now();
   const totalRecordCount = input.recordSets.reduce((total, set) => total + safeCount(set.summary.recordCount), 0);
   const totalRefusedCount = input.recordSets.reduce((total, set) => total + safeCount(set.summary.invalidCount), 0);
   let withheld = false;
@@ -263,7 +267,7 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   });
   // How Core read the values each condition and sort compared (t511), from the rows already screened above.
   // Each read by the very node it was told by (t574): a part's read is never matched again by id among the root's nodes.
-  const read = automationStudioResultValueReadings({ reads: narrowedReads, authoredNodes: accounted.authoredNodes, recordSets: summarizedSets, flowNodes, now: input.now ?? Date.now() });
+  const read = automationStudioResultValueReadings({ reads: narrowedReads, authoredNodes: accounted.authoredNodes, recordSets: summarizedSets, flowNodes, now: referenceNow });
   const reads = read.reads;
   const recordSets = read.recordSets;
   // The start view first: every trial of one build starts from the same reset
@@ -282,7 +286,8 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     flowShape,
     ...(returned.returned ? { returned: returned.returned } : {}),
     withheld,
-    ...(ended?.endView ? { endView: ended.endView } : {})
+    ...(ended?.endView ? { endView: ended.endView } : {}),
+    referenceNow
   };
 }
 
