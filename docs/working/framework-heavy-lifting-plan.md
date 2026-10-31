@@ -775,3 +775,10 @@ The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10
    documented, so do not rely on one, and run a probe only with a live agent supervising it.
 9. **How much of `refuted-no/` (25 files of sentence weighing) does the computed layer replace?** Owner: Lane C, at
    P5 design. Recommendation: replace each part the computed facts cover, in the same unit.
+
+### 2026-10-30 - Codex independent P6 acceptance (t799)
+- Agent: Codex lead
+- Validation: owning recovery/toggle/handler/pace Core batches -> `15 files / 84 tests passed` and `12 files / 151 tests passed`, both configured groups exited 0. See paired downstream `framework-heavy-lifting-plan/reports/codex-1030/t799-result.md`.
+- Validation: `pnpm.cmd --filter fluxiq check` -> exit 0, content-matched source/test check reused; `pnpm.cmd docs:check` -> `Deterministic framework reference is current.`
+- Validation: downstream native headed Chromium photo-social installed-extension proof -> `1 passed (3.7m)`, no paid calls; downstream owning tests/types passed after correcting its legacy-input test fixture.
+- Not verified: browser Core rung/pacing behavior, Firefox or the separately documented first-loop-row toggle direction. No full sweep or paid qualification.
