@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t829 merged into paired dev; shared SDK/domain/three extension targets refreshed0.21, public smoke and stamps pass. P9/P10 designs ready; main awaits permitted full sweep, no paid calls.
+Status detail: P10 worked-example unit accepted with exact web parity and real handle/save validation; paired dev integration pending. P9 active separately.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,34 +11,21 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Accepted provider-free t829, 2026-10-31 (merged):** Core0.21 repeat guard/history accepted:31 owning+190 safety/history tests, package types, audit481warnings/1143baseline; private SDK rebuilt79.888s. Down135domain+98extension tests pass; explicit observed assertions repaired initial test-only TS errors, host12rerun/typecheck31.533s pass. Domainbuild26.303s, extensiontypes61.661s/build40.345s and final spec typecheck pass; all3targets22files. Down audit239warnings and baseline615to614 (one old packing allowance removed). Real headed Chromium134.0.6998.35 UTC/en-US1280x720 company-website proof3 passes2cases42.3s: exactly2real reads then prethird unacted stop versus7intentional ForEach reads;19usable observations,0unavailable/extra observer commands, all28actual command replies successful/fresh IDs, no repairs/gateway errors/page changes. Required receipts preserved through canonical policy-output route; direct importer remains intentionally refused in required mode (Core units separately cover native registry). Earlier missing fixture dependency and refused direct-importer setup recorded with failed evidence. Evidence1-3 copied main ignored test-runs. Source merges Core6c45c83b/Down77e8b284; Core mandatory70merge contracts pass. Shared0.21 SDK/domain/extension refreshed75.536s/19.934s/21.948s; all3build stamps current and public compiled observer/native smoke pass with0dispatches. Task backups ea3a0126/ee502b5e retained, private Down removed through task finish, private Core clean/detached for normal age-prune. Final paired dev push follows this memory commit; main held for permitted full sweep. No new full/paid calls/panel management; user clinerules hash unchanged. P9/P10 bounded designs ready, not implemented/accepted yet.
+**Accepted private t831, 2026-10-31:** Paired worked-example unit under fxwork/t831, source/private SDK0.22. Optional strict receiver-compatible client metadata and all three Core consumers accepted:137owning tests/13files then corrected63/3files, package types20.623s/audit pass. Down79owning example tests pass, including all eleven parsed/accepted/saved graphs through public Core and actual web handle resolution, original four UTF8 byte/hash pins, full completion digest, actual candidate schema, and three missing-provenance refusals. Domain types12.959s/audit pass. No production validator/definition/example weakening; test helper corrected to include production resolution before save. SDK rebuilt82.428s. Root commits/backups and paired dev integration next; full suites/main held.
 
-**Accepted t828, 2026-10-31:** Source-less identity recovery and full-result receipt integrity accepted locally. Lead Core122identity+62receipt tests, domain affected selections/native16, extension84, Labtrace4, affected types/builds and both audits pass; Corepacking allowance15to10/1143baseline, Down615 unchanged. Real Chromium134.0.6998.35 e2e-chromium social-network-feed proof8 passes1test/body45.6s: four actual target-not-found/unacted attempts with accepted ~354KB replies, fourth identity unmatched, zero gateway suppression/errors; Undo then explicit original-target refresh returns only selector/element patches, one required Like, exact unchanged other-post map. This proves automatic negative recovery and explicit positive refresh, not automatic fourth-attempt browser success (Core units cover that). Initial receipt hash256KiB rejection fixed at intake/observer with exact full-payload hashing; small authority bounds/unknown safety unchanged. Earlier locator/trace-field assertion mistakes and failed attempts recorded; artifacts1-8 ignored in main. Final extensioncheck21.723s passes. Integrated Core4327ad27/downstream690de074; Core mandatory70merge contracts and Down structure gate pass. Shared SDK0.20/domain/Chrome/Firefox/e2e bundles refreshed79.474s/18.898s/24.039s,22files per target. Task backups45e13d1b/cc54135d retained. First Down merge refused a preserved handoff note, clean retry passed; Core finish required clean private worktree detachment, then passed. Final paired dev push follows this memory commit. Main held: both full-suite slots used. No paid/API calls/panel management; user clinerules preserved. NextP8repeatguard/history.
+**P10 first bounded unit:** Metadata contract accepted58tests; original Down producer21tests/types pass. Core extraction137tests then corrected63tests/3files, types20.623s/audit pass; SDK rebuilt82.428s, Core workbranch5e6b2a09 backed up. Down all91checks:78pass/13saved failures, types28.208s/audit pass. Root-cause trace found missing production handle resolution in migrated saved test helper, not an evidenced product defect; honest actual stores/resolver fixture correction active. Original eleven authored graph oracles and four exact byte/hash pins remain unchanged. Inline medium/facts/intent/fingerprint are later work; no dev integration until paired acceptance.
 
-Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+**Parallel work:** t830 P9 private foundations/private provenance accepted and backed up workbranch1bd5aafc. D1 first176tests172pass/4fail and initial type/structure defects corrected in frozen source, pending fresh paired SDK/checks; strict production failure reader retained. D2 Core actual loop admission/authority wiring active; E instructions/actual UTF8 request test source authored, not checked. Each task owns separate Core/Down trees; root serializes integration and preserves both handoffs.
 
-**User decision, 2026-10-30 (P5b).** A judge rejection whose every reason Core refutes from the run's own evidence may
-pass without a model yes, after the judge has been re-prompted with that evidence. Missing or unusable rechecks and
-unrefuted new defects must not pass. This does not authorise bypassing the judge for arbitrary computed results.
+**Accepted baseline:** t829 runtime/history merged and pushed Core5bf93be1/Down069fdfe9, Core221focused+70merge contracts/Down233focused pass; real Chromium proof2passes42.3s (2reads then prethird stop vs7ForEach), all28replies fresh/successful, no observer commands. Shared0.21 SDK/domain/three extension targets current. Full evidence/context is preserved in the linked archive and owning p8-repeat-history reports.
 
-**Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
-also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
-native installed-extension proof in the paired repository). P5b, P1b and t817 are merged (t817: Coreae354e9d/downstreamdf58a48e); native grounded-state oracle/replay passes. Paired t816 is merged and pushed:
-Claude runtime, keys/settings UI and live-test routing with the user's $5 whole-build allowance; no paid run has started.
-Sweep2 on Core803f3c81/downstream16dd9ad3 found six recovery tests and one SQL repair/replay test with zero fake-provider calls. Policy IDs and the legacy host sentinel reached strict provider validation; recovery also dropped explicit model/key metadata. Task t819 repairs caller propagation and legacy compatibility without weakening provider binding or key custody; lead217 focused tests, types and full structure audit pass. The rest of this section is the plan as written.
+Both Oct31 full-suite slots used, main held. No paid GO: future live tests Claude via CLAUDE_API_KEY, $5 whole build, no fallback. No provider/API calls, panel management or real user data/profiles. Preserve main user clinerules hash b052f0e6b0e6c6de0ba973810c7632eda04aadfdd5314eaaa73710edd1101a8d. Product examples remain generic and never mirror realistic fixture tasks.
 
-The audit ran 2026-10-28 at the user's direction: make
-Core do the heavy lifting the build model now carries, for any client environment (web, desktop, mobile, API). Eleven
-reports were synthesised into this document. The synthesis, the contradictions it resolved and the source it checked
-are in [reports/fhl-synthesis.md](framework-heavy-lifting-plan/reports/fhl-synthesis.md). The web-specific half (which
-domain and extension files fill each contract below, and moving web concepts out of Core) is in the paired document,
-`C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan.md` (the web extension repository).
+Reports/briefs: Core framework-heavy-lifting-plan/reports/codex-1031/p10-client-examples/. [Accepted historical context](framework-heavy-lifting-plan/archive/2026-10-31-runtime-context.md); Core owns the paired compaction proof in that report directory. Current project state is above, not the original audit below.
 
-Reports: Core area audits in `framework-heavy-lifting-plan/reports/` (`fhl-core-build-tools`,
-`fhl-core-grammar`, `fhl-core-trials-resets`, `fhl-core-judging`, `fhl-core-runtime`, `fhl-core-data-supervisor`,
-`fhl-core-client-seam`). Downstream evidence in `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/`
-(`fhl-debug-notes`: eight debug notes; `fhl-step-workload`: one passing build measured step by step; `fhl-core-surface`;
-`fhl-domain-surface`).
+## Original audit baseline and recommendations (2026-10-28)
+
+The dated audit below explains the original plan; current acceptance and remaining work are above.
 
 ### What is true
 
@@ -745,23 +732,36 @@ Current t829 bounded briefs are under `reports/codex-1031/p8-repeat-history/`: C
 
 Accepted prior ledger index and t828 evidence moved verbatim to [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
-### 2026-10-31 - t829 setup and accepted-memory compaction
-- Agent: Codex lead; planned three bounded workers.
-- Changed: paired task setup; three file-owned briefs and focused Current State; Core settled ledger index/t828 archived verbatim.
-- Why: finish P8 bounded execution and repair context without redoing accepted identity or receipt safety.
-- Validation: `pnpm.cmd task start runtime-repeat-history --worktree --core --skip-workspace-build` ->exit0, paired t829 trees and mandatory SDK libraries prepared, Core build77.335s; workspace build skipped, no product checks. Archive substring proof ->exact normalized block SHA256 110daea3498ec596f77454427e0593e12f5eedcebdea78cf8eae5577676abf73.
-- Outcome: Partial; setup accepted; history mapping and optional interface accepted at phase1: lead27tests/typecheck pass, archive links corrected without altering preserved block. Guard/client behavior implementation next, no browser acceptance yet.
-- Follow-up: complete setup, freeze optional observation contract, implement file-owned guard/history/client wiring; narrow checks and allowed realistic provider-free browser proof only.
 
-### 2026-10-31 - t829 observed-repeat/history acceptance
-- Agent: Codex lead; Core/host/frame/browser file-owned workers, root corrections/verification.
-- Changed: private prethird-repeat gate, closed repair observations, optional host equality memo, positively observed frame coverage, native-browser proof and authored architecture.
-- Why: stop confirmed unchanged execution before another dispatch while preserving real counter/row progress and four-attempt safety.
-- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/runtime-repeat/tests/bounded-evidence.test.ts src/programs/automation-studio/runtime/executor/step-loop/tests/run-repeat-guard.test.ts src/programs/automation-studio/runtime/composite-execution/tests/child-uncertainty.test.ts --maxWorkers=2 --minWorkers=1` ->31/3files pass; explicit affected recovery/safety selectors ->190/19files pass; exact evidence/commands in lead-acceptance.md and ignored logs.
-- Validation: package `check`/narrow builds ->all affected Core/domain/extension pass; domain135 + extension98 tests pass; both structure audits pass, baselines1143/614 (Down old allowance removed).
-- Validation: installed `native.spec.ts --workers=1` ->attempt3 two passed42.3s,2reads then prethird refusal/7ForEach reads,19observed/0extraobservercommands,28successful real replies; attempts1-2 failures/cause retained.
-- Outcome: provider-free accepted and merged Core6c45c83b/Down77e8b284; mandatory70 Core merge-contract tests pass. Shared0.21 SDK/domain/three targets refreshed; stamp/public observer smoke pass. Browser proves canonical policy output required receipts, not direct-importer support in required mode. No live Claude/full sweep claimed.
-- Follow-up: paired dev push after this memory commit; next P9 immutable evidence/batch units and P10 client examples. Main waits permitted full sweep; no paid GO. Source task backups retained, private Core detached, user clinerules preserved.
+Accepted dated ledger moved verbatim to [the runtime context archive](framework-heavy-lifting-plan/archive/2026-10-31-runtime-context.md).
+
+### 2026-10-31 - t831 client-examples setup and accepted-memory compaction
+- Agent: Codex lead; first Core contract worker briefed by file.
+- Changed: isolated paired t831 setup; accepted context/ledger preserved identically with four checksums, current P10 scope separated from original audit.
+- Validation: `pnpm.cmd task start client-flow-examples --worktree --core --skip-workspace-build` ->exit0, compiled SDK0.21 restored from shared cache8.094s, workspace build skipped; `python -` archived substring/SHA256 probe ->all4blocks match.
+- Outcome: Partial; first optional contract/validation unit starts, no prompt change or code acceptance yet.
+- Follow-up: Core contract -> Down authored exact tails -> Core consumer extraction/parity; serialize shared public/service/tools files against t830. No full/paid calls.
+
+### 2026-10-31 - t831 optional contract acceptance
+- Agent: Codex lead; standard contract worker, root receiver-compatibility review.
+- Changed: optional copied/frozen flowScriptExamples, strict renderer/validation and receiver-preserving checked binding, owning public export; existing prompts unchanged.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/script-examples/tests src/programs/automation-studio/runtime/llm/domain-instructions/tests --maxWorkers=2 --minWorkers=1` ->58/4files pass43.55s; `pnpm.cmd --filter fluxiq check` ->exit0,18.453s; `node scripts/structure-audit.mjs` ->passed. Initial fixture optional-type/as-never errors corrected without production weakening.
+- Outcome: Partial; unit1 accepted, SDK0.22 rebuild running; Down exact authored tails and Core consumer extraction/parity not yet implemented. No model/public prompt change claimed.
+- Follow-up: freeze Down producer from original current strings before removing examples from Core. Merge t830/dev and choose next version before final integration. No full/paid calls.
+
+### 2026-10-31 ? P10 consumer extraction owning acceptance
+
+- Changes: removed four worked-example tails from Core grammar; explicit examples reach candidate/subflow/completion consumers. Missing metadata never infers a web fallback. Down migrated original eleven-example graph/parser tests; acceptance pending fresh SDK.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/candidate/tests/authoring-loop.test.ts src/programs/automation-studio/runtime/flow-bootstrap/subflow-candidate/tests/builder-loop.test.ts src/programs/automation-studio/runtime/flow-bootstrap/plan/tests/flow-script-format.test.ts --maxWorkers=2 --minWorkers=1` ->63tests/3files pass30.83s; prior broader owning selection137tests/13files pass60.86s. `pnpm.cmd --filter fluxiq check` ->exit0,20.623s; `node scripts/structure-audit.mjs` ->exit0, no baseline growth. Exact selectors/logs in lead-acceptance.md.
+- Outcome: Partial; Core source accepted narrowly, private SDK rebuild in flight. Down complete byte/hash/parser/actual-registry acceptance still pending; no full/paid calls.
+- Follow-up: check actual web examples against refreshed public SDK and real definitions; retain all old oracles and fix evidenced incompatibilities before paired integration.
+
+### 2026-10-31 ? P10 exact web examples accepted
+
+- Changes: web owns four original worked-example tails; actual Core candidate/subflow/completion consumers use explicit validated binding metadata. All eleven examples resolve through real domain stores before strict saved validation.
+- Validation: `pnpm.cmd --filter @fluxiq-web-extension/domain test runtime/llm-evidence/script-examples` ->79tests pass912.3482ms; `pnpm.cmd --filter @fluxiq-web-extension/domain check` ->exit0,12.959s; `node scripts/structure-audit.mjs` ->exit0. Core owning gates and exact commands recorded above and in lead-acceptance.md.
+- Outcome: Done for this bounded unit; paired integration pending. Subflow byte parity is compositional Core actual-schema/Down original-byte proof, not browser or live model acceptance.
+- Follow-up: integrate/push paired dev, refresh shared SDK/domain, continue t830 P9. Broader P10 inline medium/facts/intent/fingerprint migrations remain. No full/paid calls or panel management.
 
 ## Open Questions
 

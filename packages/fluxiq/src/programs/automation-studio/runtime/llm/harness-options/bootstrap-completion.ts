@@ -270,7 +270,7 @@ export type AutomationStudioFlowBootstrapCompletionInput = {
   flowId: string;
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
-  binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters" | "runsNodes"> | undefined;
+  binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters" | "runsNodes" | "flowScriptExamples"> | undefined;
   /**
    * The draft the build accrued, when the Flow is to be built from what the
    * build did rather than from what the model wrote at the end.

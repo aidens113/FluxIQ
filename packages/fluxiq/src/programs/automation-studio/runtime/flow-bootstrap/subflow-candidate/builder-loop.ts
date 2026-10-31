@@ -177,7 +177,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
+import { renderAutomationStudioFlowScriptFormat } from "../script-examples/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../llm/decision-handlers/index.ts";
 import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
@@ -321,10 +321,11 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     }
     return answered;
   };
+  const scriptFormat = renderAutomationStudioFlowScriptFormat(input.submission.binding?.flowScriptExamples);
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
     description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${automationStudioSubflowBriefWords.successCheck(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.${gate.available ? ` ${THEN_WORDS.tool}` : ""}${fromStep ? ` After a failed test, repair the failing step live and check it by testing from that step (from) before testing the whole part again.` : ""} ${HONEST_ENDING}`,
-    inputSchema: { type: "object", properties: { flow: { type: "string", description: `${automationStudioSubflowBriefWords.brief(input.scope)}\nThis subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" }, ...THEN.properties(gate.available, fromStep) }, additionalProperties: false }
+    inputSchema: { type: "object", properties: { flow: { type: "string", description: `${automationStudioSubflowBriefWords.brief(input.scope)}\nThis subflow as a script. ${scriptFormat.format}\n${scriptFormat.act}\n${scriptFormat.loop}\n${scriptFormat.state}` }, plan: { type: "object" }, summary: { type: "string" }, ...THEN.properties(gate.available, fromStep) }, additionalProperties: false }
   };
   const receiptCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
     const proposal = controller.latest();

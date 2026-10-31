@@ -3,7 +3,7 @@ import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoo
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
-import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
+import { renderAutomationStudioFlowScriptFormat } from "../script-examples/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
 import { automationStudioCandidateTestRequestKey } from "../test-request/index.ts";
@@ -80,7 +80,7 @@ function refusedLabel(last: { revision: number; digest: string } | undefined, ac
 export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "checkCompletion" | "completionSchema" | "fullRunRequired" | "discoveryOnly">;
   /** `binding.startState`, when the domain has it, is how the site reset reads where the build began (`../site-reset/start-check.ts`). */
-  submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0] & { binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState" | "runsNodes"> | undefined };
+  submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0] & { binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState" | "runsNodes" | "flowScriptExamples"> | undefined };
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort };
   /**
    * This build's ledger of its own lasting acts (t462), the one its permission
@@ -125,11 +125,12 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   const submitId = "core.submit_candidate", testId = AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID;
   /** The call each accepted revision was submitted in, so a refusal can name where the latest accepted script is (t498). */
   const acceptedIn = new Map<number, string>();
+  const scriptFormat = renderAutomationStudioFlowScriptFormat(input.submission.binding?.flowScriptExamples);
   const tool: AutomationStudioLlmEvidenceTool = {
     toolId: submitId, effect: "observe",
     description: `Submit a complete Flow, written as a Flow script under "flow" (its description gives the format and examples), or an existing canonical JSON plan under "plan". Discovery calls are evidence only and never enter the Flow. Static validity returns a draft revision/digest, never semantic acceptance. Correct all diagnostics and resubmit the entire candidate. Then test that exact revision with ${testId}, and complete with the latest revision and digest only after its trial answers yes.`,
     // The format rides on the input schema, as the legacy completion schema carries it: a tool description is bounded at 2,000 characters.
-    inputSchema: { type: "object", properties: { flow: { type: "string", description: `The whole Flow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
+    inputSchema: { type: "object", properties: { flow: { type: "string", description: `The whole Flow as a script. ${scriptFormat.format}\n${scriptFormat.act}\n${scriptFormat.loop}\n${scriptFormat.state}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
   // A completion with nothing accepted says so and names the way out: lane C
   // (`run-mv0pa79q-ef91811b`) never submitted a Flow and completed four times

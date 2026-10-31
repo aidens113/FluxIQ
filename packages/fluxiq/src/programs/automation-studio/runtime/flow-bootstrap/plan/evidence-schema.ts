@@ -19,7 +19,7 @@
 // (`./size-limits.ts`), so each schema is built for a Flow's bounds, and each
 // constant is the schema at the setting's default.
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "./flow-script-format.ts";
+import { renderAutomationStudioFlowScriptFormat, type AutomationStudioFlowScriptExamples } from "../script-examples/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
 import { automationStudioEvidenceFlowBootstrapLimitsExceeded } from "./profile-limits.ts";
@@ -44,13 +44,14 @@ const MAX_ACT_CLAIMS = 16;
  * models reached for.
  */
 export function automationStudioEvidenceFlowBootstrapCompletionSchema(
-  size: AutomationStudioFlowBootstrapSizeLimits = automationStudioFlowBootstrapSizeLimits()
+  size: AutomationStudioFlowBootstrapSizeLimits = automationStudioFlowBootstrapSizeLimits(),
+  examples?: AutomationStudioFlowScriptExamples
 ): JsonObject {
   return {
     type: "object",
     additionalProperties: false,
     required: ["flow"],
-    description: `Return the finished Flow under "flow" and one sentence about it under "summary". ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}`,
+    description: `Return the finished Flow under "flow" and one sentence about it under "summary". ${renderAutomationStudioFlowScriptFormat(examples).format}`,
     properties: {
       summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength },
       flow: {
@@ -63,7 +64,9 @@ export function automationStudioEvidenceFlowBootstrapCompletionSchema(
   };
 }
 
-/** The completion schema at the setting's default. */
+/** The completion schema at the setting's default, with grammar only. Clients
+ * supply explicit examples to the factory; older callers remain callable but
+ * no longer receive implicit web examples. */
 export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA: JsonObject = automationStudioEvidenceFlowBootstrapCompletionSchema();
 
 /**
