@@ -183,6 +183,7 @@ import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.t
 import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowBriefWords } from "./brief-words.ts";
+import { automationStudioCandidateTestRequestKey } from "../test-request/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_THEN as THEN, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_THEN_WORDS as THEN_WORDS, automationStudioSubflowBuilderAutoComplete, automationStudioSubflowBuilderTest } from "../subflow-submit-then/index.ts";
 import { automationStudioSubflowDoneBefore, automationStudioSubflowEntryLeft } from "./done-before.ts";
 import { AutomationStudioSubflowPendingRepair } from "./pending-repair.ts";
@@ -389,6 +390,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, draft: false, dryRun: false, discoveryOnly: true,
+    requestContextKey: (toolId) => toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID ? automationStudioCandidateTestRequestKey(controller.latest()) : input.loop.requestContextKey?.(toolId),
     // Its turns, its allowance's dollars and its calls, less its finishing trials' judges (header, t570), a whole test's too (t685).
     budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
     finishingTools: { submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
@@ -443,8 +445,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     }
   };
   // Core's own decision once a yes stands that the gate lets complete, wrapped before `observe` so the chat shows it (header, t811).
-  // Never while a repair stands: the gate's completion takes a yes before it looks at the repair, and the repair memory
-  // crosses briefs, so the builder asks it itself; the model then decides as before.
+  // Never while a shared repair stands: the gate checks it too, and the model must check that repair before completing.
   discovery.decide = automationStudioSubflowBuilderAutoComplete(input.loop.decide, () => {
     const proposal = passed();
     if (!proposal || repair.standing) return undefined;

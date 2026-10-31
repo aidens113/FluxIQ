@@ -603,7 +603,7 @@ export class AutomationStudioSubflowTrialGate {
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
     // A failed whole test leaves its repair standing, and its instruction says where (header, t804).
-    const repairSet = port.fromStep && !offline ? this.repair.afterWholeTest(answer, latest) : undefined;
+    const repairSet = (port.fromStep || this.repair.standing) && !offline ? this.repair.afterWholeTest(answer, latest) : undefined;
     const retestsLeft = !repeatedStep && (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || offlineYes) ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes" && !offlineYes, partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
@@ -631,15 +631,15 @@ export class AutomationStudioSubflowTrialGate {
   completion(receipt: { revision: number; digest: string }): AutomationStudioLlmEvidenceCompletionCheck {
     if (!this.input.port) return { ok: true };
     const answer = this.verdicts.get(key(receipt));
-    if (answer?.verdict === "yes" && answer.entryPrepared) return { ok: true };
     const closed = this.closedDigests.get(receipt.digest);
     if (closed) return refusal("subflow.trial_unchanged_after_no", "This exact proposal was judged no and has not changed. Change it, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
     const repeated = this.repeatedFailures.get(key(receipt));
     if (answer && repeated) return refusal(`subflow.trial_${answer.verdict}`, repeatedInstruction(repeated), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, failedStep: repeated, trialFeedback: answer.feedback });
     // As the test refuses a whole test while a failed test's repair is unchecked, so does completion (header, t804).
-    const latest = this.input.port.fromStep ? this.input.latest() : undefined;
-    const pending = latest ? this.repair.refuses(latest, undefined) : undefined;
-    if (latest && pending) return refusal(FROM_STEP_FIRST, REPAIR_WORDS.refused(pending.step, latest), pending.step ? { repairStep: pending.step.key } : {});
+    const latest = this.input.latest();
+    const pending = latest && this.repair.standing ? { step: this.repair.step(latest) } : undefined;
+    if (latest && pending) return refusal(FROM_STEP_FIRST, this.input.port.fromStep && this.repair.refuses(latest, undefined) ? REPAIR_WORDS.refused(pending.step, latest) : "A failed test's repair is still unchecked. Test the whole part when you believe the repair works; an earlier yes cannot complete this brief.", pending.step ? { repairStep: pending.step.key } : {});
+    if (answer?.verdict === "yes" && answer.entryPrepared) return { ok: true };
     if (!answer) return refusal("subflow.trial_required", `Test this proposal first: call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
     const retestable = (this.trials.get(key(receipt)) ?? 0) < AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION;
     const advised = answer.verdict === "unsure" && answer.entryPrepared && retestable && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {};

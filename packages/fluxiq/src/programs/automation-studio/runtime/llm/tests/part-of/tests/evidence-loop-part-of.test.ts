@@ -25,7 +25,7 @@ const owing = authoringScopePartOf([{ id: "p1", words: "Find the entries", colum
 const none = authoringScopePartOf([{ id: "p1", words: "Press the button" }]);
 
 /** Runs a loop that reads once and completes, and returns the record output its dry run replayed the read with. */
-async function replayedOutput(partOf: typeof owing): Promise<unknown> {
+async function replayedOutput(partOf: typeof owing, runPart = false): Promise<unknown> {
   const sent: JsonObject[] = [];
   const executeTool = async ({ value }: { callId: string; toolId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
     if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
@@ -47,9 +47,9 @@ async function replayedOutput(partOf: typeof owing): Promise<unknown> {
       }
     };
   };
-  const decide = vi.fn()
-    .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: LIST, parameters, consequences: [] }, add: true })
-    .mockResolvedValueOnce({ kind: "complete", result: { summary: "Read the entries." } });
+  const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: LIST, parameters, consequences: [] }, add: true });
+  if (runPart) decide.mockResolvedValueOnce({ kind: "tool_call", callId: "part", toolId: "core.run_flow", input: { from: 1 } });
+  decide.mockResolvedValueOnce({ kind: "complete", result: { summary: "Read the entries." } });
   const result = await runAutomationStudioLlmEvidenceLoop({
     tools: [tool], decide, executeTool, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
     nodeOf: automationStudioLlmNodeDescriptions({ registry, resolution }).definition,
@@ -57,7 +57,11 @@ async function replayedOutput(partOf: typeof owing): Promise<unknown> {
     ...(partOf ? { partOf } : {})
   });
   expect(result.ok).toBe(true);
-  expect(sent).toHaveLength(1);
+  expect(sent).toHaveLength(runPart ? 2 : 1);
+  if (runPart) {
+    expect(result.trace.find(row => row.callId === "part")).toMatchObject({ resultCode: "core.run_flow.ran" });
+    expect((sent[0]!.parameters as JsonObject).recordOutput).toEqual((sent[1]!.parameters as JsonObject).recordOutput);
+  }
   return (sent[0]!.parameters as JsonObject).recordOutput;
 }
 
@@ -71,5 +75,13 @@ describe("the plan part reaches the loop's dry run", () => {
     const before = await replayedOutput(undefined);
     expect(before).not.toHaveProperty("process");
     expect(await replayedOutput(none)).toEqual(before);
+  });
+
+  it("uses the same record defaults in a part run and the required whole dry run", async () => {
+    const output = await replayedOutput(owing, true) as { process?: { columns?: string[] } };
+    expect(output.process).toMatchObject({ columns: ["title", "price"] });
+    const before = await replayedOutput(undefined, true);
+    expect(before).not.toHaveProperty("process");
+    expect(await replayedOutput(none, true)).toEqual(before);
   });
 });

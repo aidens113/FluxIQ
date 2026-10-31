@@ -14,6 +14,7 @@ const test = (evidence: readonly Entry[]) => {
   return { kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, callId: "test", input: { revision: submitted.revision!, digest: submitted.digest! } };
 };
 const ended = () => ({ kind: "complete", result: { ended: "partial", reason: "the yes was not taken" } });
+const checkRepair = () => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, callId: "repair-test", input: { fromStepImpossible: "The earlier failed run left no step that can be resumed." } });
 const FLAGGED: AutomationStudioSubflowTrialKeptEveryRowRead = {
   nodeId: "s2", kept: 3,
   keptEveryRow: { narrowerRead: "s1", narrowerSeen: 7, narrowerKept: 3, actedBy: ["s1"], sameList: "items_edge_and_read_target", said: "Step s2 read the same list as step s1." }
@@ -57,7 +58,7 @@ describe("a builder whose latest revision passed its test (t811)", () => {
       const submitted = answerOf(evidence, "submit");
       return { kind: "complete", result: { subflowKey: "find_listing", revision: submitted.revision!, digest: submitted.digest! } };
     };
-    const run = await runBuilder([submitCall("submit", twoSteps(), { then: "test_whole" }), receipt], {
+    const run = await runBuilder([submitCall("submit", twoSteps(), { then: "test_whole" }), receipt, checkRepair], {
       fromStep: true,
       afterCall: (callId, repair) => {
         if (callId === "submit") repair.afterWholeTest(STOPPED, { revision: 1, digest: "f".repeat(64), subflows: [] });
@@ -65,14 +66,16 @@ describe("a builder whose latest revision passed its test (t811)", () => {
     });
     expect(run.outcome.loop.ok, JSON.stringify(run.outcome.loop)).toBe(true);
     expect(run.answers.get("submit")!.tested).toMatchObject({ verdict: "yes", revision: 1 });
-    expect(run.pendingRepair.standing).toBe(true);
-    expect(run.decides()).toBe(2);
-    expect(automationStudioActivityDecisionReason.isCoreWritten(run.decisions.at(-1))).toBe(false);
+    expect(run.seen[2]!.some(entry => (entry.value as { code?: string }).code === "subflow.trial_from_step_first")).toBe(true);
+    expect(run.pendingRepair.standing).toBe(false);
+    expect(run.decides()).toBe(3);
+    expect(automationStudioActivityDecisionReason.isCoreWritten(run.decisions[1])).toBe(false);
+    expect(automationStudioActivityDecisionReason.isCoreWritten(run.decisions.at(-1))).toBe(true);
   });
 
   it("tells the model the exact receipt when it sends anything else after a yes Core held back for a repair", async () => {
     // Since t811 a plain yes completes before the model is asked; only a yes held back like this still reaches the t581/t601
-    // refusals, and a receipt sent beside an ending (t601), which is the brief done.
+    // refusals; a receipt beside an ending must still wait for the repair check before Core completes.
     const receipt = (evidence: readonly Entry[]) => {
       const submitted = answerOf(evidence, "submit");
       return { kind: "complete", result: { subflowKey: "find_listing", revision: submitted.revision!, digest: submitted.digest!, ended: "partial", reason: "It is a partial trial." } };
@@ -81,7 +84,8 @@ describe("a builder whose latest revision passed its test (t811)", () => {
       submitCall("submit", twoSteps(), { then: "test_whole" }),
       () => ({ kind: "complete", result: { outcome: "done" } }),
       () => ({ kind: "complete", result: { ended: "blocked", reason: "The subflow before this one never prepared its entry." } }),
-      receipt
+      receipt,
+      checkRepair
     ], {
       fromStep: true,
       afterCall: (callId, repair) => {
@@ -94,7 +98,8 @@ describe("a builder whose latest revision passed its test (t811)", () => {
     expect(refusal(2, "subflow.ending_shape")?.instruction).toMatch(/^Revision 1 of this subflow passed its trial, so the brief is done: complete with exactly \{"subflowKey": "find_listing", "revision": 1, "digest": "[0-9a-f]+"\} and nothing else\.$/u);
     expect(refusal(3, "subflow.ending_after_yes")?.instruction).toMatch(/^Revision 1 of this subflow passed its trial, so the brief is done: complete with exactly \{"subflowKey": "find_listing", "revision": 1, "digest": "[0-9a-f]+"\}\.$/u);
     expect(run.outcome.ended).toBeUndefined();
-    expect(run.decides()).toBe(4);
+    expect(refusal(4, "subflow.trial_from_step_first")).toBeDefined();
+    expect(run.decides()).toBe(5);
   });
 
   it("completes on the loop's last decision, which offers only finishing", async () => {

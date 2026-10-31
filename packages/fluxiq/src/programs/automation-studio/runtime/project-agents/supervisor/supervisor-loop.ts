@@ -121,6 +121,7 @@
 // the person's ending carries (`flow_bootstrap.provider_unavailable`), never
 // "the supervisor stopped".
 import { authoringScopePartOf } from "../../flow-bootstrap/record-defaults/index.ts";
+import { automationStudioCandidateTestRequestKey } from "../../flow-bootstrap/test-request/index.ts";
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
@@ -263,6 +264,7 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   const unusable = input.loop.unusableDecisions;
   const loopInput: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop,
+    requestContextKey: (toolId) => toolId === IDS.testCandidate ? automationStudioCandidateTestRequestKey(controller.latest()) : input.loop.requestContextKey?.(toolId),
     ...(unusable ? {
       unusableDecisions: {
         ...unusable,

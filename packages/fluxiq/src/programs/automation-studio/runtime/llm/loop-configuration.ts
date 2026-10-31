@@ -55,6 +55,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * the candidate's, `core.submit_candidate` and `core.test_candidate`.
    */
   finishingTools?: AutomationStudioLlmEvidenceFinishingTools | undefined;
+  /** Backend-owned target revision for a tool whose request also depends on non-page state. Never provider data; unchanged targets keep the same key. */
+  requestContextKey?: ((toolId: string) => string | undefined) | undefined;
   /**
    * A loop whose model plans and hands the work on rather than acting on the
    * target (the project supervisor; t569): the tools that move its work

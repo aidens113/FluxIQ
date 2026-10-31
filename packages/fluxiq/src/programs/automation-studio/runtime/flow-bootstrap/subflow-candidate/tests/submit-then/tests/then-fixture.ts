@@ -44,7 +44,7 @@ export function twoSteps(selector = ".filter"): string[] {
 }
 
 /** Runs `steps` as the provider's decisions; `afterCall` is told each call answered, with the repair memory the builder shares with the other briefs of its subflow. */
-export async function runBuilder(steps: Step[], options: { trials?: Trial[]; fromStep?: boolean; checkRows?: AutomationStudioSubflowTrialPreparingPort["checkRows"]; iterations?: number; afterCall?: ((callId: string, repair: AutomationStudioSubflowPendingRepair) => void) | undefined } = {}) {
+export async function runBuilder(steps: Step[], options: { trials?: Trial[]; fromStep?: boolean; checkRows?: AutomationStudioSubflowTrialPreparingPort["checkRows"]; iterations?: number; fixedState?: boolean; afterCall?: ((callId: string, repair: AutomationStudioSubflowPendingRepair) => void) | undefined } = {}) {
   const trials = [...(options.trials ?? [])];
   const cap = options.iterations ?? steps.length + 2;
   const asked: AutomationStudioSubflowTrialRequest[] = [];
@@ -104,6 +104,7 @@ export async function runBuilder(steps: Step[], options: { trials?: Trial[]; fro
       tools: [look], maxIterations: cap, maxToolCalls: steps.length + 6,
       unusableDecisions: { maxConsecutive: cap, maxInARow: cap, stalled: () => new Error("stalled") },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: PAGE, effectApplied: false, targetsUnchanged: true }),
+      ...(options.fixedState ? { captureStateDigest: () => "the-same-page" } : {}),
       decide
     }
   });

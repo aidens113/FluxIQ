@@ -87,6 +87,33 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   its own ledger from the project ledger, and the build's subflow trial port.
   Each brief's allowance caps its calls at three per decision, so its subflow
   trials' judges (a first answer and a confirmation) never starve its decisions.
+- **Folded submission and testing.** `core.submit_subflow` saves without testing
+  unless `then` asks for `"test_whole"` or `{ "from": "<step>" }`. The accepted
+  answer carries that exact revision's test under `tested` and its receipt under
+  `testedWith`, including the page left by a trial that moved the target. A
+  standing repair still refuses a whole test until checked from the failing
+  step, unless `fromStepImpossible` explains why that cannot check it. A script
+  label uniquely naming a step works as `from`; exact plan keys take priority,
+  and ambiguous labels are refused with the available keys and labels. Labels
+  are authoring metadata and do not change the executable digest.
+- **Completion and defaults.** A confirmed yes for the latest revision completes
+  the builder through Core's usual completion gate without another provider
+  decision; an unchecked repair or a from-step success grants no automatic
+  completion. An unchecked shared repair also refuses a model's receipt even
+  if that gate retains an earlier yes. The production observer binds the builder's completion schema
+  through its provider delegate so it retains the Core decision wrapper. The
+  activity stream shows the folded test and Core's completion in separate rows.
+  Both subflow and whole-candidate tests default to the latest submission when
+  revision and digest are both absent; half pairs and stale pairs are refused.
+  Their memo and repeat keys include the backend's current proposal revision and
+  digest, so an empty latest-default call after a real revision change is a new
+  request even on the same page. Unchanged-revision repeats retain their guard;
+  the model supplies no context key.
+  Dispatch defaults kind, parts and a repair's failing receipt from Core's plan
+  and last return, and never defaults a reset. Record defaults reach scoped
+  rebuilds, the supervisor's assembled candidate and the evidence loop's whole
+  dry run and `core.run_flow` partial replay
+  only where exactly one scoped task part owes records.
 - **A brief's own ending stops its loop (t551).** A plan step the person did
   not permit -- refused inside the submission's completion check, which the
   loop cannot see -- or a check only a person could pass that was not passed
