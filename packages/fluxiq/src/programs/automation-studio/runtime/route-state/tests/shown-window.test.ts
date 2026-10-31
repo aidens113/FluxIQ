@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID, startAutomationStudioBuildRouting } from "../index.ts";
+import { automationStudioScreenRouteSituation } from "../screen-situation.ts";
 
 const result = (path: string, extra: JsonObject = {}) => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, routeState: { page: { path, ...extra } } });
 const entry = (callId: string) => ({ callId, toolId: "core.run_node", value: { ok: true } as JsonObject });
@@ -35,7 +36,7 @@ describe("the routing situations as window entries", () => {
     expect(second.evidence.map((item) => item.callId)).toEqual(["core.route_state.1", "c1", "core.route_state.2", "c2", "core.route_state.3", "core.budget.2"]);
     // Everything the first decision was shown of the window, up to its newest call, the second is shown in the same place.
     expect(JSON.stringify(second.evidence.slice(0, 3))).toBe(JSON.stringify(first.evidence.slice(0, 3)));
-    expect(second.evidence[2]).toMatchObject({ toolId: AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID, value: { state: { "state.page.path": "/c1" } } });
+    expect(second.evidence[2]).toMatchObject({ toolId: AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID, value: { baseSituation: "core.route_state.1", updates: { "state.page.path": "/c1" }, removed: [] } });
   });
 
   it("leaves the routing context constant, listing no situation and saying where they are", async () => {
@@ -60,6 +61,77 @@ describe("the routing situations as window entries", () => {
     await execute({ callId: "c2", toolId: "core.run_node" });
     await decide({});
     const shown = routing.shown([entry("c2")], []).evidence.find((item) => item.callId === "core.route_state.2");
-    expect(shown?.value).toEqual({ seen: "after exploring with core.run_node", state: { "state.page.path": "/c2" } });
+    expect(shown?.value).toEqual({ seen: "after exploring with core.run_node", baseSituation: "core.route_state.1", updates: { "state.page.path": "/c2" }, removed: [] });
+  });
+
+  it("reconstructs every screened full situation while keeping its historical bytes", async () => {
+    const states: JsonObject[] = [
+      { page: { path: "/same", count: 1, tags: ["alpha", "beta"], value: "public" } },
+      // Established routing semantics omit duplicate full situations.
+      { page: { path: "/same", count: 1, tags: ["alpha", "beta"], value: "public" } },
+      { page: { path: "/same", count: 2, tags: ["alpha", "beta"], value: "public" } },
+      { page: { path: "/same", count: 2, tags: ["beta", "alpha"], value: "public" } },
+      { page: { path: "/same", count: 2, tags: ["beta", "alpha"], value: "sk-abcdefghijklmnopqrstuvwxyz0123456789" } },
+      // The existing flattened contract omits null; the visible key is removed.
+      { page: { path: "/same", count: null, tags: ["beta", "alpha"] } }
+    ];
+    const routing = await startAutomationStudioBuildRouting({ hostRuntime: { capabilities: [], observeRouteState: () => states[0]! }, projectId: "p1", flowId: "f1", flowInputs: [] });
+    let next = 1;
+    const execute = routing.recording(async (_call: { callId: string; toolId: string }) => ({ kind: "llm_evidence_tool_execution", routeState: states[next++]! }));
+    const decide = routing.observing(async (input: {}) => input);
+    const evidence: ReturnType<typeof entry>[] = [];
+    let previous: string[] = [];
+    for (let index = 0; index < states.length; index += 1) {
+      if (index) {
+        const call = entry(`c${index}`);
+        await execute(call);
+        evidence.push(call);
+        await decide({});
+      }
+      const shown = routing.shown(evidence, []).evidence.filter((item) => item.toolId === AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID);
+      expect(shown.slice(0, previous.length).map((item) => JSON.stringify(item))).toEqual(previous);
+      let reconstructed: JsonObject = {};
+      shown.forEach((item, situationIndex) => {
+        const value = item.value as JsonObject;
+        if (!situationIndex) reconstructed = { ...(value.state as JsonObject) };
+        else {
+          expect(value.baseSituation).toBe(shown[situationIndex - 1]!.callId);
+          for (const key of value.removed as string[]) delete reconstructed[key];
+          Object.assign(reconstructed, value.updates);
+        }
+        expect(reconstructed).toEqual(automationStudioScreenRouteSituation(routing.context().situations[situationIndex]!.state, []));
+      });
+      previous = shown.map((item) => JSON.stringify(item));
+      expect(JSON.stringify(shown)).not.toContain("sk-");
+    }
+    expect(routing.context().situations).toHaveLength(5);
+    const last = routing.shown(evidence, []).evidence.find((item) => item.callId === "core.route_state.5");
+    expect(last?.value).toMatchObject({ removed: ["state.page.count"], updates: {} });
+    // Internal full state retains the credential-bearing observation.
+    expect(routing.context().situations[3]!.state["state.page.value"]).toMatch(/^sk-/u);
+  });
+
+  it("keeps deltas and their prior identities through missing call anchors and new rounds", async () => {
+    const { routing, execute, decide } = await routed();
+    const first = routing.shown([entry("trial1")], []).evidence;
+    await execute({ callId: "internal1", toolId: "core.run_node" });
+    await decide({});
+    const second = routing.shown([entry("trial1"), entry("trial2")], []).evidence;
+    expect(second.map((item) => item.callId)).toEqual(["core.route_state.1", "trial1", "trial2", "core.route_state.2"]);
+    expect(second.slice(0, first.length)).toEqual(first);
+    const historical = second.filter((item) => item.toolId === AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID);
+    await execute({ callId: "next1", toolId: "core.run_node" });
+    await decide({});
+    const next = routing.shown([entry("next1")], []).evidence;
+    expect(next.map((item) => item.callId)).toEqual(["core.route_state.1", "core.route_state.2", "next1", "core.route_state.3"]);
+    expect(next.slice(0, 2)).toEqual(historical);
+    expect(next[3]!.value).toMatchObject({ baseSituation: "core.route_state.2", updates: { "state.page.path": "/next1" } });
+  });
+
+  it("protects the cached projection when a caller mutates its returned window", async () => {
+    const { routing } = await routed();
+    const first = routing.shown([], []).evidence;
+    (first[0]!.value as JsonObject).state = { rewritten: true };
+    expect(routing.shown([], []).evidence[0]!.value).toMatchObject({ state: { "state.page.path": "/start" } });
   });
 });

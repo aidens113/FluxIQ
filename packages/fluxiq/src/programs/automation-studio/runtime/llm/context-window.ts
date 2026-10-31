@@ -1,149 +1,30 @@
-// What one evidence decision is shown of everything the loop has gathered:
-// all of it, in the order it happened, with each view of the target shown whole
-// only until a newer view replaces it.
-//
-// This module used to choose. It held each request to a byte allowance
-// (24,000 bytes for Flow creation) and an entry count, kept the newest result
-// of each tool first, then filled what was left newest first, and skipped a
-// whole entry that did not fit without saying so. A page the model had
-// observed early was gone by the decision that wrote the Flow, and nothing
-// told it so. The standing decision of 2026-09-30 is that the model is shown
-// every entry, with no ranking and no byte or count limit: the only bound on a
-// request is the model's context window, and a request over it fails loudly
-// before it is sent, with its measured size (`./harness/run.ts`,
-// `./deepseek/provider.ts`). Nothing is trimmed to fit.
-//
-// **A view the target has left is not sent again (B1, 2026-10-01).** Shown
-// whole, every page the tab had left rode in every later request: live run
-// `run-mup2i28c-6c7fc209` went from 15,722 to 214,853 input tokens in five
-// decisions, three whole pages of the same store in the last, and a build of
-// thirty steps would pass a 1M-token window near its twenty-second call. So
-// the current view is shown whole, and every earlier one is replaced by a
-// reference: the rest of that result -- what the step did, what it read, what
-// changed, why it was refused -- stays whole, and only the view is not
-// repeated. Nothing still on the target is lost, because the current view is
-// whole and the model can look again.
-//
-// Which keys of a result *are* the view is the domain's to say, as it says
-// which keys are raw payload (`deniedEvidenceKeys`): Core knows nothing about
-// pages. A domain that declares none is shown every entry whole, as before.
-//
-// **Cache.** A stub names the result that replaced it directly -- the next one
-// carrying a view -- and never the newest, so once written it never changes,
-// and every request is a byte prefix of the next through its last stub
-// (`./deepseek/request-body.ts` orders the rest; `./evidence-loop/tests/request-prefix.test.ts`).
-//
-// **A read's rows are a view of their own (t194 w48).** Live run 13
-// (`run-muqbzu32-8691a65e`) read one list three times, and its last request
-// carried all three reads whole: 164,577 of its 290,929 characters. A domain
-// may also declare a key as `holder.member` -- the web domain's
-// `read.extracted` -- and that member is replaced inside its holder, the same
-// way, by the next result whose same holder carries one
-// (`./decision-context/view-groups.ts`). Each holder is its own kind of view:
-// a click or a page view after a read leaves its rows whole, and only a newer
-// read replaces them. The rest of the holder stays -- the domain keeps a short
-// account of the read there, its counts and first rows -- and
-// `core.recall_result` gives the replaced members back whole on request
-// (`./evidence-recall/`); its own earlier answers are replaced by its newer
-// one the same way.
-//
-// A Core note superseded by a newer one of the same kind still leaves the
-// evidence (`./decision-context/supersede.ts`); a tool's result never does.
-//
-// **One current Flow script, named once, at the end (t498, t501, t503).** An
-// accepted candidate submission carries the whole script it accepted, and a
-// refused one may carry the script it sent
-// (`flow-bootstrap/candidate/authoring-loop.ts`). Live run
-// `run-mv6ff44s-01def7f6` had only a refused script in context and sent it back
-// after a later revision was accepted, so the model must read exactly one
-// script as current. t498 rewrote every older submission in place, which broke
-// the provider's prefix cache at each newly accepted revision (live runs
-// `run-mv6i27oi-a87fb247` W5 and `run-mv6i2akr-516b2f03` D3, about $0.008 a
-// build). t501 left every entry as written and marked the newest accepted one
-// as superseding the rest; but each entry had been written calling itself
-// "your current Flow", and lane C round 17 (`run-mv6lgqi6-4bfab2e1`, 0051) was
-// shown five scripts, four of them saying so, and a refusal saying "Submit
-// again from revision 4's script". It sent revision 4's script three times.
-//
-// So no entry says what is current. Each submission is labelled when it is
-// written by what it was then -- "Revision N, as Core accepted it", or refused
-// and no revision, naming the revision that was latest when it was sent --
-// which stays true for good, so no entry is ever rewritten. The one claim of
-// which revision is current is a single Core entry, `core.current_flow`, placed
-// last in the window (`currentFlow`, below): it names the newest accepted
-// revision, its digest and the call whose result holds its whole script. Like
-// the history and the budget after it, it is written anew for every request,
-// at the end, so every request's tool results stay a byte prefix of the next.
-
+// Immutable historical results plus the full current-view and current-Flow tails.
+// Declared view members become references on their first appearance; appending
+// evidence never rewrites an earlier historical result. Raw evidence stays whole
+// for recall and execution. No entry, view member or row is ranked or truncated.
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { automationStudioLlmEvidenceViewGroups, type AutomationStudioLlmEvidenceViewGroup } from "./decision-context/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "./evidence-recall/index.ts";
+import { automationStudioLlmEvidenceCurrentView } from "./decision-context/index.ts";
 
 /** One evidence entry as a decision is shown it, and as the loop holds it. */
 export type AutomationStudioLlmEvidenceEntry = { callId: string; toolId: string; value: JsonValue };
 
-/**
- * The key a result whose view was replaced carries in place of it: the callId
- * of the result that replaced it. Core's own name, explained to the model once
- * in the decision instruction (`./evidence-loop-decision.ts`). A held view's
- * reference sits inside its holder.
- */
+/** Legacy public key, retained for consumers of older projections; no longer emitted. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDED_KEY = "supersededBy";
 
-/** A kind of view, and the one tool whose results alone carry it when it is Core's own. */
-type ToolViewGroup = AutomationStudioLlmEvidenceViewGroup & { toolId?: string };
-
 /**
- * The evidence one decision is shown: every entry the loop holds, in the order
- * the loop holds them, each whole -- except that in every entry but the newest
- * carrying a view of a kind, that view's keys are replaced by `supersededBy`,
- * naming the next entry that carried a view of the same kind. Once a candidate
- * submission was accepted, one more entry follows them all:
- * `core.current_flow`, naming the current revision (header, t503).
- *
- * `observedStateKeys` are the keys of a value that make up a view, as the
- * domain declared them. A plain key is a top-level key of the value, and an
- * entry carries that view when its value is an object holding at least one of
- * them at the top level. `holder.member` is a key of the object the value
- * holds under `holder`; an entry carries that holder's view when the holder is
- * an object holding at least one of its declared members, and the reference
- * then sits inside the holder. Nothing deeper is ever touched. Absent or
- * empty, every entry is whole.
+ * Keep every historical result in call order, projecting declared view members
+ * immediately into immutable references to their own original call and group.
+ * Append one full current-view tail, then the existing current-Flow tail.
+ * Undeclared data is kept whole and in its original property order; without
+ * declared view keys no client view is invented. The input is never mutated.
  */
 export function automationStudioLlmEvidenceContextWindow(
   records: readonly AutomationStudioLlmEvidenceEntry[],
   observedStateKeys: readonly string[] = []
 ): AutomationStudioLlmEvidenceEntry[] {
-  const window = withViewsReplaced(records.map(({ callId, toolId, value }) => ({ callId, toolId, value })), observedStateKeys);
-  const current = currentFlow(window);
-  return current ? [...window, current] : window;
-}
-
-/** The window with every view but the newest of its kind replaced by a reference (above). */
-function withViewsReplaced(window: AutomationStudioLlmEvidenceEntry[], observedStateKeys: readonly string[]): AutomationStudioLlmEvidenceEntry[] {
-  const declared = automationStudioLlmEvidenceViewGroups(observedStateKeys);
-  if (!declared.length) return window;
-  // Held views first, so the result's own view, replaced last, puts its
-  // reference after everything else the result kept.
-  // What a recall answers with (`./evidence-recall/binding.ts`) is replaced by
-  // the newer answer like any view. Built here, not at load: the barrels this
-  // file imports from import it back.
-  const recall: ToolViewGroup = { members: ["restored"], toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID };
-  const groups: ToolViewGroup[] = [...declared.filter((group) => group.holder !== undefined), recall, ...declared.filter((group) => group.holder === undefined)];
-  for (const group of groups) {
-    const members = new Set(group.members);
-    // From the newest back, so each view knows the one that replaced it.
-    let replacedBy: string | undefined;
-    for (let index = window.length - 1; index >= 0; index -= 1) {
-      const entry = window[index]!;
-      if (group.toolId !== undefined && entry.toolId !== group.toolId) continue;
-      const holder = holderOf(entry.value, group.holder);
-      if (!holder || !Object.keys(holder).some((key) => members.has(key))) continue;
-      if (replacedBy !== undefined) entry.value = replaced(entry.value as JsonObject, group.holder, members, replacedBy);
-      replacedBy = entry.callId;
-    }
-  }
-  return window;
+  const { history, currentView } = automationStudioLlmEvidenceCurrentView(records, observedStateKeys);
+  const current = currentFlow(records);
+  return [...history, ...(currentView ? [currentView] : []), ...(current ? [current] : [])];
 }
 
 /** The tool whose results carry a candidate's Flow script (`flow-bootstrap/candidate/authoring-loop.ts`). */
@@ -178,30 +59,6 @@ function currentFlowInstruction(revision: number, digest: string, call: string, 
   return `Revision ${revision} (digest ${digest}) is your current Flow: its whole ${whole} is under ${whole} in the core.submit_candidate result of call ${call}. `
     + `Make every change to the Flow by editing that ${whole} and submitting it whole; never write it again from memory. `
     + "Every other script or plan in the evidence is an earlier revision or a refused submission, kept as a record of what was tried: never start from one of them, and make a refused submission's intended changes again on this one.";
-}
-
-/** The object a group's members sit in: the value itself, or the object it holds under `holder`. */
-function holderOf(value: JsonValue, holder: string | undefined): JsonObject | undefined {
-  if (!isJsonObject(value)) return undefined;
-  if (holder === undefined) return value;
-  const held = value[holder];
-  return held !== undefined && isJsonObject(held) ? held : undefined;
-}
-
-/** The value with the group's members replaced, in its own key order, the holder kept where it stood. */
-function replaced(value: JsonObject, holder: string | undefined, members: ReadonlySet<string>, replacedBy: string): JsonObject {
-  if (holder === undefined) return withoutView(value, members, replacedBy);
-  const out: JsonObject = {};
-  for (const [key, member] of Object.entries(value)) out[key] = key === holder ? withoutView(member as JsonObject, members, replacedBy) : member;
-  return out;
-}
-
-/** The object with its view's keys taken out, in its own key order, and the reference last. */
-function withoutView(value: JsonObject, keys: ReadonlySet<string>, replacedBy: string): JsonObject {
-  const kept: JsonObject = {};
-  for (const [key, member] of Object.entries(value)) if (!keys.has(key)) kept[key] = member;
-  kept[AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDED_KEY] = replacedBy;
-  return kept;
 }
 
 function isJsonObject(value: JsonValue): value is JsonObject {

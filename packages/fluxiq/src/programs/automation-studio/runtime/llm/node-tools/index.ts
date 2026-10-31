@@ -2,6 +2,8 @@
 // registry against the live target, so what the model tests and what the Flow
 // contains are the same node with the same parameters.
 export * from "./run-node.ts";
+// Safe prior-call list primitive; offering/accounting is owned by the loop, never installed here.
+export * from "../node-reruns/index.ts";
 export * from "./draft-step.ts";
 export * from "./draft-from-flow.ts";
 export * from "./replay.ts";
