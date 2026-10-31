@@ -17,3 +17,5 @@
     }
   ]
 }
+
+Remainder inspected with ignored no-index diff: only historical explanatory sentence says recorded above versus above. No phase/decision/code loss; full incoming source preserved conservatively.
