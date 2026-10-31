@@ -1,6 +1,6 @@
 # Public declaration portability acceptance
 
-Status: Validated, 2026-10-31. Paired integration pending. No provider request has been made.
+Status: Accepted and merged on paired dev, 2026-10-31. No provider request has been made.
 
 The supervised Claude continuation reached the actual isolated Lab's test-runner build and stopped with four TS2307 errors. Emitted SDK `batch-member.d.ts` and `execution-authority/create.d.ts` refer to `packages/contracts/dist/core.js`, which is not a portable import for a downstream consumer. Earlier Core/domain/extension/test-evidence prelude builds passed; no browser/model run or billed verdict occurred. The same defect exists in main and pinned SDK output. This is not machine load or an API failure.
 
@@ -20,5 +20,7 @@ Observed lead acceptance:
 Expected unchanged behavior: public runtime/API semantics, target intent, permissions, effects and rerun execution. New behavior: a future nonportable emitted module reference fails during SDK construction instead of reaching Lab startup. Relative .ts-to-.js rewriting and valid Node/external/self imports must continue working.
 
 After accepting and integrating the repair, repin the reserved `fxlab/t833-claude` pair, rerun the provider-free preflight and normal live waste guards, then supervise one Claude company-website engineer extraction with the already requested $5 whole-build allowance and one zero-call replay. Slot1 remains owned by that continuation. The positive headless Chromium fixture proof already passed with all eight records; neither that result nor the dry run is a Claude performance result.
+
+Integration observed: both task branches backed up, parent merges were already current, and the post-parent actual consumer build reused its matching successful stamp. Down's own plain-audit finish merged7e2b3688 and removed its private tree. Core's mandatory70contract merge tests passed14.31s; its own finish mergede5674831. Private Core is clean detachedee5cae97 for age-prune; remote backups retained. Shared SDK refresh, paired dev publication and the pinned Lab repin are underway. Full suites and main promotion remain held; no provider call is being attributed to this compile repair.
 
 Baseline evidence: main Down ignored `test-runs/2026-10-31-t833-validation/claude-preflight.log` and final-state.json. Current setup/acceptance evidence belongs under ignored `test-runs/2026-10-31-t834-validation/` in the private paired Down tree; copy it to main before task finish removes that worktree.
