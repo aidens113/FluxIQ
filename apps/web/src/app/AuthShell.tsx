@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
 import { sanitizeAsciiDigits } from "../lib/input-sanitizers";
 import { localAuthDestination } from "./auth-navigation";
+import { BrandMark, LoginProductLinks, usePanelBranding } from "./product/client";
 
 export function AuthStatus(props: { displayName: string; roleId: string }) {
   const mounted = useRef(false);
@@ -51,9 +52,10 @@ export function GlobalTopbar(props: {
   breadcrumbs?: BreadcrumbItem[];
   actions?: ReactNode;
 }) {
+  const { name } = usePanelBranding();
   return (
     <header className="directory-topbar global-topbar">
-      <Link aria-label="FluxIQ programs" className="brand-lockup" href="/"><span className="brand-mark"><Blocks aria-hidden size={17} /></span><span>FluxIQ</span></Link>
+      <Link aria-label={`${name} programs`} className="brand-lockup" href="/"><BrandMark icon={<Blocks aria-hidden size={17} />} /><span>{name}</span></Link>
       {props.breadcrumbs?.length ? <div className="global-topbar-context"><Breadcrumb items={props.breadcrumbs} /></div> : null}
       {props.actions ? <div className="global-topbar-actions">{props.actions}</div> : null}
       <AuthStatus displayName={props.user.displayName} roleId={props.user.roleId} />
@@ -67,6 +69,7 @@ type LoginPayload = {
 };
 
 export function LoginPanel() {
+  const branding = usePanelBranding();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [totp, setTotp] = useState("");
@@ -205,8 +208,8 @@ export function LoginPanel() {
     <main className="auth-page">
       <section aria-labelledby="auth-title" className="auth-card auth-panel-v1">
         <div className="brand-lockup">
-          <span className="brand-mark"><ShieldCheck size={17} aria-hidden /></span>
-          <span><strong id="auth-title">FluxIQ</strong><small>{setupUserId ? "Secure first setup" : "Sign in to continue"}</small></span>
+          <BrandMark icon={<ShieldCheck size={17} aria-hidden />} />
+          <span><strong id="auth-title">{branding.signInTitle ?? branding.name}</strong><small>{setupUserId ? "Secure first setup" : branding.signInMessage ?? "Sign in to continue"}</small></span>
         </div>
         {feedback ? <InlineNotice message={feedback.message} title={feedback.title} tone={feedback.tone} /> : null}
         {setupUserId ? (
@@ -236,6 +239,7 @@ export function LoginPanel() {
             </Button>
           </form>
         )}
+        <LoginProductLinks signUp={!setupUserId} />
         {setupUserId ? <div className="auth-setup-assurance"><CheckCircle2 aria-hidden size={14} /><span>Your entries stay on this device and are sent only to the local FluxIQ identity service.</span></div> : null}
       </section>
     </main>

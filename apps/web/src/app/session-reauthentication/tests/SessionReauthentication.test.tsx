@@ -10,6 +10,10 @@ import { hasPendingProgramAuthentication, requestProgramAuthentication, resolveP
 const auth = vi.hoisted(() => ({ current: vi.fn() }));
 vi.mock("../../../lib/auth", () => ({ currentFluxIQUser: auth.current }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
+vi.mock("next/link", async () => {
+  const react = await import("react");
+  return { default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => react.createElement("a", props, children) };
+});
 vi.mock("../../GlobalClientGatewayPairing", () => ({ GlobalClientGatewayPairing: () => null }));
 vi.mock("../../GlobalConversationPrompt", () => ({ GlobalConversationPrompt: () => null }));
 vi.mock("../../../features/programs/shared-ui", async () => {
@@ -61,13 +65,14 @@ describe("authenticated root session recovery", () => {
   it("mounts exactly one host beside route content and omits it when signed out", async () => {
     const content = createElement("main", {}, "Route content");
     const authenticated = await RootLayout({ children: content });
-    const children = authenticated.props.children.props.children;
+    const children = authenticated.props.children.props.children.props.children;
     expect(children.filter((child: any) => child?.type === SessionReauthentication)).toHaveLength(1);
     expect(children).toContain(content);
-    expect(GlobalTopbar({ user: { displayName: "Operator", roleId: "admin" } }).props.children.some((child: any) => child?.type === SessionReauthentication)).toBe(false);
+    await act(async () => { renderer = create(<GlobalTopbar user={{ displayName: "Operator", roleId: "admin" }} />); });
+    expect(renderer!.root.findAllByType(SessionReauthentication)).toHaveLength(0);
     auth.current.mockResolvedValue(null);
     const signedOut = await RootLayout({ children: content });
-    expect(signedOut.props.children.props.children.filter((child: any) => child?.type === SessionReauthentication)).toHaveLength(0);
+    expect(signedOut.props.children.props.children.props.children.filter((child: any) => child?.type === SessionReauthentication)).toHaveLength(0);
   });
 
   it("opens on a real expired program request and retries once after restoring without replacing a draft", async () => {
