@@ -146,6 +146,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const { project, flow } = await seeded(single);
     const instance = createService({ provider, resolver });
     const binding = await instance.getLlmExecutionBinding(project.id, flow.flowId);
+    const canonicalMetadata = (await instance.getFlow(project.id, flow.flowId)).metadata;
 
     const result = await instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
@@ -153,9 +154,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       caller: caller()
     });
 
-    // The resolver is told only who the call is for.
+    // The resolver receives the caller and saved settings, never a grant or secret value.
     expect(resolver).toHaveBeenCalledTimes(1);
-    expect(resolver).toHaveBeenCalledWith({ projectId: project.id, flowId: flow.flowId, caller: caller() });
+    expect(resolver).toHaveBeenCalledWith({ projectId: project.id, flowId: flow.flowId, caller: caller(), providerId: "host", metadata: canonicalMetadata });
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       taskKind: "flow_bootstrap",

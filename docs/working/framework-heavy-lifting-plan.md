@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Resumed units and grounded toggle t817 are merged. Sweep2 Core build/check passed but exposed provider-ID regressions; t819 Core0.14.1 fixes pass217 targeted tests, types and audit. Main promotion held pending a corrected-source sweep; paid Claude comparison waits for the user's go. Downstream Current State owns the handoff.
+Status detail: Resumed units and grounded toggle t817 are merged. Sweep2 exposed provider-ID regressions; t819 Core0.14.1 merged/pushed3f5fe961. All previously failed files now pass narrowly after two t820 fixture updates; storage timeout not reproduced or explained. Main held pending corrected-source sweep; paid Claude comparison waits for user's go. Downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -767,6 +767,11 @@ Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledge
 - Changed: actual configured settings propagate on both paths; only legacy host normalizes to unspecified. Unknown providers and mismatched models still refuse before key access; Core0.14.1.
 - Validation: lead `vitest run` on the two failing integrations plus resolver/caller regressions ->41 passed; recovery annotation and flow-settings directories ->176 passed; `pnpm --filter fluxiq check` ->exit0; `node scripts/structure-audit.mjs` ->passed476 warnings/1144 baseline. One new statement-packing violation was corrected and its rule passed.
 - Outcome: narrow acceptance passed; sweep2 remains frozen on old source and is not promotion evidence for this fix. No paid calls; main held pending corrected-source sweep within the daily limit.
+
+### 2026-10-30 - Remaining sweep failure files checked after t819 (t820)
+- Changed: two bootstrap service assertions now require exact canonical Flow metadata plus caller/provider rather than old caller-only inputs. Production behavior is unchanged.
+- Validation: lead seven previous runtime failure files ->37 passed/two stale assertions failed; corrected generation/extend ->14 passed; all five other files passed unchanged. Lead `vitest run .../content-reseal/tests/reseal-interruption.test.ts --maxWorkers=1 --minWorkers=1` ->3 passed, racing writer703ms; worker two runs also3/3, original timeout cause remains unproven and no timeout/guarantee changed.
+- Outcome: narrow source acceptance covers every failed file; final Core package typecheck and full audit476 warnings/1144 baseline pass, three libraries rebuilt. Corrected-source whole sweep still required before main; no paid calls. Merge contract gate pending.
 
 ## Open Questions
 
