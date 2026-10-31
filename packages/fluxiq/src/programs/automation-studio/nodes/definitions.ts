@@ -160,7 +160,7 @@ export function validateAutomationStudioNodeDefinition(definition: AutomationStu
   validateAvailability(definition, issues);
   validatePorts(definition.inputs, issues, "inputs");
   validatePorts(definition.outputs, issues, "outputs");
-  validateParameters(definition.parameters, issues);
+  validateParameters(definition.parameters, issues, definition.actionEffect?.commitWhen);
   try {
     resolveAutomationStudioNodeActionEffect(definition);
   } catch {
@@ -252,13 +252,31 @@ function validatePorts(ports: AutomationNodePort[], issues: AutomationStudioVali
   }
 }
 
-function validateParameters(parameters: AutomationNodeParameter[], issues: AutomationStudioValidationIssue[]): void {
+function validateParameters(parameters: AutomationNodeParameter[], issues: AutomationStudioValidationIssue[], conditionalEffectParameter?: string): void {
   const ids = new Set<string>();
   for (const [index, parameter] of parameters.entries()) {
     if (!parameter.id.trim()) issue(issues, "node.parameter_missing_id", "Node parameter must have an id.", `parameters.${index}.id`);
     if (!parameter.label.trim()) issue(issues, "node.parameter_missing_label", "Node parameter must have a label.", `parameters.${index}.label`);
     if (ids.has(parameter.id)) issue(issues, "node.duplicate_parameter_id", `Duplicate node parameter id "${parameter.id}".`, `parameters.${index}.id`);
+    validateTargetRefresh(parameter, conditionalEffectParameter, issues, index);
     ids.add(parameter.id);
+  }
+}
+
+function validateTargetRefresh(parameter: AutomationNodeParameter, conditionalEffectParameter: string | undefined, issues: AutomationStudioValidationIssue[], index: number): void {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(parameter, "targetRefresh");
+    if (!descriptor) {
+      if ("targetRefresh" in parameter) issue(issues, "node.invalid_target_refresh", "Target refresh must be an own declaration.", `parameters.${index}.targetRefresh`);
+      return;
+    }
+    if (!("value" in descriptor) || descriptor.value !== true) {
+      issue(issues, "node.invalid_target_refresh", "Target refresh must be an explicit true declaration.", `parameters.${index}.targetRefresh`);
+    } else if (!parameter.id.trim() || parameter.id !== parameter.id.trim() || ["__proto__", "constructor", "prototype"].includes(parameter.id) || parameter.id === conditionalEffectParameter) {
+      issue(issues, "node.unsafe_target_refresh", "Only a target field independent of action-effect authority may be refreshed.", `parameters.${index}.targetRefresh`);
+    }
+  } catch {
+    issue(issues, "node.unreadable_target_refresh", "Target refresh declaration could not be read.", `parameters.${index}.targetRefresh`);
   }
 }
 

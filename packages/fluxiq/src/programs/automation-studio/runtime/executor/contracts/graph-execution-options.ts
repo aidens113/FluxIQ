@@ -7,6 +7,7 @@ import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnap
 import type { AutomationStudioParkingPort } from "../../parking/index.ts";
 import type { AutomationStudioRunControlGate } from "../../run-control/index.ts";
 import type { AutomationStudioRecoveryBudget, AutomationStudioGraphExecutionTrace, AutomationStudioRecordBatch } from "../contracts.ts";
+import type { AutomationStudioTargetRefreshResolution } from "../parameter-refresh/index.ts";
 
 export type AutomationStudioGraphExecutionOptions = {
   commandRun?: import("../command-scope/index.ts").AutomationStudioExecutorCommandRun;
@@ -38,6 +39,11 @@ export type AutomationStudioGraphExecutionOptions = {
   referenceNow?: number;
   /** Trusted client floor from the canonical registry; raw unresolved parameter slots must not be dropped. */
   resolveActionEffect?: (node: AutomationStudioFlowNode, parameterValues?: Readonly<Record<string, unknown>>) => AutomationStudioResolvedActionEffect | undefined;
+  /** Trusted canonical registry access; the matching host cannot grant a refresh write-set. */
+  resolveTargetRefresh?: (
+    node: AutomationStudioFlowNode,
+    parameterValues: Readonly<Record<string, JsonValue>>
+  ) => AutomationStudioTargetRefreshResolution;
   signal?: AbortSignal;
   /**
    * How the run waits between retry attempts. A real timer by default; a test

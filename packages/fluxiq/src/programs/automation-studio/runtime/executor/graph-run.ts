@@ -42,6 +42,7 @@ import {
   type AutomationStudioStepLoopContext
 } from "./step-loop/index.ts";
 import { AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN } from "./command-scope/index.ts";
+import { automationStudioStepAlreadyDone } from "./step-loop/index.ts";
 import { automationStudioRepeatNoProgress } from "./repeat-progress/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import { automationStudioExecutedLocations } from "./executed-locations/index.ts";
@@ -399,6 +400,14 @@ async function executeAutomationStudioGraph(
         continue;
       }
       const { remainingMs, retryPolicy, recordedState, paced, readiness, reacquired } = arrived;
+      if (ctx.arrival.identityReacquired && ctx.lifecycle.pendingAct) {
+        const completed = await automationStudioStepAlreadyDone(ctx, currentNode, regionId, ctx.lifecycle.pendingAct);
+        if (completed?.kind === "return") return completed.trace;
+        if (completed?.kind === "next") {
+          currentNode = completed.node;
+          continue;
+        }
+      }
       // An item its stale target came from, found gone: the attempt is synthesized, nothing is dispatched (`target-reacquire/`, t786).
       const gone = reacquired?.gone;
       const node: AutomationStudioFlowNode = currentNode;
@@ -421,9 +430,9 @@ async function executeAutomationStudioGraph(
       // the attempt reaches its first checkpoint.
       runState.dispatchedActions.delete(node.id);
       const executed = gone ?? (notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
-        ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState)
+        ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay)
         : await executeWithRegionTimeout(
-          (signal) => executeAutomationStudioNode(ctx.flow, node, nodeValues, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState),
+          (signal) => executeAutomationStudioNode(ctx.flow, node, nodeValues, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay),
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.

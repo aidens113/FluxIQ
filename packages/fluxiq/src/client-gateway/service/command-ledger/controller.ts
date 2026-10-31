@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
+import { clientGatewayCanonicalDigest } from "./canonical-digest.ts";
 import type { ClientGatewayCommandBinding, ClientGatewayCommandClaim, ClientGatewayCommandLedgerPort, ClientGatewayCommandReceipt, ClientGatewayCommandRecord, ClientGatewayCommandUnknownReason, ClientGatewayDurableDispatchResult } from "./contracts.ts";
 
-/** Infrastructure only: production gateway/executor callers are not wired to this controller. */
+/** Small-record validation and durable ledger dispatch for the gateway and executor. */
 export class ClientGatewayCommandLedgerController {
   static readonly HASH_LIMIT_BYTES = 256 * 1024;
   static readonly HASH_MAX_DEPTH = 64;
@@ -9,40 +9,7 @@ export class ClientGatewayCommandLedgerController {
   constructor(private readonly ledger: ClientGatewayCommandLedgerPort) {}
   /** Exact bounded plain JSON: array order retained; object keys sorted by Unicode code point. */
   static digest(value: unknown): string {
-    const hash = createHash("sha256"), ancestors = new Set<object>(); let bytes = 0, nodes = 0;
-    const append = (text: string) => {
-      bytes += Buffer.byteLength(text, "utf8");
-      if (bytes > this.HASH_LIMIT_BYTES) throw new Error("command_ledger.hash_size_limit");
-      hash.update(text);
-    };
-    const compareKeys = (left: string, right: string): number => {
-      const a = Array.from(left, char => char.codePointAt(0)!), b = Array.from(right, char => char.codePointAt(0)!);
-      for (let index = 0; index < Math.min(a.length, b.length); index++) if (a[index] !== b[index]) return a[index]! - b[index]!;
-      return a.length - b.length;
-    };
-    const visit = (item: unknown, depth: number): void => {
-      if (depth > this.HASH_MAX_DEPTH || ++nodes > this.HASH_MAX_NODES) throw new Error("command_ledger.hash_structure_limit");
-      if (item === null || typeof item === "string" || typeof item === "boolean" || typeof item === "number" && Number.isFinite(item)) { append(JSON.stringify(item)); return; }
-      if (typeof item !== "object" || ancestors.has(item)) throw new Error("command_ledger.invalid_digest_value");
-      const array = Array.isArray(item), prototype = Object.getPrototypeOf(item);
-      if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) throw new Error("command_ledger.nonplain_digest_value");
-      const ownKeys = Reflect.ownKeys(item);
-      if (ownKeys.some(key => typeof key !== "string") || ownKeys.length > this.HASH_MAX_NODES + 1) throw new Error("command_ledger.invalid_digest_fields");
-      const descriptors = Object.getOwnPropertyDescriptors(item);
-      const fields = (ownKeys as string[]).filter(key => !array || key !== "length");
-      if (fields.some(key => !descriptors[key]!.enumerable || !Object.hasOwn(descriptors[key]!, "value"))) throw new Error("command_ledger.invalid_digest_fields");
-      if (array && (item.length > this.HASH_MAX_NODES || fields.length !== item.length || fields.some(key => !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= item.length))) throw new Error("command_ledger.invalid_digest_array");
-      ancestors.add(item); append(array ? "[" : "{");
-      const keys = array ? Array.from({ length: item.length }, (_, index) => String(index)) : fields.sort(compareKeys);
-      keys.forEach((key, index) => {
-        if (index) append(",");
-        if (!array) { append(JSON.stringify(key)); append(":"); }
-        visit(descriptors[key]!.value, depth + 1);
-      });
-      append(array ? "]" : "}"); ancestors.delete(item);
-    };
-    visit(value, 0);
-    return `sha256:${hash.digest("hex")}`;
+    return clientGatewayCanonicalDigest(value, { maxBytes: this.HASH_LIMIT_BYTES, maxDepth: this.HASH_MAX_DEPTH, maxNodes: this.HASH_MAX_NODES });
   }
   static commandId(owner: Pick<ClientGatewayCommandBinding, "projectId" | "runId" | "flowId" | "invocationId" | "attemptId" | "effectOrdinal">): string {
     const { projectId, runId, flowId, invocationId, attemptId, effectOrdinal } = owner;

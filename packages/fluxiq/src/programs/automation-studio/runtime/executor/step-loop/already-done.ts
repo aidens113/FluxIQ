@@ -36,12 +36,13 @@ const ALREADY_DONE_CODE = "executor.act.already_done";
 export async function automationStudioStepAlreadyDone(
   ctx: AutomationStudioStepLoopContext,
   node: AutomationStudioFlowNode,
-  regionId: string | undefined
+  regionId: string | undefined,
+  priorIdentity?: { nodeId: string; key: string }
 ): Promise<Extract<AutomationStudioStepOutcome, { kind: "return" | "next" }> | undefined> {
   delete ctx.lifecycle.pendingAct;
   const invocation = ctx.options.invocation;
-  if (!invocation || invocation.frame.cursor.phase === "handler" || !automationStudioNodeActLasts(node, ctx.options.resolveActionEffect?.(node))) return undefined;
-  const key = automationStudioCompletedActIdentity({
+  if (!invocation || invocation.frame.cursor.phase === "handler" || (priorIdentity ? priorIdentity.nodeId !== node.id : !automationStudioNodeActLasts(node, ctx.options.resolveActionEffect?.(node)))) return undefined;
+  const key = priorIdentity?.key ?? automationStudioCompletedActIdentity({
     flow: ctx.flow,
     node,
     attempts: ctx.attempts,

@@ -3,6 +3,7 @@ import type { AutomationStudioFlowNode } from "../model/index.ts";
 import type { AutomationNodeExpectationEvaluation, AutomationNodeExpectationEvaluationContext, AutomationNodeExpectationEvaluator } from "../nodes/index.ts";
 import type { AutomationStudioFactCondition, AutomationStudioFactTruth } from "./executor/lifecycle/index.ts";
 import type { AutomationStudioSourcePlaceAnswer, AutomationStudioSourcePlaceRequest, AutomationStudioTargetReacquireAnswer, AutomationStudioTargetReacquireRequest } from "./executor/target-reacquire/index.ts";
+import type { AutomationStudioUnboundTargetReacquireAnswer, AutomationStudioUnboundTargetReacquireRequest } from "./executor/unbound-reacquire/index.ts";
 import type { AutomationStudioHostResourcePort } from "./project-agents/host-resources/index.ts";
 
 export type AutomationStudioHostRuntimeCapability =
@@ -213,6 +214,13 @@ export type AutomationStudioHostRuntimeBoundary = {
    * `unmatched`: the step spends its remaining retries as before.
    */
   reacquireTarget?(request: AutomationStudioTargetReacquireRequest): AutomationStudioTargetReacquireAnswer | Promise<AutomationStudioTargetReacquireAnswer>;
+  /**
+   * Finds a target with no source-node lineage by its saved stable identity.
+   * The host proves the previous attempt's resource, place and document before
+   * observing, and returns only patches to the trusted refresh declaration.
+   * A partial or unreadable observation cannot establish that a target is gone.
+   */
+  reacquireUnboundTarget?(request: AutomationStudioUnboundTargetReacquireRequest): AutomationStudioUnboundTargetReacquireAnswer | Promise<AutomationStudioUnboundTargetReacquireAnswer>;
   /**
    * Before that re-run: whether the page is still where the source step ran,
    * going back there when it moved and the host can (a navigation, never a

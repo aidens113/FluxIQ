@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t827 integrated and verified on paired dev; main SDK/bundles current. Core 0.19/contracts 0.5; no full or paid calls.
+Status detail: t828 lead checks and real browser proof pass; final commits and paired dev integration pending. No full/paid calls; main held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**t827 accepted and integrated, 2026-10-31:** Core 0.19.0/contracts 0.5.0 carry a strict optional measured-target fact from the browser through dispatch, runtime, attempts and authoring history. Wire compatibility uses only existing payload.actionability; no new gateway top key, receipt or negotiation. Invalid optional data drops alone; unknown and current facts replace stale observations without changing effects, authority or uncertain-action safeguards. Lead acceptance: 338 unique Core/contract tests; 335 initial affected domain tests with all eight fixture failures corrected and 31 focused tests passing (then three after final fixture typing); 102 initial extension tests with all eight shared-command fixture failures corrected and 68 focused tests passing (seven queue tests rerun after typing). Domain/extension typechecks and filtered builds pass. Three native Chromium fixture proofs pass on job-board/company-website, including exactly one Save after lost acknowledgement. Chrome/Firefox/e2e bundles each verify 22 files; Firefox background/UI unexercised. Both structure audits pass with unchanged baselines (Core 1144, Down 615). Paired dev merges Core78400cec/downstreamf8c70bf3 passed the final Down structure gate and Core70 merge-contract tests. All three main SDK libraries, domain and Chrome/Firefox/e2e bundles are rebuilt at 0.19/0.5 (22 files per browser target). Both daily full sweeps used; main promotion held. Claude/$5 configured, no paid go/calls or panel management; user clinerules preserved. Exact failures, commands and report locations: downstream p8-actionability/lead-acceptance.md.
+**Active t828, 2026-10-31:** Source-less identity recovery and full-result receipt integrity accepted locally. Lead Core122identity+62receipt tests, domain affected selections/native16, extension84, Labtrace4, affected types/builds and both audits pass; Corepacking allowance15to10/1143baseline, Down615 unchanged. Real Chromium134.0.6998.35 e2e-chromium social-network-feed proof8 passes1test/body45.6s: four actual target-not-found/unacted attempts with accepted ~354KB replies, fourth identity unmatched, zero gateway suppression/errors; Undo then explicit original-target refresh returns only selector/element patches, one required Like, exact unchanged other-post map. This proves automatic negative recovery and explicit positive refresh, not automatic fourth-attempt browser success (Core units cover that). Initial receipt hash256KiB rejection fixed at intake/observer with exact full-payload hashing; small authority bounds/unknown safety unchanged. Earlier locator/trace-field assertion mistakes and failed attempts recorded; artifacts1-8 ignored in main. Final extensioncheck21.723s passes; private SDK0.20 current, shared checkout0.19 until merge/refresh. Core taskd91ff313/Down09592ecd backups pushed; final docs/E2E commits and paired integration pending. Main held: both full-suite slots used. No paid/API calls/panel management; user clinerules preserved. NextP8repeatguard/history.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -764,14 +764,15 @@ Settled accepted client effect floor is preserved verbatim in [the accepted arch
 Accepted t825 evidence and its compaction record are preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
 Accepted t826 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+Accepted t827 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
-### 2026-10-31 - t827 typed actionability discovery
-- Agent: Codex lead; discovery worker SolMax for mixed-version action safety.
-- Changed: paired setup; frozen portable exact actionability API/pure export, source0.5/0.19; readers first; t826 accepted evidence archived verbatim. Wire stays nested payload.
-- Why: portable actionability must survive strict readers without losing executed results or becoming act permission.
-- Validation: `pnpm.cmd task start runtime-actionability-signal --worktree --core --skip-workspace-build` ->exit0, both task trees created, mandatory3CoreSDK builds pass (Core87.2s); exact owning commands in downstream p8-actionability/lead-acceptance.md ->338 Core/contract tests accepted, 31 domain/final68 extension reruns pass, native Chromium three tests pass, both final audits pass1144/615 unchanged.
-- Outcome: Implementation accepted; 338 Core/contract tests, affected domain/extension reruns, types/builds and three native fixture proofs pass. Both final audits and paired dev integration pass; main filtered SDK/domain/extension bundles current.
-- Follow-up: push both dev branches, then remaining P8 identity/repeat/history work. Main held for next permitted full sweep; no paid go/full suite.
+### 2026-10-31 - t828 source-less target recovery and receipt integrity
+- Agent: Codex lead; bounded Core, shared identity, native host, capture, structural and discovery workers.
+- Changed: trusted target-refresh flags/hooks and resolved-parameter overlays; shared record gates/private capture provenance; native/authoring scoped recovery; exact full-result receipt hashing; owning tests, browser proof and architecture/status docs.
+- Why: recover a stale literal target without source lineage or wrong-record action; preserve legitimate large failed-result receipts without weakening authority or uncertain-effect safety.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/client-gateway/service/command-ledger/tests/controller.test.ts src/client-gateway/service/command-ledger/tests/dispatch.test.ts src/client-gateway/service/command-ledger/tests/dispatch-host-lease.test.ts src/programs/automation-studio/runtime/service/command-run/tests/controller.test.ts --maxWorkers=2 --minWorkers=1` ->62passed/4files; `pnpm.cmd --filter fluxiq check` ->exit0/56.093s; `node scripts/structure-audit.mjs` ->passed481warnings/1143baseline; earlier identity122passed/14files and SDKbuild pass, detailed lead report.
+- Outcome: Ready to integrate; strict real-browser negative/explicit-positive identity oracle passes; initial setup/test assertion failures and real receipt-size defect fixed/proven. No automatic positive fourth-attempt browser or paid qualification claimed.
+- Follow-up: commit/push task work, finish downstream then Core under narrow gates, refresh shared SDK/bundles; continue P8 repeat guard and bounded repair history. Main awaits later permitted full sweep; no paid go.
 
 ## Open Questions
 

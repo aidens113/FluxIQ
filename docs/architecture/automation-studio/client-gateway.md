@@ -110,12 +110,26 @@ instructions or invalid supporting evidence and can open the correct editor.
   It freezes and hashes the complete original bounded JSON request, commits
   the selected real client/session command claim before any queue/socket send,
   and rechecks readiness and cancellation before a checked socket send.
-  A matching closed, bounded result is privately reserved; a receipt containing
+  A matching closed result is privately reserved; a receipt containing
   only owner/status/hash/server-time fields commits and is read back before
   public completion or its bound action-result event. No raw parameters,
   result payload, page data or tokens are stored in this ledger. Result hashing
-  covers the parsed live acknowledgement but does not independently establish
+  covers the complete parsed live acknowledgement, including opaque evidence,
+  but does not independently establish
   that an untrusted client performed the requested effect or semantic outcome.
+  Claims, requests and receipt records retain their small-record canonical hash
+  limits (256 KiB, 65,536 nodes and depth 64). Opaque results use the same
+  canonical SHA-256 encoding with plain-data, descriptor, cycle and depth safety,
+  without applying those private byte/node ceilings to a page snapshot. Incoming
+  byte admission remains the transport's deployment-configurable policy; trusted
+  integrations calling `receive` directly own the corresponding input admission.
+  The digest streams the entire canonical document rather than buffering an
+  extra encoded result, omitting evidence or hashing a prefix. Work is proportional
+  to admitted data plus object-key sorting; depth bounds the traversal stack.
+  Durable intake and the required completion observer use the same full-result
+  digest, and only its hash enters the receipt. A failed result over 256 KiB
+  therefore remains a failed result with a genuine receipt, rather than becoming
+  unknown solely because its evidence is larger than a claim record.
   Unknown, cancelled or timed-out client results, missing answers, disconnects
   and uncertain sends remain `outcome_unknown`. Same-key pending/unknown
   reconciliation never resends; a committed receipt with no persisted usable

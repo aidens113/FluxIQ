@@ -1,0 +1,10 @@
+Role: Discovery worker, gpt-6-luna high. Read-only functionality status inventory requested by user earlier; lead continues active t828 fix.
+Goal: concise full product status: functionality achieved, actual validation versus assumptions, known defects and remaining ordered work. No plans/code changes.
+Read only Current State + active/blocked ledger rows in these MAIN Down docs/working/: mvp-final-month-plan.md, framework-heavy-lifting-plan.md, hosted-production-plan.md, automation-project-agents-plan.md, first-class-data-extraction-plan.md, breadth-forty-tasks-plan.md, automated-testing-facility-plan.md, manual-panel-test-findings.md. If stale, state dates/conflicts; do not read whole histories.
+Also read private Core p8-identity/p8-remainder-discovery.md and browser-outcome-debug.md here for active detail.
+Current t828: source-less identity implementation narrow Core122/domain/extension84 passes; real browser reveals >256KiB valid failure rejected by small-record receipt hash. Focused dedicated full-result hash fix in progress in this private Core; browser proof/merges pending. Do not call it accepted.
+t816 Claude runtime/encrypted keys/model UI/Lab switch is merged; live default Claude with CLAUDE_API_KEY, $5 per build. No paid call/comparison has run; no paid-go authorization. Judge must be reprompted with Core evidence before a wholly refuted rejection can pass.
+Full suites at most twice/day; both Oct31 slots used, no checks/commands/browser/API/panel/source/env/runtime data/git/agents. No secret values, IDs or test artifacts.
+Own only product-status-discovery.md in this private Core report directory; must not edit shared documents, briefs or any other reports.
+Return brief plain English groups: available and evidence; merged versus unmerged; still missing/blocked; user-visible limitations; next safe implementation units. Cite exact document section paths. Do not invent total completion percentages or claim historical live passes qualify current source.
+Write report and end Outcome/Changed/Validation:not run/Not verified/Report/Notes. No source investigation outside named docs unless report states precisely what would be needed.

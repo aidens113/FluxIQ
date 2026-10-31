@@ -25,6 +25,7 @@ import { automationStudioRunFailureCounts } from "./failure-counts.ts";
 import { automationStudioRunDetailAttemptsInRunOrder, type AutomationStudioRunDetailAttemptPlacement } from "./frame-attempts.ts";
 import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
 import { automationStudioRunDetailRecoveryTrace } from "./recovery-trace.ts";
+import { automationStudioRunDetailReacquire } from "./reacquire.ts";
 import { automationStudioRunStop } from "./run-stop.ts";
 import { automationStudioRunDetailSkipped } from "./skipped.ts";
 import { automationStudioRunDetailStateRouting } from "./state-routing.ts";
@@ -248,7 +249,7 @@ function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, pla
       // and no rung can be attributed to anything.
       ...(attempt.retry ? { retry: { attemptNumber: attempt.retry.attemptNumber, maxAttempts: attempt.retry.maxAttempts, backoffMs: attempt.retry.backoffMs, rung: attempt.retry.rung } } : {}),
       // A stale target found again from its source step (t786): ids and closed codes only, never the row.
-      ...(attempt.reacquire ? { reacquire: { sourceNodeId: attempt.reacquire.sourceNodeId, kind: attempt.reacquire.kind, outcome: attempt.reacquire.outcome, ...(attempt.reacquire.reason ? { reason: attempt.reacquire.reason } : {}), ...(attempt.reacquire.returned ? { returned: true } : {}) } } : {}),
+      ...(attempt.reacquire ? { reacquire: automationStudioRunDetailReacquire(attempt.reacquire) } : {}),
       // What the run did about the state the node expected to find before it
       // ran. `message` is the host's sentence and stays behind.
       ...(attempt.readiness ? { readiness: { ceilingMs: attempt.readiness.ceilingMs, waitedMs: attempt.readiness.waitedMs, satisfied: attempt.readiness.satisfied, checkedConditionCount: attempt.readiness.checkedConditionCount } } : {}),

@@ -4,6 +4,7 @@ import type { automationStudioActivityLoopWords, automationStudioActivityStepNum
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { automationStudioStopAfterNode } from "../partial-run/index.ts";
 import type { AutomationStudioRunState } from "../run-state.ts";
+import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refresh/index.ts";
 import type { automationStudioStateRouteGuard } from "../state-routing/index.ts";
 import type { AutomationStudioTraceWithholding } from "../trace-withholding.ts";
 import type { AutomationStudioStepLifecycleFrame } from "./lifecycle-frame.ts";
@@ -64,6 +65,10 @@ export type AutomationStudioStepLoopContext = {
     ordinal: number;
     reacquired?: true;
     overlay?: Readonly<Record<string, JsonValue>>;
+    /** Target-only parameter patches for this arrival, independent of the source run-value overlay. */
+    parameterOverlay?: AutomationStudioParameterRefreshOverlay;
+    /** The source-less async observation needs a fresh completed-act ledger check. */
+    identityReacquired?: true;
   };
   /** The retry the ladder planned, stamped on the next attempt and then cleared. */
   pendingRetry: AutomationStudioNodeAttemptTrace["retry"];
