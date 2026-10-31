@@ -9,10 +9,12 @@ export function automationStudioNodeAttemptFailure(
   options: AutomationStudioGraphExecutionOptions,
   attemptNumber: number,
   startedAt: number,
-  inputs: Record<string, JsonValue>
+  inputs: Record<string, JsonValue>,
+  mayHaveActed = true
 ): AutomationStudioNodeAttemptTrace {
   const finishedAt = options.now?.() ?? Date.now();
-  const fault = automationStudioFaultFromThrownError(error, { now: finishedAt, aborted: options.signal?.aborted === true });
+  const classified = automationStudioFaultFromThrownError(error, { now: finishedAt, aborted: options.signal?.aborted === true });
+  const fault = mayHaveActed ? classified : { ...classified, effect: "unacted" as const };
   const thrownText = automationStudioThrownErrorText(error);
   return {
     attemptId: `${node.id}.attempt.${attemptNumber}`,
@@ -26,7 +28,7 @@ export function automationStudioNodeAttemptFailure(
     outputs: {},
     effects: [],
     message: thrownText || "Node execution failed.",
-    failure: { category: fault.category, code: fault.code, retryable: fault.disposition === "retry", stage: "execution" },
+    failure: { category: fault.category, code: fault.code, retryable: fault.disposition === "retry", stage: "execution", ...(mayHaveActed ? {} : { effect: "unacted" as const }) },
     fault
   };
 }

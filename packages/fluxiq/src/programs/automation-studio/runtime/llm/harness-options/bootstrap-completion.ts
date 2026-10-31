@@ -441,6 +441,7 @@ async function checkPlan(
       // A composed plan's elements were resolved with their proposals: it must name no handle left (header).
       const resolved = read.origin === "composed" ? composedElements(parsed.plan) : await resolveAutomationStudioFlowBootstrapPlanParameters({
         plan: parsed.plan,
+        registry: input.registry,
         projectId: input.projectId,
         flowId: input.flowId,
         binding: input.binding,

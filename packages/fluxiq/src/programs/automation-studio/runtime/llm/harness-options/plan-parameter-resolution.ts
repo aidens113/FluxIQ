@@ -149,7 +149,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioToggleStateSignature } from "../../toggle-state/index.ts";
-import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
+import { automationStudioActionPermissionDenied, automationStudioPlanPermissionProjection, resolveAutomationStudioPlanActionEffect, type AutomationStudioActionPermissionCheck, type AutomationStudioPlanActionEffectSource } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapIssueDetail, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioSiteResetWitnessStamp } from "../../flow-bootstrap/reset-admission/index.ts";
 // From the plan barrel, not the flow-bootstrap barrel, whose imports lead back here (t489).
@@ -255,7 +255,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
    * refused as one in a plan the model wrote is.
    */
   modelWrittenParameters?: ReadonlyMap<string, readonly string[]> | undefined;
-}): Promise<AutomationStudioFlowBootstrapPlanParameterResolution> {
+} & AutomationStudioPlanActionEffectSource): Promise<AutomationStudioFlowBootstrapPlanParameterResolution> {
   const plan = structuredClone(input.plan);
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   for (const site of automationStudioPlanFactTargetsNotNamingHandles(plan)) {
@@ -352,7 +352,7 @@ type RefusalDetail = AutomationStudioFlowBootstrapIssueDetail & { code: string }
 
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
-  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined; handleEvidence?: JsonObject | undefined; writtenByModel?: boolean | undefined },
+  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined; handleEvidence?: JsonObject | undefined; writtenByModel?: boolean | undefined } & AutomationStudioPlanActionEffectSource,
   permission: AutomationStudioActionPermissionCheck,
   inherited: boolean,
   modelKeys?: readonly string[] | undefined,
@@ -375,12 +375,22 @@ async function resolveNode(
   // for a step it did not take (`./inherited-plan-nodes.ts`). A step that
   // declared anything, or names a handle, is the build's own and goes on.
   if (inherited && step.declared === undefined && !namesHandle) return stripped(step, parameters);
+  let projection: ReturnType<typeof automationStudioPlanPermissionProjection>;
+  try {
+    projection = automationStudioPlanPermissionProjection({ actionEffect: resolveAutomationStudioPlanActionEffect(input, node, parameters), consequences: step.declared, permission });
+  } catch {
+    return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
+  }
   const resolver = input.binding?.resolvePlanNodeParameters;
   if (typeof resolver !== "function") {
     if (namesHandle) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unsupported);
+    const decision = projection.decision();
+    if (!decision.permitted) return { status: "needs_permission", missing: [...decision.missing], requestId: decision.requestId };
     // No domain to ask, so a step that says it would do something lasting is
     // one nobody can permit; one that declared nothing lasting stands.
     if (step.declared?.length) return { status: "needs_permission", missing: [...step.declared], requestId: null };
+    const consequences = projection.consequences();
+    if (consequences !== undefined) node.consequences = consequences;
     return stripped(step, parameters);
   }
   let answer: unknown;
@@ -390,7 +400,7 @@ async function resolveNode(
       flowId: input.flowId,
       nodeDefinitionId: node.definitionId,
       parameters: structuredClone(parameters),
-      permission,
+      permission: projection.permission,
       ...(step.declared ? { declaredConsequences: [...step.declared] } : {}),
       ...(input.handleReach ? { handleReach: input.handleReach } : {}),
       ...(input.handleReach && precedingSteps ? { precedingSteps } : {}),
@@ -434,6 +444,10 @@ async function resolveNode(
   // names no handle.
   const leaving = outcome.status === "resolved" ? outcome.parameters : parameters;
   if (automationStudioPlanNodeParametersNameHandle(leaving)) return unresolvedRefusal(leaving);
+  const decision = projection.decision();
+  if (!decision.permitted) return { status: "needs_permission", missing: [...decision.missing], requestId: decision.requestId };
+  const consequences = projection.consequences();
+  if (consequences !== undefined) node.consequences = consequences;
   return outcome;
 }
 

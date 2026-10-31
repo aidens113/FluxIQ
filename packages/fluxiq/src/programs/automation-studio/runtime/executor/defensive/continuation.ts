@@ -1,7 +1,7 @@
 import type { AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { getAutomationNodeDefinition } from "../../../nodes/index.ts";
+import { getAutomationNodeDefinition, type AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
 import { chooseAutomationStudioEdge } from "../graph-navigation.ts";
 import type { AutomationStudioFaultAssessment } from "./contracts.ts";
 import { automationStudioNodeMutates } from "./node-side-effect.ts";
@@ -91,7 +91,8 @@ const STOP = "stop";
 export function automationStudioContinuationAfterFailure(
   flow: AutomationStudioFlowDocument,
   node: AutomationStudioFlowNode,
-  fault: AutomationStudioFaultAssessment | undefined
+  fault: AutomationStudioFaultAssessment | undefined,
+  actionEffect?: AutomationStudioResolvedActionEffect
 ): AutomationStudioFailureContinuation {
   const authored = authoredChoice(node.parameterValues?.onFailure) ?? authoredChoice(node.metadata?.onFailure) ?? optionalChoice(node.metadata?.optional) ?? authoredChoice(flow.metadata?.onNodeFailure);
   if (authored === CONTINUE) return { continues: true, reason: `The Flow states that ${node.id} failing does not stop the run.` };
@@ -108,7 +109,7 @@ export function automationStudioContinuationAfterFailure(
   if (fault.stage === "confirmation" || fault.stage === "verification") {
     return { continues: false, reason: `${node.id} ran and its result was never confirmed, so what it did is unknown and the steps after it assume it worked.` };
   }
-  if (automationStudioNodeMutates(node) || automationStudioNodeActLasts(node)) {
+  if (automationStudioNodeMutates(node, actionEffect) || automationStudioNodeActLasts(node, actionEffect)) {
     return { continues: false, reason: `${node.id} makes a lasting act that failed, so carrying on would assume it worked without establishing the required effect.` };
   }
   if (carriesAnswer(node)) {

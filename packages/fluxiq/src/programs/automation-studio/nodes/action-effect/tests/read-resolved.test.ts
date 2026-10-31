@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { readAutomationStudioResolvedActionEffect } from "../index.ts";
+import { combineAutomationStudioResolvedActionEffects, readAutomationStudioResolvedActionEffect } from "../index.ts";
 
 describe("a resolved action-effect contract", () => {
+  it("combines matching trusted contracts conservatively without inventing an absent one", () => {
+    expect(combineAutomationStudioResolvedActionEffects([undefined])).toBeUndefined();
+    expect(combineAutomationStudioResolvedActionEffects([
+      { effectClass: "observe", permissionConsequences: [] },
+      { effectClass: "state", permissionConsequences: ["create_new"] },
+      { effectClass: "commit", permissionConsequences: ["delete", "create_new"] }
+    ])).toEqual({ effectClass: "commit", permissionConsequences: ["delete", "create_new"] });
+  });
+
   it("reads a known class and canonicalises its known consequence floor", () => {
     expect(readAutomationStudioResolvedActionEffect({ effectClass: "state", permissionConsequences: [] })).toEqual({ effectClass: "state", permissionConsequences: [] });
     expect(readAutomationStudioResolvedActionEffect({ effectClass: "observe", permissionConsequences: ["create_new", "move_money", "create_new"] })).toEqual({ effectClass: "commit", permissionConsequences: ["move_money", "create_new"] });

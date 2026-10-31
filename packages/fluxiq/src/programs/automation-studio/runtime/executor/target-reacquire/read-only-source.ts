@@ -4,6 +4,7 @@
 // and the re-acquire records `unavailable`.
 
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioNodeMutates } from "../defensive/index.ts";
 
 /**
@@ -16,10 +17,10 @@ import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioN
  * consequence. A node that says nothing about itself is not read-only: Core
  * cannot tell a read from a press.
  */
-export function automationStudioReacquireSourceReadOnly(node: AutomationStudioFlowNode): boolean {
+export function automationStudioReacquireSourceReadOnly(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): boolean {
   const observes = node.metadata?.effect === "observe" || node.parameterValues?.effect === "observe";
   const readsRecords = [node.parameterValues?.recordOutput, node.metadata?.recordOutput, node.metadata?.recordsPath].some((declared) => declared !== undefined && declared !== null);
-  if (!(observes || readsRecords) || automationStudioNodeMutates(node)) return false;
+  if (!(observes || readsRecords) || automationStudioNodeMutates(node, actionEffect)) return false;
   const declared = node.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
   return !(Array.isArray(declared) && declared.some((consequence) => typeof consequence === "string" && consequence.length > 0));
 }

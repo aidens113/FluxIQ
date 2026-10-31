@@ -269,6 +269,7 @@ async function applyPatches(
   // Each step and fact the fix writes, put to the domain as a build's are, from the packet its handles came from (t429).
   const resolveSteps = automationStudioRecoveryStepResolution({
     ports: input.ports,
+    ...(input.graphOptions.resolveActionEffect ? { resolveActionEffect: input.graphOptions.resolveActionEffect } : {}),
     projectId: input.context.projectId,
     flowId: input.context.flowId,
     failureEvidence: answer.failureEvidence,

@@ -112,7 +112,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import {
   AutomationStudioActionPermissionGate,
   automationStudioActionDeclarationCrossCheck,
-  automationStudioConsequencesInOrder,
+  automationStudioActionPermissionProjection,
   automationStudioDestructiveConsequences,
   automationStudioInstructedActReads,
   readAutomationStudioActionDeclaration,
@@ -366,7 +366,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
         let unproved = false;
         const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
-          if (input.authoringMode === "project" && reversibleLasting(readAutomationStudioActionDeclaration(declaration))) {
+          if (input.authoringMode === "project" && reversibleLasting(permissionDeclaration(declaration))) {
             unproved = true;
             return { permitted: false, missing: [], requestId: null };
           }
@@ -407,7 +407,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       let createRefusal: { evidence: JsonObject & { code: string } } | undefined;
       const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
         if (!undo) {
-          const action = readAutomationStudioActionDeclaration(declaration);
+          const action = permissionDeclaration(declaration);
           const needsBaseline = action.effect === "mutate" && action.consequences.length === 1 && action.consequences[0] === "create_new" && (action.controlSubject !== null || (action.controlItem === null && action.controlPage !== null));
           let baseline: ReturnType<NonNullable<AutomationStudioSiteResetCalls["createBaseline"]>> | undefined;
           if (input.authoringMode === "project" || (input.requireCreateBaseline === true && call.toolId === "core.run_node" && typeof value.node === "string")) {
@@ -423,7 +423,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
           return verdict;
         }
         // Read as the gate reads it, so a declaration it would refuse to read is refused here the same way.
-        const action = readAutomationStudioActionDeclaration(declaration);
+        const action = permissionDeclaration(declaration);
         target = siteReset.target(undo.act, {
           effect: action.effect,
           consequences: action.effect === "observe" ? [] : action.consequences,
@@ -475,7 +475,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         if (!decision.permitted) planRefused.abort();
         // The step's witness, from the one admission, for the resolver to stamp; never a refusal (t751, R3 door 2).
         else if (step.witnessed) {
-          const read = readAutomationStudioActionDeclaration(declaration);
+          const read = permissionDeclaration(declaration);
           if (reversibleLasting(read)) {
             const ask: AutomationStudioSiteResetStepAsk = { ref: step.ref };
             const stamp = stepWitness(input.siteReset, { effect: read.effect, consequences: read.consequences, control: { name: null, kind: null, ...placeOf(read) } }, step.definitionId, ask);
@@ -548,11 +548,11 @@ function claimed(siteReset: AutomationStudioSiteResetCalls, value: JsonObject): 
  * the gate refused to read never reaches here.
  */
 function declaredAs(gate: AutomationStudioActionPermissionGate, declaration: AutomationStudioActionDeclaration, permitted: boolean): AutomationStudioSiteResetDeclared {
-  const read = readAutomationStudioActionDeclaration(declaration);
+  const read = permissionDeclaration(declaration);
   return {
     permitted,
     effect: read.effect,
-    consequences: read.effect === "observe" ? [] : automationStudioConsequencesInOrder(read.consequences),
+    consequences: read.consequences,
     control: {
       name: gate.carriedControlName(read.controlName), kind: read.controlKind,
       // Opaque, compared only for equality, and never carried to a person (t475, t719).
@@ -560,6 +560,15 @@ function declaredAs(gate: AutomationStudioActionPermissionGate, declaration: Aut
     },
     verb: read.verb
   };
+}
+
+/** Reset preconditions and witnesses see the same client floor as the gate. */
+function permissionDeclaration(declaration: AutomationStudioActionDeclaration): AutomationStudioReadActionDeclaration {
+  const read = readAutomationStudioActionDeclaration(declaration);
+  const projected = automationStudioActionPermissionProjection(read);
+  read.effect = projected.effect;
+  read.consequences = projected.consequences;
+  return read;
 }
 
 /** The opaque place tokens a declaration gave its control (t475, t719): where it sits and what it and its page are about; each absent where it gave none. */

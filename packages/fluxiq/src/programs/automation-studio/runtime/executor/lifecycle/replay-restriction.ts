@@ -6,6 +6,7 @@
 // same answer the retry policy does.
 
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS } from "../../../nodes/control-flow/index.ts";
 import { automationStudioNodeActLasts, automationStudioNodeRepeatIsSafe, automationStudioNodeSideEffectClass } from "../defensive/index.ts";
 
@@ -27,16 +28,16 @@ const STRICTNESS: Readonly<Record<AutomationStudioReplayRestriction, number>> = 
  * `metadata.replay` may tighten that answer and is ignored where it would
  * loosen it.
  */
-export function automationStudioNodeReplayRestriction(node: AutomationStudioFlowNode): AutomationStudioReplayRestriction {
-  const derived = derivedRestriction(node);
+export function automationStudioNodeReplayRestriction(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): AutomationStudioReplayRestriction {
+  const derived = derivedRestriction(node, actionEffect);
   const declared = node.metadata?.[AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS.replay];
   if (declared !== "safe" && declared !== "reconcile" && declared !== "never") return derived;
   return STRICTNESS[declared] > STRICTNESS[derived] ? declared : derived;
 }
 
-function derivedRestriction(node: AutomationStudioFlowNode): AutomationStudioReplayRestriction {
+function derivedRestriction(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): AutomationStudioReplayRestriction {
   const needsApproval = node.parameterValues?.requiresApproval === true || node.metadata?.requiresApproval === true;
-  if (needsApproval || automationStudioNodeSideEffectClass(node) === "destructive") return "never";
-  if (automationStudioNodeRepeatIsSafe(node)) return "safe";
-  return automationStudioNodeActLasts(node) ? "reconcile" : "safe";
+  if (needsApproval || automationStudioNodeSideEffectClass(node, actionEffect) === "destructive") return "never";
+  if (automationStudioNodeRepeatIsSafe(node, actionEffect)) return "safe";
+  return automationStudioNodeActLasts(node, actionEffect) ? "reconcile" : "safe";
 }

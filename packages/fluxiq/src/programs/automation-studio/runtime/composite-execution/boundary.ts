@@ -70,16 +70,21 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
   const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, ...request.childOverrides, inputs: childInputs, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
   let childTrace: AutomationStudioGraphExecutionTrace = { status: "failed", startedAt: now, finishedAt: now, attempts: [], values: {}, effects: [], message: "Child Flow did not execute." };
   let childFrame: AutomationStudioInvocationOptions | undefined;
+  let childUncertain = false;
   for (let attempt = 0; attempt < Math.max(1, request.maxAttempts); attempt += 1) {
     await parentOptions.commandRun?.checkpoint();
     const framed = childFrame = request.frame(childInputs);
     childTrace = await runAutomationStudioChildWithBounds((signal) => request.runChild({ ...childOptions, signal, ...(framed ? { invocation: framed } : {}) }), boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun);
+    childUncertain = childTrace.status === "failed" && childTrace.failure?.code === "run.outcome_uncertain";
+    // The child already failed closed on an unresolved lasting act. A whole
+    // child retry or a latched run's checkpoint cannot settle that act.
+    if (childUncertain) break;
     await parentOptions.commandRun?.checkpoint();
     if (childTrace.status === "succeeded" || childTrace.status === "waiting" || childTrace.status === "cancelled") break;
   }
   // The parent executes with what its child executed with. The attempt keeps
   // the child's saved trace.
-  await parentOptions.commandRun?.checkpoint();
+  if (!childUncertain) await parentOptions.commandRun?.checkpoint();
   const executedChild = request.executedTrace(childTrace);
   const outputs: Record<string, JsonValue> = {};
   const frameOutputs: Record<string, JsonValue> = {};

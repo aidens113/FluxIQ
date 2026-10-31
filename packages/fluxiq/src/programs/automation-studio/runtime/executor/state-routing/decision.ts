@@ -55,7 +55,7 @@ export type AutomationStudioStateRouteInput = {
   /** Every attempt of the run so far. */
   attempts: readonly AutomationStudioNodeAttemptTrace[];
   /** `inputs` are the run's own values, which no step passed over has to set. */
-  options: Pick<AutomationStudioGraphExecutionOptions, "hostRuntime" | "signal" | "inputs">;
+  options: Pick<AutomationStudioGraphExecutionOptions, "hostRuntime" | "signal" | "inputs" | "resolveActionEffect">;
   guard: AutomationStudioStateRouteGuard;
 };
 
@@ -108,7 +108,7 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
     .filter((candidate) => candidate.signatures.before !== undefined);
   const own = ownEffect(input.flow, input.node);
   // The step that showed a control this one found on the page but not shown (`./reopen.ts`, t661).
-  const opener = automationStudioStateReopenOpener({ flow: input.flow, node: input.node, attempt: input.attempt, attempts: input.attempts, hostRuntime: input.options.hostRuntime });
+  const opener = automationStudioStateReopenOpener({ flow: input.flow, node: input.node, attempt: input.attempt, attempts: input.attempts, hostRuntime: input.options.hostRuntime, resolveActionEffect: input.options.resolveActionEffect });
   if (!candidates.length && !own && !opener) return none("no_pre_states", 0);
   const hostRuntime = input.options.hostRuntime;
   const observation = await observeAutomationStudioRouteState({ hostRuntime, ...flowScope(input.flow), ...(input.options.signal ? { signal: input.options.signal } : {}) });
@@ -291,7 +291,7 @@ function unboundRefusal(input: AutomationStudioStateRouteInput, toNodeId: string
 
 /** The second guard, for a backward route into `toNodeId`. */
 function repeatRefusal(input: AutomationStudioStateRouteInput, toNodeId: string, observed: JsonObject): Refused | undefined {
-  const act = automationStudioRepeatedLastingAct({ flow: input.flow, fromNodeId: input.node.id, toNodeId, attempts: input.attempts, hostRuntime: input.options.hostRuntime, observed });
+  const act = automationStudioRepeatedLastingAct({ flow: input.flow, fromNodeId: input.node.id, toNodeId, attempts: input.attempts, hostRuntime: input.options.hostRuntime, observed, resolveActionEffect: input.options.resolveActionEffect });
   if (!act) return undefined;
   const evidence = act.effect === "on_page" ? "the page shows its effect" : "nothing shows it did not take effect";
   return {

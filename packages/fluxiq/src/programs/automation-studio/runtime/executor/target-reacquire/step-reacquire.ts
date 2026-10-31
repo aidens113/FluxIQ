@@ -74,7 +74,7 @@ async function reacquire(
   });
   const source = ctx.nodesById.get(lineage.sourceNodeId);
   const host = options.hostRuntime;
-  if (!source || !automationStudioReacquireSourceReadOnly(source)) return ended("unavailable", "source_not_read_only");
+  if (!source || !automationStudioReacquireSourceReadOnly(source, ctx.runState.actionEffects.get(source.id) ?? options.resolveActionEffect?.(source))) return ended("unavailable", "source_not_read_only");
   if (!host?.reacquireTarget) return ended("unavailable", "no_matcher");
   const bound = automationStudioReacquireBoundValue(ctx.flow, node, lineage, values);
   if (!bound) return ended("unavailable", "no_stale_value");

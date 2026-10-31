@@ -47,6 +47,18 @@ function emptyDetail(): AutomationStudioFlowRunDetail {
 }
 
 describe("learning a closed layer in the run session", () => {
+  it("does not save a learned press whose canonical client classes were never checked by the domain", async () => {
+    const learning = world({ behavior: { invokeLlm: false } });
+    learning.graphOptions.resolveActionEffect = (node) => node.definitionId === LAYER.wayOutDefinitionId ? { effectClass: "commit", permissionConsequences: ["move_money"] } : undefined;
+    const context = bindAutomationStudioInRunRepair({ context: learning.context, graphOptions: learning.graphOptions, ports: learning.ports, runId: IN_RUN_REPAIR_RUN_ID });
+    const learn = learning.graphOptions.learnInterruption;
+    if (!learn) throw new Error("No learnInterruption was supplied.");
+    expect(await learn(learningRequest())).toMatchObject({ kind: "none" });
+    expect(learning.adaptations.size).toBe(0);
+    expect(learning.requests).toEqual([]);
+    expect(context.inRunRepairs?.receipts()).toEqual([expect.objectContaining({ outcome: "none", code: "step_unresolved", issueCodes: ["bootstrap.step_permission_required"] })]);
+  });
+
   it("proposes the handler with no model, resolves its press through the domain, overlays it, and records it for the judged end", async () => {
     const learning = world({ behavior: { invokeLlm: false } });
     const context = bindAutomationStudioInRunRepair({ context: learning.context, graphOptions: learning.graphOptions, ports: learning.ports, runId: IN_RUN_REPAIR_RUN_ID });

@@ -1,5 +1,6 @@
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
+import { readAutomationStudioResolvedActionEffect } from "../../nodes/action-effect/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import type { AutomationStudioRunState } from "./run-state.ts";
 import type { AutomationStudioTraceWithholding } from "./trace-withholding.ts";
@@ -38,11 +39,40 @@ export async function executeAutomationStudioNode(
   withholding: AutomationStudioTraceWithholding,
   runState: AutomationStudioRunState
 ): Promise<AutomationStudioNodeAttemptTrace> {
+  // A fresh pass must not inherit the previous pass's floor, including when
+  // the first checkpoint or local preparation fails. Raw unresolved values
+  // provide a conservative floor until this attempt can specialize them.
+  runState.actionEffects.delete(node.id);
+  runState.dispatchedActions.delete(node.id);
+  try {
+    const actionEffect = options.resolveActionEffect?.(node);
+    if (actionEffect) runState.actionEffects.set(node.id, readAutomationStudioResolvedActionEffect(actionEffect));
+  } catch {
+    const startedAt = options.now?.() ?? Date.now();
+    return nodeAttemptWithAdaptationIds(node, {
+      attemptId: `${node.id}.attempt.${attemptNumber}`,
+      nodeId: node.id,
+      definitionId: node.definitionId,
+      startedAt,
+      finishedAt: startedAt,
+      status: "failed",
+      route: "failed",
+      inputs: {},
+      outputs: {},
+      effects: [],
+      message: "The trusted action-effect declaration could not be resolved; the action was not run.",
+      failure: { category: "graph_validation_or_unknown_node", code: "executor.action_effect.resolve_failed", retryable: false, stage: "dispatch", effect: "unacted" }
+    });
+  }
   try {
     const attempt = await AutomationStudioNodeAttemptExecution.execute(flow, node, values, options, attemptNumber, withholding, runState);
+    if (attempt.status === "failed" && runState.actionEffects.has(node.id) && !runState.dispatchedActions.has(node.id)) {
+      attempt.failure = { ...(attempt.failure ?? { category: "graph_validation_or_unknown_node", code: "executor.action_effect.pre_dispatch_failed", retryable: false, stage: "dispatch" }), effect: "unacted" };
+      if (attempt.fault) attempt.fault = { ...attempt.fault, effect: "unacted" };
+    }
     return nodeAttemptWithAdaptationIds(node, attempt);
   } catch (error) {
     const startedAt = options.now?.() ?? Date.now();
-    return nodeAttemptWithAdaptationIds(node, automationStudioNodeAttemptFailure(node, error, options, attemptNumber, startedAt, collectNodeInputs(flow, node, values)));
+    return nodeAttemptWithAdaptationIds(node, automationStudioNodeAttemptFailure(node, error, options, attemptNumber, startedAt, collectNodeInputs(flow, node, values), runState.dispatchedActions.has(node.id)));
   }
 }

@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import { automationStudioNodeActLasts } from "../defensive/index.ts";
 import type { AutomationStudioCompletedAct, AutomationStudioLifecycleRouteGuard } from "../lifecycle-run/index.ts";
 import { automationStudioStateRouteSpan } from "../state-routing/index.ts";
@@ -43,18 +43,18 @@ export function automationStudioStepLifecycleRouteGuard(ctx: AutomationStudioSte
     const invocation = ctx.options.invocation;
     const own = { flow: ctx.flow, attempts: ctx.attempts, fromNodeId, toNodeId: target.nodeId };
     const ledger = invocation?.run.lifecycle.completedActs ?? new Map<string, AutomationStudioCompletedAct>();
-    if (!invocation || target.invocationId === invocation.frame.invocationId) return judge(own, ledger);
+    if (!invocation || target.invocationId === invocation.frame.invocationId) return judge(own, ledger, ctx.options.resolveActionEffect);
     const { stack, lifecycle } = invocation.run;
     const at = stack.findIndex((frame) => frame.invocationId === target.invocationId);
     const view = lifecycle.frames.get(target.invocationId);
     const callNodeId = stack[at + 1]?.callNodeId;
     if (at < 0 || !view || !callNodeId) return { unreachable: `Checkpoint "${target.checkpointId}" is not in a frame this run is executing.`, passesUncertainAct: false };
-    const judged = judge({ flow: view.flow, attempts: view.attempts, fromNodeId: callNodeId, toNodeId: target.nodeId }, ledger);
+    const judged = judge({ flow: view.flow, attempts: view.attempts, fromNodeId: callNodeId, toNodeId: target.nodeId }, ledger, ctx.options.resolveActionEffect);
     return { ...judged, passesUncertainAct: judged.passesUncertainAct || lastEndedUncertain(ctx.attempts, fromNodeId) };
   };
 }
 
-function judge(path: JudgedPath, ledger: ReadonlyMap<string, AutomationStudioCompletedAct>): ReturnType<AutomationStudioLifecycleRouteGuard> {
+function judge(path: JudgedPath, ledger: ReadonlyMap<string, AutomationStudioCompletedAct>, resolveActionEffect: AutomationStudioGraphExecutionOptions["resolveActionEffect"]): ReturnType<AutomationStudioLifecycleRouteGuard> {
   if (!path.flow.nodes.some((node) => node.id === path.toNodeId)) {
     return { unreachable: `Node ${path.toNodeId} is not in the graph this frame runs.`, passesUncertainAct: false };
   }
@@ -68,7 +68,7 @@ function judge(path: JudgedPath, ledger: ReadonlyMap<string, AutomationStudioCom
   const passesUncertainAct = [...passed].some((nodeId) => lastEndedUncertain(path.attempts, nodeId));
   walkedAgain.delete(path.fromNodeId);
   const ledgered = new Set([...ledger.keys()].map((key) => key.slice(0, key.lastIndexOf("/"))));
-  const repeatsUnrecordedAct = path.flow.nodes.some((node) => walkedAgain.has(node.id) && automationStudioNodeActLasts(node) && completedIn(path.attempts, node.id) && !ledgered.has(`${path.flow.flowId}/${node.id}`));
+  const repeatsUnrecordedAct = path.flow.nodes.some((node) => walkedAgain.has(node.id) && automationStudioNodeActLasts(node, resolveActionEffect?.(node)) && completedIn(path.attempts, node.id) && !ledgered.has(`${path.flow.flowId}/${node.id}`));
   return { passesUncertainAct, ...(repeatsUnrecordedAct ? { repeatsUnrecordedAct } : {}) };
 }
 

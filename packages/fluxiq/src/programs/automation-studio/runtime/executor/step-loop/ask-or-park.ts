@@ -43,7 +43,7 @@ export async function automationStudioStepAskOrPark(
   // neither the ladder nor a repair runs on it.
   const personStep = automationStudioPersonNeededStep({ attempt, node, attempts, raised, parkingBound: Boolean(options.parking) });
   if (personStep.kind === "exhausted") {
-    automationStudioRecordDefendedFault(runState, node.id, attempt, ctx.arrival.attempts, automationStudioAssessAttemptFault(attempt, node, now()), "stopped", 0);
+    automationStudioRecordDefendedFault(runState, node.id, attempt, ctx.arrival.attempts, automationStudioAssessAttemptFault(attempt, node, now(), runState.actionEffects.get(node.id)), "stopped", 0);
     return { kind: "return", trace: automationStudioEndedTrace(ctx, "failed", node.id, personStep.message) };
   }
   const ask = raised ?? (personStep.kind === "ask" ? personStep.ask : undefined);

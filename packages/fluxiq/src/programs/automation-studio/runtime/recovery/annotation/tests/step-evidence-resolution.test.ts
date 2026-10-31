@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioActionPermissionCheck } from "../../../action-permissions/index.ts";
+import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioPlanActionEffectSource } from "../../../action-permissions/index.ts";
 import type { AutomationStudioFactCondition } from "../../../executor/lifecycle/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmExploredEvidenceSlot, AutomationStudioRuntimePatch } from "../../../llm/index.ts";
 import { automationStudioRecoveryStepResolution } from "../step-evidence-resolution.ts";
@@ -42,12 +42,13 @@ function domain(asked: Asked[] = []): Resolver {
 
 const permitted: AutomationStudioActionPermissionCheck = async () => ({ permitted: true });
 
-function resolver(options: { resolve?: Resolver; failure?: JsonObject | undefined; explored?: boolean; permission?: AutomationStudioActionPermissionCheck } = {}) {
+function resolver(options: { resolve?: Resolver; failure?: JsonObject | undefined; explored?: boolean; permission?: AutomationStudioActionPermissionCheck; resolveActionEffect?: AutomationStudioPlanActionEffectSource["resolveActionEffect"] } = {}) {
   const binding: AutomationStudioLlmEvidenceRuntimeBinding = { domainId: "test.domain", deniedEvidenceKeys: [], tools: [], executeTool: async () => { throw new Error("no tools"); }, ...(options.resolve ? { resolvePlanNodeParameters: options.resolve } : {}) };
   return automationStudioRecoveryStepResolution({
     ports: { llmEvidenceRuntime: binding },
     projectId: "project.repair",
     flowId: "flow.repair",
+    resolveActionEffect: options.resolveActionEffect,
     failureEvidence: "failure" in options ? options.failure : FAILURE,
     ...(options.explored ? { explorationEvidence: EXPLORATION } : {}),
     permissionFor: () => options.permission ?? permitted
@@ -105,6 +106,30 @@ describe("a repair's steps, resolved before they are overlaid", () => {
     const plain = sequence({ value: "dismiss" });
     expect(await resolver()(plain)).toEqual({ ok: true, patch: plain });
     expect(await resolver()(sequence({ target: { handle: "t2" } }))).toMatchObject({ ok: false, code: "step_unresolved", issueCodes: ["bootstrap.handle_resolution_unavailable"] });
+  });
+
+  it("checks the canonical runtime floor even when the repair and its declaration claim nothing lasting", async () => {
+    const run = new AutomationStudioActionPermissionGate({ stage: "recovery", newRequestId: () => "permission-request:repair" });
+    const result = await resolver({
+      resolveActionEffect: (node, parameters) => {
+        expect(node.definitionId).toBe("test.press");
+        expect(parameters).toEqual({ value: "refund" });
+        return { effectClass: "commit", permissionConsequences: ["move_money"] };
+      },
+      permission: run.checkFor({ kind: "flow_step", id: "test.press", ref: "repair.step-1" }),
+      resolve: async ({ permission }) => {
+        const answer = await permission({ effect: "observe", consequences: [], control: { name: "Refund" }, verb: "press" });
+        return answer.permitted ? { status: "unchanged" } : { status: "needs_permission", missing: [...answer.missing], requestId: answer.requestId };
+      }
+    })(sequence({ value: "refund" }));
+    expect(result).toMatchObject({ ok: false, code: "permission_required" });
+    expect(run.request?.missing).toEqual(["move_money"]);
+    expect(run.declarations[0]).toMatchObject({ action: { effect: "mutate" }, consequences: ["move_money"] });
+  });
+
+  it("does not publish an unchecked known runtime class when no domain resolver is bound", async () => {
+    const result = await resolver({ resolveActionEffect: () => ({ effectClass: "commit", permissionConsequences: ["delete"] }) })(sequence({ value: "remove" }));
+    expect(result).toMatchObject({ ok: false, code: "permission_required", issueCodes: ["bootstrap.step_permission_required"] });
   });
 
   it("asks the domain about a step that names no handle too, and keeps its answer", async () => {

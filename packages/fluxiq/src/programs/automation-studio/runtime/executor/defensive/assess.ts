@@ -1,5 +1,6 @@
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { AutomationStudioFaultAssessment, AutomationStudioFaultEffect } from "./contracts.ts";
 import { automationStudioNodeActLasts } from "./lasting-act.ts";
@@ -54,12 +55,34 @@ import { automationStudioRetryHintMs } from "./retry-hint.ts";
 export function automationStudioAssessAttemptFault(
   attempt: AutomationStudioNodeAttemptTrace,
   node: AutomationStudioFlowNode | undefined,
-  now = 0
+  now = 0,
+  actionEffect?: AutomationStudioResolvedActionEffect
 ): AutomationStudioFaultAssessment | undefined {
   if (attempt.status !== "failed") return undefined;
+  const childFailure = attempt.childTrace?.status === "failed" ? attempt.childTrace.failure : undefined;
+  if (childFailure?.code === "run.outcome_uncertain") {
+    return {
+      disposition: "refuse",
+      category: "ambiguous_or_unknown",
+      code: "run.outcome_uncertain",
+      source: "failure_record",
+      effect: "ambiguous",
+      stage: "confirmation",
+      actUncertain: true,
+      reason: "A child run stopped with a lasting act whose outcome is uncertain; the container cannot repeat or settle that act from its own declarations."
+    };
+  }
   const base = attempt.fault
     ?? (attempt.failure ? faultFromRecord(attempt.failure) : undefined)
-    ?? automationStudioFaultFromResultMessage(attempt.message);
+    ?? automationStudioFaultFromResultMessage(attempt.message)
+    ?? (actionEffect?.effectClass === "commit" ? {
+      disposition: "refuse" as const,
+      category: "ambiguous_or_unknown" as const,
+      code: "executor.action_effect.outcome_unknown",
+      source: "result_message" as const,
+      effect: "ambiguous" as const,
+      reason: "The action failed without proving whether its trusted committing effect happened."
+    } : undefined);
   if (!base) return undefined;
   // The producer's own record states its wait before anything the node returned
   // is searched for one: a page's "try again in 12 seconds" travels there.
@@ -76,10 +99,10 @@ export function automationStudioAssessAttemptFault(
   // evaluator's conditions or its step's own facts (t413), stage `verification`: the act happened, so a lasting
   // one is never made again and its outcome is not uncertain -- no effect check, a true failure (`./effect-check.ts`).
   // A step whose act does not last goes on to the gates below and keeps its ordinary retry.
-  if (rejectedAfterSuccess(attempt) && node && automationStudioNodeActLasts(node)) {
+  if (rejectedAfterSuccess(attempt) && node && automationStudioNodeActLasts(node, actionEffect)) {
     return { ...fault, disposition: "refuse", reason: `${node.id} made a lasting act that answered success, and the page did not then show what it was meant to leave: that is found after acting, so the act is not made again.` };
   }
-  if (fault.disposition === "refuse") return refusalWithUnknownOutcome(attempt, node, fault) ?? fault;
+  if (fault.disposition === "refuse") return refusalWithUnknownOutcome(attempt, node, fault, actionEffect) ?? fault;
   const stage = fault.stage ?? attempt.failure?.stage;
   const foundAfterActing = stage === "confirmation" || stage === "verification";
   // Core owns both rules rather than the producer, because they are about the
@@ -89,17 +112,17 @@ export function automationStudioAssessAttemptFault(
   // A failure found after the action ran is evidence the action ran, so looking
   // again needs a positive reason rather than the absence of a reason not to. With
   // no node at all Core has none, and gives the cautious answer.
-  if (foundAfterActing && !(node && automationStudioNodeRepeatCannotAct(node))) {
+  if (foundAfterActing && !(node && automationStudioNodeRepeatCannotAct(node, actionEffect))) {
     return {
       ...fault,
       disposition: "refuse",
-      ...(node && fault.effect !== "unacted" && automationStudioNodeActLasts(node) ? { actUncertain: true as const } : {}),
+      ...(node && fault.effect !== "unacted" && automationStudioNodeActLasts(node, actionEffect) ? { actUncertain: true as const } : {}),
       reason: node
         ? `The failure was found at ${stage}, after the action had already run, and nothing about ${node.id} says that running it again could not act a second time.`
         : `The failure was found at ${stage}, after the action had already run, and no node was named to say whether running it again could act a second time.`
     };
   }
-  if (fault.effect === "ambiguous" && node && automationStudioNodeMutates(node) && !automationStudioNodeRepeatIsSafe(node)) {
+  if (fault.effect === "ambiguous" && node && automationStudioNodeMutates(node, actionEffect) && !automationStudioNodeRepeatIsSafe(node, actionEffect)) {
     return {
       ...fault,
       disposition: "refuse",
@@ -116,8 +139,8 @@ export function automationStudioAssessAttemptFault(
   //    written `consequences: none`), and a declaration never unlocks a second
   //    act. A committing act whose answer was lost is decided by the effect
   //    check -- the page -- and repeated only when that shows it did not land.
-  const producerSaysActed = attempt.failure?.effect === "ambiguous" && !(node && automationStudioNodeRepeatIsSafe(node));
-  if (fault.effect !== "unacted" && (producerSaysActed || (node && automationStudioNodeActLasts(node)))) {
+  const producerSaysActed = attempt.failure?.effect === "ambiguous" && !(node && automationStudioNodeRepeatIsSafe(node, actionEffect));
+  if (fault.effect !== "unacted" && (producerSaysActed || (node && automationStudioNodeActLasts(node, actionEffect)))) {
     return {
       ...fault,
       disposition: "refuse",
@@ -144,9 +167,10 @@ export function automationStudioAssessAttemptFault(
  * handling it always had. So does a fault classified from a throw, which
  * carries no producer statement about the act.
  */
-function refusalWithUnknownOutcome(attempt: AutomationStudioNodeAttemptTrace, node: AutomationStudioFlowNode | undefined, fault: AutomationStudioFaultAssessment): AutomationStudioFaultAssessment | undefined {
-  if (fault.actUncertain || fault.effect === "unacted" || fault.category !== "ambiguous_or_unknown") return undefined;
-  if (attempt.failure?.effect !== "ambiguous" || (node && automationStudioNodeRepeatIsSafe(node))) return undefined;
+function refusalWithUnknownOutcome(attempt: AutomationStudioNodeAttemptTrace, node: AutomationStudioFlowNode | undefined, fault: AutomationStudioFaultAssessment, actionEffect?: AutomationStudioResolvedActionEffect): AutomationStudioFaultAssessment | undefined {
+  if (fault.actUncertain || fault.effect === "unacted") return undefined;
+  if (actionEffect?.effectClass !== "commit" && (fault.category !== "ambiguous_or_unknown" || attempt.failure?.effect !== "ambiguous")) return undefined;
+  if (node && automationStudioNodeRepeatIsSafe(node, actionEffect)) return undefined;
   return {
     ...fault,
     effect: "ambiguous",
@@ -169,9 +193,10 @@ function rejectedAfterSuccess(attempt: AutomationStudioNodeAttemptTrace): boolea
 export function automationStudioAttemptFaultIsAbsorbed(
   attempt: AutomationStudioNodeAttemptTrace,
   node: AutomationStudioFlowNode | undefined,
-  now = 0
+  now = 0,
+  actionEffect?: AutomationStudioResolvedActionEffect
 ): boolean {
-  return automationStudioAssessAttemptFault(attempt, node, now)?.disposition === "retry";
+  return automationStudioAssessAttemptFault(attempt, node, now, actionEffect)?.disposition === "retry";
 }
 
 /**

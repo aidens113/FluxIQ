@@ -1,5 +1,5 @@
 import type { JsonValue } from "../../../../core/index.ts";
-import type { AutomationNodeIterationState } from "../../nodes/index.ts";
+import type { AutomationNodeIterationState, AutomationStudioResolvedActionEffect } from "../../nodes/index.ts";
 import type { AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import type { AutomationStudioGraphExecutionOptions } from "./contracts.ts";
 import { automationStudioDefenceLedger, type AutomationStudioDefenceLedger } from "./defensive/index.ts";
@@ -22,6 +22,10 @@ export type AutomationStudioRunState = {
   variables: Map<string, JsonValue>;
   /** Iteration state by node id, for a node such as For Each that keeps its place between passes. */
   loops: Map<string, AutomationNodeIterationState>;
+  /** Trusted floors for this graph frame's current node executions; never persisted. */
+  actionEffects: Map<string, AutomationStudioResolvedActionEffect>;
+  /** This frame's current passes that entered a callback capable of acting. */
+  dispatchedActions: Set<string>;
   /**
    * Every fault the default defensive policy assessed during this run, and the
    * waiting allowance spent absorbing them. It is run-scoped because the bound it
@@ -44,6 +48,8 @@ export function automationStudioRunState(options: Pick<AutomationStudioGraphExec
     records: automationStudioRecordTraceSummary(),
     variables: new Map(Object.entries(options.variables ?? {})),
     loops: new Map(),
+    actionEffects: new Map(),
+    dispatchedActions: new Set(),
     defence: automationStudioDefenceLedger(),
     pace: automationStudioPaceKeeper()
   };

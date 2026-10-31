@@ -244,8 +244,6 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
           // reads to continue at the node whose expected pre-state is the page
           // it finds (`../route-state/signatures/`).
           ...routeSignaturesMetadata(node.routeSignatures),
-          // The step's declaration survives storage, `[]` included (t252, D5). A run reads it to tell a lasting act from one it may repeat (t359, `../executor/defensive/lasting-act.ts`).
-          ...(node.consequences ? { [DECLARED_CONSEQUENCES_METADATA_KEY]: [...node.consequences] } : {}),
           // The least time between two starts of the node in one run: a span's
           // `repeat pace:`, or the pace a judged trial learned (t378). Every
           // graph run reads it, trial and playback alike (`../executor/pacing/`).
@@ -253,7 +251,10 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
           // What the step's reversible lasting act is witnessed by, as Core's admission stamped it at submission (t751): each act a trial of the node lands takes it (`../service/candidate-trial/landed-acts.ts`).
           ...(automationStudioSiteResetWitnessStampValid(node.resetWitness) ? { [RESET_WITNESS_METADATA_KEY]: { ...node.resetWitness } } : {}),
           // Where a run may start or be brought back to (C2): `fluxiq.entry`, `fluxiq.checkpoint`.
-          ...(node.metadata ? structuredClone(node.metadata) as JsonObject : {})
+          ...(node.metadata ? structuredClone(node.metadata) as JsonObject : {}),
+          // Accepted classes, including the client minimum and `[]`, outrank
+          // preserved metadata when the reviewed graph is materialized.
+          ...(node.consequences ? { [DECLARED_CONSEQUENCES_METADATA_KEY]: [...node.consequences] } : {})
         }, input.adaptationId)
       })),
       edges: entry.edges.map((edge) => ({

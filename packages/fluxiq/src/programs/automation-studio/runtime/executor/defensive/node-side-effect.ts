@@ -1,4 +1,5 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
 import type { AutomationStudioNodeSideEffectClass } from "./contracts.ts";
 
 /**
@@ -12,8 +13,9 @@ import type { AutomationStudioNodeSideEffectClass } from "./contracts.ts";
  * it -- and a retry that cannot tell a read from a payment is not a policy, it is
  * a hazard.
  */
-export function automationStudioNodeSideEffectClass(node: AutomationStudioFlowNode): AutomationStudioNodeSideEffectClass {
+export function automationStudioNodeSideEffectClass(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): AutomationStudioNodeSideEffectClass {
   if (node.metadata?.destructive === true) return "destructive";
+  if (actionEffect && actionEffect.effectClass !== "observe") return "external";
   if (node.metadata?.externalSideEffect === true) return "external";
   if (node.definitionId === "builtin.policy.action") return "external";
   if (node.definitionId.startsWith("builtin.database.")) return node.parameterValues?.dryRun === true ? "internal" : "external";
@@ -38,7 +40,8 @@ export function automationStudioNodeSideEffectClass(node: AutomationStudioFlowNo
  * or deletes something marks it; a domain that marks nothing gets retries, which
  * is the default the product wants and the repair loop is built around.
  */
-export function automationStudioNodeMutates(node: AutomationStudioFlowNode): boolean {
+export function automationStudioNodeMutates(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): boolean {
+  if (actionEffect && actionEffect.effectClass !== "observe") return true;
   if (node.metadata?.destructive === true || node.metadata?.externalSideEffect === true) return true;
   if (node.metadata?.effect === "mutate" || node.parameterValues?.effect === "mutate") return true;
   if (node.parameterValues?.requiresApproval === true) return true;
@@ -70,10 +73,11 @@ export function automationStudioNodeMutates(node: AutomationStudioFlowNode): boo
  * `metadata.effect: "observe"`, which is the one line that makes this exact for
  * every one of them.
  */
-export function automationStudioNodeRepeatCannotAct(node: AutomationStudioFlowNode): boolean {
-  if (automationStudioNodeSideEffectClass(node) === "none") return true;
-  if (automationStudioNodeRepeatIsSafe(node)) return true;
-  if (automationStudioNodeMutates(node)) return false;
+export function automationStudioNodeRepeatCannotAct(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): boolean {
+  if (actionEffect?.effectClass === "commit") return false;
+  if (automationStudioNodeSideEffectClass(node, actionEffect) === "none") return true;
+  if (automationStudioNodeRepeatIsSafe(node, actionEffect)) return true;
+  if (automationStudioNodeMutates(node, actionEffect)) return false;
   for (const declared of [node.parameterValues?.recordOutput, node.metadata?.recordOutput, node.metadata?.recordsPath]) {
     if (declared !== undefined && declared !== null) return true;
   }
@@ -92,9 +96,10 @@ export function automationStudioNodeRepeatCannotAct(node: AutomationStudioFlowNo
  * them: it is the one marker that lets a consequential-looking node keep its
  * retries without weakening the rule for the ones that really do act.
  */
-export function automationStudioNodeRepeatIsSafe(node: AutomationStudioFlowNode): boolean {
+export function automationStudioNodeRepeatIsSafe(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): boolean {
+  if (actionEffect?.effectClass === "commit") return false;
   if (node.metadata?.idempotent === true) return true;
-  if (node.metadata?.effect === "observe" || node.parameterValues?.effect === "observe") return true;
+  if (actionEffect?.effectClass !== "state" && (node.metadata?.effect === "observe" || node.parameterValues?.effect === "observe")) return true;
   const key = node.metadata?.idempotencyKey ?? node.parameterValues?.idempotencyKey;
   return typeof key === "string" && key.trim().length > 0;
 }
