@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P6 t799, Claude/$5 t816, P5b t810 and P1b t811 merged. Paired t817 passed lead Core204/types/builds and native oracle/replay acceptance, ready for integration. Downstream Current State owns the handoff.
+Status detail: All resumed units and grounded toggle t817 are verified and merged; Core0.14.0. Final isolated full sweep pending; paid Claude comparison waits for the user's go. Downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -17,7 +17,7 @@ unrefuted new defects must not pass. This does not authorise bypassing the judge
 
 **Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
 also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
-native installed-extension proof in the paired repository). P5b and P1b are merged (P1b: Coreb4a8f453/downstream01da7fa3); t817 source is frozen pending combined acceptance. Paired t816 is merged and pushed:
+native installed-extension proof in the paired repository). P5b, P1b and t817 are merged (t817: Coreae354e9d/downstreamdf58a48e); native grounded-state oracle/replay passes. Paired t816 is merged and pushed:
 Claude runtime, keys/settings UI and live-test routing with the user's $5 whole-build allowance; no paid run has started.
 The rest of this section is the plan as written.
 
@@ -753,6 +753,14 @@ Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledge
 - Validation: headed Chromium two-spec command ->2 passed(4.1m); lead JSON gate ->accepted:true,24rows/2whole/1partial,12-to9 decisions,6supervisor/2Core-completions each; JSON retained in downstream ignored test-runs/2026-10-30-t811-final.
 - Outcome: Coreb4a8f453/downstream01da7fa3 merged with Core0.13.0; Core merge contracts70 and downstream structure passed; remote task backups retained.
 - Not verified: paid Claude performance, native Firefox or full sweep. No paid calls or panel management.
+
+### 2026-10-30 - Grounded toggle choice and native replay accepted (t817)
+- Agent: Codex lead; worker Core/domain/native reports in paired downstream reports/codex-1030/first-row-toggle-*-result.md.
+- Changed: actual beforeSignature/CC9 shown survives wire/storage/reload; explicit bounded observed ensureState replaces click-order/majority inference. Safe setters, unknown exploration and admitted undo retained.
+- Validation: lead owning Vitest ->199/14files; shared-brief caller ->5/5; domain37 and extension9 pass. Core/domain/extension types,3libs,recursive caller build,docs/model-text/audits pass; no baseline/allowlist exceptions.
+- Validation: native first-row saved replay ->15-to15callbacks,3skips,0transitions,3ordered official-oracle records and1saved explicit state; lead JSON assertions accepted. Obstruction-only native ->1passed(1.9m),4recoveries,6UIchecks,exact6controlled uncertainty rows,0failed action/recovery cards and finalyes.
+- Outcome: Coreae354e9d/downstreamdf58a48e merged with Core0.14.0;70 Core contracts and downstream structure pass;3JSONs retained in downstream ignored test-runs/2026-10-30-t817-final.
+- Not verified: paid Claude behavior/performance, native Firefox or full sweep. No paid calls, panel operation, fixture/oracle changes or registry publish.
 
 ## Open Questions
 
