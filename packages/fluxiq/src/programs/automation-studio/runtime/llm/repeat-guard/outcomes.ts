@@ -391,8 +391,8 @@ export type AutomationStudioLlmEvidenceRepeatGuard = AutomationStudioLlmEvidence
 
 /**
  * `draftOf` names the draft, by its key (`./draft-key.ts`), for a tool whose
- * answer is the draft run again (`core.run_flow`), and nothing for any other:
- * such a call is keyed on the draft it ran on as well as its page (see the header).
+ * answer depends on the current draft (`core.run_flow`) or an accepted proposal's
+ * backend revision. Such a call is keyed on that target as well as its page.
  */
 export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((toolId: string) => string | undefined) | undefined } = {}): AutomationStudioLlmEvidenceRepeatGuard {
   const outcomes = new Map<string, AutomationStudioLlmEvidenceRepeatedOutcome>();

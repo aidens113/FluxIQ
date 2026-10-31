@@ -9,6 +9,7 @@ export * from "./started-with.ts";
 export * from "./trial-acts.ts";
 export * from "./reset-witness-key.ts";
 export * from "./trial-gate.ts";
+export * from "../retest-advised/index.ts";
 export * from "./trial-stop.ts";
 export * from "./stall-retest.ts";
 export * from "./trial-view.ts";

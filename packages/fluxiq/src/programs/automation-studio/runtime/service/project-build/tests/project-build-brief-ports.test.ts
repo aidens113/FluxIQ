@@ -43,6 +43,7 @@ import type { AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
+import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 vi.setConfig({ testTimeout: 300_000 });
 
@@ -117,6 +118,7 @@ async function build(input: {
   tools: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>["tools"];
   executeTool: (call: { callId: string; toolId: string; value: JsonObject; permission?: AutomationStudioActionPermissionCheck }) => Promise<unknown>;
   builderFirst?: (subflowKey: string, evidence: readonly Entry[]) => JsonObject | undefined;
+  reset?: (evidence: readonly Entry[]) => JsonObject;
   permittedConsequences?: AutomationStudioActionConsequence[];
   prepareStart?: AutomationStudioServiceOptions["prepareCandidateStart"];
   startState?: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>["startState"];
@@ -128,6 +130,8 @@ async function build(input: {
   const firstSeen: Record<string, Entry[]> = {};
   /** Each builder's evidence at its latest decision, by subflow. */
   const latestSeen: Record<string, Entry[]> = {};
+  const stopObserving = observeBuilderCalls((key, entry) => { (latestSeen[key] ??= []).push(entry); });
+  cleanups.push(async () => stopObserving());
   let supervisorDecisions = 0;
   const provider = mockProvider(async (request) => {
     if (request.taskKind === "loop_verification") return judgeReply("yes");
@@ -144,6 +148,7 @@ async function build(input: {
       return decision({ kind: "complete", result: { ended: "partial", reason: "Only the briefs were under test." } });
     }
     const subflowKey = ((loop!.completionSchema.properties as JsonObject | undefined)?.subflowKey as JsonObject | undefined)?.const as string;
+    if (!subflowKey && input.reset) return decision(input.reset(evidence));
     firstSeen[subflowKey] ??= evidence.map((entry) => structuredClone(entry));
     latestSeen[subflowKey] = evidence.map((entry) => structuredClone(entry));
     if (input.saveEffect && !evidence.some((entry) => entry.callId === "read-original")) return decision({ kind: "tool_call", callId: "read-original", toolId: "core.run_node", input: { node: "example.look", parameters: { inventory: "saves" }, consequences: [] } });
@@ -435,7 +440,10 @@ it("tests with the build's create still on the site, said under startedWith, and
   };
   const invoke = (callId: string, node: string, consequences: string[] = [], extra: JsonObject = {}): JsonObject => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node, parameters: {}, consequences, ...extra } });
   const run = await build({
-    plan, briefs: [{ kind: "build", subflowKey: "keep", parts: ["p1"], permittedActs: ["create_new"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.02, maxIterations: 20 }], permittedConsequences: ["create_new"],
+    plan, briefs: [
+      { kind: "build", subflowKey: "keep", parts: ["p1"], permittedActs: ["create_new"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.02, maxIterations: 20 },
+      { kind: "reset", subflowKey: "keep", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.02, maxIterations: 8 }
+    ], permittedConsequences: ["create_new"],
     stepControl: { name: "Save", kind: "button", subject: "s:document", resource: "r:one", scope: "p:destination" },
     tools: [{ toolId: "core.run_node", description: "Run an observed operation", effect: "mutate", perCallEffect: true, inputSchema: { type: "object", properties: { node: { type: "string" }, parameters: { type: "object" }, consequences: { type: "array", items: { type: "string" } } } }, initialObservation: { input: { node: "example.look", parameters: {}, consequences: [] } } }],
     startState: async () => ({ state: { at }, differs: [], location: at, resource: "r:one", scope: `p:${at}`, collections: at === "destination" ? [{ scope: "p:destination", group: "g:destination", subjects: [...rows], states: Object.fromEntries(rows.map(row => [row, `v:${row}`])) }] : [] }),
@@ -471,19 +479,20 @@ it("tests with the build's create still on the site, said under startedWith, and
       const submitted = lastOf(evidence, "core.submit_subflow")!;
       const candidate = { revision: submitted.revision as number, digest: submitted.digest as string };
       if (phase === 5) return { kind: "tool_call", callId: "test.dirty", toolId: "core.test_subflow", input: candidate };
-      if (phase === 6) {
-        dirty = lastOf(evidence, "core.test_subflow")!;
-        act = ((dirty.startedWith as JsonObject | undefined)?.acts as JsonObject[] | undefined)?.[0]?.act as string | undefined;
-        if (!act) return { kind: "complete", result: { subflowKey: "keep", revision: 0, digest: "no-act-said-on-the-site" } };
-        return invoke("undo.destination", "example.destination");
-      }
-      if (phase === 7) return invoke("undo", "example.remove", ["delete"], { undoes: act! });
-      if (phase === 8) return { kind: "tool_call", callId: "test.clean", toolId: "core.test_subflow", input: candidate };
       return undefined;
+    },
+    // Core completes the builder on its yes. A separate reset brief owns the undo after that trial.
+    reset: evidence => {
+      const opening = evidence[0]?.value as JsonObject | undefined;
+      act ??= (((opening?.phaseStart as JsonObject | undefined)?.stillOnSite as JsonObject[] | undefined)?.[0]?.act as string | undefined);
+      if (!evidence.some(entry => entry.callId === "undo.destination")) return invoke("undo.destination", "example.destination");
+      if (!evidence.some(entry => entry.callId === "undo")) return invoke("undo", "example.remove", ["delete"], { undoes: act ?? "missing-act" });
+      return { kind: "complete", result: { summary: "The created row was removed through its own control." } };
     }
   });
   let failed: { diagnostic?: { code?: string; issueCodes?: string[] }; message?: string } | undefined;
   await run.run().catch(error => { failed = error; });
+  dirty = lastOf(run.latestSeen.keep ?? [], "core.test_subflow");
   if (!reference || !act) throw new Error(JSON.stringify({ phase, failure: failed?.diagnostic, message: failed?.message, inputs: inputs.map(input => input.node), dirty, seen: (run.latestSeen.keep ?? []).map(entry => ({ callId: entry.callId, keys: Object.keys(entry.value as object), code: (entry.value as JsonObject).code })) }));
   expect(reference).toMatch(/^destination-[1-9][0-9]*$/u);
   // The trial ran with the create on the site, its judge told so, and passed: nothing was refused or undone first.
@@ -494,9 +503,7 @@ it("tests with the build's create still on the site, said under startedWith, and
   expect(removals).toBe(1);
   expect(rows).toEqual(["s:baseline"]);
   expect(inputs.every(input => !Object.hasOwn(input, "resetDestination"))).toBe(true);
-  const clean = lastOf(run.latestSeen.keep ?? [], "core.test_subflow");
-  expect(clean).toMatchObject({ verdict: "yes" });
-  expect(clean).not.toHaveProperty("startedWith");
+  expect(lastOf(run.latestSeen[SUPERVISOR] ?? [], "project.dispatch")).toMatchObject({ returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
 });
 
 // Office rounds 2-4 (t748, C6; `run-mvgf04kw-310fc169`, `run-mvgvyaip-d856e135`): a press was refused for want of a ref

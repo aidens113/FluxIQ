@@ -283,6 +283,10 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
   // path into a plan the model never wrote and nothing else, and live builds
   // re-proposed the same key until the budget ended them.
   const locator = automationStudioFlowScriptLocator({ script: input.script, subflows: located, unplaced, rules: ruleBlocks, fallback: routes.fallback });
+  // The node keys each script label names, for a run from a step by its label (`../step-label/`).
+  const stepKeys: Record<string, string[]> = {};
+  for (const graph of graphs.values()) for (const [label, key] of graph.keyByLabel) (stepKeys[label] ??= []).push(key);
+  locator.stepKeys = stepKeys;
   if (issues.some((issue) => issue.severity === "error")) return { refusedPlan: plan, issues, locator };
   return { plan, issues, locator };
 }

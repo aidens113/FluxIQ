@@ -36,6 +36,7 @@ import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostRes
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
+import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 // A hang guard only (header).
 vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 });
@@ -154,6 +155,8 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
   /** Every tool answer the supervisor was shown, by tool, and what each builder's every decision was asked with, by subflow. */
   const supervisorSaw = new Map<string, JsonObject>();
   const builderSaw = new Map<string, string[]>();
+  const stopObserving = observeBuilderCalls((key, entry) => { if (entry.toolId === "core.test_subflow") builderSaw.set(key, [...(builderSaw.get(key) ?? []), JSON.stringify(entry.value)]); });
+  cleanups.push(async () => stopObserving());
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-facade-"));
   const judged = { whole: [] as AutomationStudioLlmTaskRequest[], subflow: [] as AutomationStudioLlmTaskRequest[] };
   const offered: string[][] = [];

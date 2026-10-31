@@ -155,15 +155,36 @@
 // submit answer's `next` says so: run from that step, with its exact call, and
 // test the whole part only when the whole part should work. The repair memory
 // is the caller's where it passes one (`pendingRepair`), so it crosses briefs.
+//
+// **A submission can carry its test, and a yes completes the brief (t811).**
+// A builder spent a decision on every test it asked after a submission, and
+// one more on a completion that could only be the receipt of a yes. A
+// `core.submit_subflow` call may now say `then` (`../subflow-submit-then/submit-then.ts`):
+// `"test_whole"` tests the revision it makes in the same call, `{"from":
+// "<step>"}` runs it from that step to check a repair, and without `then` the
+// call only saves, as before. The folded test goes the way a `core.test_subflow`
+// call does (`../subflow-submit-then/builder-test-call.ts`) -- the gate, the trial view, the advice
+// memory, `tried` and `lastTrial` -- and the answer adds it as `tested`, with
+// `testedWith`; a refused submission tests nothing, and a whole test while a
+// repair stands gets the gate's `subflow.trial_from_step_first` unless
+// `fromStepImpossible` says why. Once a judged yes stands for the latest
+// revision and the gate lets it complete, after a folded test or a plain one,
+// the next decision is Core's: the builder's `decide` returns that receipt
+// without calling the provider, with a line the chat shows
+// (`../subflow-submit-then/builder-auto-complete.ts`), and the completion check still reads it. The
+// submit tool keeps `effect: "observe"`: the folded answer carries the page the
+// test left (`pageAfterTrial`), and a look asked again is run once more.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../llm/decision-handlers/index.ts";
-import { automationStudioCandidateSubmissionRefusal, automationStudioCandidateTrialView } from "../candidate/index.ts";
+import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowBriefWords } from "./brief-words.ts";
+import { automationStudioCandidateTestRequestKey } from "../test-request/index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_THEN as THEN, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_THEN_WORDS as THEN_WORDS, automationStudioSubflowBuilderAutoComplete, automationStudioSubflowBuilderTest } from "../subflow-submit-then/index.ts";
 import { automationStudioSubflowDoneBefore, automationStudioSubflowEntryLeft } from "./done-before.ts";
 import { AutomationStudioSubflowPendingRepair } from "./pending-repair.ts";
 import { AutomationStudioSubflowRepeatedAdvice } from "./repeated-advice.ts";
@@ -291,10 +312,19 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   let ended: AutomationStudioSubflowBuilderOutcome["ended"];
   /** The acts the run that prepared this builder's entry landed, as its opening look listed them (header, t676). */
   let entryActs: string[] = [];
+  // One test, a core.test_subflow call's or the one a submission folds in (header, t811): answered the same way, and its trial counted.
+  const test = async (value: JsonObject, callId: string, callSignal: AbortSignal | undefined) => {
+    const { answered, trial } = await automationStudioSubflowBuilderTest({ gate, advice, value, callId, signal: callSignal ?? signal, moves: input.trial?.moves, tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look) });
+    if (trial) {
+      tried = true;
+      lastTrial = trial;
+    }
+    return answered;
+  };
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
-    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${automationStudioSubflowBriefWords.successCheck(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.${fromStep ? ` After a failed test, repair the failing step live and check it by testing from that step (from) before testing the whole part again.` : ""} ${HONEST_ENDING}`,
-    inputSchema: { type: "object", properties: { flow: { type: "string", description: `${automationStudioSubflowBriefWords.brief(input.scope)}\nThis subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
+    description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${automationStudioSubflowBriefWords.successCheck(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.${gate.available ? ` ${THEN_WORDS.tool}` : ""}${fromStep ? ` After a failed test, repair the failing step live and check it by testing from that step (from) before testing the whole part again.` : ""} ${HONEST_ENDING}`,
+    inputSchema: { type: "object", properties: { flow: { type: "string", description: `${automationStudioSubflowBriefWords.brief(input.scope)}\nThis subflow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" }, ...THEN.properties(gate.available, fromStep) }, additionalProperties: false }
   };
   const receiptCheck = (result: JsonObject): AutomationStudioLlmEvidenceCompletionCheck => {
     const proposal = controller.latest();
@@ -360,6 +390,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, draft: false, dryRun: false, discoveryOnly: true,
+    requestContextKey: (toolId) => toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID ? automationStudioCandidateTestRequestKey(controller.latest()) : input.loop.requestContextKey?.(toolId),
     // Its turns, its allowance's dollars and its calls, less its finishing trials' judges (header, t570), a whole test's too (t685).
     budget: { ...(input.loop.budget ?? {}), countCalls: { keptForFinishing: AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS } },
     finishingTools: { submit: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, test: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
@@ -367,22 +398,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     // The receipt of the latest proposal, or an honest ending (header): either whole, and a passing receipt stands whatever else it carries (t601).
     completionSchema: completionSchema(subflowKey),
     executeTool: async (call) => {
-      if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) {
-        // The page the test left, when it ran or its checks moved the tab (header, t738).
-        const moves = input.trial?.moves;
-        const before = moves?.();
-        const tested = await gate.test(call.value, call.signal);
-        const targetMoved = before !== undefined && moves!() > before;
-        const viewed = await automationStudioCandidateTrialView({ answer: tested, targetMoved, tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });
-        // A judged no's advice less what an earlier trial's advice already said (header, t741 D).
-        const answered = advice.told(viewed);
-        const trial = answeredTrial(answered, gate);
-        if (trial) {
-          tried = true;
-          lastTrial = trial;
-        }
-        return answered;
-      }
+      // The page the test left, when it ran or its checks moved the tab (header, t738), and the advice already given left out (t741 D).
+      if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) return await test(call.value, call.callId, call.signal);
       if (call.toolId !== AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID) {
         const ran = await input.loop.executeTool(call);
         // A read refused for a cut-short text field, so later advice to add that field is said as the order that can pass (S5).
@@ -391,8 +408,11 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
         if (isOpeningCall(call.callId)) entryActs = automationStudioSubflowEntryLeft.acts(executionEvidence(ran));
         return ran;
       }
+      // What to do with the revision once accepted (header, t811): `then` and its reason are never part of the submission.
+      const asked = THEN.read(call.value, fromStep);
+      if (!asked.ok) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: asked.code, instruction: asked.instruction }, effectApplied: false, targetsUnchanged: true, resultCode: asked.code };
       tried = true;
-      const submitted = await controller.submit(call.value, { trialOf: (proposal) => gate.standing(proposal), refuted: (digest) => gate.refuted(digest) });
+      const submitted = await controller.submit(asked.submission, { trialOf: (proposal) => gate.standing(proposal), refuted: (digest) => gate.refuted(digest) });
       if (!submitted.ok) {
         const refusal = automationStudioCandidateSubmissionRefusal(submitted);
         return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...refusal };
@@ -401,7 +421,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
       const evidence: JsonObject = {
         ok: true, status: "draft", partial: true, subflowKey, revision: submitted.proposal.revision, digest: submitted.proposal.digest,
         changedPaths: [...submitted.proposal.changedPaths], verification: "not_performed", promotionAllowed: false,
-        ...acceptedScript(call.value, submitted.proposal),
+        ...acceptedScript(asked.submission, submitted.proposal),
         ...unneededNote(submitted.proposal),
         ...(submitted.advice?.length ? { advice: submitted.advice } : {}),
         next: !gate.available
@@ -410,9 +430,27 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
             ? `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. This test runs the whole Flow from its start as the build's judged run; a yes completes this brief. Submitting again makes a new revision that needs its own test.`
             : `Test next with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} using exactly {"revision": ${submitted.proposal.revision}, "digest": "${submitted.proposal.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.`)
       };
-      return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };
+      if (asked.note) evidence.setAside = asked.note;
+      if (!asked.test) {
+        if (gate.available) evidence.next = `${String(evidence.next)} ${THEN_WORDS.plainNext}`;
+        return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };
+      }
+      // The test `then` asked, of the revision just accepted, answered as core.test_subflow answers it (header, t811).
+      const testedWith: JsonObject = { revision: submitted.proposal.revision, digest: submitted.proposal.digest, ...(asked.test.from !== undefined ? { from: asked.test.from } : {}) };
+      const folded = await test({ ...testedWith, ...(asked.test.fromStepImpossible !== undefined ? { fromStepImpossible: asked.test.fromStepImpossible } : {}) }, call.callId, call.signal);
+      evidence.next = THEN_WORDS.tested;
+      evidence.tested = folded.evidence;
+      evidence.testedWith = testedWith;
+      return { kind: "llm_evidence_tool_execution", evidence, effectApplied: folded.effectApplied, targetsUnchanged: folded.targetsUnchanged ?? !folded.effectApplied };
     }
   };
+  // Core's own decision once a yes stands that the gate lets complete, wrapped before `observe` so the chat shows it (header, t811).
+  // Never while a shared repair stands: the gate checks it too, and the model must check that repair before completing.
+  discovery.decide = automationStudioSubflowBuilderAutoComplete(input.loop.decide, () => {
+    const proposal = passed();
+    if (!proposal || repair.standing) return undefined;
+    return gate.completion({ revision: proposal.revision, digest: proposal.digest }).ok ? { subflowKey, revision: proposal.revision, digest: proposal.digest } : undefined;
+  });
   if (signal) discovery.signal = signal;
   if (input.callScope !== undefined) discovery.callScope = input.callScope;
   const loop = await runAutomationStudioLlmEvidenceLoop({ ...(input.observe ? input.observe(discovery) : discovery), checkCompletion });
@@ -443,14 +481,6 @@ function completionSchema(subflowKey: string): JsonObject {
 /** What a builder is told when the same refusal of its completion comes again (header). */
 const BUILDER_SENT_AGAIN = "The check reads the trial gate's answer for the revision named, not the completion's words, so the same completion gets the same answer. "
   + `Do what the refusal asks -- test that revision again, or change the subflow, submit it with ${AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID} and test the new revision. ${HONEST_ENDING}`;
-
-/** The partial verdict a test call answered, when it ran a trial: a refused call (wrong receipt, retest limit) ran none. */
-function answeredTrial(answered: Awaited<ReturnType<AutomationStudioSubflowTrialGate["test"]>>, gate: AutomationStudioSubflowTrialGate): AutomationStudioSubflowTrialResult | undefined {
-  const evidence = answered.evidence;
-  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence) || evidence.partial !== true) return undefined;
-  const { revision, digest } = evidence;
-  return typeof revision === "number" && typeof digest === "string" ? gate.standing({ revision, digest }) : undefined;
-}
 
 function endingRefused(code: string, instruction: string): AutomationStudioLlmEvidenceCompletionCheck {
   return { ok: false, issueCodes: [code], feedback: { code, instruction } };

@@ -827,7 +827,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioCandidateRequirementPredicate` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/contracts.ts` | - |
 | `AutomationStudioCandidateRequirementResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/contracts.ts` | - |
 | `automationStudioCandidateRequirementsDigest` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/identity.ts` | - |
-| `automationStudioCandidateRetestAdvised` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/trial-gate.ts` | - |
+| `automationStudioCandidateRetestAdvised` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/retest-advised/advised.ts` | - |
 | `automationStudioCandidateSameBehaviour` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/unchanged-submission.ts` | - |
 | `automationStudioCandidateStallRetest` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/stall-retest.ts` | - |
 | `automationStudioCandidateStartedWithSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/started-with.ts` | - |

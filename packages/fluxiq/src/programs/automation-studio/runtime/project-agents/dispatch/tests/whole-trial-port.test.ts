@@ -35,7 +35,6 @@ function builder(seen: Seen, options: { moving?: boolean } = {}) {
       },
       (evidence: readonly Entry[]) => {
         const tested = lastOf(evidence, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID)!;
-        seen.tested.push(tested);
         const submitted = lastOf(evidence, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!;
         return tested.verdict === "yes"
           ? { kind: "complete", result: { subflowKey: "list_seeds", revision: submitted.revision, digest: submitted.digest } }
@@ -82,6 +81,18 @@ function builder(seen: Seen, options: { moving?: boolean } = {}) {
   };
 }
 
+/** Keeps the test's answer even when Core completes before another provider decision. */
+function observingBuilder(seen: Seen): typeof runAutomationStudioSubflowBuilderLoop {
+  return (input) => runAutomationStudioSubflowBuilderLoop({ ...input, observe: (loop) => {
+    const inner = input.observe ? input.observe(loop) : loop;
+    return { ...inner, executeTool: async (call) => {
+      const answered = await inner.executeTool(call);
+      if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) seen.tested.push((answered as { evidence?: JsonObject }).evidence ?? {});
+      return answered;
+    } };
+  } });
+}
+
 /** A whole test answering `verdict` for the proposal under test, or refusing; every request it was asked is kept. */
 function whole(answer: "yes" | "no" | "refused", asked: AutomationStudioSubflowTrialRequest[]): AutomationStudioProjectDispatchWholeTrial {
   return async (request) => {
@@ -97,7 +108,7 @@ describe("a single-subflow plan's whole test in the dispatcher", () => {
     const told: string[] = [];
     const asked: AutomationStudioSubflowTrialRequest[] = [];
     const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: builder(seen) } });
-    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    build.dispatcherInput.runBuilder = observingBuilder(seen);
     build.dispatcherInput.trialled = (scope, proposal, verdict) => told.push(`${scope.briefId} ${proposal.revision} ${verdict}`);
     const returned = await dispatchWith(build, whole("yes", asked));
     expect(asked).toHaveLength(1);
@@ -120,7 +131,7 @@ describe("a single-subflow plan's whole test in the dispatcher", () => {
       brief.failingReceipt = { kind: "candidate_trial", receiptId: "whole-run-0", digest: "a".repeat(64) };
     });
     const build = await gardenBuild({ capacity: 1, briefs: [fix], ports: { builder: builder(seen) } });
-    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    build.dispatcherInput.runBuilder = observingBuilder(seen);
     build.dispatcherInput.trialled = (scope, proposal, verdict) => told.push(`${scope.briefId} ${proposal.revision} ${verdict}`);
     const returned = await dispatchWith(build, whole("no", asked));
     expect(asked).toHaveLength(1);
@@ -134,7 +145,7 @@ describe("a single-subflow plan's whole test in the dispatcher", () => {
     const told: string[] = [];
     const asked: AutomationStudioSubflowTrialRequest[] = [];
     const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: builder(seen) } });
-    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    build.dispatcherInput.runBuilder = observingBuilder(seen);
     build.dispatcherInput.trialled = (scope, proposal, verdict) => told.push(`${scope.briefId} ${proposal.revision} ${verdict}`);
     const returned = await dispatchWith(build, whole("refused", asked));
     expect(seen.tested[0]).toEqual({ ok: false, code: "candidate.trial_reset_required", instruction: "Undo the listed acts, then test again.", actsToUndo: [{ act: "act-1", did: "press \"Plant\"" }] });
@@ -151,7 +162,7 @@ describe("a single-subflow plan's whole test in the dispatcher", () => {
   it("hands a refused test the page the reset's own looks left it on, through the ports' count of moves", async () => {
     const seen: Seen = { scoped: 0, hooks: 0, resets: 0, weighedScoped: 0, tested: [] };
     const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: builder(seen, { moving: true }) } });
-    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    build.dispatcherInput.runBuilder = observingBuilder(seen);
     await dispatchWith(build, whole("refused", []));
     expect(seen.resets).toBe(1);
     expect(seen.tested[0]).toMatchObject({ ok: false, code: "candidate.trial_reset_required" });
@@ -161,7 +172,7 @@ describe("a single-subflow plan's whole test in the dispatcher", () => {
   it("adds no page to a refused test when the reset moved nothing", async () => {
     const seen: Seen = { scoped: 0, hooks: 0, resets: 0, weighedScoped: 0, tested: [] };
     const build = await gardenBuild({ capacity: 1, briefs: [gardenBrief("b-read", "list_seeds")], ports: { builder: builder(seen) } });
-    build.dispatcherInput.runBuilder = runAutomationStudioSubflowBuilderLoop;
+    build.dispatcherInput.runBuilder = observingBuilder(seen);
     await dispatchWith(build, whole("refused", []));
     expect(seen.tested[0]).not.toHaveProperty("pageAfterTrial");
   });

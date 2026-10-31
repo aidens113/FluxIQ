@@ -37,3 +37,12 @@ Verbatim ledger entries moved during the P5b continuation; decisions and validat
 - Validation: paired task finish and `git push origin dev` -> both merged and pushed; Core a89f69a4, downstream05a70666. No paid calls, panel management or full sweep.
 - Not verified: paid/browser Claude quality or comparison; main awaits a qualifying full sweep. Remote task backups retained.
 
+
+### 2026-10-30 - P5b evidence-specific judge rechecks verified (t810)
+- Agent: Codex lead; worker resume_t813, report in paired downstream `reports/codex-1030/t810-result.md`.
+- Changed: every no Core overrides must have received its row-evidence re-prompt; new unrefuted defects and missing/failed/unusable rechecks remain nonpassing. Optional checked-cell schema is shared by Claude and DeepSeek; replay rows preserve screened marks and provenance.
+- Validation: lead `pnpm.cmd --filter fluxiq exec vitest run` over required recheck agreement/route, native Claude, shared schema and prompt pins -> `8 files, 119 passed`; owning domain left-out/replay-mark tests -> `8 passed`.
+- Validation: lead `pnpm.cmd --filter fluxiq check` -> content-matched reuse, exit0; final structure -> `failures: [], 473 warnings, 1144 baselined`. Worker owning RV1467, callers805, domain541 and extension501 passed; affected types, reference/freshness and model-text passed.
+- Not verified: new live judge responses. Strict original-artifact replay remains unsure when mandatory replies were never recorded; repeating a saved no is only a scripted acceptance-path test. Provider calls0/cost0. No full sweep or panel management.
+- Validation: paired task finish -> downstream structure passed and Core contract gate70 passed; merged Core31713e1d and downstream ad01bd0b.
+

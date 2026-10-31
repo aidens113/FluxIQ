@@ -6,6 +6,7 @@ import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartC
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
+import { automationStudioCandidateTestRequestKey } from "../test-request/index.ts";
 import { automationStudioCandidateSubmissionRefusal } from "./submission-refusal.ts";
 import { automationStudioCandidateStallRetest } from "./stall-retest.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
@@ -147,6 +148,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, ...(signal ? { signal } : {}), draft: false, dryRun: false, discoveryOnly: true,
+    requestContextKey: (toolId) => toolId === testId ? automationStudioCandidateTestRequestKey(controller.latest()) : input.loop.requestContextKey?.(toolId),
     // A stall tests the latest revision instead of ending the build, while it can still be tested (`./stall-retest.ts`, t477).
     recoverStall: automationStudioCandidateStallRetest(gate),
     tools: [...input.loop.tools.filter((item) => item.toolId !== "core.run_flow" && item.toolId !== submitId && item.toolId !== testId).map((item) => reset ? automationStudioSiteResetUndoesTool(item) : item), tool, gate.tool],

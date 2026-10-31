@@ -19,19 +19,16 @@
 // request already names that act as its task, how it was done and the page it
 // was made on, in place of the person's build instruction (t585).
 //
-// In both, the builder acts after its own trial passed, so the act is on the site for the first whole trial.
-//
-// The builder's part asks a lasting act, so its subflow declares the step that
-// does it, as a real script must (t597). Its own trial of that step is the
-// build's first act (act-1), and its explored press the second (act-2).
+// The builder explores before its final passing test, which Core completes.
+// Its script declares the lasting act its part asks for (t597).
 //
 // Both sites publish complete resource-bound inventories through an ordinary
 // core.run_node read before submission. Recipe Save acts on a source recipe;
 // Unsave removes its new saved-membership row, a distinct item identity. The
 // native save really changes the box, and both trial and exploration effects
 // must be restored before the whole run. The shop's native fixture is a no-op:
-// fresh complete reads settle its declared trial act as unchanged, without
-// pretending it created a line or exempting an unresolved project act.
+// actual host snapshots prove that it changes nothing, so no trial adopts an
+// existing explored line as its own effect or records a fabricated new act.
 //
 // **Nothing here waits on the wall clock (t644).** Under load these builds
 // took up to 45 s against 1-5 s quiet, near the 60 s watchdog, and a timed-out
@@ -78,6 +75,7 @@ import { automationStudioProjectBuildWholeTrials } from "../whole-trials.ts";
 import { automationStudioProjectBuildResetCalls } from "../reset-calls.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
 import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
+import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 // The reset's settled read, its two reads back to back (header).
 vi.mock("../../../flow-bootstrap/site-reset/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS: 0 }));
@@ -180,6 +178,8 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean;
   const supervisorSaw: Record<number, readonly Entry[]> = {};
   /** The builder's evidence at its latest decision. */
   const builderSaw: Entry[] = [];
+  const stopObserving = observeBuilderCalls((key, entry) => { if (key === "keep") builderSaw.push(entry); });
+  cleanups.push(async () => stopObserving());
   let supervisorDecisions = 0;
   const scripted = mockProvider(async (request) => {
     const loop = request.context.evidenceLoop;
@@ -201,9 +201,9 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean;
     if (properties.summary !== undefined && properties.subflowKey === undefined) {
       // The reset agent: undo the build's own save, named by its act, then complete; where the build ends instead, it finds no way to.
       if (options.ends) return decision({ kind: "tool_call", callId: `look.${evidence.length}`, toolId: "inspect", input: { at: evidence.length } });
-      // act-2 is the builder's explored save; act-1 its own trial of the save, which carries the recipe that trial put in the box (t598).
-      if (!evidence.some((entry) => entry.callId === "undo.save")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "core.run_node", input: { node: "domain.isolated.unsave-recipe", parameters: { recipe: "recipe:herb-bread" }, consequences: ["delete"], undoes: "act-2" } });
-      if (!evidence.some((entry) => entry.callId === "undo.trial")) return decision({ kind: "tool_call", callId: "undo.trial", toolId: "core.run_node", input: { node: "domain.isolated.unsave-recipe", parameters: { recipe: TRIAL_RECIPE }, consequences: ["delete"], undoes: "act-1" } });
+      // act-1 is the builder's explored save; act-2 its own trial of the save, which carries the recipe that trial put in the box (t598).
+      if (!evidence.some((entry) => entry.callId === "undo.save")) return decision({ kind: "tool_call", callId: "undo.save", toolId: "core.run_node", input: { node: "domain.isolated.unsave-recipe", parameters: { recipe: "recipe:herb-bread" }, consequences: ["delete"], undoes: "act-1" } });
+      if (!evidence.some((entry) => entry.callId === "undo.trial")) return decision({ kind: "tool_call", callId: "undo.trial", toolId: "core.run_node", input: { node: "domain.isolated.unsave-recipe", parameters: { recipe: TRIAL_RECIPE }, consequences: ["delete"], undoes: "act-2" } });
       return decision({ kind: "complete", result: { summary: "The recipes this build saved are out of the box again." } });
     }
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
@@ -215,9 +215,9 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean;
     if (!evidence.some((entry) => entry.callId === "read.original")) return decision({ kind: "tool_call", callId: "read.original", toolId: "core.run_node", input: { node: "domain.isolated.look", parameters: {}, consequences: [] } });
     if (!submitted && options.undeclaredFirst) return decision({ kind: "tool_call", callId: "submit.undeclared", toolId: "core.submit_subflow", input: UNDECLARED_RECIPE_SUBMISSION });
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: RECIPE_SUBMISSION });
-    if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
-    // The save comes after the builder's own passing trial, which would otherwise have it undone first (t578), so it is still on the site for the whole trial.
+    // Exploration finishes before the final passing trial completes the brief.
     if (!evidence.some((entry) => entry.callId === "save")) return decision({ kind: "tool_call", callId: "save", toolId: "core.run_node", input: { node: SAVE, parameters: { recipe: "recipe:herb-bread" }, consequences: ["create_new"] } });
+    if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
   const provider = options.resetSentAs ? throughDeepSeek(scripted, { only: isResetRequest, altered: options.resetSentAs }) : scripted;
@@ -267,18 +267,18 @@ describe("a project build whose builder leaves a lasting act", () => {
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
 
     // The first whole trial ran with no reset first (t775), told -- as its judge was -- exactly the builder's acts on the site.
-    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-1", did: "trial step 3 \"save the recipe\"" }, { act: "act-2", did: "press button" }] } });
+    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-1", did: "press button" }, { act: "act-2", did: "trial step 3 \"save the recipe\"" }] } });
     // The reset brief came back done, naming nothing it could not undo, and nothing of the build was left in place.
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
     // It pressed only the build's own recipes: the explored save's, on its own item, and the builder's trial's, on the item that
     // trial's own diff showed it put in the box (t598) -- though that trial ran its save inside a called part, whose call's own
     // diff, listed before the part's steps, already showed the recipe (t684). The one saved before the build was never touched.
     // The first whole trial's save, of a recipe already in the box, changed nothing; the second, after the reset, saved it again.
-    expect(run.pressed).toEqual([`run Save ${TRIAL_RECIPE}`, "Save recipe:herb-bread", `run Save ${TRIAL_RECIPE}`, "Unsave recipe:herb-bread", `Unsave ${TRIAL_RECIPE}`, `run Save ${TRIAL_RECIPE}`]);
+    expect(run.pressed).toEqual(["Save recipe:herb-bread", `run Save ${TRIAL_RECIPE}`, `run Save ${TRIAL_RECIPE}`, "Unsave recipe:herb-bread", `Unsave ${TRIAL_RECIPE}`, `run Save ${TRIAL_RECIPE}`]);
     expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE]);
     // Each whole trial was judged twice (an answer and its confirmation): first with the builder's acts on, then without.
     const before = ["recipe:lentil-soup", TRIAL_RECIPE];
-    expect(run.boxWhenWholeJudged).toEqual([[...before, "recipe:herb-bread"], [...before, "recipe:herb-bread"], before, before]);
+    expect(run.boxWhenWholeJudged).toEqual([["recipe:lentil-soup", "recipe:herb-bread", TRIAL_RECIPE], ["recipe:lentil-soup", "recipe:herb-bread", TRIAL_RECIPE], before, before]);
     const judged = lastOf(run.supervisorSaw[7]!, "core.test_candidate");
     expect(judged).toMatchObject({ verdict: "yes" });
     expect(judged).not.toHaveProperty("startedWith");
@@ -287,8 +287,8 @@ describe("a project build whose builder leaves a lasting act", () => {
     // shown it), and so is the judged whole run's own save, the supervisor's (t597).
     const stored = await run.record();
     expect(stored.lastingActs).toEqual([
-      { recordedAt: expect.any(Number), act: "act-1", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-1: trial step 3 \"save the recipe\"", undoable: true },
-      { recordedAt: expect.any(Number), act: "act-2", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-2: press button", undoable: true },
+      { recordedAt: expect.any(Number), act: "act-1", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-1: press button", undoable: true },
+      { recordedAt: expect.any(Number), act: "act-2", owner: { role: "builder", briefId: expect.any(String) }, consequences: ["create_new"], description: "act-2: trial step 3 \"save the recipe\"", undoable: true },
       { recordedAt: expect.any(Number), act: "act-3", owner: { role: "supervisor" }, consequences: ["create_new"], description: "act-3: trial step 4 \"save the recipe\"", undoable: true }
     ]);
   });
@@ -335,7 +335,7 @@ describe("a project build whose builder leaves a lasting act", () => {
     expect(text).toBe(`${ENDED_REASON} Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one. These changes the build made are still on the site: ran the step “save the recipe” and pressed 1 control with no label.`);
     expect(text).not.toContain("on the target");
     // Its trial's recipe and its explored one, both still there.
-    expect([...run.box]).toEqual(["recipe:lentil-soup", TRIAL_RECIPE, "recipe:herb-bread"]);
+    expect([...run.box]).toEqual(["recipe:lentil-soup", "recipe:herb-bread", TRIAL_RECIPE]);
   });
 
   it("runs the whole trial with a builder's cart line on the site, then a reset undoes exactly that line and keeps the line that was there before", async () => {
@@ -343,14 +343,14 @@ describe("a project build whose builder leaves a lasting act", () => {
     const result = await run.build();
     if (result.status !== "proposed") throw new Error(`expected a proposal, got ${JSON.stringify(result)}`);
 
-    // The whole trial ran with the explored add on the site (t775); the no-op native trial is said apart under cannotUndo.
-    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-2", did: "press \"Add to cart\" button" }], cannotUndo: [{ act: "act-1" }] } });
+    // The native trials are measured no-ops; only the explored add is on the site (t775).
+    expect(lastOf(run.supervisorSaw[5]!, "core.test_candidate")).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-1", did: "press \"Add to cart\" button" }] } });
     expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "done" }], lastingActsInPlace: 0 });
-    // The changed act is restored; the no-op trial is separately told as
-    // unchanged. Neither is falsely described as a kept, unproved effect.
+    // The real explored act is restored; measured no-op trials add no acts.
+    // No earlier line is adopted as a native trial's effect.
     const said = ((lastOf(run.supervisorSaw[6]!, "project.dispatch")!.returns as JsonObject[])[0]!.reason as string);
-    expect(said).toContain("Every act of this build that showed a change is undone.");
-    expect(said).toContain("1 act of this build showed no change on the site");
+    expect(said).toContain("Every lasting act this build made is undone");
+    expect(said).not.toContain("left on the site");
     // Named in a person's words, never by its ledger id (t738, `../../../project-agents/dispatch/reset-done.ts`).
     expect(said).not.toContain("could not be undone");
     expect(said).not.toContain("site offers no way");
@@ -363,16 +363,14 @@ describe("a project build whose builder leaves a lasting act", () => {
     // From its first decision the reset was told its task, not the person's: the act, how it was done, and its page.
     const task = run.resetFirstInstructions();
     expect(task).toContain("This brief is a reset, not a build");
-    expect(task).toContain("act-2: ");
+    expect(task).toContain("act-1: ");
     expect(task).toContain(`made on the page ${PRODUCT_PAGE}`);
     expect(task).not.toContain(TASK);
     const stored = await run.record();
     expect(stored.lastingActs).toMatchObject([
       { act: "act-1", owner: { role: "builder" }, consequences: ["create_new"], undoable: true },
-      { act: "act-2", owner: { role: "builder" }, consequences: ["create_new"], undoable: true },
-      { act: "act-3", owner: { role: "supervisor" }, consequences: ["create_new"], undoable: true },
-      { act: "act-4", owner: { role: "supervisor" }, consequences: ["create_new"], undoable: true }
     ]);
+    expect(stored.lastingActs).toHaveLength(1); // no trial adopts the preexisting explored line
   });
 });
 
@@ -408,7 +406,7 @@ function recipeRuntime(box: Set<string>, pressed: string[]) {
  * The recipe site's host runtime: a snapshot of the box around each step a run takes, and the diff of the two, which
  * lists the recipes -- each by its own item token -- the box showed before and after the step (header, t598).
  */
-function boxDiffs(box: Set<string>): AutomationStudioHostRuntimeBoundary {
+function boxDiffs(box: Iterable<string>): AutomationStudioHostRuntimeBoundary {
   let captured = 0;
   const shown = (ref: AutomationStudioHostStateSnapshotRef | undefined) => (Array.isArray(ref?.summary?.box) ? ref.summary.box : []) as string[];
   return {
@@ -486,7 +484,7 @@ type ResetScript = (n: number, evidence: readonly Entry[]) => JsonObject;
 
 /** The reset agent of the cases above: remove the line the build added, naming its act, then complete. */
 const UNDO_THE_ADD: ResetScript = (n) => n === 1
-  ? { kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-2" } }
+  ? { kind: "tool_call", callId: "undo.add", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "herb-tea" }, consequences: ["delete"], undoes: "act-1" } }
   // Fresh original inventories already settled the no-op native trial.
   : { kind: "complete", result: { summary: "The line this build added is out of the cart again." } };
 
@@ -569,19 +567,19 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
     const subflowKey = (properties.subflowKey as JsonObject | undefined)?.const as string;
     const submitted = lastOf(evidence, "core.submit_subflow");
     const tested = lastOf(evidence, "core.test_subflow");
-    // The subflow that acts on nothing (header).
     if (subflowKey === "prepare") return decision(prepareDecision(submitted, tested));
     if (!evidence.some((entry) => entry.callId === "read.original")) return decision({ kind: "tool_call", callId: "read.original", toolId: "core.run_node", input: { node: "domain.example.look", parameters: {}, consequences: [] } });
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: CART_SUBMISSION });
-    if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
-    // After its own passing trial, as in the case above (t578).
+    // Exploration finishes before the final passing trial completes the brief.
     if (!ranNode) return decision({ kind: "tool_call", callId: "add", toolId: "core.run_node", input: { node: ADD, parameters: {}, consequences: ["create_new"] } });
+    if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
   const provider = options.preflight ? throughDeepSeek(scripted) : scripted;
   const domain = shopDomain(cart);
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }), llmEvidenceRuntime: domain.binding });
   service.bindNativeNodeRuntime(shopRuntime());
+  service.bindHostRuntime(boxDiffs(cart));
   const builds = automationStudioTestSettledBuilds(service, dataDir);
   cleanups.push(builds.cleanup);
   const { project, flow } = await blankFixture(service, "active", "example");
@@ -607,8 +605,8 @@ describe("a project build told where it starts", () => {
     const steps = (feedback.steps as JsonObject[]).filter((step) => step.definitionId !== "builtin.control.start");
     expect(steps[0]).toMatchObject({ definitionId: GO, status: "succeeded" });
     expect(feedback.phaseStart).toMatchObject({ phase: "whole_trial", startHook: "none", arrival: "loaded", standsOn: `the build's start location (${start})` });
-    // The reset's start told it what was on the site: the builder's add, and the first whole trial's own (t775: it ran).
-    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-2" }, { act: "act-3", did: "trial step 5 \"add it to the cart\"" }] } });
+    // The reset sees only the real explored addition; measured no-op trials created no act.
+    expect(run.resetSaw.evidence[0]?.value).toMatchObject({ phaseStart: { phase: "reset", startHook: "none", stillOnSite: [{ act: "act-1" }] } });
     // Its one undo was the builder's line; the trial's add, which changed nothing, was settled by the reads after it.
     expect(run.acted).toEqual(["add herb-tea", "remove herb-tea"]);
     expect(run.cart).toEqual(["dish-soap"]);
@@ -629,7 +627,7 @@ describe("a reset brief", () => {
     const run = await cartBuild((n) => {
       if (n === 1) return { kind: "tool_call", callId: "extra.add", toolId: "core.run_node", input: { node: ADD, parameters: {}, consequences: ["create_new"] } };
       if (n === 2) return { kind: "complete", result: { summary: "Nothing here can be undone." } };
-      return { kind: "complete", result: { summary: "The site offers no control that takes these back.", cannotUndo: ["act-1", "act-2"] } };
+      return { kind: "complete", result: { summary: "The site offers no control that takes these back.", cannotUndo: ["act-2", "act-1"] } };
     });
     await run.build().catch(() => undefined);
 
@@ -647,12 +645,12 @@ describe("a reset brief", () => {
     expect((extra.outsideBrief as JsonObject).note).toContain("outside this reset");
     expect((extra.outsideBrief as JsonObject).note).not.toContain("subflow");
 
-    // Naming cannotUndo reaches the ledgers but cannot restore project effects: the reset stays blocked with the builder's add
-    // and the first whole trial's own (act-3, t775: it ran) to undo; the reset's own add (act-4) is said apart.
+    // Naming cannotUndo cannot restore the builder's addition: it remains to undo.
+    // The reset's own extra add (act-2), which cannot be checked, is said apart.
     expect(JSON.stringify(run.resetSaw.evidence)).toContain("project.reset_acts_in_place");
-    expect(kept.mock.calls.some((call) => JSON.stringify(call[1]) === JSON.stringify(["act-1", "act-2"]))).toBe(true);
-    const blocked = /2 acts are still to undo: act-2 \(press "Add to cart" button\), act-3 \(trial step 4 "add it to the cart"\)\. .*left on the site, as nothing can check or put it back: act-4 /u;
-    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked", reason: expect.stringMatching(blocked) }], lastingActsInPlace: 2 });
+    expect(kept.mock.calls.some((call) => JSON.stringify(call[1]) === JSON.stringify(["act-2", "act-1"]))).toBe(true);
+    const blocked = /1 act is still to undo: act-1 \(press "Add to cart" button\)\. .*left on the site, as nothing can check or put it back: act-2 /u;
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked", reason: expect.stringMatching(blocked) }], lastingActsInPlace: 1 });
     // Both whole trials were judged, twice each: a cart listing one line twice witnesses no add step (`reset-settlement/
     // collection-groups.ts`), and since t791 fix 4 that trial runs as the site stands, saying the step's change went unread.
     expect(run.cartWhenWholeJudged).toEqual([["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"], ["dish-soap", "herb-tea", "herb-tea"], ["dish-soap", "herb-tea", "herb-tea"]]);
@@ -663,24 +661,24 @@ describe("a reset brief", () => {
 
   it("refuses an undo of an original item, blocks while the build's own effect remains, and the next whole trial runs with it said", async () => {
     const run = await cartBuild((n) => n === 1
-      ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-2" } }
-      // Neither this cannotUndo claim nor the refused inverse settles act-2.
-      : { kind: "complete", result: { summary: "The act this build made cannot be undone here.", cannotUndo: ["act-1"] } });
+      ? { kind: "tool_call", callId: "undo.wrong", toolId: "core.run_node", input: { node: REMOVE, parameters: { line: "dish-soap" }, consequences: ["delete"], undoes: "act-1" } }
+      // Neither this cannotUndo claim nor the refused inverse settles act-1.
+      : { kind: "complete", result: { summary: "The act this build made cannot be undone here.", cannotUndo: ["act-2"] } });
     await run.build().catch(() => undefined);
 
     const refused = run.resetSaw.evidence.find((entry) => entry.callId === "undo.wrong")!.value as JsonObject;
-    // act-2 is the builder's add (act-1 its trial of it, t597): the dish soap's line is not its own.
-    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_unproved", act: "act-2" });
+    // act-1 is the builder's real add: the preexisting dish soap is not its own row.
+    expect(refused).toMatchObject({ ok: false, code: "candidate.undo_unproved", act: "act-1" });
     expect(refused.instruction).toBe(AUTOMATION_STUDIO_SITE_RESET_WORDS.unprovedUndo(false));
     expect(refused).not.toHaveProperty("outsideBrief");
     // The dish soap the cart held before the build was never touched.
     expect(run.acted).toEqual(["add herb-tea"]);
     expect(run.cart).toEqual(["dish-soap", "herb-tea"]);
-    // Blocked, with the builder's add and the first whole trial's own add (t775: that trial ran before the reset) still to undo.
-    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked" }], lastingActsInPlace: 2 });
+    // Blocked while the builder's real addition remains; no native no-op is counted as a new effect.
+    expect(lastOf(run.supervisorSaw[6]!, "project.dispatch")).toMatchObject({ ok: true, returns: [{ outcome: "blocked" }], lastingActsInPlace: 1 });
     // The next whole trial runs with them said under startedWith (t775), the builder's line by name, never the dish soap's.
     const next = lastOf(run.supervisorSaw[7]!, "core.test_candidate")!;
-    expect(next).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-2", stillThere: ["line herb-tea"] }, { act: "act-3" }], cannotUndo: [{ act: "act-1" }] } });
+    expect(next).toMatchObject({ ok: true, verdict: "yes", startedWith: { acts: [{ act: "act-1", stillThere: ["line herb-tea"] }] } });
     expect(JSON.stringify(next.startedWith)).not.toContain("dish-soap");
     expect(run.cartWhenWholeJudged).toEqual([["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"], ["dish-soap", "herb-tea"]]);
   });

@@ -31,6 +31,7 @@ import { AutomationStudioService, type AutomationStudioServiceOptions } from "..
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
 import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
+import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 // The reset's settled read, its two reads back to back (header).
 vi.mock("../../../flow-bootstrap/site-reset/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS: 0 }));
@@ -91,6 +92,8 @@ async function plotBuild() {
   const supervisorDid: string[] = [];
   /** The builders' briefs, by the brief id each builder was asked under. */
   const builderTests: JsonObject[] = [];
+  const stopObserving = observeBuilderCalls((_key, entry) => { if (entry.toolId === "core.test_subflow") builderTests.push(entry.value); });
+  cleanups.push(async () => stopObserving());
   let supervisorDecisions = 0;
   const provider = mockProvider(async (request) => {
     if (request.taskKind === "loop_verification") {
@@ -120,10 +123,8 @@ async function plotBuild() {
     const tested = lastOf(evidence, "core.test_subflow");
     if (submitted?.ok !== true) return decision({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: SUBMISSION });
     if (tested?.verdict !== "yes") {
-      if (tested) builderTests.push(tested);
       return decision({ kind: "tool_call", callId: `test.${builderTests.length + 1}`, toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     }
-    builderTests.push(tested);
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
   });
   const host = new CountingHost(1);

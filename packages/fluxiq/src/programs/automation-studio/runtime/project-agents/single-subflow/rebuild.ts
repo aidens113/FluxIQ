@@ -1,5 +1,6 @@
 import { AutomationStudioFlowCandidateSubmissionController, type AutomationStudioCandidateOriginalSourceBinding, type AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { authoringScopePartOf } from "../../flow-bootstrap/record-defaults/index.ts";
 import { automationStudioProjectDispatchScope } from "../dispatch/index.ts";
 import { AutomationStudioProjectRecordRefusal, type AutomationStudioProjectBuildRecord } from "../record/index.ts";
 import { automationStudioProjectSingleSubflowAssemble } from "./proposal-assembly.ts";
@@ -73,7 +74,9 @@ export async function automationStudioProjectSingleSubflowRebuild(input: Automat
   const { proposal } = submitted;
   const made = { revision: proposal.revision, digest: proposal.digest };
   // A binding is passed only when there is one: the controller reads an `originalSource` key that is present as a binding.
-  const whole = { ...input.submission, instructionText: input.instructionText, ...(input.originalSource ? { originalSource: input.originalSource } : {}) };
+  // The whole Flow's record outputs are defaulted from the one scope part that owes records, as the scoped submission's are (K5); a caller's own resolver wins.
+  const partOf = input.submission.partOf ?? authoringScopePartOf(scope.parts.map((part) => ({ id: part.partId, words: part.text, columns: part.answer?.columns })));
+  const whole = { ...input.submission, ...(partOf ? { partOf } : {}), instructionText: input.instructionText, ...(input.originalSource ? { originalSource: input.originalSource } : {}) };
   const assembled = await automationStudioProjectSingleSubflowAssemble({
     structure, scope, proposal, kept: new Map(),
     controller: new AutomationStudioFlowCandidateSubmissionController(whole),

@@ -53,9 +53,3 @@ describe("a supervisor whose model provider stopped answering", () => {
     expect(view?.record.ending?.reason).toBe("The build stopped because the AI model provider could not be reached: 3 requests in a row got no answer, before a whole trial passed (flow_bootstrap.provider_unavailable).");
   });
 });
-
-describe("a supervisor a guard stopped, beside it", () => {
-  // Completions with nothing assembled, refused until the no-progress guard stalls the loop.
-  const unassembled = () => ({ kind: "complete", result: { revision: 1, digest: "a".repeat(64) } });
-
-});

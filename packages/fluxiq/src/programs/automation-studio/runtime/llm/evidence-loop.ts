@@ -231,7 +231,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // run again, never its test. Fixed for the whole loop, so read once (`./node-tools/loop-tools.ts`).
   // The build's lasting acts, read once, whichever of the dry run, a part run or a rerun's put-back first sends steps again (`./node-tools/replay-draft.ts`).
   let lasting: Promise<ReadonlySet<string>> | undefined; const readLasting = input.lastingActs; const lastingActs = readLasting ? () => (lasting ??= readLasting()) : undefined;
-  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false, ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}) });
+  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false, ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}), ...(input.partOf ? { partOf: input.partOf } : {}) });
   if ("issue" in limits || !toolSet) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting, undefined, undefined, undefined, "issue" in limits ? limits.issue : automationStudioLlmEvidenceLoopToolSetIssue(input.tools)); // Named: the limits' check or the tool set's (`./configuration-issue/`, t584).
   const { runFlow, tools, toolIds, toolsById, mutableTools } = toolSet;
   const callIds = new Set<string>();
@@ -383,9 +383,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     ...(input.observeTest ? { observed: input.observeTest } : {}),
     ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
     ...(input.testEndView ? { endView: input.testEndView } : {}),
+    ...(input.partOf ? { partOf: input.partOf } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
-  const draftOf = (toolId: string): string | undefined => (toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined); // A part run is keyed on its draft too (`repeat-guard/draft-key.ts`).
+  const draftOf = (toolId: string): string | undefined => input.requestContextKey?.(toolId) ?? (toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined); // Memo and repeat identity share the backend target key; part runs retain their draft key.
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
