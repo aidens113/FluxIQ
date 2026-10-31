@@ -1,9 +1,9 @@
 # Hosted Production Plan
 
 Status: Active
-Status detail: Revised 2026-10-28 around the user's 2026-10-18 directions, then the H0 spike results (S1 to S6) folded in the same day; plan only, no code changed; the contract freeze and H1 are next.
+Status detail: Hosted foundations through C0 are merged; C1 tenancy and E/D5 product foundations are undergoing final acceptance. C2/C3 routing and deployment gates remain.
 Created: 2026-10-17
-Last updated: 2026-10-28
+Last updated: 2026-10-30
 Owner: Lane lead hosted-production-planner (plan); the senior supervisor agent owns execution
 Scope: Core side of running FluxIQ in production as one codebase with three deployments (getfluxiq.com, local, self-hosted): identity and account provisioning, IAM-style permissions on every surface, extension sign-in, gateway transport, tenancy and storage, panel extension points, bring-your-own-key model calls, deployment, security, tests, release cut. Browser, store, website, local simulation and Lab work is in the paired document.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/hosted-production-plan.md
@@ -13,12 +13,10 @@ Related: [package boundaries](../architecture/package-boundaries.md), [current s
 
 ## Current State
 
-**What is true now.** This is a plan. No hosted code exists yet: on 2026-10-28 Core has no
-`packages/fluxiq/src/platform/`, no `packages/contracts/src/platform/`, no `FLUXIQ_PROFILE`, no
-provisioning and no Dockerfile. **H0 is done** (spikes S1 to S6, task t782, 2026-10-28): summary
-`hosted-production-plan/reports/h0.md`, detail `h0-s1.md` to `h0-s6.md`; the results are folded
-into the sections that own them. The baseline audit and older ledger entries moved to
-`hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`.
+**What is true now, 2026-10-30.** Profiles, platform/IAM/provisioning foundations, gateway hardening and C0 closure are merged.
+C1 workspace lifecycle and E/D5 product foundations are in final acceptance; C2/C3 caller migration/routing are next.
+H0 evidence (2026-10-28) remains in `hosted-production-plan/reports/h0.md` and `h0-s1.md` to `h0-s6.md`.
+The earlier baseline/ledger is archived at `hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`; the original H0 findings below are historical evidence.
 
 **The user's directions of 2026-10-18 are folded in:** FluxIQWebsite is the public site (it gains
 sign-up and a backend, built locally first as a stand-in; paired document), Core keeps sign-in,
@@ -749,22 +747,12 @@ Chrome submission (about 11-13). getfluxiq.com sign-up opens on store approval.
 The plan's history (2026-10-17 to 10-28) and the H0 fold moved on 2026-10-29 to
 `hosted-production-plan/archive/2026-10-28-baseline-and-ledger.md`, with B3 (t803, moved 2026-10-29); the contract freeze, B1 and B2 entries are in the paired document's ledger.
 
-### 2026-10-29 — Lane A merged: gateway and panel hardened for a public deployment (t802)
-- Agent: supervisor; t802 sub-supervisor (worker-heavy W2a transport, W2b gateway service, W4a owner claim; worker W1 profile, W3 runtime, W4b sessions and throttles, W5 middleware and discovery); report `hosted-production-plan/reports/t802-a.md`
-- Changed: `platform/profile/` resolves `FLUXIQ_PROFILE` once, and every rule follows it (no environment = today's local install). Gateway: the contract's Origin grammar (`moz-extension://*` by prefix), no public bind without an allowlist, a frame cap before buffering (1009), a hello deadline and a per-socket rate limit (1008), the client address in sessions with only its prefix in the audit, crypto pairing codes, pending-pairing caps, pruning, a 10,000-entry audit ring, drain with `server.going_away`. Panel: `__Host-` session cookie on https, admin/admin refused off `local`, a `/setup` owner claim by one-time code (only the code file's path is logged), form throttles, a cross-site write guard, discovery and `/.well-known/fluxiq`, `/api/health` and `/api/ready`, redacted logs, a persisted security audit. The provisioning listener starts under `service` with its address and token file; `FLUXIQ_EMAIL_SENDER` accepts `file:<dir>`.
-- Decisions (lead, accepted): the local frame cap is 256 MiB; the listener starts under `service` only (a self-hoster's own sign-up site waits); with an allowlist set, a missing Origin is accepted locally, as the N7 table says.
-- Validation: lead-run under the heavy-check lock on the tree merged with dev (B3 in): tsc clean; `pnpm test src/client-gateway src/platform src/programs/_shared src/programs/automation-studio/client-gateway src/programs/automation-studio/api src/programs/identity-access` -> "Tests 1075 passed (1075)", real-sql "Tests 131 passed (131)"; apps/web tsc clean and `vitest run src/server src/lib src/app src/tests` -> "Test Files 84 passed (84)", "Tests 616 passed (616)", including the wss lane test (pairing over wss, web and missing Origin 403, oversized frame 1009, silent socket 1008); `pnpm check` exit 0; docs current; structure passed; downstream domain "# pass 2457 / # fail 0", headed `e2e/site-reset/tests` "32 passed (36.0m)" through the hardened local gateway.
-- Outcome: Accepted. Follow-ups (one task): `welcomeUrl` in the file mail record (`platform/provisioning/email/file-email-sender.ts`); the PIN gate on the three "check nothing" handlers (`destructive-ungated` to `destructive` in deployment-sync and database-manager); drain refusing builds started through the program API; the owner's email verification and email-only username under `service`; the session record's address-prefix field (frozen contract) and the one-hour ended-session age on `service` (lane C's `runtime.ts`). Caddy itself not run (a Node TLS stand-in).
+Accepted lane A, C0 and follow-up validation moved verbatim to [archive/2026-10-30-accepted-foundations.md](hosted-production-plan/archive/2026-10-30-accepted-foundations.md).
 
-### 2026-10-29 — Lane C0 merged: a FluxIQ instance closes without leaving anything behind (t808)
-- Agent: supervisor; workers held-keys (worker-heavy), connections and leak-test (worker); report `hosted-production-plan/reports/t808-c0.md`. Changed: `createGlobalProgramRuntime` returns `detach()`, called first by `FluxIQ.close()`; `programStateConnections` one pool per storage root; `FluxIQOptions.heldKeys` and `close({ mode: "shutdown" | "evict" })`; session expiry timers in `HeldKeys` hold only an id (the old timer kept the unlock password up to 12 hours); `framework/tests/instance-leak.test.ts`. Decision (lead): evict idle workspaces and keep their keys held; pin only busy ones (Tenancy And Data).
-- Validation: lead-run under the heavy-check lock on the tree merged with dev: `pnpm test src/programs/secret-keys src/programs/_shared src/framework .../runtime/activity` -> "Tests 702 passed (702)", real-sql "Tests 67 passed (67)"; leak test "Tests 4 passed (4)" twice; `pnpm check` exit 0; docs current; structure passed; apps/web `vitest run src` -> "Test Files 435 passed (435)", "Tests 3370 passed (3370)" after the dev fix c5cb635b (B3's ownership needed `snapshot()` on the contract test's identity fake).
-- Outcome: Accepted. Open: one shared activity hub (per-instance events are C3's); the trace slots keep the last instance alive when tracing is on (C3); a storage directory outside `.fluxiq` gets a pool `close()` does not reach; `docs/architecture/platform.md` should name `FluxIQCloseOptions`, `heldKeys` and per-root pools.
-
-### 2026-10-29 — A and B3 follow-ups merged; the first sign-up round trip passes (t809)
-- Agent: supervisor (Sonnet), six workers and one worker-heavy; report `hosted-production-plan/reports/t809-followups.md`. Changed: `welcomeUrl` in the file mail record; the three "check nothing" handlers `destructive` (PIN), with the panel's dialog in `deployment-sync.tsx`; drain refuses program starts (`apps/web/src/server/drain/program-start-refusal.ts`); the IAM catalog regenerated after three mixed `custom` resources became `["project"]`; tests that usernames are email-shaped under `service`.
-- Validation: lead-run under the lock, merged with dev: `pnpm check` exit 0; `pnpm test src/platform src/programs/_shared src/programs/deployment-sync src/programs/database-manager src/programs/automation-studio/api src/programs/tests` -> "Tests 716 passed (716)", real-sql "Tests 151 passed (151)"; contracts "Tests 523 passed (523)"; apps/web `vitest run src` -> "Tests 3383 passed (3383)"; downstream `up.mjs --round-trip` against an isolated `service` Core -> "step 1 PASS site sign-up: status 202" through "step 5 PASS repeat sign-up", "round trip PASS".
-- Outcome: Accepted. Open: the owner cannot verify their email under `service` (options in the report); Caddy, Turnstile and a really draining server are not exercised.
+### 2026-10-30 - Accepted foundation history compacted
+- Agent: Codex lead
+- Changed: archived three accepted entries for C1/product continuation; retained all open decisions and H0 evidence.
+- Validation: Node extraction -> three accepted entries preserved verbatim, equality checked before replacing source range.
 
 ## Open Questions
 
