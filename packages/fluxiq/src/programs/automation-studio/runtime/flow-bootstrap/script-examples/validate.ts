@@ -1,6 +1,6 @@
+import { AUTOMATION_STUDIO_AUTHORED_METADATA_REVISION_PATTERN as VERSION_PATTERN } from "../../authored-metadata/index.ts";
 import type { AutomationStudioFlowScriptExamples } from "./contracts.ts";
 
-const VERSION_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const CONTROL_CHARACTER = /(?!\n)\p{Cc}/u;
 const SECTIONS = ["format", "act", "loop", "state"] as const;
 const MAX_AUTHORED_BYTES = 64 * 1024;

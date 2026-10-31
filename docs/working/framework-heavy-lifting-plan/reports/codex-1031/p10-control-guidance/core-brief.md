@@ -1,0 +1,22 @@
+### Brief: p10_control_guidance_core
+- Role/model: Standard worker gpt-6.1-sol medium.
+- Repository: private t832 FluxIQ Core at C:/Users/osrs_/FluxStuff/fxwork/t832/!FluxIQ.
+- Task: implement the frozen optional explicit client act.controlOperations metadata and exact-position renderer/real consumer transport; no runtime policy change.
+- Required reads: FHL Current State, paired p9-append-only/p10-inline-guidance-design.md Stable contract/placement/validation/consumer sections; new root-owned contracts/index, binding field and public type export; existing examples validator/binding-check/snapshot/format renderer and named consumers.
+- Paths: F=packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/; L=packages/fluxiq/src/programs/automation-studio/runtime/llm/.
+- Owns: F script-guidance/**, plan/flow-script-format.ts, plan/evidence-schema.ts, script-examples/render-format.ts, candidate/authoring-loop.ts, subflow-candidate/builder-loop.ts, index.ts.
+- Owns additionally: L harness-options/binding.ts and bootstrap-completion.ts; L domain-instructions/binding-check.ts, binding-snapshot.ts; owning tests beside each named subject.
+- Owns authored doc: docs/architecture/automation-studio/client-script-guidance.md.
+- Must not touch: Down source, shared FHL/index/ledger, package/version/lockfiles, provider/system prompts, parser/executor/permission/retry/judge policy or unrelated source.
+- Frozen type: readonly version:string; readonly act?: { readonly controlOperations?: readonly string[] }; only one slot. Root contract and public binding shape are stable; do not change without root.
+- Public calls: renderAutomationStudioFlowScriptFormat(examples?,guidance?); completion(size?,examples?,guidance?). Preserve existing argument positions and examples companion behavior.
+- Keep Core act A0,A1,A5,A6,A7 immutable/in order; insert only explicit slot A2/A3/A4 between A1 and A5. Move retained Core literals into internal render-act owner; historical act constant renders without guidance. Never parse/replace/splice rendered strings.
+- Never retain the three web operation paragraphs as fallback; no inference from examples/version/domain/system text. Empty/missing slot yields no extra separator; authored empty string remains one paragraph.
+- Implement assertAutomationStudioFlowScriptGuidance(value,domainId), public type/assert only; internal renderer never public outer export. Strict closed own-data keys/records/arrays, dense arrays/no accessors/symbols/extra keys, strings/LF-only controls, revision bound, independent64KiB UTF8/4096paragraph bound; copy/freeze exactly without truncation. Reuse coherent existing metadata helpers when appropriate.
+- Checked binding validates independently of examples/system instructions, snapshots own data immutably, prevents late metadata mutation/addition and preserves receiver-bound class/private/WeakMap/prototype callbacks.
+- Propagate actual candidate/subflow renderers plus both completion/controller binding Picks; no test-only public exporter or private Down import.
+- Definition of done: meaningful validation/snapshot/absence/placement/empty-LF/safety invariance tests; actual candidate and subflow schema capture shows explicit companion; no web guidance absent, Core rules retained even with contradictory client marker; no parser/executor changes.
+- Checks: ONLY owning guidance, examples, domain-binding, format/evidence-schema and candidate/subflow tests; package fluxiq check and standalone structure audit allowed after source stable. Never whole Vitest/full check/test/build; both Oct31 full slots used.
+- No builds/provider/browser/.env/real-data/git operations. Root builds public SDK and verifies returned claims.
+- Report to: docs/working/framework-heavy-lifting-plan/reports/codex-1031/p10-control-guidance/core.md (standard report/return contract).
+- Send source-frozen notice before checks finish so root can coordinate dependent SDK; if an ownership/interface gap appears report exact source seam before expanding edits.

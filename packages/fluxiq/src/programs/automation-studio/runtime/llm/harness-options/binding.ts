@@ -19,6 +19,7 @@ import type {
 import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExplorationStateDigestPhase } from "../../recovery/index.ts";
 import type { AutomationStudioLlmDomainSystemInstructions } from "../domain-instructions/index.ts";
 import type { AutomationStudioFlowScriptExamples } from "../../flow-bootstrap/script-examples/index.ts";
+import type { AutomationStudioFlowScriptGuidance } from "../../flow-bootstrap/script-guidance/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
 import {
@@ -140,6 +141,8 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
   systemInstructions?: AutomationStudioLlmDomainSystemInstructions;
   /** Optional authored example tails; validated, copied and frozen at bind. */
   flowScriptExamples?: AutomationStudioFlowScriptExamples;
+  /** Optional operation advice in fixed positions; validated, copied and frozen at bind. */
+  flowScriptGuidance?: AutomationStudioFlowScriptGuidance;
   /**
    * What a call names, in words a person reads: the control its handle names
    * on the page the domain last showed, and the words it types or looks for --

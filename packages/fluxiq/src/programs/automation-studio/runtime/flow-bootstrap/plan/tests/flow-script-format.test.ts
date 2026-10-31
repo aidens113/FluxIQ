@@ -207,17 +207,13 @@ describe("the act grammar without client worked examples", () => {
     const text = AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE;
     for (const rule of [
       "A choice is written as the state it leaves, not as a press. A press toggles: pressing an option the page already shows chosen un-chooses it.",
-      "An option in a dropdown is `node: web.dom.select`",
-      "is `node: web.dom.check` on that control itself, `checked: true` to choose it or `checked: false` to clear it; it presses only when the state differs",
-      "Never look for a hidden box behind a swatch or chip: check the swatch or chip itself.",
-      "Every option the instruction asks for gets its own step, even one the page arrives with already chosen",
-      "Press an option with `node: web.dom.click` only when the page shows no chosen state for it at all",
       "Do not end the Flow with a check you invented to confirm it worked",
       "It waits only for something the page visibly showed after that act while you gathered evidence",
       "`optional: yes` marks a step that is only sometimes needed",
       "never on one the answer depends on, and never beside an `on <port>:` line"
     ]) expect(text).toContain(rule);
     expect(text).not.toContain("never inside a repeat");
+    expect(text).not.toContain("web.dom.");
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain("A typing step with `submit: true` sends its form, so it presses and needs the line too");
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain("A step that types, chooses, waits or reads never needs it.");
   });

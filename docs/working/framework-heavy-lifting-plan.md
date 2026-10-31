@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Active private t832 client control guidance; P9 complete/pushed with shared builds current. Narrow checks only; full/paid held.
+Status detail: t832 owning/parity/compiled acceptance and parent sync pass; paired integration next. Broader P10 remains; full/paid held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active t832, 2026-10-31:** Isolated paired inline-control-guidance unit follows accepted P9 below. Root freezes optional readonly flowScriptGuidance {version,act?:{controlOperations?:string[]}}, public type/binding field and future calls render(examples?,guidance?)/completion(size?,examples?,guidance?). Core0.24 source interface introduced; private SDK remains0.23 until implementation freezes/rebuild. Core worker owns strict metadata validation/snapshot, immutable act paragraph ordering and actual candidate/subflow/completion transport. Down worker owns exact original A2/A3/A4 payload/real binding and adaptation of existing tests to explicit companion. Original4full web UTF8 hashes/completion digest and eleven public-resolved saved graph proofs must remain unchanged; no safety/runtime/parser changes or inferred web fallback. Full/paid/browser held for this prompt-only unit, Down validation waits fresh SDK. Reports/briefs p10-control-guidance/, original source paragraphs frozen there; broader mixed prose/facts/intent/vocabulary/fingerprints remain subsequent units.
+**Accepted private t832, 2026-10-31; integration next:** Core0.24 explicit client control-guidance unit is validated. Original A2/A3/A4 move only to actual web binding at exact positions; Core grammar/safety, all4full UTF8 hashes/completion digest,11real saved graphs and3negative proofs unchanged. Lead Core152/8 pass79.82s, types matching stamp1.106s, audit pass; worker compiler120.547s. Frozen SDK177.646s/stamped, Domain18.116s and compiled actual-runtime smoke pass:4pins/completion, explicit frozen companion, no inferred advice/internal exports,0gateway/provider calls. Lead Down82/5suites pass0.730s and post-parent0.719s, types matching stamp1.422s (compiler32.306s), audit pass. Parents fc40813c/3d6d14c8 synced; exact incoming handoffs fenced/pinned, package/web source diffs verified empty after sync; Core types matching-stamp0.604s pass. Both baselines unchanged1143/583. All3authored revision validators share exact-end pattern; valid metadata/text/bounds unchanged. Only final backups/paired task integration/shared refresh remain. Broader mixed medium prose/facts/intent/vocabulary/fingerprints remain P10 work; no full/provider/browser/real-data/panel operations.
 
 **Accepted merged t830, 2026-10-31:** P9 source merges Coredf16f217/Down1d41420f, Core0.23. Root179Core owning tests/8files68.21s, legacy370/27 and compatibility202/13 pass; types93.033s and private SDK129.098s pass. Down191affected runtime tests114.385s,79parent example tests with unchanged byte pins/saved graph proofs, Domain types20.372s, final extension types/structure audit and three bundles31.931s pass. Installed isolated Chromium company-website transport PASS34.8s: completed1member batch,2TYPE/13fresh successful actual command-replies (10snapshots,1declared-start arrival strictly before first TYPE,2TYPE), no later navigation/submission/new subscription/URL change/gateway error/judge/provider call. Build cancelled deliberately after measured transport property; no finished judged Flow/performance claim. Core owns exact original capture time separately from semantic identity; real Native/Gate/web paired units preserve A across reused handles, protect B, refuse changed document, preserve accounting/no added steps. Core mandatory merge70tests8.69s pass after deliberately updating only changed evidence-decision prompt pin (45owning prompt tests9.15s); no production relaxation. Down task removed through finish; private Core clean detached for age-prune, backup2f766513 and later pin357577ed retained remotely, Down backup569ead87 retained. Evidence main Down ignored test-runs/2026-10-31-t830-validation/. Paired dev pushed and verified against origin; shared SDK95.545s/Domain23.790s/host3.521s/allthree extension bundles25.430s current. Compiled actual runtime smoke preserves all4original web hashes/completion digest, exposes only2public adapter accessors/private authority0, dispatches0gateway/provider calls. Main/full/paid held.
 
@@ -28,6 +28,8 @@ Core owns generic P9 algorithms/tool admission; Down owns its observed-state exp
 [Accepted dated context and ledger](framework-heavy-lifting-plan/archive/2026-10-31-runtime-context.md); [compaction proof](framework-heavy-lifting-plan/reports/codex-1031/p9-append-only/compaction-proof.md).
 
 [Accepted P10 context preserved during parent sync](framework-heavy-lifting-plan/archive/2026-10-31-p10-integration.md).
+
+[Exact parent handoff retained during sync](framework-heavy-lifting-plan/archive/2026-10-31-t832-parent-handoff.md).
 
 ## Original audit baseline and recommendations (2026-10-28)
 

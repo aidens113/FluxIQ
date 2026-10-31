@@ -69,3 +69,7 @@ describe("automationStudioLlmEvidenceRuntimeBindingChecked", () => {
     expect(() => automationStudioLlmEvidenceRuntimeBindingChecked(binding({ version: "v1", text: "" }))).toThrow(/domain "web" system instructions v1: text must not be empty/u);
   });
 });
+
+it.each(["v1\n", "v1\r\n", "v1\u2028", "v1\u2029", "v".repeat(65)])("refuses a revision with a final separator or excess length: %j", (version) => {
+  expect(() => assertAutomationStudioLlmDomainSystemInstructions({ version, text: "Rules." }, "archive")).toThrow(/version/u);
+});

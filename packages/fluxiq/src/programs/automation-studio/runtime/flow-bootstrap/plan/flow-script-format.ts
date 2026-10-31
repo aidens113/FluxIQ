@@ -1,3 +1,5 @@
+import { renderAutomationStudioFlowScriptAct } from "../script-guidance/index.ts";
+
 // The Flow script format, in the words the model is shown.
 //
 // This is the whole of what a model must learn to build a Flow. It replaced a
@@ -220,16 +222,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
  * remains compatible; worked examples now come only from explicit client
  * metadata and are appended by the script-examples renderer.
  */
-export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
-  "A choice is written as the state it leaves, not as a press. A press toggles: pressing an option the page already shows chosen un-chooses it.",
-  "For a known toggle, write ensureState as an exact copy of an observed signature tied to this step, choosing the state the instruction asks to leave; a shown state and the state a press would leave may differ.",
-  "An option in a dropdown is `node: web.dom.select` with the option's `value:`. A checkbox, a radio, or an option the page draws itself and shows chosen -- a colour swatch or size chip drawn apart from the others (`marked`), a `selected` tab, a `pressed` toggle -- is `node: web.dom.check` on that control itself, `checked: true` to choose it or `checked: false` to clear it; it presses only when the state differs, so it is right however the page arrives. Never look for a hidden box behind a swatch or chip: check the swatch or chip itself.",
-  "Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right, so the Flow is right however a later run's page arrives. Press an option with `node: web.dom.click` only when the page shows no chosen state for it at all; `web.dom.check` refuses such a control and says so. A press is right for a control that does something each time it is pressed: apply, add, send, open, next.",
-  "To set a box to a value, type the new value with `node: web.dom.type`: typing replaces whatever the box holds, so never clear it first. A box the page refills when it is emptied fails a clear step, while the typing step alone sets it.",
-  "`optional: yes` marks a step that is only sometimes needed -- closing a cookie banner, a popup or a notice the page may not show -- and the run goes on past it when it cannot be done. Use it only on such a step, never on one the answer depends on, and never beside an `on <port>:` line.",
-  "An interruption is dismissed through its way out -- close, no thanks, not now, the X -- never through the control that accepts, joins, buys or continues what it offers: on a real site that press takes the offer. So an optional step names the way out's own handle, and one that presses an accepting control while saying `consequences: none` is refused. A cookie or consent banner is not an offer: prefer its reject or necessary-only answer where it has one, and its accept is allowed where it has none. When the instruction does ask for that act, it is a step of its own, not optional, that says what it lastingly does.",
-  "Do not end the Flow with a check you invented to confirm it worked: whether the run did what was asked is judged from the page it ends on, so the last step is the last act the instruction needs. A wait or check step belongs in the Flow only where a later step needs the page to be ready, or where the instruction asks for the check. It waits only for something the page visibly showed after that act while you gathered evidence, never for text inside a closed panel or menu, or a notice that has already gone.",
-].join("\n");
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = renderAutomationStudioFlowScriptAct();
 
 /**
  * What a `where` condition may say, and how each comparison reads its value:

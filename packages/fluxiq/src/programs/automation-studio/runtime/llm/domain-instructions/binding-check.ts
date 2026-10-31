@@ -1,3 +1,4 @@
+import { assertAutomationStudioFlowScriptGuidance } from "../../flow-bootstrap/script-guidance/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../harness-options/index.ts";
 import { assertAutomationStudioLlmDomainSystemInstructions } from "./validate.ts";
 import { assertAutomationStudioFlowScriptExamples } from "../../flow-bootstrap/script-examples/index.ts";
@@ -14,9 +15,14 @@ export function automationStudioLlmEvidenceRuntimeBindingChecked<Binding extends
   const examplesField = Object.getOwnPropertyDescriptor(binding, "flowScriptExamples");
   if (examplesField && !("value" in examplesField)) throw new Error("Automation Studio flowScriptExamples must be a data field, not a getter or setter.");
   if (!examplesField && "flowScriptExamples" in binding) throw new Error("Automation Studio flowScriptExamples must be an own data field.");
+  const guidanceField = Object.getOwnPropertyDescriptor(binding, "flowScriptGuidance");
+  if (guidanceField && !("value" in guidanceField)) throw new Error("Automation Studio flowScriptGuidance must be a data field, not a getter or setter.");
+  if (!guidanceField && "flowScriptGuidance" in binding) throw new Error("Automation Studio flowScriptGuidance must be an own data field.");
+  const guidance: unknown = guidanceField?.value;
   const examples: unknown = examplesField?.value;
   return automationStudioLlmEvidenceRuntimeBindingSnapshot(binding, {
     systemInstructions: binding.systemInstructions === undefined ? undefined : assertAutomationStudioLlmDomainSystemInstructions(binding.systemInstructions, binding.domainId),
+    flowScriptGuidance: guidance === undefined ? undefined : assertAutomationStudioFlowScriptGuidance(guidance, binding.domainId),
     flowScriptExamples: examples === undefined ? undefined : assertAutomationStudioFlowScriptExamples(examples, binding.domainId)
   });
 }

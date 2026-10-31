@@ -321,7 +321,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     }
     return answered;
   };
-  const scriptFormat = renderAutomationStudioFlowScriptFormat(input.submission.binding?.flowScriptExamples);
+  const scriptFormat = renderAutomationStudioFlowScriptFormat(input.submission.binding?.flowScriptExamples, input.submission.binding?.flowScriptGuidance);
   const submitTool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, effect: "observe",
     description: `Submit your subflow "${subflowKey}", written as a Flow script under "flow"${input.scope.interface ? "" : `, or a JSON plan under "plan"`}. The description of "flow" opens with your brief -- the parts of the task this subflow does, in the person's words, and how it is written -- then gives the format and examples: hold whatever you submit to that brief. Write no \`when:\` line and no other subflow: which situation runs which subflow is the structure plan's. ${automationStudioSubflowBriefWords.successCheck(input.scope)} Static validity returns a draft revision and digest, never acceptance. Correct every diagnostic and resubmit the whole subflow. Then test that exact revision with ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID}, and complete with the subflowKey, revision and digest only after its trial answers yes.${gate.available ? ` ${THEN_WORDS.tool}` : ""}${fromStep ? ` After a failed test, repair the failing step live and check it by testing from that step (from) before testing the whole part again.` : ""} ${HONEST_ENDING}`,
