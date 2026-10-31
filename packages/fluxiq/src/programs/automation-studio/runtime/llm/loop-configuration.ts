@@ -55,6 +55,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * the candidate's, `core.submit_candidate` and `core.test_candidate`.
    */
   finishingTools?: AutomationStudioLlmEvidenceFinishingTools | undefined;
+  /** Backend-owned target revision for a tool whose request also depends on non-page state. Never provider data; unchanged targets keep the same key. */
+  requestContextKey?: ((toolId: string) => string | undefined) | undefined;
   /**
    * A loop whose model plans and hands the work on rather than acting on the
    * target (the project supervisor; t569): the tools that move its work
@@ -432,6 +434,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * as the stored Flow's read does (`node-tools/replay.ts`, read-list S1).
    */
   definitionOf?: AutomationStudioFlowDraftDryRunGateInput["definitionOf"];
+  /**
+   * The plan part a step serves, for a build that works within a scope: the dry
+   * run sends the record output the part owes that the saved Flow has (K5,
+   * `node-tools/replay-draft.ts`). Absent (an instruction-only build), none.
+   */
+  partOf?: AutomationStudioFlowDraftDryRunGateInput["partOf"];
   signal?: AbortSignal;
 };
 

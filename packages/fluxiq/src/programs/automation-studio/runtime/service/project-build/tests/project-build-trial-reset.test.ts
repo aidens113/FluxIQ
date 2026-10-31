@@ -10,10 +10,9 @@
 // `startedWith`. An undo the build asks for, naming the act under `undoes`,
 // still undoes exactly that act and never what was there before.
 //
-// 1. Builder "first" adds honey while exploring and leaves the tab on another
-//    page. Its trial runs with the honey still in the cart, said under
-//    startedWith, and starts by loading the build's start page. After the yes
-//    it adds rye bread, and completes.
+// 1. Builder "first" adds honey and rye bread while exploring, then leaves
+//    the tab on another page. Its trial runs with both still in the cart,
+//    said under startedWith, loads the start page and completes on its yes.
 // 2. A reset the supervisor sends before the second builder's entry replays
 //    its predecessor removes the first builder's explored and trial additions,
 //    never the dish soap. Builder "second" adds butter, then undoes its
@@ -60,6 +59,7 @@ import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
 import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
+import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 // The reset's settled read, its two reads back to back (header).
 vi.mock("../../../flow-bootstrap/site-reset/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS: 0 }));
@@ -106,8 +106,7 @@ function builderDecision(subflowKey: string, evidence: readonly Entry[]): JsonOb
   const submit = { callId: "submit", decided: () => ({ kind: "tool_call", callId: "submit", toolId: "core.submit_subflow", input: script(subflowKey) }) };
   const test = (callId: string, cannotUndo?: string[]) => ({ callId, decided: () => ({ kind: "tool_call", callId, toolId: "core.test_subflow", input: { revision: submitted!.revision as number, digest: submitted!.digest as string, ...(cannotUndo ? { cannotUndo } : {}) } }) });
   const steps = subflowKey === "first"
-    ? [run("go.product", GO, { to: PRODUCT }, []), run("add.honey", ADD, { product: "honey" }, ["create_new"]), run("go.away", GO, { to: ELSEWHERE }, []), submit, test("test.1"),
-      run("go.product.2", GO, { to: PRODUCT }, []), run("add.rye", ADD, { product: "rye-bread" }, ["create_new"])]
+    ? [run("go.product", GO, { to: PRODUCT }, []), run("add.honey", ADD, { product: "honey" }, ["create_new"]), run("add.rye", ADD, { product: "rye-bread" }, ["create_new"]), run("go.away", GO, { to: ELSEWHERE }, []), submit, test("test.1")]
     : [run("go.product", GO, { to: PRODUCT }, []), run("add.butter", ADD, { product: "butter" }, ["create_new"]), submit, run("undo.entry", REMOVE, { line: "oat-milk" }, ["delete"], "act-4"), run("undo.butter", REMOVE, { line: "butter" }, ["delete"], "act-5"), test("test.1")];
   const next = steps.find((step) => !evidence.some((entry) => entry.callId === step.callId));
   if (next) return next.decided();
@@ -204,6 +203,8 @@ async function twoBuilders() {
   const domain = shop();
   /** Each builder's evidence at its latest decision. */
   const seen: Record<string, Entry[]> = {};
+  const stopObserving = observeBuilderCalls((key, entry) => { (seen[key] ??= []).push(entry); });
+  cleanups.push(async () => stopObserving());
   let supervisorDecisions = 0;
   let resetCalls = 0;
   const provider = mockProvider(async (request) => {
@@ -223,7 +224,7 @@ async function twoBuilders() {
     }
     const properties = (loop.completionSchema.properties ?? {}) as JsonObject;
     if (properties.subflowKey === undefined) {
-      const reversals = [{ line: "honey", act: "act-1" }, { line: "oat-milk", act: "act-2" }, { line: "rye-bread", act: "act-3" }];
+      const reversals = [{ line: "honey", act: "act-1" }, { line: "oat-milk", act: "act-3" }, { line: "rye-bread", act: "act-2" }];
       const reversal = reversals[resetCalls++];
       if (reversal) return decision({ kind: "tool_call", callId: `reset.${reversal.act}`, toolId: "core.run_node", input: { node: REMOVE, parameters: { line: reversal.line }, consequences: ["delete"], undoes: reversal.act } });
       return decision({ kind: "complete", result: { summary: "The build's cart additions were removed through their own controls." } });
@@ -264,15 +265,15 @@ describe("a builder's subflow trial after the build's acts (t578, t775)", () => 
     // startedWith, by its line, and after the run both it and the trial's own add are said as left on the site.
     const first = run.seen.first;
     const firstTrial = byCall(first, "test.1");
-    expect(firstTrial, JSON.stringify(first?.map((entry) => entry.callId))).toMatchObject({ ok: true, verdict: "yes", entryPrepared: true, startedWith: { acts: [{ act: "act-1", call: "add.honey", stillThere: ["line honey"] }] }, leftOnSite: [{ act: "act-1" }, { act: "act-2" }] });
-    expect((firstTrial!.startedWith as JsonObject).acts).toHaveLength(1);
+    expect(firstTrial, JSON.stringify(first?.map((entry) => entry.callId))).toMatchObject({ ok: true, verdict: "yes", entryPrepared: true, startedWith: { acts: [{ act: "act-1", call: "add.honey", stillThere: ["line honey"] }, { act: "act-2", call: "add.rye", stillThere: ["line rye-bread"] }] }, leftOnSite: [{ act: "act-1" }, { act: "act-2" }, { act: "act-3" }] });
+    expect((firstTrial!.startedWith as JsonObject).acts).toHaveLength(2);
     expect(firstTrial).not.toHaveProperty("code");
     // Each run's first act is loading the start page: the trials' and the entry's alike.
     expect(firstOfRun(happened, "trial of first"), JSON.stringify(happened)).toEqual({ ranOn: expect.any(String), first: `run loads ${START}`, ended: "succeeded" });
 
     // The supervisor's reset, asked for before the dependent entry replays its predecessor, removed exactly the first builder's
     // acts -- its honey, its trial's oat milk, its rye bread -- and never the dish soap, before that entry ran.
-    expect(acted.slice(0, 6)).toEqual(["add honey", "run add oat-milk", "add rye-bread", "remove honey", "remove oat-milk", "remove rye-bread"]);
+    expect(acted.slice(0, 6)).toEqual(["add honey", "add rye-bread", "run add oat-milk", "remove honey", "remove oat-milk", "remove rye-bread"]);
     expect(happened.findIndex((line) => line.startsWith("entry for second"))).toBeGreaterThan(happened.indexOf("builder remove rye-bread"));
 
     // Builder "second": its entry, prepared from the start page, after the first's trial.
@@ -293,7 +294,7 @@ describe("a builder's subflow trial after the build's acts (t578, t775)", () => 
     // Every removal was of a line this build added. Core sends no reset of its own before the ending (t775): the second trial's
     // run -- its predecessor's oat milk and its own jam -- is left on the site, said as left by that trial. The line there before
     // the build is never touched or adopted by a reset.
-    expect(acted).toEqual(["add honey", "run add oat-milk", "add rye-bread", "remove honey", "remove oat-milk", "remove rye-bread", "run add oat-milk", "add butter", "remove oat-milk", "remove butter", "run add oat-milk", "run add jam"]);
+    expect(acted).toEqual(["add honey", "add rye-bread", "run add oat-milk", "remove honey", "remove oat-milk", "remove rye-bread", "run add oat-milk", "add butter", "remove oat-milk", "remove butter", "run add oat-milk", "run add jam"]);
     expect(secondTrial).toMatchObject({ leftOnSite: [{ act: "act-6" }, { act: "act-7" }] });
     expect(site.cart).toEqual(["dish-soap", "oat-milk", "jam"]);
     // The domain never saw `undoes`.

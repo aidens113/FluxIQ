@@ -296,8 +296,11 @@ export function automationStudioProjectBuildBriefPorts(input: {
     // This brief's own submissions, watched where the builder loop answers them (`observe` below).
     const submissions = automationStudioCandidateSubmissionRefusals(AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID);
     // A toggle an exploration call recorded is written into the build record once the call has answered (t792).
-    const loop = { ...limits, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: decide(undefined) };
-    return { loop, permissions, decide, submissions, ended: briefEnding(permissions, personNeeded) };
+    let configuredDecide = decide(undefined);
+    const delegate: AutomationStudioLlmEvidenceLoopInput["decide"] = (request) => configuredDecide(request);
+    const loop = { ...limits, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: delegate };
+    const setCompletionSchema = (schema: JsonObject | undefined) => { configuredDecide = decide(schema); };
+    return { loop, permissions, decide, setCompletionSchema, submissions, ended: briefEnding(permissions, personNeeded) };
   };
   const { proposals } = input;
   // The build's one start, which every brief takes before its first look (header).
@@ -343,7 +346,11 @@ export function automationStudioProjectBuildBriefPorts(input: {
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
       // `moves`: the reader's count of the times its looks moved the target, so a test refused after one says where it stands (t738).
       // `issuedRefs`: every ref the build issued, with where it was read, which the dispatcher puts on the opening call as `places` (header, t743).
-      const ports: AutomationStudioProjectBuilderPorts & { issuedRefs: () => AutomationStudioSiteResetIssuedRef[] } = { loop, submission: { ...submission, permissionFor: built.permissions.planStep, exploredToggles: built.permissions.exploredToggles, exploredInterruptions: built.permissions.exploredInterruptions, exploredPaces }, trial, reset, moves: () => reader.moves, observe: (observed) => observeAutomationStudioEvidenceLoop({ ...built.submissions.observe(observed), decide: built.decide(observed.completionSchema) }), ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys, issuedRefs: () => project.ledger.issuedRefs() };
+      const ports: AutomationStudioProjectBuilderPorts & { issuedRefs: () => AutomationStudioSiteResetIssuedRef[] } = { loop, submission: { ...submission, permissionFor: built.permissions.planStep, exploredToggles: built.permissions.exploredToggles, exploredInterruptions: built.permissions.exploredInterruptions, exploredPaces }, trial, reset, moves: () => reader.moves, observe: (observed) => {
+        // Bind the builder's late schema through the original delegate: replacing observed.decide would discard its Core completion wrapper.
+        built.setCompletionSchema(observed.completionSchema);
+        return observeAutomationStudioEvidenceLoop(built.submissions.observe(observed));
+      }, ended: built.ended, deniedEvidenceKeys: binding.deniedEvidenceKeys, issuedRefs: () => project.ledger.issuedRefs() };
       return ports;
     },
     reset: async (request) => {

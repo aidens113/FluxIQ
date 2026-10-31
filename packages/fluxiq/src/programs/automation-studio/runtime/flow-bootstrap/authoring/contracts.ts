@@ -359,4 +359,6 @@ export type AutomationStudioFlowBootstrapIssueLocator = {
    * A line inside a step is that step's.
    */
   lines: { line: number; place: AutomationStudioFlowScriptPlace; exact?: true }[];
+  /** Each written step label by the plan node keys it names, in block order; a label two blocks write names both. */
+  stepKeys?: Record<string, string[]>;
 };

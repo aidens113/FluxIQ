@@ -78,5 +78,6 @@ export const AUTOMATION_STUDIO_SUBFLOW_REPAIR_WORDS = Object.freeze({
   unavailable: "Core cannot run this part from a step here, so from is not taken. Test the whole part with the revision and digest alone.",
   reasonEmpty: "fromStepImpossible must say, in a sentence, why a run from the failing step cannot check its repair; it was empty. Run from that step with from instead, or give the reason.",
   notRun: (code: string): string => `Core did not run the part from that step (${code}): nothing ran. ${NOT_THE_TEST} Read notRun, then run from a step the latest proposal has, or test the whole part.`,
-  unknownStep: (from: string): string => `The latest proposal has no step "${from}", so nothing ran. Give from as one of the keys under steps, exactly as written there.`
+  unknownStep: (from: string, labelled = false): string => `The latest proposal has no step "${from}", so nothing ran. Give from as one of the keys under steps, exactly as written there${labelled ? ", or as the label of one step listed under labelled" : ""}.`,
+  ambiguousLabel: (label: string, keys: readonly string[]): string => `The label "${label}" names more than one step (${keys.map((key) => `"${key}"`).join(", ")}), so nothing ran. Give from as the key of the one you mean.`
 });

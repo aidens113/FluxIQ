@@ -120,6 +120,8 @@
 // take back. Its record reason says the provider stopped answering, under the code
 // the person's ending carries (`flow_bootstrap.provider_unavailable`), never
 // "the supervisor stopped".
+import { authoringScopePartOf } from "../../flow-bootstrap/record-defaults/index.ts";
+import { automationStudioCandidateTestRequestKey } from "../../flow-bootstrap/test-request/index.ts";
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
@@ -242,7 +244,9 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
     if (ports.finishing) ports.purse.keepBackCallsFromAllowances(ports.finishing.supervisorCalls + ports.finishing.resetCalls);
     if (!view?.record.allowances.some((allowance) => allowance.role === "supervisor")) await ports.record.recordAllowance(ports.build, { role: "supervisor", usd: ports.purse.keptBackUsd() });
   }
-  const controller = new AutomationStudioFlowCandidateSubmissionController(signal ? { ...ports.submission, signal } : ports.submission);
+  // A whole-Flow step that writes records is defaulted from the one task part that owes them (K5); the caller's own resolver wins.
+  const partOf = ports.submission.partOf ?? ((stepId: string) => authoringScopePartOf((state.taskSpec?.parts ?? []).map((part) => ({ id: part.id, words: part.quote.text, columns: part.answer?.columns })))?.(stepId)); // Read at each step: the task spec is written after this controller is made.
+  const controller = new AutomationStudioFlowCandidateSubmissionController({ ...ports.submission, partOf, ...(signal ? { signal } : {}) });
   // The whole trial's gate puts the target back as a candidate build's does: start hook first, then the build's ledgers (`./whole-trial.ts`).
   const wholeTrial = new AutomationStudioProjectSupervisorWholeTrial({ ports, state, time: clock.time });
   // The task's parts and their typed effects, and the parts each subflow serves, for the whole test's one targeted refusal (t775).
@@ -260,6 +264,7 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   const unusable = input.loop.unusableDecisions;
   const loopInput: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop,
+    requestContextKey: (toolId) => toolId === IDS.testCandidate ? automationStudioCandidateTestRequestKey(controller.latest()) : input.loop.requestContextKey?.(toolId),
     ...(unusable ? {
       unusableDecisions: {
         ...unusable,

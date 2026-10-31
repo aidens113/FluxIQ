@@ -205,6 +205,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
   private readonly proposedChecks = new Map<string, NonNullable<AutomationStudioSubflowScope["successCheck"]>>();
   /** The handed-on inputs no line of the submission reads, by the probe's candidate digest (header, t672). */
   private readonly unneeded = new Map<string, string[]>();
+  /** The step labels of the script each accepted probe came from, by the probe's candidate digest (header, t811). */
+  private readonly labels = new Map<string, Record<string, string[]>>();
   private current: AutomationStudioSubflowProposal | undefined;
   /** The lasting consequences the accepted revisions of this brief declared, in the order first seen (header). */
   private readonly lasting: string[] = [];
@@ -274,6 +276,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     this.input.submission.signal?.throwIfAborted();
     if (submitted.ok && read.proposedCheck) this.proposedChecks.set(submitted.candidate.digest, read.proposedCheck);
     if (submitted.ok && read.unneeded) this.unneeded.set(submitted.candidate.digest, read.unneeded);
+    if (submitted.ok) this.labels.set(submitted.candidate.digest, read.labels ?? {});
     const latest = this.inner.latest();
     this.current = latest ? this.proposalOf(latest) : undefined;
     if (!submitted.ok) return automationStudioSubflowRenumberedRefusal(read.probe === result ? submitted : asSent(submitted, read.probe, result), this.numbering);
@@ -288,7 +291,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
    * existing checks run on: the submission itself, or for a callable subflow
    * its script with the call that runs it (`./callable-target.ts`).
    */
-  private read(result: JsonObject): { issues: ScopeIssue[]; probe: JsonObject; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]>; unneeded?: string[]; written?: ReadonlyMap<string, string> } {
+  private read(result: JsonObject): { issues: ScopeIssue[]; probe: JsonObject; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]>; unneeded?: string[]; written?: ReadonlyMap<string, string>; labels?: Record<string, string[]> } {
     const issues: ScopeIssue[] = [];
     if (typeof result.flow === "string") {
       for (const block of parseAutomationStudioFlowScript(result.flow).script.blocks) {
@@ -311,7 +314,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     // A submission that cannot be read is refused by the probe's own checks, with every issue named.
     if (!accepted.ok) return { issues, probe };
     const read = this.planIssues(accepted.plan, result);
-    return { issues: [...issues, ...read.issues], probe, ...(read.proposedCheck ? { proposedCheck: read.proposedCheck } : {}), ...(unneeded ? { unneeded } : {}), written: this.writtenKeys(accepted.plan) };
+    return { issues: [...issues, ...read.issues], probe, ...(read.proposedCheck ? { proposedCheck: read.proposedCheck } : {}), ...(unneeded ? { unneeded } : {}), written: this.writtenKeys(accepted.plan), ...(accepted.locator?.stepKeys ? { labels: structuredClone(accepted.locator.stepKeys) } : {}) };
   }
 
   private planIssues(plan: AutomationStudioFlowBootstrapPlan, result: JsonObject): { issues: ScopeIssue[]; proposedCheck?: NonNullable<AutomationStudioSubflowScope["successCheck"]> } {
@@ -374,6 +377,8 @@ export class AutomationStudioSubflowScopedSubmissionController {
   private proposalOf(candidate: AutomationStudioFlowCandidate): AutomationStudioSubflowProposal {
     const known = this.proposals.get(candidate.digest);
     if (known) {
+      // The labels are no part of the digest, so a relabelled script of the same plan carries its newest.
+      this.carryLabels(known, candidate.digest);
       this.byInnerRevision.set(candidate.revision, known);
       return known;
     }
@@ -393,6 +398,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     const proposal: AutomationStudioSubflowProposal = { scope: { ...this.identity }, revision: candidate.revision + this.offset, digest, subflows, summary: candidate.summary, changedPaths: [...candidate.changedPaths] };
     const unneeded = this.unneeded.get(candidate.digest);
     if (unneeded) proposal.unneededInputs = [...unneeded];
+    this.carryLabels(proposal, candidate.digest);
     this.proposals.set(candidate.digest, proposal);
     this.byInnerRevision.set(candidate.revision, proposal);
     return proposal;
@@ -408,6 +414,13 @@ export class AutomationStudioSubflowScopedSubmissionController {
     keys.set(this.scope.subflowKey, written.key);
     for (const part of plan.subflows) if (part !== written && !(contract && part === entry)) keys.set(automationStudioSubflowPartKey(this.scope.subflowKey, part.key), part.key);
     return keys;
+  }
+
+  /** Puts the step labels the candidate's script wrote on `proposal`; none for a JSON plan. */
+  private carryLabels(proposal: AutomationStudioSubflowProposal, digest: string): void {
+    const labels = this.labels.get(digest);
+    if (labels && Object.keys(labels).length) proposal.stepLabels = structuredClone(labels);
+    else delete proposal.stepLabels;
   }
 
   /** The subflow gate's history, as the candidate controller asks it: by the probe's revision and digest. */

@@ -41,6 +41,7 @@
 // twenty times over an unchanged draft (`../repeat-guard/outcomes.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AuthoringPartOfStep } from "../../flow-bootstrap/record-defaults/index.ts";
 import {
   automationStudioFlowDraftReplayOutcomeWord,
   automationStudioFlowDraftReplayPassWords,
@@ -66,6 +67,8 @@ export type AutomationStudioFlowDraftPartRunInput = {
   nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
   /** Each step's full node definition, as the dry run is given it: a read sends its assembled record output. */
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
+  /** The scoped task part, so the partial replay writes the saved Flow's record output. */
+  partOf?: AuthoringPartOfStep | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -98,6 +101,7 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
     ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
     ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
+    ...(input.partOf ? { partOf: input.partOf } : {}),
     // A step the Flow does not always run goes on, as the Flow would; one with
     // nothing to run it with stops the run whatever it says about when it runs.
     stopsAt: (step, excused) => !excused || unrunnable(step),

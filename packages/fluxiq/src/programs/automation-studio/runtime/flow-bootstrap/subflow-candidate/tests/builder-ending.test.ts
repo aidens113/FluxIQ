@@ -88,10 +88,13 @@ describe("a subflow builder's honest ending", () => {
     const said = JSON.stringify(early.shown.flat());
     expect(said).toContain("subflow.ending_too_soon");
     expect(said).toContain("subflow.ending_shape");
+    // Since t811 the ending after a yes is never asked: Core completes with the receipt the moment the yes stands
+    // (`./submit-then/tests/builder-loop-auto-complete.test.ts` covers `subflow.ending_after_yes` where a repair holds Core back).
     const passed = await build([submit, test, end({ ended: "blocked", reason: WHY }), receipt], YES);
     expect(passed.outcome.loop.ok).toBe(true);
     expect(passed.outcome.ended).toBeUndefined();
-    expect(JSON.stringify(passed.shown.flat())).toContain("subflow.ending_after_yes");
+    expect(passed.shown).toHaveLength(2);
+    expect(JSON.stringify(passed.shown.flat())).not.toContain("subflow.ending_after_yes");
     expect(passed.outcome.trial).toMatchObject({ verdict: "yes" });
   });
 
@@ -228,10 +231,11 @@ describe("a subflow builder's honest ending", () => {
       const refused = failing.shown.flat().find((feedback) => feedback.code === "subflow.ending_shape")!;
       expect(refused.instruction).toContain("No trial answered yes for the latest proposal of this subflow, so this completion can only end the brief: send exactly {\"ended\": \"blocked\"");
       expect(failing.outcome.ended).toEqual({ outcome: "blocked", reason: WHY });
-      // Where a yes stands, the one shape is that proposal's exact receipt.
+      // Where a yes stands, Core completes with that proposal's exact receipt before any other completion is asked (t811);
+      // the refusal naming that receipt is covered where a repair holds Core back (`./submit-then/tests/builder-loop-auto-complete.test.ts`).
       const passing = await build([submit, test, end({ outcome: "done" }), receipt], YES);
-      const told = passing.shown.flat().find((feedback) => feedback.code === "subflow.ending_shape")!;
-      expect(told.instruction).toMatch(/^Revision 1 of this subflow passed its trial, so the brief is done: complete with exactly \{"subflowKey": "find_listing", "revision": 1, "digest": "[0-9a-f]+"\} and nothing else\.$/u);
+      expect(passing.shown).toHaveLength(2);
+      expect(JSON.stringify(passing.shown.flat())).not.toContain("subflow.ending_shape");
       expect(passing.outcome.loop.ok).toBe(true);
     });
   });

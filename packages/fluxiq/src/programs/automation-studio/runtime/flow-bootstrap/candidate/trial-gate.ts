@@ -286,6 +286,10 @@ import { automationStudioTrialDefaultsBeforeTrial } from "../trial-defaults/inde
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { automationStudioTrialChangeContradictedNo, automationStudioTrialChangeSteps, type AutomationStudioTrialChangeOutcome, type AutomationStudioTrialChangePart, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
+import { automationStudioCandidateTestPair } from "../test-call-pair.ts";
+import { automationStudioCandidateRetestAdvised } from "../retest-advised/index.ts";
+
+export { automationStudioCandidateRetestAdvised } from "../retest-advised/index.ts";
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
 
@@ -378,10 +382,10 @@ const TRANSIENT: ReadonlySet<AutomationStudioCandidateTrialVerdict> = new Set(["
 export class AutomationStudioFlowCandidateTrialGate {
   readonly tool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, effect: "mutate",
-    description: "Ask Core to run your latest submitted candidate once, on its own with no model, from its declared start, and to judge only what that run did. Give that candidate's revision and digest exactly. The answer is a verdict (yes, no, unsure, not_judged or execution_failed) with feedback. The run acts on the site like the saved Flow would, on the site as it stands: what this build already did there stays, the judge is told it, and the trial is judged by what it changed from the state just before it. If this answers candidate.trial_starts_in_end_state, undo just the act it lists, then test again. Complete only after a yes for that exact revision and digest; any later submission needs its own trial. After a no, change the Flow and submit it before testing again. If it answers candidate.trial_unavailable, no trial can run here: complete with the latest revision and digest and the Flow stays an unverified draft.",
+    description: "Ask Core to run your latest submitted candidate once, on its own with no model, from its declared start, and to judge only what that run did. Leave revision and digest out to test your latest submitted candidate, or give both exactly as core.submit_candidate returned them; a pair that is not the latest is refused. The answer is a verdict (yes, no, unsure, not_judged or execution_failed) with feedback. The run acts on the site like the saved Flow would, on the site as it stands: what this build already did there stays, the judge is told it, and the trial is judged by what it changed from the state just before it. If this answers candidate.trial_starts_in_end_state, undo just the act it lists, then test again. Complete only after a yes for that exact revision and digest; any later submission needs its own trial. After a no, change the Flow and submit it before testing again. If it answers candidate.trial_unavailable, no trial can run here: complete with the latest revision and digest and the Flow stays an unverified draft.",
     inputSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" },
       cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Optional; leave it out. Core defaults it to the acts a reset listed apart as ones no call can settle. Give it only to name, among the acts a reset listed, those the site offers no control to undo. They stay on the site, and the judge is told." } },
-    required: ["revision", "digest"], additionalProperties: false }
+    additionalProperties: false }
   };
   /** Each trial's answer as kept, with the kept conditions as of that trial (header, t641): what `standing` hands the submission controller. */
   private readonly verdicts = new Map<string, AutomationStudioCandidateTrialResult & AutomationStudioResultKeptConditionsCarrier>();
@@ -427,7 +431,9 @@ export class AutomationStudioFlowCandidateTrialGate {
   async test(value: JsonObject, callSignal?: AbortSignal): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
     const revision = value.revision, digest = value.digest;
     const cannotUndo = value.cannotUndo;
-    if (!Number.isSafeInteger(revision) || typeof digest !== "string" || Object.keys(value).some((key) => key !== "revision" && key !== "digest" && key !== "cannotUndo")
+    const pair = automationStudioCandidateTestPair(revision, digest);
+    if (pair.kind === "half") return refused("candidate.trial_input_invalid", pair.instruction);
+    if (pair.kind === "malformed" || Object.keys(value).some((key) => key !== "revision" && key !== "digest" && key !== "cannotUndo")
       || (cannotUndo !== undefined && !(Array.isArray(cannotUndo) && cannotUndo.length <= 50 && cannotUndo.every((act) => typeof act === "string")))) {
       return refused("candidate.trial_input_invalid", "Call core.test_candidate with exactly the latest submission's revision (an integer) and digest (a string), as core.submit_candidate returned them, and, only to narrow what Core defaults, cannotUndo: the act ids a reset listed that the site cannot undo.");
     }
@@ -435,7 +441,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     if (!trial) return refused("candidate.trial_unavailable", "No trial runner is available here. Complete with the latest revision and digest; the Flow stays an unverified draft.");
     const latest = this.input.latest();
     if (!latest) return refused("candidate.trial_stale_revision", "There is no valid latest candidate to test. Submit a complete candidate with core.submit_candidate, then test the revision and digest it returns.");
-    if (latest.revision !== revision || latest.digest !== digest) {
+    if (pair.kind === "pair" && (latest.revision !== pair.revision || latest.digest !== pair.digest)) {
       return refused("candidate.trial_stale_revision", "Only the latest submitted candidate can be tested. Test the revision and digest given here.", { latestRevision: latest.revision, latestDigest: latest.digest });
     }
     const closed = this.closedDigests.get(latest.digest);
@@ -756,19 +762,6 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
 export function automationStudioCandidateRecordContradictsPart(answer: { feedback: JsonObject }): boolean {
   const reading = answer.feedback.unconfirmedReading;
   return isJsonObject(reading) && reading.recordContradicts === "part";
-}
-
-/**
- * Whether Core's record contradicts what kept an unsure from a yes (header,
- * t641): the no's reading wholly (`unconfirmedReading.recordContradicts`, Core's
- * field beside its label), or the unsure call's doubt (`doubtContradicted`).
- * Read as fields Core set, never off the words; one judge's yes is none.
- * Exported for the subflow trial gate, which advises a re-test the same way.
- */
-export function automationStudioCandidateRetestAdvised(answer: { feedback: JsonObject }): boolean {
-  const reading = answer.feedback.unconfirmedReading;
-  if (isJsonObject(reading) && reading.recordContradicts === "whole") return true;
-  return typeof answer.feedback.doubtContradicted === "string" && answer.feedback.doubtContradicted.length > 0;
 }
 
 /** What the model is told once a revision stopped at the same step twice, from the latest trial of it. */

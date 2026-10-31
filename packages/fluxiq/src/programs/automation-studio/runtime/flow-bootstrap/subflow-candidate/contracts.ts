@@ -101,6 +101,11 @@ export type AutomationStudioSubflowProposal = {
   changedPaths: readonly string[];
   /** The scope's handed-on inputs no line of this proposal reads (t672): the builder's answer and its brief's return say so, so no plan change follows. */
   unneededInputs?: readonly string[];
+  /**
+   * The plan keys each step label of the submitted script names (`step <label>:`), so a run from a step can be asked for by the label the builder wrote.
+   * Absent for a JSON plan, which has no labels. Never part of the digest: relabelling a step changes no receipt.
+   */
+  stepLabels?: Readonly<Record<string, readonly string[]>>;
 };
 
 /**

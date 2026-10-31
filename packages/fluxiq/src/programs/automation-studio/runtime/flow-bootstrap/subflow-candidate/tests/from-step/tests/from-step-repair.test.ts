@@ -229,4 +229,29 @@ describe("a failed whole test's repair (t804)", () => {
     expect(gate.completion(state.latest)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_required"] });
     expect(gate.standing(passed)).toMatchObject({ verdict: "yes" });
   });
+
+  it.each(["s1", "s2"])("refuses an earlier yes receipt while shared repair memory still stands at %s", async (stoppedAtKey) => {
+    const memory = new AutomationStudioSubflowPendingRepair();
+    const state = { latest: proposal(1, STEPS) };
+    const { gate } = gateOver(state, [{ verdict: "yes" }, { verdict: "yes" }], { memory });
+    await gate.test(receipt(state.latest));
+    expect(gate.completion(state.latest)).toEqual({ ok: true });
+    memory.afterWholeTest({ partial: true, scope: "subflow", identity, revision: 1, digest: state.latest.digest, verdict: "execution_failed", entryPrepared: true, stoppedAtKey, feedback: {} }, state.latest);
+    expect(gate.completion(state.latest)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_from_step_first"], feedback: { repairStep: stoppedAtKey } });
+    expect((await gate.test({ from: stoppedAtKey })).evidence).toMatchObject({ repairChecked: true });
+    expect((await gate.test({})).evidence).toMatchObject({ verdict: "yes" });
+    expect(gate.completion(state.latest)).toEqual({ ok: true });
+  });
+
+  it("checks shared repair memory even if this port supports only whole tests", async () => {
+    const memory = new AutomationStudioSubflowPendingRepair();
+    const state = { latest: proposal(1, STEPS) };
+    const { gate } = gateOver(state, [{ verdict: "yes" }, { verdict: "yes" }], { memory, fromStep: false });
+    await gate.test({});
+    memory.afterWholeTest({ partial: true, scope: "subflow", identity, revision: 1, digest: state.latest.digest, verdict: "execution_failed", entryPrepared: true, stoppedAtKey: "s2", feedback: {} }, state.latest);
+    expect(gate.completion(state.latest)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_from_step_first"] });
+    expect((await gate.test({})).evidence).toMatchObject({ verdict: "yes" });
+    expect(memory.standing).toBe(false);
+    expect(gate.completion(state.latest)).toEqual({ ok: true });
+  });
 });
