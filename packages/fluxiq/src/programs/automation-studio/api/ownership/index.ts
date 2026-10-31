@@ -5,6 +5,7 @@
 
 export { AutomationStudioProjectOwnership, type AutomationStudioProjectOwnershipOptions } from "./ownership.ts";
 export { AutomationStudioProjectOwnerships } from "./ownerships.ts";
+export { recordAutomationStudioCreatedProjectOwner } from "./record-created-project-owner.ts";
 export { AutomationStudioProjectOwnerDocumentStore } from "./document-store.ts";
 export { AutomationStudioProjectOwnerMemoryStore } from "./memory-store.ts";
 export { migrateAutomationStudioProjectOwners, type AutomationStudioProjectOwnerMigrationInput } from "./migration.ts";

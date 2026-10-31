@@ -377,6 +377,16 @@ creation; it is idempotent, never overwrites, and runs lazily on first lookup,
 so no project is ever ownerless while an administrator exists. An id that is
 not a project answers no owner.
 
+Trusted in-process host initialization can record a project's creator with
+`recordAutomationStudioCreatedProjectOwner(service, projectId, userId)` from
+`fluxiq/automation-studio`, reusing that service's registered owner resolver.
+It refuses missing registration, nonexistent projects, empty owners and a
+different recorded creator. Repeating the same creator is safe, including a
+retry after creating the project but failing to assign its owner; a migration
+default can be replaced by the creator. This seam creates no session and
+does not authorize a user request. Ordinary callers use the IAM-gated
+`create-project` endpoint; host modules remain trusted server code.
+
 ## Catalog generator
 
 `generateIamActionCatalog` turns endpoint registrations (program id, endpoint,
@@ -935,8 +945,9 @@ never imports `@fluxiq/contracts`).
   the routes for pairing approval, the Studio context, trace upload (no owner
   resolver for connected clients yet) and the program directory. Each needs a
   per-item filter or a narrower resource before the hosted panel can offer it.
-- **Projects created outside `create-project`** (a chat or a schedule calling
-  the service directly) get the default owner, not their creator.
+- **Projects created without creator recording** (a chat or a schedule calling
+  the service directly without the trusted host helper) get the default owner,
+  not their creator.
 - **No fast path on `service`.** The guardrail's `Deny` disables the
   full-access shortcut, so every hosted list is decided item by item.
 - **Routes are not in the generated catalog**, which lists endpoint sources
