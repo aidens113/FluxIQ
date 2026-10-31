@@ -1,6 +1,6 @@
 # P9 lead acceptance before integration
 
-Status: Accepted on task source; paired integration pending. No full suite/paid call/user panel operations.
+Status: Accepted and source merged; shared refresh/dev push underway. No full suite/paid call/user panel operations.
 
 - Core: original foundations157tests, corrected D2/D3 111/6, legacy loop370/27, parent compatibility202/13; final reference/provenance/prior-nodes179/8 pass68.21s, Core types93.033s, final SDK129.098s. Previous source audits and final workbranch pre-push audit pass. Exact commands/logs are in lead-acceptance.md and ignored task test-runs.
 - Down: root final affected frozen/run/replay/retries/shown-rows/read-account selector191/191 pass114.385s; parent examples79/79 pass, exact UTF8 section/completion pins and eleven real saved graph proofs retained. Actual Native/Gate/web paired cases included; A re-found after t1points to B, B unchanged, changed document blocks dispatch, no envelope extra charge or draft step. Domain types20.372s, extension final types exit0, standalone audit exit0, baseline583 (31old cycle allowances removed). Domain build21.307s, host3.706s, allthree extension bundles31.931s pass.
@@ -26,3 +26,5 @@ First browser run reached completed batch/two successful fresh TYPEs but failed 
 Both Oct31 full-suite slots remain used; no main promotion until permitted full passing sweep. Future paid tests Claude/CLAUDE_API_KEY/$5 whole build/no fallback; paid GO still held. Preserve user main clinerules. Copy ignored evidence to main before task finish removes private Down. Finish Down first then Core under owning gates/mandatory70contract tests, push both dev branches, refresh shared builds. No remote branch deletion or unapproved release. Remaining P10 discovery/design reports are follow-up planning, not implemented scope.
 
 Mandatory Core merge first attempt ->67/70pass,3old evidence_tool_decision pin comparisons fail. Lead verified only intended P9 prose differs, corrected just that JSONpin plus testcomment, and owning45prompt tests pass9.15s. Full70mandatory gate retried; see prompt-pin-correction.md. No runtime relaxation/full suite.
+
+Integration: Down merge1d41420fcc3780afdab75841ef7b1482af51fb9b passed task structure gate and removed private Down. Core mergedf16f21799e46976c34f1809594044cfab9425a4 passed mandatory70tests/3files8.69s after reviewed prompt pin correction. No full check run (--skip-checks skips whole pnpm check, never mandatory contracts). Remote backups Core357577ed/Down569ead87 retained; original private Core remains clean detached at2f766513 for ordinary age-prune. Shared SDK refresh/dev pushes underway.
