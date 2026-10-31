@@ -41,9 +41,15 @@
 // by its label alone. Each is said as `numbers` (from 1), `conditions` and the
 // rows' labels, screened as every other label here is; a set that is not that
 // shape is left out.
+//
+// **And the marks (t810).** An entry of `leftOutOnlyByThis` or `leftOutTogether` may carry `marks`, one entry per row
+// in the rows' order: `null` or the `{ kind: "outside", said, entity? }` the client read on that item, as a run's
+// `leftOutMarks` are. They are screened as the cells are (`../left-out-cells/`); a list that is not one entry per
+// row said is left out and the rows stay.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioResultReadAloneRows } from "../read-account/index.ts";
+import { automationStudioResultReadLeftOutMarks } from "../left-out-cells/index.ts";
 
 /** The member of a replayed read's answer that names its rows. The domain writes the same word. */
 export const AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY = "readRows";
@@ -79,10 +85,12 @@ function readRows(sent: JsonObject, deniedKeys: readonly string[]): { value: Jso
       observations: conditionIndex !== undefined || unknown ? entry.observations : undefined,
       conditionIndex: conditionIndex ?? 0, evidenceKey: entry.condition, onScreened: values => { observations = values; }
     });
-    return said ? [{ ...(conditionIndex !== undefined ? { number: conditionIndex + 1 } : {}), condition: entry.condition, rows: said, ...(observations ? { observations: observations.map(underItsCondition) } : {}), ...notShown(entry.rowsNotShown) }] : [];
+    // The marks the client read on those rows, aligned with them and screened as the cells are (t810); a list not aligned is no marks.
+    const marks = said ? automationStudioResultReadLeftOutMarks(entry.marks, said.length, deniedKeys) : undefined;
+    return said ? [{ ...(conditionIndex !== undefined ? { number: conditionIndex + 1 } : {}), condition: entry.condition, rows: said, ...(observations ? { observations: observations.map(underItsCondition) } : {}), ...notShown(entry.rowsNotShown), ...(marks ? { marks } : {}) }] : [];
   }) : [];
   const together = Array.isArray(sent.leftOutTogether) ? sent.leftOutTogether.flatMap((entry): JsonObject[] => {
-    const said = togetherSet(entry, labels);
+    const said = togetherSet(entry, labels, deniedKeys);
     return said ? [said] : [];
   }) : [];
   if (!rows && !conditions.length && !together.length) return undefined;
@@ -93,7 +101,7 @@ function readRows(sent: JsonObject, deniedKeys: readonly string[]): { value: Jso
 }
 
 /** One set of conditions that left rows out together, as the judge is shown it (header); nothing for anything else. */
-function togetherSet(entry: JsonValue, labels: (list: JsonValue | undefined) => string[] | undefined): JsonObject | undefined {
+function togetherSet(entry: JsonValue, labels: (list: JsonValue | undefined) => string[] | undefined, deniedKeys: readonly string[]): JsonObject | undefined {
   if (!isObject(entry) || !Array.isArray(entry.conditions) || !Array.isArray(entry.conditionIndexes) || !Array.isArray(entry.rows)) return undefined;
   const names = entry.conditions;
   const places = entry.conditionIndexes;
@@ -101,7 +109,8 @@ function togetherSet(entry: JsonValue, labels: (list: JsonValue | undefined) => 
   if (!names.every((name) => typeof name === "string" && name.trim() !== "" && name.length <= CONDITION_NAME_MAX)) return undefined;
   if (!places.every((place) => typeof place === "number" && Number.isSafeInteger(place) && place >= 0) || new Set(places).size !== places.length) return undefined;
   const rows = labels(entry.rows.map((row) => (isObject(row) ? Object.fromEntries(Object.entries(row).slice(0, 1)) as JsonObject : row)));
-  return rows ? { numbers: (places as number[]).map((place) => place + 1), conditions: names, rows } : undefined;
+  const marks = rows ? automationStudioResultReadLeftOutMarks(entry.marks, rows.length, deniedKeys) : undefined;
+  return rows ? { numbers: (places as number[]).map((place) => place + 1), conditions: names, rows, ...(marks ? { marks } : {}) } : undefined;
 }
 
 /** A witness under its condition, without its own index (header). */

@@ -11,7 +11,8 @@ import { AutomationStudioRequestRowId } from "../request-rows/index.ts";
 import { automationStudioResultActDefectNotFound } from "./act-located.ts";
 import { automationStudioResultActSteps, type AutomationStudioResultActStep } from "./act-steps.ts";
 import { automationStudioResultAskedPresenceSettled } from "./presence-settled.ts";
-import { automationStudioResultLeftOutLabelKey, automationStudioResultLeftOutRowCells } from "./row-cells.ts";
+import { automationStudioResultLeftOutLabelKey, automationStudioResultLeftOutRowRecords, type AutomationStudioResultLeftOutRowRecord } from "./row-cells.ts";
+import { automationStudioResultDefectRowRefuted, type AutomationStudioResultDefectRowRefutation } from "./row-refuted.ts";
 import { automationStudioResultKeptSearchedWordsOnly } from "./searched-words-kept.ts";
 import { automationStudioResultAskedTestedValueOnly } from "./tested-value-only.ts";
 import { automationStudioResultAskedUntestedColumn } from "./untested-column.ts";
@@ -24,33 +25,44 @@ type Context = {
   requestText?: string | undefined;
 };
 
+/** A defect Core's record of its row refutes (`./row-refuted.ts`, t810): the defect, and how and with what Core's record refutes it. */
+export type AutomationStudioResultRefutedDefect = { defect: Defect; evidence: AutomationStudioResultDefectRowRefutation["evidence"]; quote: string };
+
 /**
  * Which of a no's defects Core finds in its own record of the result (header,
  * `./index.ts`), and Core's words for each it does not: `located` in the order
- * listed, `findings` one sentence per defect not found.
+ * listed, `findings` one sentence per defect not found, and `refuted`, in the
+ * order listed, each defect not found because Core's record of its row
+ * refutes it (`./row-refuted.ts`, t810), whose finding says so; absent where
+ * none is.
  */
 export function automationStudioResultDefectsLocated(
   defects: readonly Defect[],
   context: Context
-): { located: Defect[]; findings: string[] } {
+): { located: Defect[]; findings: string[]; refuted?: AutomationStudioResultRefutedDefect[] } {
   const located: Defect[] = [];
   const findings: string[] = [];
+  const refuted: AutomationStudioResultRefutedDefect[] = [];
   // Core's record of the steps the run took, read once and only for an act defect (`./act-steps.ts`, t766).
   let steps: AutomationStudioResultActStep[] | undefined;
   const actSteps = (): AutomationStudioResultActStep[] => (steps ??= automationStudioResultActSteps(context.summary));
-  // Each left-out row's own cells, read once and only for a row a defect names (`./row-cells.ts`, t771).
-  let cells: Map<string, Array<Record<string, string>>> | undefined;
-  const leftOutCells = (): Map<string, Array<Record<string, string>>> => (cells ??= automationStudioResultLeftOutRowCells(context.summary, context.record));
+  // Each left-out row's own cells and marks, read once and only for a row a defect names (`./row-cells.ts`, t771, t810).
+  let records: Map<string, AutomationStudioResultLeftOutRowRecord[]> | undefined;
+  const leftOutRecords = (): Map<string, AutomationStudioResultLeftOutRowRecord[]> => (records ??= automationStudioResultLeftOutRowRecords(context.summary, context.record));
   for (const defect of defects) {
-    const missing = notFound(defect, context, actSteps, leftOutCells);
+    const missing = notFound(defect, context, actSteps, leftOutRecords);
     if (missing === undefined) located.push(defect);
-    else findings.push(missing);
+    else if (typeof missing === "string") findings.push(missing);
+    else {
+      findings.push(missing.finding);
+      refuted.push({ defect, evidence: missing.evidence, quote: missing.quote });
+    }
   }
-  return { located, findings };
+  return { located, findings, ...(refuted.length ? { refuted } : {}) };
 }
 
-/** Why Core does not find one defect in its record, or nothing where it does. */
-function notFound(defect: Defect, context: Context, actSteps: () => AutomationStudioResultActStep[], leftOutCells: () => Map<string, Array<Record<string, string>>>): string | undefined {
+/** Why Core does not find one defect in its record -- Core's record of its row refuting it, where it does (t810) -- or nothing where it finds it. */
+function notFound(defect: Defect, context: Context, actSteps: () => AutomationStudioResultActStep[], leftOutRecords: () => Map<string, AutomationStudioResultLeftOutRowRecord[]>): string | AutomationStudioResultDefectRowRefutation | undefined {
   const { record, summary } = context;
   // Core cannot locate non-row requirements by row membership. Keep the uncertainty explicit; never infer correctness from this boundary.
   if (defect.kind === "other") return "This requirement is not measurable by Core\'s row-membership checks; it remains unconfirmed against the original request.";
@@ -59,7 +71,10 @@ function notFound(defect: Defect, context: Context, actSteps: () => AutomationSt
   // An act the request asks for, looked for in Core's record of the steps the run took (`./act-located.ts`, t766).
   if (defect.kind === "act_missing" || defect.kind === "act_wrong") return automationStudioResultActDefectNotFound(defect, actSteps());
   const quoted = `"${defect.row}"`;
-  const rows = rowsNamed(defect.row, record, leftOutCells());
+  const rows = rowsNamed(defect.row, record, leftOutRecords());
+  // A row Core's own record of it refutes is no defect: an item marked outside the person's set, or a cell that says otherwise (`./row-refuted.ts`, t810).
+  const refuted = automationStudioResultDefectRowRefuted(defect, rows, quoted);
+  if (refuted) return refuted;
   if (defect.kind !== "asked_missing") {
     if (!rows.stored.length) return `${quoted} is no row the result holds${rows.leftOut.length || rows.seen ? ": a read saw it, and it was left out" : ""}.`;
     const column = storedColumn(defect.column ?? "", rows.stored, summary);
@@ -81,7 +96,7 @@ function notFound(defect: Defect, context: Context, actSteps: () => AutomationSt
   if (rows.leftOut.length || rows.seen) {
     // A presence condition's settled absence is a cell Core measured (`./presence-settled.ts`, F4).
     const absent = automationStudioResultAskedPresenceSettled(defect, rows.label, summary);
-    return (absent ? undefined : askedCellNotFound(defect, quoted, rows.cells, rows.label))
+    return (absent ? undefined : askedCellNotFound(defect, quoted, cellsOf(rows.records), rows.label))
       ?? automationStudioResultAskedUntestedColumn(defect, rows.label, quoted, summary)
       ?? automationStudioResultAskedTestedValueOnly(defect, rows.label, quoted, summary, record.says);
   }
@@ -105,27 +120,33 @@ function requestWordsUnsaid(words: string, says: ((text: string) => boolean) | u
  * "<author> — <group>, <date>" was taken for the stored row labelled <group>).
  * A left-out row that the result also holds is a stored row. `seen` where a
  * read saw a row by that label, left out by two conditions together or kept by
- * a read and not stored; `cells`, the records of its own cells Core holds.
+ * a read and not stored; `records`, the records of its own cells and marks Core
+ * holds (`./row-cells.ts`).
  */
-function rowsNamed(row: string, record: AutomationStudioResultNoRecord, leftOutCells: ReadonlyMap<string, ReadonlyArray<Record<string, string>>>): Named {
+function rowsNamed(row: string, record: AutomationStudioResultNoRecord, leftOutRecords: ReadonlyMap<string, readonly AutomationStudioResultLeftOutRowRecord[]>): Named {
   const text = AutomationStudioRequestRowId.unsaid(row).replace(/^["“'‘]+|["”'’]+$/gu, "").trim();
   const key = fold(text);
   const labels = [...new Set([...record.stored.map((one) => one.label), ...record.leftOut.map((one) => one.label), ...(record.seenLabels ?? []), ...record.pools.flat()])];
   const whole = labels.find((label) => fold(label) === key);
-  if (whole !== undefined) return named(whole, "", record, leftOutCells);
+  if (whole !== undefined) return named(whole, "", record, leftOutRecords);
   const ids = new Set([...text.matchAll(ROW_ID)].map((found) => found[1]!));
   const byId = ids.size ? labels.filter((label) => ids.has(AutomationStudioRequestRowId.of(label))) : [];
-  if (byId.length === 1) return named(byId[0]!, "", record, leftOutCells);
+  if (byId.length === 1) return named(byId[0]!, "", record, leftOutRecords);
   // The longest label the words start with, whole, before a separator.
   const first = labels.filter((label) => {
     const folded = fold(label);
     return folded.length > 0 && key.startsWith(folded) && LEADS_ON.test(key.slice(folded.length));
   }).sort((a, b) => b.length - a.length)[0];
-  if (first !== undefined) return named(first, key.slice(fold(first).length), record, leftOutCells);
-  return { stored: [], leftOut: [], seen: false, cells: [] };
+  if (first !== undefined) return named(first, key.slice(fold(first).length), record, leftOutRecords);
+  return { stored: [], leftOut: [], seen: false, records: [] };
 }
 
-type Named = { stored: AutomationStudioResultNoStoredRow[]; leftOut: AutomationStudioResultNoLeftOutRow[]; seen: boolean; cells: ReadonlyArray<Record<string, string>>; label?: string };
+type Named = { stored: AutomationStudioResultNoStoredRow[]; leftOut: AutomationStudioResultNoLeftOutRow[]; seen: boolean; records: readonly AutomationStudioResultLeftOutRowRecord[]; label?: string };
+
+/** The records' own cells, a record holding none left out. */
+function cellsOf(records: readonly AutomationStudioResultLeftOutRowRecord[]): Array<Record<string, string>> {
+  return records.map((one) => one.cells).filter((cells) => Object.keys(cells).length > 0);
+}
 
 /** Core's id for a label, as the judge's copy writes one (`../request-rows/row-id.ts`). */
 const ROW_ID = /\b([A-HJ-NP-Z2-9]{6})\b/gu;
@@ -136,10 +157,10 @@ const LEADS_ON = /^\s*[—–\-,:;(|·]/u;
  * The rows labelled `label`, stored and left out; where `rest` names a cell of
  * some of them and not of the others, only those (header).
  */
-function named(label: string, rest: string, record: AutomationStudioResultNoRecord, leftOutCells: ReadonlyMap<string, ReadonlyArray<Record<string, string>>>): Named {
+function named(label: string, rest: string, record: AutomationStudioResultNoRecord, leftOutRecords: ReadonlyMap<string, readonly AutomationStudioResultLeftOutRowRecord[]>): Named {
   const key = fold(label);
   let stored = record.stored.filter((one) => fold(one.label) === key);
-  let cells: ReadonlyArray<Record<string, string>> = leftOutCells.get(automationStudioResultLeftOutLabelKey(label)) ?? [];
+  let records: readonly AutomationStudioResultLeftOutRowRecord[] = leftOutRecords.get(automationStudioResultLeftOutLabelKey(label)) ?? [];
   const leftOut = record.leftOut.filter((one) => fold(one.label) === key);
   const told = (row: Readonly<Record<string, string>>): boolean => rest.length > 0 && Object.values(row).some((cell) => {
     const folded = fold(cell);
@@ -147,13 +168,13 @@ function named(label: string, rest: string, record: AutomationStudioResultNoReco
   });
   // The words after the label tell apart rows that share it, where they name a cell of some (header).
   const storedTold = stored.filter((one) => told(one.cells));
-  const cellsTold = cells.filter(told);
-  if (storedTold.length || cellsTold.length) {
+  const recordsTold = records.filter((one) => told(one.cells));
+  if (storedTold.length || recordsTold.length) {
     stored = storedTold;
-    cells = cellsTold;
+    records = recordsTold;
   }
-  if (stored.length) return { stored, leftOut: [], seen: true, cells: [], label };
-  return { stored: [], leftOut, seen: true, cells, label };
+  if (stored.length) return { stored, leftOut: [], seen: true, records: [], label };
+  return { stored: [], leftOut, seen: true, records, label };
 }
 
 /**

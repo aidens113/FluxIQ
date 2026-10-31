@@ -98,6 +98,22 @@
 // its `leftOutSettled` holds is located (`./presence-settled.ts`): Core
 // measured the absence itself (t599), though it holds no cell of that column.
 //
+// **And a row Core's own record of it refutes is no defect (t810, framework
+// plan P5b).** Run `run-mvud43a2-445c7f17`: every judge of a correct Flow
+// called left-out rows missing that were items offering the person entry to
+// a set the person is not in, and a row given a value its own cell does not
+// hold; Core could only call the no unsupported. An `asked_missing` row every
+// record of which carries the client's `outside` mark, quoted by first-person
+// words that negate nothing, or a row of either kind whose own cell in the
+// named column is not empty and neither is, holds nor is held by the value
+// named, is refuted (`./row-refuted.ts`), with its quote; so is a claim about
+// a kept row (`kept_not_asked`, `wrong_value`) naming only a row a read left
+// out (`not_kept`), quoting the condition that left it out: never located, and
+// listed in `refuted` beside the finding that says so. A left-out row keeps
+// its marks beside its cells (`./row-cells.ts`), so a row told apart by its
+// cells keeps its own marks. What a no whose every defect is refuted comes to
+// is `../agreement/unsupported-no.ts`.
+//
 // What a no whose defects Core finds none of comes to is `../unsupported-no.ts`.
 
 export * from "./act-located.ts";
@@ -106,6 +122,7 @@ export * from "./condition-authored.ts";
 export * from "./condition-equals.ts";
 export * from "./presence-settled.ts";
 export * from "./row-cells.ts";
+export * from "./row-refuted.ts";
 export * from "./searched-words-kept.ts";
 export * from "./tested-cell.ts";
 export * from "./tested-value-only.ts";

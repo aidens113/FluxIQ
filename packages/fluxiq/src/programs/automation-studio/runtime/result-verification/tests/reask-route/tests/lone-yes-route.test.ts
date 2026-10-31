@@ -40,8 +40,9 @@ function judge(confirm: Record<string, unknown>): { provider: AutomationStudioLl
   };
 }
 
+// The friend's club cell is left empty: with a cell that names another club, Core refutes the no outright (t810, `refuted-rows-route.test.ts`), and this pins the t771 route.
 const verify = (provider: AutomationStudioLlmProvider) =>
-  verifyAutomationStudioRunResult({ projectId: "project-1", flowId: "flow-1", runId: "run-1", summary: noticeRunSummary(), instructions: [noticeInstruction()], deniedEvidenceKeys: [], provider });
+  verifyAutomationStudioRunResult({ projectId: "project-1", flowId: "flow-1", runId: "run-1", summary: noticeRunSummary(""), instructions: [noticeInstruction()], deniedEvidenceKeys: [], provider });
 
 describe("a lone yes beside nos Core refused every one of (t771)", () => {
   it("is asked once more, and a second yes stands as yes", async () => {

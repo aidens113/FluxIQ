@@ -42,8 +42,14 @@
 // the request does not say to leave out (`askedFor`). The gate keeps the first
 // across the build's trials whether or not Core accounts for every row, and
 // releases it only on the second.
+//
+// **And the defects Core located (P5b).** Each standing no's defects that
+// `../located-defects/` finds in this record are kept as `located` (kind and
+// row as located), the only part of a no a later judge is told of an earlier
+// trial (`../standing-no/earlier-advice.ts`); a judge's prose is never kept.
 
 import type { AutomationStudioRunResultSummary, AutomationStudioResultVerification } from "../contracts/index.ts";
+import { automationStudioResultDefectsLocated } from "../located-defects/index.ts";
 import {
   automationStudioResultAdviceChangedConditions,
   automationStudioResultReadingSentences,
@@ -56,7 +62,7 @@ import {
 import { automationStudioRequestKindExclusionLabels, automationStudioRequestRowLabel, type AutomationStudioRequestWording } from "../request-rows/index.ts";
 import { automationStudioResultNamedStoredLabels } from "./named-stored.ts";
 import { automationStudioResultConditionRequestExclusion } from "./request-exclusion.ts";
-import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoKeptOutRow, AutomationStudioResultStandingNoRecord, AutomationStudioResultStandingNoTogether } from "../standing-no/index.ts";
+import type { AutomationStudioResultStandingNoCall, AutomationStudioResultStandingNoKeptOutRow, AutomationStudioResultStandingNoLocated, AutomationStudioResultStandingNoRecord, AutomationStudioResultStandingNoTogether } from "../standing-no/index.ts";
 
 /** Core's aside on the value a condition read on a kept row (`../read-account/condition.ts`): it may differ between revisions. */
 const KEPT_ROW_ASIDE = /\s*\(read\s.*?\son\sa\srow\sit\skept\)/giu;
@@ -69,10 +75,13 @@ export function automationStudioResultStandingNoRecord(input: {
   record: AutomationStudioResultNoRecord;
   summary: AutomationStudioRunResultSummary;
   wording?: AutomationStudioRequestWording | undefined;
+  /** The request's text, where the caller holds it: what `../located-defects/` holds a defect to (P5b). */
+  requestText?: string | undefined;
 }): AutomationStudioResultStandingNoRecord {
   const { record, summary, wording } = input;
   const standing: AutomationStudioResultStandingNoCall[] = [];
   const upheld = new Set<string>();
+  const located: AutomationStudioResultStandingNoLocated[] = [];
   for (const { call, verification } of input.calls) {
     const reading = verification.basis === "model" && verification.verdict === "does_not_answer" ? verification.repair?.judgement : undefined;
     if (!reading || automationStudioResultRefutedReading(reading, record).wholly) continue;
@@ -80,10 +89,15 @@ export function automationStudioResultStandingNoRecord(input: {
     const changed = automationStudioResultAdviceChangedConditions(reading.advice, record);
     const drops = changed && namesNoRow(reading.observed, record) ? keysOf(changed) : undefined;
     standing.push({ call, ...(drops ? { drops } : {}) });
+    // The defects this no named that Core finds in its own record, as Core located them; the judge's prose is never kept (header, P5b).
+    for (const defect of automationStudioResultDefectsLocated(reading.defects ?? [], { record, summary, requestText: input.requestText }).located) {
+      if (!located.some((one) => one.kind === defect.kind && one.row === defect.row)) located.push({ kind: defect.kind, row: defect.row, ...(defect.column !== undefined ? { column: defect.column } : {}), ...(defect.value !== undefined ? { value: defect.value } : {}), ...(defect.step !== undefined ? { step: defect.step } : {}) });
+    }
   }
   const stored = [...new Set(record.stored.map((row) => row.label))];
   const together = togetherOf(summary, record, new Set(stored));
   return {
+    ...(located.length ? { located } : {}),
     stored,
     storedWhole: storedWhole(summary, record),
     conditions: (record.conditions ?? []).map((condition) => {

@@ -62,6 +62,7 @@
 // flow-bootstrap back; the builder of a record, which does, is
 // `../standing-no-record/`.
 export * from "./contradiction.ts";
+export * from "./earlier-advice-located.ts";
 export * from "./earlier-advice.ts";
 export * from "./kept-condition-drop.ts";
 export * from "./kept-conditions.ts";

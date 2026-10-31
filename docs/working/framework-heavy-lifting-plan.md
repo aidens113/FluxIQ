@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P6 t799 and Claude/$5 live-test support t816 independently verified, merged and pushed with Core0.9.0; P5b t810 and P1b t811 remain in flight. The continuation handoff is in the paired downstream Current State.
+Status detail: P6 t799 and Claude/$5 t816 merged and pushed; P5b t810 independently verified after provider integration and ready to merge with Core0.10.0. P1b t811 continues; paired downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -10,6 +10,10 @@ Paired document: ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-pla
 Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/ (fhl-debug-notes, fhl-step-workload, fhl-core-surface, fhl-domain-surface)
 
 ## Current State
+
+**User decision, 2026-10-30 (P5b).** A judge rejection whose every reason Core refutes from the run's own evidence may
+pass without a model yes, after the judge has been re-prompted with that evidence. Missing or unusable rechecks and
+unrefuted new defects must not pass. This does not authorise bypassing the judge for arbitrary computed results.
 
 **Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
 also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
@@ -734,47 +738,26 @@ Each implementation lane's brief is in its dispatch and its report under the dow
 The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10-29 to
 [archive/2026-10-29-audit-briefs-and-p0.md](framework-heavy-lifting-plan/archive/2026-10-29-audit-briefs-and-p0.md).
 
-### 2026-10-29 - P1a: bookkeeping folded outside the trial gate (t806)
-- Agent: supervisor (brief t806-p1a), four workers; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t806-p1a.md`
-- Changed: `llm/unknown-tool/` refuses an unknown tool id with the offered ids and the nearest match, counted by the refused-in-a-row guard; `project-agents/brief-defaults/` fills a brief's missing `kind`, `parts` and repair `failingReceipt` (never over the model's), `project.repair_unchanged` checked first, `kind` optional in the dispatch schema; `flow-bootstrap/unchanged-fix-point/` gives the first `unchanged_after_no` its diff and fix point; `activity/folded-reason.ts` lets Core write a folded step's line (P1b calls it); `ending-told.ts` composes an empty done reason from the record.
-- Validation: lead-run under the lock, merged with dev: tsc clean; `pnpm test` over llm, project-agents, candidate, unchanged-fix-point, activity, project-build-ending, service-bootstrap -> "Tests 3522 passed (3522)", real-sql "Tests 142 passed (142)", "all groups passed"; prompt contracts "Tests 122 passed (122)"; `pnpm check` exit 0; docs current; structure passed (`provider-stopped.test.ts` fails only when run alone, "No test found in suite", and passes in its group).
-- Outcome: Accepted. `supervisor/guidance.ts` still names `kind` as required (pin-sensitive; left for P1b).
+Accepted P1a, P7 follow-ups, repair-from-step, P6 and Claude-provider ledger entries moved verbatim to
+[archive/2026-10-30-accepted-continuation.md](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
-### 2026-10-29 - P7 follow-ups: day-granular within, record defaults plumbing (t807)
-- Agent: supervisor (Sonnet) with three workers; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t807-p7-followups.md`
-- Changed: `contracts/.../date-within.ts`: a day-only value under a `within` bound in days or weeks compares by whole UTC days (minutes and hours stay instants); `llm/node-tools/{replay-draft,dry-run-gate}.ts` accept the plan part that owes records (callers in `evidence-loop.ts`, `single-subflow/rebuild.ts`, `supervisor-loop.ts` wired with P1b); the web picker keeps `mark` (downstream).
-- Validation: lead-run under the lock, merged with dev: contracts `vitest run src/record-sets` -> "Tests 259 passed (259)"; `pnpm check` exit 0; `pnpm test` over record-defaults, node-tools, plan, candidate, result-verification -> "Tests 2205 passed (2205)", real-sql "3 passed"; docs current; structure passed.
-- Outcome: Accepted.
-
-### 2026-10-29 - A failed build test is repaired from its failing step (t804, user rule)
-- Agent: supervisor; worker-heavy trace, runner, gate; worker headed spec; lead fixes (fromStep through `service/project-build/subflow-trials.ts`, read-only at construction; the refusal code by constant); report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t804-repair-from-step.md`
-- Changed: `core.test_subflow` takes `from: <step key>` and runs the latest revision from that step on the page as it stands (no reset, earlier steps or judge; never the part's test); a failed whole test leaves a pending repair, and another whole test or a completion is refused `subflow.trial_from_step_first` (naming the step and the call) until a from-step run passes it, unless the builder says why one is impossible. P1b shape: `then: "test_whole" | {from}` on `core.submit_subflow`.
-- Validation: lead-run under the lock, merged with dev (t806 in): tsc clean; `pnpm test` over subflow-candidate, plan, verification, candidate, service, project-agents, llm -> "Tests 4821 passed | 2 skipped", real-sql "346 passed"; `pnpm check` exit 0; headed `e2e/site-reset/tests` -> "33 passed (35.9m)" with `photo-repair-from-step.spec.ts` counts `{"wholeRuns":2,"fromStepRuns":1}`.
-- Outcome: Accepted. Follow-up (P1b): `from` also takes the step label the model wrote.
-
-### 2026-10-30 - Codex independent P6 acceptance (t799)
+### 2026-10-30 - Accepted history compacted for continuing P5b/P1b
 - Agent: Codex lead
-- Validation: owning recovery/toggle/handler/pace Core batches -> `15 files / 84 tests passed` and `12 files / 151 tests passed`, both configured groups exited 0. See paired downstream `framework-heavy-lifting-plan/reports/codex-1030/t799-result.md`.
-- Validation: `pnpm.cmd --filter fluxiq check` -> exit 0, content-matched source/test check reused; `pnpm.cmd docs:check` -> `Deterministic framework reference is current.`
-- Validation: downstream native headed Chromium photo-social installed-extension proof -> `1 passed (3.7m)`, no paid calls; downstream owning tests/types passed after correcting its legacy-input test fixture.
-- Not verified: browser Core rung/pacing behavior, Firefox or the separately documented first-loop-row toggle direction. No full sweep or paid qualification.
-- Changed: publishable Core package version raised from 0.7.0 to 0.8.0 for the new P6 API/behavior; no registry operation.
-- Validation: `pnpm.cmd --filter fluxiq check` after the version bump -> exit 0 (28,212 ms).
+- Changed: archived five accepted entries; Current State retains merged outcomes and all open decisions remain here.
+- Validation: Node archive extraction -> five entries preserved verbatim, byte equality checked before replacing their source range.
 
-
-### 2026-10-30 - Claude live provider and five-dollar allowance integrated (t816)
-- Agent: Codex lead
-- Changed: native provider, encrypted-key/session/model routing, keys/settings UI and provider-aware Lab defaults; full evidence in `claude-live-provider-plan.md` and its paired downstream document.
-- Validation: lead owning checks -> Core native33, legacy196 and UI33 passed; downstream live150, non-live241, contracts11 and launcher7 passed; affected types/builds/audits passed; Core merge gate ->70 passed.
-- Validation: paired task finish and `git push origin dev` -> both merged and pushed; Core a89f69a4, downstream05a70666. No paid calls, panel management or full sweep.
-- Not verified: paid/browser Claude quality or comparison; main awaits a qualifying full sweep. Remote task backups retained.
+### 2026-10-30 - P5b evidence-specific judge rechecks verified (t810)
+- Agent: Codex lead; worker resume_t813, report in paired downstream `reports/codex-1030/t810-result.md`.
+- Changed: every no Core overrides must have received its row-evidence re-prompt; new unrefuted defects and missing/failed/unusable rechecks remain nonpassing. Optional checked-cell schema is shared by Claude and DeepSeek; replay rows preserve screened marks and provenance.
+- Validation: lead `pnpm.cmd --filter fluxiq exec vitest run` over required recheck agreement/route, native Claude, shared schema and prompt pins -> `8 files, 119 passed`; owning domain left-out/replay-mark tests -> `8 passed`.
+- Validation: lead `pnpm.cmd --filter fluxiq check` -> content-matched reuse, exit0; final structure -> `failures: [], 473 warnings, 1144 baselined`. Worker owning RV1467, callers805, domain541 and extension501 passed; affected types, reference/freshness and model-text passed.
+- Not verified: new live judge responses. Strict original-artifact replay remains unsure when mandatory replies were never recorded; repeating a saved no is only a scripted acceptance-path test. Provider calls0/cost0. No full sweep or panel management.
 
 ## Open Questions
 
-1. **May a fully typed, fully computed part pass without a model yes?** Owner: the user, through the lead. fhl-core-build-tools
-   row 16 proposes letting Core settle a verbatim pre-check yes. fhl-core-judging puts it behind an explicit gate. This
-   plan keeps a model yes required, because Core settling a pass itself is close to forcing one. Recommendation: not
-   before P5 has run one round with Core and the oracle agreeing.
+1. **May a fully typed, fully computed part pass without a model yes?** Resolved in part by the user on 2026-10-30:
+   a fully refuted judge rejection may pass only after a judge re-prompt with Core's evidence; an unrefuted new defect
+   still blocks. Passing computed results without first asking a judge remains outside this approval. Owner: the user.
 2. **What does a lone yes mean beside nos that were refused or ungrounded?** Owner: Lane C lead. mvrj-c20c raised it as
    a policy question, and mvswewhy Fix 1 proposes a reachable confirming ask. Recommendation: keep it `unsure` until
    P5's grounding lands, then re-measure. With temperature-0 flips, a third ask is a coin toss unless the defect is grounded.

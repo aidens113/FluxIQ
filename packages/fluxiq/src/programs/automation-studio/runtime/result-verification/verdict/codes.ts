@@ -19,5 +19,15 @@ export const AUTOMATION_STUDIO_RESULT_VERDICT_CODES = Object.freeze({
   /** A no naming no defect Core can find in its record of the result, asked once more to list each and still naming none (`../agreement/unsupported-no.ts`, t752): unsure, never a no. */
   refutationUnsupported: "core.result.refutation_unsupported",
   /** A yes on a run that stored none of the records the build declared its task asks for, with no sign the empty answer is honest (`../requested-output/`, t757): unsure, never a yes. */
-  requestedOutputMissing: "core.result.requested_output_missing"
+  requestedOutputMissing: "core.result.requested_output_missing",
+  /**
+   * Every no of the check named only rows whose defect Core's record of that
+   * row refutes (an item marked outside the asked set, or the row's own cell
+   * contradicting the claim), and after one re-ask with that evidence no call
+   * named a defect Core could not refute (`../refuted-no/`, t810): a
+   * temperature-0 flip does not decide it, and the result answers the request.
+   */
+  noRefutedByRecord: "core.result.no_refuted_by_record",
+  /** A yes citing a cell Core's record of the result does not hold (`../cited-yes/`, t810): unsure, never a yes. */
+  yesCitationRefuted: "core.result.yes_citation_refuted"
 } as const);

@@ -102,10 +102,18 @@
 // its label and screens it, as it does the alone rows; with them a read's rows
 // can name every row it saw (A8 frozen pair 5 `run-mva6mlm4-97fe42f9`: seen
 // 23, kept 9, 12 alone, two named nowhere).
+//
+// **And `conditions.aloneMarks` and a together set's `marks`: what the client read
+// on each left-out item** (t810). The read sends `rejectedMarks` beside
+// `rejectedSamples`, aligned with it; the alone rows keep theirs as `aloneMarks`
+// (aligned with `aloneRows`) and each together row as the set's `marks`. Unlike
+// every other member, a malformed `rejectedMarks` drops only the marks
+// (`./rejected-marks.ts`).
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 import { automationStudioResultConditionObservation } from "../../result-verification/condition-observation/index.ts";
+import { aloneMarkLists, rejectedMarkLists } from "./rejected-marks.ts";
 
 /** The two words the read uses for whether its `item` selector ever named an element (contract C2). */
 const LIST_PRESENCE = new Set(["appeared", "never_appeared"]);
@@ -206,8 +214,12 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
     aloneObservationRows(summary.rejectedObservations, summary.rejectedSamples, summary.rejectedSamplesAlone, fieldNames, reported ? (reported.rejected as number[]).length : -1);
   if (summary.rejectedObservations !== undefined && (!sampled || aloneObservations === undefined)) return undefined;
   // The rows two or more conditions left out together, once each (see the header); only beside the alone rows they follow.
-  const togetherRows = sampled && aloneRows ? togetherRowGroups(summary.rejectedSamples as Array<Array<Record<string, string | null>>>, summary.rejectedSamplesAlone as number[], fieldNames) : [];
-  const conditions = reported && aloneRows ? { ...reported, aloneRows, ...(aloneObservations ? { aloneObservations } : {}), ...(togetherRows.length ? { togetherRows } : {}) } : reported;
+  // The marks the client read on those rows (t810): aligned with the sampled rows, or none at all when any member is unreadable (`rejected-marks.ts` says why).
+  const sampledRows = summary.rejectedSamples as Array<Array<Record<string, string | null>>>;
+  const marks = sampled && aloneRows && summary.rejectedMarks !== undefined ? rejectedMarkLists(summary.rejectedMarks, summary.rejectedSamples) : undefined;
+  const aloneMarks = marks ? aloneMarkLists(marks, summary.rejectedSamplesAlone as number[], (condition, row) => rowLabel(sampledRows[condition]?.[row] as Record<string, string | null>, fieldNames) !== undefined) : undefined;
+  const togetherRows = sampled && aloneRows ? togetherRowGroups(sampledRows, summary.rejectedSamplesAlone as number[], fieldNames, marks) : [];
+  const conditions = reported && aloneRows ? { ...reported, aloneRows, ...(aloneObservations ? { aloneObservations } : {}), ...(aloneMarks ? { aloneMarks } : {}), ...(togetherRows.length ? { togetherRows } : {}) } : reported;
   // The two counts a zero read is diagnosed by, absent from a producer that did
   // not count them and held to the same rule as every other count when sent.
   // They are deliberately not cross-checked against `recordCount` or against
@@ -334,26 +346,29 @@ function aloneRowLabels(samples: unknown, leads: unknown, fieldNames: readonly s
  * each row once and led by its label (see the header). Called only on lists
  * `aloneRowLabels` already held to their shape.
  */
-function togetherRowGroups(samples: ReadonlyArray<ReadonlyArray<Record<string, string | null>>>, leads: readonly number[], fieldNames: readonly string[]): JsonObject[] {
-  const byRow = new Map<string, { row: Record<string, string | null>; failed: number[] }>();
+function togetherRowGroups(samples: ReadonlyArray<ReadonlyArray<Record<string, string | null>>>, leads: readonly number[], fieldNames: readonly string[], marks?: ReadonlyArray<ReadonlyArray<JsonObject[] | null>> | undefined): JsonObject[] {
+  const byRow = new Map<string, { row: Record<string, string | null>; failed: number[]; marks: JsonObject[] | null }>();
   samples.forEach((rows, index) => {
-    for (const row of rows.slice(leads[index] ?? 0)) {
+    rows.slice(leads[index] ?? 0).forEach((row, at) => {
       const key = JSON.stringify(row);
-      const said = byRow.get(key) ?? { row, failed: [] };
+      const said = byRow.get(key) ?? { row, failed: [], marks: null };
       if (!said.failed.includes(index)) said.failed.push(index);
+      // The same row is the same item's marks wherever it was seen; the first list that read any is kept.
+      said.marks ??= marks?.[index]?.[(leads[index] ?? 0) + at] ?? null;
       byRow.set(key, said);
-    }
+    });
   });
-  const bySet = new Map<string, { failed: number[]; rows: JsonObject[] }>();
-  for (const { row, failed } of byRow.values()) {
+  const bySet = new Map<string, { failed: number[]; rows: JsonObject[]; marks: Array<JsonObject[] | null> }>();
+  for (const { row, failed, marks: rowMarks } of byRow.values()) {
     const label = failed.length > 1 ? rowLabel(row, fieldNames) : undefined;
     if (label === undefined) continue;
     const key = failed.join(",");
-    const set = bySet.get(key) ?? { failed, rows: [] };
+    const set = bySet.get(key) ?? { failed, rows: [], marks: [] };
     set.rows.push(label);
+    set.marks.push(rowMarks);
     bySet.set(key, set);
   }
-  return [...bySet.values()].sort((a, b) => compareSets(a.failed, b.failed));
+  return [...bySet.values()].sort((a, b) => compareSets(a.failed, b.failed)).map(({ failed, rows, marks: rowMarks }) => ({ failed, rows, ...(rowMarks.some((entry) => entry !== null) ? { marks: rowMarks } : {}) }));
 }
 
 function compareSets(a: readonly number[], b: readonly number[]): number {
