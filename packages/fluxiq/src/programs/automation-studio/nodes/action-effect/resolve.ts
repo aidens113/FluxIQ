@@ -14,19 +14,23 @@ export function resolveAutomationStudioNodeActionEffect(
   const effect = definition.actionEffect;
   if (effect === undefined) return undefined;
   if (!effect || typeof effect !== "object" || Array.isArray(effect)) throw new Error("Node action effect must be a contract.");
-  if (Object.keys(effect).some((key) => key !== "effectClass" && key !== "commitWhen" && key !== "permissionConsequences")) throw new Error("Node action effect has an unknown field.");
+  if (Object.keys(effect).some((key) => key !== "effectClass" && key !== "commitWhen" && key !== "permissionConsequences" && key !== "repeatSafe")) throw new Error("Node action effect has an unknown field.");
+  if (effect.repeatSafe !== undefined && effect.repeatSafe !== true) throw new Error("Node repeat safety must be an explicit true promise.");
+  if (effect.effectClass === "commit" && effect.repeatSafe === true) throw new Error("A committing node cannot promise repeat safety.");
   const resolved = readAutomationStudioResolvedActionEffect({
     effectClass: effect.effectClass,
     permissionConsequences: effect.permissionConsequences === undefined ? [] : effect.permissionConsequences
   });
+  if (resolved.effectClass !== "commit" && effect.repeatSafe === true) resolved.repeatSafe = true;
   if (effect.commitWhen === undefined) return resolved;
   if (typeof effect.commitWhen !== "string" || !effect.commitWhen.trim() || effect.commitWhen !== effect.commitWhen.trim()) throw new Error("Node action effect predicate must name a boolean parameter.");
   const parameter = definition.parameters.find((candidate) => candidate.id === effect.commitWhen);
   if (!parameter || parameter.valueType !== "boolean") throw new Error("Node action effect predicate must name a declared boolean parameter.");
   if (parameter.defaultValue !== undefined && typeof parameter.defaultValue !== "boolean") throw new Error("Node action effect predicate must have a boolean default when present.");
   const value = Object.hasOwn(parameterValues, parameter.id) ? parameterValues[parameter.id] : parameter.defaultValue;
+  if (value === false) return resolved;
   return {
-    effectClass: value === false ? resolved.effectClass : "commit",
+    effectClass: "commit",
     permissionConsequences: resolved.permissionConsequences
   };
 }

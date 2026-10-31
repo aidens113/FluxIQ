@@ -12,4 +12,6 @@ export type AutomationStudioNodeActionEffect = {
   commitWhen?: string;
   /** Always-known lasting consequences, independent of the predicate. */
   permissionConsequences?: readonly AutomationStudioActionConsequence[];
+  /** Explicit client promise that repeating this non-committing action is safe. */
+  repeatSafe?: true;
 };

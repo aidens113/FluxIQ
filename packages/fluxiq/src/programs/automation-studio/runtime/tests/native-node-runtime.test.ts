@@ -305,6 +305,25 @@ describe("the records an importer node declares", () => {
 });
 
 describe("canonical action effects in real native and policy dispatch paths", () => {
+  it("retries a canonical safe state setter after verification while declared lasting classes still stop it", async () => {
+    for (const lasting of [false, true]) {
+      let calls = 0;
+      const implementation = (): AutomationNodeExecutionResult => {
+        calls += 1;
+        return calls < 3 ? { status: "failed", outputs: {}, failure: { category: "output_not_observed", code: "example.read_back", retryable: true, stage: "verification" } } : { outputs: {} };
+      };
+      const declared = node({ actionEffect: { effectClass: "state", repeatSafe: true } });
+      const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([declared]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+      const trace = await runAutomationStudioGraph(effectFlow({ id: "apply", definitionId: declared.id, metadata: { effect: "observe", idempotent: true, declaredConsequences: lasting ? ["modify_existing"] : [] } }), {
+        ...automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime }),
+        delay: async () => undefined
+      });
+      expect(calls).toBe(lasting ? 1 : 3);
+      expect(trace.status).toBe(lasting ? "failed" : "succeeded");
+      expect(trace.failure?.code).toBe(lasting ? "run.outcome_uncertain" : undefined);
+    }
+  });
+
   it("refreshes conditional floors on each For Each pass in both true/false orders", async () => {
     for (const order of [[true, false], [false, true]]) {
       const dispatched: boolean[] = [];

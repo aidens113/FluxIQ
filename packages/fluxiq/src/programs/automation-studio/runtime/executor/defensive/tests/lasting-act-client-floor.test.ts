@@ -18,6 +18,46 @@ function failed(): AutomationStudioNodeAttemptTrace {
 }
 
 describe("a trusted client action-effect floor", () => {
+  it("keeps explicit authored risk raises above a trusted safe-state promise", () => {
+    const safe: AutomationStudioResolvedActionEffect = { effectClass: "state", permissionConsequences: [], repeatSafe: true };
+    const risks: Array<NonNullable<AutomationStudioFlowNode["metadata"]>> = [
+      { destructive: true },
+      { externalSideEffect: true },
+      { requiresApproval: true },
+      { effect: "mutate" },
+      { declaredConsequences: ["modify_existing"] }
+    ];
+    const attempt = failed();
+    attempt.failure = { category: "action_failed", code: "example.unknown", retryable: true, stage: "execution", effect: "ambiguous" };
+    const raised: AutomationStudioFlowNode[] = risks.map((risk) => ({ ...spoofed, metadata: { ...spoofed.metadata, ...risk } }));
+    raised.push({ ...spoofed, parameterValues: { ...spoofed.parameterValues, requiresApproval: true } });
+    raised.push({ ...spoofed, parameterValues: { ...spoofed.parameterValues, effect: "mutate" } });
+    for (const node of raised) {
+      expect(automationStudioNodeRepeatIsSafe(node, safe)).toBe(false);
+      expect(automationStudioNodeActLasts(node, safe)).toBe(true);
+      expect(automationStudioAssessAttemptFault(attempt, node, 1, safe)).toMatchObject({ disposition: "refuse", actUncertain: true });
+    }
+  });
+
+  it("accepts explicit safe state while keeping its host mutation class and rejecting model-only safety", () => {
+    const safe: AutomationStudioResolvedActionEffect = { effectClass: "state", permissionConsequences: [], repeatSafe: true };
+    const plain: AutomationStudioResolvedActionEffect = { effectClass: "state", permissionConsequences: [] };
+    expect(automationStudioNodeSideEffectClass(spoofed, safe)).toBe("external");
+    expect(automationStudioNodeMutates(spoofed, safe)).toBe(true);
+    expect(automationStudioNodeRepeatIsSafe(spoofed, safe)).toBe(true);
+    expect(automationStudioNodeRepeatCannotAct(spoofed, safe)).toBe(true);
+    expect(automationStudioNodeActLasts(spoofed, safe)).toBe(false);
+    expect(automationStudioNodeRepeatIsSafe(spoofed, plain)).toBe(false);
+    for (const stage of ["execution", "verification"] as const) {
+      const attempt = failed();
+      attempt.failure = { category: "action_failed", code: "example.retry", retryable: true, stage, effect: "ambiguous" };
+      expect(automationStudioAssessAttemptFault(attempt, spoofed, 1, safe)).toMatchObject({ disposition: "retry" });
+      expect(automationStudioAssessAttemptFault(attempt, spoofed, 1, plain)).toMatchObject({ disposition: "refuse", actUncertain: true });
+      const declared = { ...spoofed, metadata: { ...spoofed.metadata, declaredConsequences: ["modify_existing"] } };
+      expect(automationStudioAssessAttemptFault(attempt, declared, 1, safe)).toMatchObject({ disposition: "refuse", actUncertain: true });
+    }
+  });
+
   it("outranks every authored safe/observe/none claim and host side-effect downgrade", () => {
     expect(automationStudioNodeActLasts(spoofed, COMMIT)).toBe(true);
     expect(automationStudioNodeMutates(spoofed, COMMIT)).toBe(true);

@@ -9,13 +9,17 @@ import type { AutomationStudioResolvedActionEffect } from "./resolved.ts";
 export function readAutomationStudioResolvedActionEffect(value: unknown): AutomationStudioResolvedActionEffect {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Action effect must be a resolved contract.");
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).some((key) => key !== "effectClass" && key !== "permissionConsequences")) throw new Error("Resolved action effect has an unknown field.");
+  if (Object.keys(record).some((key) => key !== "effectClass" && key !== "permissionConsequences" && key !== "repeatSafe")) throw new Error("Resolved action effect has an unknown field.");
   if (record.effectClass !== "observe" && record.effectClass !== "state" && record.effectClass !== "commit") throw new Error("Action effect class is not recognised.");
   if (!Array.isArray(record.permissionConsequences)) throw new Error("Resolved action effect must declare its permission consequences.");
   // Materialise every slot so a sparse list cannot hide an unknown value.
   const permissionConsequences = parseAutomationStudioPermittedConsequences([...record.permissionConsequences]);
-  return {
+  if (record.repeatSafe !== undefined && record.repeatSafe !== true) throw new Error("Resolved repeat safety must be an explicit true promise.");
+  if (record.repeatSafe === true && (record.effectClass === "commit" || permissionConsequences.length)) throw new Error("A resolved committing action cannot promise repeat safety.");
+  const resolved: AutomationStudioResolvedActionEffect = {
     effectClass: permissionConsequences.length ? "commit" : record.effectClass,
     permissionConsequences
   };
+  if (record.repeatSafe === true) resolved.repeatSafe = true;
+  return resolved;
 }

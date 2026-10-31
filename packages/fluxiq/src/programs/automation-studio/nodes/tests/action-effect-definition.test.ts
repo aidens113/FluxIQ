@@ -25,6 +25,17 @@ function node(): AutomationStudioNodeDefinition {
 }
 
 describe("action effects on canonical definitions", () => {
+  it("keeps an explicit repeat-safe conditional contract through validation and JSON registration", () => {
+    const definition = node();
+    definition.actionEffect = { effectClass: "state", commitWhen: "apply", repeatSafe: true };
+    const restored: AutomationStudioNodeDefinition = JSON.parse(JSON.stringify(definition));
+    expect(validateAutomationStudioNodeDefinition(restored).ok).toBe(true);
+    const registered = new AutomationStudioNodeRegistry([]).register(restored).get(restored.id)!;
+    expect(registered.actionEffect).toEqual(definition.actionEffect);
+    expect(resolveAutomationStudioNodeActionEffect(registered)).toEqual({ effectClass: "state", permissionConsequences: [], repeatSafe: true });
+    expect(resolveAutomationStudioNodeActionEffect(registered, { apply: true })).toEqual({ effectClass: "commit", permissionConsequences: [] });
+  });
+
   it("survives a structured clone, JSON serialization and manifest registration", () => {
     const original = node();
     const restored: AutomationStudioNodeDefinition = JSON.parse(JSON.stringify(structuredClone(original)));

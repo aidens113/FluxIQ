@@ -12,6 +12,13 @@ class. True, unresolved bindings and invalid/missing values conservatively
 resolve to commit. Known permission consequences also require commit. Raw slots
 must survive plan projection so unresolved values cannot acquire a false default.
 
+Optional `repeatSafe: true` is a separate trusted promise that repeating the
+resolved state-setting operation is idempotent. State alone makes no such
+promise. Conditional elevation to commit, known permission classes and declared
+lasting consequences outrank this promise. Combining floors retains it only
+when every state-contributing floor explicitly supplies it. Commit can never
+be made repeatable through this field or model metadata.
+
 The browser-safe public `fluxiq/automation-studio/action-effect` subpath exports
 the contracts, strict readers, resolver and floor combination helper without
 loading the executor. `AutomationStudioNativeNodeRuntime.resolveActionEffect`

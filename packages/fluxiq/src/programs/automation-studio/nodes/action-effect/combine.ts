@@ -8,8 +8,11 @@ export function combineAutomationStudioResolvedActionEffects(
 ): AutomationStudioResolvedActionEffect | undefined {
   const known = effects.filter((effect) => effect !== undefined).map(readAutomationStudioResolvedActionEffect);
   if (!known.length) return undefined;
-  return {
+  const combined: AutomationStudioResolvedActionEffect = {
     effectClass: known.some((effect) => effect.effectClass === "commit") ? "commit" : known.some((effect) => effect.effectClass === "state") ? "state" : "observe",
     permissionConsequences: automationStudioConsequencesInOrder(known.flatMap((effect) => effect.permissionConsequences))
   };
+  const stateFloors = known.filter((effect) => effect.effectClass === "state");
+  if (combined.effectClass !== "commit" && known.some((effect) => effect.repeatSafe === true) && stateFloors.every((effect) => effect.repeatSafe === true)) combined.repeatSafe = true;
+  return combined;
 }

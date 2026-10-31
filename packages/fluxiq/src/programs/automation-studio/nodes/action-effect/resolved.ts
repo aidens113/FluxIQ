@@ -5,4 +5,6 @@ import type { AutomationStudioActionEffectClass } from "./effect-class.ts";
 export type AutomationStudioResolvedActionEffect = {
   effectClass: AutomationStudioActionEffectClass;
   permissionConsequences: readonly AutomationStudioActionConsequence[];
+  /** Trusted proof, never inferred from the state class or model metadata. */
+  repeatSafe?: true;
 };
