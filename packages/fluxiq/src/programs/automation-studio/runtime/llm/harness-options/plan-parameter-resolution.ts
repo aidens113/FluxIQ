@@ -39,7 +39,7 @@
 // such an answer may carry `handleViews` -- which view each handle came from --
 // and the resolution returns them per node as a record of where the
 // candidate's targets were learned. Without it nothing is sent and nothing
-// beside `status` and `parameters` is accepted, exactly as before.
+// beside the always-available effect and control-intent companions is accepted.
 //
 // **A repair's steps are resolved here too (t429).** The steps an in-run
 // repair writes -- a handler's body, a unit's replacement, steps inserted
@@ -146,6 +146,11 @@
 // stateless control of before. It is kept on a step's own views alone, never a
 // page fact's: a fact names an element to read, not a control the step
 // presses (`../../flow-bootstrap/script-statements/toggle-idempotent.ts`).
+//
+// A resolved executable node may carry host control intent. It is strictly
+// validated and copied into a Core-owned tuple-keyed sidecar, never parameters
+// or persisted metadata. Facts, skipped inheritance and unchanged/refused
+// answers supply none. The annotation does not alter permission or effects.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioToggleStateSignature } from "../../toggle-state/index.ts";
@@ -157,6 +162,7 @@ import { automationStudioFlowBootstrapIssueDetailSentence } from "../../flow-boo
 // From the module that owns them: `../harness.ts` and the harness barrel both lead back into this module's import cycle, and through them the two read as undefined when this module loads inside it.
 import { AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN } from "../harness/structured-response.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanControlState, AutomationStudioPlanHandleReach, AutomationStudioPlanHandleView } from "./binding.ts";
+import { automationStudioReadResolvedControlIntent, automationStudioResolvedControlIntentNodeKey, automationStudioResolvedControlIntents, type AutomationStudioResolvedControlIntent } from "../resolved-control-intent/index.ts";
 import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, automationStudioPlanFactTargetSites, automationStudioPlanFactTargetsNotNamingHandles, automationStudioPlanMetadataFactHandlePaths } from "./plan-fact-targets.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";
@@ -207,7 +213,7 @@ export type AutomationStudioFlowBootstrapPlanHandleView = AutomationStudioPlanHa
 
 export type AutomationStudioFlowBootstrapPlanParameterResolution =
   /** `handleViews` only when the caller asked for the view history, in plan order. */
-  | { ok: true; plan: AutomationStudioFlowBootstrapPlan; resolvedNodeKeys: string[]; handleViews?: AutomationStudioFlowBootstrapPlanHandleView[] }
+  | { ok: true; plan: AutomationStudioFlowBootstrapPlan; resolvedNodeKeys: string[]; handleViews?: AutomationStudioFlowBootstrapPlanHandleView[]; controlIntents?: ReadonlyMap<string, AutomationStudioResolvedControlIntent> }
   | { ok: false; issues: AutomationStudioFlowBootstrapIssue[] };
 
 /**
@@ -264,6 +270,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
   }
   const resolvedNodeKeys: string[] = [];
   const handleViews: AutomationStudioFlowBootstrapPlanHandleView[] = [];
+  const controlIntents = new Map<string, AutomationStudioResolvedControlIntent>();
   // Every step in plan order as the plan holds it now, before a fact or a node is resolved into it (header, t748 U1b).
   const runOrder = input.handleReach === undefined ? undefined : plan.subflows.flatMap((subflow) => subflow.nodes.map((node) => ({ definitionId: node.definitionId, parameters: structuredClone(automationStudioPlanStepConsequences(node).parameters) })));
   let position = -1;
@@ -319,11 +326,16 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       // What the act on its control made true, where the build signed no effect of its own (header, t447).
       if (outcome.effect && !node.routeSignatures?.effect) node.routeSignatures = { ...node.routeSignatures, effect: outcome.effect };
       resolvedNodeKeys.push(node.key);
+      if (outcome.controlIntent) {
+        const key = automationStudioResolvedControlIntentNodeKey(subflow.key, node.key);
+        if (controlIntents.has(key)) issues.push(parameterIssue(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid, path));
+        else controlIntents.set(key, outcome.controlIntent);
+      }
       for (const view of outcome.handleViews ?? []) handleViews.push({ node: ref, handle: view.handle, view: view.view, location: view.location, ...(view.control ? { control: view.control } : {}) });
     }
   }
   if (issues.length) return { ok: false, issues };
-  return input.handleReach === undefined ? { ok: true, plan, resolvedNodeKeys } : { ok: true, plan, resolvedNodeKeys, handleViews };
+  return { ok: true, plan, resolvedNodeKeys, ...(input.handleReach === undefined ? {} : { handleViews }), ...(controlIntents.size ? { controlIntents: automationStudioResolvedControlIntents(controlIntents) } : {}) };
 }
 
 /**
@@ -342,7 +354,7 @@ export function assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan: Aut
 
 type NodeOutcome =
   | { status: "unchanged" }
-  | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[]; effect?: JsonObject }
+  | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[]; effect?: JsonObject; controlIntent?: AutomationStudioResolvedControlIntent }
   /** `unresolved`, for a node left naming a handle: the parameter holding it and Core's sentence about it (header, t514). */
   | { status: "refused"; issueCodes: string[]; details?: RefusalDetail[]; unresolved?: { parameter: string; message: string } }
   | { status: "needs_permission"; missing: string[]; requestId: string | null };
@@ -413,6 +425,8 @@ async function resolveNode(
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.failed);
   }
   if (!isRecord(answer)) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
+  const controlIntent = automationStudioReadResolvedControlIntent(answer);
+  if (controlIntent === false) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
   if (answer.status === "refused" && keysWithin(answer, ["status", "issueCodes"], ["issues"]) && Array.isArray(answer.issueCodes) && (answer.issues === undefined || Array.isArray(answer.issues))) {
     const codes = [...new Set(answer.issueCodes.filter((code): code is string => typeof code === "string" && ISSUE_CODE.test(code)))].slice(0, MAX_REFUSAL_CODES);
     const details = Array.isArray(answer.issues) ? refusalDetails(answer.issues) : [];
@@ -429,13 +443,14 @@ async function resolveNode(
   if (answer.status === "unchanged" && exactKeys(answer, ["status"])) outcome = stripped(step, parameters);
   else if (answer.status === "resolved" && isBoundedJsonObject(answer.parameters)
     // `handleViews` only on an answer to a resolution that asked for the view history; `effect` on any (header).
-    && keysWithin(answer, ["status", "parameters"], input.handleReach !== undefined ? ["handleViews", "effect"] : ["effect"])
+    && keysWithin(answer, ["status", "parameters"], input.handleReach !== undefined ? ["handleViews", "effect", "controlIntent"] : ["effect", "controlIntent"])
     && (!Object.hasOwn(answer, "handleViews") || isHandleViews(answer.handleViews))) {
     const effect = Object.hasOwn(answer, "effect") ? automationStudioReadRouteSignature(answer.effect) : undefined;
     if (effect && !effect.ok) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
     outcome = {
       status: "resolved",
       parameters: structuredClone(answer.parameters),
+      ...(controlIntent ? { controlIntent } : {}),
       ...(isHandleViews(answer.handleViews) ? { handleViews: answer.handleViews.map(ownView) } : {}),
       ...(effect?.ok ? { effect: effect.signature } : {})
     };

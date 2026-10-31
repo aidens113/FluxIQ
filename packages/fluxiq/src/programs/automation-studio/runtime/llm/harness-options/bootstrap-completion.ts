@@ -1,12 +1,9 @@
 // Whether a model's completed Flow Bootstrap result can be built, checked
 // while the exploration can still ask again.
 //
-// Creation used to check the completed plan only after the exploration had
-// ended, so a plan that failed any check ended the whole run: a live build
-// spent its call, completed with a plan whose parameter did not validate, and
-// stopped with `evidence_completion_plan_invalid` and no word on which check
-// refused it. A refused plan is a model failure like a malformed reply, and the
-// model can correct it if it is told what was wrong.
+// A refused completion returns its issues while exploration can still repair
+// them. Checking only after exploration ended previously stopped the run with
+// `evidence_completion_plan_invalid`, leaving no chance to correct the plan.
 //
 // So every check a completed result must pass runs here, as the evidence
 // loop's completion check: the wrapper, the plan's structure, the evidence
@@ -23,21 +20,15 @@
 // content and never a validator's prose.
 //
 // **Every check runs on every attempt, and every failure comes back at once.**
-// The checks used to stop at the first refusal, so a build was told one thing
-// at a time. `run-mulxsbyy-d4d4c7a1` was refused three times by three different
-// checks -- the start location at decision 24, the dry run at 27, a profile
-// limit at 41 -- and learned of each only after answering the last, the third
-// on the forced final decision with no turn left to answer it. All three were
-// true at decision 24. So a check whose input exists runs whatever the others
-// said: the capability checks ask their question of the furthest plan the
+// Returning one failure at a time exhausted a build's turns on issues already
+// present together (`run-mulxsbyy-d4d4c7a1`). A check whose input exists runs
+// whatever the others said: capability checks use the furthest plan the
 // structural checks produced, the act permissions are read off the draft, and
 // the refusal lists every failure together. Only a check with nothing to look
 // at is skipped -- a plan that never parsed has no nodes to resolve.
 //
-// **The capability checks ask what none of the others did.** Every structural
-// check holds the plan to the node library: it parses, its parameters resolve,
-// its nodes are registered. Neither of the questions a person would ask is
-// among them.
+// **Capability checks go beyond structure.** Parsing, parameter resolution and
+// registered nodes alone cannot answer the two questions below.
 //
 // *Could this Flow answer?* Four live builds against one instruction proposed
 // four different Flows as finished, one of which navigated twice, typed three
@@ -160,6 +151,7 @@ import {
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach } from "./binding.ts";
+import type { AutomationStudioResolvedControlIntent } from "../resolved-control-intent/index.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
 import { automationStudioAmendedPlanParameters } from "./amended-plan-parameters.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
@@ -207,6 +199,8 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
      * beside `check` for the same reason as `warnings`.
      */
     handleViews?: AutomationStudioFlowBootstrapPlanHandleView[];
+    /** Core-owned contextual annotations of actual executable resolutions; never part of the plan. */
+    controlIntents?: ReadonlyMap<string, AutomationStudioResolvedControlIntent>;
     /** Where each node of the accepted plan was written, for a check after this one to name the step it refuses (`automationStudioFlowBootstrapIssuePlace`). */
     locator?: AutomationStudioFlowBootstrapIssueLocator;
   }
@@ -415,6 +409,7 @@ async function checkPlan(
   let capabilityPlan: AutomationStudioFlowBootstrapPlan | undefined;
   let buildPlan: AutomationStudioFlowBuildPlan | undefined;
   let handleViews: AutomationStudioFlowBootstrapPlanHandleView[] | undefined;
+  let controlIntents: ReadonlyMap<string, AutomationStudioResolvedControlIntent> | undefined;
   // A refused Flow script carries the plan its steps got as far as, and the
   // issues' paths are that plan's. Read from the reply instead, as it was
   // before, and `bootstrap.unknown_parameter` came back naming a path into a
@@ -453,7 +448,10 @@ async function checkPlan(
         modelWrittenParameters: drafted?.amendedParameters,
         ...(input.handleReach ? { handleReach: input.handleReach } : {})
       });
-      if (resolved.ok) handleViews = resolved.handleViews;
+      if (resolved.ok) {
+        handleViews = resolved.handleViews;
+        controlIntents = resolved.controlIntents;
+      }
       if (!resolved.ok) {
         failures.push({ code: "flow_bootstrap.evidence_completion_parameters_unresolved", issues: resolved.issues, about: about(parsed.plan) });
       } else {
@@ -539,6 +537,7 @@ async function checkPlan(
     ...(warnings.length ? { warnings } : {}),
     ...(notes.length ? { notes } : {}),
     ...(handleViews ? { handleViews } : {}),
+    ...(controlIntents ? { controlIntents } : {}),
     ...(accepted.locator ? { locator: accepted.locator } : {})
   };
 }

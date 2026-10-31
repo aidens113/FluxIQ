@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t832 complete/pushed with shared builds and compiled smoke current. Next CC11 trusted control-intent implementation; full/paid/main held.
+Status detail: Validated t833 trusted control intent; paired task integration next. P10 broader migration remains; full/main held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -10,6 +10,8 @@ Paired document: ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-pla
 Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/ (fhl-debug-notes, fhl-step-workload, fhl-core-surface, fhl-domain-surface)
 
 ## Current State
+
+**Validated t833, 2026-10-31, integration pending:** Core0.25 resolver-only control intent is validated/copied into immutable collision-safe per-node sidecars with private provenance. Actual candidate/subflow checks use observed accept/response-only semantics, never model-authored consent or English labels in Core; annotations grant no permission/effect safety and never persist in executable plans. Web classifies actual sanitized controls/consent membership once; exact historical location and pre-act source stay attached, conflicting history refuses, current observations remain usable after label changes. Saved absolute/state/nested/repair paths correlate only exact retained evidence. Lead35Core tests/8files47.74s plus worker moved7tests pass; Core types15.283s/audit1143 pass. Lead128web tests preserve original4section hashes/completion digest/11saved graphs; final all-owning resolver+intent+paired215tests pass9.183s, domain types14.475s, prior compiler29.886s. Actual public Core+web/Gate4cases pass with1capture/0main actions each; classifier11pass. SDK final92.972s and actual owning freshness pass. Final Down audit/paired source integration/dev pushes/shared build refresh remain. Reports p10-control-intent/lead-acceptance.md and workers record failures, bounded fixes and compatibility limits. No provider/browser launch in this unit; no Claude performance claim.
 
 **Accepted merged t832, 2026-10-31:** Source merges Core6b08b5b9/Down951daa2b, Core0.24. Explicit client control guidance moves original3operation paragraphs out of Core at unchanged positions; actual web runtime retains all4full UTF8 hashes/completion digest,11real saved graphs/3negative proofs. Core owns fixed grammar/safety, strict own metadata/snapshot and actual candidate/subflow/completion transport. Three authored revision validators share exact-end pattern; valid text/limits unchanged. Lead152Core tests/8files79.82s, types matching stamp1.106s (compiler120.547s), audit pass; private SDK177.646s/Domain18.116s and compiled actual-runtime smoke pass0gateway/provider calls/private renderer/helper not public. Lead82web cases pass0.730s and post-parent0.719s, types matching stamp1.422s (compiler32.306s), audit pass. Both baselines unchanged1143/583, exact incoming parent handoffs retained with source diffs verified empty. Down task finished/removed; Core mandatory70merge-contract tests pass9.29s; backups Core66f51f63/Downb546c4a9 retained, private Core clean detached for age-prune. Evidence main Down test-runs/2026-10-31-t832-validation/. Paired dev pushed; shared SDK100.967s/Domain20.395s/host3.447s/allthree extension bundles27.031s current. Actual compiled runtime smoke preserves4original web pins/completion digest and frozen explicit companion, exposes no internal renderer/revision helper and dispatches0gateway/provider calls. Broader P10 remains; read-only CC11design traces trusted resolver sidecar because current consent exception trusts model handler wording (authoring-check gap, not proof of a dispatched lasting act). Full/paid/main held.
 
@@ -21,7 +23,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 **Remaining P9:** None for this implementation unit. P9 and t832 control-guidance ownership are complete/pushed with current shared builds and provider-free acceptance. Finished judged Flow/Claude comparison remains separate paid qualification. Next P10 is trusted control intent; mixed prose, obstruction facts, vocabulary, fingerprints and final audit remain.
 
-**Standing constraints:** Both Oct31 full-suite slots are used: owning tests/types/builds and audits only; main promotion waits a complete permitted passing sweep. No paid GO: future live model tests use CLAUDE_API_KEY/Claude/$5 whole build, no fallback; no model/API calls now. Do not manage the user's panel or touch real data/profiles. Preserve main Down .clinerules/fluxiq.md hash b052f0e6b0e6c6de0ba973810c7632eda04aadfdd5314eaaa73710edd1101a8d. Product model guidance stays generic and never teaches realistic scenarios.
+**Standing constraints:** Both Oct31 full-suite slots are used: owning tests/types/builds and audits only; main promotion waits a complete permitted passing sweep. This implementation unit uses provider-free checks; requested Claude live testing remains pending integrated-source qualification, not a new user-approval requirement. Live model tests use CLAUDE_API_KEY/Claude/$5 whole build, no fallback. Do not manage the user's panel or touch real data/profiles. Preserve main Down .clinerules/fluxiq.md hash b052f0e6b0e6c6de0ba973810c7632eda04aadfdd5314eaaa73710edd1101a8d. Product model guidance stays generic and never teaches realistic scenarios.
 
 Core owns generic P9 algorithms/tool admission; Down owns its observed-state explanation compatibility and any allowed fixture proof. Workers edit only briefed files/reports; root owns shared state, verification, version and git. Reports/briefs for this unit: framework-heavy-lifting-plan/reports/codex-1031/p9-append-only/.
 
@@ -737,6 +739,8 @@ Each implementation lane's brief is in its dispatch and its report under the dow
 Current t829 bounded briefs are under `reports/codex-1031/p8-repeat-history/`: Core guard plan, web digest discovery, and history plan. History has a separate implementation grant; guard/client source edits await a frozen optional observation seam. All behavior checks await production source freezes.
 
 ## Work Ledger
+
+- **2026-10-31 t833 Validation:** `pnpm.cmd --filter fluxiq check` -> PASS,15.283s; lead owning intent/effect/toggle selection35pass/8files,47.74s; `pnpm.cmd --filter @fluxiq-web-extension/domain test /plan-resolution/tests/ /control-intents/tests/ /tests/control-intent/tests/` (label t833-lead-final) -> 215pass/0fail,9.183s; exact commands/output in lead-acceptance report/ignored evidence. Core/domain owning types PASS, original web examples/guidance128tests PASS; final merge gates pending.
 
 Accepted prior ledger index and t828 evidence moved verbatim to [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 

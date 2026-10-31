@@ -72,7 +72,7 @@ function choosingDefinition(): AutomationStudioNodeDefinition {
   return { ...base, id: "web.output.dom-choose", label: "Choose Way", description: "Choose one of two ways.", outputAction: { allowedOutputIds: ["web.dom.click", "web.dom.select"] } };
 }
 
-type CorpusCase = { name: string; lines: string[]; codes: string[]; registry?: ReturnType<typeof refusalTestRegistry> };
+type CorpusCase = { name: string; lines: string[]; codes: string[]; registry?: ReturnType<typeof refusalTestRegistry>; hostAccept?: true };
 
 /**
  * The state-aware statements (t388): a library that can call a part -- Call
@@ -166,12 +166,13 @@ const CORPUS: CorpusCase[] = [
   { name: "a handler fact that cannot be read", lines: [...open, ...handler("on retry for rows: a notice", ["  when: somewhere t1", "  then: carry on"])], codes: ["flow_script.fact_invalid"] },
   { name: "a handler in a library with no handler nodes", lines: [...open, ...handler("on fail for rows: no rows", ["  then: give up"])], codes: ["flow_script.handler_unavailable"], registry: refusalTestRegistry([], ["builtin.control.handler", "builtin.control.handler-end"]) },
   // Interruptions answered through their offer rather than their way out (t423).
-  // The element words stand in for what the domain resolves a handle to.
-  { name: "an optional step pressing an offer's accept control as if it did nothing", lines: [...open, ...click("offer", ["  optional: yes", "  element.visibleText: Claim your discount"])], codes: ["flow_script.way_out_accepts"] },
+  // The host classifies its resolved control; authored words grant no exception.
+  { name: "an optional step pressing an offer's accept control as if it did nothing", lines: [...open, ...click("offer", ["  optional: yes", "  element.visibleText: Claim your discount"])], codes: ["flow_script.way_out_accepts"], hostAccept: true },
   {
     name: "a handler step pressing an offer's join control as if it did nothing",
     lines: [...open, ...handler("on before for rows: an offer covers the list", ["  when: exists t1", "  step: close the offer", "    node: web.dom.click", "    selector: .offer", "    element.accessibleName: Join now", "    consequences: none", "  then: carry on"])],
     codes: ["flow_script.way_out_accepts"],
+    hostAccept: true,
     registry: calling()
   }
 ];
@@ -181,7 +182,14 @@ const outcomes: Outcome[] = [];
 
 beforeAll(async () => {
   for (const corpusCase of CORPUS) {
-    const controller = new AutomationStudioFlowCandidateSubmissionController(refusalTestSubmission(corpusCase.registry));
+    const base = refusalTestSubmission(corpusCase.registry);
+    const controller = new AutomationStudioFlowCandidateSubmissionController({ ...base, binding: {
+      resolvePlanNodeParameters: async (input) => {
+        const answer = await base.binding.resolvePlanNodeParameters(input);
+        return answer.status === "resolved" && corpusCase.hostAccept && input.nodeDefinitionId === "web.output.dom-click"
+          ? { ...answer, controlIntent: { intent: "accept" as const } } : answer;
+      }
+    } });
     const submitted = await controller.submit({ summary: corpusCase.name, flow: corpusCase.lines.join("\n") });
     if (submitted.ok) throw new Error(`the corpus case "${corpusCase.name}" was accepted`);
     const evidence = automationStudioCandidateSubmissionRefusal(submitted).evidence;

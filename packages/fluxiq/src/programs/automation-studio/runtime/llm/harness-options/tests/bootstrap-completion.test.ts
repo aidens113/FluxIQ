@@ -22,6 +22,22 @@ const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomation
 const extractList = { item: "li.product", fields: { name: ".name" } };
 const NEWLINE = String.fromCharCode(10);
 
+it("carries only a freshly resolved host control-intent sidecar beside a completion's unchanged executable plan", async () => {
+  const result = { summary: "Read rows", plan: planWith({ extractList }), controlIntents: { 'primary.scrape': { intent: "accept", responseOnly: true } } };
+  const check = (withIntent: boolean) => checkAutomationStudioFlowBootstrapCompletion({ result, projectId: "project.1", flowId: "flow.1", registry, resolution,
+    binding: { resolvePlanNodeParameters: ({ parameters }) => ({ status: "resolved", parameters, ...(withIntent ? { controlIntent: { intent: "accept" as const } } : {}) }) } });
+  const plain = await check(false);
+  const annotated = await check(true);
+  expect(plain.ok, JSON.stringify(plain)).toBe(true);
+  expect(annotated.ok, JSON.stringify(annotated)).toBe(true);
+  if (!plain.ok || !annotated.ok) return;
+  expect(plain.controlIntents).toBeUndefined();
+  expect([...annotated.controlIntents!]).toEqual([[JSON.stringify(["primary", "scrape"]), { intent: "accept" }]]);
+  expect(JSON.stringify(annotated.buildPlan)).toBe(JSON.stringify(plain.buildPlan));
+  expect(JSON.stringify(annotated.buildPlan)).not.toContain("controlIntent");
+  expect(Object.hasOwn(annotated.check, "controlIntents")).toBe(false);
+});
+
 function planWith(parameters: JsonObject): JsonObject {
   return {
     schemaVersion: "0.1",

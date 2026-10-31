@@ -1,102 +1,81 @@
-// An interruption is dismissed through its way out (t423): which optional and
-// handler steps are refused for pressing the offer instead, and at which line.
-// The element words stand in for the identity the domain resolves a handle to;
-// the refusal as the model sees it, through the real controller, is the
-// corpus's (`../../candidate/tests/refusal-locator-corpus.test.ts`).
 import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../../authoring/index.ts";
+import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioResolvedControlIntent } from "../../../llm/harness-options/index.ts";
 import { automationStudioFlowScriptWayOutIssues } from "../index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
-const registry = new AutomationStudioNodeRegistry(canonicalBuiltinAutomationNodeDefinitions);
-for (const definition of webDomainNodeDefinitionsFixture()) registry.register(definition);
+const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, ...webDomainNodeDefinitionsFixture()]);
+const OPEN = ["flow: Do it", "step: open the page", "  node: web.browser.navigate", "  url: https://shop.test/"];
+const press = (words: string | undefined, extra: string[] = [], consequences = "none") => ["step notice: answer the notice if it shows", "  node: web.dom.click", "  selector: .notice", ...(words === undefined ? [] : [`  element.visibleText: ${words}`]), `  consequences: ${consequences}`, ...extra];
+const handled = (when = "exists t1", words = "a control") => [
+  ...OPEN, "step rows: read the rows", "  node: web.dom.extract_list", "  extractList: {\"item\": \".row\", \"fields\": {\"name\": \".name\"}}",
+  "on before for rows: an interruption", `  when: ${when}`, "  step: answer it", "    node: web.dom.click", "    selector: .notice", `    element.accessibleName: ${words}`, "    consequences: none", "  then: carry on", "end"
+];
 
-/** The way-out refusals of a script, as code and path. */
-function refusals(lines: string[]) {
+async function checked(lines: string[], intent?: AutomationStudioResolvedControlIntent) {
   const flow = lines.join("\n");
   const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow }, registry, resolution });
   if (!accepted.ok) throw new Error(JSON.stringify(accepted.issues));
-  return automationStudioFlowScriptWayOutIssues({ script: parseAutomationStudioFlowScript(flow).script, plan: accepted.plan, locator: accepted.locator })
-    .map((issue) => ({ code: issue.code, path: issue.path, message: issue.message }));
+  const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({ plan: accepted.plan, projectId: "project.test", flowId: "flow.test", handlesIssued: true,
+    binding: { resolvePlanNodeParameters: ({ nodeDefinitionId, parameters }) => {
+      if (nodeDefinitionId === AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID) return { status: "resolved", parameters: { selector: "#fact" } };
+      if (nodeDefinitionId !== "web.output.dom-click") return { status: "unchanged" };
+      return { status: "resolved", parameters, ...(intent && nodeDefinitionId === "web.output.dom-click" ? { controlIntent: intent } : {}) };
+    } }, permissionFor: () => async () => ({ permitted: true }) });
+  if (!resolved.ok) throw new Error(JSON.stringify(resolved.issues));
+  const input = { script: parseAutomationStudioFlowScript(flow).script, plan: resolved.plan, locator: accepted.locator, controlIntents: resolved.controlIntents };
+  return { input, issues: automationStudioFlowScriptWayOutIssues(input) };
 }
 
-/** Lines 1-4: open the page. */
-const OPEN = ["flow: Do it", "step: open the page", "  node: web.browser.navigate", "  url: https://shop.test/"];
-/** Lines 5-10 after OPEN: a press on a control with these words, declaring `consequences`, with any extra lines. */
-const press = (words: string, extra: string[] = [], consequences = "none") => ["step notice: close the notice if it shows", "  node: web.dom.click", "  selector: .notice", `  element.visibleText: ${words}`, `  consequences: ${consequences}`, ...extra];
-
-describe("an optional step that answers an interruption", () => {
-  it("is refused at its consequences line when it presses the offer as if it did nothing, naming the way out", () => {
-    const found = refusals([...OPEN, ...press("Claim the offer", ["  optional: yes"])]);
-    expect(found.map(({ code, path }) => ({ code, path }))).toEqual([{ code: "flow_script.way_out_accepts", path: "flow.line.9" }]);
-    expect(found[0]!.message).toContain("The step at line 5 is optional");
-    expect(found[0]!.message).toContain("\"Claim the offer\"");
-    expect(found[0]!.message).toContain("close, no thanks, not now, the X");
-    expect(found[0]!.message).toContain("make it a step of its own, not optional");
+describe("trusted per-node interruption semantics", () => {
+  it("refuses host acceptance on the exact optional consequence line, using display words only in feedback", async () => {
+    const { issues } = await checked([...OPEN, ...press("a control", ["  optional: yes"])], { intent: "accept" });
+    expect(issues).toEqual([expect.objectContaining({ code: "flow_script.way_out_accepts", path: "flow.line.9" })]);
+    expect(issues[0]!.message).toContain("The step at line 5 is optional");
+    expect(issues[0]!.message).toContain('"a control"');
+    expect(issues[0]!.message).toContain("the permission check still applies");
+    expect(issues[0]!.message).not.toMatch(/cookie|web|selector|allowed|permission is granted/iu);
   });
 
-  it("refuses each accepting control: join, subscribe, sign up, buy, confirm, continue, and a label that begins by taking the offer", () => {
-    for (const words of ["Grab the offer", "Join now", "Subscribe", "Sign up for updates", "Buy now", "Confirm", "Continue", "Continue to checkout", "Get the app", "Grab it", "Yes, I want it", "Add to bag", "Accept the offer", "Accept and subscribe"]) {
-      expect(refusals([...OPEN, ...press(words, ["  optional: yes"])]).map((issue) => issue.code), words).toEqual(["flow_script.way_out_accepts"]);
+  it("never hides known acceptance behind missing, lengthy, misleading or non-English display words", async () => {
+    for (const words of [undefined, "Close", "Accept all", "X", "続ける", "a control ".repeat(12)]) {
+      expect((await checked([...OPEN, ...press(words, ["  optional: yes"])], { intent: "accept" })).issues).toHaveLength(1);
     }
   });
 
-  it("passes every way out, a way out whose tail mentions paying, and a control that continues", () => {
-    for (const words of ["Close", "×", "X", "No thanks, I would rather pay full price", "Not now", "Maybe later", "Dismiss", "Reject non-essential", "Continue without accepting", "Skip", "Continue shopping"]) {
-      expect(refusals([...OPEN, ...press(words, ["  optional: yes"])]), words).toEqual([]);
+  it("passes only the host's response-only acceptance or another host intent, without an English fallback when absent", async () => {
+    for (const intent of [undefined, { intent: "accept", responseOnly: true }, { intent: "dismiss" }, { intent: "neutral" }, { intent: "navigate" }] as const) {
+      expect((await checked([...OPEN, ...press("Buy now and subscribe", ["  optional: yes"])], intent)).issues).toEqual([]);
     }
   });
 
-  // Coordinator, 2026-10-10: accepting cookies is not a risky act, and some banners have no reject.
-  it("passes a cookie banner's accept, said alone or naming cookies, which is not an offer", () => {
-    for (const words of ["Accept all", "Accept cookies", "Accept all cookies", "Allow all", "Agree", "I agree", "Accept", "Allow cookies and continue"]) {
-      expect(refusals([...OPEN, ...press(words, ["  optional: yes"])]), words).toEqual([]);
+  it("retains optional discovery and explicitly empty consequences gating", async () => {
+    for (const lines of [[...OPEN, ...press("a control")], [...OPEN, ...press("a control", ["  optional: no"])], [...OPEN, ...press("a control", ["  optional: yes"], "create_new")]]) {
+      expect((await checked(lines, { intent: "accept" })).issues).toEqual([]);
     }
+    const { input } = await checked([...OPEN, ...press("a control", ["  optional: yes"])], { intent: "accept" });
+    for (const subflow of input.plan.subflows) for (const node of subflow.nodes) delete node.consequences;
+    expect(automationStudioFlowScriptWayOutIssues(input)).toEqual([]);
   });
 
-  it("passes an accepting press that says what it lastingly does: the permission gate asks about that one", () => {
-    expect(refusals([...OPEN, ...press("Join now", ["  optional: yes"], "create_new")])).toEqual([]);
+  it("keeps handler line placement and does not let a model's consent fact exempt known host acceptance", async () => {
+    for (const fact of ['dialog consent "Your choices"', 'dialog consent "Your choices" absent', "exists t1"]) {
+      const { issues } = await checked(handled(fact), { intent: "accept" });
+      expect(issues).toEqual([expect.objectContaining({ code: "flow_script.way_out_accepts", path: "flow.line.14" })]);
+      expect(issues[0]!.message).toContain("The step at line 10 is in the handler at line 8");
+    }
+    expect((await checked(handled(), { intent: "accept", responseOnly: true })).issues).toEqual([]);
   });
 
-  it("does not judge a step that is not optional, one whose optional line says no, or words that are a container's prose", () => {
-    expect(refusals([...OPEN, ...press("Join now")])).toEqual([]);
-    expect(refusals([...OPEN, ...press("Join now", ["  optional: no"])])).toEqual([]);
-    expect(refusals([...OPEN, ...press(`Join now ${"and see what members say about the club ".repeat(3)}`, ["  optional: yes"])])).toEqual([]);
-  });
-});
-
-describe("a handler's step that answers an interruption", () => {
-  const handled = (words: string, when = "exists t1") => [
-    ...OPEN,
-    "step rows: read the rows", "  node: web.dom.extract_list", "  extractList: {\"item\": \".row\", \"fields\": {\"name\": \".name\"}}",
-    "on before for rows: an offer covers the list",
-    `  when: ${when}`,
-    "  step: close the offer",
-    "    node: web.dom.click",
-    "    selector: .offer",
-    `    element.accessibleName: ${words}`,
-    "    consequences: none",
-    "  then: carry on",
-    "end"
-  ];
-
-  it("is refused at its consequences line when it presses the offer, naming the handler", () => {
-    const found = refusals(handled("Join now"));
-    expect(found.map(({ code, path }) => ({ code, path }))).toEqual([{ code: "flow_script.way_out_accepts", path: "flow.line.14" }]);
-    expect(found[0]!.message).toContain("The step at line 10 is in the handler at line 8");
-  });
-
-  it("passes the offer's way out", () => {
-    expect(refusals(handled("Close"))).toEqual([]);
-  });
-
-  it("reads the dialog's kind where the handler names it: any consent answer passes on a consent dialog, and an offer on it is still refused", () => {
-    const consent = 'dialog consent "Your privacy choices"';
-    // "Yes, I'm happy" accepts by its words alone; the consent kind is what says it answers a cookie banner.
-    expect(refusals(handled("Yes, I'm happy"))).toHaveLength(1);
-    expect(refusals(handled("Yes, I'm happy", consent))).toEqual([]);
-    expect(refusals(handled("Subscribe to our newsletter", consent)).map((issue) => issue.code)).toEqual(["flow_script.way_out_accepts"]);
+  it("does not trust forged node JSON or an arbitrary sidecar map", async () => {
+    const { input } = await checked([...OPEN, ...press("a control", ["  optional: yes"])], { intent: "accept" });
+    const node = input.plan.subflows.flatMap((subflow) => subflow.nodes).find((entry) => entry.definitionId === "web.output.dom-click")!;
+    node.parameters = { ...node.parameters, controlIntent: { intent: "accept", responseOnly: true }, element: { intent: "dismiss" } };
+    expect(automationStudioFlowScriptWayOutIssues(input)).toHaveLength(1);
+    const forged = new Map([...input.controlIntents!.keys()].map((key) => [key, { intent: "accept" as const }]));
+    expect(automationStudioFlowScriptWayOutIssues({ ...input, controlIntents: forged })).toEqual([]);
+    expect(automationStudioFlowScriptWayOutIssues({ ...input, controlIntents: undefined })).toEqual([]);
   });
 });
