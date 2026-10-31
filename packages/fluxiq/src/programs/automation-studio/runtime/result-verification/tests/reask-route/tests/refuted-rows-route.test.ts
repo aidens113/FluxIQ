@@ -141,7 +141,7 @@ describe("a no whose every defect row Core's record of that row refutes, through
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.002 });
     const report = await automationStudioLlmFlowPurseScope(purse, async () => await verify(provider));
     expect(seen).toHaveLength(2);
-    expect(report.outcome.verdict).toBe("unsure");
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "unsure" });
     expect(report.outcome.performed && report.outcome.code).not.toBe(AUTOMATION_STUDIO_RESULT_VERDICT_CODES.noRefutedByRecord);
   });
 

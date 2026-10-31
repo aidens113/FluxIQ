@@ -23,8 +23,8 @@ const attempt = (aloneMarks: JsonValue | undefined, togetherMarks: JsonValue | u
       conditions: {
         applied: 4, kept: 1, rejected: [2, 2], unfiltered: false, alone: [2, 0],
         aloneRows: [[{ club: "Ann Lee", posted: "6 March 2027" }, { club: "Chess Circle", posted: "2 March 2027" }], []],
-        aloneMarks,
-        togetherRows: [{ failed: [0, 1], rows: [{ club: "Bo Kim", posted: "1 May 2026" }], marks: togetherMarks }]
+        ...(aloneMarks === undefined ? {} : { aloneMarks }),
+        togetherRows: [{ failed: [0, 1], rows: [{ club: "Bo Kim", posted: "1 May 2026" }], ...(togetherMarks === undefined ? {} : { marks: togetherMarks }) }]
       }
     }
   }
