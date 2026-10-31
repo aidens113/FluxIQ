@@ -901,6 +901,18 @@ never imports `@fluxiq/contracts`).
   only, memoised on `globalThis`). Concurrent callers share the same load;
   failures are retained so partial registrations cannot run again. The
   instrumentation hookup comes later.
+  The SDK build re-emits its native importer with
+  `packages/fluxiq/tsconfig.runtime-imports.json` after the ordinary library
+  compilation and before declaration validation and runtime identity stamping.
+  That project owns only `import-host-module.ts`: its already-resolved file URL
+  keeps the original module identity, and its bundler-ignore directives remain
+  on the native `import()` argument. TypeScript's normal extension rewriting
+  would put those directives inside a helper and make a production Turbopack
+  build replace the import with a module-not-found failure. The final pass is
+  forced on each SDK build so the preceding compilation cannot leave that
+  rewritten importer behind; both projects' state participates in the build
+  cache. Registration ordering, shared in-flight loads, and retained failures
+  stay with `loadPlatformHostModules`.
 - **The registry** (`getPlatformRegistry()`, on `globalThis`) holds the product
   (`setProduct(manifest, { assetsDir })`, validated by `panelProductSchema`,
   once per process), the hooks (`account.created`, `workspace.created`,

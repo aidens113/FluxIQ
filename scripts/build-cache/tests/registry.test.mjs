@@ -159,6 +159,23 @@ test("Fluxiq cleanup is an owning fingerprinted command while contracts retain t
   assert.ok(!STEPS["contracts:build"].command.includes("clean-library-output"));
 });
 
+test("every SDK build finishes native import emission before validation and identity stamping", () => {
+  const step = STEPS["fluxiq:build"];
+  const command = step.command;
+  const nativePass = "tsc -b tsconfig.runtime-imports.json --force";
+  assert.equal(command.split(nativePass).length, 2, "the native importer is always re-emitted once");
+  assert.ok(command.lastIndexOf("tsc -b tsconfig.build.json") < command.indexOf(nativePass));
+  assert.ok(command.indexOf(nativePass) < command.indexOf("rewrite-declaration-imports.mjs"));
+  assert.ok(command.indexOf(nativePass) < command.indexOf("runtime-build-identity.mjs"));
+  assert.ok(step.tsconfigs.includes("tsconfig.runtime-imports.json"));
+  assert.ok(step.outputs.some((output) => output.path === "tsconfig.runtime-imports.tsbuildinfo"));
+  const resolved = resolveStep("fluxiq:build", { env: {} });
+  assert.ok(coversPath(path.join(REPOSITORY_ROOT, "packages/fluxiq/tsconfig.runtime-imports.json"), resolved));
+  for (const name of ["contracts:build", "client-gateway-websocket:build"]) {
+    assert.ok(!STEPS[name].command.includes("tsconfig.runtime-imports"), name);
+  }
+});
+
 test("the production web build resolves Core's packages from their stamped dist, not from source", () => {
   // tsconfig.base.json sends fluxiq to packages/fluxiq/src through `paths`, and
   // Turbopack honours them, so a production build compiled that way embedded
