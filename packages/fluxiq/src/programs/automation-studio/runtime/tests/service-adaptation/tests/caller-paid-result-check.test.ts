@@ -24,7 +24,7 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../../_
 import { registerAutomationStudioApi } from "../../../../api/handlers/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW, automationStudioConversationCommandPort } from "../../../conversations/commands/index.ts";
-import type { AutomationStudioRuntimeSessionLlm } from "../../../llm/index.ts";
+import type { AutomationStudioLlmProviderResolverInput, AutomationStudioRuntimeSessionLlm } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../result-check-schedule/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
@@ -100,12 +100,14 @@ type Harness = {
   flowId: string;
   /** The task kinds the caller's provider ran, and whether a caller came with each. */
   callerCalls: Array<{ taskKind: string; hasCaller: boolean }>;
+  resolverInputs: AutomationStudioLlmProviderResolverInput[];
   /** Every redemption of the standing authorization the host was asked to resolve. */
   standingCalls: string[];
 };
 
-async function harness(options: { clean?: boolean; schedule?: JsonObject; standing?: boolean } = {}): Promise<Harness> {
+async function harness(options: { clean?: boolean; schedule?: JsonObject; standing?: boolean; metadata?: JsonObject } = {}): Promise<Harness> {
   const callerCalls: Harness["callerCalls"] = [];
+  const resolverInputs: Harness["resolverInputs"] = [];
   const standingCalls: string[] = [];
   const io = new IoRegistry();
   io.registerOutput("example", {
@@ -133,22 +135,25 @@ async function harness(options: { clean?: boolean; schedule?: JsonObject; standi
   const service = new AutomationStudioService({
     dataDir: tempRoot,
     seedFixture: false,
-    llmProviderResolver: (resolverInput) => ({
-      metadata: { provider: "mock", model: "caller" },
-      runTask: async (request) => {
-        callerCalls.push({ taskKind: request.taskKind, hasCaller: Boolean(resolverInput.caller) });
-        if (request.taskKind === "runtime_patch") {
-          return {
-            response: { kind: "runtime_patch", summary: "Retry the drift action once the state settles.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "drift", retryCount: 2, timeoutMs: 100, reason: "The action succeeds after a deterministic retry setting." }] },
-            usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16, estimatedCostUsd: 0.002 }
-          };
+    llmProviderResolver: (resolverInput) => {
+      resolverInputs.push(resolverInput);
+      return {
+        metadata: { provider: "mock", model: "caller" },
+        runTask: async (request) => {
+          callerCalls.push({ taskKind: request.taskKind, hasCaller: Boolean(resolverInput.caller) });
+          if (request.taskKind === "runtime_patch") {
+            return {
+              response: { kind: "runtime_patch", summary: "Retry the drift action once the state settles.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "drift", retryCount: 2, timeoutMs: 100, reason: "The action succeeds after a deterministic retry setting." }] },
+              usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16, estimatedCostUsd: 0.002 }
+            };
+          }
+          if (request.taskKind === "loop_verification") {
+            return { response: { kind: "diagnosis", summary: "Judged for the caller.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
+          }
+          return { response: { kind: "diagnosis", summary: "The drift action needs a retry setting." }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
         }
-        if (request.taskKind === "loop_verification") {
-          return { response: { kind: "diagnosis", summary: "Judged for the caller.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
-        }
-        return { response: { kind: "diagnosis", summary: "The drift action needs a retry setting." }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
-      }
-    }),
+      };
+    },
     resultCheckProviderResolver: (request) => ({
       provider: {
         metadata: { provider: "mock", model: "standing-judge" },
@@ -169,7 +174,7 @@ async function harness(options: { clean?: boolean; schedule?: JsonObject; standi
   await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: created.flowId, instruction: "Run the Flow's steps in order and return its result." });
   await service.saveFlow({
     projectId: project.id,
-    flow: { ...created, metadata: { ...(created.metadata ?? {}), ...base, trainingModeSettings: { ...(base.trainingModeSettings as JsonObject), resultCheck: { schedule: options.schedule ?? SEQUENCE_SKIPS_RUN_ONE, ...(options.standing ? { authorization } : {}) } } } }
+    flow: { ...created, metadata: { ...(created.metadata ?? {}), ...base, ...(options.metadata ?? {}), trainingModeSettings: { ...(base.trainingModeSettings as JsonObject), resultCheck: { schedule: options.schedule ?? SEQUENCE_SKIPS_RUN_ONE, ...(options.standing ? { authorization } : {}) } } } }
   });
   const subflow = await service.createFlowSubflow({ projectId: project.id, flowId: created.flowId, name: "Primary", role: "primary" });
   const blank = await service.getFlow(project.id, subflow.graphFlowId!);
@@ -188,10 +193,39 @@ async function harness(options: { clean?: boolean; schedule?: JsonObject; standi
     }
   });
   await service.setFlowMapFallback({ projectId: project.id, flowId: created.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
-  return { service, projectId: project.id, flowId: created.flowId, callerCalls, standingCalls };
+  return { service, projectId: project.id, flowId: created.flowId, callerCalls, resolverInputs, standingCalls };
 }
 
 const verifications = (found: Harness) => found.callerCalls.filter((call) => call.taskKind === "loop_verification");
+
+describe("Flow provider settings across recovery and caller-paid judging", () => {
+  it("preserves the configured Claude provider, model and named key on both paths", async () => {
+    const metadata = { llmProvider: "anthropic", llmModel: "claude-haiku-5-5", llmSecretKeyId: "secret:claude-flow" };
+    const found = await harness({ metadata });
+    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution });
+
+    expect(run.status).toBe("succeeded");
+    expect(found.callerCalls.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch", "loop_verification"]);
+    expect(found.resolverInputs).toHaveLength(2);
+    for (const input of found.resolverInputs) expect(input).toMatchObject({
+      projectId: found.projectId, flowId: found.flowId, caller: { actorUserId: llmExecution.actorUserId, actorSessionId: llmExecution.actorSessionId },
+      providerId: metadata.llmProvider, modelId: metadata.llmModel, metadata
+    });
+  });
+
+  it("leaves the provider unspecified when the Flow uses the host default", async () => {
+    const found = await harness();
+    const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution });
+
+    expect(run.status).toBe("succeeded");
+    expect(found.callerCalls.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch", "loop_verification"]);
+    expect(found.resolverInputs).toHaveLength(2);
+    for (const input of found.resolverInputs) {
+      expect(input).not.toHaveProperty("providerId");
+      expect(input).not.toHaveProperty("modelId");
+    }
+  });
+});
 
 describe("a run whose caller pays only for the checks that judge a repair", () => {
   it("makes no result-check call for a routine run that succeeded with nothing repaired", { timeout: 180_000 }, async () => {
