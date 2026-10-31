@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../../nodes/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, resolveAutomationStudioNodeActionEffect, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../../nodes/index.ts";
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioRecordBatch } from "../executor/index.ts";
 import { runAutomationStudioGraph } from "../executor.ts";
@@ -18,6 +18,27 @@ function node(overrides: Partial<AutomationStudioNodeDefinition> = {}): Automati
 function manifest(nodes = [node()]): AutomationStudioImporterSdkManifest { return { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "example.package", packageVersion: "1.0.0", domainId: "example", nodes }; }
 
 describe("trusted-local native node runtime", () => {
+  it("retains the trusted effect floor through manifest serialization, SDK copies and getDefinition without execution", () => {
+    const declared = node({
+      actionEffect: { effectClass: "state", commitWhen: "apply", permissionConsequences: ["create_new"] },
+      parameters: [{ id: "apply", label: "Apply", valueType: "boolean", defaultValue: false }]
+    });
+    const original = manifest([declared]);
+    const restored: AutomationStudioImporterSdkManifest = JSON.parse(JSON.stringify(structuredClone(original)));
+    const implementation = vi.fn(() => ({ outputs: {} }));
+    const runtime = new AutomationStudioNativeNodeRuntime().register(restored, {
+      packageId: original.packageId,
+      packageVersion: original.packageVersion,
+      implementations: { transform: implementation }
+    });
+    const definition = runtime.getDefinition(declared.id);
+    expect(definition?.actionEffect).toEqual(declared.actionEffect);
+    expect(runtime.sdk.get(original.packageId)?.nodes[0]?.actionEffect).toEqual(declared.actionEffect);
+    expect(runtime.listDefinitions()[0]?.actionEffect).toEqual(declared.actionEffect);
+    expect(definition && resolveAutomationStudioNodeActionEffect(definition, { apply: false })).toEqual({ effectClass: "commit", permissionConsequences: ["create_new"] });
+    expect(implementation).not.toHaveBeenCalled();
+  });
+
   it("passes a session reference through the canonical native host adapter and drops malformed direct references", async () => {
     const references: Array<number | undefined> = [];
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), {

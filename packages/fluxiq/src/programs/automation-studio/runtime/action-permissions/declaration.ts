@@ -47,6 +47,7 @@
 // it reads is taken out of the gate's reach.
 
 import { isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "./consequences.ts";
+import { readAutomationStudioResolvedActionEffect, type AutomationStudioResolvedActionEffect } from "../../nodes/action-effect/index.ts";
 
 /**
  * Whether taking the action changes anything, in the same two words the node
@@ -55,7 +56,8 @@ import { isAutomationStudioActionConsequence, type AutomationStudioActionConsequ
  * `observe` is a promise the domain makes about its own action -- it reads,
  * waits or asserts, and the page and everything behind it is as it was
  * afterwards. `mutate` is everything else, and is what an unstated effect
- * means.
+ * means. A newer resolved `actionEffect` can raise the client floor; its
+ * known consequences and commit class take precedence over this legacy word.
  */
 export type AutomationStudioActionEffect = "observe" | "mutate";
 
@@ -101,6 +103,8 @@ export type AutomationStudioActionDeclaration = {
   control: { name: string; kind?: string; item?: string; dialog?: string; subject?: string; page?: string; scope?: string; resource?: string; place?: string; state?: string };
   verb: string;
   effect?: AutomationStudioActionEffect;
+  /** Resolved trusted client floor, separate from model-authored consequences. */
+  actionEffect?: AutomationStudioResolvedActionEffect;
 };
 
 /**
@@ -163,6 +167,8 @@ export type AutomationStudioReadActionDeclaration = {
   verb: string;
   /** Stated or, where the domain said nothing, `mutate`. */
   effect: AutomationStudioActionEffect;
+  /** Present only when the client supplied a resolved floor. */
+  actionEffect?: AutomationStudioResolvedActionEffect;
 };
 
 const VERB = /^[a-z]{2,20}(?: [a-z]{2,20})?$/;
@@ -177,7 +183,7 @@ const PLACE_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/;
  * only the gate knows what has already been shown.
  */
 export function readAutomationStudioActionDeclaration(value: unknown): AutomationStudioReadActionDeclaration {
-  if (!isRecord(value) || !hasOnlyFields(value, ["consequences", "control", "verb", "effect"])) throw new AutomationStudioActionDeclarationError("declaration_shape");
+  if (!isRecord(value) || !hasOnlyFields(value, ["consequences", "control", "verb", "effect", "actionEffect"])) throw new AutomationStudioActionDeclarationError("declaration_shape");
   const consequences = value.consequences;
   if (!Array.isArray(consequences) || consequences.length > 10) throw new AutomationStudioActionDeclarationError("consequences_missing");
   if (!consequences.every(isAutomationStudioActionConsequence)) throw new AutomationStudioActionDeclarationError("consequence_unrecognised");
@@ -194,7 +200,15 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
   // `mutate`: a domain that meant to say something about its action and
   // misspelled it must not be answered as though it had said nothing.
   if (value.effect !== undefined && value.effect !== "observe" && value.effect !== "mutate") throw new AutomationStudioActionDeclarationError("effect_invalid");
-  return {
+  let actionEffect: AutomationStudioResolvedActionEffect | undefined;
+  if (value.actionEffect !== undefined) {
+    try {
+      actionEffect = readAutomationStudioResolvedActionEffect(value.actionEffect);
+    } catch {
+      throw new AutomationStudioActionDeclarationError("action_effect_invalid");
+    }
+  }
+  const declaration: AutomationStudioReadActionDeclaration = {
     consequences: [...new Set(consequences as AutomationStudioActionConsequence[])],
     controlName: control.name.replace(/\s+/gu, " ").trim(),
     controlKind: typeof control.kind === "string" ? control.kind : null,
@@ -209,6 +223,8 @@ export function readAutomationStudioActionDeclaration(value: unknown): Automatio
     verb: value.verb,
     effect: value.effect ?? "mutate"
   };
+  if (actionEffect) declaration.actionEffect = actionEffect;
+  return declaration;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

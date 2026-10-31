@@ -40,65 +40,6 @@
 // needs all of them, so a person is never asked for the lesser consequence
 // while the greater one rides along unnamed.
 
-/**
- * Every lasting consequence Core can be asked to permit, most serious first.
- * The order is the order a request lists them in.
- */
-export const AUTOMATION_STUDIO_ACTION_CONSEQUENCES = Object.freeze([
-  /** Spends, charges, refunds or transfers money, or commits to a payment. */
-  "move_money",
-  /** Deletes or removes something so that it is gone. */
-  "delete",
-  /** Sends or publishes something that other people or systems receive or see. */
-  "send_or_publish",
-  /** Changes something that already exists. */
-  "modify_existing",
-  /** Creates something new that stays after the run. */
-  "create_new"
-] as const);
-
-export type AutomationStudioActionConsequence = (typeof AUTOMATION_STUDIO_ACTION_CONSEQUENCES)[number];
-
-/**
- * Each consequence as the person being asked would say it. Exhaustive, so a
- * class added to the list above is a compile error here until it can be
- * explained to someone.
- */
-export const AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES: Readonly<Record<AutomationStudioActionConsequence, string>> = Object.freeze({
-  move_money: "spend, refund or move money",
-  delete: "delete or remove something",
-  send_or_publish: "send or publish something that others will receive or see",
-  modify_existing: "change something that already exists",
-  create_new: "create something new that stays"
-});
-
-export function isAutomationStudioActionConsequence(value: unknown): value is AutomationStudioActionConsequence {
-  return typeof value === "string" && (AUTOMATION_STUDIO_ACTION_CONSEQUENCES as readonly string[]).includes(value);
-}
-
-/**
- * The consequences a run is permitted, read from a request or a stored permission.
- *
- * Fail closed in both directions. **Absent is the empty set**: a permission that
- * says nothing permits nothing, and there is no default that a forgotten field
- * could fall back to. **Anything unrecognised refuses the whole set**, rather
- * than being dropped: a caller that asked for `purchase` meant something, and
- * permitting a set that quietly holds less than was asked for would leave the
- * run to discover the gap by stopping. The answer is deduplicated and in
- * Core's order, so two permissions holding the same set compare equal.
- */
-export function parseAutomationStudioPermittedConsequences(value: unknown): AutomationStudioActionConsequence[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > AUTOMATION_STUDIO_ACTION_CONSEQUENCES.length * 2) {
-    throw new Error("Permitted consequences must be a list of consequence classes.");
-  }
-  const unrecognised = value.filter((item) => !isAutomationStudioActionConsequence(item));
-  if (unrecognised.length) throw new Error("Permitted consequences name a class Core does not recognise.");
-  return automationStudioConsequencesInOrder(value as AutomationStudioActionConsequence[]);
-}
-
-/** Deduplicated, in the order `AUTOMATION_STUDIO_ACTION_CONSEQUENCES` lists them. */
-export function automationStudioConsequencesInOrder(values: readonly AutomationStudioActionConsequence[]): AutomationStudioActionConsequence[] {
-  const present = new Set(values);
-  return AUTOMATION_STUDIO_ACTION_CONSEQUENCES.filter((consequence) => present.has(consequence));
-}
+// The closed vocabulary is model-owned so trusted node definitions can use it
+// without importing the runtime. These existing public names stay unchanged.
+export * from "../../model/action-consequences/index.ts";
