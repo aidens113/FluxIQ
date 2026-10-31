@@ -7,6 +7,10 @@ project rules and wins where they conflict. Codex sessions read [CODEX.md](CODEX
 Claude Code sessions read [CLAUDE.md](CLAUDE.md). Install the global rules for the
 runtime in use before starting a session.
 
+Codex model ceiling: GPT-6.1 Sol at Max effort. Never use Astra for any
+role, fallback or review. Follow the shared Codex routing guide for worker
+models and escalation.
+
 ## Agent Roles
 
 **Senior supervisor agent** — the agent the user prompts directly. It owns
