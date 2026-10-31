@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800), the Core-no ending words (t805), P1a (t806), the P7 follow-ups (t807) and the repair-from-step fix (t804) merged; P6 (t799, verification stopped at the 2026-10-30 handoff), P5b (t810) and P1b (t811) in flight; the session handoff is in the paired downstream document's Current State.
+Status detail: P6 t799 independently verified and merged with Core 0.8.0; P5b t810 and P1b t811 remain in flight. Paired t816 adds the user's Claude live-test provider. The continuation handoff is in the paired downstream Current State.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,9 +11,10 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Mode 2, executing (2026-10-29).** P0 (t793, scenario-free model text with a downstream check) and the per-pass act
-ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`), P4 (t797, one undo and reset answer), P5a (t795, computed facts before any judge) and P7 (t800, dates, marks, record defaults) are merged; P6 (t799), t804 (repair from the failing step) and P1a (t806, the parts of P1 outside t804's files) are in flight; P1b starts
-after t804, whose files it shares. t796 gave trial proofs `not_run`, and t795 made it a Core no.
+**Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
+also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
+native installed-extension proof in the paired repository). P5b t810 and P1b t811 continue. Paired t816 adds Claude
+for live tests, with the user's $5 build allowance; no paid run has started in this continuation.
 The rest of this section is the plan as written.
 
 The audit ran 2026-10-28 at the user's direction: make
