@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Resumed units and grounded toggle t817 are merged. Sweep2 exposed provider-ID regressions; t819 Core0.14.1 merged/pushed3f5fe961. All previously failed files now pass narrowly after two t820 fixture updates; storage timeout not reproduced or explained. Main held pending corrected-source sweep; paid Claude comparison waits for user's go. Downstream Current State owns the handoff.
+Status detail: Resumed units and grounded toggle t817 are merged. Sweep2 finished failed; t819/t820 fixes merged/pushed, Core0.14.1. All failed files now pass narrowly, including downstream callers/cache fixtures; original storage timeout unexplained. Corrected-source full sweep next after daily reset; main held, paid Claude comparison waits for user's go. Downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -746,21 +746,7 @@ Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledge
 - Changed: archived five accepted entries; Current State retains merged outcomes and all open decisions remain here.
 - Validation: Node archive extraction -> five entries preserved verbatim, byte equality checked before replacing their source range.
 
-### 2026-10-30 - P1b and consistent live invocation context accepted (t811)
-- Agent: Codex lead; worker resume_t811, report in paired downstream reports/codex-1030/t811-result.md.
-- Changed: folded submit/test, labelled repair, Core completion and backend proposal-aware keys; downstream CLI context now reaches planning and actual child model/purse/mode with provider secrets removed.
-- Validation: lead helper/gate Vitest ->42 passed; compiled CLI/auth/topology `node --test` ->26 passed; post-parent Core/runner/extension types passed; worker narrowed233 and observer1 passed.
-- Validation: headed Chromium two-spec command ->2 passed(4.1m); lead JSON gate ->accepted:true,24rows/2whole/1partial,12-to9 decisions,6supervisor/2Core-completions each; JSON retained in downstream ignored test-runs/2026-10-30-t811-final.
-- Outcome: Coreb4a8f453/downstream01da7fa3 merged with Core0.13.0; Core merge contracts70 and downstream structure passed; remote task backups retained.
-- Not verified: paid Claude performance, native Firefox or full sweep. No paid calls or panel management.
-
-### 2026-10-30 - Grounded toggle choice and native replay accepted (t817)
-- Agent: Codex lead; worker Core/domain/native reports in paired downstream reports/codex-1030/first-row-toggle-*-result.md.
-- Changed: actual beforeSignature/CC9 shown survives wire/storage/reload; explicit bounded observed ensureState replaces click-order/majority inference. Safe setters, unknown exploration and admitted undo retained.
-- Validation: lead owning Vitest ->199/14files; shared-brief caller ->5/5; domain37 and extension9 pass. Core/domain/extension types,3libs,recursive caller build,docs/model-text/audits pass; no baseline/allowlist exceptions.
-- Validation: native first-row saved replay ->15-to15callbacks,3skips,0transitions,3ordered official-oracle records and1saved explicit state; lead JSON assertions accepted. Obstruction-only native ->1passed(1.9m),4recoveries,6UIchecks,exact6controlled uncertainty rows,0failed action/recovery cards and finalyes.
-- Outcome: Coreae354e9d/downstreamdf58a48e merged with Core0.14.0;70 Core contracts and downstream structure pass;3JSONs retained in downstream ignored test-runs/2026-10-30-t817-final.
-- Not verified: paid Claude behavior/performance, native Firefox or full sweep. No paid calls, panel operation, fixture/oracle changes or registry publish.
+Accepted t811 and t817 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
 ### 2026-10-30 - Provider binding repaired after sweep failures (t819)
 - Cause: recovery supplied policy IDs and caller-paid judging supplied host as concrete providers; strict binding stopped both before key release/fetch. Recovery also lost model/key metadata.
@@ -771,7 +757,17 @@ Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledge
 ### 2026-10-30 - Remaining sweep failure files checked after t819 (t820)
 - Changed: two bootstrap service assertions now require exact canonical Flow metadata plus caller/provider rather than old caller-only inputs. Production behavior is unchanged.
 - Validation: lead seven previous runtime failure files ->37 passed/two stale assertions failed; corrected generation/extend ->14 passed; all five other files passed unchanged. Lead `vitest run .../content-reseal/tests/reseal-interruption.test.ts --maxWorkers=1 --minWorkers=1` ->3 passed, racing writer703ms; worker two runs also3/3, original timeout cause remains unproven and no timeout/guarantee changed.
-- Outcome: narrow source acceptance covers every failed file; final Core package typecheck and full audit476 warnings/1144 baseline pass, three libraries rebuilt. Corrected-source whole sweep still required before main; no paid calls. Merge contract gate pending.
+- Outcome: merged/pushedc7f33647 after70 mandatory contract tests; final Core types and audit476 warnings/1144 baseline pass, three libraries rebuilt. Corrected-source whole sweep still required before main; no paid calls. Downstream saved-repair callers also7/7 after rebuilding this fix.
+
+### 2026-10-30 - Accepted evidence retained while making room for sweep results
+- Changed: t811/t817 settled detail moved to the existing continuation archive with a pointer; Current State and all open questions remain.
+- Validation: Node extraction ->two headings archived verbatim; exact appended bytes compared before source replacement.
+
+### 2026-10-30 - Full sweep2 completed; corrected-source acceptance next
+- Validation: downstream `node test-runs/2026-10-30-sweep-2/runner.mjs t818 803f3c81f25909b76a69b55a80cb68cc7c4724ba 16dd9ad3848acaa2c37f6dbe505ce29f95b58eed` ->both installs/builds and Core check exit0; Core test exit1(six ordinary/27SQL); downstream check exit1(five), test exit1(five domain/three demo). Core web3454 and extension3459 tests pass.
+- Changed: t819 resolver fix and t820 exact settings fixtures are merged/pushed; downstream cache now registers product build/check, Claude/$5 setup/CLI fixtures aligned. Frozen t818 removed through task abandon after unmerged0/0; main logs retained.
+- Validation: lead259 unique Core tests, seven saved-repair domain tests, five Lab argument tests,16 registry/CLI tests and nine demo tests pass; Core/test-runner/product types, product build and both earlier full audits pass. Main dependencies refreshed before final demo checks; no key/browser/panel use.
+- Outcome: no corrected-source full acceptance yet. Next-day runner refuses launch before local2026-10-31; full sweep3 is the next allowed sweep. Main held; original storage timeout cause remains unproven. No paid calls.
 
 ## Open Questions
 

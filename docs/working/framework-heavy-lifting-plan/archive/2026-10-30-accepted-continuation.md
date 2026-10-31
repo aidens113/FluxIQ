@@ -46,3 +46,19 @@ Verbatim ledger entries moved during the P5b continuation; decisions and validat
 - Not verified: new live judge responses. Strict original-artifact replay remains unsure when mandatory replies were never recorded; repeating a saved no is only a scripted acceptance-path test. Provider calls0/cost0. No full sweep or panel management.
 - Validation: paired task finish -> downstream structure passed and Core contract gate70 passed; merged Core31713e1d and downstream ad01bd0b.
 
+### 2026-10-30 - P1b and consistent live invocation context accepted (t811)
+- Agent: Codex lead; worker resume_t811, report in paired downstream reports/codex-1030/t811-result.md.
+- Changed: folded submit/test, labelled repair, Core completion and backend proposal-aware keys; downstream CLI context now reaches planning and actual child model/purse/mode with provider secrets removed.
+- Validation: lead helper/gate Vitest ->42 passed; compiled CLI/auth/topology `node --test` ->26 passed; post-parent Core/runner/extension types passed; worker narrowed233 and observer1 passed.
+- Validation: headed Chromium two-spec command ->2 passed(4.1m); lead JSON gate ->accepted:true,24rows/2whole/1partial,12-to9 decisions,6supervisor/2Core-completions each; JSON retained in downstream ignored test-runs/2026-10-30-t811-final.
+- Outcome: Coreb4a8f453/downstream01da7fa3 merged with Core0.13.0; Core merge contracts70 and downstream structure passed; remote task backups retained.
+- Not verified: paid Claude performance, native Firefox or full sweep. No paid calls or panel management.
+
+### 2026-10-30 - Grounded toggle choice and native replay accepted (t817)
+- Agent: Codex lead; worker Core/domain/native reports in paired downstream reports/codex-1030/first-row-toggle-*-result.md.
+- Changed: actual beforeSignature/CC9 shown survives wire/storage/reload; explicit bounded observed ensureState replaces click-order/majority inference. Safe setters, unknown exploration and admitted undo retained.
+- Validation: lead owning Vitest ->199/14files; shared-brief caller ->5/5; domain37 and extension9 pass. Core/domain/extension types,3libs,recursive caller build,docs/model-text/audits pass; no baseline/allowlist exceptions.
+- Validation: native first-row saved replay ->15-to15callbacks,3skips,0transitions,3ordered official-oracle records and1saved explicit state; lead JSON assertions accepted. Obstruction-only native ->1passed(1.9m),4recoveries,6UIchecks,exact6controlled uncertainty rows,0failed action/recovery cards and finalyes.
+- Outcome: Coreae354e9d/downstreamdf58a48e merged with Core0.14.0;70 Core contracts and downstream structure pass;3JSONs retained in downstream ignored test-runs/2026-10-30-t817-final.
+- Not verified: paid Claude behavior/performance, native Firefox or full sweep. No paid calls, panel operation, fixture/oracle changes or registry publish.
+
