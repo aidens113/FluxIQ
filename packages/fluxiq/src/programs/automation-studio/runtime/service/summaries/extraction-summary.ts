@@ -108,12 +108,12 @@
 // `rejectedSamples`, aligned with it; the alone rows keep theirs as `aloneMarks`
 // (aligned with `aloneRows`) and each together row as the set's `marks`. Unlike
 // every other member, a malformed `rejectedMarks` drops only the marks
-// (`./rejected-marks/`).
+// (`./rejected-marks.ts`).
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 import { automationStudioResultConditionObservation } from "../../result-verification/condition-observation/index.ts";
-import { aloneMarkLists, rejectedMarkLists } from "./rejected-marks/index.ts";
+import { aloneMarkLists, rejectedMarkLists } from "./rejected-marks.ts";
 
 /** The two words the read uses for whether its `item` selector ever named an element (contract C2). */
 const LIST_PRESENCE = new Set(["appeared", "never_appeared"]);
@@ -214,7 +214,7 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
     aloneObservationRows(summary.rejectedObservations, summary.rejectedSamples, summary.rejectedSamplesAlone, fieldNames, reported ? (reported.rejected as number[]).length : -1);
   if (summary.rejectedObservations !== undefined && (!sampled || aloneObservations === undefined)) return undefined;
   // The rows two or more conditions left out together, once each (see the header); only beside the alone rows they follow.
-  // The marks the client read on those rows (t810): aligned with the sampled rows, or none at all when any member is unreadable (`rejected-marks/` says why).
+  // The marks the client read on those rows (t810): aligned with the sampled rows, or none at all when any member is unreadable (`rejected-marks.ts` says why).
   const sampledRows = summary.rejectedSamples as Array<Array<Record<string, string | null>>>;
   const marks = sampled && aloneRows && summary.rejectedMarks !== undefined ? rejectedMarkLists(summary.rejectedMarks, summary.rejectedSamples) : undefined;
   const aloneMarks = marks ? aloneMarkLists(marks, summary.rejectedSamplesAlone as number[], (condition, row) => rowLabel(sampledRows[condition]?.[row] as Record<string, string | null>, fieldNames) !== undefined) : undefined;

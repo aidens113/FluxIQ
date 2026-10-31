@@ -9,6 +9,9 @@
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import type { AutomationStudioResultItemMark } from "../../read-condition.ts";
+import type { AutomationStudioResultVerdictInput } from "../../verdict/index.ts";
+
+type Diagnosis = NonNullable<AutomationStudioResultVerdictInput["diagnosis"]>;
 
 export const CIRCLE_REQUEST = "Go through my library board down to its end and list every notice in it that was written in one of the reading circles I belong to on or after 1 March 2027. "
   + "Leave out every notice that was not written in a circle at all, such as a member's own note, and every notice from a circle I have not entered, such as one offered with a Reserve a place button. "
@@ -86,7 +89,7 @@ export const REFUTED_NO = {
   observed: "Only two notices were kept.",
   changed: "Change condition 1 on read-board.",
   defects: REFUTED_DEFECTS.map((defect) => ({ ...defect }))
-};
+} satisfies Diagnosis;
 
 /** A yes naming each left-out row with the request's words that leave it out. */
 export const CIRCLE_YES = {
@@ -94,7 +97,7 @@ export const CIRCLE_YES = {
   expected: "Every notice of a circle the person belongs to on or after 1 March 2027.",
   observed: "The result holds the Poetry Circle and Map Readers notices. \"Ann Lee\" was left out: it is a member's own note, and the request says \"Leave out every notice that was not written in a circle at all\". \"Kai Moss\" and \"Rui Tan\" were left out: each offered a Reserve a place button, and the request says to leave out \"every notice from a circle I have not entered\".",
   changed: ""
-};
+} satisfies Diagnosis;
 
 /**
  * The case's re-ask shape (0065/0066): the two marked notices called missing by
@@ -111,9 +114,9 @@ export const RECAST_NO = {
     { kind: "asked_missing", row: "Rui Tan — circle: Cycle Readers, posted: Monday 1 March 2027 at 07:05", column: "access", value: "Open to all", requestWords: OWN_CIRCLES },
     { kind: "wrong_value", row: "Ann Lee — circle: Town Archive Society, posted: Wednesday 3 March 2027 at 09:15", column: "circle", value: "Ann Lee", requestWords: "Give me a table with columns circle, author, posted and text" }
   ]
-};
+} satisfies Diagnosis;
 
 /** A yes as `CIRCLE_YES`, citing the stored cells it checked (`diagnosis.checked`); `author` the author it cites for the Poetry Circle notice. */
-export function citingYes(author: string): Record<string, unknown> {
+export function citingYes(author: string): Diagnosis {
   return { ...CIRCLE_YES, checked: [{ row: "Poetry Circle", column: "author", value: author }, { row: "Map Readers", column: "circle", value: "Map Readers" }] };
 }

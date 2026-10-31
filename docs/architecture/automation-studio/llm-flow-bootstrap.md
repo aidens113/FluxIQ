@@ -4019,9 +4019,13 @@ t752 re-ask's place, with Core's evidence for each row, the rows in reverse orde
 question (`refuted-no/refuted-rows-recheck.ts`), never the generic recheck. Then, if every call's
 latest answer is a wholly refuted no or a yes citing nothing Core refutes, the verdict is `answers`:
 the yes's own, or `core.result.no_refuted_by_record` where no yes came, so a temperature-0 flip
-between the two does not decide it. A re-ask no naming a defect Core finds, or a re-ask that did not
-come back usable, is weighed as before. A failing computed fact stays a Core no and the
-requested-output hold stays last.
+between the two does not decide it. Every no Core overrides must first have received that explicit
+evidence prompt: a generic question sent before a call introduced refuted rows does not qualify.
+A missing, failed, unusable or purse-exhausted evidence recheck cannot produce this no-model-yes
+acceptance. An independent usable model-yes confirmation still follows the existing positive
+agreement rule. A re-ask no naming a new defect Core finds still blocks; an unrefuted no is never
+turned into a Core pass. A failing computed fact stays a Core no and the requested-output hold
+stays last.
 
 **A yes cites what it checked** (`result-verification/cited-yes/`, `llm/verification-checked/`).
 The verification's diagnosis offers `checked`: each stored row the yes checked, a stored column and

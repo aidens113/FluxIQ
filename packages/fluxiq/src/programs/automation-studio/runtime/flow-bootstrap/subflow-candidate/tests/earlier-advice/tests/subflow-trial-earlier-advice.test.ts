@@ -14,7 +14,7 @@ import { testScope } from "../../subflow-fixture.ts";
 const scope = testScope();
 const identity = { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey };
 const READ_1 = `node.bootstrap.aa11bb22.${scope.subflowKey}.s3`;
-const ADVICE = `Condition 1 of ${READ_1} keeps only books on the shelf; also accept books on hold.`;
+const ADVICE = 'Core located these defects in its record of that trial: it lacks "Ferns on Hold", which the request asks for.';
 
 function proposal(revision: number, status: unknown): AutomationStudioSubflowProposal {
   return {
@@ -28,7 +28,8 @@ function proposal(revision: number, status: unknown): AutomationStudioSubflowPro
 
 const STANDING_NO = {
   stored: ["A Field Guide to Ferns"], storedWhole: true, standing: [{ call: 1 }, { call: 2 }],
-  conditions: [{ name: "condition 1 (status contains [\"On shelf\"])", nodeId: READ_1, number: 1 }, { name: "condition 2 (pages atMost 300)", nodeId: READ_1, number: 2 }]
+  conditions: [{ name: "condition 1 (status contains [\"On shelf\"])", nodeId: READ_1, number: 1, leftOutAlone: ["Ferns on Hold"] }, { name: "condition 2 (pages atMost 300)", nodeId: READ_1, number: 2 }],
+  located: [{ kind: "asked_missing", row: "Ferns on Hold" }]
 };
 
 function brief(first: AutomationStudioSubflowProposal, earlierTrials?: unknown[]) {
@@ -51,7 +52,7 @@ const receipt = (of: AutomationStudioSubflowProposal): JsonObject => ({ revision
 const CHANGED = {
   revision: 1, verdict: "no", advice: ADVICE, followed: "changed",
   named: [`condition 1 (status contains ["On shelf"]) of step ${scope.subflowKey}.s3`],
-  said: `After the trial of revision 1 (judged no) the judge advised: ${ADVICE} Revision 2 changed condition 1 (status contains ["On shelf"]) of step ${scope.subflowKey}.s3, which that advice named.`
+  said: `After the trial of revision 1 (judged no) ${ADVICE} Revision 2 changed condition 1 (status contains ["On shelf"]) of step ${scope.subflowKey}.s3, which alone left a row out there.`
 };
 
 describe("the judge of a subflow's later trial is told each earlier judged trial's advice (t752)", () => {

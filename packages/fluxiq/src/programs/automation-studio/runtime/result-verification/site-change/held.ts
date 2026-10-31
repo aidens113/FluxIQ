@@ -1,7 +1,5 @@
 import type { AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../contracts/index.ts";
-// The leaves, not the barrel: `../computed-facts/` reads `../request-rows/` and `../read-account/`, which reach back here through `../agreement/`.
-import { automationStudioResultActPassesFact } from "../computed-facts/act-passes.ts";
-import { automationStudioResultComputedNo } from "../computed-facts/computed-no.ts";
+import { automationStudioResultActPassesFact, automationStudioResultComputedNo } from "../computed-facts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "../unsettled/index.ts";
 import { automationStudioResultChangeCountDiffers } from "./count-differs.ts";
 

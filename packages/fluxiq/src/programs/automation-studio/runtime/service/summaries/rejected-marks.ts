@@ -18,8 +18,8 @@
 // other member of the summary drops the whole summary; these are not counts the
 // verdicts depend on.)
 
-import type { JsonObject } from "../../../../../../core/index.ts";
-import { isJsonRecord } from "../../json-values.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
+import { isJsonRecord } from "../json-values.ts";
 
 type Marks = JsonObject[] | null;
 

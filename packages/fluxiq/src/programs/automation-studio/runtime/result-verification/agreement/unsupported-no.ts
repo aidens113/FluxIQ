@@ -132,7 +132,7 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   }
   const verdicts = [...(settled.verdicts ?? []), ...asked];
   // Where a no was asked with Core's record of its rows, what every call's latest answer comes to (header, t810).
-  const byRecord = rowAsked.size ? byRowRecord({ settled, calls, reasked, verdicts, refutedRows, wholly: (verification) => weigh(verification).wholly }) : undefined;
+  const byRecord = rowAsked.size ? byRowRecord({ settled, calls, reasked, rowAsked, verdicts, refutedRows, wholly: (verification) => weigh(verification).wholly }) : undefined;
   if (byRecord) return byRecord;
   // Otherwise weighed as below, the rows Core refuted kept on the outcome wherever a no was asked with them (t810 follow-up 2).
   const rowsKept = rowAsked.size && refutedRows.length ? { refutedRows } : {};
@@ -214,6 +214,7 @@ function byRowRecord(input: {
   settled: Verification;
   calls: readonly [Verification, Verification];
   reasked: ReadonlyMap<1 | 2, Verification>;
+  rowAsked: ReadonlySet<1 | 2>;
   verdicts: AutomationStudioResultVerdict[];
   refutedRows: RefutedRow[];
   wholly: (verification: Verification) => boolean;
@@ -230,7 +231,12 @@ function byRowRecord(input: {
       ...(citedWrongly.yesCitations ? { yesCitations: citedWrongly.yesCitations } : {})
     };
   }
-  if (!calls.every((call) => modelYes(call) || (modelNo(call) && input.wholly(call)))) return undefined;
+  // A generic unsupported-no question cannot substitute for the mandatory
+  // evidence prompt when its reply introduces refuted rows for the first time.
+  if (!([1, 2] as const).every((call) => {
+    const latest = calls[call - 1]!;
+    return modelYes(latest) || (modelNo(latest) && input.rowAsked.has(call) && input.wholly(latest));
+  })) return undefined;
   // The yes a call gave, a re-asked one first: the outcome is that yes's, with the rows Core refuted beside it.
   const yes = [...reasked.values(), ...calls].find(modelYes);
   if (yes) return { ...yes, verdicts, calls: verdicts.length, refutedRows };

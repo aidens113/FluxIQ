@@ -3,6 +3,7 @@
 // `marks`, screened as the cells are. A hobby club's notice board: no task,
 // site, item or answer of any realistic scenario.
 import { describe, expect, it } from "vitest";
+import type { JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../model/index.ts";
 import { automationStudioResultReadAccounts } from "../accounts.ts";
 import { automationStudioResultReadLeftOutMarks } from "../../left-out-cells/index.ts";
@@ -14,7 +15,7 @@ const node: AutomationStudioFlowNode = {
 };
 const OFFER = { kind: "outside", said: "Join club", entity: "Chess Circle" };
 
-const attempt = (aloneMarks: unknown, togetherMarks: unknown): AutomationStudioFlowRunActionAttemptRecord => ({
+const attempt = (aloneMarks: JsonValue | undefined, togetherMarks: JsonValue | undefined): AutomationStudioFlowRunActionAttemptRecord => ({
   attemptId: "attempt.read", nodeId: NODE, definitionId: node.definitionId, order: 1, status: "succeeded", startedAt: 1,
   metadata: {
     extraction: {
@@ -26,7 +27,7 @@ const attempt = (aloneMarks: unknown, togetherMarks: unknown): AutomationStudioF
         togetherRows: [{ failed: [0, 1], rows: [{ club: "Bo Kim", posted: "1 May 2026" }], marks: togetherMarks }]
       }
     }
-  } as never
+  }
 });
 
 describe("marks on the rows a read left out (t810)", () => {

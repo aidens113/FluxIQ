@@ -52,7 +52,9 @@
 // contradicted when the run put a control back to how it was before; and in t795
 // (framework plan P5) both by one clause and one sentence in the held-rows rule: rows
 // several conditions left out together (leftOutTogether), and that computedFacts are
-// Core's to settle. With
+// Core's to settle; and in t810 (P5b) both verification pins by the located-only
+// earlierAdvice sentence and the appended checked stored-cell citation sentence.
+// With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.

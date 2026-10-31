@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { extractionSummaryFromOutputs } from "../extraction-summary.ts";
-import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
+import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../model/index.ts";
 import { automationStudioResultReadAccounts } from "../../../result-verification/read-account/index.ts";
 
 const FRIEND = { club: "Ann Lee", posted: "6 March 2027" };
@@ -66,9 +66,10 @@ describe("the marks on the rows a read left out (t810)", () => {
 describe("a row two conditions left out together keeps its mark all the way to the read account (t810)", () => {
   it("places the page's mark of a together row on the account's leftOutTogether set", () => {
     const extraction = extractionSummaryFromOutputs({ result: { extraction: page([[null, [OFFER], [OFFER]], [[OFFER], null]]) } });
+    if (!extraction) throw new Error("the valid extraction was not summarized");
     const node: AutomationStudioFlowNode = { id: "read", definitionId: "web.output.dom-extract_list", parameterValues: { extractList: { item: ".n", fields: { club: { kind: "text" }, posted: { kind: "text" } }, where: [{ field: "club", contains: "Circle" }, { field: "posted", contains: "2027" }] } } };
-    const attempt = { attemptId: "a", nodeId: "read", definitionId: node.definitionId, order: 1, status: "succeeded" as const, startedAt: 1, metadata: { extraction } };
-    const read = automationStudioResultReadAccounts({ actionAttempts: [attempt], flowNodes: [node], deniedEvidenceKeys: [] } as never).reads[0]!;
+    const attempt: AutomationStudioFlowRunActionAttemptRecord = { attemptId: "a", nodeId: "read", definitionId: node.definitionId, order: 1, status: "succeeded", startedAt: 1, metadata: { extraction } };
+    const read = automationStudioResultReadAccounts({ actionAttempts: [attempt], flowNodes: [node], deniedEvidenceKeys: [] }).reads[0]!;
     expect(read.leftOutTogether?.[0]?.rows).toHaveLength(1);
     expect(read.leftOutTogether?.[0]?.marks).toEqual([[OFFER]]);
   });

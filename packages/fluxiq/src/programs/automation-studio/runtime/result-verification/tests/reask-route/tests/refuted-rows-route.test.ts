@@ -10,6 +10,7 @@
 // are stubbed (`../../computed-facts-route/`). No model is called.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../../../llm/build-purse/index.ts";
 import { automationStudioResultComputedFacts } from "../../../computed-facts/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultComputedFact } from "../../../contracts/index.ts";
 import { ANY_CIRCLE, CIRCLE_YES, NOT_ENTERED, OWN_CIRCLES, RECAST_NO, REFUTED_DEFECTS, REFUTED_NO, circleInstruction, circleRunSummary, citingYes } from "../../../located-defects/tests/circle-board-fixture.ts";
@@ -120,8 +121,9 @@ describe("a no whose every defect row Core's record of that row refutes, through
     const { provider, seen } = answering(REFUTED_NO, REFUTED_NO, located, REFUTED_NO);
     const report = await verify(provider);
     expect(seen).toHaveLength(4);
+    if (!report.outcome.performed) throw new Error("not performed");
     expect(report.outcome).toMatchObject({ verdict: "does_not_answer" });
-    expect(automationStudioResultVerificationFailsRun(report.outcome.performed ? report.outcome : (undefined as never))).toBe(true);
+    expect(automationStudioResultVerificationFailsRun(report.outcome)).toBe(true);
     // The rows Core refuted stay on the outcome, though the no stands (follow-up 2).
     expect(report.outcome.performed && report.outcome.refutedRows?.length).toBeGreaterThan(0);
   });
@@ -131,6 +133,15 @@ describe("a no whose every defect row Core's record of that row refutes, through
     const report = await verify(provider);
     expect(seen.length).toBeGreaterThanOrEqual(4);
     expect(report.outcome).toMatchObject({ verdict: "unsure" });
+    expect(report.outcome.performed && report.outcome.code).not.toBe(AUTOMATION_STUDIO_RESULT_VERDICT_CODES.noRefutedByRecord);
+  });
+
+  it("cannot accept refuted nos when the real Flow purse is exhausted before the mandatory evidence calls", async () => {
+    const { provider, seen } = answering(REFUTED_NO, REFUTED_NO, REFUTED_NO, REFUTED_NO);
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.002 });
+    const report = await automationStudioLlmFlowPurseScope(purse, async () => await verify(provider));
+    expect(seen).toHaveLength(2);
+    expect(report.outcome.verdict).toBe("unsure");
     expect(report.outcome.performed && report.outcome.code).not.toBe(AUTOMATION_STUDIO_RESULT_VERDICT_CODES.noRefutedByRecord);
   });
 
