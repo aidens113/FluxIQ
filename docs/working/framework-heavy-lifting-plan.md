@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t828 Core and affected web/Lab tests/types/builds pass; installed browser rerun active after setup locator fix. Private0.20/main0.19; no full/paid calls.
+Status detail: t828 initial narrow checks pass; proved receipt hash defect repaired in intake/observer, focused validation active. Browser acceptance pending; no full/paid calls.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active t828, 2026-10-31:** Core0.20 independently accepted122tests/14files, typecheck, full audit and compiled SDK smoke; imports ratchet removed1 old violation, baseline1143. All three private SDK libraries current. Down domain source/tests types and build pass after optional-field/copy fixes; first selection142/143 passed, all corrected/additional91 pass and final18 fixture/contract tests pass; native16 rerun passes. Extension84owning tests/typecheck/build and Lab typecheck/build/four trace-reader tests pass. Source/producer/identity APIs frozen. Installed browser attempt1 paired/captured/declared the real target, then test locator reselected a different visible record after Hide, before any Core action; lead pinned the fixture container key and attempt2 is running. No browser acceptance yet. Real proof uses genuine hidden-target commands plus explicit same-post re-observation after Undo, never manufactured failures. Reports p8-identity/ in private Core; artifacts ignored. Parent dev Coreceb14f8f/downstream1830d9ab pushed, main source/SDK stays0.19 until integration. Full sweeps2used/main held; Claude/$5 configured, no paid go/API calls/panel management; user clinerules unchanged.
+**Active t828, 2026-10-31:** Core0.20 independently accepted122tests/14files, typecheck, full audit and compiled SDK smoke; imports ratchet removed1 old violation, baseline1143. Identity SDK0.20 was built; receipt-fix SDK rebuild is active. Down domain source/tests types and build pass after optional-field/copy fixes; first selection142/143 passed, all corrected/additional91 pass and final18 fixture/contract tests pass; native16 rerun passes. Extension84owning tests/typecheck/build and Lab typecheck/build/four trace-reader tests pass. Source/producer/identity APIs frozen. Installed browser attempts1-2 stopped on test locators, corrected using persistent fixture identity; attempts3-5 reached Core but stopped safely with required_outcome_unknown. Attempt5 actual browser target-not-found failure arrived in4837ms, retryable true, gateway errors0; Attempt6 proves353656-byte click result suppressed as invalid_result by Core256KiB canonical hash guard; Dedicated exact full-result hash now replaces small-record hashing at intake and required observer; claims retain original bounds, full result integrity and uncertainty protection remain, Lead independently accepts62receipt tests, controller13rerun, Coretypecheck56.093s and audit; packing allowance lowered15to10. Fresh SDK rebuild and browser rerun pending. No browser acceptance or integration claimed. Private SDK0.20/shared-checkout SDK0.19. Full suites exhausted today; no paid calls/panel management. Reports in private Core p8-identity; ignored browser attempts1-6 preserved in main.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 

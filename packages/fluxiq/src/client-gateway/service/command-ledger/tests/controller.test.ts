@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { ClientGatewayCommandLedgerController as Controller, type ClientGatewayCommandClaim, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
+import { ClientGatewayCommandLedgerController as Controller, clientGatewayCommandResultDigest, type ClientGatewayCommandClaim, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
 
 function claim(): ClientGatewayCommandClaim {
   const owner = { projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "node.attempt.1", effectOrdinal: 0 };
@@ -84,6 +84,39 @@ describe("durable gateway command controller infrastructure", () => {
     expect(() => Controller.digest(deep)).toThrow();
     // Below the byte limit: failure must come from the independent node-count bound.
     expect(() => Controller.digest(new Array(65_536).fill(0))).toThrow("hash_structure_limit");
+  });
+  it("hashes complete transport-admitted evidence without the small-record byte or node limits", () => {
+    const text = "admitted evidence ".repeat(25_000);
+    const value = { status: "failed", payload: { snapshot: { text, records: [1, 2, 3] } } };
+    const canonical = `{"payload":{"snapshot":{"records":[1,2,3],"text":${JSON.stringify(text)}}},"status":"failed"}`;
+    expect(clientGatewayCommandResultDigest(value)).toBe(`sha256:${createHash("sha256").update(canonical).digest("hex")}`);
+    expect(() => Controller.digest(value)).toThrow("hash_size_limit");
+    expect(clientGatewayCommandResultDigest({ ...value, payload: { snapshot: { text: `${text}tail changed`, records: [1, 2, 3] } } })).not.toBe(clientGatewayCommandResultDigest(value));
+    const wide = new Array(70_000).fill(0);
+    expect(clientGatewayCommandResultDigest(wide)).toBe(`sha256:${createHash("sha256").update(JSON.stringify(wide)).digest("hex")}`);
+    expect(() => Controller.digest(wide)).toThrow("invalid_digest_fields");
+  });
+  it("keeps canonical result bytes and structural safety identical to admissible ledger JSON", () => {
+    for (const value of [null, true, false, 0, -0, "quoted\ntext", [1, null, { "\ufffd": 2, "😀": 1 }], { b: false, a: [2, 1] }]) expect(clientGatewayCommandResultDigest(value)).toBe(Controller.digest(value));
+    const sparse = new Array(2);
+    sparse[1] = 1;
+    const symbolic = { safe: 1 };
+    Reflect.set(symbolic, Symbol("extra"), 2);
+    const extra = [1];
+    Reflect.set(extra, "rawExtra", "not ignored");
+    const cycle: { self?: unknown } = {};
+    cycle.self = cycle;
+    let deep: unknown = null;
+    for (let i = 0; i < 65; i++) deep = { child: deep };
+    let getterCalls = 0;
+    const getter = Object.defineProperty({}, "payload", { enumerable: true, get: () => {
+      getterCalls++;
+      return "must not execute";
+    } });
+    for (const value of [undefined, { missing: undefined }, Number.NaN, Infinity, new Date(), new Map(), sparse, extra, symbolic, cycle, deep, getter, Object.defineProperty({}, "hidden", { value: 1 })]) expect(() => clientGatewayCommandResultDigest(value)).toThrow();
+    expect(getterCalls).toBe(0);
+    const reordered = new Proxy([1, 2], { ownKeys: () => ["1", "0", "length"] });
+    expect(clientGatewayCommandResultDigest(reordered)).toBe(clientGatewayCommandResultDigest([1, 2]));
   });
   it("freezes the validated claim before a real port callback can mutate its nested binding", async () => {
     const ledger = port(), input = claim(), original = ledger.claim;

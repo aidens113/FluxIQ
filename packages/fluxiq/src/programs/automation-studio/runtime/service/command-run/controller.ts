@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandContext as Context, ClientGatewayCommandOutcome as Outcome, ClientGatewayDurableDispatch as Dispatch, type ClientGatewayCommandClaim, type ClientGatewayCommandReceipt, type ClientGatewayCommandRecord, type ClientGatewayCommandUnknownReason, type ClientGatewayCommandOutcomeObserver, type ClientGatewayCommandLedgerLease } from "../../../../../client-gateway/service/command-ledger/index.ts";
+import { ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandContext as Context, ClientGatewayCommandOutcome as Outcome, ClientGatewayDurableDispatch as Dispatch, clientGatewayCommandResultDigest, type ClientGatewayCommandClaim, type ClientGatewayCommandReceipt, type ClientGatewayCommandRecord, type ClientGatewayCommandUnknownReason, type ClientGatewayCommandOutcomeObserver, type ClientGatewayCommandLedgerLease } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import { AutomationStudioProjectCommandLedgerStore as Store, type AutomationStudioCommandRunAdmission } from "../../../storage/project/index.ts";
 import { AutomationStudioCommandRunScope, type AutomationStudioCommandRunOwner, type AutomationStudioCommandRunPorts, type AutomationStudioCommandEffectProvenance } from "./contracts.ts";
 
@@ -149,7 +149,7 @@ export class AutomationStudioCommandRunController {
   private observe(scope: AutomationStudioCommandRunScope, state: State, effect: Effect, proof: object): Promise<void> {
     return this.operation(state, async () => {
       const completion = Dispatch.readCompletionProof(proof, effect.context, effect.observer); await this.live(state);
-      if (state.blocked || effect.ticket || !effect.claim || Rules.digest(effect.claim) !== Rules.digest(completion.claim) || Rules.digest(completion.result) !== completion.receipt.resultDigest) throw new Error("command_run.invalid_completion");
+      if (state.blocked || effect.ticket || !effect.claim || Rules.digest(effect.claim) !== Rules.digest(completion.claim) || clientGatewayCommandResultDigest(completion.result) !== completion.receipt.resultDigest) throw new Error("command_run.invalid_completion");
       const record = await this.read(scope, completion.claim); await this.live(state);
       Dispatch.readCompletionProof(proof, effect.context, effect.observer);
       if (state.blocked || !record || record.state !== "committed" || Rules.digest(record.receipt) !== Rules.digest(completion.receipt)) throw new Error("command_run.invalid_completion");

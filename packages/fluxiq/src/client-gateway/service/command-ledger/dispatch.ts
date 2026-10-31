@@ -12,6 +12,7 @@ import { clientGatewayHostLeaseStamp, isClientGatewayHostLease, type ClientGatew
 import { ClientGatewayCommandContext } from "./context.ts";
 import { ClientGatewayCommandOutcome } from "./outcome.ts";
 import { ClientGatewayCommandLedgerController as Controller } from "./controller.ts";
+import { clientGatewayCommandResultDigest } from "./result-digest.ts";
 import type { ClientGatewayTraceTap } from "../trace-tap/index.ts";
 import type { ClientGatewayCommandClaim, ClientGatewayCommandLedgerLease, ClientGatewayCommandReceipt, ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse, ClientGatewayDurableDispatchResult, ClientGatewayCommandOutcomeObserver, ClientGatewayCommandCompletion } from "./contracts.ts";
 
@@ -89,7 +90,7 @@ export class ClientGatewayDurableDispatch {
   private async accept(entry: Entry, input: ClientGatewayActionResult, delivered?: (result: ClientGatewayActionResult) => void): Promise<"settled" | "suppressed"> {
     if (entry.phase !== "waiting") return this.suppressed(entry, "not_waiting");
     let result: ClientGatewayActionResult, resultDigest: string;
-    try { resultDigest = Controller.digest(input); result = this.parseResult(input); this.freeze(result); }
+    try { resultDigest = clientGatewayCommandResultDigest(input); result = this.parseResult(input); this.freeze(result); }
     catch { return this.suppressed(entry, "invalid_result"); }
     if (result.status === "unknown" || result.status === "timed_out" || result.status === "cancelled") { this.uncertain(entry); await entry.completion; return this.suppressed(entry, "uncertain_status"); }
     entry.phase = "reserved"; if (!entry.observer) entry.timer?.cancel();

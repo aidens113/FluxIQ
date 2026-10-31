@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { FluxIQ } from "../../../../../../framework/index.ts";
-import { ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayCommandContext, type ClientGatewayCommandClaim } from "../../../../../../client-gateway/service/command-ledger/index.ts";
+import { ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayCommandContext, clientGatewayCommandResultDigest, type ClientGatewayCommandClaim } from "../../../../../../client-gateway/service/command-ledger/index.ts";
 import { ClientGatewayService, CLIENT_GATEWAY_PROTOCOL_VERSION } from "../../../../../../client-gateway/index.ts";
 import { AutomationStudioProjectCommandLedgerStore as Store, type AutomationStudioProjectDatabasePool } from "../../../../storage/project/index.ts";
 import { AutomationStudioCommandRunController as Controller, AutomationStudioCommandRunScope, type AutomationStudioCommandRunOwner, type AutomationStudioCommandExecutorOwner, type AutomationStudioCommandEffectProvenance } from "../index.ts";
@@ -47,6 +47,25 @@ async function consumedFixture(operation: (h: { controller: Controller; scope: A
   });
 }
 describe("private consumed outcomes with actual program SQLite and gateway", () => {
+  it.each(["succeeded", "failed"] as const)("accepts a full large %s result through the actual receipt observer and consumption gate", async status => consumedFixture(async h => {
+    const first = h.issue(0), context = await h.controller.issueEffect(h.scope, first.capability);
+    const committed = vi.spyOn(Store.prototype, "commitReceipt");
+    const response = h.gateway.executeAction(h.sessionId, { actionType: "synthetic.action" }, { context });
+    for (let i = 0; i < 100 && !h.sends.length; i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const result = { commandId: response.commandId, status, payload: { snapshot: { text: "actual observer evidence ".repeat(16_000) } }, ...(status === "failed" ? { failure: { category: "target_not_found" as const, code: "example.target.not_found", retryable: true, stage: "target_resolution" as const } } : {}) };
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeGreaterThan(Rules.HASH_LIMIT_BYTES);
+    await h.gateway.receive(h.sessionId, { id: "large.ack", protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.action_result", payload: result });
+    const completed = await response.result;
+    expect(completed).toMatchObject({ status: "completed", result: { status } });
+    if (completed.status !== "completed") throw new Error("Expected required observer receipt.");
+    expect(completed.receipt.resultDigest).toBe(clientGatewayCommandResultDigest(result));
+    expect(h.controller.receipted(context)).toBe(true);
+    expect(committed).toHaveBeenCalledTimes(1);
+    h.handled(first.capability, context);
+    await h.controller.consume(first.consumer, context);
+    await h.controller.checkpoint(h.scope);
+    expect(h.sends).toHaveLength(1);
+  }));
   it("manual observer call with exact committed receipt/result JSON cannot mint the initial ticket", async () => consumedFixture(async h => {
     const first = h.issue(0), context = await h.controller.issueEffect(h.scope, first.capability), original = Store.prototype.commitReceipt;
     let release!: () => void, committed!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }), ready = new Promise<void>(resolve => { committed = resolve; });

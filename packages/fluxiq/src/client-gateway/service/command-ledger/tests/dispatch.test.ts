@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientGatewayService, CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayActionResult, type ClientGatewayClientMessage } from "../../../index.ts";
-import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayDurableDispatch as Dispatch, type ClientGatewayCommandLedgerLease, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
+import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayDurableDispatch as Dispatch, clientGatewayCommandResultDigest, type ClientGatewayCommandLedgerLease, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
 
 const owner = { projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "node.attempt.1", effectOrdinal: 0 };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
@@ -24,6 +24,40 @@ function ack(commandId: string, fields: Partial<ClientGatewayActionResult> = {})
 }
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 describe("actual gateway explicit durable dispatch boundary", () => {
+  it.each(["succeeded", "failed"] as const)("commits and delivers one full large %s result through its required observer", async status => {
+    const ledger = memory(), context = Context.issue(owner), events: ClientGatewayActionResult[] = [];
+    const observer = {
+      completed: vi.fn(async (proof: object) => {
+        const value = Dispatch.readCompletionProof(proof, context, observer);
+        expect(value.result.status).toBe(status);
+        expect(value.receipt.resultDigest).toBe(clientGatewayCommandResultDigest(value.result));
+        expect(Object.isFrozen(value.result.payload)).toBe(true);
+        expect((await ledger.read(value.claim))?.receipt).toEqual(value.receipt);
+      }),
+      uncertain: vi.fn(async () => undefined)
+    };
+    Outcome.require(context, observer);
+    const gateway = new ClientGatewayService({ resolveCommandLedger: async () => ({ ledger, outcomeObserver: observer, close: async () => undefined }) });
+    const sessionId = await paired(gateway, () => undefined);
+    gateway.onEvent(event => { if (event.type === "client.action_result") events.push(event.message.payload); });
+    const response = gateway.executeAction(sessionId, { actionType: "synthetic.action" }, { context });
+    await tick();
+    const result = { commandId: response.commandId, status, payload: { snapshot: { text: "legitimate page evidence ".repeat(16_000), values: new Array(70_000).fill(0) } }, ...(status === "failed" ? { failure: { category: "target_not_found" as const, code: "example.target.not_found", retryable: true, stage: "target_resolution" as const } } : {}) };
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeGreaterThan(Rules.HASH_LIMIT_BYTES);
+    await gateway.receive(sessionId, ack(response.commandId, result));
+    const completed = await response.result;
+    expect(completed).toMatchObject({ status: "completed", result: { status } });
+    if (completed.status !== "completed") throw new Error("Expected committed result.");
+    expect(completed.receipt.resultDigest).toBe(clientGatewayCommandResultDigest(result));
+    const changed = { ...result, payload: { ...result.payload, snapshot: { ...result.payload.snapshot, text: `${result.payload.snapshot.text}changed tail` } } };
+    expect(clientGatewayCommandResultDigest(changed)).not.toBe(completed.receipt.resultDigest);
+    expect(ledger.commitReceipt).toHaveBeenCalledTimes(1);
+    expect(observer.completed).toHaveBeenCalledTimes(1);
+    expect(observer.uncertain).not.toHaveBeenCalled();
+    expect(events).toEqual([result]);
+    expect(JSON.stringify(await ledger.read(expect.anything()))).not.toContain("legitimate page evidence");
+    await gateway.close();
+  });
   it("authenticates only the exact live dispatch proof, never equal JSON or an expired/copied proof", async () => {
     const ledger = memory(), context = Context.issue(owner); let saved!: object;
     const observer = { completed: vi.fn(async (proof: object) => { saved = proof; const value = Dispatch.readCompletionProof(proof, context, observer); expect(Rules.digest(value.result)).toBe(value.receipt.resultDigest); expect(Object.isFrozen(value.result.payload)).toBe(true); const stored = await ledger.read(value.claim); expect(stored?.receipt).toEqual(value.receipt); for (const forged of [JSON.parse(JSON.stringify(proof)), { ...value }, structuredClone(value.receipt)]) expect(() => Dispatch.readCompletionProof(forged, context, observer)).toThrow("foreign_completion_proof"); expect(() => Dispatch.readCompletionProof(proof, Context.issue(owner), observer)).toThrow("foreign_completion_proof"); expect(() => Dispatch.readCompletionProof(proof, context, { ...observer })).toThrow("foreign_completion_proof"); }), uncertain: vi.fn(async () => undefined) };
@@ -87,14 +121,14 @@ describe("actual gateway explicit durable dispatch boundary", () => {
     const unpaired = gateway.connect({ socket: { send } }); expect(() => gateway.executeAction(unpaired.sessionId, { actionType: "synthetic.action" }, { context: Context.issue(owner) })).toThrow();
     expect(send).not.toHaveBeenCalled(); expect(gateway.outbound(sessionId)).toHaveLength(0); await gateway.close();
   });
-  it("wrong sender, malformed/oversize/provenance result and racing duplicates cannot reserve the right answer", async () => {
+  it("wrong sender, malformed/nonfinite/provenance result and racing duplicates cannot reserve the right answer", async () => {
     const ledger = memory(), gate = deferred<void>(), original = ledger.commitReceipt;
     ledger.commitReceipt = vi.fn(async (claim, receipt) => { await gate.promise; return original(claim, receipt); });
     const gateway = new ClientGatewayService({ resolveCommandLedger: async () => ({ ledger, close: async () => undefined }) });
     const right = await paired(gateway, () => undefined), wrong = await paired(gateway, () => undefined, "client.wrong");
     const response = gateway.executeAction(right, { actionType: "synthetic.action" }, { context: Context.issue(owner) }); await tick();
     await gateway.receive(wrong, ack(response.commandId));
-    await gateway.receive(right, ack(response.commandId, { payload: { huge: "x".repeat(300_000) } }));
+    await gateway.receive(right, ack(response.commandId, { payload: { nonfinite: Number.NaN } }));
     await gateway.receive(right, ack(response.commandId, { status: "success" as never }));
     const forged = ack(response.commandId); Reflect.set(forged.payload, "receiptId", "model.success"); await gateway.receive(right, forged);
     expect(ledger.commitReceipt).not.toHaveBeenCalled();
