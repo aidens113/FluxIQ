@@ -7,8 +7,8 @@ import type { FluxIQWorkspaceManager } from "./workspace-manager";
  *
  * Sessions are the platform's: the primary instance's Identity Access checks
  * them under every tenancy. Under `single` every signed-in person is in the
- * primary workspace; under `multi` it is their first active membership in the
- * platform store.
+ * primary workspace; under `multi` it is their oldest active membership, with
+ * workspace id breaking a creation-time tie independently of store order.
  */
 export async function sessionWorkspaceId(input: {
   sessionId: string;
@@ -20,5 +20,7 @@ export async function sessionWorkspaceId(input: {
   if (!auth) return null;
   if (manager.tenancy === "single") return manager.primaryWorkspaceId;
   const memberships = await (await input.platformServices()).store.listMembershipsOfUser(auth.user.id);
-  return memberships.find((membership) => membership.status === "active")?.workspaceId ?? null;
+  const active = memberships.filter((membership) => membership.status === "active");
+  active.sort((left, right) => left.createdAtMs - right.createdAtMs || (left.workspaceId < right.workspaceId ? -1 : left.workspaceId > right.workspaceId ? 1 : 0));
+  return active[0]?.workspaceId ?? null;
 }

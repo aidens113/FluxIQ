@@ -264,4 +264,78 @@ describe("FluxIQWorkspaceManager", () => {
     expect(manager.get("ws-a")).toBeDefined();
     expect(warnings.some((line) => line.includes("kept open"))).toBe(true);
   });
+
+  it("refuses a lease whose construction finishes after shutdown starts", async () => {
+    let finishOpen!: (instance: FluxIQ) => void;
+    const gate = new Promise<FluxIQ>((resolve) => { finishOpen = resolve; });
+    const { manager } = harness({ createTenant: () => gate });
+    const pending = manager.acquire("ws-a");
+    const refused = expect(pending).rejects.toThrow("workspaces.closed");
+    const closing = manager.close();
+    const instance = fakeInstance("ws-a");
+    finishOpen(instance);
+    await Promise.all([refused, closing]);
+    expect(instance.closes).toEqual(["shutdown"]);
+    expect(manager.get("ws-a")).toBeUndefined();
+  });
+
+  it.each(["shutdown", "delete"])("does not reopen after an eviction wait if %s started", async (action) => {
+    let finishClose!: () => void;
+    const gate = new Promise<void>((resolve) => { finishClose = resolve; });
+    const removeTenantRoot = vi.fn(async () => undefined);
+    const createTenant = vi.fn(async ({ workspaceId }: { workspaceId: string }) => fakeInstance(workspaceId, gate));
+    const { manager, advance } = harness({ createTenant, removeTenantRoot });
+    (await manager.acquire("ws-a")).release();
+    advance(60_000);
+    const sweeping = manager.sweep();
+    const reopening = manager.acquire("ws-a");
+    const refused = expect(reopening).rejects.toThrow(action === "shutdown" ? "workspaces.closed" : "workspaces.deleting");
+    const stopping = action === "shutdown" ? manager.close() : manager.deleteWorkspace("ws-a");
+    finishClose();
+    await Promise.all([sweeping, refused, stopping]);
+    expect(createTenant).toHaveBeenCalledTimes(1);
+    expect(manager.get("ws-a")).toBeUndefined();
+    if (action === "delete") expect(removeTenantRoot).toHaveBeenCalledTimes(1);
+    await manager.close();
+  });
+
+  it("does not lease an instance whose construction is being deleted", async () => {
+    let finishOpen!: (instance: FluxIQ) => void;
+    const gate = new Promise<FluxIQ>((resolve) => { finishOpen = resolve; });
+    const removeTenantRoot = vi.fn(async () => undefined);
+    const { manager } = harness({ createTenant: () => gate, removeTenantRoot });
+    const pending = manager.acquire("ws-a");
+    const refused = expect(pending).rejects.toThrow("workspaces.deleting");
+    const deleting = manager.deleteWorkspace("ws-a");
+    const instance = fakeInstance("ws-a");
+    finishOpen(instance);
+    await Promise.all([refused, deleting]);
+    expect(instance.closes).toEqual(["shutdown"]);
+    expect(removeTenantRoot).toHaveBeenCalledTimes(1);
+    await manager.close();
+  });
+
+  it.each(["evict", "delete"])("keeps a failed %s close as a barrier to reopening its root", async (action) => {
+    const instance = fakeInstance("ws-a");
+    vi.mocked(instance.close).mockRejectedValue(new Error("connection still open"));
+    const createTenant = vi.fn(async () => instance);
+    const removeTenantRoot = vi.fn(async () => undefined);
+    const { manager, advance } = harness({ createTenant, removeTenantRoot });
+    (await manager.acquire("ws-a")).release();
+    advance(60_000);
+    await expect(action === "evict" ? manager.sweep() : manager.deleteWorkspace("ws-a")).rejects.toThrow("connection still open");
+    await expect(manager.acquire("ws-a")).rejects.toThrow("connection still open");
+    expect(createTenant).toHaveBeenCalledTimes(1);
+    expect(removeTenantRoot).not.toHaveBeenCalled();
+    await expect(manager.close()).rejects.toThrow("connection still open");
+  });
+
+  it("never creates or replaces a primary after close", async () => {
+    const createPrimary = vi.fn(() => fakeInstance("primary"));
+    const { manager } = harness({ createPrimary });
+    await manager.close();
+    expect(() => manager.primary()).toThrow("workspaces.closed");
+    expect(() => manager.replacePrimary(fakeInstance("replacement"))).toThrow("workspaces.closed");
+    expect(createPrimary).not.toHaveBeenCalled();
+  });
 });

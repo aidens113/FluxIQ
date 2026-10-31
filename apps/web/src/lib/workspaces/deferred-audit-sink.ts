@@ -21,7 +21,8 @@ export class DeferredIamAuditSink implements IamAuditSink {
   private readonly onError: ((error: Error) => void) | undefined;
 
   constructor(private readonly resolve: () => Promise<IamAuditSink>, options: { maxPending?: number; onError?: (error: Error) => void } = {}) {
-    this.maxPending = Math.max(1, Math.trunc(options.maxPending ?? DEFAULT_MAX_PENDING));
+    this.maxPending = options.maxPending ?? DEFAULT_MAX_PENDING;
+    if (!Number.isSafeInteger(this.maxPending) || this.maxPending <= 0) throw new Error("workspaces.invalid_audit_limit: maxPending must be a positive safe integer");
     this.onError = options.onError;
   }
 

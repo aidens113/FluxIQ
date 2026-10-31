@@ -89,6 +89,19 @@ unreadable marker or one with another version. A workspace id must match
 `storage.workspace_id_invalid:`, so a root is always a direct child of
 `workspaces/`. Removing a workspace deletes only that child.
 
+The web manager creates tenant instances lazily and keeps the primary open.
+Concurrent callers share construction; a lease or runtime activity prevents
+eviction. Idle tenants close after 15 minutes or when least recently used beyond
+the default 100 open entries (`FLUXIQ_WORKSPACE_IDLE_MS` and
+`FLUXIQ_WORKSPACE_CACHE_MAX`). A tenant's manager-owned key custody survives
+eviction, and its next instance receives that same custody. Workspace deletion
+and server shutdown revoke it. A failed close blocks re-opening the root until
+the server is restarted and the failure is resolved.
+
+The platform IAM audit at `.fluxiq/platform/iam-audit.sqlite` is one open store
+per host root across primary reloads. It is flushed and closed after workspace
+shutdown; tenant registries never retain a sink replaced by a reload.
+
 ## Global SQLite Database
 
 The global framework database is:
@@ -452,6 +465,11 @@ run:<runId>
 
 Writes are batched every 10 seconds. The service updates in-memory state
 immediately, then flushes a full state snapshot to SQLite on the batch window.
+Closing stops scheduler admission, awaits storage loading and all admitted task
+runs, and serially writes their final state before the instance closes SQLite.
+Concurrent close callers await the same drain. Reading `activity()` neither
+loads storage nor starts the scheduler; a stopped scheduler has no scheduled
+activity, and maintenance intervals do not keep an otherwise idle workspace open.
 
 ## Generated Documentation
 

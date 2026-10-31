@@ -17,6 +17,10 @@ function memorySink(): IamAuditSink & { rows: string[]; flushes: number } {
 }
 
 describe("DeferredIamAuditSink", () => {
+  it.each([0, -1, 1.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1])("refuses an invalid pending-record limit %s", (maxPending) => {
+    expect(() => new DeferredIamAuditSink(async () => memorySink(), { maxPending })).toThrow("workspaces.invalid_audit_limit");
+  });
+
   it("keeps records until the real sink opens, then hands them over in order and forwards the rest", async () => {
     const target = memorySink();
     let open!: (sink: IamAuditSink) => void;

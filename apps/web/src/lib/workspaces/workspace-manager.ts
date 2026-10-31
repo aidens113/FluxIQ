@@ -82,11 +82,13 @@ export class FluxIQWorkspaceManager {
 
   /** The primary workspace, created on first use. */
   primary(): WorkspaceEntry {
+    this.assertOpen();
     return this.primaryRecord();
   }
 
   /** Puts a new primary instance in place (a reload); the caller closed the old one. */
   replacePrimary(fluxiq: FluxIQ): void {
+    this.assertOpen();
     if (this.primaryEntry) this.primaryEntry.fluxiq = fluxiq;
     else this.primaryEntry = new OpenWorkspace(this.primaryWorkspaceId, true, fluxiq, null, this.now(), (instance) => this.reportsWork(instance));
   }
@@ -111,11 +113,15 @@ export class FluxIQWorkspaceManager {
       this.assertOpen();
       if (this.deletions.has(workspaceId)) throw new Error("workspaces.deleting: the workspace is being deleted");
       const closing = this.closing.get(workspaceId);
-      if (closing) await closing;
+      if (closing) {
+        await closing;
+        this.assertAvailable(workspaceId);
+      }
       const open = this.open.get(workspaceId);
       if (open) return this.lease(open);
       if (this.closing.has(workspaceId)) continue;
       const opened = await (this.opening.get(workspaceId) ?? this.startOpening(workspaceId));
+      this.assertAvailable(workspaceId);
       if (this.open.get(workspaceId) === opened && !this.deletions.has(workspaceId)) return this.lease(opened);
     }
     throw new Error("workspaces.unavailable: the workspace was evicted each time it opened; try again");
@@ -180,7 +186,11 @@ export class FluxIQWorkspaceManager {
     record.leases += 1;
     record.lastUsedAt = this.now();
     // Held before the cap is enforced, so the workspace just asked for is never the one evicted to make room.
-    if (!record.primary) void this.enforceCap();
+    if (!record.primary) {
+      for (const closing of this.enforceCap()) {
+        void closing.catch(/* best-effort: evict reported the failure and keeps the rejected close as a barrier */ () => undefined);
+      }
+    }
     let released = false;
     return {
       workspaceId: record.workspaceId,
@@ -218,15 +228,16 @@ export class FluxIQWorkspaceManager {
 
   private evict(record: OpenWorkspace): Promise<void> {
     const { workspaceId } = record;
+    if (this.open.get(workspaceId) !== record) return this.closing.get(workspaceId) ?? Promise.resolve();
     this.open.delete(workspaceId);
-    const closing: Promise<void> = record.fluxiq.close({ mode: "evict" })
-      .then(
-        () => undefined,
-        (error: unknown) => this.warn("[FluxIQ] An evicted workspace did not close cleanly.", { reason: describeError(error) })
-      )
-      .finally(() => {
-        if (this.closing.get(workspaceId) === closing) this.closing.delete(workspaceId);
-      });
+    const closing: Promise<void> = record.fluxiq.close({ mode: "evict" }).then(() => {
+      if (this.closing.get(workspaceId) === closing) this.closing.delete(workspaceId);
+    }, (error: unknown) => {
+      // The old instance may still own the root. Keep the rejected close as a
+      // barrier rather than creating a second instance over its connections.
+      this.warn("[FluxIQ] An evicted workspace did not close cleanly.", { reason: describeError(error) });
+      throw error;
+    });
     this.closing.set(workspaceId, closing);
     return closing;
   }
@@ -255,7 +266,10 @@ export class FluxIQWorkspaceManager {
     try {
       if (record) {
         this.open.delete(workspaceId);
-        await record.fluxiq.close({ mode: "shutdown" });
+        const closing = record.fluxiq.close({ mode: "shutdown" });
+        this.closing.set(workspaceId, closing);
+        await closing;
+        if (this.closing.get(workspaceId) === closing) this.closing.delete(workspaceId);
       }
       const closing = this.closing.get(workspaceId);
       if (closing) await closing;
@@ -276,7 +290,10 @@ export class FluxIQWorkspaceManager {
     for (const result of closed) {
       if (result.status === "rejected") errors.push(result.reason);
     }
-    await Promise.allSettled([...this.closing.values()]);
+    const evictions = await Promise.allSettled([...this.closing.values()]);
+    for (const result of evictions) {
+      if (result.status === "rejected") errors.push(result.reason);
+    }
     for (const heldKeys of this.custody.values()) heldKeys.revokeAll();
     this.custody.clear();
     if (this.primaryEntry) {
@@ -306,6 +323,11 @@ export class FluxIQWorkspaceManager {
 
   private assertOpen(): void {
     if (this.closed) throw new Error("workspaces.closed: the web server is shutting down");
+  }
+
+  private assertAvailable(workspaceId: string): void {
+    this.assertOpen();
+    if (this.deletions.has(workspaceId)) throw new Error("workspaces.deleting: the workspace is being deleted");
   }
 
   private warn(message: string, fields: Record<string, unknown>): void {
