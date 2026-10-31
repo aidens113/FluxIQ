@@ -80,7 +80,7 @@ function refusedLabel(last: { revision: number; digest: string } | undefined, ac
 export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "checkCompletion" | "completionSchema" | "fullRunRequired" | "discoveryOnly">;
   /** `binding.startState`, when the domain has it, is how the site reset reads where the build began (`../site-reset/start-check.ts`). */
-  submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0] & { binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState" | "runsNodes" | "flowScriptExamples"> | undefined };
+  submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0] & { binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState" | "runsNodes" | "flowScriptExamples" | "flowScriptGuidance"> | undefined };
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort };
   /**
    * This build's ledger of its own lasting acts (t462), the one its permission
@@ -125,7 +125,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   const submitId = "core.submit_candidate", testId = AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID;
   /** The call each accepted revision was submitted in, so a refusal can name where the latest accepted script is (t498). */
   const acceptedIn = new Map<number, string>();
-  const scriptFormat = renderAutomationStudioFlowScriptFormat(input.submission.binding?.flowScriptExamples);
+  const scriptFormat = renderAutomationStudioFlowScriptFormat(input.submission.binding?.flowScriptExamples, input.submission.binding?.flowScriptGuidance);
   const tool: AutomationStudioLlmEvidenceTool = {
     toolId: submitId, effect: "observe",
     description: `Submit a complete Flow, written as a Flow script under "flow" (its description gives the format and examples), or an existing canonical JSON plan under "plan". Discovery calls are evidence only and never enter the Flow. Static validity returns a draft revision/digest, never semantic acceptance. Correct all diagnostics and resubmit the entire candidate. Then test that exact revision with ${testId}, and complete with the latest revision and digest only after its trial answers yes.`,

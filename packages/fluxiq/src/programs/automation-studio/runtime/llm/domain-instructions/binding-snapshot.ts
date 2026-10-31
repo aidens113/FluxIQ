@@ -5,6 +5,7 @@ export function automationStudioLlmEvidenceRuntimeBindingSnapshot<Binding extend
   binding: Binding,
   metadata: {
     systemInstructions: AutomationStudioLlmEvidenceRuntimeBinding["systemInstructions"];
+    flowScriptGuidance: AutomationStudioLlmEvidenceRuntimeBinding["flowScriptGuidance"];
     flowScriptExamples: AutomationStudioLlmEvidenceRuntimeBinding["flowScriptExamples"];
   }
 ): Binding {
@@ -13,7 +14,7 @@ export function automationStudioLlmEvidenceRuntimeBindingSnapshot<Binding extend
   // their original receiver, including when Core invokes a checked binding.
   for (let owner: object | null = binding; owner && owner !== Object.prototype; owner = Object.getPrototypeOf(owner)) {
     for (const key of Reflect.ownKeys(owner)) {
-      if (key === "constructor" || key === "systemInstructions" || key === "flowScriptExamples") continue;
+      if (key === "constructor" || key === "systemInstructions" || key === "flowScriptExamples" || key === "flowScriptGuidance") continue;
       if (owner !== binding && Object.prototype.hasOwnProperty.call(descriptors, key)) continue;
       const descriptor = Object.getOwnPropertyDescriptor(owner, key)!;
       if ("value" in descriptor && typeof descriptor.value === "function") {
@@ -23,7 +24,7 @@ export function automationStudioLlmEvidenceRuntimeBindingSnapshot<Binding extend
       }
     }
   }
-  for (const key of ["systemInstructions", "flowScriptExamples"] as const) {
+  for (const key of ["systemInstructions", "flowScriptExamples", "flowScriptGuidance"] as const) {
     Object.defineProperty(descriptors, key, { value: { value: metadata[key], enumerable: true, writable: false, configurable: false }, configurable: true, enumerable: true, writable: true });
   }
   return Object.create(Object.getPrototypeOf(binding), descriptors) as Binding;

@@ -1,0 +1,21 @@
+### Brief: p10_control_guidance_web
+- Role/model: Standard worker gpt-6.1-sol medium.
+- Repository: private t832 Down at C:/Users/osrs_/FluxStuff/fxwork/t832/!FluxIQWebExtension.
+- Task: supply original three control-operation paragraphs through frozen new client guidance contract, preserve exact web prompt bytes and real example behavior.
+- Required reads: FHL Current State; paired Core p10-inline-guidance-design.md relevant contract/placement/proof sections and p10-control-guidance/baseline-control-operations.md; new Core frozen contracts type read-only; owned actual runtime and example test helpers.
+- Owns: domain/src/runtime/llm-evidence/script-guidance/** (new act/guidance/barrel and owning tests), tools.ts, runtime-contract/runtime.ts; script-examples/tests/** for explicit companion propagation/new assertions only.
+- Owns authored doc: docs/architecture/web-script-examples.md.
+- Must not touch: Core code, shared FHL/index/ledger, original script-examples source arrays, system instructions, package/lockfiles, parser/resolver/graph/oracles/gateway/retry/permission source or other tests.
+- Frozen public shape: AutomationStudioFlowScriptGuidance readonly version:string, act?: {controlOperations?: readonly string[]}; web revision web-guidance-1, exact three baseline values A2/A3/A4 only. Root owns contract/public type/binding shape before dispatch; SDK types appear after Core freeze/build.
+- New public render call examples?,guidance? and completion size?,examples?,guidance?; Core renderer keeps protected grammar/safety before/after. Examples remain independent unchanged tails, never used to carry duplicated Core grammar/guidance.
+- Actual createWebAutomationLlmEvidenceRuntime returns flowScriptGuidance beside existing examples, own runtime type declares it explicitly and actual checked binding forwards it. No domain-ID inference, runtime string parsing or replacements.
+- Metadata payload strings must match frozen baseline exactly including punctuation/escapes/Unicode/order; never regenerate accepted full-byte pins to accept a discrepancy.
+- Adapt existing test rendering/setup calls to explicit web companion; preserve all original eleven real public plan-resolver/parser/accept/save graph proofs and three missing-source negative assertions. No fake registry/private Core imports or added public test seams.
+- Definition of done: four original UTF8 byte/hash pins and full completion digest unchanged; real runtime supplied metadata and actual candidate schema proven, generic absence does not infer web operation advice; helper binding isolation tests as relevant.
+- Existing pins: format6154/71df264a2c345227a15f9bf5955ed35169619552210336e664f86b06e005ec67; act3916/2290b5399c44fb4100400e88cd40394fe800258eb0484eef2438ef6250626697; loop8808/6713cc27611efe0e4b941492cfbf3b82c95ad43a01851e53c8f85503f20323bd; state7451/1f691ad3d071deee2e5271e3fd74679eae754d819282273cfb40fd3c979ba2e4.
+- Full completion digest02c766712576f5d8a7bf6cf539e951644b0fa8b3a3978293fadeb3e8cc529147 remains fixed.
+- Validation HOLD: source authoring permitted after root dispatch; do not run Domain tests/types/build/audit until root announces fresh public SDK. Source changes finish/freeze first; root coordinates independent owning checks.
+- After release only owning script-guidance/script-examples tests, Domain check and standalone audit permitted; no whole suites/whole package tests. Both Oct31 full slots used; no paid/browser/.env/real-data/git.
+- Do not claim full P10 medium neutrality: only three act operation paragraphs move; mixed medium prose, facts/intent/vocabulary/fingerprints remain later units.
+- Report to paired Core docs/working/framework-heavy-lifting-plan/reports/codex-1031/p10-control-guidance/web.md (standard report/return contract).
+- Send source-frozen notice and precise remaining validation; report actual source/interface gap before expanding ownership or weakening any oracle.

@@ -1,7 +1,7 @@
+import { AUTOMATION_STUDIO_AUTHORED_METADATA_REVISION_PATTERN as VERSION_PATTERN } from "../../authored-metadata/index.ts";
 import { AUTOMATION_STUDIO_LLM_DOMAIN_SYSTEM_INSTRUCTIONS_MAX_LENGTH } from "./max-length.ts";
 import type { AutomationStudioLlmDomainSystemInstructions } from "./system-instructions.ts";
 
-const VERSION_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 // Every control character but a line feed. A tab, a carriage return or an
 // escape sequence in a system message is either a copying accident or an
 // attempt to hide text from whoever reads the step log, and neither is a rule.

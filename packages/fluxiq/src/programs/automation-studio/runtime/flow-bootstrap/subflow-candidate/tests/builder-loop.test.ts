@@ -1,3 +1,4 @@
+import { renderAutomationStudioFlowScriptAct, type AutomationStudioFlowScriptGuidance } from "../../script-guidance/index.ts";
 import type { AutomationStudioFlowScriptExamples } from "../../script-examples/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT,
@@ -461,11 +462,13 @@ describe("explicit client examples in the actual submit tool", () => {
 
   const scope = { buildId: "build.examples", briefId: "brief.examples", planDigest: "plan.examples", subflowKey: "archive", parts: [{ partId: "p1", sourceId: "instruction", text: "Inspect an archive volume" }], predecessors: [] };
 
-  it.each(cases)("renders only this submission's supplied sections: %j", async (flowScriptExamples) => {
+  it.each(cases.flatMap((examples) => [
+    [examples, undefined], [examples, { version: "archive.v1", act: { controlOperations: ["Explicit archive operation advice."] } }]
+  ] as const))("renders only this submission's supplied sections: %j / %j", async (flowScriptExamples, flowScriptGuidance: AutomationStudioFlowScriptGuidance | undefined) => {
     const captured: string[] = [];
     await expect(runAutomationStudioSubflowBuilderLoop({
       scope, siblings: [],
-      submission: { ...submission, ...(flowScriptExamples ? { binding: { flowScriptExamples } } : {}) },
+      submission: { ...submission, binding: { ...(flowScriptExamples ? { flowScriptExamples } : {}), ...(flowScriptGuidance ? { flowScriptGuidance } : {}) } },
       observe: (loop) => {
         const tool = loop.tools.find((item) => item.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!;
         captured.push(((tool.inputSchema.properties as JsonObject).flow as JsonObject).description as string);
@@ -477,11 +480,14 @@ describe("explicit client examples in the actual submit tool", () => {
       }
     })).rejects.toBe(stop);
     const names = ["format", "act", "loop", "state"] as const;
-    const expected = sections.map((grammar, index) => {
+    const expected = sections.map((prefix, index) => {
+      const grammar = index === 1 ? renderAutomationStudioFlowScriptAct(flowScriptGuidance) : prefix;
       const lines = flowScriptExamples?.[names[index]!];
       return lines?.length ? `${grammar}\n${lines.join("\n")}` : grammar;
     }).join("\n");
     expect(captured).toEqual([`${automationStudioSubflowBriefWords.brief(scope)}\nThis subflow as a script. ` + expected]);
+    expect(captured[0]).not.toContain("web.dom.");
+    if (flowScriptGuidance) expect(captured[0]).toContain("Explicit archive operation advice.");
     if (!flowScriptExamples) expect(captured[0]).not.toMatch(/^Example/m);
     if (flowScriptExamples?.version === "sound.v1") expect(captured[0]).not.toContain("archive.document.read");
   });

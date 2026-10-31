@@ -19,6 +19,7 @@
 // (`./size-limits.ts`), so each schema is built for a Flow's bounds, and each
 // constant is the schema at the setting's default.
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFlowScriptGuidance } from "../script-guidance/index.ts";
 import { renderAutomationStudioFlowScriptFormat, type AutomationStudioFlowScriptExamples } from "../script-examples/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
@@ -45,13 +46,14 @@ const MAX_ACT_CLAIMS = 16;
  */
 export function automationStudioEvidenceFlowBootstrapCompletionSchema(
   size: AutomationStudioFlowBootstrapSizeLimits = automationStudioFlowBootstrapSizeLimits(),
-  examples?: AutomationStudioFlowScriptExamples
+  examples?: AutomationStudioFlowScriptExamples,
+  guidance?: AutomationStudioFlowScriptGuidance
 ): JsonObject {
   return {
     type: "object",
     additionalProperties: false,
     required: ["flow"],
-    description: `Return the finished Flow under "flow" and one sentence about it under "summary". ${renderAutomationStudioFlowScriptFormat(examples).format}`,
+    description: `Return the finished Flow under "flow" and one sentence about it under "summary". ${renderAutomationStudioFlowScriptFormat(examples, guidance).format}`,
     properties: {
       summary: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength },
       flow: {
