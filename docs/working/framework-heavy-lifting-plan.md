@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t826 typed temporary-failure source accepted273Core/contract tests plus focused host checks/types/build and Chromium saved-once proof; paired integration pending. No full/paid calls; main held.
+Status detail: t826 integrated/verified Core0.18/contracts0.4, current local bundles and saved-once browser proof; next CC10/P8 remainder. No further full suites/paid calls; main held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active continuation, 2026-10-31:** t826-runtime-transient-signal source accepted, paired dev integration pending. Contracts0.4.0/Core0.18.0: strict transient flag, optional CONTROL-only tool failure, original uncertainty/authority and all-attempt history retained, malformed metadata drops alone, raw dumps project before serialization. Authoring repeat memory/refusal streak/amendment replay use strict transient+retryable+unacted with actual !effectApplied/!personNeeded; no web-English admission. Host annotates parsed RATE_LIMITED/classified TRANSPORT_TRANSIENT only after existing wire parsing; browser constructors/wire unchanged. Lead273unique named Core/contract tests pass, types/audit1144 pass,3SDKlibs rebuilt. Down235initial tests231pass4old-expectation failures; focused final82pass covers4/new cautious fixtures/retry typings; types/build pass. Audit615 passed before final test-only repairs, final gate pending. Chromium headless UTC job-board real Save lost-ack compatibility1pass (2.6s test/about1.6min overall), no duplicate/unsave/alternative; new host contract tested provider-free through actual public Core loop, not browser authoring. Task-owned reports p8-transient/; HTML/logs retained MAIN ignored test-runs/2026-10-31-t826-*. t825 dev Coree784f2e9/downstreame0c03bf7; MAIN bundles0.17.1 until integration refresh. No paid go/calls/panel or further whole suites; both daily sweeps used, main held. User .clinerules unstaged. Next CC10 after paired acceptance.
+**Accepted t826; continuing P8, 2026-10-31:** typed temporary failure is integrated on dev (Core03e518b3/downstream59489463), Core0.18.0/contracts0.4.0. Strict optional CONTROL-only failure survives exploration/replay/amendments/capture/reset/throws, preserving original authority/ambiguity and every attempt; browser wire/constructors unchanged. Both authoring guards require transient+retryable+unacted and actual !effectApplied/!personNeeded; comparison text/digests excluded before serialization and raw dumps. Lead273unique named Core/contract tests plus70merge contracts pass. Initial235 domain tests231pass4legacy assertions; final82pass resolves those/new cautious cases, unchanged155 passed earlier. Package types, structure1144/615, all3Corelibs/domain/extension filtered builds pass; local Chrome/Firefox/e2e bundles current22files each. Chromium headless UTC job-board Save lost-ack1pass (2.6s test/about1.6min total), no duplicate/unsave/alternative; new host controls proven through public Core loop unit integration, not browser authoring. Reports p8-transient/, ignored MAIN HTML/logs retained. Next CC10 typed actionability, then identity re-find/unchanged-run guard/history per P8. Both daily full sweeps used/main held. Claude/$5 configured, no paid go/calls/panel; user .clinerules unchanged.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -768,8 +768,8 @@ Accepted t825 evidence and its compaction record are preserved verbatim in [the 
 - Changed: strict transient reader and public CONTROL projection, tool optional failure reader; contracts0.4/Core0.18. Consumer/producer disjoint source work released after interface verification.
 - Why: structured temporary failure is lost before authoring guards; preserve uncertainty and private comparisons while making the control path typed.
 - Validation: `pnpm.cmd --filter fluxiq check` ->exit0,52.7s; `node scripts/structure-audit.mjs` ->passed1144unchanged after one test statement-packing fix; `node scripts/build-cache/cli.mjs contracts:build fluxiq:build client-gateway-websocket:build` ->exit0. Lead named134 reader/contract tests plus70 consumer tests (204unique), dump6 repeated after formatting passes; exact commands in paired lead-acceptance.md.
-- Outcome: Partial; source acceptance complete. Host mechanical/type/legacy-fixture fixes verified, filtered types/build and Chromium Save compatibility1pass. Initial235 host231pass4fail, final82pass covers all4/new cases; no full/API/model calls.
-- Follow-up: final Down structure gate and paired integration; reports/HTML/logs retained, main and paid comparison held. Lead additional69 Core regression tests pass (273unique total).
+- Outcome: Accepted; paired dev merged Core03e518b3/downstream59489463, Core mandatory70merge contracts pass, local SDK/domain/extension builds current. Host235initial231pass4fail, final82pass covers4/new cases; Chromium compatibility1pass. No full/API/model calls.
+- Follow-up: paired dev pushes then CC10/P8 remainder; evidence retained. Lead273unique named tests/types/audits pass, both full sweep slots used/main held, no paid go.
 
 ## Open Questions
 
