@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P6 t799 and Claude/$5 t816 merged and pushed; P5b t810 independently verified, merged and pushed with Core0.10.0. P1b t811 continues; paired downstream Current State owns the handoff.
+Status detail: P6 t799, Claude/$5 t816 and P5b t810 merged/pushed. P1b t811 is in final acceptance; paired t817 implements grounded toggle state choice. Paired downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -17,7 +17,7 @@ unrefuted new defects must not pass. This does not authorise bypassing the judge
 
 **Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
 also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
-native installed-extension proof in the paired repository). P5b t810 and P1b t811 continue. Paired t816 is merged and pushed:
+native installed-extension proof in the paired repository). P5b t810 is merged; P1b t811 is in final acceptance and t817 fixes toggle polarity. Paired t816 is merged and pushed:
 Claude runtime, keys/settings UI and live-test routing with the user's $5 whole-build allowance; no paid run has started.
 The rest of this section is the plan as written.
 
