@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P6 t799 and Claude/$5 t816 merged and pushed; P5b t810 independently verified after provider integration and ready to merge with Core0.10.0. P1b t811 continues; paired downstream Current State owns the handoff.
+Status detail: P6 t799 and Claude/$5 t816 merged and pushed; P5b t810 independently verified, merged and pushed with Core0.10.0. P1b t811 continues; paired downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -752,6 +752,7 @@ Accepted P1a, P7 follow-ups, repair-from-step, P6 and Claude-provider ledger ent
 - Validation: lead `pnpm.cmd --filter fluxiq exec vitest run` over required recheck agreement/route, native Claude, shared schema and prompt pins -> `8 files, 119 passed`; owning domain left-out/replay-mark tests -> `8 passed`.
 - Validation: lead `pnpm.cmd --filter fluxiq check` -> content-matched reuse, exit0; final structure -> `failures: [], 473 warnings, 1144 baselined`. Worker owning RV1467, callers805, domain541 and extension501 passed; affected types, reference/freshness and model-text passed.
 - Not verified: new live judge responses. Strict original-artifact replay remains unsure when mandatory replies were never recorded; repeating a saved no is only a scripted acceptance-path test. Provider calls0/cost0. No full sweep or panel management.
+- Validation: paired task finish -> downstream structure passed and Core contract gate70 passed; merged Core31713e1d and downstream ad01bd0b.
 
 ## Open Questions
 
