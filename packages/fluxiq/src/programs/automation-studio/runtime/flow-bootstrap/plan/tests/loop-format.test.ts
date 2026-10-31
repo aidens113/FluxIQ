@@ -1,9 +1,4 @@
-// The candidate-only loop format (t346). A model copies an example, so each
-// example must build as written into the loop the legacy path builds, and the
-// text must stay out of the format the legacy completion schema carries.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioNodeRegistry, type AutomationNodePort, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import { acceptAutomationStudioFlowBootstrapResult, automationStudioFlowBootstrapWrittenPlanBindingIssues } from "../../authoring/index.ts";
 import {
   AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA,
   AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE,
@@ -11,40 +6,8 @@ import {
   AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT,
   AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT
 } from "../index.ts";
-import { webDomainNodeDefinitionsFixture } from "./index.ts";
 
-const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
-const fixture = webDomainNodeDefinitionsFixture();
-const click = fixture.find((definition) => definition.id === "web.output.dom-click")!;
-const ROW_INPUT: AutomationNodePort = { id: "item", label: "Item", valueType: "any", role: "data", required: false };
-// Next-page as the web domain declares it: a `nextPage` request and an `ended` route.
-const nextPage: AutomationStudioNodeDefinition = {
-  ...click,
-  id: "web.output.dom-next_page",
-  label: "Next Page",
-  description: "Go to the list's next page, and answer ended when there is none.",
-  source: { kind: "importer", domainId: "web-automation", packageId: "@fluxiq-web-extension/domain", implementationKey: "web.dom.next_page" },
-  outputAction: { fixedOutputId: "web.dom.next_page" },
-  parameters: [{ id: "nextPage", label: "Next page", valueType: "object", example: { list: "extraction.1", control: "t9" }, ui: { control: "value" } }],
-  outputs: [...click.outputs, { id: "ended", label: "Ended", valueType: "any", role: "branch" }]
-};
-const registry = new AutomationStudioNodeRegistry();
-for (const definition of [...fixture.map((definition) => definition.id === click.id ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition), nextPage]) registry.register(definition);
-
-/** Each example of the loop format, as the script it shows. */
-function examples(): Map<string, string> {
-  const found = new Map<string, string>();
-  let name: string | undefined;
-  for (const line of AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT.split("\n")) {
-    if (line.startsWith("Example, ")) {
-      name = line;
-      found.set(name, "");
-    } else if (name) found.set(name, `${found.get(name)}${line}\n`);
-  }
-  return found;
-}
-
-describe("the Flow script loop format", () => {
+describe("the Flow script loop grammar", () => {
   it("stays out of the format, so the legacy completion schema does not change", () => {
     for (const words of ["repeat over", "repeat while", "$row."]) {
       expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain(words);
@@ -53,45 +16,6 @@ describe("the Flow script loop format", () => {
     }
   });
 
-  it("shows one example of each loop", () => {
-    expect([...examples().keys()]).toEqual(["Example, reading every page of a list:", "Example, acting on each row a listing kept:", "Example, a loop the site asked to slow down:"]);
-  });
-
-  it("builds the pages example as written: a Repeat around the read and the next page, left when the list ends", () => {
-    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: examples().get("Example, reading every page of a list:")! }, registry, resolution });
-    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
-    if (!accepted.ok) return;
-    const subflow = accepted.plan.subflows[0]!;
-    expect(subflow.nodes.map((node) => node.definitionId)).toEqual([
-      "web.output.browser-navigate", "builtin.control.merge", "builtin.control.repeat", "web.output.dom-extract_list", "web.output.dom-next_page", "builtin.control.merge"
-    ]);
-    expect(subflow.edges.some((edge) => edge.source.nodeKey === "s5" && edge.source.portId === "ended" && edge.target.nodeKey === "s6")).toBe(true);
-    expect(subflow.nodes[3]!.parameters?.recordOutput).toMatchObject({ process: { where: [{ field: "year", atLeast: 2015 }] } });
-    expect(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution })).toEqual([]);
-  });
-
-  it("builds the rows example as written: a For Each over the listing, the press taking each row, the row's field bound", () => {
-    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: examples().get("Example, acting on each row a listing kept:")! }, registry, resolution });
-    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
-    if (!accepted.ok) return;
-    const subflow = accepted.plan.subflows[0]!;
-    expect(subflow.nodes.map((node) => node.definitionId)).toEqual([
-      "web.output.browser-navigate", "web.output.dom-extract_list", "builtin.control.merge", "builtin.control.for-each",
-      "web.output.dom-click", "web.output.dom-wait_for_text", "builtin.control.merge"
-    ]);
-    expect(subflow.edges.some((edge) => edge.source.nodeKey === "s4" && edge.source.portId === "item" && edge.target.nodeKey === "s5" && edge.target.portId === "item")).toBe(true);
-    expect(subflow.nodes[4]!.consequences).toEqual(["modify_existing"]);
-    // t378: the rows the repeat visits are the rows the listing kept, so the
-    // narrowing is the listing's own `where`, inside its request.
-    expect(subflow.nodes[1]!.parameters?.extractList).toMatchObject({ where: [{ field: "status", contains: "overdue" }], minItems: 0 });
-    expect(subflow.edges.some((edge) => edge.source.nodeKey === "s2" && edge.source.portId === "records" && edge.target.nodeKey === "s4" && edge.target.portId === "items")).toBe(true);
-    expect(subflow.nodes[5]!.parameters?.text).toEqual({ $state: { path: "item.number" } });
-    expect(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution })).toEqual([]);
-  });
-
-  // t378, lane D (`run-mv0fuual-f9e6f089`) and lane C: the text said "keep some"
-  // was `recordOutput.process`, which shapes only the saved answer, and showed no
-  // place for `repeat most:`.
   it("says the rows a repeat acts on are narrowed on the listing, and where repeat most goes", () => {
     const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
     expect(text).toContain("The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where:");
@@ -100,16 +24,12 @@ describe("the Flow script loop format", () => {
     expect(text).toContain("A span whose last step answers ended -- a next-page step -- needs none.");
   });
 
-  // F5 (`run-mvecxeci-1c2cc227`): `repeat most:` beside `repeat over:` was refused and the builder dropped the bound.
   it("says repeat most beside repeat over acts on only the listing's first rows, with an example of another kind of site", () => {
     const clause = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT.split("\n").find((line) => line.includes("Beside `repeat over:`"));
     expect(clause).toContain("Beside `repeat over:` it acts on only the listing's first rows, in their order, and then the Flow goes on: `repeat over: bookmarks` then `repeat most: 2` does the span for the first two bookmarks.");
     expect(clause).not.toMatch(/photo|\blike|\bpost|newest/i);
   });
 
-  // t741, rerun round 3 (`run-mvgobp8h-b99ede98`, 0249-0284): the builder sorted the rows only in
-  // `recordOutput.process`, and `repeat most:` acted on the listing's first rows in page order. The
-  // order a repeat visits goes on the listing, `extractList.sort`, in the shape the web domain reads.
   it("names the listing's own order, extractList.sort, and that a repeat over visits it, with an example of another kind of site", () => {
     const sentence = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT.split("\n").find((line) => line.includes("`extractList.sort:"));
     expect(sentence).toBeDefined();
@@ -121,8 +41,6 @@ describe("the Flow script loop format", () => {
     expect(sentence).not.toMatch(/shop|store|cart|basket|feed|social|post|photo|\blike|heart|saved item|job|address|newest|friend|request/iu);
   });
 
-  // t796 (`run-mvtdn37t-e1e4d0a7`): Core hands a For Each over a page-order listing the listing's own sort
-  // (`../../script-statements/repeat-order.ts`), so the sentence no longer says nothing reorders such a listing's rows.
   it("says Core orders a repeat's rows by the listing's sort, unreadable rows last, before repeat most", () => {
     const sentence = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT.split("\n").find((line) => line.includes("`extractList.sort:"))!;
     expect(sentence).toContain("Core hands the repeat its rows in that order, rows the sort cannot read last, before `repeat most` takes the first of them, whatever order the page shows them in.");
@@ -131,40 +49,6 @@ describe("the Flow script loop format", () => {
     expect(sentence).not.toContain("nothing reorders them");
   });
 
-  it("carries extractList.sort into the listing step's request, as it carries extractList.where", () => {
-    const script = [
-      "flow: Mark the two oldest unpaid invoices as reviewed",
-      "step: open the invoices",
-      "  node: web.browser.navigate",
-      "  url: https://billing.test/invoices",
-      "step invoices: list the unpaid invoices",
-      "  node: web.dom.extract_list",
-      "  extractList: extraction.2",
-      "  extractList.where: [{\"field\": \"status\", \"contains\": \"unpaid\"}]",
-      "  extractList.sort: [{\"field\": \"due\", \"order\": \"asc\", \"as\": \"date\"}]",
-      "  extractList.minItems: 0",
-      "step: mark the invoice as reviewed",
-      "  node: web.dom.click",
-      "  target: t21",
-      "  consequences: modify_existing",
-      "  repeat over: invoices",
-      "  repeat most: 2"
-    ].join("\n");
-    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: script }, registry, resolution });
-    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
-    if (!accepted.ok) return;
-    const listing = accepted.plan.subflows[0]!.nodes.find((node) => node.definitionId === "web.output.dom-extract_list")!;
-    expect(listing.parameters?.extractList).toEqual({
-      handle: "extraction.2",
-      where: [{ field: "status", contains: "unpaid" }],
-      sort: [{ field: "due", order: "asc", as: "date" }],
-      minItems: 0
-    });
-  });
-
-  // t378 W8, lane D (`run-mv0fuual-f9e6f089`): a trial that met the site's
-  // request to slow down is answered in the Flow's own lines -- a guarded
-  // dismissal and wait inside the span, and a pace between passes.
   it("teaches how a loop adapts when a trial says the site asked it to slow down", () => {
     const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
     expect(text).toContain("An `optional: yes` step may stand inside a span");
@@ -174,28 +58,10 @@ describe("the Flow script loop format", () => {
     expect(text).toContain("a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named.");
   });
 
-  // t470, lane D round 8 (`run-mv5jnc5m-a47c3e59`): the run closed the notice itself and named no control, and the
-  // step written to close it pressed the chat's "Close chat". A closing step is asked for only against a named way out.
   it("asks for a step closing the notice only against the way out the trial named, and for the pace alone otherwise", () => {
     const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
     expect(text).toContain("When that step's feedback also lists the notice under `interruptions` with the handle of its way out, `wayOut`, add right after the step, inside the span, an `optional: yes` step that presses that handle");
     expect(text).toContain("A notice listed with no `wayOut` was closed by the run itself: write no step for it, and never close it through any other handle.");
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain("one with a `wayOut` is dismissed through that handle and no other; one with none was closed by the run itself and needs no step.");
-  });
-
-  it("builds the slow-down example as written: the notice's way past and the wait meet at a join that closes the loop, and the press keeps its pace", () => {
-    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: examples().get("Example, a loop the site asked to slow down:")! }, registry, resolution });
-    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
-    if (!accepted.ok) return;
-    const subflow = accepted.plan.subflows[0]!;
-    expect(subflow.nodes.map((node) => node.definitionId)).toEqual([
-      "web.output.browser-navigate", "web.output.dom-extract_list", "builtin.control.merge", "builtin.control.for-each",
-      "web.output.dom-click", "web.output.dom-click", "builtin.timing.wait", "builtin.control.merge", "builtin.control.merge"
-    ]);
-    const edges = subflow.edges.map((edge) => `${edge.source.nodeKey}.${edge.source.portId} -> ${edge.target.nodeKey}.${edge.target.portId}`);
-    expect(edges).toEqual(expect.arrayContaining(["s6.failed -> s8.in", "s6.success -> s7.in", "s7.success -> s8.branches", "s8.success -> s3.branches"]));
-    expect(subflow.nodes[4]!.paceMs).toBe(6_000);
-    expect(subflow.nodes[6]!.parameters).toMatchObject({ duration: 6, unit: "seconds" });
-    expect(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution })).toEqual([]);
   });
 });

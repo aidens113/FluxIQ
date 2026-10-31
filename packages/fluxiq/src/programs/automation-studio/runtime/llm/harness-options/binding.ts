@@ -18,6 +18,7 @@ import type {
 } from "../../live-patch.ts";
 import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExplorationStateDigestPhase } from "../../recovery/index.ts";
 import type { AutomationStudioLlmDomainSystemInstructions } from "../domain-instructions/index.ts";
+import type { AutomationStudioFlowScriptExamples } from "../../flow-bootstrap/script-examples/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
 import {
@@ -137,6 +138,8 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * is exactly what it was.
    */
   systemInstructions?: AutomationStudioLlmDomainSystemInstructions;
+  /** Optional authored example tails; validated, copied and frozen at bind. */
+  flowScriptExamples?: AutomationStudioFlowScriptExamples;
   /**
    * What a call names, in words a person reads: the control its handle names
    * on the page the domain last showed, and the words it types or looks for --

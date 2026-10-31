@@ -1,3 +1,12 @@
+import type { AutomationStudioFlowScriptExamples } from "../../script-examples/index.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT
+} from "../../plan/index.ts";
+import { automationStudioSubflowBriefWords } from "../brief-words.ts";
+import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
@@ -426,5 +435,54 @@ describe("advice to add a field a read was refused incomplete_text for (S5, t743
       expect(said).toContain("no click step or repeat will help");
       expect(said).not.toContain("Add a due-note field");
     });
+  });
+});
+
+describe("explicit client examples in the actual submit tool", () => {
+  const full: AutomationStudioFlowScriptExamples = {
+    version: "archive.v1",
+    format: ["Example: archive a document", "  node: archive.document.read"],
+    act: ["Example: archive a folder", "  node: archive.folder.seal"],
+    loop: ["Example: archive each volume", "  node: archive.volume.list"],
+    state: ["Example: resume an archive", "  node: archive.session.resume"]
+  };
+  const cases: Array<AutomationStudioFlowScriptExamples | undefined> = [
+    undefined, { version: "empty.v1" }, { version: "empty.v2", format: [], act: [], loop: [], state: [] },
+    { version: "partial.v1", loop: ["Example: archive each volume", "  node: archive.volume.list"] }, full,
+    { version: "sound.v1", format: ["Example: inspect a track", "  node: audio.track.inspect"] }
+  ];
+  const submission = {
+    projectId: "project.examples", flowId: "flow.examples", registry: new AutomationStudioNodeRegistry(),
+    resolution: { scope: { kind: "domain" as const, domainId: "archive" }, runtimeCapabilities: [], permissions: [] },
+    baseDependencyDigest: "accepted.base"
+  };
+  const sections = [AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT];
+  const stop = new Error("schema captured before any model or node call");
+
+  const scope = { buildId: "build.examples", briefId: "brief.examples", planDigest: "plan.examples", subflowKey: "archive", parts: [{ partId: "p1", sourceId: "instruction", text: "Inspect an archive volume" }], predecessors: [] };
+
+  it.each(cases)("renders only this submission's supplied sections: %j", async (flowScriptExamples) => {
+    const captured: string[] = [];
+    await expect(runAutomationStudioSubflowBuilderLoop({
+      scope, siblings: [],
+      submission: { ...submission, ...(flowScriptExamples ? { binding: { flowScriptExamples } } : {}) },
+      observe: (loop) => {
+        const tool = loop.tools.find((item) => item.toolId === AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID)!;
+        captured.push(((tool.inputSchema.properties as JsonObject).flow as JsonObject).description as string);
+        throw stop;
+      },
+      loop: { tools: [], maxIterations: 1, maxToolCalls: 1,
+        executeTool: async () => { throw new Error("no tool should execute"); },
+        decide: async () => { throw new Error("no model should execute"); }
+      }
+    })).rejects.toBe(stop);
+    const names = ["format", "act", "loop", "state"] as const;
+    const expected = sections.map((grammar, index) => {
+      const lines = flowScriptExamples?.[names[index]!];
+      return lines?.length ? `${grammar}\n${lines.join("\n")}` : grammar;
+    }).join("\n");
+    expect(captured).toEqual([`${automationStudioSubflowBriefWords.brief(scope)}\nThis subflow as a script. ` + expected]);
+    if (!flowScriptExamples) expect(captured[0]).not.toMatch(/^Example/m);
+    if (flowScriptExamples?.version === "sound.v1") expect(captured[0]).not.toContain("archive.document.read");
   });
 });
