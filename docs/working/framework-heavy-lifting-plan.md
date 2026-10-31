@@ -751,6 +751,16 @@ The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10
 - Validation: lead-run under the lock, merged with dev (t806 in): tsc clean; `pnpm test` over subflow-candidate, plan, verification, candidate, service, project-agents, llm -> "Tests 4821 passed | 2 skipped", real-sql "346 passed"; `pnpm check` exit 0; headed `e2e/site-reset/tests` -> "33 passed (35.9m)" with `photo-repair-from-step.spec.ts` counts `{"wholeRuns":2,"fromStepRuns":1}`.
 - Outcome: Accepted. Follow-up (P1b): `from` also takes the step label the model wrote.
 
+### 2026-10-30 - Codex independent P6 acceptance (t799)
+- Agent: Codex lead
+- Validation: owning recovery/toggle/handler/pace Core batches -> `15 files / 84 tests passed` and `12 files / 151 tests passed`, both configured groups exited 0. See paired downstream `framework-heavy-lifting-plan/reports/codex-1030/t799-result.md`.
+- Validation: `pnpm.cmd --filter fluxiq check` -> exit 0, content-matched source/test check reused; `pnpm.cmd docs:check` -> `Deterministic framework reference is current.`
+- Validation: downstream native headed Chromium photo-social installed-extension proof -> `1 passed (3.7m)`, no paid calls; downstream owning tests/types passed after correcting its legacy-input test fixture.
+- Not verified: browser Core rung/pacing behavior, Firefox or the separately documented first-loop-row toggle direction. No full sweep or paid qualification.
+- Changed: publishable Core package version raised from 0.7.0 to 0.8.0 for the new P6 API/behavior; no registry operation.
+- Validation: `pnpm.cmd --filter fluxiq check` after the version bump -> exit 0 (28,212 ms).
+
+
 ## Open Questions
 
 1. **May a fully typed, fully computed part pass without a model yes?** Owner: the user, through the lead. fhl-core-build-tools
@@ -775,10 +785,3 @@ The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10
    documented, so do not rely on one, and run a probe only with a live agent supervising it.
 9. **How much of `refuted-no/` (25 files of sentence weighing) does the computed layer replace?** Owner: Lane C, at
    P5 design. Recommendation: replace each part the computed facts cover, in the same unit.
-
-### 2026-10-30 - Codex independent P6 acceptance (t799)
-- Agent: Codex lead
-- Validation: owning recovery/toggle/handler/pace Core batches -> `15 files / 84 tests passed` and `12 files / 151 tests passed`, both configured groups exited 0. See paired downstream `framework-heavy-lifting-plan/reports/codex-1030/t799-result.md`.
-- Validation: `pnpm.cmd --filter fluxiq check` -> exit 0, content-matched source/test check reused; `pnpm.cmd docs:check` -> `Deterministic framework reference is current.`
-- Validation: downstream native headed Chromium photo-social installed-extension proof -> `1 passed (3.7m)`, no paid calls; downstream owning tests/types passed after correcting its legacy-input test fixture.
-- Not verified: browser Core rung/pacing behavior, Firefox or the separately documented first-loop-row toggle direction. No full sweep or paid qualification.
