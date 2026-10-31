@@ -34,7 +34,7 @@ function site(busy = 0) {
     if (toolId === "read") return result({ evidence: { rows: 3 }, effectApplied: true, resultCode: "web.inspect.succeeded", draft: { actionId: "web.read", effect: "observe", proposes: true } }, before);
     const click = { draft: { actionId: "web.click", effect: "mutate", proposes: true } };
     if (value.target === "Next") { page += 1; return result({ evidence: { ok: true }, effectApplied: true, resultCode: "web.action.succeeded", ...click }, before); }
-    if (value.target === "Busy" && busyLeft > 0) { busyLeft -= 1; return result({ evidence: { ok: false, code: "rate_limited" }, effectApplied: false, resultCode: "web.action.rejected.rate_limited", ...click }, before); }
+    if (value.target === "Busy" && busyLeft > 0) { busyLeft -= 1; return result({ evidence: { ok: false, code: "rate_limited" }, effectApplied: false, resultCode: "web.action.rejected.rate_limited", failure: { category: "action_failed", code: "client.capacity", retryable: true, effect: "unacted", transient: true }, ...click }, before); }
     if (value.target === "Busy") { page += 1; return result({ evidence: { ok: true }, effectApplied: true, resultCode: "web.action.succeeded", ...click }, before); }
     return result({ evidence: { ok: false, code: "target_unobserved" }, effectApplied: false, resultCode: "web.action.rejected.target_unobserved", resultReason: "handle_not_in_packet", ...click }, before);
   });
@@ -84,16 +84,31 @@ describe("a call already tried on this same page", () => {
     expect(JSON.stringify(feedback)).toContain("only if it actually returned the intended rows");
   });
 
-  it("is let through when its outcome said to try again later: a rate-limited press", async () => {
+  it("passes both authoring guards for a validated temporary unacted failure", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(press(1, "Busy"))
       .mockResolvedValueOnce(press(2, "Busy"))
       .mockResolvedValueOnce(press(3, "Busy"))
+      .mockResolvedValueOnce(press(4, "Busy"))
+      .mockResolvedValueOnce(press(5, "Busy"))
       .mockResolvedValueOnce(complete);
-    const executeTool = site(2);
+    const executeTool = site(4);
 
     await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
-    expect(executeTool).toHaveBeenCalledTimes(3);
+    expect(executeTool).toHaveBeenCalledTimes(5);
+  });
+
+  it("blocks a legacy temporary word or malformed signal before executing an identical call again", async () => {
+    for (const failure of [undefined, { category: "action_failed", code: "client.capacity", retryable: true, effect: "unacted", transient: "true" }]) {
+      const decide = vi.fn().mockImplementation(async () => press(decide.mock.calls.length, "Busy"));
+      const executeTool = vi.fn(async () => ({
+        kind: "llm_evidence_tool_execution", stateDigests: { before: "s1", after: "s1" },
+        evidence: { ok: false, code: "retry_allowed" }, effectApplied: false, resultCode: "client.timeout", resultReason: "retry_allowed",
+        ...(failure ? { failure } : {}), draft: { effect: "mutate", proposes: true }
+      }));
+      await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 10, maxToolCalls: 10, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).rejects.toBe(stalledError);
+      expect(executeTool).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("is let through once the page has changed", async () => {
@@ -387,6 +402,51 @@ describe("a rerun that changed nothing, sent again", () => {
     // The way out names the step and the rerun shape, and how a key the patch leaves out is removed (W2).
     expect(String(note?.instruction)).toContain('rerun step 1 with a corrected argument, {"step": 1, "change": "rerun", "input": {<only the keys that change>}}');
     expect(String(note?.instruction)).toContain("set to null");
+  });
+
+  it("carries actual temporary failure facts through settled amendments so the same rerun may work later", async () => {
+    let attempted = 0;
+    const base = itemPage();
+    const executeTool = vi.fn(async (request: { toolId: string; value: JsonObject }) => {
+      const answer = await base(request);
+      if (request.toolId !== "look" && request.value.node === "web.output.dom-click" && (attempted += 1) <= 2) {
+        return {
+          ...answer, evidence: { ok: false, code: "client.capacity" }, effectApplied: false,
+          resultCode: "client.declined", resultReason: "capacity",
+          failure: { category: "action_failed", code: "client.capacity", retryable: true, effect: "unacted", transient: true }
+        };
+      }
+      return answer;
+    });
+    const rerun = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: spain }] };
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "type.1", toolId: "core.run_node", input: quantity, add: true })
+      .mockResolvedValueOnce(rerun)
+      .mockResolvedValueOnce(rerun)
+      .mockResolvedValueOnce(rerun)
+      .mockResolvedValue(complete);
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 20, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
+    expect(attempted).toBe(3);
+    expect(executeTool.mock.calls.filter(([request]) => request.value.node === "web.output.dom-click")).toHaveLength(3);
+    for (const index of [2, 3]) expect(shownAt(decide, index).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
+  });
+
+  it("retains the failed amendment's actual result reason without granting admission from its words", async () => {
+    const base = itemPage();
+    const executeTool = vi.fn(async (request: { toolId: string; value: JsonObject }) => {
+      const answer = await base(request);
+      return request.value.node === "web.output.dom-click" ? { ...answer, evidence: { ok: false }, effectApplied: false, resultCode: "client.declined", resultReason: "retry_allowed" } : answer;
+    });
+    const rerun = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: spain }] };
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "type.1", toolId: "core.run_node", input: quantity, add: true })
+      .mockResolvedValueOnce(rerun)
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "look.1", toolId: "look", input: {} })
+      .mockResolvedValueOnce(rerun)
+      .mockResolvedValue(complete);
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 20, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
+    expect(executeTool.mock.calls.filter(([request]) => request.value.node === "web.output.dom-click")).toHaveLength(1);
+    expect(shownAt(decide, 4).find((entry) => entry.toolId === "core.repeat_check")?.value).toMatchObject({ then: { outcome: "same_amendment", resultCode: "client.declined", resultReason: "retry_allowed", rerunFailed: true } });
   });
 
   it("still runs the same rerun once the draft has changed since it changed nothing", async () => {

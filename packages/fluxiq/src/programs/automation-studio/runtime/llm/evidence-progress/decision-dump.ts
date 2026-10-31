@@ -14,12 +14,14 @@
 // (`entry`, keyed by a hash of its content), and per decision the keys of the
 // window it was shown in order, with what it answered (`decision`); every tool
 // call with its request and full result (`tool`); every completion check's
-// verdict (`check`). Nothing here is screened: it holds page text and the
+// verdict (`check`). Execution failure metadata is control-only; other content
+// is unscreened: it holds page text and the
 // person's instruction, which is why it is written only where the debugger
 // pointed it -- the Lab's ignored run tree -- and never to the log or a bundle.
 import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { automationStudioLlmEvidenceToolExecutionControl } from "./tool-execution-control.ts";
 
 export type AutomationStudioLlmEvidenceDecisionDump = {
   /** One decision: the window it was shown, and what came back. */
@@ -55,7 +57,7 @@ export function automationStudioLlmEvidenceDecisionDump(
       const shown = Array.isArray(evidence) ? evidence.map(keyOf) : [];
       write({ event: "decision", iteration, ms, shown, decision });
     },
-    tool: ({ callId, toolId, ms, request, result }) => write({ event: "tool", callId, toolId, ms, request, result }),
+    tool: ({ callId, toolId, ms, request, result }) => write({ event: "tool", callId, toolId, ms, request, result: automationStudioLlmEvidenceToolExecutionControl(result) }),
     check: ({ verdict }) => write({ event: "check", verdict })
   };
 }

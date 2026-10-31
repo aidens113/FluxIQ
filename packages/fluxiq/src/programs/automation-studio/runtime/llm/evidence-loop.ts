@@ -448,7 +448,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     automationStudioLlmEvidenceLookBudget(handling, iteration, { tool, lookedAtNothing: lookRefused }); // A planning loop's looks, counted and withdrawn once spent (t569).
     if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
     // What this call did on the page it found: a call that failed or changed nothing is not made again there; a rerun sent as a check is no attempt of its input (`repeat-guard/outcomes.ts`).
-    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, answer: JSON.stringify(value), ...(rerunChecked ? { checked: true } : {}) });
+    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, failure: execution.failure, personNeeded: execution.personNeeded, answer: JSON.stringify(value), ...(rerunChecked ? { checked: true } : {}) });
     if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, counters.attemptEpoch);
       latestObservations.set(tool.toolId, callId);
@@ -468,7 +468,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
     const draftChanged = decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}), ...(rerunPlace ? { rerunPlace } : {}) }, { add: decision.add, act: decision.act, place: decision.place });
     automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring }); if (authoring) automationStudioFlowDraftDropReversals(draftSteps); // A rerun that took a kept step's place joined the Flow too (`../flow-draft/reversal.ts`).
-    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId), { kind: rerunTook || (!refusedCall && (record.effect !== "mutate" || effectApplied || record.written === true)) ? "accepted" : "failed", callId }) : undefined;
+    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId), { kind: rerunTook || (!refusedCall && (record.effect !== "mutate" || effectApplied || record.written === true)) ? "accepted" : "failed", callId }, execution) : undefined;
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
     const addedToFlow = authored?.advanced() === true;
     const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
@@ -496,7 +496,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A look asked again and run once more: the same page is a step without
     // progress whatever its bytes, and a page that moved by itself is progress.
     const reask = verifying ? automationStudioLlmEvidenceReaskOutcome(verifying, { stateAfter, refused: lookRefused }) : undefined;
-    const refusedRun = automationStudioLlmEvidenceRefusedCallRun(handling, iteration, { refused: refusedCall, effectApplied, effect: record.effect, proposes: record.proposes, resultCode, resultReason: execution.resultReason }); if (refusedRun) return refusedRun; // Refusals of one kind in a row end the round; an added step is progress, a rerun that changed nothing or found the same is not (`decision-handlers/`).
+    const refusedRun = automationStudioLlmEvidenceRefusedCallRun(handling, iteration, { refused: refusedCall, effectApplied, effect: record.effect, proposes: record.proposes, resultCode, resultReason: execution.resultReason, failure: execution.failure, personNeeded: execution.personNeeded }); if (refusedRun) return refusedRun; // Refusals of one kind in a row end the round; an added step is progress, a rerun that changed nothing or found the same is not (`decision-handlers/`).
     if (settled?.unchanged || settled?.sameResult) { const ended = automationStudioLlmEvidenceRerunChangedNothing(handling, iteration); if (ended) return ended; }
     else if (addedToFlow || (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated)))) {
       // Progress: a redirect about steps without it no longer holds.

@@ -73,4 +73,10 @@ export type AutomationStudioFailureRecord = {
    * on every retry (`executor/defensive/assess.ts`).
    */
   certainNoEffect?: true;
+  /**
+   * The producer positively identified a temporary cause. Only literal true;
+   * absence makes no claim. This neither grants retry permission nor says
+   * whether the action happened: retryable and effect remain independent.
+   */
+  transient?: true;
 };

@@ -9,8 +9,9 @@
 //   - a rerun that changed nothing, or found what its step had found
 //     (`./refused-repeat.ts`, `./rerun-result.ts`);
 //   - a call that would add a step or change the page and that the page
-//     refused, applying nothing, by its result code -- unless the code says to
-//     try again later (`../repeat-guard/retry-later.ts`). Looks are left to the
+//     refused, applying nothing, by its result code -- unless typed failure and
+//     execution facts prove it temporary, retryable and unacted
+//     (`../repeat-guard/retry-later.ts`). Looks are left to the
 //     searching guard (`./searching.ts`).
 // Anything else decided between two of these breaks the run. At the second
 // the model is told that one more ends this exploration (in candidate mode,
@@ -27,6 +28,7 @@
 // model; the warning names the category and the issues, by code and line,
 // instead (`reasonWords`), and `refusal` carries the kind without it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import { automationStudioFlowDraftStepCopy } from "../../flow-draft/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW } from "../evidence-progress/index.ts";
@@ -141,15 +143,19 @@ function isObject(value: JsonValue | undefined): value is JsonObject {
 
 /**
  * A call that ran: one more of a run of refusals when the page refused it,
- * applied nothing, would have added a step or changed the page, and its code
- * does not say to try again later (header). Answers the loop's ending when the
+ * applied nothing, would have added a step or changed the page, and supplies
+ * no validated temporary, retryable, unacted failure (header). Answers the loop's ending when the
  * round stops here.
  */
 export function automationStudioLlmEvidenceRefusedCallRun(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
   iteration: number,
-  call: { refused: boolean; effectApplied: boolean; effect: string; proposes?: boolean | undefined; resultCode?: string | undefined; resultReason?: string | undefined }
+  call: {
+    refused: boolean; effectApplied: boolean; effect: string; proposes?: boolean | undefined;
+    resultCode?: string | undefined; resultReason?: string | undefined;
+    failure?: AutomationStudioFailureRecord | undefined; personNeeded?: true | undefined;
+  }
 ): AutomationStudioLlmEvidenceLoopResult | undefined {
-  const counts = call.refused && !call.effectApplied && (call.effect === "mutate" || call.proposes === true) && !automationStudioLlmEvidenceRetriesLater(call.resultCode, call.resultReason);
+  const counts = call.refused && !call.effectApplied && (call.effect === "mutate" || call.proposes === true) && !automationStudioLlmEvidenceRetriesLater(call);
   return counts ? automationStudioLlmEvidenceRefusedOfAKind(context, iteration, `call:${call.resultCode ?? "refused"}`, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE) : undefined;
 }

@@ -8,7 +8,7 @@ import {
   type AutomationStudioFailureStage
 } from "./record.ts";
 
-const RECORD_FIELDS: ReadonlySet<string> = new Set(["category", "code", "retryable", "stage", "expected", "actual", "evidenceDigest", "effect", "retryAfterMs", "certainNoEffect"]);
+const RECORD_FIELDS: ReadonlySet<string> = new Set(["category", "code", "retryable", "stage", "expected", "actual", "evidenceDigest", "effect", "retryAfterMs", "certainNoEffect", "transient"]);
 const FAILURE_STAGES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_FAILURE_STAGES);
 const FAILURE_EFFECTS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_FAILURE_EFFECTS);
 const CODE_PATTERN = /^[A-Za-z0-9._:-]+$/u;
@@ -41,10 +41,11 @@ const TARGET_RESOLUTION_ONLY: ReadonlySet<AutomationStudioAdaptiveFailureClass> 
  * Consistency rules: `blocked_by_capability_or_policy`,
  * `missing_router_or_subflow_target`, `graph_validation_or_unknown_node`,
  * `external_side_effect_denied`, `auth_required`, and
- * `user_intervention_required` are never retryable; `target_not_found` and
+ * `user_intervention_required` are never retryable or transient; `target_not_found` and
  * `target_ambiguous` may name only the `target_resolution` stage; a
  * `retryAfterMs` wait belongs only on a retryable record; `certainNoEffect`
  * is only `true`, and only on a retryable record whose effect is `unacted`.
+ * `transient` is only `true` and makes no retry/effect claim of its own.
  */
 export function parseAutomationStudioFailureRecord(value: unknown): AutomationStudioFailureRecord | null {
   try {
@@ -56,7 +57,7 @@ export function parseAutomationStudioFailureRecord(value: unknown): AutomationSt
 
 function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
   if (!isPlainRecord(value) || !Object.keys(value).every((key) => RECORD_FIELDS.has(key))) return null;
-  const { category, code, retryable, stage, expected, actual, evidenceDigest, effect, retryAfterMs, certainNoEffect } = value;
+  const { category, code, retryable, stage, expected, actual, evidenceDigest, effect, retryAfterMs, certainNoEffect, transient } = value;
   if (!isAutomationStudioAdaptiveFailureClass(category)) return null;
   if (typeof code !== "string" || code.length > AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS.codeMaxLength || !CODE_PATTERN.test(code)) return null;
   if (retryable !== true && retryable !== false) return null;
@@ -66,11 +67,12 @@ function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
   if (evidenceDigest !== undefined && (typeof evidenceDigest !== "string" || !EVIDENCE_DIGEST_PATTERN.test(evidenceDigest))) return null;
   if (effect !== undefined && !isFailureEffect(effect)) return null;
   if (retryAfterMs !== undefined && !isRetryAfterMs(retryAfterMs)) return null;
-  if (retryable && NEVER_RETRYABLE.has(category)) return null;
+  if (transient !== undefined && transient !== true) return null;
+  if ((retryable || transient === true) && NEVER_RETRYABLE.has(category)) return null;
   if (stage !== undefined && TARGET_RESOLUTION_ONLY.has(category) && stage !== "target_resolution") return null;
   if (retryAfterMs !== undefined && !retryable) return null;
   if (certainNoEffect !== undefined && (certainNoEffect !== true || effect !== "unacted" || !retryable)) return null;
-  return {
+  const record: AutomationStudioFailureRecord = {
     category,
     code,
     retryable,
@@ -82,6 +84,8 @@ function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     ...(certainNoEffect === true ? { certainNoEffect } : {})
   };
+  if (transient === true) record.transient = true;
+  return record;
 }
 
 function isFailureEffect(value: unknown): value is AutomationStudioFailureEffect {

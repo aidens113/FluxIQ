@@ -585,8 +585,8 @@ because the structure audit's depth limit leaves no room below it:
   `retry_allowed`, and tells the supervisor to end honestly
   (`supervisor/whole-trial.ts`).
 
-  The refusal answers `retry_allowed` and reports whether the arrival moved
-  the page, so the identical retest reaches the gate. That matters in the
+  The refusal reports `retry_allowed` diagnostically and whether arrival moved
+  the page; precondition lifting admits a retest. That matters in the
   wrap-up, which offers only submit and test. The gate never deadlocks over
   legacy acts: a refusal identical to the last one, or a fourth in one phase,
   admits the trial and says under `startedWith` what was still in place or
@@ -605,8 +605,8 @@ because the structure audit's depth limit leaves no room below it:
   was not refused lifts it on every page, so the retest after a settling look
   reaches the ledger even when the look left the page digest unchanged; the
   call that lifts it is still recorded as changing nothing when it did. This
-  holds whether or not the gate's `retry_allowed` reason also exempts the
-  refusal. Refuse, look, refuse stays bounded by
+  uses typed temporary [failure control](failure-control.md), never the gate's
+  `retry_allowed` reason. Refuse, look, refuse stays bounded by
   `llm_evidence_loop.repeat_without_progress`.
 - **Every refusal says what can meet it (t743).** Every site-reset refusal is
   built by one constructor, `automationStudioSiteResetRefusal(code, answer)`

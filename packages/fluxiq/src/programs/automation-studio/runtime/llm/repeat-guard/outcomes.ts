@@ -138,9 +138,9 @@
 // any call is. Every trial gate today also answers these refusals with the
 // reason `retry_allowed` (`../../flow-bootstrap/candidate/trial-gate.ts`,
 // `../../flow-bootstrap/subflow-candidate/subflow-trial-gate.ts`,
-// `../../project-agents/supervisor/tool-answer.ts`), which `./retry-later.ts`
-// already exempts from this guard; the precondition holds without that reason,
-// so the rule does not rest on the wording of one. The loop's own memory of a
+// `../../project-agents/supervisor/tool-answer.ts`). That wording grants no
+// retry exemption; the precondition is lifted only once a call meets it.
+// The loop's own memory of a
 // refused action is the other layer (`../refused-action-retest.ts`).
 //
 // **A rerun that changed nothing is keyed on the decision and the draft, not
@@ -240,8 +240,8 @@
 // - A look that ran, which changes nothing by nature: looks stay with the
 //   repeat policy, which answers one asked again from memory and runs one after
 //   an attempt. A look the domain refused is a failed call (above).
-// - A call whose earlier outcome said to wait and try again: a rate limit, a
-//   control briefly disabled, a page still loading (`./retry-later.ts`).
+// - A call with a validated temporary, retryable, unacted failure and actual
+//   execution facts that confirm it did not act (`./retry-later.ts`).
 // - A call that threw: nothing answered it, so it is not a repeat.
 // - A step written and not run (`core.run_node.written`): it was added, not
 //   tried (above).
@@ -251,6 +251,7 @@
 //   forgotten (`moved`), and nothing is refused until the page is seen again.
 
 import { createHash } from "node:crypto";
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceResendAdmission } from "./resend-admission.ts";
@@ -351,6 +352,9 @@ export type AutomationStudioLlmEvidenceCallOutcome = {
   refused: boolean;
   resultCode?: string | undefined;
   resultReason?: string | undefined;
+  /** Validated control facts, independent of the actual execution fields. */
+  failure?: AutomationStudioFailureRecord | undefined;
+  personNeeded?: true | undefined;
   /** What the call answered, as the model was shown it: compared for a look only. */
   answer?: string | undefined;
   /** A rerun sent as the dry run's check (`../node-tools/rerun-check.ts`): it acted on nothing, so it is no attempt of its input (see the header). */
@@ -384,7 +388,11 @@ export type AutomationStudioLlmEvidenceRepeatGuard = AutomationStudioLlmEvidence
    * the step observed, `failed` whether the rerun did not work (and so left the
    * Flow as it was), and `callId` the rerun's call.
    */
-  amended(outcome: { signature: string; draft: string; changed: boolean; failed?: boolean | undefined; callId: string; resultCode?: string | undefined; resultReason?: string | undefined }): void;
+  amended(outcome: {
+    signature: string; draft: string; changed: boolean; failed?: boolean | undefined; callId: string;
+    resultCode?: string | undefined; resultReason?: string | undefined;
+    failure?: AutomationStudioFailureRecord | undefined; effectApplied?: boolean | undefined; personNeeded?: true | undefined;
+  }): void;
   /** The earlier outcome that makes this `amend_draft` decision, on the draft whose key is `draft`, a repeat to refuse before any of it runs. */
   amendmentBlocks(signature: string, draft: string): AutomationStudioLlmEvidenceRepeatedOutcome | undefined;
 };
@@ -484,7 +492,7 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       const failed = call.refused || (call.effect === "mutate" && !call.effectApplied && !runsDraft);
       // A call that met a precondition changed the build's state, whatever its page digest says (header, t587).
       const changedNothing = !call.effectApplied || (!metPrecondition && call.stateAfter !== undefined && call.stateAfter === state);
-      const retryLater = automationStudioLlmEvidenceRetriesLater(call.resultCode, call.resultReason);
+      const retryLater = automationStudioLlmEvidenceRetriesLater(call);
       const at = key(call.toolId, call.input, state);
       // A refusal that invites its resend, the first under this key: no failure, so the identical call runs once more (header, t650).
       if (call.refused && resends.admits(at, call.answer)) {
@@ -524,8 +532,8 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
     },
     amended(outcome) {
       const at = amendmentKey(outcome.signature, outcome.draft);
-      // As for a call: one that changed something, or whose outcome says to wait and try again, is not a repeat to refuse.
-      if (outcome.changed || automationStudioLlmEvidenceRetriesLater(outcome.resultCode, outcome.resultReason)) {
+      // As for a call: progress, or validated temporary failure of an unacted call, is not a repeat to refuse.
+      if (outcome.changed || automationStudioLlmEvidenceRetriesLater(outcome)) {
         outcomes.delete(at);
         return;
       }

@@ -1,6 +1,10 @@
 // The loop's record of what each call did on the page it found (`../outcomes.ts`).
 import { describe, expect, it } from "vitest";
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import { automationStudioLlmEvidenceRepeatGuard, type AutomationStudioLlmEvidenceCallOutcome } from "../outcomes.ts";
+import { automationStudioLlmEvidenceRetriesLater } from "../retry-later.ts";
+
+const temporaryFailure: AutomationStudioFailureRecord = { category: "action_failed", code: "service.temporary", retryable: true, effect: "unacted", transient: true };
 
 const call = (over: Partial<AutomationStudioLlmEvidenceCallOutcome> = {}): AutomationStudioLlmEvidenceCallOutcome => ({
   callId: "c1", toolId: "core.run_node", input: { node: "web.click", parameters: { target: "t7" } },
@@ -25,18 +29,63 @@ describe("what a call did on the page it found", () => {
     expect(moved.blocks("core.run_node", call().input)).toBeUndefined();
   });
 
-  it("never blocks a look, a page it has not seen, or an outcome that said to try again later", () => {
+  it("never blocks a look, a page it has not seen, or a validated temporary unacted outcome", () => {
     const guard = automationStudioLlmEvidenceRepeatGuard();
     guard.recorded(call({ effect: "observe", proposes: false, effectApplied: false, refused: false }));
     expect(guard.blocks("core.run_node", call().input)).toBeUndefined();
     for (const resultCode of ["web.action.rejected.rate_limited", "web.action.rejected.target_disabled", "web.action.rejected.page_loading"]) {
       const later = automationStudioLlmEvidenceRepeatGuard();
-      later.recorded(call({ resultCode }));
+      later.recorded(call({ resultCode, failure: temporaryFailure }));
       expect(later.blocks("core.run_node", call().input), resultCode).toBeUndefined();
     }
     const unseen = automationStudioLlmEvidenceRepeatGuard();
     unseen.recorded(call({ stateBefore: undefined, stateAfter: undefined }));
     expect(unseen.blocks("core.run_node", call().input)).toBeUndefined();
+  });
+
+  it("does not interpret result codes or reasons as temporary failure facts", () => {
+    for (const words of ["rate_limited", "target_disabled", "page_loading", "retry_allowed", "service_timeout", "busy_try_again"]) {
+      const guard = automationStudioLlmEvidenceRepeatGuard();
+      guard.recorded(call({ resultCode: `client.${words}`, resultReason: words }));
+      expect(guard.blocks("core.run_node", call().input)?.outcome, words).toBe("failed");
+      guard.amended({ signature: "A", draft: "D", changed: false, callId: "rerun.1", resultCode: words, resultReason: words, effectApplied: false });
+      expect(guard.amendmentBlocks("A", "D")?.outcome, words).toBe("same_amendment");
+    }
+  });
+
+  it("keeps recorded calls and amendment reruns cautious when any required safety fact is absent or contradictory", () => {
+    const { transient: _temporary, ...notTemporary } = temporaryFailure;
+    const { effect: _effect, ...unknownEffect } = temporaryFailure;
+    const unsafe: Array<[string, Partial<AutomationStudioLlmEvidenceCallOutcome>]> = [
+      ["nontransient", { failure: notTemporary }],
+      ["nonretryable", { failure: { ...temporaryFailure, retryable: false } }],
+      ["ambiguous", { failure: { ...temporaryFailure, effect: "ambiguous" } }],
+      ["unknown effect", { failure: unknownEffect }],
+      ["acted", { effectApplied: true }],
+      ["person needed", { personNeeded: true }],
+      ["policy refusal", { failure: { ...temporaryFailure, category: "blocked_by_capability_or_policy" } }],
+      ["authentication refusal", { failure: { ...temporaryFailure, category: "auth_required" } }],
+      ["certain no effect alone", { failure: { ...notTemporary, certainNoEffect: true } }]
+    ];
+    for (const [label, change] of unsafe) {
+      const guard = automationStudioLlmEvidenceRepeatGuard();
+      const outcome = call({ failure: temporaryFailure, ...change });
+      guard.recorded(outcome);
+      expect(guard.blocks("core.run_node", outcome.input), label).toBeDefined();
+      guard.amended({ signature: "A", draft: "D", changed: false, callId: outcome.callId, effectApplied: outcome.effectApplied, failure: outcome.failure, personNeeded: outcome.personNeeded });
+      expect(guard.amendmentBlocks("A", "D"), label).toBeDefined();
+    }
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.amended({ signature: "A", draft: "D", changed: false, callId: "rerun.1", failure: temporaryFailure });
+    expect(guard.amendmentBlocks("A", "D")).toBeDefined();
+  });
+
+  it("strictly validates the whole temporary signal, including malformed optional metadata", () => {
+    for (const failure of [null, "temporary", { ...temporaryFailure, transient: false }, { ...temporaryFailure, transient: "true" }, { ...temporaryFailure, extra: true }, { ...temporaryFailure, expected: "" }, { ...temporaryFailure, evidenceDigest: "private" }]) {
+      expect(automationStudioLlmEvidenceRetriesLater({ effectApplied: false, failure })).toBe(false);
+    }
+    expect(automationStudioLlmEvidenceRetriesLater({ effectApplied: false, failure: temporaryFailure })).toBe(true);
+    expect(automationStudioLlmEvidenceRetriesLater({ effectApplied: undefined, failure: temporaryFailure })).toBe(false);
   });
 
   it("forgets the page when something moved it unseen, and keys on the last page seen when the call reported none", () => {
@@ -228,7 +277,7 @@ describe("what a call did on the page it found", () => {
     // Changing something lifts it, as an outcome that says to try again later never sets it.
     guard.amended({ signature: "A", draft: "d1", changed: true, callId: "rerun.14.5" });
     expect(guard.amendmentBlocks("A", "d1")).toBeUndefined();
-    guard.amended({ signature: "A", draft: "d1", changed: false, callId: "rerun.14.6", resultCode: "web.action.rejected.rate_limited" });
+    guard.amended({ signature: "A", draft: "d1", changed: false, callId: "rerun.14.6", resultCode: "web.action.rejected.rate_limited", failure: temporaryFailure, effectApplied: false });
     expect(guard.amendmentBlocks("A", "d1")).toBeUndefined();
   });
 
