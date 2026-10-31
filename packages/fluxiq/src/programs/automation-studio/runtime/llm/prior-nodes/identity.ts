@@ -21,7 +21,8 @@ export function automationStudioLlmPriorNodesIdentity() {
     hash,
     scope: scopeKey,
     original(record: AutomationStudioLlmRerunRecord, scope: AutomationStudioLlmRerunScope): string {
-      return hash({ scope: scopeKey(scope), subject: token(record.subject), referenceNow: record.referenceNow });
+      // Exact replay time stays in provenance; actual time-bearing arguments stay in C's concrete input key.
+      return hash({ scope: scopeKey(scope), subject: token(record.subject) });
     }
   };
 }

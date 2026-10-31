@@ -31,9 +31,9 @@ export function scope(): AutomationStudioLlmRerunScope {
   return { loop: {}, binding: {}, generation: {}, registry: {}, authority: {} };
 }
 
-export function fixture() {
+export function fixture(now: () => number = () => 123456) {
   let current: AutomationStudioLlmRerunScope | undefined = scope();
-  const provenance = createAutomationStudioLlmRerunProvenance({ currentScope: () => current });
+  const provenance = createAutomationStudioLlmRerunProvenance({ currentScope: () => current, now });
   const owner = {};
   const generation = {};
   const capsule = Object.freeze({ privatePayload: "private-command-payload" });
@@ -105,7 +105,8 @@ export function fixture() {
       return success("warehouse.shelves.read");
     }
     normal++;
-    publish(snapshot({ adapterValue: request.value }));
+    if (request.referenceNow === undefined) throw new Error("test original lacks its host-owned reference");
+    publish(snapshot({ adapterValue: request.value, referenceNow: request.referenceNow }));
     return success("warehouse.shelves.read");
   };
 

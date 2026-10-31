@@ -198,12 +198,26 @@ describe("prior successful calls in the actual evidence loop", () => {
   });
 
   it("keys ordered lists on canonical dispatch identity rather than aliases or model callIds", async () => {
-    const f = priorNodesFixture();
-    const { result, decide } = f.run([readCall("a", "one", "catalogue-read"), readCall("alias", "one", "CATALOGUE.READ"), batchCall(["a"]), batchCall(["alias"], "again"), complete]);
-    await result;
-    expect(f.actualItems).toEqual(["one", "one", "one"]);
-    const request = decide.mock.calls[4]?.[0] as Parameters<AutomationStudioLlmEvidenceLoopInput["decide"]>[0];
-    expect(request.evidence.find((entry) => entry.callId === "again")?.value).toMatchObject({ status: "rejected", executed: 0, reason: "list_guard_refused" });
+    const references: number[] = [];
+    const create = provenance.createAutomationStudioLlmRerunProvenance;
+    const observed = vi.spyOn(provenance, "createAutomationStudioLlmRerunProvenance").mockImplementation((input) => create({
+      ...input, now: () => {
+        const reference = 1000 + references.length;
+        references.push(reference);
+        return reference;
+      }
+    }));
+    try {
+      const f = priorNodesFixture();
+      const { result, decide } = f.run([readCall("a", "one", "catalogue-read"), readCall("alias", "one", "CATALOGUE.READ"), batchCall(["a"]), batchCall(["alias"], "again"), complete]);
+      await result;
+      expect(references).toEqual([1000, 1001]);
+      expect(f.actualItems).toEqual(["one", "one", "one"]);
+      const request = decide.mock.calls[4]?.[0] as Parameters<AutomationStudioLlmEvidenceLoopInput["decide"]>[0];
+      expect(request.evidence.find((entry) => entry.callId === "again")?.value).toMatchObject({ status: "rejected", executed: 0, reason: "list_guard_refused" });
+    } finally {
+      observed.mockRestore();
+    }
   });
 
   it.each(["node", "binding", "effect", "tool"])("rechecks current %s authority before a member", async (changed) => {

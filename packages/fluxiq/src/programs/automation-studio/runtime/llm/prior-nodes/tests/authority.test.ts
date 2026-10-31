@@ -46,14 +46,14 @@ describe("live NativeRuntime prior-call authority", () => {
     expect(port.resolve("catalogue.read", {}, {})).toBeUndefined();
   });
 
-  it("uses stable opaque subject/resource identities and the original reference instant", () => {
+  it("uses stable opaque subject/resource authority independently of the exact replay instant", () => {
     const identity = automationStudioLlmPriorNodesIdentity();
     const scope: AutomationStudioLlmRerunScope = { loop: {}, binding: {}, generation: {}, registry: {}, authority: {} };
     const record = { subject: { privateResource: "resource" }, referenceNow: 10 } as unknown as AutomationStudioLlmRerunRecord;
     const first = identity.original(record, scope);
     expect(identity.original(record, { ...scope })).toBe(first);
     expect(identity.original({ ...record, subject: { privateResource: "resource" } }, scope)).not.toBe(first);
-    expect(identity.original({ ...record, referenceNow: 11 }, scope)).not.toBe(first);
+    expect(identity.original({ ...record, referenceNow: 11 }, scope)).toBe(first);
     expect(identity.original(record, { ...scope, binding: {} })).not.toBe(first);
     expect(first).toMatch(/^[a-f0-9]{64}$/u);
     expect(first).not.toContain("resource");

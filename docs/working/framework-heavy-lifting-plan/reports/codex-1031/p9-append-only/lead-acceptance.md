@@ -23,3 +23,22 @@
 - Existing normal-loop owning regression command: pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/llm/evidence-loop/tests src/programs/automation-studio/runtime/llm/tests/evidence-loop.test.ts src/programs/automation-studio/runtime/llm/decision-handlers/tests/stall-recovery.test.ts --maxWorkers=2 --minWorkers=1 ->370tests/27files pass63.22s. Core baseline1143entries lowers old evidence-loop statement-packing22to19, no growth. Core source ready for task backup/parent sync; overall paired/browser acceptance pending.
 
 - Core parent sync mergeb2f845c2 took P10 dev69dcecba with code merging cleanly; only FHL conflict. Incoming exact Current State/ledger blocks and full incoming source archived with checksums. Remainder diff was only historical explanatory sentence recorded above versus above, not plan/code loss. Source0.23 now passes202parent compatibility tests/13files61.06s, package types73.544s and full standalone audit. Fresh SDK0.23 rebuild running; paired adapter/browser tests remain pending.
+
+
+## Fresh SDK and paired seam
+Validation: private Core SDK build -> PASS83.292s; compiled public accessors present/private factory absent; smoke0dispatch.
+Validation: fresh-SDK Down owning191tests ->188pass/3fail100.409s; two new actual paired tests lack batch because original ordinary call omits referenceNow, capture correctly abstains; replay expected1 vs real mandated4. Production optional-value guard and exact4 target-preservation fixture corrected.
+Paired worker reports original main1, settled primary permission1, capture access active twice/publish0; no fake fixture timestamp accepted. Core reference-owner brief dispatched to bounded worker; root Domain type gate rerunning. Browser not run, no paid/full suite.
+
+
+## Reference ownership and real-clock identity follow-up
+Validation: root Core provenance/prior-nodes run ->178/179 passed,74.50s. All100provenance cases pass; alias-equivalence loop exposes raw referenceNow in authorityKey, so per-original timestamps allow equivalent lists to evade list guard. This is a product identity defect, not a reason to freeze fixture time.
+Core fix separates exact private execution reference (D0 still rejects changed producer time/reuses sealed time) from canonical ordered-list authority. Only raw clock removed; actual resolved time-bearing parameters/subject/world remain in identity. Strengthened loop drives1000/1001, existing oracle unchanged. Source frozen, root SDK/types/179owning revalidation running.
+Validation: first corrected Down typecheck ->PASS25.192s, stamp withheld because Core source changed while running; clean final rerun remains required. Initial corrected source/test type failures were test-only excess property assignment and union code access, now corrected.
+Validation: extension check first command wrong cwd failed TS5058; corrected owning cwd reached missing Domain node dist declarations, so build Domain before final extension types. No browser claim from this check.
+Down WIP backup dac14111 and parent merge b69defff retained; code merged cleanly including runtime-contract flowScriptExamples and frozen producer. Conflicts only FHL/index. Exact incoming Down P10 source archived as fenced document, SHA256 pin in ignored t830-down-parent-preservation.json. Push hooks caught diagnostic spread/stale index then historical relative links; fixed without changing archived source bytes. Final workbranch151332d0 pushed successfully, root dev untouched.
+Validation: node scripts/structure-audit.mjs --update ->baseline already current583entries/9rules,0lowered/0removed; final pre-push full standalone audit passes with fenced parent source. No full suites or paid calls.
+
+
+Validation: root provenance+prior-nodes owning run ->179tests/8files PASS68.21s, log t830-reference-identity-lead-tests.log. Core check PASS93.033s; final SDK PASS129.098s. Both source frozen.
+Validation: Down post-parent check PASS30.614s, stamped/current source and test types. Root exact public paired tests ->0/2: capture now accepted, original main1 and primary permitted assessment1, but no batch offering at second decide. No oracle weakening/private-Core test import; bounded paired next-refusal diagnosis dispatched.

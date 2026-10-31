@@ -48,6 +48,7 @@ type CaptureTransaction = {
  */
 export function createAutomationStudioLlmRerunProvenance(input: Readonly<{
   currentScope(): AutomationStudioLlmRerunScope | undefined;
+  now?: () => number;
 }>): AutomationStudioLlmRerunProvenance {
   let disposed = false;
   let entries = new WeakMap<AutomationStudioLlmRerunRecord, Entry>();
@@ -123,6 +124,19 @@ export function createAutomationStudioLlmRerunProvenance(input: Readonly<{
       return runWithAutomationStudioLlmRerunFrame(refusal, () => executor(request));
     }
     const captureScope: AutomationStudioLlmRerunScope = scope;
+    let referenceNow = request.referenceNow;
+    try {
+      if (referenceNow === undefined) referenceNow = (input.now ?? Date.now)();
+    } catch {
+      calls.set(request.callId, unavailable("invalid_snapshot"));
+      return runWithAutomationStudioLlmRerunFrame(unavailable("invalid_snapshot"), () => executor(request));
+    }
+    if (!Number.isFinite(referenceNow) || referenceNow < 0) {
+      calls.set(request.callId, unavailable("invalid_snapshot"));
+      return runWithAutomationStudioLlmRerunFrame(unavailable("invalid_snapshot"), () => executor(request));
+    }
+    // The original host owns this instant before any outer wrapper or adapter sees the call.
+    const call = request.referenceNow === undefined ? { ...request, referenceNow } : request;
 
     const transaction: CaptureTransaction = { active: true };
     const assessment = createAutomationStudioLlmRerunAssessment({
@@ -153,7 +167,7 @@ export function createAutomationStudioLlmRerunProvenance(input: Readonly<{
         transaction.reason = captured.reason;
         return captured;
       }
-      if (request.referenceNow !== undefined && request.referenceNow !== captured.snapshot.referenceNow) {
+      if (referenceNow !== captured.snapshot.referenceNow) {
         transaction.reason = "reference_changed";
         return unavailable(transaction.reason);
       }
@@ -165,7 +179,7 @@ export function createAutomationStudioLlmRerunProvenance(input: Readonly<{
     let result: AutomationStudioLlmRerunResult;
     try {
       result = await runWithAutomationStudioActionAssessments(assessment.scope,
-        () => runWithAutomationStudioLlmRerunFrame(frame, () => executor(request)));
+        () => runWithAutomationStudioLlmRerunFrame(frame, () => executor(call)));
     } catch (error) {
       calls.set(request.callId, unavailable("result_unproven"));
       throw error;

@@ -34,6 +34,11 @@ actual effects are held. Neither acknowledgement nor a returned JSON status prov
 dispatch. The host producer reports fresh final-lowered main attempts through the
 selected execution accessor; the model cannot submit that report.
 
+Core supplies a missing original reference instant once before the fully wrapped
+executor. The producer must publish that exact instant, and selected reuse keeps
+it unchanged. An explicit reference is preserved; an unavailable capture stays
+on its ordinary path.
+
 The same wrapped executor and ordinary current admission, permissions, retries,
 uncertainty, quota, cancellation, deadline and purse rules apply to each member.
 Batch intent bypasses only the original successful answer-cache entry. It never
@@ -42,7 +47,9 @@ a dataset or invokes automatic recovery. The original public request remains in
 the trace while an opaque host-local capsule carries exact execution arguments.
 
 The ordered list guard hashes canonical definitions, actual inputs, semantic
-subjects, reference time and captured world/authority. Aliases and model call ids
+subjects and captured world/authority. Time-bearing resolved inputs remain part
+of this identity; a raw capture clock alone never makes an identical list new.
+Aliases and model call ids
 cannot create fresh authority. A failed guard record terminates the loop before
 another provider decision, tool or completion. Every member also retains the
 ordinary per-call guards.
