@@ -73,3 +73,18 @@ Verbatim ledger entries moved during the P5b continuation; decisions and validat
 - Validation: lead seven previous runtime failure files ->37 passed/two stale assertions failed; corrected generation/extend ->14 passed; all five other files passed unchanged. Lead `vitest run .../content-reseal/tests/reseal-interruption.test.ts --maxWorkers=1 --minWorkers=1` ->3 passed, racing writer703ms; worker two runs also3/3, original timeout cause remains unproven and no timeout/guarantee changed.
 - Outcome: merged/pushedc7f33647 after70 mandatory contract tests; final Core types and audit476 warnings/1144 baseline pass, three libraries rebuilt. Corrected-source whole sweep still required before main; no paid calls. Downstream saved-repair callers also7/7 after rebuilding this fix.
 
+
+### 2026-10-30 - Full sweep2 completed; corrected-source acceptance next
+- Validation: downstream `node test-runs/2026-10-30-sweep-2/runner.mjs t818 803f3c81f25909b76a69b55a80cb68cc7c4724ba 16dd9ad3848acaa2c37f6dbe505ce29f95b58eed` ->both installs/builds and Core check exit0; Core test exit1(six ordinary/27SQL); downstream check exit1(five), test exit1(five domain/three demo). Core web3454 and extension3459 tests pass.
+- Changed: t819 resolver fix and t820 exact settings fixtures are merged/pushed; downstream cache now registers product build/check, Claude/$5 setup/CLI fixtures aligned. Frozen t818 removed through task abandon after unmerged0/0; main logs retained.
+- Validation: lead259 unique Core tests, seven saved-repair domain tests, five Lab argument tests,16 registry/CLI tests and nine demo tests pass; Core/test-runner/product types, product build and both earlier full audits pass. Main dependencies refreshed before final demo checks; no key/browser/panel use.
+- Outcome: no corrected-source full acceptance yet. Next-day runner refuses launch before local2026-10-31; full sweep3 is the next allowed sweep. Main held; original storage timeout cause remains unproven. No paid calls.
+
+
+
+### 2026-10-31 - t822 catalog capability and integration reporting fix
+- Changed: Core operation evidence excludes incidental prose/data shape; web secondary operations explicitly tagged. Integration assertions registered as named tests; no missing-capability/provider guard weakened. Core version0.15.0; no wire-schema change. Worker regressions consolidated into existing catalog.test.ts to respect the25-file limit. Core AGENTS.md now explicitly carries the twice-daily cap and narrow merge guidance, matching downstream. Worker reports in downstream reports/codex-1031.
+- Validation: `pnpm --filter fluxiq exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/plan/tests` ->275 passed; final catalog-only rerun ->30 passed. `pnpm --filter @fluxiq-web-extension/domain test src/tests/domain.test.ts output-nodes/tests/model-facing-catalog.test.ts output-nodes/tests/click-ensure-state.test.ts output-nodes/tests/definitions.test.ts` ->42 passed. Both package check commands ->exit0.
+- Validation correction: t821 also contained the hidden module-load failure; t822 install/build/check0, test1. No third full suite today; no main promotion or paid calls. Both structure gates pass; paired task finishes merged Core26973484/downstream2ec3dc42; mandatory Core contract gate70/70 passed. Core finish used --skip-checks to honour the daily limit. The temporary downstream tree was removed; detached Core tree is left for normal age-gated pruning.
+
+
