@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioProject } from "../../../api/index.ts";
-import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowArtifact } from "../../../model/index.ts";
+import { createBlankAutomationStudioFlowArtifact, resolveAutomationStudioLlmTestRunCostCeilingUsd, type AutomationStudioFlowArtifact } from "../../../model/index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { CanonicalAutomationStudioRepositories } from "../../../storage/index.ts";
 import type { CanonicalAuthorityWholeOperation } from "../../../storage/canonical-authority/index.ts";
 import type { AutomationStudioProjectStore } from "../projects/index.ts";
@@ -19,13 +20,26 @@ export class AutomationStudioFlowCreation {
       if (input.flowId !== undefined) throw new Error("canonical_whole.caller_flow_id");
       return this.authority.createFlow(input.projectId, { name, ...(description === undefined ? {} : { description }) }, async flowId => {
         const project = await this.authority!.requireProject(input.projectId) as unknown as AutomationStudioProject;
-        const flow = createBlankAutomationStudioFlowArtifact({ flowId, projectId: project.id, name, ...(description === undefined ? {} : { description }), scope: flowScopeForProject(project) });
+        const flow = createRuntimeBlankFlow({ flowId, projectId: project.id, name, ...(description === undefined ? {} : { description }), scope: flowScopeForProject(project) });
         return this.writer.saveFlowInternal({ projectId: project.id, flow }, false);
       });
     }
     const project = legacyProject!, flowId = typeof input.flowId === "string" && input.flowId.trim() ? input.flowId.trim() : `flow.${randomUUID()}`;
     await this.flows.loadProjectFlow(project.id, flowId); if (await this.repositories.flows.get(flowId)) throw new Error(`Automation Studio Flow ID already exists: ${flowId}`);
-    const saveInput = { projectId: project.id, flow: createBlankAutomationStudioFlowArtifact({ flowId, projectId: project.id, name, ...(typeof input.description === "string" && input.description.trim() ? { description: input.description.trim() } : {}), scope: flowScopeForProject(project) }) };
+    const saveInput = { projectId: project.id, flow: createRuntimeBlankFlow({ flowId, projectId: project.id, name, ...(typeof input.description === "string" && input.description.trim() ? { description: input.description.trim() } : {}), scope: flowScopeForProject(project) }) };
     return this.facade ? this.facade.saveFlow(saveInput) : this.writer.saveFlowInternal(saveInput, false);
   }
+}
+
+/** Only a fresh runtime-owned Flow inherits the isolated host's default purse. */
+function createRuntimeBlankFlow(input: Omit<Parameters<typeof createBlankAutomationStudioFlowArtifact>[0], "metadata">): AutomationStudioFlowArtifact {
+  const flow = createBlankAutomationStudioFlowArtifact(input);
+  const ceilingUsd = resolveAutomationStudioLlmTestRunCostCeilingUsd();
+  if (ceilingUsd !== undefined) {
+    // The model's product default stays pure. Existing or explicitly configured
+    // Flow policies never pass here, even when they equal the product default.
+    const metadata = flow.metadata!;
+    metadata.adaptationPolicySettings = { ...(metadata.adaptationPolicySettings as JsonObject), maxEstimatedCostUsdPerRun: ceilingUsd };
+  }
+  return flow;
 }

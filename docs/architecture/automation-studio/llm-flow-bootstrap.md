@@ -2876,8 +2876,17 @@ the Flow's `maxEstimatedCostUsdPerRun` ($0.25 by default), narrowed by any
 explicit resolver/request limit and the existing server maximum. An isolated
 test runtime opts in with `FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`; only then
 does `FLUXIQ_LLM_RUN_COST_CEILING_USD` impose its ceiling ($0.10 when unset).
-That test ceiling may only narrow a Flow's settings and never changes stored
-or browser UI defaults. An ordinary process ignores the test variable.
+The public service delegates fresh creation to
+`runtime/service/flows/creation.ts`, which supplies that
+isolated host's ceiling as its initial stored policy in both canonical and
+legacy creation. The chat therefore creates its Flow with the same allowance
+the host authorized before its first build. This default applies only at fresh
+creation: existing policies and explicit lower limits keep narrowing the run,
+including a limit equal to the ordinary product default. Pure model and browser
+UI defaults remain independent; an ordinary process ignores the test variable.
+Stored per-call cost limits use the same server maximum as the settings API;
+every accepted value narrows the resolver's request allowance without raising
+it or changing the whole-build allowance.
 The whole build
 body runs inside `automationStudioLlmBuildPurseScope`, so reading the
 instruction, every decision, the test and the judge are all held against it.

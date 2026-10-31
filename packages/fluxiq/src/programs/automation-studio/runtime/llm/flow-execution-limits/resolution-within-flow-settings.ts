@@ -24,6 +24,7 @@
 // when nobody configured one (`FLOW_LLM_UNSET_CALL_COUNT`), so 1 reads as unset.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../model/run-cost-ceiling/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD } from "../harness/index.ts";
 import type { AutomationStudioLlmProviderResolution } from "../resolver-contract.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "./run-call-backstop.ts";
@@ -31,7 +32,6 @@ import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "./run-call-backstop.ts"
 /** The settings check's own bound (`api/handlers/llm-execution-settings.ts`): Core's runaway backstop (t583). */
 const FLOW_MAX_CALLS = AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
 const FLOW_UNSET_CALL_COUNT = 1;
-const FLOW_MAX_COST_USD = 0.25;
 
 /**
  * `resolved` narrowed by the Flow's stored `llmExecutionSettings`: `maxCalls`
@@ -49,7 +49,7 @@ export function automationStudioLlmResolutionWithinFlowSettings<T>(resolved: T, 
   const calls = wholeNumber(settings.maxCalls, 1, FLOW_MAX_CALLS);
   if (calls !== undefined && calls !== FLOW_UNSET_CALL_COUNT) narrowed.maxCallsPerRun = lower(resolution.maxCallsPerRun, calls);
   const cost = settings.maxEstimatedCostUsd;
-  if (typeof cost === "number" && Number.isFinite(cost) && cost > 0 && cost <= FLOW_MAX_COST_USD) {
+  if (typeof cost === "number" && Number.isFinite(cost) && cost > 0 && cost <= AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD) {
     narrowed.maxEstimatedCostUsd = Math.min(resolution.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD, cost);
   }
   return narrowed as unknown as T;
