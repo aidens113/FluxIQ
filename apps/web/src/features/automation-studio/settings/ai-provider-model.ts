@@ -2,10 +2,10 @@ import type { SecretKeySummary } from "fluxiq/secret-keys";
 import { applyFlowAdaptationMode, flowLlmProvider, normalizedProviderLabel, type FlowSettingsDraft } from "./flow-settings-model";
 
 /**
- * The AI provider controls: whether a usable bring-your-own DeepSeek key
+ * The AI provider controls: whether a usable bring-your-own model key
  * exists, and the plain on/off adaptation switch.
  *
- * DeepSeek is the only provider for the MVP. The switch is a view over the
+ * Readiness follows the selected provider. The switch is a view over the
  * existing adaptation mode rather than a second setting: on is
  * `fully_adaptive`, off is `no_llm_intervention`, and both go through
  * `applyFlowAdaptationMode` so every permission it sets moves with it.
@@ -14,10 +14,10 @@ import { applyFlowAdaptationMode, flowLlmProvider, normalizedProviderLabel, type
 /** Only what the section reads from a key. Values are never part of it. */
 export type AiProviderKeySummary = Pick<SecretKeySummary, "id" | "name" | "kind" | "provider" | "scope" | "scopeRef" | "enabled">;
 
-export type DeepSeekKeyAvailability = {
+export type AiProviderKeyAvailability = {
   /**
-   * `ready`: at least one key can be used. `missing`: no DeepSeek key exists.
-   * `unusable`: DeepSeek keys exist but are disabled or scoped elsewhere.
+   * `ready`: at least one key can be used. `missing`: no key for this provider exists.
+   * `unusable`: matching keys exist but are disabled or scoped elsewhere.
    * `loading`: the key list is being read. `unknown`: it could not be read, or
    * was never requested -- which is not the same as having no key.
    */
@@ -25,6 +25,9 @@ export type DeepSeekKeyAvailability = {
   usableKeys: AiProviderKeySummary[];
   summary: string;
 };
+
+/** Compatibility type for existing DeepSeek callers. */
+export type DeepSeekKeyAvailability = AiProviderKeyAvailability;
 
 /** Where keys are added and managed: the existing Secret Keys program, the only secret store. */
 export const AI_PROVIDER_SECRET_KEYS_HREF = "/programs/secret-keys";
@@ -39,19 +42,19 @@ export function aiProviderKeyAvailability(input: {
   error: string;
   /** A Flow-scoped key counts only for this Flow; without one, only global keys count. */
   flowId?: string | null;
-}): DeepSeekKeyAvailability {
+}): AiProviderKeyAvailability {
   const provider = flowLlmProvider(input.provider ?? "deepseek");
   const label = provider.label;
   if (input.loading) return { status: "loading", usableKeys: [], summary: `Checking for a ${label} API key...` };
   if (input.error) return { status: "unknown", usableKeys: [], summary: `Your API keys could not be read: ${input.error}` };
   if (!input.keys) return { status: "unknown", usableKeys: [], summary: "Your API keys have not been checked yet." };
-  const deepSeekKeys = input.keys.filter((key) => key.kind === "llm" && normalizedProviderLabel(key.provider) === provider.id);
-  const usableKeys = deepSeekKeys.filter((key) => key.enabled === true && (key.scope === "global" || (Boolean(input.flowId) && key.scope === "flow" && key.scopeRef === input.flowId)));
+  const providerKeys = input.keys.filter((key) => key.kind === "llm" && normalizedProviderLabel(key.provider) === provider.id);
+  const usableKeys = providerKeys.filter((key) => key.enabled === true && (key.scope === "global" || (Boolean(input.flowId) && key.scope === "flow" && key.scopeRef === input.flowId)));
   if (usableKeys.length) {
     return { status: "ready", usableKeys, summary: usableKeys.length === 1 ? `${label} key "${usableKeys[0]!.name}" is ready.` : `${usableKeys.length} ${label} keys are ready.` };
   }
-  if (deepSeekKeys.length) {
-    const disabled = deepSeekKeys.every((key) => key.enabled !== true);
+  if (providerKeys.length) {
+    const disabled = providerKeys.every((key) => key.enabled !== true);
     return { status: "unusable", usableKeys: [], summary: disabled ? `Your ${label} key is disabled. Enable it or add a new one.` : `Your ${label} key is limited to another scope. Add a global ${label} key so every automation can use it.` };
   }
   return { status: "missing", usableKeys: [], summary: `No ${label} API key has been added yet.` };

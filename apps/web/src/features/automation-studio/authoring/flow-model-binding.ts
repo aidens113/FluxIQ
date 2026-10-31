@@ -2,7 +2,7 @@ import { automationStudioLlmModelProvider } from "fluxiq/automation-studio/llm-m
 
 /**
  * The part of a build request every build shares, whatever it does to the
- * Flow: the Flow must name a DeepSeek model and a turned-on key, and the
+ * Flow: the Flow must name a configured provider and matching model and a turned-on key, and the
  * request names the Flow. Creating a Flow and improving one differ only in
  * which Flows they accept, so that rule is the caller's and this is the rest.
  */

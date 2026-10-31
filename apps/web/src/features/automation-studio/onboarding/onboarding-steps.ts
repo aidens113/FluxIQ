@@ -8,7 +8,7 @@ const PAIRING_ACTION: OnboardingAction = { label: "Pair the browser extension", 
 const KEY_ACTION: OnboardingAction = { label: "Add a model API key", location: "Secret Keys > Add Key, with kind LLM and provider Anthropic (Claude) or DeepSeek", href: AI_PROVIDER_SECRET_KEYS_HREF };
 
 /**
- * The first-run checklist, in order: runtime, pairing, DeepSeek key.
+ * The first-run checklist, in order: runtime, pairing, model API key.
  *
  * A step whose own condition holds is `done`. The first step that is not is
  * `current`, and every later unfinished step is `blocked` by it, so exactly

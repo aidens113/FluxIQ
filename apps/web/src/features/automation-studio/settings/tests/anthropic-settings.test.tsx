@@ -19,7 +19,7 @@ describe("Claude settings and authoring integration", () => {
     const saved = buildFlowSettingsSavePayload(flow, draft);
     expect(saved.metadata).toMatchObject(flow.metadata);
     expect(flowSettingsDraftFromFlow({ ...flow, ...saved })).toMatchObject({ llmProvider: "anthropic", llmModel: "claude-haiku-5-5", llmSecretKeyId: "secret.claude" });
-    const detail = flowSettingsFlowFromDetail({ flowId: flow.flowId, name: flow.name, settings: { llm: { provider: "anthropic", model: "claude-haiku-5-5", secretKeyId: key.id } } });
+    const detail = flowSettingsFlowFromDetail({ flowId: flow.flowId, name: flow.name, metadata: {} }, { flowId: flow.flowId, name: flow.name, settings: { llm: { provider: "anthropic", model: "claude-haiku-5-5", secretKeyId: key.id } } });
     expect(flowModelBinding("project.one", detail).ok).toBe(true);
     expect(flowLlmSettingsErrors({ ...draft, llmProvider: "deepseek" }, [key], true)).toContain("The selected model does not belong to the selected provider.");
     expect(flowEffectiveSettings(flow, draft).find((entry) => entry.key === "llmModel")).toMatchObject({ value: "claude-haiku-5-5", source: "Flow override" });

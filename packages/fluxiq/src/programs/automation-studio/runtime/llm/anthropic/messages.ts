@@ -1,3 +1,4 @@
+import { automationStudioAnthropicReplyContainsCredential } from "./credential-screen.ts";
 import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, AutomationStudioLlmProviderError, automationStudioLlmSignalTimedOut } from "../provider-contract.ts";
 import { readAutomationStudioProviderBoundedResponse, readAutomationStudioProviderRefusal, raceAutomationStudioProviderSignal, automationStudioProviderBalanceExhausted } from "../provider-transport/index.ts";
@@ -70,8 +71,11 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     }
     if (!response.ok) {
       // Shared refusal screening drops credentials and locator-shaped text.
-      const refusal = await readAutomationStudioProviderRefusal({ response, maxResponseBytes: input.maxResponseBytes, request: input.requestShape ?? null, credential: key, signal: controller.signal });
-      const balance = automationStudioProviderBalanceExhausted(response.status, refusal.error);
+      const screened = await readAutomationStudioProviderRefusal({ response, maxResponseBytes: input.maxResponseBytes, request: input.requestShape ?? null, credential: key, signal: controller.signal });
+      const balance = automationStudioProviderBalanceExhausted(response.status, screened.error);
+      const refusal = automationStudioAnthropicReplyContainsCredential(screened, key)
+        ? { ...screened, contentType: null, error: null, withheld: [...screened.withheld, "message_credential_shaped"] }
+        : screened;
       const code = balance ? "llm.provider_balance_exhausted" : response.status === 401 || response.status === 403 ? "llm.provider_auth_failed" : response.status === 429 ? "llm.provider_rate_limited" : "llm.provider_http_error";
       throw new AutomationStudioLlmProviderError(code, "Anthropic refused the request.", !balance && (response.status === 429 || response.status >= 500), response.status, undefined, undefined, refusal);
     }
@@ -79,7 +83,12 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     let raw: Uint8Array;
     const mediaType = response.headers.get("content-type") ?? "";
     if (/^text\/event-stream(?:\s*;|$)/i.test(mediaType)) {
-      const streamed = await readAutomationStudioAnthropicStream(response, input.maxResponseBytes, controller.signal, (partial) => { paid = automationStudioAnthropicUsage(partial.usage, input.model) ?? paid; });
+      const streamed = await readAutomationStudioAnthropicStream(response, input.maxResponseBytes, controller.signal, (partial) => {
+        // message_start's output count is provisional. Until a final delta
+        // ends generation, the bill is unknown and Core keeps its conservative
+        // reservation on failure instead of charging that initial 0/1 token.
+        if (typeof partial.stop_reason === "string") paid = automationStudioAnthropicUsage(partial.usage, input.model) ?? paid;
+      });
       raw = streamed.raw;
       envelope = streamed.envelope;
     } else if (/^application\/json(?:\s*;|$)/i.test(mediaType)) {
@@ -89,8 +98,7 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
       catch { throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned malformed JSON."); }
     } else throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned an unexpected media type.");
     paid = isRecord(envelope) ? automationStudioAnthropicUsage(envelope.usage, input.model) : undefined;
-    if (new TextDecoder().decode(raw).includes(key)) throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic response contained the configured credential.");
-    step?.reply(raw, response.status);
+    if (new TextDecoder().decode(raw).includes(key) || automationStudioAnthropicReplyContainsCredential(envelope, key)) throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic response contained the configured credential.");
     if (!isRecord(envelope) || envelope.type !== "message" || envelope.role !== "assistant" || envelope.model !== input.model || !Array.isArray(envelope.content)) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned an invalid message envelope.");
     if (envelope.stop_reason === "max_tokens" || envelope.stop_reason === "model_context_window_exceeded") throw new AutomationStudioLlmProviderError("llm.provider_output_truncated", "Anthropic stopped before completing its output.");
     if (envelope.stop_reason === "refusal" || isRecord(envelope.stop_details) && envelope.stop_details.type === "refusal") throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic refused to produce the requested output.");
@@ -104,8 +112,12 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     const text = content.join("");
     if (!text.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned no answer.");
     if (!paid) throw new AutomationStudioLlmProviderError("llm.provider_usage_invalid", "Anthropic returned invalid token usage.");
-    // Reported usage is told to the step log before the caller's schema check.
+    // The paid account exists before schema validation can refuse the answer.
     const answer = input.readAnswer(text, paid);
+    if (automationStudioAnthropicReplyContainsCredential(answer, key)) throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic answer contained the configured credential.");
+    // Logging comes last: JSON-text transport can reveal a credential only
+    // after its inner answer is decoded, and an unusable answer stays unlogged.
+    step?.reply(raw, response.status);
     step?.succeeded(answer, paid);
     return { response: answer, usage: paid };
   } catch (error) {

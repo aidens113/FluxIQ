@@ -1,7 +1,7 @@
 # Claude Live Provider Plan
 
 Status: Active
-Status detail: Implementing paired t816; Anthropic is listed in Secret Keys UI, but runtime resolution and live Lab routing are DeepSeek-only.
+Status detail: Claude runtime and keys/settings support implemented; lead acceptance and paired integration in progress.
 Created: 2026-10-30
 Last updated: 2026-10-30
 Owner: Senior supervisor agent
@@ -14,9 +14,12 @@ Related: [Framework continuation](framework-heavy-lifting-plan.md)
 The user requested Claude for every live model-backed test and explicitly asked that preference be recorded.
 Both repositories' AGENTS.md now hold it. Never silently fall back to DeepSeek. Provider-free tests remain provider-free.
 CLAUDE_API_KEY is present in the main downstream .env.local; its value was not printed, copied or committed.
-Anthropic appears in the keys UI, but Core's provider factory/session resolver and Lab credential/plan paths support only DeepSeek.
+Anthropic originally appeared in the keys UI without runtime support. Core now implements the native provider, per-call encrypted-key resolution and matching model/settings controls; the Lab migration is under acceptance.
 Paired task t816 owns implementation in isolated checkouts. The lead owns downstream paths; a heavy worker owns Core.
 Live default: claude-sonnet-5-5, provider anthropic, selected for agentic task quality and speed; explicit model selection remains available.
+The user raised Claude live tests to $5 per whole Flow build, not each call. Explicit lower limits remain effective; ordinary product defaults remain separate.
+Lead independently observed native Claude tests: 4 files / 33 passed; legacy DeepSeek/session/settings: 19 files / 196 passed. All use fake transports/credentials, with no paid calls.
+Core source/library version0.9.0 is frozen pending downstream acceptance. A stale private root workspace dependency was changed from0.7.0 to workspace:* and its lockfile regenerated offline.
 The user raised Claude live tests to $5 per build on 2026-10-30. The Lab injects this test-scoped ceiling; normal
 product defaults remain separate, and native output limits are never reduced to save money.
 Keep identical realistic task instructions/oracles and record model, verdict, calls, provider-reported usage/cost and runtime.

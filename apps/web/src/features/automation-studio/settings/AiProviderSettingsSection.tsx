@@ -9,11 +9,11 @@ import {
   AI_PROVIDER_SECRET_KEYS_HREF,
   aiProviderAdaptationIsOn,
   applyAiProviderAdaptationSwitch,
-  type DeepSeekKeyAvailability
+  type AiProviderKeyAvailability
 } from "./ai-provider-model";
 
 /**
- * Bring-your-own-key AI settings for one Flow: the DeepSeek key, which model
+ * Bring-your-own-key AI settings for one Flow: the selected provider's key, which model
  * is in use, and whether the Flow may adapt. The model is chosen in the LLM
  * Connection section, which owns that field; this section only names it, so
  * Flow Settings never shows two pickers bound to one value. Controlled; the host owns the draft and
@@ -23,7 +23,7 @@ import {
 export function AiProviderSettingsSection(props: {
   draft: FlowSettingsDraft;
   onDraftChange(update: (current: FlowSettingsDraft) => FlowSettingsDraft): void;
-  keyAvailability: DeepSeekKeyAvailability;
+  keyAvailability: AiProviderKeyAvailability;
   secretKeysHref?: string;
 }) {
   const provider = flowLlmProvider(props.draft.llmProvider);

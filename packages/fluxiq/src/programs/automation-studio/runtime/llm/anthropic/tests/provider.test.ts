@@ -1,3 +1,4 @@
+import * as stepLog from "../../step-log/index.ts";
 import { describe, expect, it, vi } from "vitest";
 import { createAutomationStudioAnthropicProvider } from "../provider.ts";
 import { AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, AUTOMATION_STUDIO_ANTHROPIC_API_VERSION } from "../messages.ts";
@@ -102,6 +103,28 @@ describe("native Anthropic task provider", () => {
     await expect(provider(() => streamReply(textFor({ ...DIAGNOSIS, summary: "dummy-provider-key" }))).runTask(request())).rejects.toMatchObject({ code: "llm.provider_output_invalid", paid: { outputTokens: 30 } });
   });
 
+  it("refuses Unicode-escaped credentials at decoded JSON layers before logging any raw reply", async () => {
+    const credential = "dummy-provider-key";
+    const escaped = [...credential].map((char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+    const inner = JSON.stringify({ ...DIAGNOSIS, summary: credential }).replace(credential, escaped);
+    const text = JSON.stringify({ result_json: inner });
+    expect(text).not.toContain(credential);
+    const reply = vi.fn();
+    const succeeded = vi.fn();
+    const failed = vi.fn();
+    const log = vi.spyOn(stepLog, "automationStudioLlmStepLogModelStep").mockReturnValue({ reply, succeeded, failed });
+    try {
+      await expect(provider(() => streamReply(text)).runTask(request())).rejects.toMatchObject({ code: "llm.provider_output_invalid", paid: { outputTokens: 30, estimatedCostUsd: 0.000555 } });
+      expect(reply).not.toHaveBeenCalled();
+      expect(succeeded).not.toHaveBeenCalled();
+      expect(failed).toHaveBeenCalledTimes(1);
+      const raw = JSON.stringify(envelope(textFor({ ...DIAGNOSIS, summary: credential }))).replace(credential, escaped);
+      await expect(provider(() => new Response(raw, { headers: { "content-type": "application/json" } })).runTask(request())).rejects.toMatchObject({ code: "llm.provider_output_invalid", paid: { outputTokens: 30 } });
+      expect(reply).not.toHaveBeenCalled();
+      expect(succeeded).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); }
+  });
+
   it("rejects redirects, byte overflow and incomplete streams", async () => {
     await expect(provider(() => new Response(null, { status: 302 })).runTask(request())).rejects.toMatchObject({ code: "llm.provider_redirect_rejected" });
     await expect(provider(streamReply, { maxResponseBytes: 100 }).runTask(request())).rejects.toMatchObject({ code: "llm.provider_response_oversize" });
@@ -114,6 +137,17 @@ describe("native Anthropic task provider", () => {
     await expect(provider(streamReply, { resolveSecret: () => new Promise(() => undefined) }).runTask(request({ timeoutMs: 20 }))).rejects.toMatchObject({ code: "llm.provider_timeout" });
     const stalled = new Response(new ReadableStream({ pull() {} }), { headers: { "content-type": "text/event-stream" } });
     await expect(provider(() => stalled).runTask(request({ timeoutMs: 20 }))).rejects.toMatchObject({ code: "llm.provider_timeout" });
+  });
+
+  it("keeps the bill unknown for an interrupted stream before final usage so the ledger retains its conservative hold", async () => {
+    let cancelled = false;
+    const start = { type: "message_start", message: envelope("", { content: [], stop_reason: null, usage: { ...USAGE, output_tokens: 1 } }) };
+    const partial = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode(`event: message_start\ndata: ${JSON.stringify(start)}\n\n`)); },
+      cancel() { cancelled = true; }
+    }), { headers: { "content-type": "text/event-stream" } });
+    await expect(provider(() => partial).runTask(request({ timeoutMs: 30 }))).rejects.toMatchObject({ code: "llm.provider_timeout", paid: undefined });
+    expect(cancelled).toBe(true);
   });
 
   it("honors parent cancellation without resolving a different key or provider", async () => {

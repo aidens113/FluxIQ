@@ -72,7 +72,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // A run nobody is watching has no live session to release a key to, so it
   // draws the key from the unlock the person left for it; what reaches here is
   // the key, that unlock, and the ceiling for this one redemption.
-  const resultCheckProviderResolver = async (request: Parameters<typeof createAutomationStudioResultCheckProvider>[0]["scope"]) => {
+  const resultCheckProviderResolver = async (request: Parameters<typeof createAutomationStudioResultCheckProvider>[0]["scope"]): Promise<ReturnType<typeof createAutomationStudioResultCheckProvider>> => {
     const key = await secretKeys.getKeySummary(request.keyId);
     const flow = await automationStudio.getFlow(request.projectId, request.flowId);
     const providerId = request.providerId ?? (typeof flow.metadata?.llmProvider === "string" ? flow.metadata.llmProvider : undefined)
@@ -106,7 +106,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     pool: () => AutomationStudioGatewayTraceServicePools.of(automationStudio)
   });
   const prepareCandidateStart = gatewayTrace.startHook(automationStudioCandidateStartHookFromEnvironment(process.env));
-  const automationStudio = new AutomationStudioService(paths && storageLayoutVersion === 2
+  const automationStudio: AutomationStudioService = new AutomationStudioService(paths && storageLayoutVersion === 2
       ? {
         storageRootDir: paths.recordings,
         customNodeRootDir: path.join(paths.domainPrograms, "automation-studio", "nodes"),
@@ -179,12 +179,12 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // the resolver without the Flow's metadata, so the Flow is read here. The
   // locked sentence names the public host when `FLUXIQ_PUBLIC_ORIGIN` sets one.
   const instanceHost = publicInstanceHost(process.env.FLUXIQ_PUBLIC_ORIGIN);
-  const resolveSessionProvider = createAutomationStudioSessionKeyProviderResolver({
+  const resolveSessionProvider = modelProvidersEnabled ? createAutomationStudioSessionKeyProviderResolver({
     ports: secretKeys,
     flowSecretKeyId: ({ projectId, flowId }) => flowSecretKeyId(automationStudio, projectId, flowId),
     ...(instanceHost ? { instanceHost } : {})
-  });
-  if (modelProvidersEnabled) automationStudio.bindLlmExecutionProvider(async (request) => {
+  }) : undefined;
+  if (resolveSessionProvider) automationStudio.bindLlmExecutionProvider(async (request) => {
     const flow = await automationStudio.getFlow(request.projectId, request.flowId);
     const metadata = { ...flow.metadata, ...request.metadata };
     const key = typeof metadata.llmSecretKeyId === "string" ? await secretKeys.getKeySummary(metadata.llmSecretKeyId) : undefined;

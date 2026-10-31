@@ -303,7 +303,9 @@ that fills the remaining window reports `model_context_window_exceeded`, which
 Core treats as paid truncation, never a successful structured answer; no page
 evidence is trimmed. See the provider's
 [overflow contract](https://platform.claude.com/docs/en/build-with-claude/context-windows#context-window-overflow-behavior). A request and its body read share the same
-deadline; refused, truncated and malformed paid replies retain usage and cost.
+deadline; refused, truncated and malformed paid replies retain usage and cost. Decoded
+content, nested JSON-text layers and the final structured answer are credential
+screened before raw reply logging or return. Rejected raw answers stay unlogged.
 
 The browser-safe `fluxiq/automation-studio/llm-models` export retains the
 DeepSeek names and adds `AUTOMATION_STUDIO_ANTHROPIC_MODELS`,
@@ -333,7 +335,9 @@ both to its normalized input count, and prices uncached input, five-minute
 writes, one-hour writes, cache hits and output separately. Haiku's above-100k
 prompt tier applies to the whole prompt. Estimates reserve an all-write input
 case; charges use the provider's reported split, including unsuccessful paid
-replies. Product spending defaults remain unchanged; an isolated Lab's explicit
+replies. A stream interrupted before its final usage delta leaves the bill
+unknown, preserving Core's conservative reservation; its initial output count
+is never treated as the completed bill. Product spending defaults remain unchanged; an isolated Lab's explicit
 `FLUXIQ_LLM_RUN_COST_CEILING_USD=5` is honored and clamps Flow settings as usual.
 Rates and API details were checked on 2026-10-30 against Anthropic's
 [models](https://platform.claude.com/docs/en/models/overview),

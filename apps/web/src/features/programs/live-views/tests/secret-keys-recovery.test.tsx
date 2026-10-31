@@ -80,3 +80,16 @@ it("pending update result cannot overwrite a replacement actor or trigger old fo
 });
 
 it("confirmed removal invalidates an open editor instead of leaving a silently inert submit", async () => { await mount(); await open("Edit metadata"); fill("Your password", "synthetic-proof"); apis.secret.get.mockResolvedValue({ ok: true, payload: { keys: [] } }); await act(async () => button("Refresh").props.onClick()); expect(view.root.findAll(n => n.props["data-modal"] === "Edit Key Metadata")).toHaveLength(0); });
+
+it.each(["anthropic", "Anthropic (Claude)"])("edits API-provisioned %s keys through the Claude picker without rewriting their provider", async provider => {
+  apis.secret.get.mockResolvedValue({ ok: true, payload: { keys: [{ ...key, kind: "llm", provider }] } });
+  await mount();
+  await open("Edit metadata");
+  const picker = field("Provider").findByType("select");
+  expect(picker.props.value).toBe("Anthropic");
+  expect(picker.findAllByType("option").find(option => option.props.value === "Anthropic")!.children).toEqual(["Anthropic (Claude)"]);
+  fill("Your password", "synthetic-proof");
+  await act(async () => button("Save Changes").props.onClick());
+  expect(apis.secret.post.mock.calls[0]?.[0]).toBe("update-key");
+  expect(apis.secret.post.mock.calls[0]?.[1]).toMatchObject({ provider });
+});

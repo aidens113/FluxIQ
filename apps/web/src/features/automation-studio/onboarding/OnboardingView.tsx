@@ -20,7 +20,7 @@ export type OnboardingViewProps = {
 };
 
 /**
- * First-run setup: runtime, pairing, DeepSeek key, in that order, each shown
+ * First-run setup: runtime, pairing, model API key, in that order, each shown
  * as done, current, or blocked with one concrete action. Then the one-line
  * explanation of how FluxIQ uses AI and the three ways to start. It renders
  * outside Studio, so its `onboarding-*` classes are styled by the hosting
