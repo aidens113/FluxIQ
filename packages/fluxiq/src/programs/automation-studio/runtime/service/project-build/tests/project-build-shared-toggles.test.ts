@@ -84,7 +84,7 @@ describe("the explored toggles of a project build", () => {
 
 // t792 (fix 2 of debug run-mvswfjbq-d0a95f6e): a toggle a subflow trial's press
 // made reaches the next revision of the same step that a repair brief of the
-// same project build submits, as `ensureState`.
+// same project build submits, grounding the repair's explicit `ensureState` choice.
 //
 // The press answers exactly as the web domain's runtime path builds it: the
 // client's action result (its raw `toggle` signature included) kept whole under
@@ -153,6 +153,16 @@ const RESUBMITTED: JsonObject = {
   }
 };
 
+/** The model copies a state observed for this step; the resolver must retain its explicit choice. */
+function choosingState(submission: JsonObject, nodeKey: string): JsonObject {
+  const chosen = structuredClone(submission);
+  const subflow = ((chosen.plan as JsonObject).subflows as JsonObject[])[0]!;
+  const node = (subflow.nodes as JsonObject[]).find(entry => entry.key === nodeKey);
+  if (!node) throw new Error("test.state_choice_step_missing");
+  node.parameters = { ...(node.parameters as JsonObject), ensureState: structuredClone(SIGNATURE) };
+  return chosen;
+}
+
 function trialledBuild() {
   const toggles = new AutomationStudioExploredToggles();
   const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, PIN]);
@@ -162,7 +172,7 @@ function trialledBuild() {
   // Any other handle is another control of the page (t792: a step a repair inserts before the press).
   const resolving = { resolvePlanNodeParameters: async ({ parameters }: { parameters: JsonObject }) => {
     const handle = String((parameters.target as JsonObject).handle);
-    return { status: "resolved" as const, parameters: { target: { selector: handle === "t9" ? SELECTOR : `#${handle}` } }, handleViews: [{ handle, view: 2, location: "https://notes.test/saved" }] };
+    return { status: "resolved" as const, parameters: { ...parameters, target: { selector: handle === "t9" ? SELECTOR : `#${handle}` } }, handleViews: [{ handle, view: 2, location: "https://notes.test/saved" }] };
   } };
   const project = new AutomationStudioSiteResetProjectLedger();
   const binding = { domainId: "example", deniedEvidenceKeys: [], tools: [RUN_NODE], executeTool: async () => ({}), startState: async () => ({ state: {}, differs: [] }) };
@@ -196,12 +206,16 @@ describe("a toggle a subflow trial pressed, in a project build", () => {
     expect(recorded[0]!.trialNodes![0]).toMatch(/\.pin_notes\.pin$/u);
   });
 
-  it("gives the repair brief's resubmission of the same step ensureState, though its entry was written under another key", async () => {
+  it("requires and grounds the repair's explicit observed state, though its entry was written under another key", async () => {
     const { ports, request, runTrial } = trialledBuild();
     await runTrial();
     const repair = await ports.builder(request("brief-2", "repair"));
     const controller = new AutomationStudioSubflowScopedSubmissionController({ scope: SCOPE("brief-2"), siblings: [], submission: repair.submission });
-    const submitted = await controller.submit(RESUBMITTED);
+    const missing = await controller.submit(RESUBMITTED);
+    expect(missing.ok).toBe(false);
+    if (missing.ok) throw new Error("test.missing_state_choice_accepted");
+    expect(missing.check.issueCodes).toContain("candidate.toggle_state_required");
+    const submitted = await controller.submit(choosingState(RESUBMITTED, "pin"));
     expect(submitted.ok, JSON.stringify(submitted)).toBe(true);
     if (!submitted.ok) return;
     const pin = submitted.proposal.subflows.find((subflow) => subflow.key === "pin_notes")?.nodes.find((node) => node.key === "pin");
@@ -218,7 +232,7 @@ describe("a toggle a subflow trial pressed, in a project build", () => {
     const main = (RESUBMITTED.plan as JsonObject).subflows as JsonObject[];
     const press = (key: string, handle: string) => ({ key, definitionId: PIN.id, definitionVersion: PIN.version, consequences: ["modify_existing"], parameters: { target: { handle } } });
     const inserted = { ...RESUBMITTED, plan: { ...(RESUBMITTED.plan as JsonObject), subflows: [{ ...main[0]!, nodes: [press("pin", "t4"), press("pin2", "t9")], edges: [{ key: "next", source: { nodeKey: "pin", portId: "success" }, target: { nodeKey: "pin2", portId: "in" } }] }] } };
-    const submitted = await controller.submit(inserted);
+    const submitted = await controller.submit(choosingState(inserted, "pin2"));
     expect(submitted.ok, JSON.stringify(submitted)).toBe(true);
     if (!submitted.ok) return;
     const nodes = submitted.proposal.subflows.find((subflow) => subflow.key === "pin_notes")?.nodes ?? [];
