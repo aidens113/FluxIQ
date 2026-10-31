@@ -77,11 +77,11 @@ describe("session-key provider resolver", () => {
     expect(resolve({ projectId: "project.one", flowId: "flow.one" })).toBeUndefined();
   });
 
-  it("uses the Flow's configured model and falls back to Core's default for an unknown one", () => {
+  it("uses the Flow's configured model and refuses an unknown one", () => {
     const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: ports() });
     const caller = { actorUserId: "user.one", actorSessionId: "session.one" };
     expect(resolve({ projectId: "p", flowId: "f", caller, modelId: "deepseek-flash" })!.provider.metadata).toMatchObject({ provider: "deepseek", model: "deepseek-flash" });
-    expect(resolve({ projectId: "p", flowId: "f", caller, modelId: "not-a-model" })!.provider.metadata).toMatchObject({ provider: "deepseek" });
+    expect(() => resolve({ projectId: "p", flowId: "f", caller, modelId: "not-a-model" })).toThrow(/Unsupported/);
   });
 
   it("fails the call, in words a person can act on, when the session has not unlocked the key", async () => {

@@ -119,7 +119,9 @@
 // no still refuted is taken as unsure.
 
 import type { AutomationStudioResultRepairDirective } from "../contracts/index.ts";
-import { automationStudioResultChangeCountClaim } from "../site-change/index.ts";
+// The barrel also exports held.ts, which builds computed nos and reaches the
+// standing record and this module again. Only this pure claim reader is used.
+import { automationStudioResultChangeCountClaim } from "../site-change/count-claim.ts";
 import { automationStudioResultAdviceConditions, automationStudioResultAdviceSteps } from "./advice-condition.ts";
 import { automationStudioResultConditionReferences } from "./condition-references.ts";
 import { automationStudioResultWithoutConditionWording } from "./condition-wording.ts";

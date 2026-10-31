@@ -251,8 +251,11 @@
 //
 // **Each later trial's judge is told what earlier judged trials advised (t752).** A revision made exactly
 // the change an earlier no's judge advised, and its judges answered no for that change, told nothing of it.
-// The gate keeps each judged trial's advice (`./earlier-advice-memory.ts`) and each request carries it,
-// with Core's finding of whether that revision changed what the advice named (`earlierAdvice`).
+// The gate keeps what Core located in each judged trial's record (`./earlier-advice-memory.ts`; P5b: never a judge's
+// prose advice) and each request carries it, with Core's finding of whether that revision changed what it named
+// (`earlierAdvice`). A no Core made itself (a computed fact that fails) brings its own record, marked `source: "core"`
+// (`standingNo`, `../../result-verification/standing-no-record/core-record.ts`), which the gate keeps as it keeps a judge's:
+// its conditions' kept rows, and its located defects.
 //
 // **A failure the recording already shows costs the site nothing (trace plan P6, t769; D40-D46).** A port with
 // `offlineFirst` is asked once per revision and digest, while none was tried, before admission, the start hook
@@ -497,7 +500,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     // What Core's record of this trial shows its conditions kept out, as the revision that ran wrote them (header, t641).
     this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
     const keptConditions = this.keptConditions.conditions();
-    this.earlierAdvice.remember({ revision: answer.revision, verdict: answer.verdict, feedback: answer.feedback, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
+    this.earlierAdvice.remember({ revision: answer.revision, verdict: answer.verdict, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
     const leftOnSite = offSite ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     // An offline yes is never the verdict kept for completion, and a stale one of this revision goes (header, Decision 3).
     const offlineYes = offline && answer.verdict === "yes";

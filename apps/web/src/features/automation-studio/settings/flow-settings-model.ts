@@ -1,9 +1,12 @@
 import {
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+  AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD,
   AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS,
   AUTOMATION_STUDIO_DEEPSEEK_MODELS,
-  automationStudioDeepSeekModelRefusal,
-  isAutomationStudioDeepSeekModel
+  AUTOMATION_STUDIO_ANTHROPIC_MODELS,
+  automationStudioLlmModelProvider,
+  automationStudioLlmProviderDefaultModel,
+  assertAutomationStudioLlmModelBinding
 } from "fluxiq/automation-studio/llm-models";
 import { FLOW_RESULT_CHECK_DEFAULT_VALUES, flowResultCheckDraftFromSettings, flowResultCheckSchedule, type FlowResultCheckDraft } from "./flow-result-check-model";
 import { FLOW_SIZE_SETTING } from "./max-nodes-setting";
@@ -11,7 +14,7 @@ import { FLOW_SIZE_SETTING } from "./max-nodes-setting";
 /** The model's context window, read from Core's model registry: the only per-request token limit. */
 export const FLOW_LLM_HARD_MAX_TOKENS = AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS;
 export const FLOW_LLM_MAX_TIMEOUT_SECONDS = 25;
-export const FLOW_LLM_DIAGNOSIS_MAX_COST_USD = 0.25;
+export const FLOW_LLM_DIAGNOSIS_MAX_COST_USD = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD;
 export const FLOW_LLM_EXECUTION_DEFAULTS = {
   maxInputTokens: "8000",
   maxOutputTokens: "2000",
@@ -25,14 +28,16 @@ export const FLOW_LLM_EXECUTION_DEFAULTS = {
  * again here: the panel offering a model Core will refuse, or refusing one Core
  * would take, is the drift this list exists to prevent. */
 export const FLOW_LLM_PROVIDERS = [
-  { id: "deepseek", label: "DeepSeek", models: AUTOMATION_STUDIO_DEEPSEEK_MODELS }
+  { id: "deepseek", label: "DeepSeek", models: AUTOMATION_STUDIO_DEEPSEEK_MODELS },
+  { id: "anthropic", label: "Anthropic (Claude)", models: AUTOMATION_STUDIO_ANTHROPIC_MODELS }
 ] as const;
 export function flowLlmProvider(providerId: string) {
   return FLOW_LLM_PROVIDERS.find((provider) => provider.id === providerId) ?? FLOW_LLM_PROVIDERS[0];
 }
 
 export function normalizedProviderLabel(value: unknown): string {
-  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalized = String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return normalized === "anthropicclaude" ? "anthropic" : normalized;
 }
 export type FlowPortSettingsDraft = { id: string; name: string; valueKind: "string" | "number" | "boolean" | "json"; required: boolean; description: string; defaultValue: string };
 
@@ -142,7 +147,7 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
     // Reported as an override when it is one, so the Effective Values list
     // stops calling a deliberately chosen model a framework default and offers
     // the reset every other overridden setting offers.
-    { key: "llmModel", group: "LLM", label: "Model", value: draft.llmModel || AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, overridden: Boolean(draft.llmModel) && draft.llmModel !== AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL },
+    { key: "llmModel", group: "LLM", label: "Model", value: draft.llmModel || automationStudioLlmProviderDefaultModel(flowLlmProvider(draft.llmProvider).id), overridden: Boolean(draft.llmModel) && draft.llmModel !== automationStudioLlmProviderDefaultModel(flowLlmProvider(draft.llmProvider).id) },
     { key: "adaptationPreset", group: "Adaptation", label: "Behavior", value: draft.adaptationPreset === "adaptive" ? "Fully adaptive" : draft.adaptationPreset === "observe" ? "Observe only" : draft.adaptationPreset === "locked" ? "Locked" : "Broad autonomy", overridden: draft.adaptationPreset !== "adaptive" },
     { key: "adaptationProposalMode", group: "Adaptation", label: "Approval", value: describeApproval(draft.adaptationProposalMode), overridden: draft.adaptationProposalMode !== "auto" },
     { key: "maxInterventionsPerRun", group: "Limits", label: "LLM interventions per run", value: draft.maxInterventionsPerRun, overridden: Number(draft.maxInterventionsPerRun) !== 2 },
@@ -193,8 +198,8 @@ export function flowGeneralRuntimeErrors(draft: Pick<FlowSettingsDraft, "name" |
 export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIntervention" | "llmProvider" | "llmModel" | "llmSecretKeyId" | "llmMaxInputTokens" | "llmMaxOutputTokens" | "llmMaxTotalTokens" | "llmTimeoutSeconds" | "llmMaxCostUsd" | "llmRetryCount">, compatibleKeys: any[], keysReady: boolean): string[] {
   if (!draft.allowLlmIntervention) return [];
   const errors: string[] = [];
-  if (draft.llmProvider !== "deepseek") errors.push("Only DeepSeek is supported for live LLM execution.");
-  if (!isAutomationStudioDeepSeekModel(draft.llmModel)) errors.push(automationStudioDeepSeekModelRefusal(draft.llmModel));
+  try { assertAutomationStudioLlmModelBinding(draft.llmProvider, draft.llmModel); }
+  catch (error) { errors.push(error instanceof Error ? error.message : "Choose a supported provider and matching model."); }
   const tokenFields = [
     ["Input-token limit", draft.llmMaxInputTokens],
     ["Output-token limit", draft.llmMaxOutputTokens],
@@ -205,9 +210,9 @@ export function flowLlmSettingsErrors(draft: Pick<FlowSettingsDraft, "allowLlmIn
   }
   if (Number(draft.llmMaxInputTokens) + Number(draft.llmMaxOutputTokens) > Number(draft.llmMaxTotalTokens)) errors.push("Input and output token limits together cannot exceed the total-token limit.");
   if (!Number.isInteger(Number(draft.llmTimeoutSeconds)) || Number(draft.llmTimeoutSeconds) < 1 || Number(draft.llmTimeoutSeconds) > FLOW_LLM_MAX_TIMEOUT_SECONDS) errors.push("LLM timeout must be a whole number from 1 to 25 seconds.");
-  if (!Number.isFinite(Number(draft.llmMaxCostUsd)) || Number(draft.llmMaxCostUsd) <= 0 || Number(draft.llmMaxCostUsd) > FLOW_LLM_DIAGNOSIS_MAX_COST_USD) errors.push("Diagnosis cost limit must be greater than 0 and no more than 0.25 USD.");
+  if (!Number.isFinite(Number(draft.llmMaxCostUsd)) || Number(draft.llmMaxCostUsd) <= 0 || Number(draft.llmMaxCostUsd) > FLOW_LLM_DIAGNOSIS_MAX_COST_USD) errors.push(`Diagnosis cost limit must be greater than 0 and no more than ${FLOW_LLM_DIAGNOSIS_MAX_COST_USD} USD.`);
   if (draft.llmRetryCount !== "0") errors.push("Flow LLM execution does not permit provider retries.");
-  if (keysReady && !draft.llmSecretKeyId) errors.push("Choose an enabled encrypted key for DeepSeek.");
+  if (keysReady && !draft.llmSecretKeyId) errors.push(`Choose an enabled encrypted key for ${flowLlmProvider(draft.llmProvider).label}.`);
   if (draft.llmSecretKeyId && keysReady && !compatibleKeys.some((key) => key.id === draft.llmSecretKeyId)) errors.push("The selected encrypted key is unavailable, disabled, or belongs to another provider.");
   return errors;
 }
@@ -357,13 +362,13 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     // were pinned to the default here while the save payload wrote the chosen
     // value, so choosing the non-default model saved and then snapped straight
     // back on the read -- the change appeared never to have happened.
-    llmProvider: flowLlmProvider(String(metadata.llmProvider ?? "")).id,
+    llmProvider: flowLlmProvider(String(metadata.llmProvider ?? automationStudioLlmModelProvider(metadata.llmModel) ?? "")).id,
     // An id Core no longer configures resolves to Core's default rather than
     // being shown: a model DeepSeek has withdrawn must never appear in this
     // form, and every id Core lists as retired is replaced by that same
     // default. Both the membership test and the default are Core's, so a change
     // to either reaches this form without being restated here.
-    llmModel: isAutomationStudioDeepSeekModel(metadata.llmModel) ? metadata.llmModel : AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+    llmModel: automationStudioLlmModelProvider(metadata.llmModel) === flowLlmProvider(String(metadata.llmProvider ?? automationStudioLlmModelProvider(metadata.llmModel) ?? "")).id ? String(metadata.llmModel) : automationStudioLlmProviderDefaultModel(flowLlmProvider(String(metadata.llmProvider ?? "")).id),
     llmSecretKeyId: String(metadata.llmSecretKeyId ?? ""),
     llmMaxInputTokens: numberInputValue(llmTokenLimits.maxInputTokens ?? 8000),
     llmMaxOutputTokens: numberInputValue(llmTokenLimits.maxOutputTokens ?? 2000),
@@ -531,8 +536,8 @@ export function flowSettingsMetadata(flow: any) {
     trainingMode: trainingModeSettings.mode,
     proposalMode: trainingModeSettings.proposalApprovalMode,
     proposalApprovalMode: trainingModeSettings.proposalApprovalMode,
-    llmProvider: "deepseek",
-    llmModel: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+    llmProvider: automationStudioLlmModelProvider(existingMetadata.llmModel) ?? "deepseek",
+    llmModel: automationStudioLlmProviderDefaultModel(automationStudioLlmModelProvider(existingMetadata.llmModel) ?? "deepseek"),
     llmExecutionSettings: { tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: FLOW_LLM_UNSET_CALL_COUNT, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 },
     adaptationPolicyId: "policy.default",
     budgetExhaustedBehavior: "ask",

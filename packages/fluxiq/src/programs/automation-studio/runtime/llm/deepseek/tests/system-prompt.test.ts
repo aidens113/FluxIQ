@@ -52,7 +52,9 @@
 // contradicted when the run put a control back to how it was before; and in t795
 // (framework plan P5) both by one clause and one sentence in the held-rows rule: rows
 // several conditions left out together (leftOutTogether), and that computedFacts are
-// Core's to settle. With
+// Core's to settle; and in t810 (P5b) both verification pins by the located-only
+// earlierAdvice sentence and the appended checked stored-cell citation sentence.
+// With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.
@@ -190,12 +192,14 @@ describe("a verification's system message, on the defects a no rests on (t752)",
   const DEFECTS = "When you answer no, list in diagnosis.defects each defect of this result the no rests on: kind kept_not_asked (a row kept that the request does not ask for), asked_missing (a row asked for that the result lacks) or wrong_value (a kept row whose column holds a wrong value); an act the request asks for is named as one, whether or not the result also stores rows: act_missing (an act the request asks for that no step does, naming in row what it is done to) or act_wrong (a step that did its act to the wrong thing, with the wrong value or with no effect the evidence shows, naming that step in step by its nodeId, its label or its buildTest step number, and in row what it acted on); use other for ordering, formatting, missing columns or requirements not expressible as a row or act defect, naming the unmet requirement in row; row, the row as the evidence names it, by Core's id for it or its whole label, or \"rows not read\" for rows the run never read; column and value, for a wrong value the actual cell value the defect claims, so Core can compare it with the stored cell, and for a row a read left out that the request asks for, that row's own value in the column that makes it asked for, as its leftOutCells give it, so Core can compare it with that row's cell; and requestWords, quoting the request's words it fails.";
   const NOT_A_DEFECT = "A concern that is not a defect of this result -- a method, wording, how a condition is written, what another run might meet -- is no ground for a no: where it is all you find, answer yes and give it as advice in changed.";
   const RELATION = "Where the request defines its set by the person's relation to each item, a condition should read the sign of that relation each row shows, its own control or mark: advise that sign, never a literal list of today's values, and a literal list that keeps exactly the rows asked for is no defect of this result; for example, an archive's \"documents I have checked out\" are kept by each row's Check-in button.";
-  const EARLIER = "resultSummary.earlierAdvice, where present, says what an earlier judge of this build advised and, in followed, whether this revision changed what it named: a changed step or condition does not prove that the advice was followed or correct. Earlier advice never overrides the original request: independently check every requirement, including ordering, formatting, required fields and actions, and report any defect introduced by earlier advice. An absent structured row defect does not prove correctness; answer unknown when the evidence cannot settle a requirement.";
+  const EARLIER = "resultSummary.earlierAdvice, where present, lists only the defects Core located in its own record of an earlier trial of this build and, in followed, whether this revision changed what they trace to: it is context, not an earlier judge's advice, and a changed step or condition does not prove a defect fixed. Earlier advice never overrides the original request: independently check every requirement, including ordering, formatting, required fields and actions, and report any defect introduced by earlier advice. An absent structured row defect does not prove correctness; answer unknown when the evidence cannot settle a requirement.";
   const WORKING = "resultSummary.reads[].workingRows, where present, is Core's flag on a read whose kept rows a later step was repeated over and whose list a later read (rereadBy) read again: its rows are working rows, what the repeat went over, not the answer, so judge the answer by the later read's rows.";
   const WORKING_SET = "Each record set holds the run's answer, unless only reads Core flagged with workingRows collected it:";
   const NARROWING = "That rule is for steps that act on the site before a read, never a read's own conditions, which are judged by the rows they keep and leave out.";
   const STORES = "buildTest.stores is the answer the Flow would give (a dataset only reads flagged with workingRows fill holds working rows, not the answer):";
-  const SAID = [DEFECTS, NOT_A_DEFECT, RELATION, EARLIER, WORKING, WORKING_SET, NARROWING];
+  // t810: the last sentence of a verification's message asks a yes to cite the cells it checked.
+  const CHECKED = "When you answer yes, list in diagnosis.checked the stored rows you checked, each as its label in row, a stored column in column and that row's own value there in value, the cell that shows the request asks for it; Core looks each up in the stored rows, and a yes citing a cell the result does not hold is not taken as a yes.";
+  const SAID = [DEFECTS, NOT_A_DEFECT, RELATION, EARLIER, CHECKED, WORKING, WORKING_SET, NARROWING];
   const verifications = ["loop_verification", "loop_verification_build_test"];
 
   it("says each once to both verifications and to no other task", () => {
@@ -219,7 +223,7 @@ describe("a verification's system message, on the defects a no rests on (t752)",
       expect(prompt).toContain(`${WORKING_SET} the rows its reads collected on every page`);
       expect(prompt).not.toContain("Each record set holds the run's answer:");
     }
-    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!).endsWith(`${DEFECTS} ${NOT_A_DEFECT} ${RELATION} ${EARLIER}`)).toBe(true);
+    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!).endsWith(`${DEFECTS} ${NOT_A_DEFECT} ${RELATION} ${EARLIER} ${CHECKED}`)).toBe(true);
   });
 
   it("tells only the build-test judge that a dataset only flagged reads fill is not the answer", () => {

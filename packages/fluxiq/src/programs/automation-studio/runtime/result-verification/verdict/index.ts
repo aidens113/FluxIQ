@@ -96,6 +96,12 @@
 // screened as every word a judge wrote is (`defects.ts`), for Core to find in
 // its own record before the no counts (`../agreement/unsupported-no.ts`).
 //
+// **And a yes cites what it checked (t810).** A yes may list in `diagnosis.checked`
+// the stored cells it checked; Core finds each in its record of the result
+// (`../cited-yes/`), the verification carries `yesCitations`, and a yes with a
+// citation Core cannot find is `unsure` (`yesCitationRefuted`), never a yes. A
+// yes that cites nothing is read as before.
+//
 // The verdict itself is `result-verdict.ts`; its codes `codes.ts`, its input
 // `types.ts`, the answer word `from-diagnosis.ts`, Core's one-line account
 // `observation.ts`, and the kept rows a yes is held to `kept-rows-flagged.ts`.

@@ -79,6 +79,23 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
   /** The calls whose no Core's record wholly refutes, and Core's findings (`./refuted-no/`, t607): each asked once more (`reasked`); a no still refuted is unsure. */
   refutedNo?: { calls: Array<1 | 2>; findings: string[]; reasked?: true };
   /**
+   * Each defect row a no named that Core's record of that row refutes (t810,
+   * `./refuted-no/`): the call, the row as the judge named it, the defect's
+   * kind, what refuted it (`outside_mark`: the item was marked outside the
+   * person's set; `cell_differs`: the row's own stored or left-out cell
+   * contradicts the claim; `not_kept`: a claim about a kept row's value or
+   * keeping, made of a row the result does not hold) and Core's quote of that
+   * evidence.
+   */
+  refutedRows?: Array<{ call: 1 | 2; row: string; kind: "asked_missing" | "kept_not_asked" | "wrong_value"; evidence: "outside_mark" | "cell_differs" | "not_kept"; quote: string }>;
+  /**
+   * What a yes cited it checked (`diagnosis.checked`, `./cited-yes/`, t810):
+   * how many citations it gave and Core's sentence for each it could not find
+   * in its record of the result. A yes with a refuted citation is unsure
+   * (`yesCitationRefuted`). Absent on a reply that is not a yes.
+   */
+  yesCitations?: { cited: number; refuted: string[] };
+  /**
    * The calls whose no still names no defect Core can find in its record of
    * this result after it was asked once more to list each (t752,
    * `../agreement/unsupported-no.ts`), and Core's findings of what each listed:

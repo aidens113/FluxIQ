@@ -5,6 +5,7 @@
 // (`./named-stored.ts`, which `../agreement/` reads a split's no by too), and
 // each condition's standing as an exclusion the request states
 // (`./request-exclusion.ts`, t687).
+export * from "./core-record.ts";
 export * from "./named-stored.ts";
 export * from "./record.ts";
 export * from "./request-exclusion.ts";

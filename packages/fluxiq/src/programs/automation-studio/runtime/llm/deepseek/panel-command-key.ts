@@ -4,7 +4,8 @@
 // else's credential.
 
 import type { AutomationStudioConversationCaller } from "../../conversations/index.ts";
-import { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "./session-key.ts";
+import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../session-keys/index.ts";
+import type { AutomationStudioLlmProviderId } from "../models/index.ts";
 
 export type AutomationStudioPanelCommandKeyPorts = AutomationStudioSessionKeyPorts;
 
@@ -14,9 +15,9 @@ export type AutomationStudioPanelCommandKeyPorts = AutomationStudioSessionKeyPor
  * Throws, in words a person can act on, when there is no caller, no such key,
  * or the session has not unlocked it.
  */
-export function automationStudioPanelCommandKeyFromSecretKeys(ports: AutomationStudioPanelCommandKeyPorts): (caller: AutomationStudioConversationCaller | null) => Promise<string> {
+export function automationStudioPanelCommandKeyFromSecretKeys(ports: AutomationStudioPanelCommandKeyPorts, options: { provider?: AutomationStudioLlmProviderId; model?: string } = {}): (caller: AutomationStudioConversationCaller | null) => Promise<string> {
   return async (caller) => {
     if (!caller) throw new Error("No signed-in person sent this message, so no model key can be released for it.");
-    return await releaseAutomationStudioSessionDeepSeekKey(ports, caller);
+    return await releaseAutomationStudioSessionProviderKey(ports, caller, { provider: options.provider ?? "deepseek", ...(options.model ? { model: options.model } : {}) });
   };
 }
