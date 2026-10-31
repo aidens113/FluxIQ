@@ -6,4 +6,8 @@ export * from "./whole-inputs.ts";
 export * from "./recorded-effect.ts";
 export * from "./already-in-state.ts";
 export type { AutomationStudioClearedLayer, AutomationStudioClearedLayerKind } from "./cleared-layer.ts";
+export type { AutomationStudioObstruction, AutomationStudioObstructionIntent, AutomationStudioObstructionWayOut } from "./obstruction.ts";
 export * from "./result-path-outputs.ts";
+export * from "./layer-kind.ts";
+export * from "./obstruction-of.ts";
+export * from "./obstruction-way-out.ts";

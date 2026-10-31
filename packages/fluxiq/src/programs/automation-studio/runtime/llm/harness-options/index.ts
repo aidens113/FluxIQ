@@ -37,6 +37,7 @@ export {
   automationStudioHarnessOptionBundleFromBinding,
   automationStudioHarnessOptionRegistry,
   type AutomationStudioLlmEvidenceRuntimeBinding,
+  type AutomationStudioPlanControlState,
   type AutomationStudioPlanHandleReach,
   type AutomationStudioPlanHandleView
 } from "./binding.ts";

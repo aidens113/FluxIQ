@@ -1,7 +1,7 @@
 // t775: builds stop putting the site back before a trial, so a submitted step on
 // a control the build explored as a toggle must be safe to run again. A plain
-// press of it is given Core's `ensureState`; where the domain named a node that
-// sets the state, the step is refused `candidate.toggle_not_idempotent` naming it.
+// press of it is given Core's `ensureState`, also where the domain named a node that
+// sets the state, since a press node that takes the state is its idempotent form (t799).
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../../../core/index.ts";
@@ -71,17 +71,10 @@ describe("a submitted step on a control explored as a toggle", () => {
     expect(submitted.ok && submitted.candidate.buildPlan.plan.subflows[0]!.nodes[0]!.parameters?.ensureState).toEqual(SIGNATURE);
   });
 
-  it("is refused candidate.toggle_not_idempotent naming the node that sets the state, when the domain named one", async () => {
+  it("is given ensureState in place of a refusal when the domain named a node that sets the state and the press takes the state (t799)", async () => {
     const submitted = await controller(explored("t1", { signature: SIGNATURE, idempotentWith: "domain.demo.set_state" })).submit(candidate([{ handle: "t1", consequences: ["modify_existing"] }]));
-    expect(submitted.ok).toBe(false);
-    if (submitted.ok) return;
-    expect(submitted.check.issueCodes).toEqual(["candidate.toggle_not_idempotent"]);
-    const feedback = submitted.check.feedback as JsonObject;
-    expect(feedback.code).toBe("candidate.toggle_not_idempotent");
-    const issue = (feedback.issues as JsonObject[])[0]!;
-    expect(issue).toMatchObject({ code: "candidate.toggle_not_idempotent", path: "plan.subflows.0.nodes.0" });
-    expect(String(issue.message)).toContain("domain.demo.set_state");
-    expect(String(issue.message)).toMatch(/already in the state the step asks for would press it and flip it back/u);
+    expect(submitted.ok, JSON.stringify(submitted)).toBe(true);
+    expect(submitted.ok && submitted.candidate.buildPlan.plan.subflows[0]!.nodes[0]!.parameters).toEqual({ target: { selector: "#setting" }, ensureState: SIGNATURE });
   });
 
   it("is left alone when it declares anything but exactly modify_existing", async () => {

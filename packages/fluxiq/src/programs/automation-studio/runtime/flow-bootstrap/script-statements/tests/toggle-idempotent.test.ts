@@ -54,8 +54,9 @@ describe("a toggle step in a resolved plan", () => {
     }
   });
 
-  it("refuses the step at its node's path when the press named a node that sets the state, saying nothing of any site", () => {
-    const result = automationStudioFlowPlanToggleSteps({ plan: plan([{ key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "#a", frame: 0 } } }]), explored: [press({ idempotentWith: "domain.demo.set_state" })] });
+  // t799: a node that takes `ensureState` is given it instead (`./toggle-idempotent-trial-pass.test.ts`).
+  it("refuses the step at its node's path when the press named a node that sets the state and its own node cannot take one, saying nothing of any site", () => {
+    const result = automationStudioFlowPlanToggleSteps({ plan: plan([{ key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "#a", frame: 0 } } }]), explored: [press({ idempotentWith: "domain.demo.set_state" })], takesEnsureState: () => false });
     expect(result.issues).toEqual([{ severity: "error", code: "candidate.toggle_not_idempotent", path: "plan.subflows.0.nodes.0", message: expect.stringContaining("node domain.demo.set_state") }]);
     expect(result.issues[0]!.message).not.toMatch(/cart|basket|like|save|job|checkout|address|follow/iu);
   });
@@ -87,8 +88,8 @@ describe("a toggle step tied to its own node's trial (t787)", () => {
     ]);
   });
 
-  it("refuses such a step when the trial's answer named a node that sets the state", () => {
-    const result = automationStudioFlowPlanToggleSteps({ plan: plan([{ key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" } } }]), explored: [trialPress({ idempotentWith: "domain.demo.set_state" })] });
+  it("refuses such a step when the trial's answer named a node that sets the state and its own node cannot take one", () => {
+    const result = automationStudioFlowPlanToggleSteps({ plan: plan([{ key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" } } }]), explored: [trialPress({ idempotentWith: "domain.demo.set_state" })], takesEnsureState: () => false });
     expect(result.issues).toMatchObject([{ code: "candidate.toggle_not_idempotent", path: "plan.subflows.0.nodes.0" }]);
   });
 });

@@ -25,18 +25,18 @@ describe("what a step's run closed over the page", () => {
   it("names the way out by the handle the domain gave, and says the run closed a layer it could not name by itself", () => {
     const said = automationStudioTrialInterruptions([
       attempt("a1", "failed", [{ kind: "rate_limit", control: "OK", wayOut: "way-out.1" }]),
-      attempt("a2", "succeeded", [{ kind: "promotion", control: "No thanks", wayOut: "way-out.2" }])
+      attempt("a2", "succeeded", [{ kind: "notice", control: "No thanks", wayOut: "way-out.2" }])
     ], { "way-out.1": "t901" });
     expect(said).toEqual([
       { kind: "rate_limit", wayOut: "t901", said: "The site's notice asking the run to slow down was over the page, and the run closed it by pressing its way out, t901." },
-      { kind: "promotion", said: "A promotion was over the page, and the run closed it by itself. No control of it is named, so no step of the Flow is needed to close it." }
+      { kind: "notice", said: "A notice was over the page, and the run closed it by itself. No control of it is named, so no step of the Flow is needed to close it." }
     ]);
   });
 
   it("says each layer once per kind and way out, never the words the client matched, and at most four", () => {
     const layers = [{ kind: "rate_limit" as const, control: "OK", wayOut: "way-out.1" }];
     expect(automationStudioTrialInterruptions([attempt("a1", "failed", layers), attempt("a2", "failed", layers)], { "way-out.1": "t901" })).toHaveLength(1);
-    const many = (["consent", "promotion", "assistant", "dialog", "rate_limit"] as const).map((kind) => ({ kind, control: "Close" }));
+    const many = (["overlay", "notice", "assistant", "other", "rate_limit"] as const).map((kind) => ({ kind, control: "Close" }));
     const said = automationStudioTrialInterruptions([attempt("a1", "succeeded", many)]);
     expect(said).toHaveLength(4);
     expect(JSON.stringify(said)).not.toMatch(/"Close"|\bOK\b/u);
@@ -45,8 +45,8 @@ describe("what a step's run closed over the page", () => {
 
   it("collects each way-out reference once, in order", () => {
     expect(automationStudioTrialWayOuts([
-      attempt("a1", "failed", [{ kind: "rate_limit", control: "OK", wayOut: "way-out.1" }, { kind: "dialog", control: "Close" }]),
-      attempt("a2", "succeeded", [{ kind: "rate_limit", control: "OK", wayOut: "way-out.1" }, { kind: "promotion", control: "Skip", wayOut: "way-out.2" }])
+      attempt("a1", "failed", [{ kind: "rate_limit", control: "OK", wayOut: "way-out.1" }, { kind: "other", control: "Close" }]),
+      attempt("a2", "succeeded", [{ kind: "rate_limit", control: "OK", wayOut: "way-out.1" }, { kind: "notice", control: "Skip", wayOut: "way-out.2" }])
     ])).toEqual(["way-out.1", "way-out.2"]);
   });
 
@@ -70,16 +70,24 @@ describe("what a step's run closed over the page", () => {
 // is now said as over the page, with its own name, and -- where the domain marks it opened by this run -- as the layer
 // the nearest earlier step that acted opened. A library fixture: a branch list a step opens.
 describe("whose layer the run closed", () => {
-  const branchList = { kind: "dialog" as const, control: "Close", name: "Choose your branch", wayOut: "way-out.7" };
+  const branchList = { kind: "other" as const, control: "Close", name: "Choose your branch", wayOut: "way-out.7" };
   /** The dismiss attempt of an optional step, its dispatch's own report marking the branch list as opened by this run. */
-  const dismissing = (runOpened?: boolean | string): Attempt => ({
+  // The raw report is the client's own: an older one still says `dialog`, which Core reads as `other` (t799).
+  const dismissing = (runOpened?: boolean | string, rawKind = "dialog"): Attempt => ({
     ...attempt("d1", "succeeded", [branchList]), nodeId: "dismiss",
-    outputs: { result: { clearedLayers: [{ kind: "dialog", control: "Close", name: "Choose your branch", wayOut: "way-out.7", ...(runOpened === undefined ? {} : { runOpened }) }] } }
+    outputs: { result: { clearedLayers: [{ kind: rawKind, control: "Close", name: "Choose your branch", wayOut: "way-out.7", ...(runOpened === undefined ? {} : { runOpened }) }] } }
+  });
+
+  it("matches the raw report's kind to the parsed layer's whether the client said the old word or the generic one (t799)", () => {
+    for (const rawKind of ["dialog", "other"]) {
+      expect(automationStudioTrialInterruptions([dismissing(true, rawKind)], { "way-out.7": "t334" }, 2)).toEqual([expect.objectContaining({ kind: "other", openedByStep: 2 })]);
+    }
+    expect(automationStudioTrialInterruptions([dismissing(true, "robot_check")], { "way-out.7": "t334" }, 2)[0]).not.toHaveProperty("openedByStep");
   });
 
   it("names a layer the domain marks as opened by this run as the given step's, and says closing it undid that step", () => {
     expect(automationStudioTrialInterruptions([dismissing(true)], { "way-out.7": "t334" }, 2)).toEqual([{
-      kind: "dialog", wayOut: "t334", openedByStep: 2,
+      kind: "other", wayOut: "t334", openedByStep: 2,
       said: "A dialog (\"Choose your branch\"), a layer step 2 opened, was over the page, and the run closed it by pressing its way out, t334. Closing it undid what step 2 had opened."
     }]);
   });
@@ -102,7 +110,7 @@ describe("whose layer the run closed", () => {
     const skipped: Attempt = { ...attempt("s1", "succeeded"), nodeId: "skipped", route: "skipped", skipped: { reason: "target_absent", code: "web.target.not_found" } };
     const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: flow, wayOuts: { "way-out.7": "t334" },
       trace: trace([{ ...attempt("l1", "succeeded"), nodeId: "list" }, skipped, dismissing(true)]) });
-    expect((feedback.steps as JsonObject[])[2]).toMatchObject({ interruptions: [{ kind: "dialog", wayOut: "t334", openedByStep: 1 }] });
+    expect((feedback.steps as JsonObject[])[2]).toMatchObject({ interruptions: [{ kind: "other", wayOut: "t334", openedByStep: 1 }] });
   });
 });
 

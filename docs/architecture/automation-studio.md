@@ -1122,13 +1122,20 @@ Retry waits, pace waits and Wait pauses share one wait,
   after-action snapshot. A limit the page states is not read: no record
   reaching Core carries one (a failure record carries only `retryAfterMs`, a
   closed layer only its kind and way out), and Core parses no page wording,
-  so refusals are the one source. Only when no earlier start explains the
+  so refusals are the one source. A rate limit without a wait hint (a failed
+  attempt's `obstruction` of kind `rate_limit`, or a cleared `rate_limit` layer
+  on any attempt) raises the node's pace to `min(60 s, max(1 s, ceil(pace *
+  1.5)))`, never below an authored pace (`pacing/rate-limit-pace.ts`,
+  `learnUnhinted` in `pace-keeper.ts`); a stated wait (`retryAfterMs`, a
+  transport hint) goes through the learning above. Only when no earlier start explains the
   refusal (the node's first act refused) does the pace rise to the hint. Each
   further hint grows the pace by half again at least, up to
   60 s (`AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS`); an authored pace is never
   lowered. Each attempt records `pace: { inForceMs, waitedMs, raisedToMs? }`
   and the trace lists each paced node under `trace.pace`. A candidate script
-  writes the pace with `repeat pace:`, and promotion keeps a pace a trial
+  writes the pace with `repeat pace:`, Core itself writes the pace a trial
+  learned as the step's `paceMs` at the next submission
+  (`flow-bootstrap/learned-paces.ts`), and promotion keeps a pace a trial
   learned ([LLM Flow Bootstrap Contract](automation-studio/llm-flow-bootstrap.md#script-statements-a-candidate-may-write)).
 - **A passed trial the site asked to slow down completes only once the Flow
   answers it** (t485; `runtime/flow-bootstrap/candidate/trial-gate.ts`). A
@@ -1519,16 +1526,18 @@ the element was left to the output's adapter.
 
 An attempt also records `clearedLayers` when a dispatch says the client closed
 layers the page put over itself while the output ran (state-aware recovery,
-C11). Each entry is `{ kind, control, name?, controlName?, wayOut?, wayOutDefinitionId? }`:
+C11). Each entry is `{ kind, control, id?, name?, controlName?, wayOut?, wayOutDefinitionId?, controlRef? }`:
 
 | Field | What it holds |
 | --- | --- |
-| `kind` | A closed word: `consent`, `rate_limit`, `promotion`, `assistant` or `dialog`. |
+| `kind` | A closed generic word: `overlay`, `notice`, `rate_limit`, `assistant` or `other`. The older words are still read and mapped (`consent` to `overlay`, `promotion` to `notice`, `dialog` to `other`, `runtime/executor/node-execution/layer-kind.ts`). |
+| `id` (t799) | An opaque id, stable for the same layer across visits: 1 to 80 characters of `[A-Za-z0-9._:-]`. |
 | `control` | The dismiss control's words, whitespace-collapsed, with token-shaped runs hidden and held to 40 characters. |
 | `name` (t516) | The layer's own name, as the client's page view labels the dialog. Bounded the same way, but held to 120 characters. |
 | `controlName` (t516) | The pressed control's own name, bounded as `name` is. |
 | `wayOut` (t470) | The domain's opaque reference to the control it pressed, kept only as a short token. The control's description stays in the domain. |
-| `wayOutDefinitionId` (t516) | The node definition a step pressing that way out runs, as the domain names it. An identifier, kept only beside `wayOut`. |
+| `wayOutDefinitionId` (t516) | The node definition a step pressing that way out runs, as the domain names it. An identifier, kept with a `wayOut` token or with a `controlRef`. |
+| `controlRef` (t799) | The opaque, durable target of the pressed way out: the parameters `wayOutDefinitionId`'s node runs with, as the domain resolved them (web: `{ selector, element }`); Core hands it back whole and never reads inside. A plain JSON object of at most 8 KB and 16 levels, refused whole if any key starts with `$` (a `$state` binding would read run values into the press). Kept only beside `wayOutDefinitionId`. |
 
 Core reads the field from the top of the dispatch payload, the same place it
 reads a dispatched `route` (`runtime/executor/node-execution/cleared-layers.ts`):
@@ -1541,6 +1550,38 @@ reads a dispatched `route` (`runtime/executor/node-execution/cleared-layers.ts`)
 Each attempt that closed any layer also says one step `interference` recovery
 row (see the client gateway's activity contract). The dismiss words and names
 stay on the trace and never reach the chat.
+
+**Obstruction: a layer that stood in the way (t799).** A dispatch whose target
+was covered, or that failed because a layer stood over the page, also reports
+`outputs.result.obstruction` (one object; the latest on an attempt wins, and it
+is recorded as the attempt trace's `obstruction`). A `web.action.rate_limited`
+failure reports one of kind `rate_limit`. The parser
+(`runtime/executor/node-execution/obstruction-of.ts`) drops the whole object
+when the kind is unusable or `dismiss` is not a list, and bad fields one at a
+time:
+
+| Field | What it holds |
+| --- | --- |
+| `kind` | The generic kind word, mapped as for a cleared layer. |
+| `id`, `name`, `covers` | Opaque layer id (token), the layer's name (120 characters), and what it covers (token). |
+| `retryAfterMs` | 1 to 600000, kept only on `rate_limit`, and only when the page stated it. |
+| `dismiss` | At most six ways out, each `{ intent: dismiss, accept or neutral, controlRef?, definitionId?, action?: "back" }`. |
+
+**The `clear_interference` rung presses the obstruction (t799).** For an
+attempt with a pressable obstruction the rung is offered ahead of the Flow's own
+interference node, whatever the failure's `retryable` (a non-retryable
+`blocked_by_dialog` still gets it), and under the usual gates: the step may be
+repeated, attempts remain, the rung is not spent
+(`executor/node-execution/obstruction-way-out.ts`, `executor/ladder-run.ts`).
+It picks the first way out whose intent is `dismiss`, else the first `neutral`,
+and never `accept`; the way out needs a `definitionId` and a `controlRef`
+(unless it is `action: "back"`). It runs a transient node
+`{ definitionId, parameterValues: controlRef }` that declares no
+consequence and is not added to the Flow, emits one `interference` recovery row
+about the failed step, waits for the target's readiness and attempts the step
+again. A press that fails spends the rung and the ladder goes on. A retry this
+rung makes does not first show a failed card (`step-loop/failed-attempt.ts`).
+The client's own press guard still refuses anything committing.
 
 **A closed layer becomes a handler of the Flow (t516).** The user's rule is
 that an interruption met in a run becomes a branch of the Flow: wait for it,
@@ -1562,10 +1603,13 @@ takes these steps:
    one `runtime/flow-bootstrap/layer-handlers/patch.ts` builds; a build gives a
    submitted Flow the same shape for a layer it cleared while exploring, t787):
    - the event is `before` that step, scoped to that step;
-   - `when` is `{ fact: "dialog", op: "visible", value: <name> }`;
+   - `when` is `{ fact: "obstruction", op: "visible", value: <name> }` for a
+     layer that carried an `id` (a client that sends one), else the same with
+     `fact: "dialog"`; `obstruction` is answered exactly as `dialog` is, and
+     `dialog` stays as its alias. Handlers are keyed by `id ?? name`;
    - the one step presses the way out by `wayOutDefinitionId` and the handle,
      and declares no lasting consequence;
-   - `completionCheck` is the same dialog `absent`;
+   - `completionCheck` is the same fact `absent`;
    - `then` is `resume`.
 3. The domain resolves the step's handle from the Flow's view history, as a
    build's step is resolved. A domain may reconstruct that view directly from

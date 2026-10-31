@@ -8,12 +8,12 @@ import type { AutomationStudioTargetReacquireRecord } from "./target-reacquire/i
 import type { AutomationStudioAskKind, AutomationStudioParkedRun, AutomationStudioParkingPort } from "../parking/index.ts";
 import type { AutomationStudioRunControlGate } from "../run-control/index.ts";
 import type { AutomationStudioRecordedState } from "./recorded-state.ts";
-import type { AutomationStudioClearedLayer } from "./node-execution/index.ts";
+import type { AutomationStudioClearedLayer, AutomationStudioObstruction } from "./node-execution/index.ts";
 import type { AutomationStudioDefenceSummary, AutomationStudioFaultAssessment } from "./defensive/index.ts";
 import type { AutomationStudioLifecycleEvent } from "../../nodes/control-flow/index.ts";
 import type { AutomationStudioFactTruth, AutomationStudioRouteRefusalGuard, AutomationStudioUnhandledReason } from "./lifecycle/index.ts";
 
-export type { AutomationStudioClearedLayer, AutomationStudioClearedLayerKind } from "./node-execution/index.ts";
+export type { AutomationStudioClearedLayer, AutomationStudioClearedLayerKind, AutomationStudioObstruction, AutomationStudioObstructionIntent, AutomationStudioObstructionWayOut } from "./node-execution/index.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 
@@ -149,6 +149,8 @@ export type AutomationStudioRecoveryCandidate = {
    * never by the label, which is display text (t643).
    */
   optionalStepWayOn?: true;
+  /** On a `clear_interference` candidate that presses a way out of the failed attempt's `obstruction` (CC7, t799), a transient press and no Flow node, so no `targetNodeId` (`ladder-run.ts`). */
+  clearsObstruction?: true;
 };
 
 export type AutomationStudioRecoveryDecision = {
@@ -542,6 +544,8 @@ export type AutomationStudioNodeAttemptTrace = {
    * at least one readable layer (`node-execution/cleared-layers.ts`).
    */
   clearedLayers?: AutomationStudioClearedLayer[];
+  /** The layer that stood over the page when this attempt was covered or failed, as the client reported it (CC7, `node-execution/obstruction.ts`); absent when it reported none. */
+  obstruction?: AutomationStudioObstruction;
   hostCapabilities?: string[];
   /**
    * The saved changes (adaptation ids) the executed node carried in

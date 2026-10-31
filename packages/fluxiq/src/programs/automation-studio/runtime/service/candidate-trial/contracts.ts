@@ -132,6 +132,14 @@ export type AutomationStudioCandidateTrialPorts = {
    * nothing is recorded.
    */
   exploredToggles?: { trial(attempts: readonly AutomationStudioNodeAttemptTrace[], graph?: AutomationStudioFlowArtifact | undefined): void } | undefined;
+  /**
+   * The build's record of layers a trial closed (`../../flow-bootstrap/explored-interruptions.ts`, P6, t799): each trial's attempts are told to it, so a layer a trial pass met and the run closed becomes a handler of the next submission. Absent, nothing is recorded.
+   */
+  exploredInterruptions?: { trial(attempts: readonly AutomationStudioNodeAttemptTrace[], graph?: AutomationStudioFlowArtifact | undefined): void } | undefined;
+  /**
+   * The build's record of paces a trial learned (`../../flow-bootstrap/learned-paces.ts`, P6 CC8, t799): each trial's attempts are told to it, so a step whose pace the run raised gets that pace written by Core at the next submission. Absent, nothing is recorded.
+   */
+  exploredPaces?: { trial(attempts: readonly AutomationStudioNodeAttemptTrace[], graph?: AutomationStudioFlowArtifact | undefined): void } | undefined;
   readEndView?: ((input: { runId: string }) => Promise<AutomationStudioResultEndView | undefined>) | undefined;
   actionAttempts?: ((session: AutomationStudioRuntimeSession) => readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined) | undefined;
   observedStateKeys?: readonly string[] | undefined;

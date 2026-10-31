@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Executing since 2026-10-29: P0 (t793), the per-pass act ledger (t796), P4 (t797), P5a (t795), P7 (t800), the Core-no ending words (t805), P1a (t806), the P7 follow-ups (t807) and the repair-from-step fix (t804) merged; P6 (t799, verification stopped at the 2026-10-30 handoff), P5b (t810) and P1b (t811) in flight; the session handoff is in the paired downstream document's Current State.
+Status detail: P6 t799 independently verified and merged with Core 0.8.0; P5b t810 and P1b t811 remain in flight. Paired t816 adds the user's Claude live-test provider. The continuation handoff is in the paired downstream Current State.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,9 +11,10 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Mode 2, executing (2026-10-29).** P0 (t793, scenario-free model text with a downstream check) and the per-pass act
-ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`), P4 (t797, one undo and reset answer), P5a (t795, computed facts before any judge) and P7 (t800, dates, marks, record defaults) are merged; P6 (t799), t804 (repair from the failing step) and P1a (t806, the parts of P1 outside t804's files) are in flight; P1b starts
-after t804, whose files it shares. t796 gave trial proofs `not_run`, and t795 made it a Core no.
+**Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
+also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
+native installed-extension proof in the paired repository). P5b t810 and P1b t811 continue. Paired t816 adds Claude
+for live tests, with the user's $5 build allowance; no paid run has started in this continuation.
 The rest of this section is the plan as written.
 
 The audit ran 2026-10-28 at the user's direction: make
@@ -750,6 +751,16 @@ The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10
 - Changed: `core.test_subflow` takes `from: <step key>` and runs the latest revision from that step on the page as it stands (no reset, earlier steps or judge; never the part's test); a failed whole test leaves a pending repair, and another whole test or a completion is refused `subflow.trial_from_step_first` (naming the step and the call) until a from-step run passes it, unless the builder says why one is impossible. P1b shape: `then: "test_whole" | {from}` on `core.submit_subflow`.
 - Validation: lead-run under the lock, merged with dev (t806 in): tsc clean; `pnpm test` over subflow-candidate, plan, verification, candidate, service, project-agents, llm -> "Tests 4821 passed | 2 skipped", real-sql "346 passed"; `pnpm check` exit 0; headed `e2e/site-reset/tests` -> "33 passed (35.9m)" with `photo-repair-from-step.spec.ts` counts `{"wholeRuns":2,"fromStepRuns":1}`.
 - Outcome: Accepted. Follow-up (P1b): `from` also takes the step label the model wrote.
+
+### 2026-10-30 - Codex independent P6 acceptance (t799)
+- Agent: Codex lead
+- Validation: owning recovery/toggle/handler/pace Core batches -> `15 files / 84 tests passed` and `12 files / 151 tests passed`, both configured groups exited 0. See paired downstream `framework-heavy-lifting-plan/reports/codex-1030/t799-result.md`.
+- Validation: `pnpm.cmd --filter fluxiq check` -> exit 0, content-matched source/test check reused; `pnpm.cmd docs:check` -> `Deterministic framework reference is current.`
+- Validation: downstream native headed Chromium photo-social installed-extension proof -> `1 passed (3.7m)`, no paid calls; downstream owning tests/types passed after correcting its legacy-input test fixture.
+- Not verified: browser Core rung/pacing behavior, Firefox or the separately documented first-loop-row toggle direction. No full sweep or paid qualification.
+- Changed: publishable Core package version raised from 0.7.0 to 0.8.0 for the new P6 API/behavior; no registry operation.
+- Validation: `pnpm.cmd --filter fluxiq check` after the version bump -> exit 0 (28,212 ms).
+
 
 ## Open Questions
 
