@@ -252,7 +252,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // An interruption answered through its offer rather than its way out
     // (t423), read once the domain has said which control each step names.
     const script = typeof result.flow === "string" ? parseAutomationStudioFlowScript(result.flow).script : undefined;
-    const wayOut = script ? automationStudioFlowScriptWayOutIssues({ script, plan: verdict.buildPlan.plan, locator: verdict.locator }) : [];
+    const wayOut = script ? automationStudioFlowScriptWayOutIssues({ script, plan: verdict.buildPlan.plan, locator: verdict.locator, controlIntents: verdict.controlIntents }) : [];
     // A step doing one of the person's requested acts is never optional (r4b
     // F4): the draft path's `step_is_optional` rule, which no candidate met.
     const optionalActs = script ? automationStudioInstructedActOptionalScriptIssues({ instructionText: this.input.instructionText, script, plan: verdict.buildPlan.plan, locator: verdict.locator, ...(this.input.askedConsequences?.length ? { askedConsequences: this.input.askedConsequences } : {}) }) : [];

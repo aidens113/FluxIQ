@@ -20,6 +20,7 @@ import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExpl
 import type { AutomationStudioLlmDomainSystemInstructions } from "../domain-instructions/index.ts";
 import type { AutomationStudioFlowScriptExamples } from "../../flow-bootstrap/script-examples/index.ts";
 import type { AutomationStudioFlowScriptGuidance } from "../../flow-bootstrap/script-guidance/index.ts";
+import type { AutomationStudioResolvedControlIntent } from "./resolved-control-intent/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
 import {
@@ -541,8 +542,11 @@ export type AutomationStudioPlanNodeResolution =
    * own route-effect form (`signRouteEffect`) and within its bound. Core writes it onto the plan node as
    * `routeSignatures.effect` where the build signed none, so a run that cannot find the control passes the step over
    * when the page already shows it (`./plan-parameter-resolution.ts`, t447). It only ever skips a step.
+   * `controlIntent` is contextual host evidence for this node only, outside its parameters. Only omission is absent;
+   * supplied metadata is validated as closed own data, copied and frozen. An accept-only `responseOnly:true` answers
+   * the interruption itself; it grants no permission, effect class, repeat safety or automatic-clearing authority.
    */
-  | { status: "resolved"; parameters: JsonObject; handleViews?: readonly AutomationStudioPlanHandleView[]; effect?: JsonObject }
+  | { status: "resolved"; parameters: JsonObject; handleViews?: readonly AutomationStudioPlanHandleView[]; effect?: JsonObject; controlIntent?: AutomationStudioResolvedControlIntent }
   | { status: "refused"; issueCodes: readonly string[]; issues?: readonly { code: string; field?: string; valid?: readonly string[] }[] }
   | { status: "needs_permission"; missing: readonly string[]; requestId: string | null };
 
