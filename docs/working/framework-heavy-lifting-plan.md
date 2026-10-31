@@ -29,6 +29,8 @@ Core owns generic P9 algorithms/tool admission; Down owns its observed-state exp
 
 [Accepted P10 context preserved during parent sync](framework-heavy-lifting-plan/archive/2026-10-31-p10-integration.md).
 
+[Exact parent handoff retained during sync](framework-heavy-lifting-plan/archive/2026-10-31-t832-parent-handoff.md).
+
 ## Original audit baseline and recommendations (2026-10-28)
 
 The dated audit below explains the original plan; current acceptance and remaining work are recorded above.
