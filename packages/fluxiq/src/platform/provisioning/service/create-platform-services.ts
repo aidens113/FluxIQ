@@ -31,6 +31,8 @@ export type PlatformServices = {
   store: PlatformStore;
   provisioning: PlatformProvisioningService;
   links: PlatformAccountLinks;
+  /** The workspace's IAM store: the one provisioning attaches member policies to, and a registry's policy `source`. */
+  workspaceIam(workspaceId: string): IamStore;
   provisionerCaller(sourceIp?: string): PlatformProvisioningCaller;
 };
 
@@ -60,5 +62,5 @@ export async function createPlatformServices(options: PlatformServicesOptions): 
   const provisioning = createPlatformProvisioning({ ...deps, store, authorizer, iamAttachments });
   const provisionerCaller = (sourceIp?: string): PlatformProvisioningCaller =>
     sourceIp === undefined ? { kind: "service-identity", name, transport: "http" } : { kind: "service-identity", name, transport: "http", sourceIp };
-  return { store, provisioning, links: provisioning, provisionerCaller };
+  return { store, provisioning, links: provisioning, workspaceIam: iamAttachments, provisionerCaller };
 }

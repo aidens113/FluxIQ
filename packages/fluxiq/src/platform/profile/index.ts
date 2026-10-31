@@ -1,6 +1,6 @@
 // Barrel for deployment profile resolution (hosted lane A): every setting from the environment, pure.
 export type { FluxIQDeploymentSettings } from "./types.ts";
-export { resolveFluxIQDeploymentSettings, resolveClientAddress } from "./resolve/index.ts";
+export { resolveFluxIQDeploymentSettings, resolveFluxIQProfile, resolveClientAddress } from "./resolve/index.ts";
 export { clientAddressPrefix } from "./client-address-prefix.ts";
 // The pure platform contracts the web layer needs at runtime. apps/web does
 // not depend on `@fluxiq/contracts` directly, and the gateway server bundle
