@@ -7,3 +7,7 @@
 - Private0.22SDK rebuild running. Down producer must pin exact original authored tails/bytes before Core constants change. No prompt/provider/browser performance claim, no new full suite/paid/panel operations.
 
 - Fresh private SDK0.22 build passed115.668s. Unit2 Down authored tails now frozen with four pinned original UTF8 hashes and byte lengths; lead owning tests/types/audit running before Core extraction.
+
+- Unit2 pre-extraction Down21tests pass, package types36.882s; structure split moved runtime contracts coherently, source frozen.
+- Unit3 Core first137tests/13files pass60.86s. Two optional-property fixtures and three overfull26file test directories failed types/structure; all cases consolidated into existing owning files, no production changes.
+- Corrected Core63tests/3files pass30.83s, package types20.623s and full standalone structure gate pass; no baseline growth. Private SDK refresh now running. Down exact parser/graph/wrapper acceptance source active, not yet checked. Public subflow builder is intentionally not exported solely for testing: actual Core subflow schema six-case test plus Down original rendered-byte pins establish compositional parity; direct Down subflow end-to-end not claimed.

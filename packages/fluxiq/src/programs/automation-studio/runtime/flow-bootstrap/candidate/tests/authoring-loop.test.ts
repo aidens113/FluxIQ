@@ -1,3 +1,10 @@
+import type { AutomationStudioFlowScriptExamples } from "../../script-examples/index.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT
+} from "../../plan/index.ts";
 import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
@@ -215,5 +222,51 @@ describe("a completion the loop refuses says why", () => {
     expect(told).toMatchObject({ code: "candidate.latest_submission_required", submitted: true, revision: receipt.revision, digest: receipt.digest });
     expect(String(told.instruction)).toContain(`{"revision": ${String(receipt.revision)}, "digest": "${String(receipt.digest)}"}`);
     expect(String(told.instruction)).not.toMatch(/No Flow has been submitted/u);
+  });
+});
+
+describe("explicit client examples in the actual submit tool", () => {
+  const full: AutomationStudioFlowScriptExamples = {
+    version: "archive.v1",
+    format: ["Example: archive a document", "  node: archive.document.read"],
+    act: ["Example: archive a folder", "  node: archive.folder.seal"],
+    loop: ["Example: archive each volume", "  node: archive.volume.list"],
+    state: ["Example: resume an archive", "  node: archive.session.resume"]
+  };
+  const cases: Array<AutomationStudioFlowScriptExamples | undefined> = [
+    undefined, { version: "empty.v1" }, { version: "empty.v2", format: [], act: [], loop: [], state: [] },
+    { version: "partial.v1", loop: ["Example: archive each volume", "  node: archive.volume.list"] }, full,
+    { version: "sound.v1", format: ["Example: inspect a track", "  node: audio.track.inspect"] }
+  ];
+  const submission = {
+    projectId: "project.examples", flowId: "flow.examples", registry: new AutomationStudioNodeRegistry(),
+    resolution: { scope: { kind: "domain" as const, domainId: "archive" }, runtimeCapabilities: [], permissions: [] },
+    baseDependencyDigest: "accepted.base"
+  };
+  const sections = [AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT];
+  const stop = new Error("schema captured before any model or node call");
+
+  it.each(cases)("renders only this submission's supplied sections: %j", async (flowScriptExamples) => {
+    const captured: string[] = [];
+    await expect(runAutomationStudioFlowCandidateAuthoringLoop({
+      submission: { ...submission, ...(flowScriptExamples ? { binding: { flowScriptExamples } } : {}) },
+      observe: (loop) => {
+        const tool = loop.tools.find((item) => item.toolId === 'core.submit_candidate')!;
+        captured.push(((tool.inputSchema.properties as JsonObject).flow as JsonObject).description as string);
+        throw stop;
+      },
+      loop: { tools: [], maxIterations: 1, maxToolCalls: 1,
+        executeTool: async () => { throw new Error("no tool should execute"); },
+        decide: async () => { throw new Error("no model should execute"); }
+      }
+    })).rejects.toBe(stop);
+    const names = ["format", "act", "loop", "state"] as const;
+    const expected = sections.map((grammar, index) => {
+      const lines = flowScriptExamples?.[names[index]!];
+      return lines?.length ? `${grammar}\n${lines.join("\n")}` : grammar;
+    }).join("\n");
+    expect(captured).toEqual(["The whole Flow as a script. " + expected]);
+    if (!flowScriptExamples) expect(captured[0]).not.toMatch(/^Example/m);
+    if (flowScriptExamples?.version === "sound.v1") expect(captured[0]).not.toContain("archive.document.read");
   });
 });

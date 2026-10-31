@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P10 unit1 contract accepted58tests/types/audit; SDK build then Down supply/parity, consumer extraction pending. No full/paid calls.
+Status detail: P10 contract58tests and exact Down producer21tests/types accepted; structure split then Core consumer extraction. No full/paid calls.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,11 +11,11 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active t831, 2026-10-31:** Paired task/t831-client-flow-examples under fxwork/t831; parents pushed Core5bf93be1/Down069fdfe9. Setup finished exit0, mandatory SDK0.21 restored8.094s, whole workspace build skipped. Core source0.22 is lead-owned; private SDK remains0.21 until source freeze/rebuild. This independent branch must merge t830/dev and receive the next appropriate version before final integration; no source changes from the other private branch are assumed.
+**Active t831, 2026-10-31:** Paired private task under fxwork/t831; parents pushed Core5bf93be1/Down069fdfe9. Core0.22 private SDK rebuilt115.668s. Optional metadata contract accepted58tests/types/audit and backed up workbranch faff8d3f; no dev integration yet. Down exact authored four tails pass21focused tests and package types36.882s; original four UTF8 byte/hash pins fixed before extraction. Structure gate found tools.ts805lines plus stale index; cohesive contract split active. Core consumer extraction brief ready, waiting for worker slot. Merge current dev and choose appropriate next source version before integration; no other branch source assumed.
 
-**P10 first bounded unit:** optional flowScriptExamples companion (version + format/act/loop/state authored lines), strict copied validation and pure renderer. Existing systemInstructions/node descriptions remain. Unit1 does not alter model prompt strings. Lead58tests/4files, package typecheck18.453s and full audit pass after typed optional/adversarial fixture corrections; receiver/WeakMap/private-class and actual store tests pass. Owning barrel export reaches runtime/public wildcard chain without touching shared public barrels. SDK0.22 rebuild is running; producer and consumer phases remain unverified. Unit2 supplies exact current web example tails; unit3 switches all Core schema consumers only after byte-for-byte web parity. Generic grammar stays Core; web examples Down; absent examples never infer a web fallback. Inline medium/fact/intent/fingerprint migrations remain later P10 work, not claimed complete.
+**P10 first bounded unit:** Optional examples metadata, strict receiver-compatible copied validation and pure renderer accepted58tests/types/audit. Private0.22SDK current before extraction. Down four exact original tails accepted21tests/types; runtime-contract split frozen. Core all-three-consumer extraction frozen and lead tests/types/audit in progress; initial audit flags three newly overfull25-file test directories, no baseline growth allowed. Down migrated original parser/graph/schema assertions active with unchanged digest pins. Missing examples become generic grammar only; inline medium/facts/intent/fingerprint remain later work.
 
-**Parallel work:** t830 P9 owns its private Core/Down trees. Its A/B/C helpers pass157tests/8files, package types62.138s and audit; private frozen-rerun provenance/loop/client integration are active and unaccepted. Shared service/public export/tools files must be serialized by root, even across worktrees. First worker must not touch public runtime/index.ts while t830 D0 owns it; root adds narrow exports afterward. Source type interface can be frozen before either compiled SDK rebuild.
+**Parallel work:** t830 P9 private foundations/private provenance accepted and backed up workbranch1bd5aafc. D1 first176tests172pass/4fail and initial type/structure defects corrected in frozen source, pending fresh paired SDK/checks; strict production failure reader retained. D2 Core actual loop admission/authority wiring active; E instructions/actual UTF8 request test source authored, not checked. Each task owns separate Core/Down trees; root serializes integration and preserves both handoffs.
 
 **Accepted baseline:** t829 runtime/history merged and pushed Core5bf93be1/Down069fdfe9, Core221focused+70merge contracts/Down233focused pass; real Chromium proof2passes42.3s (2reads then prethird stop vs7ForEach), all28replies fresh/successful, no observer commands. Shared0.21 SDK/domain/three extension targets current. Full evidence/context is preserved in the linked archive and owning p8-repeat-history reports.
 
@@ -748,6 +748,13 @@ Accepted dated ledger moved verbatim to [the runtime context archive](framework-
 - Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/script-examples/tests src/programs/automation-studio/runtime/llm/domain-instructions/tests --maxWorkers=2 --minWorkers=1` ->58/4files pass43.55s; `pnpm.cmd --filter fluxiq check` ->exit0,18.453s; `node scripts/structure-audit.mjs` ->passed. Initial fixture optional-type/as-never errors corrected without production weakening.
 - Outcome: Partial; unit1 accepted, SDK0.22 rebuild running; Down exact authored tails and Core consumer extraction/parity not yet implemented. No model/public prompt change claimed.
 - Follow-up: freeze Down producer from original current strings before removing examples from Core. Merge t830/dev and choose next version before final integration. No full/paid calls.
+
+### 2026-10-31 ? P10 consumer extraction owning acceptance
+
+- Changes: removed four worked-example tails from Core grammar; explicit examples reach candidate/subflow/completion consumers. Missing metadata never infers a web fallback. Down migrated original eleven-example graph/parser tests; acceptance pending fresh SDK.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run <unit3 owning selectors> --maxWorkers=2 --minWorkers=1` ->137tests/13files pass60.86s; after fixture/consolidation corrections, three touched owning files63tests pass30.83s. `pnpm.cmd --filter fluxiq check` ->exit0,20.623s; `node scripts/structure-audit.mjs` ->exit0, no baseline growth. Exact selectors/logs in lead-acceptance.md.
+- Outcome: Partial; Core source accepted narrowly, private SDK rebuild in flight. Down complete byte/hash/parser/actual-registry acceptance still pending; no full/paid calls.
+- Follow-up: check actual web examples against refreshed public SDK and real definitions; retain all old oracles and fix evidenced incompatibilities before paired integration.
 
 ## Open Questions
 
