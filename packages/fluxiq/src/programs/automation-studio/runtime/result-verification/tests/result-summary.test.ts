@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
-import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
+import { describe, expect, it, vi } from "vitest";
+import { processAutomationStudioRecordRows, type AutomationStudioRecordSchema, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
+import { automationStudioResultOrderFact } from "../computed-facts/index.ts";
+import { automationStudioResultOrderClaimContradicted } from "../value-readings/index.ts";
+import { automationStudioResultVerificationNoRecord } from "../agreement/index.ts";
+import { automationStudioResultVerdict } from "../verdict/index.ts";
+import { ANSWER, flow, harness, instruction, session, verify } from "./run-outcome-harness.ts";
 
 // What leaves the process for a verification, and what may not.
 //
@@ -345,5 +350,98 @@ describe("a run summary's reads after an act over a narrower read (t692)", () =>
   it("flag nothing where the caller gives no edges", () => {
     const summary = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: nodes, actionAttempts, deniedEvidenceKeys: [] });
     expect(summary.reads?.some((entry) => entry.keptEveryRow)).toBe(false);
+  });
+});
+
+describe("the execution's reference date in result verification", () => {
+  const START = Date.UTC(2026, 9, 31, 23, 59);
+  const LATER = Date.UTC(2026, 10, 1, 0, 1);
+  const schema: AutomationStudioRecordSchema = {
+    schemaVersion: "0.1", fields: ["title", "starts"].map((id) => ({ id, label: id, valueType: "string" as const }))
+  };
+
+  const where = [{ field: "starts", atLeast: "today", as: "date" as const }];
+  const process = { where, sort: [{ field: "starts", order: "desc" as const, as: "date" as const }] };
+  const rows: JsonObject[] = [{ title: "Workshop", starts: "Today" }];
+  const node: AutomationStudioFlowNode = {
+    id: "read", definitionId: "catalog.read-events",
+    parameterValues: {
+      extractList: { item: ".event", fields: { title: { kind: "text" }, starts: { kind: "text" } }, where },
+      recordOutput: { datasetId: "events", schema, process }
+    }
+  };
+  const attempt: AutomationStudioFlowRunActionAttemptRecord = {
+    attemptId: "read.1", nodeId: "read", definitionId: node.definitionId, order: 1, status: "succeeded", startedAt: START,
+    metadata: { extraction: {
+      recordCount: 1, pagesRead: 1, truncated: false, itemsSeen: 2,
+      conditions: { applied: 2, kept: 1, rejected: [1], alone: [1], unfiltered: false, aloneRows: [[{ title: "Seminar", starts: "2026-10-31 12:00" }]] }
+    } }
+  };
+
+  function summary(referenceNow: number, now?: number) {
+    const made = processAutomationStudioRecordRows({ rows: rows.map((values) => ({ values, nodeId: "read", batchKey: "one" })), schema, process, now: START });
+    return summarizeAutomationStudioRunResult({
+      recordSets: [{ schema, rows, summary: datasetSummary({ datasetId: "events", recordCount: 1, processing: made.account }) }],
+      flowNodes: [node], actionAttempts: [attempt], deniedEvidenceKeys: [], referenceNow, ...(now !== undefined ? { now } : {})
+    });
+  }
+
+  it("rejudges a normal run against its persisted session start on a later day", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(LATER);
+    const context = harness({ answer: ANSWER.yes, schema, rows,
+      datasets: [datasetSummary({ datasetId: "events", recordCount: 1 })], instructions: [instruction("List the events.")] });
+    const run = { session: session({ startedAt: START }), flow: { ...flow, nodes: [node] } };
+    try {
+      await verify(context, run);
+      clock.mockReturnValue(LATER + 86_400_000);
+      await verify(context, run);
+      expect(context.requests.length).toBeGreaterThanOrEqual(2);
+      expect(context.requests.every((request) => request.context.resultSummary?.referenceNow === START)).toBe(true);
+      expect(context.requests[0]?.context.resultSummary?.recordSets[0]?.sortRead?.[0]?.said).toContain('"Today" as 2026-10-31');
+    } finally { clock.mockRestore(); }
+  });
+
+  it("anchors read and saved-answer values and left-out settlement before a later midnight", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(LATER);
+    try {
+      const result = summary(START);
+      expect(result.referenceNow).toBe(START);
+      expect(result.reads?.[0]?.conditions?.[0]?.valuesRead).toContain('kept "Workshop": starts read as 2026-10-31 23:59 UTC from "Today"');
+      // This absolute row meets the original bound: a later day must not make its exclusion seem justified.
+      expect(result.reads?.[0]?.conditions?.[0]?.leftOutSettled).toBeUndefined();
+      expect(result.recordSets[0]?.processing?.conditions?.[0]?.valuesRead).toContain('kept "Workshop": starts read as 2026-10-31 23:59 UTC from "Today"');
+      expect(summary(LATER).reads?.[0]?.conditions?.[0]?.leftOutSettled).toHaveLength(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("preserves an explicit numeric now override and ignores malformed reference metadata", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(LATER);
+    try {
+      expect(summary(START, LATER).referenceNow).toBe(LATER);
+      for (const invalid of [NaN, Infinity, -1, 1.5, 8.64e15 + 1]) expect(summary(invalid).referenceNow).toBe(LATER);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("uses the same reference for inferred date order and a judge's contradictory order claim", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(LATER);
+    try {
+      const result = summarizeAutomationStudioRunResult({
+        recordSets: [{ schema, rows: [{ title: "Seminar", starts: "2026-11-01 00:00" }, { title: "Workshop", starts: "Today" }], summary: datasetSummary({ datasetId: "events", recordCount: 2 }) }],
+        deniedEvidenceKeys: [], referenceNow: START
+      });
+      const requestText = "List the events, newest first.";
+      expect(automationStudioResultOrderFact({ summary: result, requestText, instructions: [] })).toMatchObject([{ kind: "order", status: "holds" }]);
+      expect(automationStudioResultOrderClaimContradicted("The events are not newest first.", result.recordSets, result.referenceNow)).toBe(true);
+      expect(automationStudioResultOrderClaimContradicted("The events are not newest first.", result.recordSets, LATER)).toBe(false);
+      const first = automationStudioResultVerdict({ summary: result, basis: "model", diagnosis: { answersRequest: "no", observed: "The events are not newest first." } });
+      const record = automationStudioResultVerificationNoRecord({ summary: result, requestText, first });
+      expect(record?.other?.("The events are not newest first.")?.refuted).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

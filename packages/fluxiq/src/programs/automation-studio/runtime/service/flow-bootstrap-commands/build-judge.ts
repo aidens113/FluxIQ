@@ -147,6 +147,7 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
           steps: loop.steps, report: judgedTest, nodes: planNodes(input.plan()), instructionText: input.instructionText,
           result: loop.result, startLocation: input.startLocation, arrival: input.arrival, deniedEvidenceKeys: input.deniedEvidenceKeys,
           observedStateKeys: input.observedStateKeys, rowContextKeys: input.rowContextKeys, notes: input.notes?.(),
+          referenceNow: judgedTest?.referenceNow,
           // The pages the test started and ended on, looked at just before its replay and as it passed (`../../llm/node-tools/dry-run-gate.ts`).
           ...(judgedTest?.endView ? { endView: judgedTest.endView } : {}),
           ...(judgedTest?.startView ? { startView: judgedTest.startView } : {})

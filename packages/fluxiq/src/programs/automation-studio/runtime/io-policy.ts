@@ -11,6 +11,7 @@ import type { FluxIQRuntimeCommandStatus, FluxIQRuntimeWithheldValues, RuntimeSe
 import { normalizeAutomationStudioElementTarget, type AutomationStudioElementTarget, type PolicyAction } from "../model/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution } from "../nodes/contracts.ts";
+import { automationStudioReferenceNow } from "./reference-now/index.ts";
 
 const elementMatcher = createAutomationStudioElementMatcher();
 
@@ -76,7 +77,7 @@ export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string 
 }
 
 export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined, runtime: RuntimeService) {
-  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; withheldValues?: FluxIQRuntimeWithheldValues; commandContext?: ClientGatewayCommandContext }): Promise<AutomationNodeExecutionResult | undefined> => {
+  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; referenceNow?: number; withheldValues?: FluxIQRuntimeWithheldValues; commandContext?: ClientGatewayCommandContext }): Promise<AutomationNodeExecutionResult | undefined> => {
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
     const payload = effect.payload as JsonObject;
     let action = policyActionFromPayload(payload);
@@ -88,6 +89,7 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
     action = prepared.action;
     if (!await runtimeCanDispatchOutput(runtime, domainId, outputId)) return dispatchPolicyOutput(io, domainId, action, context?.signal, context?.commandContext);
     const confirmation = awaitConfirmation(io, domainId, action, context?.signal);
+    const referenceNow = automationStudioReferenceNow(context?.referenceNow);
     const result = await runtime.dispatch({
       kind: "execute_action",
       domainId: domainId ?? null,
@@ -99,6 +101,7 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
     }, {
       ...(context?.commandContext ? { commandContext: context.commandContext } : {}),
       ...(context?.signal ? { signal: context.signal } : {}),
+      ...(referenceNow !== undefined ? { referenceNow } : {}),
       // The runtime withholds these from the command attempt it saves; the command still carries them.
       ...(context?.withheldValues ? { withheldValues: context.withheldValues } : {}),
       // A dispatch that carries `recordOutput` returns records, which are stored only

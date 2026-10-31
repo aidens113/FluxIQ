@@ -146,6 +146,7 @@ export class AutomationStudioNodeAttemptExecution {
         inputs: { ...(options.inputs ?? {}), ...collectWiredNodeInputs(flow, node, values) },
         ...(options.signal ? { signal: options.signal } : {}),
         hostContext: {
+          ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}),
           capabilityIds: hostCapabilities,
           sideEffectClass: automationStudioNodeSideEffectClass(executionNode),
           ...(beforeAction ? { currentStateRef: beforeAction, previousStateRef: beforeAction } : {}),
@@ -196,6 +197,7 @@ export class AutomationStudioNodeAttemptExecution {
         iteration: this.iterationFor(runState, node.id),
         ...(options.random ? { random: options.random } : {}),
         ...(options.now ? { now: options.now } : {}),
+        ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
         ...(expectationEvaluator ? { expectationEvaluator } : {})
       };
@@ -462,11 +464,11 @@ export class AutomationStudioNodeAttemptExecution {
   // What the run has resolved out of state travels with each dispatch, so a
   // dispatcher that saves its own record of the command -- the framework
   // runtime's command attempt -- withholds the values the trace withholds. A dispatch with
-  // neither a signal nor a withheld value gets no context, as before.
+  // neither a reference, signal nor a withheld value gets no context, as before.
   private static effectDispatchContext(options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding): EffectDispatchContext {
     const withheldValues = withholding.values();
     const withholds = withheldValues.texts.length > 0 || withheldValues.numbers.length > 0;
-    if (!options.signal && !withholds) return undefined;
-    return { ...(options.signal ? { signal: options.signal } : {}), ...(withholds ? { withheldValues } : {}) };
+    if (options.referenceNow === undefined && !options.signal && !withholds) return undefined;
+    return { ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}), ...(options.signal ? { signal: options.signal } : {}), ...(withholds ? { withheldValues } : {}) };
   }
 }

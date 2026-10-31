@@ -16,7 +16,7 @@ export function noRecordOf(input: AutomationStudioResultVerificationAgreementInp
   if (known && known.input.requestText === input.requestText && known.input.wording === input.wording && known.input.reads === input.reads && known.input.recordSets === input.recordSets) return known.record;
   const reads = input.reads ?? summary.reads;
   const recordSets = input.recordSets ?? summary.recordSets;
-  const record = automationStudioResultNoRecord({ summary, requestText: input.requestText, wording: input.wording, other: (sentence) => pageOrOrderClaim(sentence, reads, recordSets) });
+  const record = automationStudioResultNoRecord({ summary, requestText: input.requestText, wording: input.wording, other: (sentence) => pageOrOrderClaim(sentence, reads, recordSets, summary.referenceNow) });
   NO_RECORDS.set(summary, { input, record });
   return record;
 }
@@ -25,13 +25,13 @@ export function noRecordOf(input: AutomationStudioResultVerificationAgreementInp
 const DENIES_ORDER = /\b(?:out\s+of\s+order|unsorted|wrong(?:ly)?\s+(?:sorted|ordered|order)|not\s+(?:sorted|ordered|in\s+(?:\w+\s+){0,2}order)|(?:sort|order)\s+(?:is|was)\s+(?:wrong|incorrect|reversed))\b/iu;
 
 /** A sentence's claim about pages (t501) or order (t511), refuted where the record contradicts it, standing where it does not; nothing where it makes none. */
-function pageOrOrderClaim(sentence: string, reads: readonly AutomationStudioResultReadAccount[] | undefined, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined): AutomationStudioResultNoClaim | undefined {
+function pageOrOrderClaim(sentence: string, reads: readonly AutomationStudioResultReadAccount[] | undefined, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined, now?: number): AutomationStudioResultNoClaim | undefined {
   const reading = { observed: sentence };
   if (MORE_PAGES.test(sentence)) {
     return contradictsPagingRecord(reading, reads)
       ? { refuted: true, finding: pagingReads(reads).map((read) => `Read ${read.nodeId} read ${automationStudioResultReadPagesClause(read)}.`).join(" ") }
       : { refuted: false };
   }
-  if (contradictsOrderRecord(reading, recordSets)) return { refuted: true, finding: "Core sorted the answer itself, and its sortRead says the rows are in that order." };
+  if (contradictsOrderRecord(reading, recordSets, now)) return { refuted: true, finding: "Core sorted the answer itself, and its sortRead says the rows are in that order." };
   return DENIES_ORDER.test(sentence) ? { refuted: false } : undefined;
 }

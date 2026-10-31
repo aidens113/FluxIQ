@@ -68,6 +68,7 @@ export async function resumeAutomationStudioGraph(
     { ...options, startNodeId: parked.nodeId, ...(parked.carried.callFlowAttemptPath ? { callFlowAttemptPath: parked.carried.callFlowAttemptPath } : {}) },
     {
       startedAt: request.trace.startedAt,
+      referenceNow: request.trace.referenceNow ?? request.trace.startedAt,
       stepsTaken: parked.carried.stepsTaken,
       maxSteps: parked.carried.maxSteps,
       attempts: settledAttempts(request.trace.attempts, parked, settlement.outcome, settlement.route, settlement.settledAtMs),

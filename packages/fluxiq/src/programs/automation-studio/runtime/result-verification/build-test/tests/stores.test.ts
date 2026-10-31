@@ -6,11 +6,11 @@
 // filtered rows, so 30 rows were stored and 3 of them twice. The test replayed
 // both reads, yet the summary carried no record set, both judges said yes, and
 // one wrote "the test stored nothing ..., so the record set is empty".
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import { automationStudioLlmRequestEvidenceRefusal, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { automationStudioFlowDraftDryRunGate, automationStudioLlmRequestEvidenceRefusal, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioBuildTestResultSummary, type AutomationStudioBuildTestReportInput } from "../summary.ts";
 import { DENIED, SITE, navigate, replayed, report, web } from "./draft-steps.ts";
@@ -275,3 +275,77 @@ function verificationRequest(summary: AutomationStudioRunResultSummary): Automat
     }
   };
 }
+
+describe("the date reference of a build test's saved answer", () => {
+  const START = Date.UTC(2026, 9, 31, 23, 59);
+  const LATER = Date.UTC(2026, 10, 1, 0, 1);
+  const step: AutomationStudioFlowDraftStep = {
+    position: 1, id: "events", iteration: 1, actionId: "catalog.read-events", input: {}, ranWith: {},
+    effect: "observe", disposition: "kept", proposes: true
+  };
+  const rows: JsonObject[] = [{ title: "Workshop", starts: "2026-10-31 12:00" }, { title: "Seminar", starts: "2026-11-01 12:00" }];
+  const node: AutomationStudioFlowNode = {
+    id: "read", definitionId: step.actionId,
+    parameterValues: { recordOutput: {
+      datasetId: "events", writeMode: "replace", recordsPath: "records",
+      schema: { schemaVersion: "0.1", fields: ["title", "starts"].map((id) => ({ id, label: id, valueType: "string" })) },
+      process: { where: [{ field: "starts", atLeast: "today", as: "date" }], sort: [{ field: "starts", order: "asc", as: "date" }] }
+    } }
+  };
+
+  function summary(referenceNow?: number, now?: number) {
+    return automationStudioBuildTestResultSummary({
+      steps: [step], nodes: [node], deniedEvidenceKeys: [], ...(now !== undefined ? { now } : {}),
+      report: { verdict: { outcomes: [{ step: 1, stepId: "events", actionId: step.actionId, status: "replayed" }] },
+        observations: [{ step: 1, stepId: "events", evidence: { readRows: { rows: rows.map((row) => ({ title: row.title! })) } }, records: rows }], reused: true,
+        ...(referenceNow !== undefined ? { referenceNow } : {}) }
+    });
+  }
+
+  it("keeps cached replay membership after midnight and refreshes it for a new execution of the unchanged Flow", async () => {
+    const replayedStep = { ...step, replay: { from: { location: "https://catalogue.test/events" } } };
+    const clock = vi.spyOn(Date, "now").mockReturnValue(START);
+    const executeTool = vi.fn(async () => ({
+      kind: "llm_evidence_tool_execution" as const, evidence: { readRows: { rows: rows.map((row) => ({ title: row.title! })) } },
+      outputs: { records: rows }, effectApplied: true, resultCode: "core.replay.replayed"
+    }));
+    let observed: AutomationStudioFlowDraftTestReport | undefined;
+    const newExecution = () => automationStudioFlowDraftDryRunGate({
+      enabled: true, steps: [replayedStep], executeTool, accountEvidence: () => 0, showEvidence: () => {}, targetMoved: () => {},
+      observed: (report) => { observed = report; }
+    });
+    const answer = () => automationStudioBuildTestResultSummary({ steps: [replayedStep], nodes: [node], report: observed, deniedEvidenceKeys: [] }).buildTest?.stores?.[0]?.answer;
+    try {
+      const gate = newExecution();
+      expect(await gate()).toBeUndefined();
+      expect(answer()).toEqual({ rows: 2, labels: ["Workshop", "Seminar"] });
+      const calls = executeTool.mock.calls.length;
+      clock.mockReturnValue(LATER);
+      expect(await gate()).toBeUndefined();
+      expect(executeTool).toHaveBeenCalledTimes(calls);
+      expect(observed?.reused).toBe(true);
+      expect(answer()).toEqual({ rows: 2, labels: ["Workshop", "Seminar"] });
+      expect(await newExecution()()).toBeUndefined();
+      expect(observed?.reused).toBe(false);
+      expect(answer()).toEqual({ rows: 1, labels: ["Seminar"] });
+    } finally { clock.mockRestore(); }
+  });
+
+  it("reuses the replay's date for relative bounds after midnight", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(LATER);
+    try {
+      expect(summary(START).buildTest?.stores?.[0]?.answer).toEqual({ rows: 2, labels: ["Workshop", "Seminar"] });
+      expect(summary(LATER).buildTest?.stores?.[0]?.answer).toEqual({ rows: 1, labels: ["Seminar"] });
+      expect(summary(START).referenceNow).toBe(START);
+    } finally { clock.mockRestore(); }
+  });
+
+  it("retains numeric overrides and wall-time fallback for old or malformed reports", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(LATER);
+    try {
+      expect(summary(START, LATER).buildTest?.stores?.[0]?.answer.rows).toBe(1);
+      expect(summary().referenceNow).toBe(LATER);
+      expect(summary(NaN).referenceNow).toBe(LATER);
+    } finally { clock.mockRestore(); }
+  });
+});

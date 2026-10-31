@@ -81,7 +81,7 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * whole result, and every result is shown to the model in full, save a view
    * of the target a newer one replaced (`context-window.ts`).
    */
-  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal; referenceNow?: number }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   /**
    * The top-level keys of a tool result that are a view of the target -- a
    * page, for the web domain -- as the bound domain declared them

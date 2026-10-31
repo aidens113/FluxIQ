@@ -18,6 +18,28 @@ const action = { actionType: "activate-element", outputId: "activate-element", p
 const unmatchedTarget = { kind: "element", fingerprint: { visibleText: "Save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel" }] };
 
 describe("policy output dispatch failures", () => {
+  it("passes the run reference to a runtime adapter while command timestamps stay live", async () => {
+    const referenceNow = Date.UTC(2026, 9, 30, 23, 59, 59);
+    const contexts: Array<{ referenceNow?: number; now?: () => number }> = [];
+    let live = referenceNow + 2_000;
+    const runtime = new RuntimeService({ now: () => live++ });
+    runtime.registerAdapter({
+      adapterId: "reference.runtime", label: "Reference", transport: "direct", domainId: "example",
+      capabilities: () => [{ id: "reference.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+      execute: (command, context) => {
+        contexts.push(context);
+        return { commandId: command.commandId!, status: "succeeded" };
+      }
+    });
+    const dispatcher = createRuntimePolicyEffectDispatcher(ioWith(), "example", runtime);
+    expect((await dispatcher(effect, { referenceNow }))?.status).toBe("success");
+    expect((await dispatcher(effect, { referenceNow: NaN }))?.status).toBe("success");
+    expect(contexts.map((context) => context.referenceNow)).toEqual([referenceNow, undefined]);
+    const attempts = runtime.commandAttemptsList();
+    expect(attempts[0]!.dispatchedAt).toBeGreaterThan(referenceNow);
+    expect(attempts[1]!.dispatchedAt).toBeGreaterThan(attempts[0]!.dispatchedAt);
+  });
+
   it("names a timed-out runtime command a timeout without relying on its message", async () => {
     const result = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "timed_out", message: "The client did not answer." }))(effect);
 

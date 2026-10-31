@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import {
   automationStudioAskEffect,
   type AutomationStudioAsk,
   type AutomationStudioAskAnswer
 } from "../../parking/index.ts";
 import {
+  automationStudioReferenceNow,
   resumeAutomationStudioGraph,
   runAutomationStudioGraph,
   type AutomationStudioGraphExecutionOptions,
@@ -115,6 +116,29 @@ describe("a run that reaches an approval", () => {
 });
 
 describe("answering a parked run", () => {
+  it("retains an earlier explicit date reference through saved-trace hydration while the resumed clock advances", async () => {
+    const referenceNow = PARKED_AT - 500;
+    const references: Array<number | undefined> = [];
+    const recorder = dispatchRecorder();
+    const dispatch: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = (effect, context) => {
+      references.push(context?.referenceNow);
+      return recorder.options.effectDispatcher!(effect, context);
+    };
+    const parked = await parkedRunTrace({ ...recorder.options, referenceNow, effectDispatcher: dispatch });
+    expect(parked.parked?.expiresAtMs).toBe(PARKED_AT + TIMEOUT_MS);
+    const hydrated = JSON.parse(JSON.stringify(parked)) as AutomationStudioGraphExecutionTrace;
+    const resumed = await resumeAutomationStudioGraph({
+      flow: approvalFlow, trace: hydrated,
+      resumption: { kind: "answer", answer: { askId: hydrated.parked!.ask.askId, answeredAt: PARKED_AT + 5, kind: "deny", value: null, actorId: null } },
+      options: { now: () => PARKED_AT + 10, referenceNow: PARKED_AT + 10, effectDispatcher: dispatch }
+    });
+    expect(resumed.outcome).toBe("resumed");
+    if (resumed.outcome !== "resumed") throw new Error("parked run did not resume");
+    expect(resumed.trace).toMatchObject({ status: "succeeded", startedAt: PARKED_AT, referenceNow, finishedAt: PARKED_AT + 10 });
+    expect(references).toEqual([referenceNow, referenceNow]);
+    expect(recorder.outputIds).toEqual(["send-draft", "discard-draft"]);
+  });
+
   it("resumes it down the approved route with its earlier work intact, and never runs the parked node again", async () => {
     const recorder = dispatchRecorder();
     const parked = await parkedRunTrace(recorder.options);
@@ -377,5 +401,108 @@ describe("parking is the run's capability, not the Approval node's", () => {
     }));
 
     expect(dispatched).toEqual([]);
+  });
+});
+
+const MIDNIGHT = Date.UTC(2026, 9, 31);
+
+function flowOf(nodes: AutomationStudioFlowNode[], flowId = "reference-clock"): AutomationStudioFlowDocument {
+  return {
+    schemaVersion: "0.1", flowId, ownerKind: "routine", ownerId: flowId, name: flowId, createdAt: 1, updatedAt: 1, nodes,
+    edges: nodes.slice(1).map((node, index) => ({ id: `next.${index}`, sourceNodeId: nodes[index]!.id, sourcePortId: "success", targetNodeId: node.id, targetPortId: "in" }))
+  };
+}
+
+const action = (id: string): AutomationStudioFlowNode => ({ id, definitionId: "builtin.policy.action", parameterValues: { outputId: id } });
+
+describe("the enclosing execution's relative-date reference", () => {
+  it("reads valid epoch milliseconds and drops malformed references", () => {
+    for (const value of [0, MIDNIGHT, 8_640_000_000_000_000]) expect(automationStudioReferenceNow(value)).toBe(value);
+    for (const value of [undefined, null, "1", -1, 0.5, NaN, Infinity, 8_640_000_000_000_001]) expect(automationStudioReferenceNow(value)).toBeUndefined();
+  });
+
+  it("captures a root start once while attempt and finish timestamps keep advancing", async () => {
+    let live = MIDNIGHT - 100;
+    const references: Array<number | undefined> = [];
+    const trace = await runAutomationStudioGraph(flowOf([action("first"), action("second")]), {
+      now: () => live++,
+      effectDispatcher: (_effect, context) => {
+        references.push(context?.referenceNow);
+        return { status: "success", route: "success", outputs: {} };
+      }
+    });
+    expect(trace.status).toBe("succeeded");
+    expect(trace.startedAt).toBe(MIDNIGHT - 100);
+    expect(references).toEqual([trace.startedAt, trace.startedAt]);
+    expect(trace.attempts[0]!.startedAt).toBeGreaterThan(trace.startedAt);
+    expect(trace.finishedAt).toBeGreaterThan(trace.attempts.at(-1)!.startedAt);
+  });
+
+  it("keeps retry waits live across midnight and sends the same reference to every native and effect attempt", async () => {
+    let live = MIDNIGHT - 100;
+    const references: Array<number | undefined> = [], nativeReferences: Array<number | undefined> = [], waits: number[] = [];
+    const trace = await runAutomationStudioGraph(flowOf([{ id: "read", definitionId: "custom.read" }]), {
+      now: () => live,
+      delay: async (ms) => {
+        waits.push(ms);
+        live += ms;
+      },
+      nativeNodeExecutor: async ({ hostContext }) => {
+        nativeReferences.push(hostContext?.referenceNow);
+        return { result: { status: "success", route: "success", outputs: {}, effects: [{ type: "policy.output.dispatch", payload: { outputId: "read" } }] } };
+      },
+      effectDispatcher: (_effect, context) => {
+        references.push(context?.referenceNow);
+        return references.length === 1
+          ? { status: "failed", route: "failed", outputs: {}, failure: { category: "action_failed", code: "read.busy", retryable: true, effect: "unacted", stage: "execution" } }
+          : { status: "success", route: "success", outputs: {} };
+      }
+    });
+    expect(trace.status).toBe("succeeded");
+    expect(waits.length).toBeGreaterThan(0);
+    expect(trace.finishedAt).toBeGreaterThan(MIDNIGHT);
+    expect(references).toEqual([MIDNIGHT - 100, MIDNIGHT - 100]);
+    expect(nativeReferences).toEqual(references);
+    expect(trace.attempts.map((attempt) => attempt.startedAt)).toEqual([MIDNIGHT - 100, trace.finishedAt]);
+  });
+
+  it("lets an explicit enclosing reference win and passes it into nested child graphs", async () => {
+    let live = MIDNIGHT + 100;
+    const references: Array<number | undefined> = [];
+    const child = flowOf([action("child")], "child");
+    const trace = await runAutomationStudioGraph(flowOf([{ id: "call", definitionId: "builtin.control.call-subflow", parameterValues: { subflowId: "child" } }]), {
+      referenceNow: MIDNIGHT - 100,
+      now: () => live++,
+      effectDispatcher: (_effect, context) => {
+        references.push(context?.referenceNow);
+        return { status: "success", route: "success", outputs: {} };
+      },
+      subflowGraphs: { load: async () => ({ subflowId: "child", graph: child, graphRevision: null }) }
+    });
+    expect(trace.status).toBe("succeeded");
+    expect(trace.referenceNow).toBe(MIDNIGHT - 100);
+    expect(trace.startedAt).toBe(MIDNIGHT + 100);
+    expect(trace.attempts[0]!.childTrace?.referenceNow).toBe(MIDNIGHT - 100);
+    expect(trace.attempts[0]!.childTrace?.attempts[0]?.framePath).toEqual(["invocation-1", "invocation-2"]);
+    expect(references).toEqual([MIDNIGHT - 100]);
+  });
+
+  it("drops a malformed explicit value and captures a fresh reference for each new root", async () => {
+    let live = MIDNIGHT - 1;
+    const references: Array<number | undefined> = [];
+    const options = {
+      referenceNow: NaN,
+      now: () => live,
+      effectDispatcher: (_effect: unknown, context?: { referenceNow?: number }) => {
+        references.push(context?.referenceNow);
+        return { status: "success" as const, route: "success", outputs: {} };
+      }
+    };
+    const first = await runAutomationStudioGraph(flowOf([action("read")]), options);
+    live = MIDNIGHT + 1;
+    const second = await runAutomationStudioGraph(flowOf([action("read")]), options);
+    expect([first.status, second.status]).toEqual(["succeeded", "succeeded"]);
+    expect(references).toEqual([MIDNIGHT - 1, MIDNIGHT + 1]);
+    expect(options.referenceNow).toBeNaN();
   });
 });

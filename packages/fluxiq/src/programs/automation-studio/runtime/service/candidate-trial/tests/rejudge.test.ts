@@ -1,9 +1,13 @@
 // A trial its judge did not judge is judged again on its own evidence, not run
 // again (t473). Live run `run-mv5q4j5c-49bfb5e2` re-ran an identical 84-second
 // trial only to get the judgement its timed-out judge never gave.
-import { describe, expect, it } from "vitest";
-import { automationStudioCandidateTrialPort } from "../index.ts";
+import { describe, expect, it, vi } from "vitest";
+import { automationStudioCandidateTrialPort, automationStudioCandidateTrialSummary } from "../index.ts";
 import { SPENT_TWO, trialFixture } from "./fixtures.ts";
+import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
+import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
+import { datasetSummary } from "../../../result-verification/tests/run-outcome-harness.ts";
 
 /** Every press succeeds and is counted: how many times the candidate actually ran. */
 function pressing(fixture: ReturnType<typeof trialFixture>) {
@@ -74,5 +78,44 @@ describe("a trial its judge did not judge", () => {
     expect(await trials.port(fixture.request())).toMatchObject({ verdict: "yes", trialRunId: "trial.2" });
     expect(presses()).toBe(2);
     expect(trials.records()[0]).toMatchObject({ judge: { calls: 0 } });
+  });
+});
+
+describe("a candidate trial's fixed reference date", () => {
+  const START = Date.UTC(2026, 9, 31, 23, 59);
+  const LATER = Date.UTC(2026, 10, 1, 0, 1);
+  const schema: AutomationStudioRecordSchema = {
+    schemaVersion: "0.1", fields: ["title", "starts"].map((id) => ({ id, label: id, valueType: "string" as const }))
+  };
+  const graph = { nodes: [{
+    id: "events", definitionId: "catalog.read-events", parameterValues: {
+      recordOutput: { datasetId: "events", schema, process: { sort: [{ field: "starts", order: "desc", as: "date" }] } }
+    }
+  }], edges: [] } as unknown as AutomationStudioFlowArtifact;
+  const trace = (referenceNow?: number): AutomationStudioGraphExecutionTrace => ({
+    status: "succeeded", startedAt: START, values: {}, effects: [], attempts: [], ...(referenceNow !== undefined ? { referenceNow } : {})
+  });
+  const input = {
+    graph, deniedEvidenceKeys: [],
+    recordSets: [{ schema, summary: datasetSummary({ datasetId: "events", recordCount: 2 }),
+      rows: [{ title: "Seminar", starts: "2026-11-01 00:00" }, { title: "Workshop", starts: "Today" }] }]
+  };
+
+  it("uses the persisted trial start even without a trace and after delayed end-view reads", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(LATER);
+    try {
+      const result = await automationStudioCandidateTrialSummary({ ...input, trace: undefined, referenceNow: START, readEndView: async () => undefined });
+      expect(result.referenceNow).toBe(START);
+      expect(result.recordSets[0]?.sortRead?.[0]?.inOrder).toBe(true);
+    } finally { clock.mockRestore(); }
+  });
+
+  it("retains trace references, falls back to legacy trace start, and honors an explicit fresh trial reference", async () => {
+    expect((await automationStudioCandidateTrialSummary({ ...input, trace: trace() })).referenceNow).toBe(START);
+    expect((await automationStudioCandidateTrialSummary({ ...input, trace: trace(LATER) })).recordSets[0]?.sortRead?.[0]?.inOrder).toBe(false);
+    const explicit = await automationStudioCandidateTrialSummary({ ...input, trace: trace(START), referenceNow: LATER });
+    expect(explicit.referenceNow).toBe(LATER);
+    expect(explicit.recordSets[0]?.sortRead?.[0]?.inOrder).toBe(false);
+    expect((await automationStudioCandidateTrialSummary({ ...input, trace: trace(), referenceNow: NaN })).referenceNow).toBe(START);
   });
 });

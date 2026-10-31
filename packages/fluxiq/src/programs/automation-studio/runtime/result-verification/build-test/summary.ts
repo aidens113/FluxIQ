@@ -140,6 +140,7 @@ import { automationStudioBuildTestPassLines } from "./pass-lines.ts";
 import { automationStudioBuildTestSpanRows } from "./span-rows.ts";
 import { automationStudioBuildTestStores } from "./stores.ts";
 import { automationStudioBuildTestInputs } from "./test-inputs.ts";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 
 /**
  * The test a build ran, as this builder reads it.
@@ -149,6 +150,8 @@ import { automationStudioBuildTestInputs } from "./test-inputs.ts";
  * declared here so the two could be written at once. Only what is read is named.
  */
 export type AutomationStudioBuildTestReportInput = {
+  /** The replay's fixed date reference; cached reports retain the original. */
+  referenceNow?: number | undefined;
   verdict: { outcomes: readonly AutomationStudioFlowDraftReplayOutcome[] };
   /**
    * `pass` and `of` (1-based pass, pass count) on an answer from a repeated
@@ -224,7 +227,12 @@ export function automationStudioBuildTestResultSummary(input: {
   endView?: AutomationStudioResultEndView | undefined;
   /** The page the caller looked at just before the test, as the domain produced it. Absent, none is sent. */
   startView?: AutomationStudioResultEndView | undefined;
+  /** Explicit numeric date override, preserved for low-level callers. */
+  now?: number | undefined;
+  /** Fixed execution reference. Absent, use the replay report, then legacy wall time. */
+  referenceNow?: number | undefined;
 }): AutomationStudioRunResultSummaryWithEndView {
+  const referenceNow = input.now ?? automationStudioReferenceNow(input.referenceNow) ?? automationStudioReferenceNow(input.report?.referenceNow) ?? Date.now();
   const denied = input.deniedEvidenceKeys;
   const observe = denied === undefined ? undefined : automationStudioBuildTestObservationReader({ deniedEvidenceKeys: denied, observedStateKeys: input.observedStateKeys });
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
@@ -296,6 +304,7 @@ export function automationStudioBuildTestResultSummary(input: {
   const report = input.report;
   const stored = denied === undefined || !report || !input.nodes.length ? undefined : automationStudioBuildTestStores({
     steps: proposed, nodes: input.nodes, deniedEvidenceKeys: denied,
+    now: referenceNow,
     // Each answer with its place among the test's, so the rows are collected in capture order.
     answers: (step) => report.observations.flatMap((observation, at) => observes(step, observation)
       ? [{ at, evidence: observation.evidence, ...(observation.records ? { records: observation.records } : {}) }]
@@ -312,7 +321,7 @@ export function automationStudioBuildTestResultSummary(input: {
     ...(tested?.inputs.length ? { inputs: tested.inputs } : {}),
     ...(stored ? { stores: stored.stores } : {})
   };
-  const shape = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: input.nodes, deniedEvidenceKeys: denied });
+  const shape = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: input.nodes, deniedEvidenceKeys: denied, referenceNow });
   const held = input.endView ?? lastView(input.report, input.observedStateKeys);
   const ended = held ? automationStudioResultEndView(held, denied) : undefined;
   if (ended?.withheld) withheld = true;
@@ -330,7 +339,8 @@ export function automationStudioBuildTestResultSummary(input: {
     flowShape: shape.flowShape,
     withheld: withheld || shape.withheld,
     buildTest,
-    ...(ended?.endView ? { endView: ended.endView } : {})
+    ...(ended?.endView ? { endView: ended.endView } : {}),
+    referenceNow
   };
 }
 

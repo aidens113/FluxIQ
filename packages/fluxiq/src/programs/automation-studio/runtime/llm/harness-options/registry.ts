@@ -89,6 +89,8 @@ export type AutomationStudioHarnessOptionLoopBinding = {
     toolId: string;
     value: JsonObject;
     signal?: AbortSignal;
+    /** Fixed execution date reference, never part of model-authored tool values. */
+    referenceNow?: number;
     /**
      * The run's permission check for this one action, from the run's
      * `AutomationStudioActionPermissionGate`. Both of Core's callers -- Flow
@@ -241,7 +243,7 @@ export class AutomationStudioHarnessOptionRegistry {
     return automationStudioLlmEvidenceRecallBinding<AutomationStudioHarnessOptionLoopBinding>({
       tools,
       ...(observedStateKeys.length ? { observedStateKeys } : {}),
-      executeTool: ({ callId, toolId, value, signal, permission }) => runWithAutomationStudioEvidenceBuildScope(scopeOf({ callId, toolId, value }), () => this.execute({
+      executeTool: ({ callId, toolId, value, signal, permission, referenceNow }) => runWithAutomationStudioEvidenceBuildScope(scopeOf({ callId, toolId, value }), () => this.execute({
         projectId: context.projectId,
         flowId: context.flowId,
         ...(context.runId !== undefined ? { runId: context.runId } : {}),
@@ -249,6 +251,7 @@ export class AutomationStudioHarnessOptionRegistry {
         optionId: toolId,
         value,
         ...(signal !== undefined ? { signal } : {}),
+        ...(referenceNow !== undefined ? { referenceNow } : {}),
         ...(permission !== undefined ? { permission } : {})
       }, resolution))
     });

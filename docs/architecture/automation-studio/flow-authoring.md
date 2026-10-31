@@ -20,6 +20,29 @@ the loop the stored Flow held. The model may still explore any node
 configuration live; it may also write the Flow it has learned, with loops and
 parameters, without going through every iteration.
 
+## Relative dates use the execution's reference time
+
+Each execution captures a fixed epoch-millisecond `referenceNow`, separate
+from the advancing `now()` clock used for retries, deadlines and durations.
+The ordinary runtime and candidate/subflow trials use their persisted session
+start. Native nodes receive it as `context.host.referenceNow`; effect dispatch
+and generic runtime execution contexts carry the same optional field.
+
+Child calls, parked resumes and repairs within the same execution retain the
+reference. A fresh execution receives a fresh reference. A build replay keeps
+its reference with its cached observations, so rejudging the same evidence
+does not move relative-date bounds to the judge call's day. Result processing,
+date-order checks and judge agreement readers use the same reference.
+
+Legacy callers without reference metadata retain their existing fallback.
+Explicit low-level numeric `now` overrides remain supported. A client should
+forward execution metadata into its date-aware reads rather than ask the model
+to author a timestamp. The web domain uses its existing `extractList.now`
+parameter for this transport; no new browser command shape is required.
+Custom graph hosts that own dataset persistence separately must pass a custom
+reference to the store's existing `processRunDatasets(runId, { now })` override.
+Canonical runtime and trial sessions already share their persisted start.
+
 ## The Draft
 
 ### Required task and optional recording evidence

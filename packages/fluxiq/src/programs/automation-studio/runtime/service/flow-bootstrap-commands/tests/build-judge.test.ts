@@ -55,6 +55,33 @@ function scripted(): { provider: AutomationStudioLlmProvider; seen: AutomationSt
 }
 
 describe("a build's judge", () => {
+  it("rejudges a cached replay with its original reference after midnight", async () => {
+    const { provider, seen } = scripted();
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined
+    });
+    const referenceNow = Date.UTC(2026, 9, 31, 23, 59);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 10, 1, 0, 1));
+    try {
+      judge.observeTest({ ...passed(automationStudioFlowDraftFlowSignature([read])), reused: true, referenceNow });
+      const round: Parameters<typeof judge.judge>[0] = {
+        round: 0,
+        loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {
+          iterations: 0, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0
+        } },
+        budget: { maxCostUsd: 1 }
+      };
+      await judge.judge(round);
+      expect(seen[0]?.context.resultSummary?.referenceNow).toBe(referenceNow);
+      clock.mockReturnValue(Date.UTC(2026, 10, 2, 0, 1));
+      await judge.judge(round);
+      expect(seen.every((request) => request.context.resultSummary?.referenceNow === referenceNow)).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("is told what the completion check found an accepted Flow cannot do, and reads each observation without its view", async () => {
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Read the price", plan: readsOneValue }, projectId: "project.1", flowId: "flow.1", registry, resolution, instructionText: ASKS_FOR_A_TABLE

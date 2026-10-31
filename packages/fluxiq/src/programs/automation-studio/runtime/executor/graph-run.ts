@@ -46,6 +46,7 @@ import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, ty
 import { automationStudioExecutedLocations } from "./executed-locations/index.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepAnnounced, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../activity/index.ts";
+import { automationStudioReferenceNow } from "../reference-now/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -102,6 +103,7 @@ export async function runAutomationStudioGraph(
  */
 export type AutomationStudioGraphRunSeed = {
   startedAt: number;
+  referenceNow?: number;
   stepsTaken: number;
   maxSteps: number;
   attempts: AutomationStudioNodeAttemptTrace[];
@@ -145,16 +147,20 @@ async function runGraphFromSeed(
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
+  const { referenceNow: suppliedReferenceNow, ...baseOptions } = options;
+  const referenceNow = automationStudioReferenceNow(seed?.referenceNow) ?? automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
+  const executionOptions = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
   try {
     await options.commandRun?.checkpoint();
     // The run executes as its frame, pushed for exactly as long as it runs (`frames/graph-frame.ts`).
-    return await runAutomationStudioGraphInFrame(flow, options, runAutomationStudioGraph, (framed) => runGraphToTrace(flow, framed, seed, onExecutedTrace));
+    return await runAutomationStudioGraphInFrame(flow, executionOptions, runAutomationStudioGraph, (framed) => runGraphToTrace(flow, framed, startedAt, seed, onExecutedTrace));
   } catch (error) {
     await options.commandRun?.stop("executor.graph_stopped");
     const fault = automationStudioFaultFromThrownError(error, { now: options.now?.() ?? Date.now(), aborted: options.signal?.aborted === true });
     return {
       status: "failed",
       startedAt,
+      ...(referenceNow !== undefined && referenceNow !== startedAt ? { referenceNow } : {}),
       finishedAt: options.now?.() ?? Date.now(),
       attempts: seed ? [...seed.attempts] : [],
       values: {},
@@ -167,6 +173,7 @@ async function runGraphFromSeed(
 async function runGraphToTrace(
   flow: AutomationStudioFlowDocument,
   options: AutomationStudioGraphExecutionOptions,
+  startedAt: number,
   seed: AutomationStudioGraphRunSeed | undefined,
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
@@ -180,9 +187,10 @@ async function runGraphToTrace(
   recordDeclaredStateBindings(flow, options, withholding);
   // What lifecycle dispatch keeps for this frame's trace: handler bodies' attempts, and the run's records at its root.
   const lifecycle = automationStudioStepLifecycleFrame();
-  const start = () => executeAutomationStudioGraph(flow, options, withholding, runState, lifecycle, seed);
+  const start = () => executeAutomationStudioGraph(flow, options, startedAt, withholding, runState, lifecycle, seed);
   const running = options.commandRun ? options.commandRun.own(start) : start();
-  const executed = automationStudioTraceInFrame(await running, options.invocation);
+  const trace = await running;
+  const executed = automationStudioTraceInFrame(options.referenceNow !== undefined && options.referenceNow !== trace.startedAt ? { ...trace, referenceNow: options.referenceNow } : trace, options.invocation);
   // The incident still open when the frame ends closes here; a Call Subflow child's goes to its node first (C7).
   automationStudioStepEndFrameIncident(options.invocation, executed);
   // A run stopped as Outcome uncertain keeps its trace: in a required run the latch that would refuse this checkpoint is why it stopped.
@@ -284,13 +292,13 @@ function stepsPerIteration(node: AutomationStudioFlowNode): number {
 async function executeAutomationStudioGraph(
   flow: AutomationStudioFlowDocument,
   options: AutomationStudioGraphExecutionOptions,
+  startedAt: number,
   withholding: AutomationStudioTraceWithholding,
   runState: AutomationStudioRunState,
   lifecycle: AutomationStudioStepLifecycleFrame,
   seed?: AutomationStudioGraphRunSeed
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const now = options.now ?? Date.now;
-  const startedAt = seed?.startedAt ?? now();
   const attempts: AutomationStudioNodeAttemptTrace[] = seed ? [...seed.attempts] : [];
   // A resumed run keeps what it had computed, with the caller's own inputs put
   // back over it: the seed comes from a saved trace, whose run inputs are

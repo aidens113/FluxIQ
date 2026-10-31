@@ -1,8 +1,9 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../model/index.ts";
-import { AutomationStudioImporterSdkRegistry, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
+import { AutomationStudioImporterSdkRegistry, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort } from "../nodes/contracts.ts";
+import { automationStudioReferenceNow } from "./reference-now/index.ts";
 
 export type AutomationStudioNativeRuntimeGrants = {
   permissions?: Iterable<string>;
@@ -80,7 +81,7 @@ export class AutomationStudioNativeNodeRuntime {
   getTargetResolver(domainId: string, id: string): AutomationStudioTargetResolverImplementation | undefined { return this.targetResolvers.get(`${domainId}:${id}`); }
   getComparator(domainId: string, id: string): AutomationStudioComparatorImplementation | undefined { return this.comparators.get(`${domainId}:${id}`); }
 
-  async execute(node: AutomationStudioFlowNode, inputs: Record<string, JsonValue>, signal?: AbortSignal, hostContext?: { currentStateRef?: JsonObject; previousStateRef?: JsonObject; capabilityIds: string[]; sideEffectClass: "none" | "internal" | "external" | "destructive"; target?: JsonValue }): Promise<AutomationStudioNativeExecution | undefined> {
+  async execute(node: AutomationStudioFlowNode, inputs: Record<string, JsonValue>, signal?: AbortSignal, hostContext?: AutomationStudioNativeNodeContext["host"]): Promise<AutomationStudioNativeExecution | undefined> {
     const definition = this.getDefinition(node.definitionId); if (!definition || (definition.source.kind !== "importer" && definition.source.kind !== "code")) return undefined;
     if (node.definitionVersion && node.definitionVersion !== definition.version) return failed(`Node ${definition.id} requires definition version ${node.definitionVersion}, but ${definition.version} is bound.`);
     const binding = this.bindings.get(definition.id); if (!binding) return failed(`No trusted-local implementation is bound for ${definition.id}.`);
@@ -91,7 +92,14 @@ export class AutomationStudioNativeNodeRuntime {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const isolatedInputs = Object.fromEntries(definition.inputs.flatMap((port) => inputs[port.id] === undefined ? [] : [[port.id, inputs[port.id]]])) as Record<string, JsonValue>;
-      const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), ...(hostContext ? { host: Object.freeze({ ...hostContext, capabilityIds: [...hostContext.capabilityIds] }) } : {}), elementMatcher: this.elementMatcher, resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) }));
+      const host = hostContext ? { ...hostContext, capabilityIds: [...hostContext.capabilityIds] } : undefined;
+      if (host) {
+        const referenceNow = automationStudioReferenceNow(host.referenceNow);
+        if (referenceNow === undefined) delete host.referenceNow;
+        else host.referenceNow = referenceNow;
+        Object.freeze(host);
+      }
+      const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), ...(host ? { host } : {}), elementMatcher: this.elementMatcher, resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) }));
       const result = await Promise.race([execution, new Promise<AutomationNodeExecutionResult>((resolve) => { timer = setTimeout(() => { resolve({ status: "failed", route: "failed", outputs: { error: `Native node exceeded ${timeoutMs}ms timeout.` } }); controller.abort(new Error("Native node timeout.")); }, timeoutMs); })]);
       const boundaryError = validateResultBoundary(definition, result); if (boundaryError) return { ...failed(boundaryError), logs };
       return { result, logs, declaredOutputs: definition.outputs };

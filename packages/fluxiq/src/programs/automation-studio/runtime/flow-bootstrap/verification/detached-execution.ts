@@ -3,6 +3,7 @@ import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapsho
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
 import { automationStudioOptionalStepWayOn, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 import { automationStudioRouterStatePaths, routeAutomationStudioRun } from "../../route-state/index.ts";
 import type { AutomationStudioRouterExecutionResult } from "../../router-runtime.ts";
 import { normalizeAutomationStudioFlowBuildPlan } from "../adaptation.ts";
@@ -38,6 +39,9 @@ export async function runAutomationStudioDetachedCandidate(input: {
   const snapshots = structuredClone(input.snapshots), start = structuredClone(input.start), options = { ...input.options };
   if (options.inputs) options.inputs = structuredClone(options.inputs);
   const signal = input.signal ?? options.signal, now = options.now ?? Date.now, startedAt = now();
+  const referenceNow = automationStudioReferenceNow(options.referenceNow) ?? automationStudioReferenceNow(startedAt);
+  delete options.referenceNow;
+  if (referenceNow !== undefined) options.referenceNow = referenceNow;
   let returnedTrace: AutomationStudioGraphExecutionTrace | undefined, returnedRoute: AutomationStudioRouterExecutionResult | undefined, returnedGraph: AutomationStudioFlowArtifact | undefined;
   let candidateGraphs: AutomationStudioFlowArtifact[] | undefined;
   const receipt = (status: AutomationStudioCandidateExecutionReceipt["status"], trace?: AutomationStudioGraphExecutionTrace): AutomationStudioCandidateExecutionReceipt => ({

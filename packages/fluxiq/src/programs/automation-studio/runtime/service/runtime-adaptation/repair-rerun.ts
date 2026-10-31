@@ -46,7 +46,8 @@ import type {
   AutomationStudioRuntimeSession
 } from "../../../model/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor.ts";
+import { type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor.ts";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/index.ts";
 import { automationStudioRefutedResultFlowWasReauthored, automationStudioRefutedResultHeldReauthor } from "../../recovery/refuted-result/index.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";
@@ -175,12 +176,14 @@ export async function rerunAutomationStudioSessionAfterRepair(
   const candidate = reauthored ? { flow: updatedFlow, adaptationIds: [] } : await pendingCandidate({ ...input, detail }, updatedFlow);
   if ("declinedCode" in candidate) return candidate;
   if (input.from === "start" && !reauthored && !candidate.adaptationIds.length) return { declinedCode: UNREADABLE.nothingToRerun };
+  const referenceNow = automationStudioReferenceNow(input.session.trace?.referenceNow) ?? automationStudioReferenceNow(input.graphOptions?.referenceNow)
+    ?? automationStudioReferenceNow(input.session.startedAt) ?? automationStudioReferenceNow(input.session.trace?.startedAt);
   const retryTrace = adopted ?? await runCanonicalAutomationStudioFlow(
     candidate.flow,
     await input.ports.listPublishedFlowSnapshots(),
     // Numbered after the first pass's attempts: the re-run is kept under the
     // same run id, and an attempt id it repeated would be dropped by the store.
-    { ...(input.graphOptions ?? {}), priorAttemptCount: input.session.trace?.attempts.length ?? 0, ...(resumeNodeId ? { startNodeId: resumeNodeId } : {}) },
+    { ...(input.graphOptions ?? {}), ...(referenceNow !== undefined ? { referenceNow } : {}), priorAttemptCount: input.session.trace?.attempts.length ?? 0, ...(resumeNodeId ? { startNodeId: resumeNodeId } : {}) },
     await input.ports.deprecatedPublicationIds()
   );
   const retrySession: AutomationStudioRuntimeSession = {

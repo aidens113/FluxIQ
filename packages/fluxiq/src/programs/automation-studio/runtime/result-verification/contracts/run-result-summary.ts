@@ -37,6 +37,8 @@ export type AutomationStudioResultLeftOutNamingTheItem = {
  */
 export type AutomationStudioRunResultSummary = {
   schemaVersion: "automation-studio.run-result-summary.v1";
+  /** Fixed execution time, in epoch milliseconds, for interpreting relative dates when this result is checked again. */
+  referenceNow?: number | undefined;
   /** Rows stored across every record set, including the ones not summarized. */
   totalRecordCount: number;
   /** Rows refused across every record set. */

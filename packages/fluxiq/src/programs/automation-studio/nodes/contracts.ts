@@ -129,6 +129,8 @@ export type AutomationNodeIterationState = {
 };
 
 export type AutomationNodeExecutionContext = {
+  /** Fixed reference for relative task dates; now() remains the live timer. */
+  referenceNow?: number;
   inputs: Record<string, JsonValue>;
   parameters: Record<string, JsonValue>;
   /** The run's variables: one map shared by every node of a graph run, and not by a Call Flow child's run. */

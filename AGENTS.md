@@ -280,6 +280,10 @@ When Core's current `pnpm task finish` would launch its default full check,
 use `--skip-checks` after independently passing the relevant narrow checks;
 this does not skip its mandatory contract-test gate. Promotion to `main`
 still requires a complete passing sweep on the commit being promoted.
+For paired worktrees created by the downstream task tool, use its
+`start --worktree --skip-workspace-build` option for narrow work; otherwise
+that setup command launches a full downstream build. Core library preparation
+and currency checks still run. This flag belongs to the downstream tool.
 
 **Live model provider (user, 2026-10-30).** FluxIQ live model-backed tests use
 Anthropic Claude, with the downstream Lab reading `CLAUDE_API_KEY` from its

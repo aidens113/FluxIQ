@@ -28,7 +28,8 @@ export function bothReadings(
   reads: readonly AutomationStudioResultReadAccount[] | undefined,
   recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined,
   /** What Core's record says of each call's no where it refutes any of it (t607, `../refuted-no/`; in part, t641). */
-  refuted: ReadonlyMap<1 | 2, AutomationStudioResultNoWeighed> = new Map()
+  refuted: ReadonlyMap<1 | 2, AutomationStudioResultNoWeighed> = new Map(),
+  now?: number
 ): AutomationStudioResultVerification {
   const weighed: Weighed[] = [];
   for (const [call, verification] of [[1, first], [2, second]] as const) {
@@ -36,7 +37,7 @@ export function bothReadings(
     if (!reading || !(reading.expected || reading.observed || reading.advice)) continue;
     if (weighed.some((other) => sameWords(other.reading, reading))) continue;
     const found = refuted.get(call);
-    const because = contradictsPagingRecord(reading, reads) ? CONTRADICTED : contradictsOrderRecord(reading, recordSets) ? CONTRADICTED_ORDER
+    const because = contradictsPagingRecord(reading, reads) ? CONTRADICTED : contradictsOrderRecord(reading, recordSets, now) ? CONTRADICTED_ORDER
       : found?.wholly ? `contradicted by Core's record: ${found.findings.join(" ")}` : undefined;
     // A reading the record refutes only in part still stands, and says which part (header, t641).
     const label = because ?? (found?.findings.length ? `${PART_CONTRADICTED}: ${found.findings.join(" ")}` : undefined);

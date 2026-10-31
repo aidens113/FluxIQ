@@ -136,7 +136,7 @@ export type AutomationStudioFlowDraftReplayInput = {
    * does not hold (see the header): read by the activity observer, which takes
    * it off before the call goes on. An executor that is not observed ignores it.
    */
-  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal; excusable?: AutomationStudioFlowDraftExcusedReason }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal; excusable?: AutomationStudioFlowDraftExcusedReason; referenceNow?: number }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   /**
    * The ids of the instruction's acts this build reads as lasting
    * (`../../flow-bootstrap/action-permissions.ts`, `instructedLastingActs`): a

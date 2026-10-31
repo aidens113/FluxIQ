@@ -1,6 +1,7 @@
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary } from "../contracts/index.ts";
 import { automationStudioResultReadStop } from "../read-account/index.ts";
 import { automationStudioResultOrderClaimContradicted } from "../value-readings/index.ts";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 import type { JudgeReading } from "./types.ts";
 
 /**
@@ -27,8 +28,9 @@ export function contradictsPagingRecord(reading: JudgeReading, reads: readonly A
 }
 
 /** Whether a reading denies an order every record set's own sort reading says the rows have (`../value-readings/order-claim.ts`, t511). */
-export function contradictsOrderRecord(reading: JudgeReading, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined): boolean {
-  return [reading.expected, reading.observed, reading.advice].some((text) => automationStudioResultOrderClaimContradicted(text, recordSets));
+export function contradictsOrderRecord(reading: JudgeReading, recordSets: readonly AutomationStudioResultRecordSetSummary[] | undefined, now?: number): boolean {
+  const referenceNow = automationStudioReferenceNow(now) ?? Date.now();
+  return [reading.expected, reading.observed, reading.advice].some((text) => automationStudioResultOrderClaimContradicted(text, recordSets, referenceNow));
 }
 
 /** The reads that follow pages: authored to, or read more than one page or loop pass. */

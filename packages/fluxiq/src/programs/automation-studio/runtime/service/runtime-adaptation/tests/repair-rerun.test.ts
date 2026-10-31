@@ -18,6 +18,21 @@ import { PROJECT_ID, adaptationContext, flow, readFails, rerun } from "./repair-
 // The re-run therefore has one check attempt where it used to have three.
 
 describe("a repaired re-run of an optional press whose target is gone", () => {
+  it("keeps the persisted execution reference when legacy options omit it, and lets a retained trace reference win", async () => {
+    const references: Array<number | undefined> = [];
+    const dispatcher: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = (_effect, context) => {
+      references.push(context?.referenceNow);
+      return { status: "success", route: "success", outputs: {} };
+    };
+    const first = await rerun({ dispatcher });
+    expect(first.result?.session?.trace?.referenceNow).toBe(first.session.startedAt);
+    expect(references).toEqual([1, 1, 1]);
+    references.length = 0;
+    const explicit = await rerun({ dispatcher, referenceNow: 2, sessionReferenceNow: 0 });
+    expect(explicit.result?.session?.trace?.referenceNow).toBe(0);
+    expect(references).toEqual([0, 0, 0]);
+  });
+
   it("runs under the default recovery budget a Flow is created with", async () => {
     const context = await adaptationContext();
 

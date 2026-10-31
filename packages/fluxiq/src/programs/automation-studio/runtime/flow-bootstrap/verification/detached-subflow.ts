@@ -55,7 +55,8 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../model/index.ts";
 import { automationNodeStateBinding, type AutomationStudioNodeRegistry, type AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 import type { AutomationStudioRouterExecutionResult } from "../../router-runtime.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS,
@@ -158,6 +159,9 @@ export async function runAutomationStudioDetachedSubflow(input: AutomationStudio
   const signal = input.signal ?? input.options?.signal;
   const now = input.options?.now ?? Date.now;
   const startedAt = now();
+  const { referenceNow: suppliedReferenceNow, ...baseOptions } = input.options ?? {};
+  const referenceNow = automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
+  const options = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
   const candidateIdentity = automationStudioDetachedSubflowCandidateIdentity(identity);
   const refused = (code: string, extra: Pick<AutomationStudioDetachedSubflowResult, "planIssues"> = {}): AutomationStudioDetachedSubflowResult => ({
     partial: true,
@@ -210,7 +214,7 @@ export async function runAutomationStudioDetachedSubflow(input: AutomationStudio
     sourceInstructionIds: input.sourceInstructionIds,
     runId: input.runId,
     start: input.start,
-    ...(input.options ? { options: input.options } : {}),
+    options,
     ...(input.signal ? { signal: input.signal } : {})
   });
   const keys = predecessors.map((predecessor) => predecessor.subflowKey);

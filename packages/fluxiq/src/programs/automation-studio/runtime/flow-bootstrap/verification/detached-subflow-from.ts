@@ -23,6 +23,7 @@
 // source, the root invocation and each graph's own failed-route budget.
 
 import { isDeepStrictEqual } from "node:util";
+import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioDetachedSubflowCandidateIdentity, type AutomationStudioDetachedSubflowInput, type AutomationStudioDetachedSubflowProposal, type AutomationStudioDetachedSubflowResult } from "./detached-subflow.ts";
 
@@ -36,6 +37,9 @@ export async function runAutomationStudioDetachedSubflowFrom(input: AutomationSt
   const signal = input.signal ?? input.options?.signal;
   const now = input.options?.now ?? Date.now;
   const startedAt = now();
+  const { referenceNow: suppliedReferenceNow, ...baseOptions } = input.options ?? {};
+  const referenceNow = automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
+  const options = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
   const candidateIdentity = automationStudioDetachedSubflowCandidateIdentity(identity);
   const refused = (code: string, planIssues?: string[]): AutomationStudioDetachedSubflowResult => ({
     partial: true,
@@ -69,7 +73,7 @@ export async function runAutomationStudioDetachedSubflowFrom(input: AutomationSt
     sourceInstructionIds: input.sourceInstructionIds,
     runId: input.runId,
     start: input.start,
-    ...(input.options ? { options: input.options } : {}),
+    options,
     ...(input.signal ? { signal: input.signal } : {}),
     fromNodeKey: input.fromKey
   });

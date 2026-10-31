@@ -81,12 +81,12 @@ export function automationStudioResultValueReadings(input: {
   const recordSets = input.recordSets.map((set) => withAnswerReadings(set, declaring, input.now));
   const reads = input.reads.map((read, index) => {
     const node = input.authoredNodes ? input.authoredNodes[index] : input.flowNodes.find((candidate) => candidate.id === read.nodeId && candidate.definitionId === read.definitionId);
-    return withReadReadings(read, input.recordSets, node?.definitionId === read.definitionId ? node : undefined);
+    return withReadReadings(read, input.recordSets, node?.definitionId === read.definitionId ? node : undefined, input.now);
   });
   return { reads, recordSets };
 }
 
-function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonly AutomationStudioResultRecordSetSummary[], node: AutomationStudioFlowNode | undefined): AutomationStudioResultReadAccount {
+function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonly AutomationStudioResultRecordSetSummary[], node: AutomationStudioFlowNode | undefined, now: number): AutomationStudioResultReadAccount {
   const authored = automationStudioResultReadParameters(node?.parameterValues);
   if (!node || !authored || !read.conditions?.length) return read;
   const written = Array.isArray(authored.where) ? authored.where : [];
@@ -104,9 +104,9 @@ function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonl
     const witnesses = entry.leftOutObservations?.length === entry.leftOutOnlyByThis?.length ? entry.leftOutObservations : undefined;
     const paired = (entry.leftOutOnlyByThis ?? []).map((row, at) => ({ row, cell: column === undefined ? undefined : leftOutCell(row, column), witness: witnesses?.[at] }));
     const leftOut = paired.flatMap(({ cell }) => cell ?? []);
-    const valuesRead = column === undefined ? [] : automationStudioResultConditionReadings({ condition, column, kept, leftOut });
+    const valuesRead = column === undefined ? [] : automationStudioResultConditionReadings({ condition, column, kept, leftOut, now });
     // The rows a numeric bound, a presence test or a text test left out that Core read as failing it: settled, never quoted for row by row (`./settled-rows.ts`, t574, t599, t624).
-    const settled = read.unfiltered ? undefined : automationStudioResultSettledRows({ condition, column, number: entry.number ?? index + 1, wording: entry.condition, leftOut: paired });
+    const settled = read.unfiltered ? undefined : automationStudioResultSettledRows({ condition, column, number: entry.number ?? index + 1, wording: entry.condition, leftOut: paired, now });
     if (!valuesRead.length && !settled) return entry;
     changed = true;
     return { ...entry, ...(valuesRead.length ? { valuesRead } : {}), ...(settled ?? {}) };
@@ -132,7 +132,7 @@ function withAnswerReadings(summarized: AutomationStudioResultRecordSetSummary, 
     const column = isRecord(authored) && typeof authored.field === "string" ? authored.field : undefined;
     const condition = column === undefined ? undefined : asRecordCondition(authored, column);
     if (!condition || column === undefined) return entry;
-    const valuesRead = automationStudioResultConditionReadings({ condition, column, kept: keptCells(set, column), leftOut: [] });
+    const valuesRead = automationStudioResultConditionReadings({ condition, column, kept: keptCells(set, column), leftOut: [], now });
     if (!valuesRead.length) return entry;
     conditionsChanged = true;
     return { ...entry, valuesRead };

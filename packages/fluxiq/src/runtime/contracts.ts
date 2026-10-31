@@ -145,6 +145,8 @@ export type FluxIQRuntimeCommandAttempt = {
 };
 
 export type FluxIQRuntimeExecutionContext = {
+  /** Fixed epoch milliseconds for relative task dates within this execution. */
+  referenceNow?: number;
   runId?: string;
   signal?: AbortSignal;
   now?: () => number;

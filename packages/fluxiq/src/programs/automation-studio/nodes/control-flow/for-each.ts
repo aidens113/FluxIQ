@@ -117,7 +117,7 @@ function forEachPass(context: AutomationNodeExecutionContext): AutomationNodeExe
     if (!Array.isArray(listed)) return failedPass("for_each.items_invalid", "graph_validation_or_unknown_node", "For Each needs a list in Items.");
     const keys = orderKeys(context.parameters.order);
     if (keys === null) return failedPass("for_each.order_invalid", "graph_validation_or_unknown_node", "For Each's order is a list of keys, each a field with order asc or desc and, optionally, as auto, number, date or text.");
-    const ordered = keys.length ? inOrder(listed, keys, context.now?.() ?? Date.now()) : listed;
+    const ordered = keys.length ? inOrder(listed, keys, context.referenceNow ?? context.now?.() ?? Date.now()) : listed;
     const first = stopAfter(context);
     const items = first === undefined || ordered.length <= first ? ordered : ordered.slice(0, first);
     const limit = maxIterations(context);

@@ -76,6 +76,8 @@ export type AutomationStudioNativeNodeContext = {
   signal: AbortSignal;
   grants: Readonly<{ permissions: string[]; runtimeCapabilities: string[]; networkDestinations: string[]; secretHandles: string[]; filesystemRoots: string[]; process: boolean; childProcess: boolean }>;
   host?: Readonly<{
+    /** The enclosing execution's fixed reference for relative task dates. */
+    referenceNow?: number;
     capabilityIds: string[];
     currentStateRef?: JsonObject;
     previousStateRef?: JsonObject;

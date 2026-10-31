@@ -75,6 +75,7 @@ import {
   type AutomationStudioFlowGraphVersion
 } from "../flow-version/index.ts";
 import { automationStudioAttemptInputs, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
+import { automationStudioReferenceNow } from "../reference-now/index.ts";
 import { AutomationStudioLlmRunPurse, automationStudioLlmBuildTrace, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 import { resolveAutomationStudioRecoveryRunBudget } from "../recovery/annotation/index.ts";
 
@@ -558,6 +559,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   const calledNodes = attempts ? await automationStudioResultCalledNodes(attempts, input.calledGraphs) : undefined;
   const summary = summarizeAutomationStudioRunResult({
     recordSets,
+    referenceNow: automationStudioReferenceNow(session.trace?.referenceNow) ?? session.startedAt ?? session.trace?.startedAt,
     // In the order the Flow runs them, never as its store lists the nodes (s1, s10, s11 ... s9: run-murwd8le's Cause 8).
     ...(input.flow ? { flowNodes: input.flow.nodes, flowEdges: input.flow.edges } : {}),
     ...ended,

@@ -107,7 +107,7 @@ async function fromStepIn(request: AutomationStudioSubflowFromStepRequest, ports
       runId,
       start: receipt,
       // The signal rides on the options alone, as a trial's does: the runner refuses two different signals.
-      options: automationStudioTrialExecutorOptions(ports.graphOptions({ runId, signal }), ports.environment)
+      options: automationStudioTrialExecutorOptions({ ...ports.graphOptions({ runId, signal }), referenceNow: startedAt }, ports.environment)
     });
   } catch (error) {
     await ports.writeSession({ ...opened, status: signal.aborted ? "cancelled" : "failed", startedAt, finishedAt: now() });
