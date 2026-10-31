@@ -3,10 +3,10 @@
 Status: Active
 Status detail: Core's obligations are done: CLAUDE.md loads AGENTS.md, the working-docs audit checks Current State length and ledger validation, and the delegation rule and return contract are mirrored. Kept Active until the paired plan closes.
 Created: 2026-09-10
-Last updated: 2026-09-10
+Last updated: 2026-10-30
 Owner: Senior supervisor agent
 Scope: Core's share of the plan to keep the senior supervisor agent's context small on every project: a `CLAUDE.md` that loads `AGENTS.md`, the mirrored delegation rule and worker return contract, and the `working-docs` audit extension that Core owns.
-Paired document: `F:\!FluxIQWebExtension\docs\working\agent-token-efficiency-plan.md`
+Paired document: `../!FluxIQWebExtension/docs/working/agent-token-efficiency-plan.md`
 Related: [AGENTS.md](../../AGENTS.md), [agent working document protocol](./agent-working-doc-protocol.md), [module size governance plan](./module-size-governance-plan.md)
 
 The design — the draft it refines, the memory tiers, the delegation rule,
@@ -17,34 +17,44 @@ the paired downstream document. This document does not restate it.
 
 ## Current State
 
-**Core's obligations are done.**
+**2026-10-30: MeritPrompts 0.2.0 project integration is refreshed.**
 
-- `CLAUDE.md` at the repository root imports `AGENTS.md` and the FluxIQ
-  family lessons index from `F:\!AgentBrain`. Until now Claude Code loaded
-  no repository instructions here at all.
-- `scripts/structure-audit/rules/working-docs.mjs` now also fails, ratcheted
-  per document, a `## Current State` over 150 lines (key `<file>#current-state`)
-  and any `## Work Ledger` entry without a `- Validation:` bullet or whose
-  validation text is hearsay (`reported success`, `worker(s) reported|said|claimed`;
-  key `<file>#ledger`). Tests: `scripts/structure-audit/rules/tests/working-docs.test.mjs`,
-  run by `pnpm structure:test`. No Core document violates either check
-  today, so nothing was baselined; the longest `Current State` is 144 lines,
-  and the first edit that pushes one past 150 fails outright rather than
-  ratcheting, which is the intended behaviour for a new violation.
-- `AGENTS.md` gained the `Delegation` subsection under Workflow Modes; the
-  protocol gained the 40-line brief budget, the report file format, and the
-  12-line worker return contract. Both are byte-identical downstream.
+- Shared runtime rules, hooks and lessons live at
+  `C:/Users/osrs_/MeritClaude`; `F:/!AgentBrain` is historical.
+- Root `AGENTS.md` now directs Claude Code to `CLAUDE.md` and Codex to
+  `CODEX.md`. Project rules override global policy, including `pnpm task`,
+  validation, repository boundaries and promotion gates.
+- `CLAUDE.md` retains project and FluxIQ family lesson imports; global
+  `~/.claude/settings.json` owns hooks for both project repositories.
+- `CODEX.md` links the shared Codex guide and the FluxIQ family lesson
+  index, requiring explicit reads of relevant lessons. It preserves working
+  documents and local memory, and makes no claim to install Claude hooks
+  or agent/model aliases into Codex.
+- The existing working-document checks and protocol remain unchanged.
+  Task t815 owns the paired project update; worker `meritprompts-core`
+  changed only the root instruction files and its report.
+- Both global drift checks, the project structure audit and supervisor
+  instruction-path/import assertions passed. All 357 preserved memory/config
+  files are unchanged; all eight configured Claude hook entries resolve.
+  No application code changed.
 
-**Next steps**
-
-1. None in Core. The remaining phases (brain hooks, templates, memory
-   promotion, measurement) live in the paired document.
+**Next:** no runtime integration work remains. Measurement remains owned by
+the downstream plan.
 
 **Blockers:** none.
 
 ---
 
 ## Work Ledger
+
+### 2026-10-30 ? MeritPrompts project runtime integration (t815)
+
+- Agent: senior supervisor; Core instruction files by worker meritprompts-core.
+- Changed: root AGENTS.md, CLAUDE.md, new CODEX.md, this document and its generated index; Core worker report.
+- Why: update both existing projects to the shared Claude Code/Codex policy without replacing project rules or second-brain memory.
+- Validation: `node C:/Users/osrs_/MeritClaude/install.mjs --check` and `--codex --check` -> both passed. Worker diff independently reviewed. `node scripts/structure-audit.mjs --json` -> exit 0, no failures in each repository. Supervisor Node assertions -> both runtime routes/imports/lesson paths passed; 357 preservation hashes unchanged; Claude settings byte-identical; eight hook entries resolve. `git diff --check` -> passed. An audit probe before worktree dependency installation completed could not resolve TypeScript; rerun after setup.
+- Outcome: Accepted; instruction integration validated.
+- Follow-up: no application tests or interactive runtime sessions needed for these instruction-only edits; phase 4 measurement remains paused.
 
 ### 2026-09-10 — Paired document created
 
@@ -75,6 +85,20 @@ the paired downstream document. This document does not restate it.
 - Follow-up: none in Core.
 
 ---
+
+## Worker Briefs
+
+### Brief: meritprompts-core
+- Repository: FluxIQ Core, C:/Users/osrs_/FluxStuff/fxwork/t815/!FluxIQ
+- Task: Refresh existing project integration with MeritPrompts 0.2.0 for both runtimes.
+- Required reads: this document Current State; root AGENTS.md and CLAUDE.md; C:/Users/osrs_/MeritClaude/CODEX.md and templates/CODEX.md; Repository Boundary in AGENTS.md.
+- Owns (may edit): root AGENTS.md, CLAUDE.md, new CODEX.md, and your report below.
+- Must not touch: other files, global configuration, source, lessons, memory, shared docs, git state. Never commit or push.
+- Requirements: add a short runtime entry section in AGENTS.md linking CODEX.md for Codex and CLAUDE.md for Claude; shared policy comes from global install and project rules override it. Replace MeritClaude branding in prose with MeritPrompts while retaining actual C:/Users/osrs_/MeritClaude paths.
+- Requirements: CLAUDE.md keeps @AGENTS.md and the current FluxIQ family lesson import, names the new global runtime setup. CODEX.md explicitly links C:/Users/osrs_/MeritClaude/CODEX.md and lessons/fluxiq/INDEX.md; read relevant family lesson files explicitly, since @ imports do not load in Codex. State global installation command and configured Codex models/tools, no Claude model aliases or hooks claimed for Codex.
+- Requirements: preserve all project-specific validation, branch, safety and memory rules. Do not copy global hooks into either repo.
+- Definition of done: inspect diff, git diff --check, check referenced source and lesson paths exist. No full suites. Report exactly what was checked.
+- Report to: docs/working/agent-token-efficiency-plan/reports/meritprompts-core.md
 
 ## Open Questions
 
