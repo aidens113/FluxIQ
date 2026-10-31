@@ -34,7 +34,9 @@ answers, untouched inherited nodes, unchanged/refused outcomes and model plan
 JSON contribute none. Resolution and successful completion return the fresh
 sidecar beside the plan. A frozen read-only view and private identity tracking
 prevent arbitrary maps or provider result fields from becoming trusted input.
-Internal readers and key helpers are not package exports.
+The private implementation lives at `runtime/llm/resolved-control-intent/`;
+internal readers and key helpers are not package exports. The harness-options
+barrel continues to export only the public companion type from that directory.
 
 The shared candidate controller consumes this sidecar before relayout or other
 transforms. Scoped subflow submissions use the same controller before they

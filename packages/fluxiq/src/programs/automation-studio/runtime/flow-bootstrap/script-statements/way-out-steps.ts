@@ -11,7 +11,7 @@ import type {
   AutomationStudioFlowScriptStep
 } from "../authoring/index.ts";
 import { automationStudioModelFacingControlWords } from "../../llm/model-facing/index.ts";
-import { automationStudioResolvedControlIntentFor, type AutomationStudioResolvedControlIntent } from "../../llm/harness-options/resolved-control-intent/index.ts";
+import { automationStudioResolvedControlIntentFor, type AutomationStudioResolvedControlIntent } from "../../llm/resolved-control-intent/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioFlowScriptStepSaysOptional } from "./guarded-steps.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";

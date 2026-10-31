@@ -162,7 +162,7 @@ import { automationStudioFlowBootstrapIssueDetailSentence } from "../../flow-boo
 // From the module that owns them: `../harness.ts` and the harness barrel both lead back into this module's import cycle, and through them the two read as undefined when this module loads inside it.
 import { AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN } from "../harness/structured-response.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanControlState, AutomationStudioPlanHandleReach, AutomationStudioPlanHandleView } from "./binding.ts";
-import { automationStudioReadResolvedControlIntent, automationStudioResolvedControlIntentNodeKey, automationStudioResolvedControlIntents, type AutomationStudioResolvedControlIntent } from "./resolved-control-intent/index.ts";
+import { automationStudioReadResolvedControlIntent, automationStudioResolvedControlIntentNodeKey, automationStudioResolvedControlIntents, type AutomationStudioResolvedControlIntent } from "../resolved-control-intent/index.ts";
 import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, automationStudioPlanFactTargetSites, automationStudioPlanFactTargetsNotNamingHandles, automationStudioPlanMetadataFactHandlePaths } from "./plan-fact-targets.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";

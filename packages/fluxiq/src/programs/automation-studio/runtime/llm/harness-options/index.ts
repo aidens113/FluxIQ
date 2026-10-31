@@ -83,4 +83,4 @@ export { automationStudioRepeatSuggestion, type AutomationStudioRepeatSuggestion
 // The instruction's acts as the checklist a Flow Bootstrap's loop shows beside its draft.
 export { automationStudioFlowBootstrapDraftActs } from "./draft-acts.ts";
 
-export type { AutomationStudioResolvedControlIntent } from "./resolved-control-intent/index.ts";
+export type { AutomationStudioResolvedControlIntent } from "../resolved-control-intent/index.ts";

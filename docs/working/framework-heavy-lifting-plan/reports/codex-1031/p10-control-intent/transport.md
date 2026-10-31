@@ -1,6 +1,6 @@
 # P10 trusted control intent: downstream transport
 
-Status: Final source frozen; released targeted rerun passes. Lead owns broader plan-resolution/type/audit and paired acceptance verification.
+Status: Done. Final source/tests/docs/report frozen. Lead reported the complete owning acceptance set, types and both structure audits passing.
 
 ## Implemented
 
@@ -27,7 +27,7 @@ Downstream paths:
 - `domain/src/runtime/llm-evidence/plan-resolution/view-history.ts`
 - `domain/src/runtime/llm-evidence/plan-resolution/control-intents/{source,same,absolute,answer,index}.ts`
 - `domain/src/runtime/llm-evidence/plan-resolution/control-intents/tests/{host,targets.test,resolution.test,repair.test}.ts`
-- `domain/src/runtime/llm-evidence/plan-resolution/tests/{resolve-plan-node,view-history}.test.ts` (strict expected companions and separated historical-conflict/identity oracles)
+- `domain/src/runtime/llm-evidence/plan-resolution/tests/{resolve-plan-node,view-history,acted-identity,fact-target,identity-stable-facts,plan-node-identity}.test.ts` (strict expected companions and separated historical-conflict/identity oracles)
 - `docs/architecture/build-loop.md`
 
 The classifier directory, Core implementation, shared working documents, package/build files, scripts/examples/graphs/oracles/pins, provider/browser state and git were not touched. The paired Core report is this file only.
@@ -46,17 +46,23 @@ Read-only freeze review found a second conflict hazard: pre-act restoration coul
 
 `DOMAIN_TEST_BUILD_LABEL=p10-transport-3 pnpm.cmd --filter @fluxiq-web-extension/domain test runtime/llm-evidence/plan-resolution/tests/resolve-plan-node.test runtime/llm-evidence/plan-resolution/control-intents/tests/targets.test` -> Core freshness PASS; 30 tests passed, 0 failed, 563.8101 ms test duration (8.0478 s command). This released rerun covers the corrected adjacent resolver file and every new target/history regression. Source remains frozen for lead verification.
 
+The lead's broader run initially reached 210/214. Read-only worker diagnosis separated four test-oracle differences from production defects: the manual A8 helper had no actual predecessor/acted source and correctly refused accept-to-neutral history; a fact answer now intentionally differs from a click answer only by the executable companion; and two direct secret-control target expectations lacked the new neutral companion. The lead released four test-only updates after the compiler ended. Exact Get coupons-to-Collected history is preserved as a named exact-ambiguity regression; the neutral-to-neutral identity proof is separately named and is not claimed as original A8 acceptance. Fact full records and parameter equality remain strict with explicit annotation absence; secret identity assertions only gained a top-level neutral companion. Original actual node-run pre-act tests were untouched.
+
+`DOMAIN_TEST_BUILD_LABEL=p10-transport-4 pnpm.cmd --filter @fluxiq-web-extension/domain test runtime/llm-evidence/plan-resolution/tests/acted-identity.test runtime/llm-evidence/plan-resolution/tests/fact-target.test runtime/llm-evidence/plan-resolution/tests/identity-stable-facts.test runtime/llm-evidence/plan-resolution/tests/plan-node-identity.test` -> Core freshness PASS; 26 tests passed, 0 failed, 662.2013 ms test duration (9.4196 s command). This includes the unchanged actual node-run original pre-act tests, exact A8 ambiguity and independent identity assertions, passive fact separation and full secret identity checks.
+
+**Lead-reported final verification (not worker-run claims):** all 25 owning plan-resolution files plus new intent and actual paired acceptance tests passed, 215/215 in 9.183 s; final domain types passed in 14.475 s; Core structure audit passed at its unchanged 1143 baseline and Downstream audit passed at its unchanged 583 baseline. The lead also reported the earlier 128-case web acceptance set, including the classifier, actual public Core/Native/Gate pairing and exact original examples/guidance/instructions, passing. The worker did not rerun those lead checks or operate git. The lead reported source commits on both task branches and backup pushes in progress.
+
 Static final source counts: target-packets.ts 800 lines, resolve-plan-node.ts 779 lines; no baseline allowance was added. No browser/provider calls, package builds or git operations were performed by this worker. Source counts are not runtime validation.
 
 New owning cases cover reused A/B identities and annotations, exact historical source, bare ambiguity, known semantic conflict, original pre-act restoration and caller mutation isolation, wrong location/document/frame/layer/shadow sources, unchanged absolute parameters, absent evidence and forged saved/model fields, multiple-source ambiguity, nested Run Output, handle-bound `$state`, fact exclusion, and exact retained repair packets.
 
 The lead also authorized the bounded exact saved absolute `$state` fallback helper and its byte-identical/absence/conflict/model-refusal oracles; its new owning test passed in both broader worker runs. The corrected current/history boundary and exact expected-companion updates now pass the released targeted rerun.
 
-## Return contract (pending validation)
+## Return contract
 
-Outcome: Partial
+Outcome: Done
 Changed: Owned downstream source/tests/doc paths above; this report.
-Validation: Final released labelled adjacent resolver/target command above -> 30/30 passed; prior broader intent/store/history run 68/69 before the final strict fixture expectation correction.
-Not verified: Lead's broader owning plan-resolution run, final typecheck/structure audit, paired Native/Gate acceptance and byte/graph proofs; no browser/provider qualification.
+Validation: Final released worker commands above -> 30/30 and 26/26 passed. Lead reports final complete owning/intent/paired set 215/215, domain types PASS, both structure audits PASS with unchanged baselines.
+Not verified: Worker did not independently rerun the lead's final broader/types/audit/paired/byte-graph checks; no browser/provider qualification or worker git operations.
 Report: docs/working/framework-heavy-lifting-plan/reports/codex-1031/p10-control-intent/transport.md
-Notes: Source/docs/tests are frozen. Await lead release before checks or further source edits. No git operations performed.
+Notes: Source/docs/tests/report are frozen. No further edits will be made. Lead owns integration and git.

@@ -48,7 +48,7 @@ Additional narrow preservation checks located and passed to root, not launched h
 
 Under `packages/fluxiq/src/programs/automation-studio/runtime/`:
 
-- `llm/harness-options/resolved-control-intent/{read,node-key,sidecar,index}.ts`
+- `llm/resolved-control-intent/{contracts,read,node-key,sidecar,index}.ts` (the root-prepared contract was mechanically relocated in the follow-up below)
 - `llm/harness-options/{binding,plan-parameter-resolution,bootstrap-completion}.ts`
 - `llm/harness-options/tests/bootstrap-completion.test.ts`
 - `llm/harness-options/tests/plan-parameter-resolution/tests/intent.test.ts`
@@ -56,7 +56,7 @@ Under `packages/fluxiq/src/programs/automation-studio/runtime/`:
 - `flow-bootstrap/candidate/submission.ts`, `tests/refusal-locator-corpus.test.ts`, and `control-intent/tests/submission.test.ts`
 - `flow-bootstrap/subflow-candidate/control-intent/tests/submission.test.ts`
 
-Also the authored architecture document and this report. The root-prepared public contract, package/version/lockfiles and shared working documents were not edited by this worker.
+Also the authored architecture document and this report. The root-prepared public contract's content, package/version/lockfiles and shared working documents were not edited by this worker.
 
 ## Root acceptance follow-up: test directory budgets
 
@@ -72,11 +72,37 @@ pnpm.cmd exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/c
 
 Observed: PASS, 7/7 tests across the 2 moved files, 38.36s. Candidate transport/permission tests passed 5/5; scoped-subflow transport tests passed 2/2. No other checks were relaunched by this worker. Source/tests remain frozen for root's rebuilt SDK/freshness and audit acceptance.
 
+## Root push follow-up: tracked naming depth
+
+Root reported that its Core backup push was rejected because the five now-tracked intent files occupied 10 path segments, exceeding the limit of 9; the precommit audit had missed their previously untracked paths. No baseline increase or bypass was used. Root authorized relocating only the private directory, its importing sites and exact-path documentation, without semantic or assertion changes.
+
+Actual path changes (prefix `packages/fluxiq/src/programs/automation-studio/`):
+
+| Previous path | Current path |
+| --- | --- |
+| `runtime/llm/harness-options/resolved-control-intent/contracts.ts` | `runtime/llm/resolved-control-intent/contracts.ts` |
+| `runtime/llm/harness-options/resolved-control-intent/index.ts` | `runtime/llm/resolved-control-intent/index.ts` |
+| `runtime/llm/harness-options/resolved-control-intent/node-key.ts` | `runtime/llm/resolved-control-intent/node-key.ts` |
+| `runtime/llm/harness-options/resolved-control-intent/read.ts` | `runtime/llm/resolved-control-intent/read.ts` |
+| `runtime/llm/harness-options/resolved-control-intent/sidecar.ts` | `runtime/llm/resolved-control-intent/sidecar.ts` |
+
+The native move verified that source/destination stayed within this task checkout, refused an existing destination or unexpected source contents, and compared SHA256 before/after for all five files: all five hashes were unchanged. The old directory no longer exists. Only relative import/export paths changed in `harness-options/{binding,index,plan-parameter-resolution,bootstrap-completion}.ts` and `flow-bootstrap/script-statements/way-out-steps.ts`; the public harness export remains type-only with the same name/shape, with no public helpers. The architecture document now names `runtime/llm/resolved-control-intent/`. Tests continue importing the public harness barrel and needed no change. No assertion, implementation or permission/effect policy changed.
+
+Source was re-frozen and root notified before launching the narrow check. Root owns SDK, types, final tracked audit and push. Historical brief text records the original authorized location; this report records the superseding move.
+
+Working directory: `packages/fluxiq`.
+
+```powershell
+pnpm.cmd exec vitest run src/programs/automation-studio/runtime/llm/harness-options/tests/plan-parameter-resolution/tests/intent.test.ts src/programs/automation-studio/runtime/flow-bootstrap/script-statements/tests/way-out-steps.test.ts src/programs/automation-studio/runtime/flow-bootstrap/candidate/control-intent/tests/submission.test.ts src/programs/automation-studio/runtime/flow-bootstrap/subflow-candidate/control-intent/tests/submission.test.ts --maxWorkers=2 --minWorkers=1
+```
+
+Observed: PASS, 19/19 tests across all 4 affected files, 59.45s (intent 6, checker 6, actual candidate 5, actual scoped subflow 2). No other checks were relaunched by this worker. Source remains frozen for root's rebuilt SDK/types/tracked audit and push.
+
 ## Return contract
 
 Outcome: Done
 Changed: resolved-control-intent private reader/key/sidecar/barrel; binding documentation; plan resolution; completion; candidate submission; way-out checker; owning resolution/completion/checker/candidate/subflow tests; architecture doc; this report.
-Validation: named 13-file Vitest command -> 162 passed, 1 fixture failure, 62.98s; released test-only fixes; package typecheck -> PASS, 25.788s; targeted two-file rerun -> 11 passed, 1 unsupported-grammar fixture failure, 30.56s; released one-literal correction; final direct-checker rerun -> 6/6 PASS, 28.29s; authorized test-directory move rerun -> 7/7 PASS across 2 moved files, 38.36s.
-Not verified: root SDK/audit/final freshness/cross-repository acceptance, extra route-effect/toggle regressions, live behavior; package typecheck preceded the final test-only grammar literal.
+Validation: named 13-file Vitest command -> 162 passed, 1 fixture failure, 62.98s; released test-only fixes; package typecheck -> PASS, 25.788s; targeted two-file rerun -> 11 passed, 1 unsupported-grammar fixture failure, 30.56s; released one-literal correction; direct-checker rerun -> 6/6 PASS, 28.29s; authorized test-directory move rerun -> 7/7 PASS across 2 moved files, 38.36s; authorized private-directory relocation -> all 5 moved-file SHA256 hashes unchanged, affected tests 19/19 PASS across 4 files, 59.45s.
+Not verified: root final SDK/types/tracked audit/freshness/cross-repository acceptance and push after relocation, extra route-effect/toggle regressions, live behavior; the worker's successful package typecheck predates the mechanical relocation.
 Report: docs/working/framework-heavy-lifting-plan/reports/codex-1031/p10-control-intent/core.md
-Notes: Source/tests re-frozen after the authorized two-file test move; root owns the SDK hash refresh/audit. No production source changed after root's passing SDK snapshot. No production defect observed in actual candidate/subflow transport.
+Notes: Source frozen after the authorized five-file private-directory relocation and import/doc path updates; no semantic/assertion changes. Root owns final SDK/types/tracked audit/push. No production defect observed in actual candidate/subflow transport.

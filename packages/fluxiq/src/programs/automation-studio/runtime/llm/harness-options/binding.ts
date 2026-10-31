@@ -20,7 +20,7 @@ import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExpl
 import type { AutomationStudioLlmDomainSystemInstructions } from "../domain-instructions/index.ts";
 import type { AutomationStudioFlowScriptExamples } from "../../flow-bootstrap/script-examples/index.ts";
 import type { AutomationStudioFlowScriptGuidance } from "../../flow-bootstrap/script-guidance/index.ts";
-import type { AutomationStudioResolvedControlIntent } from "./resolved-control-intent/index.ts";
+import type { AutomationStudioResolvedControlIntent } from "../resolved-control-intent/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
 import {
