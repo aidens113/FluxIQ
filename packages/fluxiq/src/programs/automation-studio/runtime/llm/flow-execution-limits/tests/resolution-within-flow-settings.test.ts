@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import { assertFlowLlmExecutionSettings } from "../../../../api/handlers/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../../model/index.ts";
 import type { AutomationStudioLlmProvider } from "../../harness.ts";
 import { automationStudioLlmResolutionWithinFlowSettings } from "../resolution-within-flow-settings.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../run-call-backstop.ts";
@@ -37,6 +39,28 @@ describe("a provider resolution narrowed by the Flow's own spend limits", () => 
     expect(lowered).toMatchObject({ maxCallsPerRun: 20, maxEstimatedCostUsd: 0.1 });
   });
 
+  it.each([
+    [1, 5, 1],
+    [5, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD, 5],
+    [5, 1, 1],
+    [1, 0.05, 0.05],
+    [AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD, 5, 5]
+  ])("enforces API-accepted per-call cost %s against host allowance %s as %s without a provider call", (cost, host, expected) => {
+    const metadata: JsonObject = {
+      llmProvider: "anthropic", llmModel: "claude-sonnet-5-5",
+      llmExecutionSettings: {
+        tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
+        maxCalls: 48, timeoutMs: 25_000, maxEstimatedCostUsd: cost, retryCount: 0
+      }
+    };
+    expect(() => assertFlowLlmExecutionSettings(metadata)).not.toThrow();
+    const runTask = vi.fn(provider.runTask);
+    const resolution = { ...sessionKeyResolution(), provider: { ...provider, runTask }, maxEstimatedCostUsd: host, maxTotalEstimatedCostUsd: host };
+    const narrowed = automationStudioLlmResolutionWithinFlowSettings(resolution, metadata);
+    expect(narrowed).toMatchObject({ maxCallsPerRun: 48, maxEstimatedCostUsd: expected, maxTotalEstimatedCostUsd: host });
+    expect(runTask).not.toHaveBeenCalled();
+  });
+
   // A Flow saved from the web app stores 8,000 / 2,000 / 10,000 tokens and 20 s
   // by default; read as limits they would starve every panel-built Flow.
   it("leaves the resolver's token limits and timeout alone whatever the Flow stores", () => {
@@ -62,7 +86,7 @@ describe("a provider resolution narrowed by the Flow's own spend limits", () => 
   it.each([
     ["absent settings", {}],
     ["settings that are not an object", { llmExecutionSettings: [48] }],
-    ["values outside the settings check's bounds", flow({ maxCalls: AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP + 1, maxEstimatedCostUsd: 0.3 })],
+    ["values outside the settings check's bounds", flow({ maxCalls: AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP + 1, maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD + 0.01 })],
     ["values of the wrong type", flow({ maxCalls: "48", maxEstimatedCostUsd: "0.1" })]
   ])("ignores %s", (_label, metadata) => {
     expect(automationStudioLlmResolutionWithinFlowSettings(sessionKeyResolution(), metadata as JsonObject)).toEqual(sessionKeyResolution());

@@ -303,7 +303,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4315,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4304,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "import-cycles": {

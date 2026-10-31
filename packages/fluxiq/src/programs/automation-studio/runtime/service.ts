@@ -151,7 +151,7 @@ import {
   type AutomationStudioFlowRunSummaryPage,
   flowPublicationId,
   AutomationStudioFlowMutations,
-  AutomationStudioFlowWriter, automationStudioFlowValidationContext,
+  AutomationStudioFlowWriter, AutomationStudioFlowCreation, automationStudioFlowValidationContext,
   subflowFeedRevision,
   type CreateFlowSubflowInput,
   flowScopeForProject,
@@ -363,6 +363,7 @@ export class AutomationStudioService {
   private readonly flows: AutomationStudioFlowStore;
   private readonly recordings: AutomationStudioRecordingStore;
   private readonly flowWriter: AutomationStudioFlowWriter;
+  private readonly flowCreation: AutomationStudioFlowCreation;
   private readonly flowMutations: AutomationStudioFlowMutations;
   private readonly adaptationPatches: AutomationStudioAdaptationPatches;
   private readonly durableAdaptations: AutomationStudioDurableAdaptations;
@@ -456,6 +457,7 @@ export class AutomationStudioService {
     this.flows = new AutomationStudioFlowStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.repositories, this.projectDatabasePool);
     this.recordings = new AutomationStudioRecordingStore(this.projectPaths, this.recordingPaths, this.projects, this.indexes, this.objectDocuments, this.repositories, this.objectStore, this.runtimeProjectDatabasePool);
     this.flowWriter = new AutomationStudioFlowWriter(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.legacy, this.objectDocuments, this.repositories, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
+    this.flowCreation = new AutomationStudioFlowCreation(this.projects, this.flows, this.repositories, this.flowWriter, undefined, automationStudioFacadePorts(this));
     this.flowMutations = new AutomationStudioFlowMutations(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowWriter, automationStudioFacadePorts(this));
     this.adaptationPatches = new AutomationStudioAdaptationPatches(this.flows, this.flowWriter, this.flowMutations, automationStudioFacadePorts(this));
     this.durableAdaptations = new AutomationStudioDurableAdaptations(this.flows, this.flowWriter, this.flowMutations, this.adaptationPatches, automationStudioFacadePorts(this));
@@ -1316,20 +1318,7 @@ export class AutomationStudioService {
   }
 
   async createFlow(input: { projectId: string; name?: unknown; description?: unknown; flowId?: string }): Promise<AutomationStudioFlowArtifact> {
-    const project = await this.projects.findProject(input.projectId);
-    const name = typeof input.name === "string" ? input.name.trim() : "";
-    if (!name) throw new Error("Flow name is required.");
-    const flowId = typeof input.flowId === "string" && input.flowId.trim() ? input.flowId.trim() : `flow.${randomUUID()}`;
-    await this.flows.loadProjectFlow(project.id, flowId);
-    if (await this.repositories.flows.get(flowId)) throw new Error(`Automation Studio Flow ID already exists: ${flowId}`);
-    const flow = createBlankAutomationStudioFlowArtifact({
-      flowId,
-      projectId: project.id,
-      name,
-      ...(typeof input.description === "string" && input.description.trim() ? { description: input.description.trim() } : {}),
-      scope: flowScopeForProject(project)
-    });
-    return await this.saveFlow({ projectId: project.id, flow });
+    return await this.flowCreation.createFlow(input);
   }
 
   async getFlow(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact> {
