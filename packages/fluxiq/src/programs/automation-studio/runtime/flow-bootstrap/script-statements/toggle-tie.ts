@@ -33,15 +33,8 @@
 // presses it back (an undo, written with the other state's words) ties the
 // press to the step written exactly as the trial's was, never to the undo.
 //
-// **The earliest tied press decides (t792).** A build's first press of a
-// control moved it away from where the site was before the build, toward the
-// state the instruction asks for. A later press that flipped it again is a
-// reversal: its signature names the build's before-state, never the asked one.
-// Run `run-mvswfjbq-d0a95f6e` pressed a control it had already flipped once
-// more while exploring, the newest press used to decide, and the step was
-// taught the before-state: the trial then pressed nothing, "already in the
-// asked state", on a control that was not. Presses that agree give the same
-// signature whichever is taken. Pure.
+// Every tied observation is returned. Matching identifies a step; it cannot
+// identify task intent. State choice belongs to `runtime/toggle-state/`.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioExploredToggle } from "./toggle-idempotent.ts";
@@ -50,7 +43,7 @@ import { automationStudioToggleSameAcrossStates } from "./toggle-state-words.ts"
 /** The parameter Core gives a toggle step (`./toggle-idempotent.ts`): never part of what the step is. */
 const ENSURE_STATE = "ensureState";
 
-/** The earliest recorded press tied to the step or call (header), or `undefined`. */
+/** Every recorded press tied to the step or call, without choosing its state. */
 export function automationStudioExploredToggleTie(
   tie: {
     /** The node the step or call runs. */
@@ -72,14 +65,14 @@ export function automationStudioExploredToggleTie(
     } | undefined;
   },
   explored: readonly AutomationStudioExploredToggle[]
-): AutomationStudioExploredToggle | undefined {
+): AutomationStudioExploredToggle[] {
   const target = tie.target === undefined ? undefined : canonical(tie.target);
   const step = tie.step;
   const identity = step ? written(step.parameters) : undefined;
   const others = (step?.others ?? []).filter((other) => other.definitionId === tie.node);
   // Another step of the plan written the same: only then does the place decide (header).
   const twinned = others.some((other) => written(other.parameters) === identity);
-  return explored.find((press) => {
+  return explored.filter((press) => {
     if (press.node !== tie.node) return false;
     if (press.trialNodes?.length) {
       if (!step || press.trialParameters === undefined) return false;

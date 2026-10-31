@@ -82,6 +82,8 @@ export type AutomationStudioProjectBuildToggle = {
    */
   trialParameters?: JsonObject;
   signature: JsonObject;
+  /** The actual observed pre-state; absent on legacy records, never inferred. */
+  beforeSignature?: JsonObject;
   idempotentWith?: string;
 };
 

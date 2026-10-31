@@ -111,6 +111,7 @@ export class AutomationStudioProjectBuildTogglesRecord {
         ...(toggle.trialNodes?.length ? { trialNodes: [...toggle.trialNodes] } : {}),
         ...(toggle.trialNodes?.length && toggle.trialParameters ? { trialParameters: structuredClone(toggle.trialParameters) } : {}),
         signature: structuredClone(toggle.signature),
+        ...(toggle.beforeSignature ? { beforeSignature: structuredClone(toggle.beforeSignature) } : {}),
         ...(toggle.idempotentWith ? { idempotentWith: toggle.idempotentWith } : {})
       });
     } catch (error) {

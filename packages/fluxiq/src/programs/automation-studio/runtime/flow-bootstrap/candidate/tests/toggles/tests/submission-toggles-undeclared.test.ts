@@ -30,7 +30,7 @@ const resolution = { scope: { kind: "domain" as const, domainId: "demo" }, runti
 const binding = {
   resolvePlanNodeParameters: async ({ parameters }: { parameters: JsonObject }) => ({
     status: "resolved" as const,
-    parameters: { target: { selector: "#like" } },
+    parameters: { target: { selector: "#like" }, ...(parameters.ensureState ? { ensureState: parameters.ensureState } : {}) },
     handleViews: [{ handle: String((parameters.target as JsonObject).handle), view: 1, location: "https://site.test/p/1/" }]
   })
 };
@@ -50,7 +50,7 @@ function explored(): AutomationStudioExploredToggles {
 async function submitted(declaresEnsureState: boolean) {
   const registry = new AutomationStudioNodeRegistry([press(declaresEnsureState)]);
   const controller = new AutomationStudioFlowCandidateSubmissionController({ projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base", binding, exploredToggles: explored() });
-  const nodes = [{ key: "like", definitionId: "domain.demo.press", definitionVersion: "1.0.0", consequences: ["modify_existing"], parameters: { target: { handle: "t542" } } }];
+  const nodes = [{ key: "like", definitionId: "domain.demo.press", definitionVersion: "1.0.0", consequences: ["modify_existing"], parameters: { target: { handle: "t542" }, ...(declaresEnsureState ? { ensureState: SIGNATURE } : {}) } }];
   const result = await controller.submit({ summary: "Like the posts", plan: { schemaVersion: "0.1", router: { name: "Like", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } }, subflows: [{ key: "primary", name: "Primary", role: "primary", nodes, edges: [] }] } });
   expect(result.ok, JSON.stringify(result)).toBe(true);
   if (!result.ok) throw new Error("refused");
@@ -65,7 +65,7 @@ describe("a toggle step's ensureState, as the trial runs it", () => {
     expect(await submitted(true)).toEqual({ target: { selector: "#like" }, ensureState: SIGNATURE });
   });
 
-  it("is not given to a press that does not declare it, so validation never turns it into another parameter", async () => {
+  it("preserves the existing no-ensureState node path without correcting it to expectedState", async () => {
     const parameters = await submitted(false);
     expect(parameters).toEqual({ target: { selector: "#like" } });
     expect(parameters?.expectedState).toBeUndefined();

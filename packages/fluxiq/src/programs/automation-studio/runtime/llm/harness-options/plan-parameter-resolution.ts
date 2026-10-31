@@ -137,9 +137,9 @@
 //
 // **A handle's view may say its control is stateful (CC9, t799).** A view in
 // `handleViews` may carry `control`: what the domain read of the control at
-// that look, `{stateful: true, state?, ensures?, idempotentWith?}`
+// that look, `{stateful: true, state?, shown?, ensures?, idempotentWith?}`
 // (`./binding.ts`). It is the domain's and opaque, so it is only bounded here:
-// `stateful` exactly `true`, `state` a short word, `ensures` a small non-empty
+// `stateful` exactly `true`, `state` a short word, `shown`/`ensures` small non-empty
 // plain JSON object, `idempotentWith` a node id. A field outside its bound is
 // dropped and the rest kept; a `control` with any other key, or not stateful,
 // is dropped whole. Neither ever refuses the node: an unreadable look is the
@@ -148,6 +148,7 @@
 // presses (`../../flow-bootstrap/script-statements/toggle-idempotent.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioToggleStateSignature } from "../../toggle-state/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapIssueDetail, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioSiteResetWitnessStamp } from "../../flow-bootstrap/reset-admission/index.ts";
@@ -196,7 +197,6 @@ const MAX_HANDLE_VIEWS = 64;
 const MAX_VIEW_LOCATION_LENGTH = 2_048;
 /** Bounds on a view's `control` (header, CC9): its `state` a short word, its `ensures` a state's digest as JSON, never a page, its `idempotentWith` a node id. */
 const MAX_CONTROL_STATE_LENGTH = 40;
-const MAX_CONTROL_ENSURES_CHARS = 4_096;
 const CONTROL_NODE_ID = /^[A-Za-z0-9_.:-]{1,200}$/u;
 /** The most steps before a node it is told of (header, t748 U1b); a node with more is told none. */
 const MAX_PRECEDING_STEPS = 200;
@@ -550,12 +550,12 @@ function ownView(view: AutomationStudioPlanHandleView): AutomationStudioPlanHand
 
 /** A view's `control` within its bounds (header, CC9): a field outside its bound dropped, the whole dropped when not stateful or with any other key. */
 function controlOf(value: unknown): AutomationStudioPlanControlState | undefined {
-  if (!isRecord(value) || value.stateful !== true || !keysWithin(value, ["stateful"], ["state", "ensures", "idempotentWith"])) return undefined;
+  if (!isRecord(value) || value.stateful !== true || !keysWithin(value, ["stateful"], ["state", "shown", "ensures", "idempotentWith"])) return undefined;
   const state = typeof value.state === "string" && value.state.trim() !== "" && value.state.length <= MAX_CONTROL_STATE_LENGTH && !/\p{Cc}/u.test(value.state) ? value.state : undefined;
-  const ensures = isRecord(value.ensures) && Object.keys(value.ensures).length > 0 && isPlainJson(value.ensures) && JSON.stringify(value.ensures).length <= MAX_CONTROL_ENSURES_CHARS
-    ? structuredClone(value.ensures) as JsonObject : undefined;
+  const shown = automationStudioToggleStateSignature(value.shown);
+  const ensures = automationStudioToggleStateSignature(value.ensures);
   const idempotentWith = typeof value.idempotentWith === "string" && CONTROL_NODE_ID.test(value.idempotentWith) ? value.idempotentWith : undefined;
-  return { stateful: true, ...(state !== undefined ? { state } : {}), ...(ensures ? { ensures } : {}), ...(idempotentWith ? { idempotentWith } : {}) };
+  return { stateful: true, ...(state !== undefined ? { state } : {}), ...(shown ? { shown } : {}), ...(ensures ? { ensures } : {}), ...(idempotentWith ? { idempotentWith } : {}) };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

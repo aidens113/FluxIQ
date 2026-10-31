@@ -16,6 +16,7 @@ type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePl
 
 const SHELF = "https://library.test/shelf";
 const ENSURES = { state: "opaque.read" };
+const SHOWN = { state: "opaque.unread" };
 
 function plan(parameters: JsonObject = { target: { handle: "t4" } }): AutomationStudioFlowBootstrapPlan {
   return {
@@ -47,10 +48,11 @@ async function viewsOf(control: unknown, parameters?: JsonObject) {
 
 describe("a view's stateful control", () => {
   it("is kept whole on the step's own view when within its bounds, as Core's own copy", async () => {
-    const control = { stateful: true, state: "unread", ensures: ENSURES, idempotentWith: "library.set_read" };
+    const control = { stateful: true, state: "unread", shown: SHOWN, ensures: ENSURES, idempotentWith: "library.set_read" };
     const views = await viewsOf(control);
     expect(views).toEqual([{ node: "primary.mark", handle: "t4", view: 1, location: SHELF, control }]);
     expect(views[0]!.control!.ensures).not.toBe(ENSURES);
+    expect(views[0]!.control!.shown).not.toBe(SHOWN);
   });
 
   it("drops each field outside its bound and keeps the rest, never refusing the node", async () => {
@@ -61,6 +63,9 @@ describe("a view's stateful control", () => {
       [{ stateful: true, state: "unread", ensures: {} }, { stateful: true, state: "unread" }],
       [{ stateful: true, ensures: { state: "x".repeat(4_100) } }, { stateful: true }],
       [{ stateful: true, ensures: ["opaque.read"] }, { stateful: true }],
+      [{ stateful: true, shown: {}, ensures: ENSURES }, { stateful: true, ensures: ENSURES }],
+      [{ stateful: true, shown: { state: "x".repeat(4_100) }, ensures: ENSURES }, { stateful: true, ensures: ENSURES }],
+      [{ stateful: true, shown: ["opaque.unread"], ensures: ENSURES }, { stateful: true, ensures: ENSURES }],
       [{ stateful: true, ensures: ENSURES, idempotentWith: "not a node id" }, { stateful: true, ensures: ENSURES }],
       [{ stateful: true, idempotentWith: 7 }, { stateful: true }]
     ];
@@ -73,7 +78,7 @@ describe("a view's stateful control", () => {
   });
 
   it("is kept on no page fact's view, though the step's own fact names a stateful control", async () => {
-    const control = { stateful: true, state: "unread", ensures: ENSURES };
+    const control = { stateful: true, state: "unread", shown: SHOWN, ensures: ENSURES };
     const views = await viewsOf(control, { target: { handle: "t4" }, expectedState: { facts: [{ fact: "exists", target: { handle: "t9" } }] } });
     expect(views).toEqual([
       { node: "primary.mark", handle: "t9", view: 2, location: SHELF },

@@ -55,8 +55,8 @@ const controller = (exploredToggles?: AutomationStudioExploredToggles) => new Au
 const SIGNATURE = { state: "opaque.state.1" };
 
 describe("a submitted step on a control explored as a toggle", () => {
-  it("is given ensureState, the explored press's signature, when it repeats that press as a plain modify_existing press", async () => {
-    const submitted = await controller(explored("t1", { signature: SIGNATURE })).submit(candidate([{ handle: "t1", consequences: ["modify_existing"] }, { handle: "t3", consequences: ["modify_existing"] }]));
+  it("keeps the explicit exact observed ensureState on a modify_existing step", async () => {
+    const submitted = await controller(explored("t1", { signature: SIGNATURE })).submit(candidate([{ handle: "t1", consequences: ["modify_existing"], ensureState: SIGNATURE }, { handle: "t3", consequences: ["modify_existing"] }]));
     expect(submitted.ok, JSON.stringify(submitted)).toBe(true);
     if (!submitted.ok) return;
     expect(submitted.candidate.buildPlan.plan.subflows[0]!.nodes.map((node) => node.parameters)).toEqual([
@@ -67,12 +67,12 @@ describe("a submitted step on a control explored as a toggle", () => {
   });
 
   it("is tied to the press by its resolved target too, when the model copied another view's handle for it", async () => {
-    const submitted = await controller(explored("t1", { signature: SIGNATURE })).submit(candidate([{ handle: "t2", consequences: ["modify_existing"] }]));
+    const submitted = await controller(explored("t1", { signature: SIGNATURE })).submit(candidate([{ handle: "t2", consequences: ["modify_existing"], ensureState: SIGNATURE }]));
     expect(submitted.ok && submitted.candidate.buildPlan.plan.subflows[0]!.nodes[0]!.parameters?.ensureState).toEqual(SIGNATURE);
   });
 
   it("is given ensureState in place of a refusal when the domain named a node that sets the state and the press takes the state (t799)", async () => {
-    const submitted = await controller(explored("t1", { signature: SIGNATURE, idempotentWith: "domain.demo.set_state" })).submit(candidate([{ handle: "t1", consequences: ["modify_existing"] }]));
+    const submitted = await controller(explored("t1", { signature: SIGNATURE, idempotentWith: "domain.demo.set_state" })).submit(candidate([{ handle: "t1", consequences: ["modify_existing"], ensureState: SIGNATURE }]));
     expect(submitted.ok, JSON.stringify(submitted)).toBe(true);
     expect(submitted.ok && submitted.candidate.buildPlan.plan.subflows[0]!.nodes[0]!.parameters).toEqual({ target: { selector: "#setting" }, ensureState: SIGNATURE });
   });
@@ -85,8 +85,24 @@ describe("a submitted step on a control explored as a toggle", () => {
     }
   });
 
-  it("never keeps an ensureState the model wrote itself", async () => {
+  it("refuses an ensureState with no tied observation", async () => {
     const submitted = await controller().submit(candidate([{ handle: "t1", consequences: ["modify_existing"], ensureState: { state: "made.up" } }]));
-    expect(submitted.ok && submitted.candidate.buildPlan.plan.subflows[0]!.nodes[0]!.parameters).toEqual({ target: { selector: "#setting" } });
+    expect(submitted).toMatchObject({ ok: false, check: { issueCodes: ["candidate.toggle_state_unobserved"], feedback: { code: "candidate.toggle_state_unobserved" } } });
+  });
+
+  it("refuses a known toggle with no chosen state and offers actual before and after choices", async () => {
+    const before = { state: "opaque.state.before" };
+    const submitted = await controller(explored("t1", { signature: SIGNATURE, beforeSignature: before })).submit(candidate([{ handle: "t1", consequences: ["modify_existing"] }]));
+    expect(submitted).toMatchObject({ ok: false, check: { issueCodes: ["candidate.toggle_state_required"], feedback: { code: "candidate.toggle_state_required" } } });
+    expect(JSON.stringify(submitted)).toContain("opaque.state.before");
+    expect(JSON.stringify(submitted)).toContain("opaque.state.1");
+  });
+
+  it("accepts the observed pre-state and refuses another control's selected state", async () => {
+    const before = { state: "opaque.state.before" };
+    const accepted = await controller(explored("t1", { signature: SIGNATURE, beforeSignature: before })).submit(candidate([{ handle: "t1", consequences: ["modify_existing"], ensureState: before }]));
+    expect(accepted.ok && accepted.candidate.buildPlan.plan.subflows[0]!.nodes[0]!.parameters?.ensureState).toEqual(before);
+    const refused = await controller(explored("t1", { signature: SIGNATURE })).submit(candidate([{ handle: "t3", consequences: ["modify_existing"], ensureState: SIGNATURE }]));
+    expect(refused).toMatchObject({ ok: false, check: { issueCodes: ["candidate.toggle_state_unobserved"], feedback: { code: "candidate.toggle_state_unobserved" } } });
   });
 });

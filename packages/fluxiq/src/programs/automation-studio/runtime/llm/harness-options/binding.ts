@@ -516,12 +516,13 @@ export type AutomationStudioPlanHandleView = { handle: string; view: number; loc
 /**
  * A stateful control as one view showed it (CC9). Every field is the domain's
  * and opaque to Core, which compares and passes them back and never reads
- * inside: `state`, a short word for the state it showed; `ensures`, the
+ * inside: `state`, a short word for the state it showed; `shown`, the signature
+ * of that actual shown state; `ensures`, the
  * domain's own toggle signature a press of it would leave from that state, in
  * the form its press node takes as `ensureState`; `idempotentWith`, the node
  * that sets the asked state itself, where the domain's library has one.
  */
-export type AutomationStudioPlanControlState = { stateful: true; state?: string; ensures?: JsonObject; idempotentWith?: string };
+export type AutomationStudioPlanControlState = { stateful: true; state?: string; shown?: JsonObject; ensures?: JsonObject; idempotentWith?: string };
 
 /** A domain answer about one plan node. May be awaited: asking permission is. */
 export type AutomationStudioPlanNodeResolution =

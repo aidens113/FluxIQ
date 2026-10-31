@@ -17,10 +17,10 @@ const press = (extra: Partial<AutomationStudioExploredToggle> = {}): AutomationS
 const nodesOf = (result: { plan: AutomationStudioFlowBootstrapPlan }) => result.plan.subflows[0]!.nodes.map((node) => node.parameters);
 
 describe("a toggle step in a resolved plan", () => {
-  it("takes the earliest matching press, by handle or by the whole resolved target in any key order, and gives every other step nothing", () => {
+  it("grounds a chosen state by handle or the whole resolved target, and gives every other step nothing", () => {
     const input = plan([
-      { key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "#x" } } },
-      { key: "b", consequences: ["modify_existing"], parameters: { target: { frame: 0, selector: "#a" } } },
+      { key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "#x" }, ensureState: { state: "first" } } },
+      { key: "b", consequences: ["modify_existing"], parameters: { target: { frame: 0, selector: "#a" }, ensureState: { state: "first" } } },
       { key: "c", definitionId: "domain.demo.other", consequences: ["modify_existing"], parameters: { target: { selector: "#a", frame: 0 } } }
     ]);
     const result = automationStudioFlowPlanToggleSteps({
@@ -36,17 +36,17 @@ describe("a toggle step in a resolved plan", () => {
       { target: { selector: "#a", frame: 0 } }
     ]);
     // A new plan; the one passed in is unchanged.
-    expect(input.subflows[0]!.nodes[0]!.parameters).toEqual({ target: { selector: "#x" } });
+    expect(input.subflows[0]!.nodes[0]!.parameters).toEqual({ target: { selector: "#x" }, ensureState: { state: "first" } });
   });
 
   // t792: a notes board's "Pin"/"Unpin" control, pressed once to pin, then once more by mistake while exploring.
-  it("two tied presses with opposite signatures give the step the first one's", () => {
+  it("preserves an explicitly chosen state through same-control reversals", () => {
     const pinned = { via: "name", gains: ["unpin"], loses: ["pin"] };
     const unpinned = { via: "name", gains: ["pin"], loses: ["unpin"] };
-    const step = plan([{ key: "pin", consequences: ["modify_existing"], parameters: { target: { selector: "#note-3 .pin" } } }]);
+    const step = plan([{ key: "pin", consequences: ["modify_existing"], parameters: { target: { selector: "#note-3 .pin" }, ensureState: pinned } }]);
     const handleViews = [{ node: "primary.pin", handle: "t7" }];
     const pin = press({ handles: ["t7"], target: { selector: "#note-3 .pin" }, signature: pinned });
-    // The reversal, then a trial pass of the step that also flipped it back: the first press still decides.
+    // Neither a reversal nor a later reversed trial replaces the explicit choice.
     const reversal = press({ handles: ["t7"], target: { selector: "#note-3 .pin" }, signature: unpinned });
     const trialPass: AutomationStudioExploredToggle = { node: "domain.demo.press", handles: [], trialNodes: ["node.bootstrap.b1.primary.pin"], trialParameters: { target: { selector: "#note-3 .pin" } }, signature: unpinned };
     for (const explored of [[pin, reversal], [pin, reversal, trialPass], [pin, trialPass]]) {
@@ -61,9 +61,21 @@ describe("a toggle step in a resolved plan", () => {
     expect(result.issues[0]!.message).not.toMatch(/cart|basket|like|save|job|checkout|address|follow/iu);
   });
 
-  it("takes off an ensureState the model wrote, and ties nothing without an explored press", () => {
+  it("refuses a written ensureState with no tied observation instead of keeping or replacing it", () => {
     const result = automationStudioFlowPlanToggleSteps({ plan: plan([{ key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "#a" }, ensureState: { state: "made.up" } } }]), explored: [] });
     expect(nodesOf(result)).toEqual([{ target: { selector: "#a" } }]);
+    expect(result.issues).toMatchObject([{ code: "candidate.toggle_state_unobserved" }]);
+  });
+
+  it("never injects an unsupported written state outside the grounding path", () => {
+    for (const consequences of [[], ["create_new"], ["modify_existing", "delete"]]) {
+      const result = automationStudioFlowPlanToggleSteps({ plan: plan([{ key: "a", consequences, parameters: { target: { selector: "#ordinary" }, ensureState: { state: "made.up" } } }]), explored: [] });
+      expect(result.issues).toEqual([]);
+      expect(nodesOf(result)).toEqual([{ target: { selector: "#ordinary" } }]);
+    }
+    const unsupported = automationStudioFlowPlanToggleSteps({ plan: plan([{ key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "#ordinary" }, ensureState: { state: "made.up" } } }]), explored: [], takesEnsureState: () => false });
+    expect(unsupported.issues).toEqual([]);
+    expect(nodesOf(unsupported)).toEqual([{ target: { selector: "#ordinary" } }]);
   });
 });
 
@@ -74,7 +86,7 @@ describe("a toggle step tied to its own node's trial (t787)", () => {
   it("gives ensureState to a step whose only matching press came from a trial pass of the same node, and to no other step", () => {
     const result = automationStudioFlowPlanToggleSteps({
       plan: plan([
-        { key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" } } },
+        { key: "a", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" }, ensureState: { state: "s.on" } } },
         { key: "b", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" } } },
         { key: "aa", consequences: ["modify_existing"], parameters: { target: { selector: "$row.link" } } }
       ]),
