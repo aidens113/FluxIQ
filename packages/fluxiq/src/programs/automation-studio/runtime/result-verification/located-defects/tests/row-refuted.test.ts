@@ -67,7 +67,7 @@ describe("a defect row Core's record of that row refutes (t810)", () => {
   function secondRead(cells: Record<string, string>): AutomationStudioRunResultSummary {
     const summary = circleRunSummary();
     const first = summary.reads![0]!;
-    summary.reads!.push({ ...first, nodeId: "read-board-again", conditions: [{ number: 1, condition: first.conditions![0]!.condition, rejected: 1, alone: 1, leftOutOnlyByThis: ["Kai Moss"], leftOutCells: [cells] }] });
+    summary.reads!.push({ ...first, nodeId: "read-board-again", conditions: [{ number: 1, condition: first.conditions![0]!.condition!, rejected: 1, alone: 1, leftOutOnlyByThis: ["Kai Moss"], leftOutCells: [cells] }] });
     return summary;
   }
 

@@ -11,6 +11,10 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
+**User decision, 2026-10-30 (P5b).** A judge rejection whose every reason Core refutes from the run's own evidence may
+pass without a model yes, after the judge has been re-prompted with that evidence. Missing or unusable rechecks and
+unrefuted new defects must not pass. This does not authorise bypassing the judge for arbitrary computed results.
+
 **Mode 2, executing (2026-10-29).** P0 (t793, scenario-free model text with a downstream check) and the per-pass act
 ledger (t796, from debug `run-mvtdn37t-e1e4d0a7`), P4 (t797, one undo and reset answer), P5a (t795, computed facts before any judge) and P7 (t800, dates, marks, record defaults) are merged; P6 (t799), t804 (repair from the failing step) and P1a (t806, the parts of P1 outside t804's files) are in flight; P1b starts
 after t804, whose files it shares. t796 gave trial proofs `not_run`, and t795 made it a Core no.
@@ -753,10 +757,9 @@ The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10
 
 ## Open Questions
 
-1. **May a fully typed, fully computed part pass without a model yes?** Owner: the user, through the lead. fhl-core-build-tools
-   row 16 proposes letting Core settle a verbatim pre-check yes. fhl-core-judging puts it behind an explicit gate. This
-   plan keeps a model yes required, because Core settling a pass itself is close to forcing one. Recommendation: not
-   before P5 has run one round with Core and the oracle agreeing.
+1. **May a fully typed, fully computed part pass without a model yes?** Resolved in part by the user on 2026-10-30:
+   a fully refuted judge rejection may pass only after a judge re-prompt with Core's evidence; an unrefuted new defect
+   still blocks. Passing computed results without first asking a judge remains outside this approval. Owner: the user.
 2. **What does a lone yes mean beside nos that were refused or ungrounded?** Owner: Lane C lead. mvrj-c20c raised it as
    a policy question, and mvswewhy Fix 1 proposes a reachable confirming ask. Recommendation: keep it `unsure` until
    P5's grounding lands, then re-measure. With temperature-0 flips, a third ask is a coin toss unless the defect is grounded.
