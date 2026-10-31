@@ -65,11 +65,40 @@ function recoveriesOf(attempt: AutomationStudioNodeAttemptTrace): AutomationStud
     tried.push({ ...at, kind: "handler", handlerId: attempt.lifecycle.handlerId, event: attempt.lifecycle.event, disposition: attempt.lifecycle.disposition.kind, completionCheck: attempt.lifecycle.completionCheck });
   }
   if (attempt.stateRouting) {
-    tried.push({ ...at, kind: "state_route", outcome: attempt.stateRouting.outcome, ...(attempt.stateRouting.toNodeId ? { toNodeId: attempt.stateRouting.toNodeId } : {}), ...(attempt.stateRouting.refused?.length ? { refused: attempt.stateRouting.refused.map((refusal) => refusal.guard) } : {}) });
+    const route = attempt.stateRouting;
+    tried.push({
+      ...at, kind: "state_route", outcome: route.outcome,
+      ...(route.toNodeId ? { toNodeId: route.toNodeId } : {}),
+      ...(route.refused?.length ? { refused: route.refused.map((refusal) => refusal.guard) } : {}),
+      ...(boundedNumber(route.candidates) && Number.isInteger(route.candidates) ? { candidates: route.candidates } : {}),
+      ...(boundedNumber(route.matched) && Number.isInteger(route.matched) ? { matched: route.matched } : {}),
+      ...(route.direction === "forward" || route.direction === "backward" ? { direction: route.direction } : {}),
+      ...(boundedNumber(route.closeness) ? { closeness: route.closeness } : {})
+    });
   }
   const selected = attempt.recoveryDecision?.selected;
   if (selected) tried.push({ ...at, kind: "ladder", rung: selected.kind, ...(selected.targetNodeId ? { targetNodeId: selected.targetNodeId } : {}) });
   if (attempt.repair) tried.push({ ...at, kind: "repair", outcome: attempt.repair.outcome, unit: attempt.repair.unit as unknown as JsonObject });
   if (attempt.failureClass && attempt.failureClass !== "true_failure") tried.push({ ...at, kind: "counted", failureClass: attempt.failureClass });
+  const obstruction = attempt.obstruction;
+  if (obstruction && ["overlay", "notice", "rate_limit", "assistant", "other"].includes(obstruction.kind)) {
+    tried.push({ ...at, kind: "obstruction", obstructionKind: obstruction.kind, ...(boundedNumber(obstruction.retryAfterMs) ? { retryAfterMs: obstruction.retryAfterMs } : {}) });
+  }
+  const pace = attempt.pace;
+  if (pace && boundedNumber(pace.inForceMs) && boundedNumber(pace.waitedMs)) {
+    tried.push({ ...at, kind: "pace", inForceMs: pace.inForceMs, waitedMs: pace.waitedMs, ...(boundedNumber(pace.raisedToMs) ? { raisedToMs: pace.raisedToMs } : {}) });
+  }
+  const reacquire = attempt.reacquire;
+  if (reacquire && ["row", "output", "identity"].includes(reacquire.kind) && ["found", "gone", "unmatched", "unavailable"].includes(reacquire.outcome)) {
+    tried.push({
+      ...at, kind: "reacquire", strategy: reacquire.kind, outcome: reacquire.outcome,
+      ...(reacquire.kind !== "identity" ? { sourceNodeId: reacquire.sourceNodeId, ...(reacquire.returned === true ? { returned: true } : {}) } : {})
+    });
+  }
   return tried;
+}
+
+/** Missing or malformed measurements stay absent; never invent a capped observation. */
+function boundedNumber(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
 }

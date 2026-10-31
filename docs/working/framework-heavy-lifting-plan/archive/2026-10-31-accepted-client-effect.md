@@ -62,3 +62,47 @@ End of preserved source blocks.
 - Follow-up: push both dev branches, then remaining P8 identity/repeat/history work. Main held for next permitted full sweep; no paid go/full suite.
 
 Accepted t827 archive ends here.
+
+## Accepted ledger index and t828, compacted for t829
+
+Verbatim historical block; its original relative links are literal evidence. Current navigation: [P0/audit archive](2026-10-29-audit-briefs-and-p0.md), [accepted continuation](2026-10-30-accepted-continuation.md).
+
+````markdown
+The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10-29 to
+[archive/2026-10-29-audit-briefs-and-p0.md](framework-heavy-lifting-plan/archive/2026-10-29-audit-briefs-and-p0.md).
+
+Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledger entries moved verbatim to
+[archive/2026-10-30-accepted-continuation.md](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
+
+Settled earlier history compaction is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+
+Accepted t811 and t817 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
+
+Accepted t819/t820 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
+
+Settled continuation compaction is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+
+The settled sweep2 result is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
+
+Accepted t822 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
+
+Accepted t823 assignment and lead acceptance are preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
+
+Settled accepted client effect floor is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+
+Accepted t825 evidence and its compaction record are preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+
+Accepted t826 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+Accepted t827 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+
+### 2026-10-31 - t828 source-less target recovery and receipt integrity
+- Agent: Codex lead; bounded Core, shared identity, native host, capture, structural and discovery workers.
+- Changed: trusted target-refresh flags/hooks and resolved-parameter overlays; shared record gates/private capture provenance; native/authoring scoped recovery; exact full-result receipt hashing; owning tests, browser proof and architecture/status docs.
+- Why: recover a stale literal target without source lineage or wrong-record action; preserve legitimate large failed-result receipts without weakening authority or uncertain-effect safety.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/client-gateway/service/command-ledger/tests/controller.test.ts src/client-gateway/service/command-ledger/tests/dispatch.test.ts src/client-gateway/service/command-ledger/tests/dispatch-host-lease.test.ts src/programs/automation-studio/runtime/service/command-run/tests/controller.test.ts --maxWorkers=2 --minWorkers=1` ->62passed/4files; `pnpm.cmd --filter fluxiq check` ->exit0/56.093s; `node scripts/structure-audit.mjs` ->passed481warnings/1143baseline; earlier identity122passed/14files and SDKbuild pass, detailed lead report.
+- Outcome: Accepted and integrated Core4327ad27/downstream690de074; Core mandatory70merge contracts and Down structure gate pass. Real-browser strict oracle accepted; earlier setup/assertion errors and real receipt defect documented. Shared SDK/bundles current0.20.
+- Follow-up: final paired dev push, then P8 unchanged-repeat guard and bounded repair history. Main awaits a later permitted full sweep; no paid go, provider calls or user-panel management.
+
+````
+
+Archived t828 block ends here.

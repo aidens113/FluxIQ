@@ -45,4 +45,29 @@ describe("the in-run repair request", () => {
       expect(slot.contract).toMatchObject({ kind: unit.kind, absent: true });
     }
   });
+
+  it("carries recorded recovery observations through the actual patch request", async () => {
+    const world = inRunRepairWorld();
+    bindAutomationStudioInRunRepair({ context: world.context, graphOptions: world.graphOptions, ports: world.ports, runId: IN_RUN_REPAIR_RUN_ID });
+    const request = inRunRepairRequest();
+    Object.assign(request.failedAttempt, {
+      obstruction: { kind: "notice", dismiss: [], name: "private-layer" },
+      pace: { inForceMs: 10, waitedMs: 0, raisedToMs: 20 },
+      reacquire: { kind: "identity", outcome: "unmatched", reason: "ambiguous", at: 42 },
+      stateRouting: { outcome: "no_match", candidates: 2, matched: 0, reason: "private-page" },
+      outputs: { result: { selector: "private-target", record: "private-record" } }
+    });
+    await world.graphOptions.repairIncident!(request);
+    const slot = world.requests.find((item) => item.taskKind === "runtime_patch")?.context.inRunRepair;
+    expect(slot?.recoveriesTried).toEqual([
+      { attemptId: "read.attempt.4", nodeId: "read", kind: "retry", attemptNumber: 4, maxAttempts: 4, rung: "retry_node" },
+      { attemptId: "read.attempt.4", nodeId: "read", kind: "state_route", outcome: "no_match", candidates: 2, matched: 0 },
+      { attemptId: "read.attempt.4", nodeId: "read", kind: "obstruction", obstructionKind: "notice" },
+      { attemptId: "read.attempt.4", nodeId: "read", kind: "pace", inForceMs: 10, waitedMs: 0, raisedToMs: 20 },
+      { attemptId: "read.attempt.4", nodeId: "read", kind: "reacquire", strategy: "identity", outcome: "unmatched" }
+    ]);
+    expect(slot?.actsCompleted[0]?.attemptId).toBe("open.attempt.1");
+    expect(JSON.stringify(slot)).not.toContain("private-");
+    expect(world.requests[0]?.context.inRunRepair).toBeUndefined();
+  });
 });
