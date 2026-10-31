@@ -1,15 +1,17 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: Resumed units and grounded toggle t817 are merged. Sweep2 finished failed; t819/t820 fixes merged/pushed, Core0.14.1. All failed files now pass narrowly, including downstream callers/cache fixtures; original storage timeout unexplained. Corrected-source full sweep next after daily reset; main held, paid Claude comparison waits for user's go. Downstream Current State owns the handoff.
+Status detail: t822 capability-identity fix passes 317 focused tests and both package type checks; paired dev integration pending. Both Oct31 full-suite slots used; main held for a later permitted full sweep. No paid calls.
 Created: 2026-10-28
-Last updated: 2026-10-30
+Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
 Scope: Every responsibility Core's model-facing loop leaves to the model, classified as semantic (model), computable or enforceable by Core for any client environment, or client-specific; with the generic contract each client would supply.
 Paired document: ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan.md (web-specific parts)
 Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/ (fhl-debug-notes, fhl-step-workload, fhl-core-surface, fhl-domain-surface)
 
 ## Current State
+
+**Current fix-forward, 2026-10-31:** t822 ended exit1 despite2488 registered domain passes: src/tests/domain.test.ts failed during module load. The same hidden failure existed in t821, so the earlier claim that its robot-watch assertion was the only failure was incomplete. Core had mistaken incidental 'Choose ensureState' help for selection capability. The fix uses declared node id/label/tags/output identities only; the web domain explicitly declares check/select, type/submit and tab/open. Original integration assertions now run as named tests, with denied-operation expectations strengthened. Lead275 Core plan and42 domain tests pass; both package type checks exit0. Final catalog consolidation30/30 passes. Paired dev integration is pending. Both Oct31 full-suite slots are used: narrow checks only; main needs a later permitted full sweep. Coreb72e4214's20683/7-skipped proof is historical and cannot qualify this classifier change. Claude/$5 is configured, but no paid go or calls occurred.
 
 **User decision, 2026-10-30 (P5b).** A judge rejection whose every reason Core refutes from the run's own evidence may
 pass without a model yes, after the judge has been re-prompted with that evidence. Missing or unusable rechecks and
@@ -748,26 +750,23 @@ Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledge
 
 Accepted t811 and t817 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
-### 2026-10-30 - Provider binding repaired after sweep failures (t819)
-- Cause: recovery supplied policy IDs and caller-paid judging supplied host as concrete providers; strict binding stopped both before key release/fetch. Recovery also lost model/key metadata.
-- Changed: actual configured settings propagate on both paths; only legacy host normalizes to unspecified. Unknown providers and mismatched models still refuse before key access; Core0.14.1.
-- Validation: lead `vitest run` on the two failing integrations plus resolver/caller regressions ->41 passed; recovery annotation and flow-settings directories ->176 passed; `pnpm --filter fluxiq check` ->exit0; `node scripts/structure-audit.mjs` ->passed476 warnings/1144 baseline. One new statement-packing violation was corrected and its rule passed.
-- Outcome: narrow acceptance passed; sweep2 remains frozen on old source and is not promotion evidence for this fix. No paid calls; main held pending corrected-source sweep within the daily limit.
-
-### 2026-10-30 - Remaining sweep failure files checked after t819 (t820)
-- Changed: two bootstrap service assertions now require exact canonical Flow metadata plus caller/provider rather than old caller-only inputs. Production behavior is unchanged.
-- Validation: lead seven previous runtime failure files ->37 passed/two stale assertions failed; corrected generation/extend ->14 passed; all five other files passed unchanged. Lead `vitest run .../content-reseal/tests/reseal-interruption.test.ts --maxWorkers=1 --minWorkers=1` ->3 passed, racing writer703ms; worker two runs also3/3, original timeout cause remains unproven and no timeout/guarantee changed.
-- Outcome: merged/pushedc7f33647 after70 mandatory contract tests; final Core types and audit476 warnings/1144 baseline pass, three libraries rebuilt. Corrected-source whole sweep still required before main; no paid calls. Downstream saved-repair callers also7/7 after rebuilding this fix.
+Accepted t819/t820 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
 ### 2026-10-30 - Accepted evidence retained while making room for sweep results
 - Changed: t811/t817 settled detail moved to the existing continuation archive with a pointer; Current State and all open questions remain.
-- Validation: Node extraction ->two headings archived verbatim; exact appended bytes compared before source replacement.
+- Validation: Node extraction ->two headings archived verbatim; exact appended bytes compared before source replacement. Continued with t819/t820 using the same exact-byte comparison.
 
 ### 2026-10-30 - Full sweep2 completed; corrected-source acceptance next
 - Validation: downstream `node test-runs/2026-10-30-sweep-2/runner.mjs t818 803f3c81f25909b76a69b55a80cb68cc7c4724ba 16dd9ad3848acaa2c37f6dbe505ce29f95b58eed` ->both installs/builds and Core check exit0; Core test exit1(six ordinary/27SQL); downstream check exit1(five), test exit1(five domain/three demo). Core web3454 and extension3459 tests pass.
 - Changed: t819 resolver fix and t820 exact settings fixtures are merged/pushed; downstream cache now registers product build/check, Claude/$5 setup/CLI fixtures aligned. Frozen t818 removed through task abandon after unmerged0/0; main logs retained.
 - Validation: lead259 unique Core tests, seven saved-repair domain tests, five Lab argument tests,16 registry/CLI tests and nine demo tests pass; Core/test-runner/product types, product build and both earlier full audits pass. Main dependencies refreshed before final demo checks; no key/browser/panel use.
 - Outcome: no corrected-source full acceptance yet. Next-day runner refuses launch before local2026-10-31; full sweep3 is the next allowed sweep. Main held; original storage timeout cause remains unproven. No paid calls.
+
+
+### 2026-10-31 - t822 catalog capability and integration reporting fix
+- Changed: Core operation evidence excludes incidental prose/data shape; web secondary operations explicitly tagged. Integration assertions registered as named tests; no missing-capability/provider guard weakened. Core version0.15.0; no wire-schema change. Worker reports in downstream reports/codex-1031.
+- Validation: `pnpm --filter fluxiq exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/plan/tests` ->275 passed; final catalog-only rerun ->30 passed. `pnpm --filter @fluxiq-web-extension/domain test src/tests/domain.test.ts output-nodes/tests/model-facing-catalog.test.ts output-nodes/tests/click-ensure-state.test.ts output-nodes/tests/definitions.test.ts` ->42 passed. Both package check commands ->exit0.
+- Validation correction: t821 also contained the hidden module-load failure; t822 install/build/check0, test1. No third full suite today; no main promotion or paid calls. Final structure gates and paired integration pending.
 
 ## Open Questions
 
