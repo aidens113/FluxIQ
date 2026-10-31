@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": false,
+    "tsBuildInfoFile": "tsconfig.runtime-imports.tsbuildinfo"
+  },
+  "include": ["src/platform/panel/host-modules/import-host-module.ts"]
+}

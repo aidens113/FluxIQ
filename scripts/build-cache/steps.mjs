@@ -51,7 +51,11 @@ const CACHE = "node_modules/.cache/fluxiq-build";
 // The library type checks need more than node's default heap on a 12 GB Windows machine (exit 134),
 // so tsc runs under node with an explicit ceiling rather than relying on each caller's NODE_OPTIONS.
 const TSC = "node --max-old-space-size=4096 node_modules/typescript/bin/tsc";
-const LIBRARY_BUILD = `${TSC} -b tsconfig.build.json --clean && ${TSC} -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist`;
+const LIBRARY_COMPILE = `${TSC} -b tsconfig.build.json --clean && ${TSC} -b tsconfig.build.json`;
+const DECLARATION_CHECK = "node ../../scripts/rewrite-declaration-imports.mjs dist";
+// Dynamic host paths are already file URLs. Re-emit only their native importer
+// without TS's extension helper, which would hide its bundler-ignore directives.
+const NATIVE_IMPORT_COMPILE = `${TSC} -b tsconfig.runtime-imports.json --force`;
 // `--incremental` keeps each file's diagnostics keyed by its version and
 // re-reports them, so the set of errors is what a cold run reports; the build
 // info sits under node_modules, away from the source tree and from the build's
@@ -63,14 +67,16 @@ function library(dir) {
     [`${dir}:build`]: {
       package: `packages/${dir}`,
       kind: "build",
-      command: dir === "fluxiq" ? "node ../../scripts/clean-library-output.mjs && " + LIBRARY_BUILD + " && node ../../scripts/runtime-build-identity.mjs" : LIBRARY_BUILD,
+      command: dir === "fluxiq"
+        ? `node ../../scripts/clean-library-output.mjs && ${LIBRARY_COMPILE} && ${NATIVE_IMPORT_COMPILE} && ${DECLARATION_CHECK} && node ../../scripts/runtime-build-identity.mjs`
+        : `${LIBRARY_COMPILE} && ${DECLARATION_CHECK}`,
       // Fluxiq removes its entire owned output before rebuilding: TypeScript
       // clean alone cannot remove outputs whose source was deleted/relocated.
       // Contracts retain their existing build scope. Build info restores too.
-      outputs: [{ path: "dist" }, { path: "tsconfig.build.tsbuildinfo" }],
+      outputs: [{ path: "dist" }, { path: "tsconfig.build.tsbuildinfo" }, ...(dir === "fluxiq" ? [{ path: "tsconfig.runtime-imports.tsbuildinfo" }] : [])],
       required: ["dist/index.js", "dist/index.d.ts", ...(dir === "fluxiq" ? ["dist/runtime-build-identity.json"] : [])],
       ...(dir === "fluxiq" ? { ignoredInputs: [{ path: "../../scripts/runtime-build-identity", match: /\.mjs$/u }] } : {}),
-      tsconfigs: ["tsconfig.build.json"],
+      tsconfigs: ["tsconfig.build.json", ...(dir === "fluxiq" ? ["tsconfig.runtime-imports.json"] : [])],
       env: ["NODE_ENV"]
     },
     [`${dir}:check`]: {
