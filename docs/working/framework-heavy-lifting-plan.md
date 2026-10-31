@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P10 worked-example unit merged into paired dev; shared build refresh/push next. P9 guarded batching active privately. Full/paid calls held.
+Status detail: P10 worked-example unit shipped on paired dev with refreshed SDK/domain; P9 actual settled-safety/loop acceptance active privately. Full/paid calls held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Accepted merged t831, 2026-10-31:** Source merges Coreaa9afcca/Down16ae8b7f, Core0.22. Workbranch backups87cb2678/bbb1900a retained. Core137owning tests then corrected63tests, typecheck20.623s/audit pass; Down79example tests, typecheck12.959s/audit pass; all eleven examples use real public handle resolution and strict saved graph validators with three missing-source negatives. Four full UTF8 byte/hash pins and full completion digest unchanged. Core mandatory70merge-contract tests9.12s pass; Down task structure gate pass. Shared SDK/domain refresh and paired push follow. Private Down removed through task finish; private Core clean/detached for normal age-prune. No browser/live model performance claim.
+**Accepted merged t831, 2026-10-31:** Source merges Coreaa9afcca/Down16ae8b7f, Core0.22. Workbranch backups87cb2678/bbb1900a retained. Core137owning tests then corrected63tests, typecheck20.623s/audit pass; Down79example tests, typecheck12.959s/audit pass; all eleven examples use real public handle resolution and strict saved graph validators with three missing-source negatives. Four full UTF8 byte/hash pins and full completion digest unchanged. Core mandatory70merge-contract tests9.12s pass; Down task structure gate pass. Shared SDK131.247s/domain21.260s refreshed; compiled actual web binding verifies all four original section hashes with zero gateway/provider calls. Paired dev e77268a5/8a081369 pushed and equal origin/dev before this memory update. Private Down removed through task finish; private Core clean/detached for normal age-prune. No browser/live model performance claim.
 
 **Shipped P10 scope:** Worked-example ownership only: optional strict client metadata, web-authored original tails and explicit candidate/subflow/completion rendering. Missing metadata gives grammar without inferred examples. Parser/executor/registry contracts remain unchanged. Inline medium-specific guidance, facts, intent classification and fingerprints remain subsequent P10 migrations; this unit does not finish medium neutrality.
 
