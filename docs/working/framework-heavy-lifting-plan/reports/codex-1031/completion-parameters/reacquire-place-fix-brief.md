@@ -1,0 +1,14 @@
+Role: heavy implementation worker; model gpt-6.1-sol; effort max.
+Goal: preserve original semantic landmark/name through source and unbound target refresh, preventing a footer twin from becoming the saved navigation target.
+Root: C:/Users/osrs_/FluxStuff/fxwork/t837/!FluxIQWebExtension, same taskt837branch.
+Context: reacquire-place.md actual production-Domain counterexample, engine/command fixes and user same-item/no-position rule.
+Owned source: domain/src/runtime/target-reacquire/element-match.ts; domain/src/runtime/target-reacquire/identity/classify-observation.ts.
+Owned tests: target-reacquire/tests/element-match.test.ts; target-reacquire/identity/tests/{classify-observation.test.ts,refresh.test.ts}; runtime/tests/host-runtime-reacquire.test.ts.
+Owned report: this Core reports directory/reacquire-place-fix.md.
+Must not touch: other source/tests, browser spec/helper, extension engine/recovery, Core source/tests, shared docs/git/other reports. No browser/model/build/fullsuite.
+Read original landmark and optional name into the existing plain-JSON identity owner; use one coherent matcher for both refresh paths. Absent original landmark imposes no invented constraint; present role/name must survive. Preserve existing frame/tab/document/shadow/record/dialog gates and identity matching.
+Explicit decision: DO NOT loosen present-but-contradictory ID/class or other descriptive identity rules. Browser scoring already covers simultaneous weak-attribute drift; source refresh remains exact on the signals both descriptors retain. Positive coverage may omit changed optional id/class metadata and use existing matching strong signals plus the same landmark. Position/handle never decides identity.
+Missing/unverifiable original place metadata in fresh observations must fail closed, not falsely prove gone. Explicit other-landmark matches cannot rebind original. Keep gone only where original source/identity absence is actually established by existing completeness/scope contract; no fabricated proof.
+Tests: footer/missing/wrong/named landmark refused in source+unbound; matched original place with stable strong identity/changed position found; optional absent id/class retains existing behavior; genuine same-place twins ambiguous; record/dialog/shadow/frame and uncertain-act safeguards unchanged. Validate replacement cannot overwrite original place on a non-match.
+Run narrow owning tests only after source writes stable; no compiler/audit/build. Root owns final Domain build/types/package/audits/installed proof. Current extension source is frozen; root independently adjusts explicit read-only retained-source probe in browser spec.
+Inform before edit, final exact files and freeze. Preserve public contracts, confidence thresholds and baselines. Report commands/observed results, limitations and normal return contract; no raw page/model/selector/key data.

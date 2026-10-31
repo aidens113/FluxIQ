@@ -125,4 +125,18 @@ describe("the route signatures a draft step recorded", () => {
     const assembled = assembleAutomationStudioFlowDraftPlan({ steps: [signed(1)], write, registry, resolution, summary: "Press once" });
     expect(assembled.plan?.subflows[0]?.nodes.some((node) => "routeSignatures" in node)).toBe(false);
   });
+
+  it("places a node after a routed join at its original draft position and id, without placing the join by a guess", () => {
+    const assembled = assembleAutomationStudioFlowDraftPlan({
+      steps: [signed(3, { kind: "optional" }), signed(8)],
+      write: (draftStep) => ({ ...write(draftStep)!, node: "web.output.dom-click" }),
+      registry: withJoins, resolution, summary: "Press the controls"
+    });
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(assembled.draftStepIdByNodeKey).toEqual({ s1: "d3", s3: "d8" });
+    expect(assembled.locator?.nodes["0.2"]).toEqual({ step: "press", draftStep: 8, draftStepId: "d8", nodeDefinition: "web.output.dom-click" });
+    expect(assembled.locator?.nodes["0.1"]).toBeUndefined();
+    expect(assembled.locator?.paths["draft.steps.8"]).toMatchObject({ draftStep: 8, draftStepId: "d8" });
+    expect(JSON.stringify(assembled.locator)).not.toContain("#control-");
+  });
 });

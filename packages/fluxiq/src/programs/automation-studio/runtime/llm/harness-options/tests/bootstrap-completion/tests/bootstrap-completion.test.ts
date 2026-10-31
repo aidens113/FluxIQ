@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
-import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
-import { automationStudioInstructedActsChecklist } from "../../../flow-bootstrap/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import { automationStudioLlmEvidenceParseCompletionCheck } from "../../evidence-loop-decision.ts";
-import { checkAutomationStudioFlowBootstrapCompletion } from "../bootstrap-completion.ts";
-import { automationStudioPlanNodeHandleSites } from "../plan-node-handles.ts";
+import type { JsonObject } from "../../../../../../../../core/index.ts";
+import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../../../nodes/index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../../../../flow-bootstrap/plan/tests/index.ts";
+import { automationStudioInstructedActsChecklist } from "../../../../../flow-bootstrap/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../../../flow-draft/index.ts";
+import { automationStudioLlmEvidenceParseCompletionCheck } from "../../../../evidence-loop-decision.ts";
+import { checkAutomationStudioFlowBootstrapCompletion } from "../../../bootstrap-completion.ts";
+import { automationStudioPlanNodeHandleSites } from "../../../plan-node-handles.ts";
 
 // What a model is told when the plan it completed is refused, and what is no
 // longer refused at all. Live Flow creations were refused three times in a row
@@ -185,7 +185,10 @@ describe("the handle a built plan carries", () => {
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { flow: ["step: click the row", "  node: web.dom.click", "  target: control.7"].join(NEWLINE) },
       projectId: "project.1", flowId: "flow.1", registry, resolution,
-      binding: { resolvePlanNodeParameters: (request) => { asked.push(request.parameters); return { status: "resolved" as const, parameters: { selector: "li" } }; } }
+      binding: { resolvePlanNodeParameters: (request) => {
+        asked.push(request.parameters);
+        return { status: "resolved" as const, parameters: { selector: "li" } };
+      } }
     });
 
     expect(verdict.ok).toBe(true);
@@ -572,8 +575,8 @@ describe("a completed draft that does not do what the instruction asks", () => {
     const issues = (verdict.check.feedback as unknown as Feedback).issues;
     const unrepeat = "amend_draft {\"step\": 15, \"change\": \"unrepeat\"}";
     expect(issues).toEqual([
-      { code: "flow_draft.repeat_not_after_its_source", path: "draft.steps.15", message: expect.stringContaining(unrepeat) },
-      { code: "flow_draft.repeat_not_after_its_source", path: "draft.steps.16", message: expect.stringContaining(unrepeat) }
+      { code: "flow_draft.repeat_not_after_its_source", path: "draft.steps.15", message: expect.stringContaining(unrepeat), step: "web.dom.extract_list", draftStep: 15, draftStepId: "d15" },
+      { code: "flow_draft.repeat_not_after_its_source", path: "draft.steps.16", message: expect.stringContaining(unrepeat), step: "web.dom.click", draftStep: 16, draftStepId: "d16" }
     ]);
   });
 

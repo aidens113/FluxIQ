@@ -3,10 +3,10 @@
 // as the plan it is, never through the reply reader; its elements held to
 // having been resolved already; refused with Core's own words.
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
-import { refusalTestSubmission } from "../../../flow-bootstrap/candidate/tests/refusal-domain-fixture.ts";
-import type { AutomationStudioFlowBootstrapPlan } from "../../../flow-bootstrap/plan/index.ts";
-import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion } from "../bootstrap-completion.ts";
+import type { JsonObject } from "../../../../../../../../core/index.ts";
+import { refusalTestSubmission } from "../../../../../flow-bootstrap/candidate/tests/refusal-domain-fixture.ts";
+import type { AutomationStudioFlowBootstrapPlan } from "../../../../../flow-bootstrap/plan/index.ts";
+import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion } from "../../../bootstrap-completion.ts";
 
 const SCRIPT = [
   "flow: Find the titles",

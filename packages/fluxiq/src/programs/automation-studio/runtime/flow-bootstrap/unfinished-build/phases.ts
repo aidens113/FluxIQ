@@ -239,6 +239,13 @@ const NEW_ACT: ReadonlySet<AutomationStudioFlowBootstrapProgressMeasure> = new S
 /** What a purse has left at most and still counts as spent: the purse's own floating-point slack. */
 const PURSE_EMPTY_USD = 1e-9;
 
+/** What a stopped round's accepted Flow is built as; the preflight and judge read the same result. */
+const STOPPED_SUMMARY = {
+  cost: "Flow built from the steps that ran before the build reached its spending limit.",
+  calls: "Flow built from the steps that ran before the build reached its model call allowance.",
+  short: "Flow built from the steps that ran before the build stopped short of finishing it."
+} as const;
+
 /** What one live round is given. */
 export type AutomationStudioFlowBootstrapRoundRequest = {
   /** 0 for the exploration, then each repair. */
@@ -302,8 +309,10 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
    * Whether the Flow a round left when it stopped -- on the judging reserve, or
    * short of a completion -- can be built as it stands -- the completion check a
    * finished round's Flow passes -- and, where it can, make it the plan the caller builds should the build
-   * finish with it (`./reserve-judging.ts`). Asked before that Flow is judged:
-   * a yes about a Flow that cannot be built would finish nothing. Absent: it can.
+   * finish with it (`./reserve-judging.ts`). Asked before any fallback whole
+   * test: a draft whose parameters cannot resolve is not ready to run. Its
+   * successful snapshot is reused for judging; the moved page is not resolved
+   * a second time. Absent: it can.
    */
   acceptStopped?(loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>): Promise<boolean>;
   /** True where this build is a result repair (a re-author after a refuted run): the Flow it starts from was finished, so a stalled round says the repair stopped (t785). */
@@ -461,6 +470,16 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       const atReserve = stoppedAtReserve && !unchangedAtStop && pairFits;
       // A round that stopped short of a completion is judged too, once its test runs clean, unless its Flow is that one (t195-w42, run-musp474o-e0ed7432).
       const shortJudged = ending.kind === "unfinished" && judge !== undefined && !unchangedSinceNo && pairFits;
+      const stoppedBy = !atReserve ? "short" : ending.kind === "budget" && ending.bound === "calls" ? "calls" : "cost";
+      const stoppedLoop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }> = {
+        ok: true, result: { summary: STOPPED_SUMMARY[stoppedBy] }, steps: toTest,
+        trace: [...ending.progress.trace], accounting: { ...ending.progress.accounting }
+      };
+      // A completion that cannot be built must not become a whole test just
+      // because a call allowance ended. Always check the current draft, so a
+      // repaired one can become ready; never infer readiness from old codes.
+      const readyToTest = (ending.kind === "unfinished" || atReserve) && toTest.length > 0
+        && (!input.acceptStopped || await input.acceptStopped(stoppedLoop));
       const boundSaid = ending.kind === "budget" && ending.bound === "calls" ? "model call allowance" : "spending limit";
       if (unchangedAtStop) {
         input.announce?.({ phase: "verifying", label: "Flow unchanged since judged", text: `The build reached its ${boundSaid} before the Flow was finished. The Flow is unchanged since the judge said it does not do what was asked, so what was kept back for judging is not spent judging it again.` });
@@ -468,7 +487,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
         input.announce?.({ phase: "verifying", label: "Too little left to judge", text: `The build reached its ${boundSaid} before the Flow was finished, with too little left to judge the Flow whole, so it is not tested or judged again.` });
       }
       // Said only when the test will run: a Flow with steps in it that carries what a replay needs, exactly as `automationStudioFlowBootstrapJudgeUnfinished` decides. An empty Flow has nothing to run, and one nothing can replay is not run; announcing a test then was followed by none (live run murwcmx2, UI-4).
-      if ((ending.kind === "unfinished" || atReserve) && toTest.length && input.replayable(toTest)) {
+      if (readyToTest && input.replayable(toTest)) {
         input.announce?.(atReserve
           ? { phase: "verifying", label: "Testing the Flow so far", text: `The build reached its ${boundSaid} before the Flow was finished. Running the Flow as far as it got from its start, and judging it with what was kept back for judging.` }
           : { phase: "verifying", label: "Testing the Flow so far", text: automationStudioFlowBootstrapStopAnnouncementSaid({ resultRepair: input.resultRepair === true, reason: automationStudioFlowBootstrapStopSaid(stopped, ending.lastIssueCodes) }) });
@@ -477,7 +496,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       const judged = await automationStudioFlowBootstrapJudgeUnfinished({
         round, stopped, steps: ending.steps, lastIssueCodes: ending.lastIssueCodes,
         // The test's steps are logged as this round's test (`../../llm/step-log/`); a test the judge reads next says so.
-        ...(ending.kind === "unfinished" || atReserve ? { test: (steps: AutomationStudioFlowDraftStep[]) => automationStudioLlmBuildTrace.timed("round-test", () => automationStudioLlmStepLogScope.run({ round, phase: "test" }, () => (atReserve || shortJudged ? input.test(steps, { judged: true }) : input.test(steps))), traceTested) } : {}),
+        ...(readyToTest ? { test: (steps: AutomationStudioFlowDraftStep[]) => automationStudioLlmBuildTrace.timed("round-test", () => automationStudioLlmStepLogScope.run({ round, phase: "test" }, () => (atReserve || shortJudged ? input.test(steps, { judged: true }) : input.test(steps))), traceTested) } : {}),
         replayable: input.replayable, checklist: input.checklist
       });
       const cancelled = (): AutomationStudioFlowBootstrapBuildPhasesOutcome => ({ kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.progress.trace], steps: ending.steps, accounting: { ...ending.progress.accounting } }, accounting: spent, rounds, trace: [...record] });
@@ -485,9 +504,9 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       phase2 = { stopped, judgement: judged.judgement, seed: judged.seed, lastIssueCodes: ending.lastIssueCodes, completionAttempts: ending.completionAttempts, progress: ending.progress };
       // The ending says what that judge found of this same Flow.
       if (unchangedAtStop && judgedNo) phase2 = { ...phase2, judgement: { ...judged.judgement, judge: judgedNo.judge } };
-      if ((atReserve || shortJudged) && judge) {
+      if (readyToTest && (atReserve || shortJudged) && judge) {
         const stoppedJudging = await automationStudioFlowBootstrapJudgeAtReserve({
-          stopped: !atReserve ? "short" : ending.kind === "budget" && ending.bound === "calls" ? "calls" : "cost", judgement: judged.judgement, seed: judged.seed, progress: ending.progress, accept: input.acceptStopped,
+          judgement: judged.judgement, loop: { ...stoppedLoop, steps: judged.seed },
           judge: (loop) => {
             if (!atReserve) input.announce?.({ phase: "verifying", label: "Judging the Flow", text: `${automationStudioFlowBootstrapTestReachSaid(judged.seed)} Judging what the test did against what you asked.` });
             return judgeAccounted(input, judge, { round, loop }, spent, clock() - startedAt);

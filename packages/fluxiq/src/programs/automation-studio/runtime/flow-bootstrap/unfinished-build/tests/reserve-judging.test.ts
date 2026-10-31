@@ -48,6 +48,7 @@ async function build(options: {
   const judged: Array<{ round: number; steps: string[] }> = [];
   const tests: Array<{ steps: number; judged: boolean }> = [];
   const accepted: string[][] = [];
+  const events: string[] = [];
   const kept: number[] = [];
   const outcome = await runAutomationStudioFlowBootstrapBuildPhases({
     round: async (request) => {
@@ -55,14 +56,20 @@ async function build(options: {
       return costStopped(options.steps ?? draft(), "keptBackUsd" in options ? options.keptBackUsd : 0.005);
     },
     judge: async ({ round, loop }) => {
+      events.push("judge");
       judged.push({ round, steps: loop.steps.map((each) => each.id ?? "") });
       // The judge's calls draw on the reserve.
       const held = purse.hold({ projectedCostUsd: 0.004, estimatedInputTokens: 1, maxOutputTokens: 1, judge: true });
       if (held.ok) held.hold.settle({ estimatedCostUsd: 0.004 });
       return (options.verdict ?? ((signature) => ({ verdict: "yes", spent: SPENT, flowSignature: signature })))(automationStudioFlowDraftFlowSignature(loop.steps));
     },
-    ...(options.accept !== undefined ? { acceptStopped: async (loop) => { accepted.push(loop.steps.map((each) => each.id ?? "")); return options.accept === true; } } : {}),
+    ...(options.accept !== undefined ? { acceptStopped: async (loop) => {
+      events.push("accept");
+      accepted.push(loop.steps.map((each) => each.id ?? ""));
+      return options.accept === true;
+    } } : {}),
     test: options.test ?? (async (steps, testOptions) => {
+      events.push("test");
       tests.push({ steps: steps.length, judged: testOptions?.judged === true });
       return undefined;
     }),
@@ -77,16 +84,17 @@ async function build(options: {
     },
     now: () => 0
   });
-  return { outcome, purse, judged, tests, accepted, kept };
+  return { outcome, purse, judged, tests, accepted, kept, events };
 }
 
 describe("a round the judging reserve stopped (t254 stage 2)", () => {
   it("tests the Flow so far from its start for the judge, and finishes the build when it is judged yes about that Flow", async () => {
-    const { outcome, judged, tests, accepted, purse } = await build({ accept: true });
+    const { outcome, judged, tests, accepted, purse, events } = await build({ accept: true });
 
     expect(tests).toEqual([{ steps: 3, judged: true }]);
     // The caller is asked first whether it can build that Flow, and makes it its plan.
     expect(accepted).toEqual([["d1", "d2", "d3"]]);
+    expect(events).toEqual(["accept", "test", "judge"]);
     expect(judged).toEqual([{ round: 0, steps: ["d1", "d2", "d3"] }]);
     expect(outcome).toMatchObject({ kind: "finished", rounds: 1, judged: { verdict: "yes" } });
     expect(outcome.kind === "finished" && outcome.loop).toMatchObject({ ok: true, result: { summary: expect.stringContaining("spending limit") } });
@@ -129,8 +137,9 @@ describe("a round the judging reserve stopped (t254 stage 2)", () => {
 
     const refused = await build({ accept: false });
     expect(refused.accepted).toHaveLength(1);
+    expect(refused.tests).toEqual([]);
     expect(refused.judged).toEqual([]);
-    expect(refused.outcome.kind === "unfinished" && refused.outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
+    expect(refused.outcome.kind === "unfinished" && refused.outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { tested: "not_tested" } });
 
     const empty = await build({ steps: [] });
     expect(empty.tests).toEqual([]);
@@ -165,20 +174,74 @@ it("uses actual reserved call slots to judge a full test after call admission st
       return { ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(1, 0.001),
         exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, maxIterations: 64, iterations: 1, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] } };
     },
-    test: async () => { tests += 1; return undefined; }, replayable: () => true,
+    test: async () => {
+      tests += 1;
+      return undefined;
+    }, replayable: () => true,
     checklist: (current) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: current }),
     judge: async ({ loop }) => {
       for (let index = 0; index < 2; index += 1) {
         const held = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1, judge: true });
-        expect(held.ok).toBe(true); if (held.ok) held.hold.settle(); judges += 1;
+        expect(held.ok).toBe(true);
+        if (held.ok) held.hold.settle();
+        judges += 1;
       }
       return { verdict: "yes", spent: SPENT, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) };
     },
     acceptStopped: async () => true, keep: async () => undefined
   });
   expect(outcome.kind).toBe("finished");
-  expect(tests).toBe(1); expect(judges).toBe(2); expect(purse.spentCalls()).toBe(3);
+  expect(tests).toBe(1);
+  expect(judges).toBe(2);
+  expect(purse.spentCalls()).toBe(3);
   expect(outcome.kind === "finished" && outcome.loop.result.summary).toContain("model call allowance");
+});
+
+it("keeps a known-unresolved draft and its exact refusal at the call limit without a whole trial or judge", async () => {
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 3 });
+  const sent = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 });
+  if (sent.ok) sent.hold.settle();
+  const steps = draft();
+  const before = structuredClone(steps);
+  const issueCodes = ["example.handle.ambiguous:parameters"];
+  let tests = 0, judges = 0, accepted = 0;
+  let kept: readonly AutomationStudioFlowDraftStep[] | undefined;
+  const outcome = await runAutomationStudioFlowBootstrapBuildPhases({
+    purse, maxIterations: 64, budget: { maxCostUsd: 1 },
+    round: async () => {
+      const held = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 });
+      if (held.ok || held.refusal.code !== "llm_budget.run_call_limit") throw new Error("Expected reserved call refusal");
+      return { ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(1, 0.001),
+        exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, maxIterations: 64, iterations: 1,
+          draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 1, lastIssueCodes: issueCodes, outstandingIssueCodes: issueCodes } };
+    },
+    acceptStopped: async (loop) => {
+      accepted += 1;
+      expect(loop.steps.map((item) => item.id)).toEqual(before.map((item) => item.id));
+      return false;
+    },
+    test: async () => {
+      tests += 1;
+      return undefined;
+    }, replayable: () => true, checklist: () => [],
+    judge: async () => {
+      judges += 1;
+      return { verdict: "yes", spent: SPENT };
+    },
+    keep: async (_stopped, outstanding, current) => {
+      expect(outstanding).toEqual(issueCodes);
+      kept = current;
+      return { revision: 1, steps: current.length };
+    }
+  });
+  expect(accepted).toBe(1);
+  expect(tests).toBe(0);
+  expect(judges).toBe(0);
+  expect(purse.spentCalls()).toBe(1);
+  expect(steps).toEqual(before);
+  expect(kept?.map((item) => [item.id, item.ranWith])).toEqual(before.map((item) => [item.id, item.ranWith]));
+  expect(outcome).toMatchObject({ kind: "unfinished", lastIssueCodes: issueCodes,
+    ending: { kind: "budget_exhausted", bound: "calls", tried: { tested: "not_tested", stepsInFlow: 3 } } });
 });
 
 // Live run run-mux6nxst-c9bca37c (D3-5): the round opened with 47 of 48 calls spent, so the judging pair kept back no
@@ -204,13 +267,19 @@ it("does not judge, nor ask the caller, when the judging kept back no longer fit
       return { ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(1, 0.001),
         exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, maxIterations: 64, iterations: 1, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] } };
     },
-    test: async () => { tests += 1; return undefined; }, replayable: () => true,
+    test: async () => {
+      tests += 1;
+      return undefined;
+    }, replayable: () => true,
     checklist: (current) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: current }),
     judge: async ({ loop }) => {
       judges += 1;
       return { verdict: "yes", spent: SPENT, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) };
     },
-    acceptStopped: async () => { accepted += 1; return true; }, keep: async () => undefined
+    acceptStopped: async () => {
+      accepted += 1;
+      return true;
+    }, keep: async () => undefined
   }));
   expect(judges).toBe(0);
   expect(accepted).toBe(0);

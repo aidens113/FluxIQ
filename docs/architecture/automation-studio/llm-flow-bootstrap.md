@@ -1087,6 +1087,12 @@ instead?, ...}`:
   (`llm/harness-options/bootstrap-completion.ts`).
 - A JSON-plan submission has no lines: its issues carry the node's name as
   `step` and its key as `label` (`authoring/plan-locator.ts`).
+- A Flow assembled from the live draft carries `draftStep`, `draftStepId` and
+  `nodeDefinition` for each node tied to an original draft step. These come
+  from assembly's existing node-to-step mapping, so an optional join does not
+  shift a refusal onto another draft step. Generated joins and loops receive
+  no guessed draft identity, and synthetic assembly lines are not presented
+  as authored script lines. Codes and plan paths remain unchanged.
 - Only issues about the whole Flow carry no line, and they are one explicit
   list: `flow_script.no_steps`, `flow_script.too_many_lines`,
   `flow_script.repeat_unavailable` and `bootstrap.invalid_plan`
@@ -2979,11 +2985,15 @@ instruction, every decision, the test and the judge are all held against it.
   `runtime/flow-bootstrap/unfinished-build/reserve-judging.ts`). A round the
   purse stopped because its next call would have eaten into the judging kept
   back (a cost refusal carrying `keptBackUsd`) does not end the build with that
-  reserve unspent. The Flow as it stands is tested from its start, its test
-  handed to the build's judge (`AutomationStudioFlowBootstrapBuildJudge.judgedTest`),
-  the caller is asked whether it can build that Flow as it stands
-  (`acceptStopped`: the completion check run on the draft, which becomes the
-  plan built), and the judge is asked about the test with the reserve its
+  reserve unspent when the Flow is ready. Before any fallback whole test, the
+  caller is asked whether it can build the current draft (`acceptStopped`:
+  the same completion check used by the live loop). A refused preflight runs
+  neither a whole test nor a judge and keeps the draft and its refusal. A
+  successful preflight retains the accepted plan snapshot; the Flow is then
+  tested from its start, its test handed to the build's judge
+  (`AutomationStudioFlowBootstrapBuildJudge.judgedTest`), and that snapshot
+  is reused without resolving again against the page the test left. The
+  judge is asked about the test with the reserve its
   calls draw on. A yes about that very Flow (its `flowSignature`) finishes the
   build with it. Anything else -- a no, an unsure verdict, a yes about another
   version or about no test -- ends it `budget_exhausted` (`cost`): the message
@@ -3017,10 +3027,11 @@ instruction, every decision, the test and the judge are all held against it.
   and makes no judge call.
 - **A round that stopped short is judged too** (t195-w42,
   `runtime/flow-bootstrap/unfinished-build/phases.ts`, `reserve-judging.ts`
-  with `stopped: "short"`). A round that ended without a completion and not on
+  for a stopped-short round). A round that ended without a completion and not on
   a budget -- refused repeats, unusable decisions, a stall -- has its Flow tested
-  from its start as before; where that test ran clean, the completion check
-  accepts the Flow as it stands, and the Flow is not the one a judge of this
+  from its start only after the current draft passes that same preflight.
+  A repaired draft is checked afresh on the next round. Where the test ran
+  clean and the Flow is not the one a judge of this
   build last said no to, the test goes to the build's judge, whose calls draw on
   the judging reserve -- its money and, under a call allowance, its calls
   (t262). A yes about that very Flow finishes the build with it. Any other

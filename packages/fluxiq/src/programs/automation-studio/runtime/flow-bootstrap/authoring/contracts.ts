@@ -331,6 +331,11 @@ export type AutomationStudioFlowScriptPlace = {
   label?: string;
   /** The 1-based script line the issue is about; absent for a JSON plan, which has no lines. */
   line?: number;
+  /** Original draft position and stable id, read from assembly's node-to-step mapping; never an assembled node index. */
+  draftStep?: number;
+  draftStepId?: string;
+  /** The registered definition of the node this draft step became, when it became one. */
+  nodeDefinition?: string;
 };
 
 /**
