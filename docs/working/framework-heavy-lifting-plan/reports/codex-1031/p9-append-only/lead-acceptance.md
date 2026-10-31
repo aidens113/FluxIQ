@@ -42,3 +42,13 @@ Validation: node scripts/structure-audit.mjs --update ->baseline already current
 
 Validation: root provenance+prior-nodes owning run ->179tests/8files PASS68.21s, log t830-reference-identity-lead-tests.log. Core check PASS93.033s; final SDK PASS129.098s. Both source frozen.
 Validation: Down post-parent check PASS30.614s, stamped/current source and test types. Root exact public paired tests ->0/2: capture now accepted, original main1 and primary permitted assessment1, but no batch offering at second decide. No oracle weakening/private-Core test import; bounded paired next-refusal diagnosis dispatched.
+
+
+## Final paired regression and browser entry
+Validation: root final affected Domain selector (frozen-execution, run/replay/retries/shown-rows/replay-read-account) ->191pass/0fail114.385s, including actual public Native/Gate/Down paired2cases. Fixture reports real typing by changing only addressed subject value; B remains unchanged, original selectors/document/accounting oracles retained.
+Validation: Domain check ->PASS20.372s, extension owning check ->exit0, allthree extension bundles ->PASS31.931s. Domain build ->PASS21.307s; host build ->PASS3.706s; test-contracts cached output restored. Root post-parent example selector ->79pass/0fail.
+Documentation correction: initial root CRLF-sensitive CurrentState slicing truncated Down plan to38lines; restored full253line document from preserved parentc084b96a. Original body from Contract fills through all phases/briefs/ledger/questions has identical normalized SHA2563e82b19fb07c6a63d5238d77724f251311af654601f312685f5539ff47d07e2a before additive ledger, verified in ignored t830-down-document-restoration.json. No product source affected. Section edits now normalize LF, assert boundaries and guard line preservation.
+Validation: structure baseline remains583entries/9rules; index regenerated for restored document, no new allowances. Installed prior-nodes Chromium proof launched provider-free; no browser outcome yet, no real model/paid/full suite/user panel operation.
+
+
+Validation: installed Chromium final spec ->1passed34.8s. Actual completed1member batch,2TYPE/13fresh successful command-replies,10snapshots,1initial declared-start navigation before first TYPE; no later navigation/submission/subscription change/URL change/gateway error/judge/provider call. Initial browser failure overstrict global command set diagnosed by closed census and verified against iteration0Core arrival source; final ordering assertion preserves no-reposition batch property. Extension final types exit0; Down standalone final audit exit0. Final source acceptance complete, paired task integration next.
