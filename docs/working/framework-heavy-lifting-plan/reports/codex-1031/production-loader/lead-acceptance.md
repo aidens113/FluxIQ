@@ -1,6 +1,6 @@
 # Lead acceptance: t835 production native host import
 
-Status: Accepted provider-free implementation; paired integration pending.
+Status: Accepted and merged on paired dev; publication/Claude qualification continuation.
 
 The requested first Claude invocation reached Core's production web server, then failed core.health readiness after225.582s. It had zero provider calls, no browser task actions, no Flow and no oracle result. The prior repaired preflight and the entire SDK-consumer prelude passed. The failure therefore gives no Claude authentication or performance result.
 
@@ -22,4 +22,6 @@ Validation setup: first root build/type commands could not open their log direct
 
 Validation: `node test-runs/2026-10-31-t834-validation/t835-startup-proof.mjs` -> actual production build/server/coordinator startup passed185.844s, page200, gateway401, runtime initialized, model providers disabled; test processes closed.
 
-Pending: paired integration/publication/repin; a completed Claude model-backed task and zero-call replay. Both Oct31 full-suite slots were already consumed; no full sweep was run here. Main promotion waits a permitted passing sweep. Remote backup retention and user dirty-file preservation apply.
+Integration: parents synchronized without source changes; post-parent11loader tests3.51s/11registry747ms passed. Down plain-audit task finish passed and removed its private tree. Core own mandatory70contract tests passed10.05s; task merged with --skip-checks to avoid an extra full sweep. Source merges Core88bbcb31/Down30ccaf53. Private Core clean detacheded8e4620 for age-prune; both remote task backups retained.
+
+Pending: paired dev publication/shared refresh/repin; a completed Claude model-backed task and zero-call replay. Both Oct31 full-suite slots were already consumed; no full sweep was run here. Main promotion waits a permitted passing sweep. Remote backup retention and user dirty-file preservation apply.
