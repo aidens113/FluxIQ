@@ -1,6 +1,6 @@
 # Lead acceptance: t836 actual build allowance
 
-Status: Accepted narrow implementation; paired integration and published-pin production API proof pending. No paid retry.
+Status: Accepted and merged on paired dev; publication and published-pin production API proof pending. No paid retry.
 
 The first successful Claude-backed product invocation made6calls at recorded cost0.1912105 and reached draft testing/two judges, but failed before accepted Flow/oracle/replay. Its whole run226.262s included production compilation; provider window39.407s, build39.782s. The build ran with a stored0.25 policy despite both CLI flags, child environment and authorized Lab plan5. No provider/model/key/balance error occurred. Provider connectivity is proven; task performance is not.
 
@@ -18,4 +18,6 @@ Earlier results are not acceptance: two cold-import/wrong-purse harness runs fai
 
 Validation: final `node scripts/structure-audit.mjs` -> Core passed1143baselined, Down passed583baselined. Owning `--update` ratchet independently inspected: only service.ts file-line allowance4315to4304, no other change/growth; plain audit after update is authoritative.
 
-Remaining: paired integration/publication/repin. Then prove the exact published production API creates policy5, accepts/persists per-call1 and preserves explicit policy0.25 with model providers disabled. Only then may the supervised unchanged eight-record Claude task retry under5 and request one zero-call replay. Both Oct31 full-suite slots already used; main promotion waits a permitted passing sweep. No credentials/page captures/profiles are committed.
+Integration: both parents already synchronized; post-parent15limit tests passed55.65s. Down task finish plain audit passed and removed its private tree. Core own mandatory70contract tests passed7.74s; source merges Corece5f553e/Down0d55efbc. Private Core clean detachedb8e5f8ea; both remote task backups retained. No full sweep at merge.
+
+Remaining: paired dev publication/repin. Then prove the exact published production API creates policy5, accepts/persists per-call1 and preserves explicit policy0.25 with model providers disabled. Only then may the supervised unchanged eight-record Claude task retry under5 and request one zero-call replay. Both Oct31 full-suite slots already used; main promotion waits a permitted passing sweep. No credentials/page captures/profiles are committed.
