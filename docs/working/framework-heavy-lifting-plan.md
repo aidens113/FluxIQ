@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P6 t799 independently verified and merged with Core 0.8.0; P5b t810 and P1b t811 remain in flight. Paired t816 adds the user's Claude live-test provider. The continuation handoff is in the paired downstream Current State.
+Status detail: P6 t799 and Claude/$5 live-test support t816 independently verified, merged and pushed with Core0.9.0; P5b t810 and P1b t811 remain in flight. The continuation handoff is in the paired downstream Current State.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -17,9 +17,8 @@ unrefuted new defects must not pass. This does not authorise bypassing the judge
 
 **Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
 also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
-native installed-extension proof in the paired repository). P5b t810 and P1b t811 continue. Paired t816 adds Claude
-for live tests, with the user's $5 build allowance; no paid run has started in this continuation.
-
+native installed-extension proof in the paired repository). P5b t810 and P1b t811 continue. Paired t816 is merged and pushed:
+Claude runtime, keys/settings UI and live-test routing with the user's $5 whole-build allowance; no paid run has started.
 The rest of this section is the plan as written.
 
 The audit ran 2026-10-28 at the user's direction: make
@@ -739,33 +738,13 @@ Each implementation lane's brief is in its dispatch and its report under the dow
 The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10-29 to
 [archive/2026-10-29-audit-briefs-and-p0.md](framework-heavy-lifting-plan/archive/2026-10-29-audit-briefs-and-p0.md).
 
-### 2026-10-29 - P1a: bookkeeping folded outside the trial gate (t806)
-- Agent: supervisor (brief t806-p1a), four workers; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t806-p1a.md`
-- Changed: `llm/unknown-tool/` refuses an unknown tool id with the offered ids and the nearest match, counted by the refused-in-a-row guard; `project-agents/brief-defaults/` fills a brief's missing `kind`, `parts` and repair `failingReceipt` (never over the model's), `project.repair_unchanged` checked first, `kind` optional in the dispatch schema; `flow-bootstrap/unchanged-fix-point/` gives the first `unchanged_after_no` its diff and fix point; `activity/folded-reason.ts` lets Core write a folded step's line (P1b calls it); `ending-told.ts` composes an empty done reason from the record.
-- Validation: lead-run under the lock, merged with dev: tsc clean; `pnpm test` over llm, project-agents, candidate, unchanged-fix-point, activity, project-build-ending, service-bootstrap -> "Tests 3522 passed (3522)", real-sql "Tests 142 passed (142)", "all groups passed"; prompt contracts "Tests 122 passed (122)"; `pnpm check` exit 0; docs current; structure passed (`provider-stopped.test.ts` fails only when run alone, "No test found in suite", and passes in its group).
-- Outcome: Accepted. `supervisor/guidance.ts` still names `kind` as required (pin-sensitive; left for P1b).
+Accepted P1a, P7 follow-ups, repair-from-step, P6 and Claude-provider ledger entries moved verbatim to
+[archive/2026-10-30-accepted-continuation.md](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
 
-### 2026-10-29 - P7 follow-ups: day-granular within, record defaults plumbing (t807)
-- Agent: supervisor (Sonnet) with three workers; report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t807-p7-followups.md`
-- Changed: `contracts/.../date-within.ts`: a day-only value under a `within` bound in days or weeks compares by whole UTC days (minutes and hours stay instants); `llm/node-tools/{replay-draft,dry-run-gate}.ts` accept the plan part that owes records (callers in `evidence-loop.ts`, `single-subflow/rebuild.ts`, `supervisor-loop.ts` wired with P1b); the web picker keeps `mark` (downstream).
-- Validation: lead-run under the lock, merged with dev: contracts `vitest run src/record-sets` -> "Tests 259 passed (259)"; `pnpm check` exit 0; `pnpm test` over record-defaults, node-tools, plan, candidate, result-verification -> "Tests 2205 passed (2205)", real-sql "3 passed"; docs current; structure passed.
-- Outcome: Accepted.
-
-### 2026-10-29 - A failed build test is repaired from its failing step (t804, user rule)
-- Agent: supervisor; worker-heavy trace, runner, gate; worker headed spec; lead fixes (fromStep through `service/project-build/subflow-trials.ts`, read-only at construction; the refusal code by constant); report `../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/t804-repair-from-step.md`
-- Changed: `core.test_subflow` takes `from: <step key>` and runs the latest revision from that step on the page as it stands (no reset, earlier steps or judge; never the part's test); a failed whole test leaves a pending repair, and another whole test or a completion is refused `subflow.trial_from_step_first` (naming the step and the call) until a from-step run passes it, unless the builder says why one is impossible. P1b shape: `then: "test_whole" | {from}` on `core.submit_subflow`.
-- Validation: lead-run under the lock, merged with dev (t806 in): tsc clean; `pnpm test` over subflow-candidate, plan, verification, candidate, service, project-agents, llm -> "Tests 4821 passed | 2 skipped", real-sql "346 passed"; `pnpm check` exit 0; headed `e2e/site-reset/tests` -> "33 passed (35.9m)" with `photo-repair-from-step.spec.ts` counts `{"wholeRuns":2,"fromStepRuns":1}`.
-- Outcome: Accepted. Follow-up (P1b): `from` also takes the step label the model wrote.
-
-### 2026-10-30 - Codex independent P6 acceptance (t799)
+### 2026-10-30 - Accepted history compacted for continuing P5b/P1b
 - Agent: Codex lead
-- Validation: owning recovery/toggle/handler/pace Core batches -> `15 files / 84 tests passed` and `12 files / 151 tests passed`, both configured groups exited 0. See paired downstream `framework-heavy-lifting-plan/reports/codex-1030/t799-result.md`.
-- Validation: `pnpm.cmd --filter fluxiq check` -> exit 0, content-matched source/test check reused; `pnpm.cmd docs:check` -> `Deterministic framework reference is current.`
-- Validation: downstream native headed Chromium photo-social installed-extension proof -> `1 passed (3.7m)`, no paid calls; downstream owning tests/types passed after correcting its legacy-input test fixture.
-- Not verified: browser Core rung/pacing behavior, Firefox or the separately documented first-loop-row toggle direction. No full sweep or paid qualification.
-- Changed: publishable Core package version raised from 0.7.0 to 0.8.0 for the new P6 API/behavior; no registry operation.
-- Validation: `pnpm.cmd --filter fluxiq check` after the version bump -> exit 0 (28,212 ms).
-
+- Changed: archived five accepted entries; Current State retains merged outcomes and all open decisions remain here.
+- Validation: Node archive extraction -> five entries preserved verbatim, byte equality checked before replacing their source range.
 
 ## Open Questions
 
