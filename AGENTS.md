@@ -268,6 +268,19 @@ the build loop, not only in the model's instructions.
 
 ## Validation
 
+**Full suites run at most twice a day (user, 2026-10-01; reaffirmed
+2026-10-31).** This applies to `pnpm check`, `pnpm test`, `pnpm build`
+and Core's whole vitest run, including paired downstream sweeps. Do not run
+a full suite before every merge or after each fix. Validate changes with
+the touched packages' type checks, tests beside the changed code and the
+structure audit; fix sweep failures forward with those narrow checks.
+Record each full attempt and its result in the working document. A failed
+attempt still uses a slot; cached results do not authorise another sweep.
+When Core's current `pnpm task finish` would launch its default full check,
+use `--skip-checks` after independently passing the relevant narrow checks;
+this does not skip its mandatory contract-test gate. Promotion to `main`
+still requires a complete passing sweep on the commit being promoted.
+
 **Live model provider (user, 2026-10-30).** FluxIQ live model-backed tests use
 Anthropic Claude, with the downstream Lab reading `CLAUDE_API_KEY` from its
 repository's `.env.local` or explicitly supplied environment. Never expose or
@@ -278,8 +291,9 @@ supervision and paid-launch requirements still apply.
 Claude live tests default to $5 per build (user, 2026-10-30), across all its
 calls; explicit lower limits still hold. The normal product default is separate.
 
-Before the final response for a code change, run the relevant checks and
-read their output:
+Before the final response for a code change, run the relevant narrow checks
+and read their output. These full commands are for the scheduled sweeps
+within the daily limit:
 
 ```bash
 pnpm check     # structure audit, then per-package type checks
