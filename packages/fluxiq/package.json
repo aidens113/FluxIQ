@@ -15,8 +15,8 @@
     "./automation-studio/evidence-build-scope": { "types": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.d.ts", "import": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.js" },
     "./automation-studio/candidate-authoring": { "types": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.d.ts", "import": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.js" },
     "./automation-studio/llm-models": {
-    "types": "./dist/programs/automation-studio/runtime/llm/deepseek/models.d.ts",
-    "import": "./dist/programs/automation-studio/runtime/llm/deepseek/models.js"
+    "types": "./dist/programs/automation-studio/runtime/llm/models/index.d.ts",
+    "import": "./dist/programs/automation-studio/runtime/llm/models/index.js"
   },
   "./automation-studio/action-permissions": { "types": "./dist/programs/automation-studio/runtime/action-permissions/client/index.d.ts", "import": "./dist/programs/automation-studio/runtime/action-permissions/client/index.js" },
     "./automation-studio/panel-capabilities": { "types": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.d.ts", "import": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.js" },

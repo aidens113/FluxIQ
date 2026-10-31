@@ -270,7 +270,7 @@ fields and malformed usage, normalizes provider throws to terminal diagnostics,
 and persists only a compact structured-result summary without provider
 free-text or arbitrary metadata.
 
-Core also exports a production transport seam and a built-in DeepSeek adapter.
+Core exports a production transport seam and built-in DeepSeek and native Anthropic (Claude) adapters.
 The adapter has one fixed HTTPS chat-completions URL and a configured set of
 DeepSeek models (`AUTOMATION_STUDIO_DEEPSEEK_MODELS`: `deepseek-flash`, the
 default, and `deepseek-v4-pro`); a model outside that set is refused by name,
@@ -290,6 +290,57 @@ reserved at its own measured input tokens and, when the provider prices calls
 never at its window-sized limit. Failed or usage-less calls are charged
 conservatively.
 
+**Native Anthropic (Claude), t816.** `createAutomationStudioAnthropicProvider`
+uses the fixed `https://api.anthropic.com/v1/messages` endpoint, API version
+`2026-10-21`, opaque per-call key release, manual redirects and bounded reads.
+`createAutomationStudioAnthropicPanelCommandModel` supplies the same transport
+for conversation decisions. Both stream SSE at the selected model's native
+128,000 output maximum; the harness's 8,000-token reply reservation is a budget
+estimate, never the wire output cap. Removed sampling parameters and unsupported
+`thinking: disabled` are not sent. Claude 4.5+ accepts input plus
+`max_tokens` beyond its context window when the input itself fits. Generation
+that fills the remaining window reports `model_context_window_exceeded`, which
+Core treats as paid truncation, never a successful structured answer; no page
+evidence is trimmed. See the provider's
+[overflow contract](https://platform.claude.com/docs/en/build-with-claude/context-windows#context-window-overflow-behavior). A request and its body read share the same
+deadline; refused, truncated and malformed paid replies retain usage and cost.
+
+The browser-safe `fluxiq/automation-studio/llm-models` export retains the
+DeepSeek names and adds `AUTOMATION_STUDIO_ANTHROPIC_MODELS`,
+`AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL` (`claude-sonnet-5-5`) and
+`AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS`. Sonnet, Haiku and Opus 5.5 have 1M
+context and 128K output. `FLUXIQ_LLM_DEFAULT_MODEL` accepts either provider's
+configured IDs; an explicit DeepSeek factory remains usable under a Claude
+global default. Explicit mismatched provider/model/key settings are refused;
+there is no cross-provider fallback. The host infers missing settings from a
+selected key's metadata, and resolves and validates its unlock on every call.
+Secret Keys stores the compatible `Anthropic` provider value while the panel
+labels it **Anthropic (Claude)**; Flow settings persist `anthropic` and the
+chosen model/key without loading key values.
+
+Both adapters share provider-neutral task prompts, evidence preflight, schemas
+and refusal screening under `runtime/llm/provider-task` and
+`provider-transport`. Anthropic receives a transformed native schema when its
+closed-object and grammar limits permit it. Arbitrary maps or schemas exceeding
+24 optional fields or 16 unions use a closed native envelope containing
+`result_json`, a serialized copy of the original answer. This reversible adapter
+framing preserves every nested parameter; the unchanged original schema is
+validated locally and Core's harness applies its usual semantic checks. No
+scenario-specific model guidance is introduced.
+
+Anthropic's `input_tokens` excludes cache creation and cache reads: Core adds
+both to its normalized input count, and prices uncached input, five-minute
+writes, one-hour writes, cache hits and output separately. Haiku's above-100k
+prompt tier applies to the whole prompt. Estimates reserve an all-write input
+case; charges use the provider's reported split, including unsuccessful paid
+replies. Product spending defaults remain unchanged; an isolated Lab's explicit
+`FLUXIQ_LLM_RUN_COST_CEILING_USD=5` is honored and clamps Flow settings as usual.
+Rates and API details were checked on 2026-10-30 against Anthropic's
+[models](https://platform.claude.com/docs/en/models/overview),
+[Messages](https://platform.claude.com/docs/en/api/messages/create),
+[structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+and [pricing](https://platform.claude.com/docs/en/about-claude/pricing) references.
+
 **A model call is paid for by the person it is made for, and needs nothing
 else.** Building, exploring, repairing, verifying or judging, diagnosing and
 adapting a Flow all call the model on the caller's own unlocked Secret Keys
@@ -304,8 +355,8 @@ The shipped host binds one resolver,
 `createAutomationStudioSessionKeyProviderResolver`
 (`runtime/llm/session-key-provider.ts`), with
 `automationStudio.bindLlmExecutionProvider(resolver)`. A request with no
-caller resolves no provider. With a caller it returns the DeepSeek adapter
-whose secret is resolved per call: the newest enabled DeepSeek LLM key,
+caller resolves no provider. With a caller it returns the configured provider adapter
+whose secret is resolved per call: the Flow's chosen matching key, or the caller's own newest enabled key for that provider,
 released to the caller's own unlocked session by a one-use Secret Keys session
 reveal authorization, by the same rule the chat window's key follows
 (`runtime/llm/deepseek/panel-command-key.ts`). The unlock is established at
@@ -313,8 +364,9 @@ login and lives only in memory; Automation Studio never accepts or retains a
 password or PIN, and a person whose keys are locked, or who has signed out,
 gets no key and the call fails as `llm.provider_secret_unavailable`. The
 provider refuses an outbound body that contains the secret. The model is the
-request's `modelId` when that is a configured DeepSeek model, and Core's
-default otherwise. The resolution carries Core's default per-call token,
+request's supported `modelId`, the selected provider's default when only a
+provider is pinned, or Core's configured default. An unknown explicit model is
+refused. The resolution carries Core's default per-call token,
 timeout and cost limits (USD 0.25 per call, USD 2 per run) as defaults the run
 budget applies, not as checks of their own. Provider secrets are decrypted just
 in time at dispatch and never retained or persisted. Core never reads a

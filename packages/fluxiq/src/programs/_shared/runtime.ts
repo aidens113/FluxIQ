@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioAnthropicPanelCommandModel, automationStudioLlmModelProvider, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, automationStudioSessionKeyProvider, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { AutomationStudioChannelScope } from "../automation-studio/runtime/environment/index.ts";
 import { automationStudioClientGatewayTraceEnabled } from "../automation-studio/runtime/gateway-trace/index.ts";
 import { AutomationStudioGatewayTraceServicePools, createAutomationStudioGatewayTraceHost } from "../automation-studio/runtime/gateway-trace/wiring/index.ts";
@@ -72,15 +72,23 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // A run nobody is watching has no live session to release a key to, so it
   // draws the key from the unlock the person left for it; what reaches here is
   // the key, that unlock, and the ceiling for this one redemption.
-  const resultCheckProviderResolver = (request: Parameters<typeof createAutomationStudioResultCheckProvider>[0]["scope"]) => createAutomationStudioResultCheckProvider({
+  const resultCheckProviderResolver = async (request: Parameters<typeof createAutomationStudioResultCheckProvider>[0]["scope"]) => {
+    const key = await secretKeys.getKeySummary(request.keyId);
+    const flow = await automationStudio.getFlow(request.projectId, request.flowId);
+    const providerId = request.providerId ?? (typeof flow.metadata?.llmProvider === "string" ? flow.metadata.llmProvider : undefined)
+      ?? (key ? automationStudioSessionKeyProvider(key) : undefined);
+    const modelId = request.modelId ?? (typeof flow.metadata?.llmModel === "string" ? flow.metadata.llmModel : undefined)
+      ?? (typeof key?.metadata?.model === "string" && key.metadata.model ? key.metadata.model : undefined);
+    return createAutomationStudioResultCheckProvider({
     ports: {
       getKeySummary: (id) => secretKeys.getKeySummary(id),
       createSessionRevealAuthorization: (input) => secretKeys.createSessionRevealAuthorization(input),
       revealKeyWithAuthorization: (input) => secretKeys.revealKeyWithAuthorization(input),
       revokeRevealAuthorization: (authorizationId) => secretKeys.revokeRevealAuthorization(authorizationId)
     },
-    scope: request
+    scope: { ...request, ...(providerId ? { providerId } : {}), ...(modelId ? { modelId } : {}) }
   });
+  };
   // The candidate start hook (decision D1): deployment configuration, unset in
   // every product deployment. A test facility that owns the target points it
   // at its own reset of that target (`FLUXIQ_CANDIDATE_START_URL`, with the
@@ -171,16 +179,28 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // the resolver without the Flow's metadata, so the Flow is read here. The
   // locked sentence names the public host when `FLUXIQ_PUBLIC_ORIGIN` sets one.
   const instanceHost = publicInstanceHost(process.env.FLUXIQ_PUBLIC_ORIGIN);
-  if (modelProvidersEnabled) automationStudio.bindLlmExecutionProvider(createAutomationStudioSessionKeyProviderResolver({
+  const resolveSessionProvider = createAutomationStudioSessionKeyProviderResolver({
     ports: secretKeys,
     flowSecretKeyId: ({ projectId, flowId }) => flowSecretKeyId(automationStudio, projectId, flowId),
     ...(instanceHost ? { instanceHost } : {})
-  }));
-  // The chat window reads plain requests with DeepSeek, on the key of whoever
+  });
+  if (modelProvidersEnabled) automationStudio.bindLlmExecutionProvider(async (request) => {
+    const flow = await automationStudio.getFlow(request.projectId, request.flowId);
+    const metadata = { ...flow.metadata, ...request.metadata };
+    const key = typeof metadata.llmSecretKeyId === "string" ? await secretKeys.getKeySummary(metadata.llmSecretKeyId) : undefined;
+    const providerId = request.providerId ?? (typeof metadata.llmProvider === "string" ? metadata.llmProvider : undefined)
+      ?? (key ? automationStudioSessionKeyProvider(key) : undefined);
+    const modelId = request.modelId ?? (typeof metadata.llmModel === "string" ? metadata.llmModel : undefined)
+      ?? (typeof key?.metadata?.model === "string" && key.metadata.model ? key.metadata.model : undefined);
+    return resolveSessionProvider({ ...request, metadata, ...(providerId ? { providerId } : {}), ...(modelId ? { modelId } : {}) });
+  });
+  // The chat window reads plain requests with the configured provider, on the key of whoever
   // sent the message, released to their own unlocked session. With no key, or
   // a locked session, the conversation still answers from its offline reading.
-  if (modelProvidersEnabled) automationStudio.conversations.bindModel(createAutomationStudioDeepSeekPanelCommandModel({
-    resolveKey: automationStudioPanelCommandKeyFromSecretKeys(secretKeys)
+  const chatProvider = automationStudioLlmModelProvider(AUTOMATION_STUDIO_LLM_DEFAULT_MODEL)!;
+  const chatFactory = chatProvider === "anthropic" ? createAutomationStudioAnthropicPanelCommandModel : createAutomationStudioDeepSeekPanelCommandModel;
+  if (modelProvidersEnabled) automationStudio.conversations.bindModel(chatFactory({
+    resolveKey: automationStudioPanelCommandKeyFromSecretKeys(secretKeys, { provider: chatProvider, model: AUTOMATION_STUDIO_LLM_DEFAULT_MODEL })
   }));
   // A paired client (the browser extension) acts under a session of its own,
   // which no key is released to. Its chat, and the builds and runs the chat

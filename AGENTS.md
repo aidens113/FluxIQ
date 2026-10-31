@@ -275,6 +275,8 @@ commit the value, or silently fall back to DeepSeek. Preserve scenarios and
 acceptance checks, and record the exact model, verdict, calls, billed cost and
 runtime for comparison. Provider-free tests remain provider-free; existing
 supervision and paid-launch requirements still apply.
+Claude live tests default to $5 per build (user, 2026-10-30), across all its
+calls; explicit lower limits still hold. The normal product default is separate.
 
 Before the final response for a code change, run the relevant checks and
 read their output:

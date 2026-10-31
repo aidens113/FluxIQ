@@ -1,11 +1,11 @@
-import { AI_PROVIDER_SECRET_KEYS_HREF, deepSeekKeyAvailability } from "../settings";
+import { AI_PROVIDER_SECRET_KEYS_HREF, aiProviderKeyAvailability } from "../settings";
 import type { OnboardingAction, OnboardingReadings, OnboardingStep, OnboardingStepId } from "./types";
 
 type StepCheck = { id: OnboardingStepId; title: string; satisfied: boolean; detail: string; action: OnboardingAction; problem?: string };
 
 const RUNTIME_ACTION: OnboardingAction = { label: "Start the FluxIQ runtime", location: "A terminal in your FluxIQ folder", command: "pnpm dev" };
 const PAIRING_ACTION: OnboardingAction = { label: "Pair the browser extension", location: "Open the FluxIQ extension and connect it to this panel, then confirm the matching code in the \"Client pairing request\" prompt that opens here" };
-const KEY_ACTION: OnboardingAction = { label: "Add a DeepSeek API key", location: "Secret Keys > Add Key, with kind LLM and provider DeepSeek", href: AI_PROVIDER_SECRET_KEYS_HREF };
+const KEY_ACTION: OnboardingAction = { label: "Add a model API key", location: "Secret Keys > Add Key, with kind LLM and provider Anthropic (Claude) or DeepSeek", href: AI_PROVIDER_SECRET_KEYS_HREF };
 
 /**
  * The first-run checklist, in order: runtime, pairing, DeepSeek key.
@@ -63,9 +63,10 @@ function pairingCheck(readings: OnboardingReadings, nowMs: number): StepCheck {
 }
 
 function keyCheck(readings: OnboardingReadings): StepCheck {
-  const step = { id: "deepseek-key" as const, title: "Add a DeepSeek API key", action: KEY_ACTION };
+  const step = { id: "deepseek-key" as const, title: "Add a model API key", action: KEY_ACTION };
   const keys = readings.keys;
-  const availability = deepSeekKeyAvailability({
+  const availability = aiProviderKeyAvailability({
+    provider: keys.status === "loaded" && keys.value.some((key) => key.kind === "llm" && /^(anthropic|anthropicclaude)$/i.test(String(key.provider ?? "").replace(/[^a-z0-9]/gi, "")) && key.enabled && key.scope === "global") ? "anthropic" : "deepseek",
     keys: keys.status === "loaded" ? keys.value : null,
     loading: keys.status === "loading",
     error: keys.status === "failed" ? keys.error : ""

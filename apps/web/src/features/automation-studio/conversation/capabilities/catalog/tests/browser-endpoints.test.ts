@@ -55,7 +55,7 @@ describe("capabilities use only endpoints the browser allows", () => {
     expect(calls.map((call) => call.endpoint)).toEqual(["get-flow-metadata-detail", "save-flow-instruction", "generate-flow-bootstrap-adaptation"]);
     const post = vi.fn(async () => ({ ok: true, payload: { flow: { flowId: "f1", settings: { llm: {} } } } }));
     const refused = await dispatchPanelCapability({ transport: { get: vi.fn(), post } as unknown as ProgramCommandTransport, projectId: "p1", flowId: "f1" }, { capabilityId: "flow.improve", arguments: { change: "x" } });
-    expect(refused.outcome).toMatchObject({ status: "failed", error: expect.stringContaining("no DeepSeek model key chosen") });
+    expect(refused.outcome).toMatchObject({ status: "failed", error: expect.stringContaining("no model key chosen") });
     expect(post).toHaveBeenCalledTimes(1);
   });
 });

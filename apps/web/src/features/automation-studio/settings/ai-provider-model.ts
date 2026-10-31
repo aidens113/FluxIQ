@@ -1,5 +1,5 @@
 import type { SecretKeySummary } from "fluxiq/secret-keys";
-import { applyFlowAdaptationMode, normalizedProviderLabel, type FlowSettingsDraft } from "./flow-settings-model";
+import { applyFlowAdaptationMode, flowLlmProvider, normalizedProviderLabel, type FlowSettingsDraft } from "./flow-settings-model";
 
 /**
  * The AI provider controls: whether a usable bring-your-own DeepSeek key
@@ -28,31 +28,33 @@ export type DeepSeekKeyAvailability = {
 
 /** Where keys are added and managed: the existing Secret Keys program, the only secret store. */
 export const AI_PROVIDER_SECRET_KEYS_HREF = "/programs/secret-keys";
-export const AI_PROVIDER_ADAPTATION_OFF_EXPLANATION = "Off: runs use only the steps FluxIQ has already learned and never call DeepSeek; if a page has changed, the run stops instead of adapting.";
-export const AI_PROVIDER_ADAPTATION_ON_EXPLANATION = "On: when a page changes, FluxIQ asks DeepSeek to repair the step, then reuses the fix so later runs do not need AI.";
+export const AI_PROVIDER_ADAPTATION_OFF_EXPLANATION = "Off: runs use only the steps FluxIQ has already learned and never call the model; if a page has changed, the run stops instead of adapting.";
+export const AI_PROVIDER_ADAPTATION_ON_EXPLANATION = "On: when a page changes, FluxIQ asks the selected model to repair the step, then reuses the fix so later runs do not need AI.";
 
-const DEEPSEEK_LABEL = normalizedProviderLabel("DeepSeek");
 
-export function deepSeekKeyAvailability(input: {
+export function aiProviderKeyAvailability(input: {
+  provider?: string;
   keys: readonly AiProviderKeySummary[] | null;
   loading: boolean;
   error: string;
   /** A Flow-scoped key counts only for this Flow; without one, only global keys count. */
   flowId?: string | null;
 }): DeepSeekKeyAvailability {
-  if (input.loading) return { status: "loading", usableKeys: [], summary: "Checking for a DeepSeek API key..." };
+  const provider = flowLlmProvider(input.provider ?? "deepseek");
+  const label = provider.label;
+  if (input.loading) return { status: "loading", usableKeys: [], summary: `Checking for a ${label} API key...` };
   if (input.error) return { status: "unknown", usableKeys: [], summary: `Your API keys could not be read: ${input.error}` };
   if (!input.keys) return { status: "unknown", usableKeys: [], summary: "Your API keys have not been checked yet." };
-  const deepSeekKeys = input.keys.filter((key) => key.kind === "llm" && normalizedProviderLabel(key.provider) === DEEPSEEK_LABEL);
+  const deepSeekKeys = input.keys.filter((key) => key.kind === "llm" && normalizedProviderLabel(key.provider) === provider.id);
   const usableKeys = deepSeekKeys.filter((key) => key.enabled === true && (key.scope === "global" || (Boolean(input.flowId) && key.scope === "flow" && key.scopeRef === input.flowId)));
   if (usableKeys.length) {
-    return { status: "ready", usableKeys, summary: usableKeys.length === 1 ? `DeepSeek key "${usableKeys[0]!.name}" is ready.` : `${usableKeys.length} DeepSeek keys are ready.` };
+    return { status: "ready", usableKeys, summary: usableKeys.length === 1 ? `${label} key "${usableKeys[0]!.name}" is ready.` : `${usableKeys.length} ${label} keys are ready.` };
   }
   if (deepSeekKeys.length) {
     const disabled = deepSeekKeys.every((key) => key.enabled !== true);
-    return { status: "unusable", usableKeys: [], summary: disabled ? "Your DeepSeek key is disabled. Enable it or add a new one." : "Your DeepSeek key is limited to another scope. Add a global DeepSeek key so every automation can use it." };
+    return { status: "unusable", usableKeys: [], summary: disabled ? `Your ${label} key is disabled. Enable it or add a new one.` : `Your ${label} key is limited to another scope. Add a global ${label} key so every automation can use it.` };
   }
-  return { status: "missing", usableKeys: [], summary: "No DeepSeek API key has been added yet." };
+  return { status: "missing", usableKeys: [], summary: `No ${label} API key has been added yet.` };
 }
 
 export function aiProviderAdaptationIsOn(draft: Pick<FlowSettingsDraft, "adaptationMode">): boolean {
@@ -62,3 +64,6 @@ export function aiProviderAdaptationIsOn(draft: Pick<FlowSettingsDraft, "adaptat
 export function applyAiProviderAdaptationSwitch(draft: FlowSettingsDraft, on: boolean): FlowSettingsDraft {
   return applyFlowAdaptationMode(draft, on ? "fully_adaptive" : "no_llm_intervention");
 }
+
+/** Compatibility name for callers that explicitly use DeepSeek. */
+export const deepSeekKeyAvailability = aiProviderKeyAvailability;

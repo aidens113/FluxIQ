@@ -31,6 +31,8 @@ import {
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
   automationStudioLlmRunCostCeilingUsd,
   estimateAutomationStudioDeepSeekCostUsd,
+  estimateAutomationStudioAnthropicCostUsd,
+  isAutomationStudioAnthropicModel,
   isAutomationStudioDeepSeekModel,
   resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmRunBudgetProfile,
@@ -182,6 +184,7 @@ function worstCaseCallCostUsd(tokenLimits: Partial<AutomationStudioLlmTokenLimit
   const limits = resolveAutomationStudioLlmTokenLimits(tokenLimits).limits;
   const outputTokens = Math.min(limits.maxOutputTokens, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST);
   const inputTokens = Math.max(0, Math.min(limits.maxInputTokens, limits.maxTotalTokens - outputTokens, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST - outputTokens));
+  if (isAutomationStudioAnthropicModel(model)) return estimateAutomationStudioAnthropicCostUsd(inputTokens, outputTokens, 0, model, inputTokens);
   return estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, isAutomationStudioDeepSeekModel(model) ? model : AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, atMs);
 }
 
