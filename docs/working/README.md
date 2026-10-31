@@ -59,6 +59,7 @@ The downstream web-extension index is at `F:\!FluxIQWebExtension\docs\working\RE
 | [action-visual-entity-target-plan.md](./action-visual-entity-target-plan.md) | Automation Studio | 366 | FluxIQ Automation Studio action evidence contracts, state visual entity linking, editor highlighting, importer documentation, validation, and proposal/runtime use. | `action-visual-entity-target-plan.md` |
 | [automation-studio-element-target-fingerprints-plan.md](./automation-studio-element-target-fingerprints-plan.md) | Automation Studio | 338 | Automation Studio recording capture, recording mappers, native/custom extension output nodes, runtime element matching, and domain-neutral persisted target contracts. | none |
 | [automation-studio-strict-workspace-layout-plan.md](./automation-studio-strict-workspace-layout-plan.md) | Automation Studio | 525 | Replacing the dynamic inner-window canvas with a strict workspace layout of fixed panes, docks, and sidebars. | none |
+| [claude-live-provider-plan.md](./claude-live-provider-plan.md) | Senior supervisor agent | 69 | Use CLAUDE_API_KEY for all live tests; implement real Claude provider, encrypted-key routing and model selection in Core, and provider-aware credential/default/accounting paths in the Lab. | `claude-live-provider-plan.md` |
 | [codebase-audit-remediation-plan.md](./codebase-audit-remediation-plan.md) | FluxIQ framework | 1201 ⚠ | FluxIQ public framework repository | none |
 | [flow-build-quality-and-lab-budget-plan.md](./flow-build-quality-and-lab-budget-plan.md) | Codex senior supervisor | 51 | Generic build-budget isolation and evidenced authoring feedback/progress improvement; browser/Lab composition remains downstream. | `flow-build-quality-and-lab-budget-plan.md` |
 | [instruction-led-automation-plan.md](./instruction-led-automation-plan.md) | Codex senior supervisor | 66 | Explicit durable instructions are required for automation build and execution; recordings are described supplemental evidence. | `instruction-led-automation-plan.md` |
@@ -80,5 +81,5 @@ detail`. Retained for evidence. Do not plan current work from them.
 | [automation-studio-load-performance-plan.md](./automation-studio-load-performance-plan.md) | Automation Studio | 346 | Summary-first load performance for project open, pane switching, runtime debug, and Flow browsing. | none |
 | [automation-studio-ui-lag-root-cause-audit.md](./automation-studio-ui-lag-root-cause-audit.md) | Automation Studio | 513 | Root-cause audit of Automation Studio UI lag; audit complete, remediation tracked elsewhere. | none |
 
-⚠ marks documents over the 800-line compaction threshold (16 of 45 here).
+⚠ marks documents over the 800-line compaction threshold (16 of 46 here).
 Compact them the next time work touches them; do not schedule a bulk rewrite.

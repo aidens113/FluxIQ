@@ -25,19 +25,15 @@
 // test runtime alone applies the environment ceiling to every such total.
 
 import { resolveAutomationStudioLlmBuildCallLimit } from "../../model/index.ts";
-import {
-  AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
-  AutomationStudioSecretsLockedError,
-  isAutomationStudioDeepSeekModel,
-  releaseAutomationStudioSessionDeepSeekKey,
-  type AutomationStudioSessionKeyPorts
-} from "./deepseek/index.ts";
+import { AutomationStudioSecretsLockedError } from "./deepseek/index.ts";
+import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "./session-keys/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS, automationStudioLlmModelProvider, automationStudioLlmProviderDefaultModel, assertAutomationStudioLlmModelBinding, isAutomationStudioAnthropicModel } from "./models/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 // Read at module evaluation, so from the leaf that imports no value rather than
 // through the barrel, where an import cycle could leave them undefined.
 import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "./model-limits/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "./harness/index.ts";
-import { createAutomationStudioDeepSeekProvider } from "./provider-factories.ts";
+import { createAutomationStudioDeepSeekProvider, createAutomationStudioAnthropicProvider } from "./provider-factories.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS } from "./provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmRunCostCeilingUsd } from "./flow-execution-limits/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./resolver-contract.ts";
@@ -92,12 +88,17 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
   return (input) => {
     const caller = input.caller;
     if (!caller) return undefined;
-    const model = typeof input.modelId === "string" && isAutomationStudioDeepSeekModel(input.modelId) ? input.modelId : AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL;
+    const selectedModel = input.modelId ?? (typeof input.metadata?.llmModel === "string" ? input.metadata.llmModel : undefined);
+    const selectedProvider = input.providerId ?? (typeof input.metadata?.llmProvider === "string" ? input.metadata.llmProvider : undefined);
+    assertAutomationStudioLlmModelBinding(selectedProvider, selectedModel);
+    const providerId = selectedProvider as "anthropic" | "deepseek" | undefined ?? automationStudioLlmModelProvider(selectedModel ?? AUTOMATION_STUDIO_LLM_DEFAULT_MODEL)!;
+    const model = selectedModel ?? automationStudioLlmProviderDefaultModel(providerId);
+    const factory = providerId === "anthropic" ? createAutomationStudioAnthropicProvider : createAutomationStudioDeepSeekProvider;
     // The adapter reports any failed secret resolution as `llm.provider_secret_unavailable`;
     // a locked key is remembered per request so the call fails with the typed error instead.
     const locked = new Map<string, AutomationStudioSecretsLockedError>();
-    const adapter = createAutomationStudioDeepSeekProvider({
-      secretReference: { kind: "secret_reference", id: "secret:session-deepseek-key" },
+    const adapter = factory({
+      secretReference: { kind: "secret_reference", id: `secret:session-${providerId}-key` },
       model,
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
       resolveSecret: async (request) => {
@@ -106,7 +107,8 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
         const flowKeyId = (await options.flowSecretKeyId?.({ projectId: input.projectId, flowId: input.flowId })) ?? metadataKeyId(input.metadata);
         let secret: string;
         try {
-          secret = await releaseAutomationStudioSessionDeepSeekKey(options.ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
+          secret = await releaseAutomationStudioSessionProviderKey(options.ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
+            provider: providerId, model,
             ...(flowKeyId ? { flowKeyId } : {}),
             ...(options.instanceHost ? { instanceHost: options.instanceHost } : {})
           });
@@ -139,7 +141,7 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     return {
       provider,
       ...(buildCalls === undefined ? {} : { maxCallsPerRun: buildCalls }),
-      tokenLimits: { ...automationStudioSessionKeyProviderTokenLimits(AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS[model].contextTokens) },
+      tokenLimits: { ...automationStudioSessionKeyProviderTokenLimits((isAutomationStudioAnthropicModel(model) ? AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model] : AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS[model as keyof typeof AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS]).contextTokens) },
       timeoutMs: defaults.timeoutMs,
       maxEstimatedCostUsd: totalCostUsd,
       maxTotalEstimatedCostUsd: totalCostUsd

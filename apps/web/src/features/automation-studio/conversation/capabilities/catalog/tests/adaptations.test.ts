@@ -50,7 +50,7 @@ describe("improving a Flow from the conversation", () => {
   it("changes nothing when the Flow has no model key", async () => {
     const { api, calls } = improving({ "get-flow-metadata-detail": { ok: true, payload: { flow: { flowId: "f1", settings: { llm: {} } } } } });
     const dispatch = await dispatchPanelCapability(scope(api), { capabilityId: "flow.improve", arguments: { change: "x" } });
-    expect(dispatch.outcome).toMatchObject({ status: "failed", summary: expect.stringContaining("no DeepSeek model key") });
+    expect(dispatch.outcome).toMatchObject({ status: "failed", summary: expect.stringContaining("no model key") });
     expect(calls.map((call) => call.endpoint)).toEqual(["get-flow-metadata-detail"]);
   });
 

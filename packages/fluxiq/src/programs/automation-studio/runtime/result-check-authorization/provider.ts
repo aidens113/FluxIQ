@@ -16,7 +16,7 @@
 //
 // What it does not relax is in `reveal.ts`, which is where every refusal lives.
 
-import { createAutomationStudioDeepSeekProvider } from "../llm/index.ts";
+import { createAutomationStudioDeepSeekProvider, createAutomationStudioAnthropicProvider, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, automationStudioLlmModelProvider, automationStudioLlmProviderDefaultModel, assertAutomationStudioLlmModelBinding } from "../llm/index.ts";
 import type { AutomationStudioResultCheckProviderPorts, AutomationStudioResultCheckProviderScope } from "./provider-contract.ts";
 import { revealAutomationStudioResultCheckSecret } from "./reveal.ts";
 import type { AutomationStudioResultCheckProviderResolution } from "./provider-contract.ts";
@@ -26,10 +26,15 @@ export function createAutomationStudioResultCheckProvider(input: {
   scope: AutomationStudioResultCheckProviderScope;
   fetchImpl?: typeof fetch | undefined;
 }): AutomationStudioResultCheckProviderResolution {
-  const provider = createAutomationStudioDeepSeekProvider({
+  assertAutomationStudioLlmModelBinding(input.scope.providerId, input.scope.modelId);
+  const providerId = input.scope.providerId as "anthropic" | "deepseek" | undefined ?? automationStudioLlmModelProvider(input.scope.modelId ?? AUTOMATION_STUDIO_LLM_DEFAULT_MODEL)!;
+  const model = input.scope.modelId ?? automationStudioLlmProviderDefaultModel(providerId);
+  const factory = providerId === "anthropic" ? createAutomationStudioAnthropicProvider : createAutomationStudioDeepSeekProvider;
+  const provider = factory({
+    model,
     secretReference: { kind: "secret_reference", id: input.scope.keyId },
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
-    resolveSecret: async (request) => await revealAutomationStudioResultCheckSecret({ ports: input.ports, scope: input.scope, request })
+    resolveSecret: async (request) => await revealAutomationStudioResultCheckSecret({ ports: input.ports, scope: input.scope, request, providerId, model })
   });
   return { provider, maxEstimatedCostUsd: input.scope.maxEstimatedCostUsd };
 }

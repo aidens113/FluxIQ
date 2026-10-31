@@ -11,7 +11,7 @@ import type { AutomationStudioLlmProvider } from "../llm/index.ts";
 
 /** The Secret Keys operations a standing check needs, and no others. */
 export type AutomationStudioResultCheckProviderPorts = {
-  getKeySummary(id: string): Promise<{ id: string; kind: string; enabled: boolean; updatedAtMs: number } | null | undefined>;
+  getKeySummary(id: string): Promise<{ id: string; kind: string; enabled: boolean; updatedAtMs: number; provider?: string | undefined; metadata?: { model?: unknown } | undefined } | null | undefined>;
   /** Mints a one-use reveal from the person's held key unlock. Refuses unless the unlock is live and belongs to that user. */
   createSessionRevealAuthorization(input: { id: string; sessionId: string; userId: string; ttlMs: number }): Promise<{ authorizationId: string; keyId: string; keyUpdatedAtMs: number }>;
   revealKeyWithAuthorization(input: { authorizationId: string; id: string }): Promise<{ value: string }>;
@@ -29,6 +29,8 @@ export type AutomationStudioResultCheckProviderScope = {
   projectId: string;
   flowId: string;
   keyId: string;
+  providerId?: string;
+  modelId?: string;
   unlockSessionId: string;
   authorizedByUserId: string;
   maxEstimatedCostUsd: number;

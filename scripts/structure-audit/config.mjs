@@ -68,6 +68,7 @@ export const CONFIG = {
     entries: [
       "packages/fluxiq/src/programs/automation-studio/nodes/index.ts",
       "packages/fluxiq/src/programs/automation-studio/fingerprinting/index.ts",
+      "packages/fluxiq/src/programs/automation-studio/runtime/llm/models/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/client/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/panel-capabilities/client/index.ts",
       "packages/fluxiq/src/client-gateway/contracts.ts",
@@ -176,6 +177,9 @@ export const CONFIG = {
       from: [
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/model-facing/",
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/system-prompt.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-task/system-prompt.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-task/request-messages.ts",
+        "packages/fluxiq/src/programs/automation-studio/runtime/llm/anthropic/request.ts",
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/domain-instructions/",
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/diagnosis-instructions.ts",
         "packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/instructions.ts",

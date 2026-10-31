@@ -1,5 +1,7 @@
 "use client";
 
+import { automationStudioLlmProviderDefaultModel } from "fluxiq/automation-studio/llm-models";
+
 import { Combobox, StatusBadge } from "../../programs/shared-ui";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, AlertTriangle, ArrowLeftRight, Bot, Boxes, CircleCheck, CircleDollarSign, Gauge, Info, KeyRound, ListChecks, Plus, Settings2, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
@@ -8,12 +10,12 @@ import { JsonToggle } from "../runtime";
 import { readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsDirty } from "./settings-model";
 import { useSettingsCommands, type SettingsCommands } from "./settings-host";
 import { SettingsSectionLayout, type SettingsSectionDefinition } from "./SettingsSectionLayout";
-import { FLOW_LLM_HARD_MAX_TOKENS, FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
+import { FLOW_LLM_HARD_MAX_TOKENS, FLOW_LLM_DIAGNOSIS_MAX_COST_USD, FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
 import { flowResultCheckErrors, flowResultCheckSummary } from "./flow-result-check-model";
 import { flowSettingsNotPersisted } from "./persistence-check";
 import { FLOW_SIZE_SETTING } from "./max-nodes-setting";
 import { AiProviderSettingsSection } from "./AiProviderSettingsSection";
-import { deepSeekKeyAvailability } from "./ai-provider-model";
+import { aiProviderKeyAvailability } from "./ai-provider-model";
 import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
 import { automationStudioViewId } from "../views/view-registry";
 
@@ -21,7 +23,7 @@ export type FlowSettingsViewProps = { projectId: string | null; flow: any };
 
 const FLOW_SETTINGS_SECTIONS = [
   { id: "flow-settings-general", label: "General", description: "Identity and visibility", icon: Settings2 },
-  { id: "flow-settings-ai-provider", label: "AI Provider", description: "DeepSeek key and adaptation", icon: KeyRound },
+  { id: "flow-settings-ai-provider", label: "AI Provider", description: "Model key and adaptation", icon: KeyRound },
   { id: "flow-settings-runtime", label: "Runtime", description: "Execution behavior", icon: Gauge },
   { id: "flow-settings-safety", label: "Safety", description: "Approval gates", icon: ShieldCheck },
   { id: "flow-settings-adaptation", label: "Adaptation", description: "Learning policy", icon: Sparkles },
@@ -152,7 +154,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const resultCheckSummary = flowResultCheckSummary(draft);
   const effectiveSettings = flowEffectiveSettings(flow, draft);
   const resetEffectiveSetting = (key: keyof FlowSettingsDraft) => {
-    const value = FLOW_SETTINGS_DEFAULT_VALUES[key];
+    const value = key === "llmModel" ? automationStudioLlmProviderDefaultModel(flowLlmProvider(draft.llmProvider).id) : FLOW_SETTINGS_DEFAULT_VALUES[key];
     if (value === undefined) return;
     if (key === "trainingMode") { setDraft((current) => applyFlowTrainingMode(current, value as FlowSettingsDraft["trainingMode"])); return; }
     if (key === "adaptationPreset") { setDraft((current) => applyFlowAdaptationPreset(current, value as FlowSettingsDraft["adaptationPreset"])); return; }
@@ -163,7 +165,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const selectedProvider = flowLlmProvider(draft.llmProvider);
   const compatibleLlmSecrets = llmSecrets.filter((key) => key.enabled === true && normalizedProviderLabel(key.provider) === normalizedProviderLabel(selectedProvider.label) && (key.scope === "global" || (key.scope === "flow" && key.scopeRef === flow?.flowId)));
   const llmSettingsErrors = flowLlmSettingsErrors(draft, compatibleLlmSecrets, !llmSecretsLoading && !llmSecretsError);
-  const aiKeyAvailability = deepSeekKeyAvailability({ keys: props.projectId && flow?.flowId ? llmSecrets : null, loading: llmSecretsLoading, error: llmSecretsError, flowId: flow?.flowId ?? null });
+  const aiKeyAvailability = aiProviderKeyAvailability({ provider: draft.llmProvider, keys: props.projectId && flow?.flowId ? llmSecrets : null, loading: llmSecretsLoading, error: llmSecretsError, flowId: flow?.flowId ?? null });
   const llmSecretError = llmSettingsErrors.find((item) => item.toLowerCase().includes("key")) ?? "";
   const adaptationErrors = flowAdaptationErrors(draft);
   const limitsInterfaceErrors = flowLimitsInterfaceErrors(draft);
@@ -336,7 +338,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
           </div>
           <div className="automation-settings-inline-fields">
             <label><span>Timeout (seconds)</span><input aria-label="Timeout (seconds)" max={25} min={1} step={1} type="number" value={draft.llmTimeoutSeconds} onChange={(event) => updateDraft("llmTimeoutSeconds", event.target.value)} /></label>
-            <label><span>Max cost (USD)</span><input aria-label="Max cost (USD)" max={0.25} min={0.01} step={0.01} type="number" value={draft.llmMaxCostUsd} onChange={(event) => updateDraft("llmMaxCostUsd", event.target.value)} /></label>
+            <label><span>Max cost (USD)</span><input aria-label="Max cost (USD)" max={FLOW_LLM_DIAGNOSIS_MAX_COST_USD} min={0.01} step={0.01} type="number" value={draft.llmMaxCostUsd} onChange={(event) => updateDraft("llmMaxCostUsd", event.target.value)} /></label>
             <label><span>Provider retries</span><input aria-label="Provider retries" max={0} min={0} step={1} type="number" value={draft.llmRetryCount} onChange={(event) => updateDraft("llmRetryCount", event.target.value)} /><small>Retries are disabled for diagnosis and adaptation runs.</small></label>
           </div>
         </section>
