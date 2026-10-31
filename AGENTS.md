@@ -268,6 +268,14 @@ the build loop, not only in the model's instructions.
 
 ## Validation
 
+**Live model provider (user, 2026-10-30).** FluxIQ live model-backed tests use
+Anthropic Claude, with the downstream Lab reading `CLAUDE_API_KEY` from its
+repository's `.env.local` or explicitly supplied environment. Never expose or
+commit the value, or silently fall back to DeepSeek. Preserve scenarios and
+acceptance checks, and record the exact model, verdict, calls, billed cost and
+runtime for comparison. Provider-free tests remain provider-free; existing
+supervision and paid-launch requirements still apply.
+
 Before the final response for a code change, run the relevant checks and
 read their output:
 
