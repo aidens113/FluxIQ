@@ -2,14 +2,49 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../model/index.ts";
 import type { AutomationStudioActionEffectClass } from "../../../../nodes/index.ts";
 import { runAutomationStudioGraph } from "../../index.ts";
+import type { AutomationStudioExecutorCommandRun } from "../../command-scope/index.ts";
 import { automationStudioChildInvocation } from "../../frames/index.ts";
 import type { AutomationStudioHostStateSnapshotRef } from "../../../host-runtime.ts";
+import { executeAutomationStudioNode } from "../../node-execution.ts";
+import { automationStudioRunState } from "../../run-state.ts";
+import { automationStudioTraceWithholding } from "../../trace-withholding.ts";
+import type { AutomationStudioParameterRefreshOverlay } from "../../parameter-refresh/index.ts";
 
 function graph(flowId: string, node: AutomationStudioFlowNode): AutomationStudioFlowDocument {
   return { schemaVersion: "0.1", flowId, ownerKind: "routine", ownerId: flowId, name: "Effect isolation", nodes: [node], edges: [], createdAt: 1, updatedAt: 1 };
 }
 
 describe("execution-only floors in graph frames", () => {
+  it("pins an arrival floor before the first preparation checkpoint can fail", async () => {
+    const node = { id: "same", definitionId: "example.activate", parameterValues: { selector: "old" } };
+    const flow = graph("preparation-floor", node);
+    const state = automationStudioRunState();
+    const overlay: AutomationStudioParameterRefreshOverlay = { nodeId: node.id, definitionId: node.definitionId, refresh: { container: "node", definitionId: node.definitionId, definitionVersion: "1.0.0", parameterIds: ["selector"], removableParameterIds: ["selector"] }, baseline: node.parameterValues, patches: [{ operation: "set", parameterId: "selector", value: "fresh" }], floor: { effectClass: "commit", permissionConsequences: ["modify_existing"] }, active: true };
+    let checkpoints = 0;
+    const commandRun: AutomationStudioExecutorCommandRun = {
+      signal: new AbortController().signal,
+      acceptsComposite: () => false,
+      own: (start) => start(),
+      checkpoint: async () => {
+        checkpoints++;
+        expect(state.actionEffects.get(node.id)).toEqual(overlay.floor);
+        throw new Error("Preparation stopped before dispatch.");
+      },
+      context: async () => { throw new Error("Unexpected command context."); },
+      consume: async () => { throw new Error("Unexpected command consumption."); },
+      stop: async () => { throw new Error("Unexpected command stop."); },
+      receipted: () => false,
+      withdraw: () => false
+    };
+    const attempt = await executeAutomationStudioNode(flow, node, {}, {
+      resolveActionEffect: () => ({ effectClass: "observe", permissionConsequences: [] }),
+      commandRun
+    }, 4, automationStudioTraceWithholding(), state, overlay);
+    expect(checkpoints).toBe(1);
+    expect(attempt.status).toBe("failed");
+    expect(attempt.failure?.effect).toBe("unacted");
+    expect(state.actionEffects.get(node.id)).toEqual(overlay.floor);
+  });
   it("isolates nested frames with the same node id in both commit/observe directions", async () => {
     for (const outerClass of ["commit", "observe"] as const) {
       const innerClass: AutomationStudioActionEffectClass = outerClass === "commit" ? "observe" : "commit";

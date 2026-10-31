@@ -64,6 +64,7 @@ export function automationStudioRunGraphOptions(input: {
     options.runtimeCapabilities = [...new Set([...(options.runtimeCapabilities ?? []), ...native.getRuntimeCapabilities()])];
     options.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => native.execute(node, inputs, signal, hostContext);
     options.resolveActionEffect = (node, parameterValues) => native.resolveActionEffect(node, parameterValues);
+    options.resolveTargetRefresh = (node, parameterValues) => native.resolveTargetRefresh(node, parameterValues);
   }
   if (input.hostRuntime) options.hostRuntime = input.hostRuntime;
   if (input.maxSteps !== undefined) options.maxSteps = input.maxSteps;

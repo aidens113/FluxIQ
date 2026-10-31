@@ -28,6 +28,30 @@ function importerNode(): AutomationStudioNodeDefinition {
 }
 
 describe("canonical Automation Studio node registry", () => {
+  it("preserves explicit target-refresh fields and rejects authority-bearing or malformed declarations", () => {
+    const base = importerNode();
+    base.parameters = [{ id: "address", label: "Address", valueType: "string", targetRefresh: true }];
+    expect(new AutomationStudioNodeRegistry().register(structuredClone(base)).get(base.id)?.parameters[0]?.targetRefresh).toBe(true);
+    for (const flag of [false, "true", 1, null]) {
+      const malformed = structuredClone(base);
+      (malformed.parameters[0] as unknown as Record<string, unknown>).targetRefresh = flag;
+      expect(validateAutomationStudioNodeDefinition(malformed).issues.some((issue) => issue.code === "node.invalid_target_refresh")).toBe(true);
+    }
+    const effect = structuredClone(base);
+    effect.parameters = [{ id: "apply", label: "Apply", valueType: "boolean", targetRefresh: true }];
+    effect.actionEffect = { effectClass: "observe", commitWhen: "apply" };
+    expect(validateAutomationStudioNodeDefinition(effect).issues.some((issue) => issue.code === "node.unsafe_target_refresh")).toBe(true);
+    const duplicate = structuredClone(base);
+    duplicate.parameters.push({ ...duplicate.parameters[0]! });
+    expect(validateAutomationStudioNodeDefinition(duplicate).issues.some((issue) => issue.code === "node.duplicate_parameter_id")).toBe(true);
+    let getterCalls = 0;
+    Object.defineProperty(base.parameters[0]!, "targetRefresh", { enumerable: true, get: () => {
+      getterCalls++;
+      return true;
+    } });
+    expect(validateAutomationStudioNodeDefinition(base).issues.some((issue) => issue.code === "node.invalid_target_refresh")).toBe(true);
+    expect(getterCalls).toBe(0);
+  });
   it("adapts every built-in node to the canonical definition contract", () => {
     expect(canonicalBuiltinAutomationNodeDefinitions.length).toBeGreaterThan(0);
     for (const definition of canonicalBuiltinAutomationNodeDefinitions) {

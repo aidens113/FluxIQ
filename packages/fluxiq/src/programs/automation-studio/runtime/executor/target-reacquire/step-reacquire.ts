@@ -19,6 +19,7 @@ import { automationStudioReacquireSourceReadOnly } from "./read-only-source.ts";
 import { automationStudioReacquireSourcePlace } from "./source-place.ts";
 import { automationStudioReacquireSourceRerun } from "./source-rerun.ts";
 import { automationStudioStaleTargetFailure } from "./stale-failure.ts";
+import { automationStudioUnboundReacquire } from "../unbound-reacquire/index.ts";
 
 /** What a re-acquire came to: the record the next attempt carries, and the attempt that stands in for it when the item is gone. */
 export type AutomationStudioStepReacquired = { record: AutomationStudioTargetReacquireRecord; gone?: AutomationStudioNodeAttemptTrace };
@@ -52,10 +53,15 @@ export async function automationStudioStepReacquire(
   if (!retried || ctx.arrival.reacquired || ctx.arrival.attempts !== automationStudioReacquireBeforeAttempt(retryPolicy.maxAttempts)) return undefined;
   if (!automationStudioStaleTargetFailure(retried, { actCompleted: actCompleted(ctx, node) })) return undefined;
   const lineage = automationStudioTargetLineage(ctx.flow, node);
-  if (!lineage) return undefined;
+  if (!lineage && !ctx.options.hostRuntime?.reacquireUnboundTarget) return undefined;
   ctx.arrival.reacquired = true;
-  const record = await reacquire(ctx, node, lineage, retried);
-  const source = ctx.nodesById.get(lineage.sourceNodeId);
+  if (!lineage) ctx.arrival.identityReacquired = true;
+  const record = lineage ? await reacquire(ctx, node, lineage, retried) : await automationStudioUnboundReacquire(ctx, node, retried);
+  if (!lineage && (ctx.options.signal?.aborted || actCompleted(ctx, node))) {
+    delete ctx.arrival.parameterOverlay;
+    return undefined;
+  }
+  const source = lineage ? ctx.nodesById.get(lineage.sourceNodeId) : undefined;
   if (record.outcome === "found" || record.outcome === "gone") emitAutomationStudioActivityStepReacquire({ nodeId: node.id, outcome: record.outcome, sourceLabel: source?.label });
   if (record.outcome !== "gone") return { record };
   return { record, gone: automationStudioTargetGoneAttempt(node, `${node.id}.attempt.${ctx.nextAttemptNumber()}`, record.at) };

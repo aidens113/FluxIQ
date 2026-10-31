@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t828 setup/discovery complete; additive Core/host interface planning active, source frozen. Parent t827 accepted/pushed; no full or paid calls.
+Status detail: t828 Core and affected web/Lab tests/types/builds pass; installed browser rerun active after setup locator fix. Private0.20/main0.19; no full/paid calls.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active t828, 2026-10-31:** Paired private setup passed, mandatory three SDK libraries built (Core73.93s); source stays0.19/contracts0.5. Core and web read-only discovery confirms source-less targets cannot use existing source-node lineage; stable saved fingerprint matching exists, bare selectors carry no identity. Two Sol Max planners are settling an additive optional host hook, actual resolved retry parameters, arrival-only replacement and shared frame/completeness-aware web matching; Lead chose trusted targetRefresh:true declarations plus a separate optional reacquireUnboundTarget hook; exact patch/previous-place types await final reports. Two lead regression tests reproduce shared matcher defects (six existing pass/two new fail): a sole conflicting record is accepted and stable record keys are ignored. Production remains unchanged. Independent remainder discovery found no arbitrary-node unchanged-repeat guard and missing pace/reacquire/obstruction repair history; existing safety/retry guards stay intact. Private Core owns all p8-identity briefs/reports. Parent paired dev pushed Coreceb14f8f/downstream1830d9ab, t827 accepted and main SDK/bundles current0.19/0.5. Both daily full sweeps used; main held. Claude/$5 configured, no paid go/API calls/panel management. User clinerules untouched.
+**Active t828, 2026-10-31:** Core0.20 independently accepted122tests/14files, typecheck, full audit and compiled SDK smoke; imports ratchet removed1 old violation, baseline1143. All three private SDK libraries current. Down domain source/tests types and build pass after optional-field/copy fixes; first selection142/143 passed, all corrected/additional91 pass and final18 fixture/contract tests pass; native16 rerun passes. Extension84owning tests/typecheck/build and Lab typecheck/build/four trace-reader tests pass. Source/producer/identity APIs frozen. Installed browser attempt1 paired/captured/declared the real target, then test locator reselected a different visible record after Hide, before any Core action; lead pinned the fixture container key and attempt2 is running. No browser acceptance yet. Real proof uses genuine hidden-target commands plus explicit same-post re-observation after Undo, never manufactured failures. Reports p8-identity/ in private Core; artifacts ignored. Parent dev Coreceb14f8f/downstream1830d9ab pushed, main source/SDK stays0.19 until integration. Full sweeps2used/main held; Claude/$5 configured, no paid go/API calls/panel management; user clinerules unchanged.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -771,7 +771,7 @@ Accepted t827 ledger preserved verbatim in [the accepted archive](framework-heav
 - Changed: paired task setup, discovery briefs; accepted t827 ledger archived verbatim.
 - Why: source-less literal targets currently lack the source-step retry path.
 - Validation: `pnpm.cmd task start runtime-target-identity --worktree --core --skip-workspace-build` ->exit0, both private trees created and all three mandatory SDK libraries built (Core73.93s); no new runtime tests.
-- Outcome: Partial; additive interface planning and shared record-identity safety fix required. Lead owning matcher tests ->six existing pass/two new regressions fail; production unchanged.
+- Outcome: Partial; Core122, domain affected91/final18/native16, extension84 and trace-reader4 tests pass; affected types/builds/audits pass. Installed browser rerun pending.
 - Follow-up: reconcile Core and web findings, freeze an additive interface, then implement and run owning checks; no full suite/paid calls.
 
 ## Open Questions

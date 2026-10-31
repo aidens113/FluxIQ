@@ -2,9 +2,11 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../model/index.ts";
 import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
-import type { AutomationNodeExecutionResult, AutomationNodePort } from "../nodes/contracts.ts";
+import type { AutomationNodeExecutionResult, AutomationNodePort } from "../nodes/index.ts";
 import { automationStudioReferenceNow } from "./reference-now/index.ts";
 import { projectRuntimeTargetActionability } from "../../../runtime/result-control/index.ts";
+import { automationStudioResolveTargetRefresh } from "./executor/parameter-refresh/index.ts";
+import type { AutomationStudioTargetRefreshResolution } from "./executor/parameter-refresh/index.ts";
 
 export type AutomationStudioNativeRuntimeGrants = {
   permissions?: Iterable<string>;
@@ -67,6 +69,14 @@ export class AutomationStudioNativeNodeRuntime {
   }
 
   getDefinition(nodeId: string): AutomationStudioNodeDefinition | undefined { return this.sdk.nodes.get(nodeId); }
+  /** Only canonical registered target-field declarations grant a refresh write-set. */
+  resolveTargetRefresh(node: AutomationStudioFlowNode, parameterValues: Readonly<Record<string, JsonValue>>): AutomationStudioTargetRefreshResolution {
+    try {
+      return automationStudioResolveTargetRefresh(node, parameterValues, this.getDefinition(node.definitionId), this.listDefinitions());
+    } catch {
+      return { kind: "unreadable", reason: "registry_unreadable" };
+    }
+  }
   /** Only registered canonical definitions supply the runtime floor. */
   resolveActionEffect(node: AutomationStudioFlowNode, parameterValues: Readonly<Record<string, unknown>> = node.parameterValues ?? {}): AutomationStudioResolvedActionEffect | undefined {
     const definition = this.getDefinition(node.definitionId);

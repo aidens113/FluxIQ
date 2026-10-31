@@ -13,6 +13,7 @@
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioIdentityReacquireRecord } from "../unbound-reacquire/index.ts";
 
 /**
  * Where a step's target came from: `row` when a For Each pass handed it the row
@@ -71,7 +72,7 @@ export type AutomationStudioSourcePlaceRequest = {
 export type AutomationStudioSourcePlaceAnswer = "same_place" | "returned" | "unavailable";
 
 /** What a re-acquire came to, stamped on the attempt that followed it (or on the synthesized attempt of a gone item). */
-export type AutomationStudioTargetReacquireRecord = {
+export type AutomationStudioTargetReacquireRecord = AutomationStudioIdentityReacquireRecord | {
   sourceNodeId: string;
   kind: AutomationStudioTargetLineage["kind"];
   /** `unavailable`: no host matcher, the source could not be re-run, or its place could not be reached. */

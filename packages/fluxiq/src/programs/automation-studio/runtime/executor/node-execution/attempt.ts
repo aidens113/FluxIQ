@@ -6,14 +6,14 @@ import type { JsonValue } from "../../../../../core/index.ts";
 import { projectRuntimeTargetActionability, readRuntimeTargetActionability } from "../../../../../runtime/result-control/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator, AutomationNodePort } from "../../../nodes/index.ts";
-import { combineAutomationStudioResolvedActionEffects, getAutomationNodeDefinition, readAutomationStudioResolvedActionEffect, resolveAutomationNodeParameterValues } from "../../../nodes/index.ts";
+import { combineAutomationStudioResolvedActionEffects, getAutomationNodeDefinition } from "../../../nodes/index.ts";
 import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../../host-runtime.ts";
 import { AUTOMATION_STUDIO_ASK_EFFECT } from "../../parking/index.ts";
 import { nodeAttemptFromResult } from "../attempt-trace.ts";
 import type { AutomationStudioClearedLayer, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioObstruction, AutomationStudioRecordBatch } from "../contracts.ts";
 import { automationStudioFaultFromThrownError, automationStudioNodeSideEffectClass, automationStudioThrownErrorText } from "../defensive/index.ts";
 import { captureHostState, enrichAttemptWithHostState } from "../host-state.ts";
-import { automationStudioNodeOutputReferences, collectNodeInputs, collectWiredNodeInputs } from "../node-inputs.ts";
+import { collectWiredNodeInputs } from "../node-inputs.ts";
 import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "../record-capture.ts";
 import type { AutomationStudioRunState } from "../run-state.ts";
 import type { AutomationStudioTraceWithholding } from "../trace-withholding.ts";
@@ -34,6 +34,9 @@ import { mathNodes } from "../../../nodes/math/index.ts";
 import { policyNodes } from "../../../nodes/policy/index.ts";
 import { randomNodes } from "../../../nodes/random/index.ts";
 import { timingNodes } from "../../../nodes/timing/index.ts";
+import { automationStudioRefreshInputs } from "../parameter-refresh/index.ts";
+import { automationStudioApplyParameterRefresh } from "../parameter-refresh/index.ts";
+import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refresh/index.ts";
 
 // `cleared` collects the layers each dispatch of the attempt says the client
 // closed over the page (`./cleared-layers.ts`), in dispatch order;
@@ -67,7 +70,8 @@ export class AutomationStudioNodeAttemptExecution {
     options: AutomationStudioGraphExecutionOptions,
     attemptNumber: number,
     withholding: AutomationStudioTraceWithholding,
-    runState: AutomationStudioRunState
+    runState: AutomationStudioRunState,
+    parameterOverlay?: AutomationStudioParameterRefreshOverlay
   ): Promise<AutomationStudioNodeAttemptTrace> {
     await options.commandRun?.checkpoint();
     const startedAt = options.now?.() ?? Date.now();
@@ -79,34 +83,27 @@ export class AutomationStudioNodeAttemptExecution {
       await options.commandRun.stop("executor.unsupported_definition");
       throw new Error("executor.unsupported_definition");
     }
-    const inputs = collectNodeInputs(flow, node, values);
-    // A parameter reading another node's output names that node by its key in
-    // the graph; it is read under the id the run keeps its outputs at (`./node-inputs.ts`).
-    const authoredParameters = automationStudioNodeOutputReferences(flow, node.parameterValues ?? {});
-    const resolvedParameters = resolveAutomationNodeParameterValues(authoredParameters, {
-      ...(options.inputs ?? {}),
-      // The run's live variables, not the seed it started from: a variable written
-      // during the run -- inside a For Each body, say -- is what a later node's
-      // binding has to read. `runState.variables` is seeded from
-      // `options.variables`, so a run that writes none resolves exactly as before.
-      ...Object.fromEntries(runState.variables),
-      ...values,
-      ...inputs
-    });
+    const resolvedParameters = automationStudioRefreshInputs(flow, node, values, options, runState.variables);
+    const { inputs, authored: authoredParameters } = resolvedParameters;
     // Recorded before any branch below can return: what resolution supplied is
     // withheld from the trace whether or not this node goes on to execute, and
     // whether or not the rest of its bindings resolved.
     withholding.record(authoredParameters, resolvedParameters.values);
-    const executionNode = resolvedParameters.missingPaths.length
-      ? node
-      : { ...node, parameterValues: resolvedParameters.values };
+    let executionParameters = resolvedParameters.values;
+    if (parameterOverlay && !resolvedParameters.missingPaths.length) {
+      const refreshed = automationStudioApplyParameterRefresh(node, executionParameters, parameterOverlay);
+      if (refreshed.kind === "applied") executionParameters = refreshed.parameters;
+    }
+    const executionNode = resolvedParameters.missingPaths.length ? node : { ...node, parameterValues: executionParameters };
     // This frame's floor is resolved before any host/native/output call. On a
     // missing binding keep its raw slot; a dropped slot is not an absent value
     // to which a trusted false schema default may honestly apply.
     runState.actionEffects.delete(node.id);
     try {
-      const actionEffect = options.resolveActionEffect?.(node, resolvedParameters.missingPaths.length ? authoredParameters : resolvedParameters.values);
-      if (actionEffect) runState.actionEffects.set(node.id, readAutomationStudioResolvedActionEffect(actionEffect));
+      const originalFloor = options.resolveActionEffect?.(node, resolvedParameters.missingPaths.length ? authoredParameters : resolvedParameters.values);
+      const refreshedFloor = executionParameters !== resolvedParameters.values ? options.resolveActionEffect?.(node, executionParameters) : undefined;
+      const actionEffect = combineAutomationStudioResolvedActionEffects([originalFloor, refreshedFloor, parameterOverlay?.floor]);
+      if (actionEffect) runState.actionEffects.set(node.id, actionEffect);
     } catch {
       return {
         attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [],
@@ -210,7 +207,7 @@ export class AutomationStudioNodeAttemptExecution {
     try {
       const context = {
         inputs,
-        parameters: resolvedParameters.values,
+        parameters: executionParameters,
         // Run-scoped: one map for the whole run, so a write reaches the nodes after it.
         variables: runState.variables,
         iteration: this.iterationFor(runState, node.id),

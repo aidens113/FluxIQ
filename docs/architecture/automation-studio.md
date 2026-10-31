@@ -1086,6 +1086,10 @@ a graph, `automationStudioDispatchWithNodeRetries` takes the caller's
 dispatch for the remaining attempts, `gone` ends with the caller's answer, and
 the outcome says which (`reacquire`).
 
+Targets without source-node lineage use the separate optional
+[source-less identity recovery](automation-studio/source-less-target-recovery.md)
+path since Core 0.20; source-bound recovery above retains precedence.
+
 **Waits, retry waits and pace** (since t378; `runtime/executor/pacing/`).
 Retry waits, pace waits and Wait pauses share one wait,
 `automationStudioRunWait`, which ends at once when the run is aborted.

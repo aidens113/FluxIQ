@@ -6,6 +6,14 @@ import { runtimeSessionToFlowRunDetail } from "../index.ts";
 // A stale target found again from its source step (t786) is in the run's
 // detail, as ids and closed codes, so a reader of the step log sees it.
 describe("the run detail's re-acquire record", () => {
+  it("keeps source-less identity outcomes without inventing a source or retaining target data", () => {
+    for (const outcome of ["found", "gone", "unmatched", "unavailable"] as const) {
+      const record = project({ ...attempt(), reacquire: { kind: "identity", outcome, ...(outcome === "unmatched" ? { reason: "ambiguous" as const } : {}), at: 12 } });
+      expect(record?.metadata?.reacquire).toEqual({ kind: "identity", outcome, ...(outcome === "unmatched" ? { reason: "ambiguous" } : {}) });
+      expect(record?.metadata?.reacquire).not.toHaveProperty("sourceNodeId");
+      expect(record?.metadata?.reacquire).not.toHaveProperty("returned");
+    }
+  });
   it("keeps where the target was found again from, and how it came out", () => {
     const record = project({ ...attempt(), reacquire: { sourceNodeId: "read", kind: "row", outcome: "found", at: 12 } });
     expect(record?.metadata?.reacquire).toEqual({ sourceNodeId: "read", kind: "row", outcome: "found" });

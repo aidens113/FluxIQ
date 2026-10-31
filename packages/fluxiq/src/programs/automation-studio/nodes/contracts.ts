@@ -61,6 +61,8 @@ export type AutomationNodeParameter = {
   required?: boolean;
   /** Parameters are state-bindable by default; set false to restrict this field to manual values. */
   allowStateBinding?: boolean;
+  /** Only a canonical registered declaration may opt this target field into identity refresh. */
+  targetRefresh?: true;
   /**
    * `false` for a parameter the host fills from what a model names -- a
    * domain's own address and identity for an element the model named by a
