@@ -34,6 +34,7 @@ describe("global program web route", () => {
       kind: "identity.users",
       authSessionId: "trusted",
     });
+    expect(withProgramAuthSession("deployment-sync", { targetId: "a", authSessionId: "spoofed" }, "trusted")).toEqual({ targetId: "a", authSessionId: "trusted" });
     expect(withProgramAuthSession("secret-keys", { id: "secret:one", authSessionId: "spoofed" }, "trusted")).toEqual({
       id: "secret:one",
       authSessionId: "trusted",

@@ -126,7 +126,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     programId: "database-manager",
     endpoint: DATABASE_MANAGER_ENDPOINTS.runMigration,
     permission: "data.manage",
-    classification: "destructive-ungated",
+    classification: "destructive",
     action: "ops:RunMigration",
     accessLevel: "Write",
     resource: endpointResource.program(),

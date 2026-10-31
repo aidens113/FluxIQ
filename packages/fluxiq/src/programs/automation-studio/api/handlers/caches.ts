@@ -53,7 +53,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     classification: "read",
     action: "studio:ListProjectUiCacheStats",
     accessLevel: "List",
-    resource: endpointResource.custom(["project", "*"], (request) => {
+    resource: endpointResource.custom(["project"], (request) => {
       const projectId = request.payload !== null && typeof request.payload === "object" ? (request.payload as { projectId?: unknown }).projectId : undefined;
       return typeof projectId === "string" && projectId !== "" ? { kind: "project", projectId } : { kind: "workspace" };
     }),

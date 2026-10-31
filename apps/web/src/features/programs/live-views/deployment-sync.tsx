@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { DeploymentGitVersion, DeploymentSyncRun, DeploymentSyncSnapshotResponse } from "fluxiq/deployment-sync";
 import { useProgramApi, type ApiResponse } from "../program-api";
-import { DataTable, EmptyState, Field, KeyValue, LoadingState, Modal, Panel, Segmented, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
+import { AuthorizationDialog, DataTable, EmptyState, Field, KeyValue, LoadingState, Panel, Segmented, StatusText, SummaryStrip, VisualAlert } from "../shared-ui";
+import type { AuthorizationCredentials } from "../shared-ui";
 import { formatTime, yesNo } from "./shared";
+
+const NO_CREDENTIALS: AuthorizationCredentials = { password: "", pin: "", totp: "" };
 
 
 export function DeploymentSyncLive() {
@@ -24,6 +27,8 @@ function DeploymentWorkspace({ api, isOwner }: { api: ReturnType<typeof useProgr
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [credentials, setCredentials] = useState<AuthorizationCredentials>(NO_CREDENTIALS);
+  const [authError, setAuthError] = useState("");
   const [readError, setReadError] = useState("");
   const [reading, setReading] = useState(false);
   const mounted = useRef(false);
@@ -68,28 +73,55 @@ function DeploymentWorkspace({ api, isOwner }: { api: ReturnType<typeof useProgr
 
   function openConfirmation(action: Omit<PendingAction, "epoch">) {
     if (!alive() || actionLock.current || !availableAction(latestSnapshot.current, action)) return;
-    const pending = { ...action, epoch: ++confirmationEpoch.current }; confirmation.current = pending; setPendingAction(pending);
+    const pending = { ...action, epoch: ++confirmationEpoch.current };
+    confirmation.current = pending;
+    setCredentials(NO_CREDENTIALS);
+    setAuthError("");
+    setPendingAction(pending);
   }
   function closeConfirmation(action: PendingAction) {
     if (!alive() || confirmation.current !== action || actionLock.current) return;
-    confirmation.current = null; setPendingAction(null);
+    confirmation.current = null;
+    setPendingAction(null);
+    setCredentials(NO_CREDENTIALS);
+    setAuthError("");
   }
-  function confirmAction(action: PendingAction) {
+  // Sync and rollback are PIN-gated by the registry (`destructive`), so the PIN is
+  // collected here and sent as `authorizationPin`. The prompt stays open with the
+  // PIN cleared when the server refuses it, so a mistyped PIN costs one retry.
+  async function confirmAction(action: PendingAction) {
     if (!alive() || confirmation.current !== action || actionLock.current) return;
-    confirmation.current = null; setPendingAction(null); void run(action.endpoint, action.targetId, action.versionSha);
+    const outcome = await run(action.endpoint, action.targetId, action.versionSha, credentials.pin);
+    if (!alive() || confirmation.current !== action) return;
+    if (outcome.ok) {
+      confirmation.current = null;
+      setPendingAction(null);
+      setCredentials(NO_CREDENTIALS);
+      setAuthError("");
+      return;
+    }
+    setCredentials(NO_CREDENTIALS);
+    setAuthError(outcome.error ?? "The action was refused. Check the PIN and try again.");
   }
 
-  async function run(endpoint: "dry-run" | "sync" | "rollback", targetId: string, versionSha?: string) {
-    if (!alive() || actionLock.current || !availableAction(latestSnapshot.current, { endpoint, targetId, ...(versionSha ? { versionSha } : {}) })) return;
+  async function run(endpoint: "dry-run" | "sync" | "rollback", targetId: string, versionSha?: string, authorizationPin?: string): Promise<{ ok: boolean; error?: string }> {
+    if (!alive() || actionLock.current || !availableAction(latestSnapshot.current, { endpoint, targetId, ...(versionSha ? { versionSha } : {}) })) return { ok: false };
     actionLock.current = true; setBusy(true); setStatus("");
     readEpoch.current++; read.current?.controller.abort(); read.current = null; setReading(false);
     try {
-      const result = await api.post<DeploymentSyncRun>(endpoint, versionSha ? { targetId, versionSha } : { targetId });
-      if (!alive()) return;
-      if (!result.ok || !validRun(result.payload) || result.payload.targetId !== targetId || (result.payload.mode !== undefined && result.payload.mode !== endpoint)) { setStatus("Deployment action failed. Review the target before trying again."); return; }
-      setSelectedRun(result.payload); setStatus(`${endpoint} finished`); await refresh();
+      const result = await api.post<DeploymentSyncRun>(endpoint, { targetId, ...(versionSha ? { versionSha } : {}), ...(authorizationPin ? { authorizationPin } : {}) });
+      if (!alive()) return { ok: false };
+      if (!result.ok || !validRun(result.payload) || result.payload.targetId !== targetId || (result.payload.mode !== undefined && result.payload.mode !== endpoint)) {
+        setStatus("Deployment action failed. Review the target before trying again.");
+        return { ok: false, ...(result.error ? { error: result.error } : {}) };
+      }
+      setSelectedRun(result.payload);
+      setStatus(`${endpoint} finished`);
+      await refresh();
+      return { ok: true };
     } catch {
       if (alive()) setStatus("Deployment action failed. Review the target before trying again.");
+      return { ok: false };
     } finally {
       if (alive()) { actionLock.current = false; setBusy(false); }
     }
@@ -137,7 +169,7 @@ function DeploymentWorkspace({ api, isOwner }: { api: ReturnType<typeof useProgr
         {busy || status ? <p role={status.startsWith("Deployment action failed") ? "alert" : "status"}>{busy ? "Deployment action in progress..." : status}</p> : null}
         <StatusText value={busy ? "Deployment action in progress..." : status} />
       </Panel>
-      {pendingAction ? <Modal title={pendingAction.endpoint === "rollback" ? "Confirm Rollback" : "Confirm Branch Checkout"} description={pendingAction.endpoint === "rollback" ? "Rollback changes the selected target to version " + pendingAction.versionSha + "." : "Checkout updates the importing repository to the selected branch. Local changes may block the operation."} onClose={() => closeConfirmation(pendingAction)}><VisualAlert tone="warning" title="Repository state will change" message="Review the target and working-tree status before continuing." /><KeyValue rows={[["Target", pendingAction.targetId], ["Action", pendingAction.endpoint], ["Version", pendingAction.versionSha ?? "Selected branch"]]} /><div className="modal-actions"><button className="button" onClick={() => closeConfirmation(pendingAction)} type="button">Cancel</button><button className="button button-primary" disabled={busy} onClick={() => confirmAction(pendingAction)} type="button">{pendingAction.endpoint === "rollback" ? "Rollback" : "Checkout"}</button></div></Modal> : null}
+      {pendingAction ? <AuthorizationDialog actionLabel={pendingAction.endpoint === "rollback" ? "Rollback" : "Checkout"} busy={busy} credentials={credentials} description={(pendingAction.endpoint === "rollback" ? "Rollback changes the selected target to version " + pendingAction.versionSha + "." : "Checkout updates the importing repository to the selected branch. Local changes may block the operation.") + " Target " + pendingAction.targetId + "; enter your security PIN to continue."} error={authError} requirements={{ pin: true }} title={pendingAction.endpoint === "rollback" ? "Confirm Rollback" : "Confirm Branch Checkout"} onAuthorize={() => void confirmAction(pendingAction)} onCancel={() => closeConfirmation(pendingAction)} onChange={setCredentials} /> : null}
     </section>
   );
 }

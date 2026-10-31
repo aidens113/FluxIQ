@@ -3,9 +3,11 @@ import { hostExpectationEvaluator } from "../host-runtime.ts";
 import { AUTOMATION_STUDIO_LADDER_RUNG_KINDS, type AutomationStudioGraphExecutionOptions, type AutomationStudioLadderRungKind, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryDecision } from "./contracts.ts";
 import { automationStudioExpectationRequest, automationStudioNodeReadinessState, automationStudioReadinessCeilingMs, automationStudioRecordedState } from "./recorded-state.ts";
 import { chooseAutomationStudioRecovery, type AutomationStudioLadderState } from "./recovery-ladder.ts";
-import { automationStudioAssessAttemptFault, automationStudioNodeMutates, automationStudioNodeRepeatIsSafe } from "./defensive/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioAssessAttemptFault, automationStudioNodeMutates, automationStudioNodeRepeatIsSafe } from "./defensive/index.ts";
 import { automationStudioAttemptIsRetryable, automationStudioRetryBackoffMs, type AutomationStudioNodeRetryPolicy } from "./retry-policy.ts";
 import { automationStudioExpectationSatisfiedAfterFailure } from "./transition-comparison.ts";
+import { automationStudioObstructionWayOut } from "./node-execution/index.ts";
+import { emitAutomationStudioActivityStepInterference } from "../activity/index.ts";
 
 /** The node metadata that marks a Flow node as one whose job is to clear interference: an overlay, a consent wall, a timed prompt. */
 const CLEARS_INTERFERENCE_METADATA_KEY = "clearsInterference";
@@ -44,7 +46,12 @@ export type AutomationStudioLadderRunInput = {
    * that does not track the allowance is not silently capped at zero.
    */
   mayAbsorb?: boolean;
-  /** Runs one Flow node outside the step loop, for the rung that clears interference. */
+  /**
+   * Runs one node outside the step loop, for the rung that clears
+   * interference: the Flow's own interference node, or a transient press of
+   * the way out of the layer the failed attempt reported, which is no node of
+   * the Flow (`clearObstruction` below).
+   */
   executeNode: (node: AutomationStudioFlowNode) => Promise<AutomationStudioNodeAttemptTrace>;
 };
 
@@ -88,7 +95,9 @@ export async function runAutomationStudioRecoveryLadder(input: AutomationStudioL
     input.consumed.add(rung);
     const resolved = rung === "await_recorded_state"
       ? await awaitRecordedState(input)
-      : await clearInterference(input, selected.targetNodeId);
+      : selected.clearsObstruction
+        ? await clearObstruction(input)
+        : await clearInterference(input, selected.targetNodeId);
     if (resolved) return { kind: "retry", rung, backoffMs: 0, decision: finalDecision(input, attemptsForNode) };
     attemptsForNode = input.attemptsForNode;
   }
@@ -124,7 +133,8 @@ function ladderState(input: AutomationStudioLadderRunInput, attemptsForNode: num
     // state before it attempted: if readiness held and the node still failed,
     // the failure is not this node waiting for the page.
     readinessAvailable: Boolean(automationStudioNodeReadinessState(input.node)) && Boolean(hostExpectationEvaluator(input.options.hostRuntime)) && input.attempt.readiness?.satisfied !== true,
-    ...(interferenceNodeId ? { interferenceNodeId } : {})
+    ...(interferenceNodeId ? { interferenceNodeId } : {}),
+    ...(automationStudioObstructionWayOut(input.attempt.obstruction) ? { obstructionPressable: true as const } : {})
   };
 }
 
@@ -140,6 +150,40 @@ async function clearInterference(input: AutomationStudioLadderRunInput, targetNo
   if (!node) return false;
   const attempt = await input.executeNode(node);
   return attempt.status === "succeeded";
+}
+
+/** What the transient press is called on its attempt: Core's own words, never the layer's. */
+const CLEAR_OBSTRUCTION_LABEL = "Close what was over the page";
+
+/**
+ * Rung 3, fed by the client (CC7, t799): press the way out of the layer the
+ * failed attempt reported over the page, as a transient node that is no node
+ * of the Flow -- the domain's definition for the press and the client's own
+ * target for the control, declaring no lasting consequence, so it adds nothing
+ * to the Flow and is never mistaken for an act of its own. The press is said as
+ * one interference recovery row about the failed step. When it worked, the
+ * node's state is waited for as the await rung waits for it (a deadline passing
+ * is not a failure), and the node is attempted again. A press that failed
+ * consumes the rung all the same, and the ladder goes on.
+ */
+async function clearObstruction(input: AutomationStudioLadderRunInput): Promise<boolean> {
+  const obstruction = input.attempt.obstruction;
+  const wayOut = automationStudioObstructionWayOut(obstruction);
+  if (!obstruction || !wayOut) return false;
+  const press: AutomationStudioFlowNode = {
+    id: `${input.node.id}.clear-interference`,
+    definitionId: wayOut.definitionId,
+    label: CLEAR_OBSTRUCTION_LABEL,
+    // `controlRef` is the parameters the pressing node runs with, as the domain resolved them (CC7, t799); Core never reads inside.
+    parameterValues: wayOut.action === "back" || !wayOut.controlRef ? {} : structuredClone(wayOut.controlRef),
+    metadata: { [AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY]: [] }
+  };
+  const attempt = await input.executeNode(press);
+  const pressed = attempt.status === "succeeded";
+  emitAutomationStudioActivityStepInterference({ nodeId: input.node.id, kinds: [obstruction.kind], outcome: pressed ? "succeeded" : "failed" });
+  if (!pressed) return false;
+  await automationStudioAwaitNodeReadiness(input.node, input.options, input.attempt.attemptId);
+  return true;
 }
 
 /**

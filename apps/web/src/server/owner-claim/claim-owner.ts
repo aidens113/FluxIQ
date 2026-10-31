@@ -34,6 +34,14 @@ let queue: Promise<unknown> = Promise.resolve();
  * generated code file removed (never the operator's `FLUXIQ_SETUP_CODE_FILE`).
  * The marker comes after the admin is retired, so a failure before it leaves
  * the claim open to retry rather than claimed with admin/admin still live.
+ *
+ * On every profile the owner's username is the email as the contract
+ * normalises it (trimmed, lower-cased, refused unless email-shaped), because
+ * `createAccount` signs every account in by its email. The email starts
+ * unverified: the setup code comes from a file on the server (generated, or
+ * the operator's `FLUXIQ_SETUP_CODE_FILE`) and is never mailed, so knowing it
+ * proves control of the server, not of the mailbox. Only redeeming a link
+ * mailed to the address verifies it.
  */
 export function claimOwner(form: OwnerClaimForm, deps: OwnerClaimDeps): Promise<OwnerClaimOutcome> {
   const run = queue.then(() => claimExclusively(form, deps));

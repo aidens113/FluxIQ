@@ -38,6 +38,13 @@ export type AutomationStudioLadderState = {
   readinessAvailable: boolean;
   /** A Flow node that clears known interference, when the Flow holds one. */
   interferenceNodeId?: string;
+  /**
+   * Whether the failed attempt reported a layer over the page with a way out
+   * Core may press itself: one that closes it, else one that neither closes
+   * nor accepts, never one that accepts (`node-execution/obstruction-way-out.ts`,
+   * CC7, t799). Absent when it reported none.
+   */
+  obstructionPressable?: true;
 };
 
 /** Ladder order, cheapest first. The authored failed route and the model both sit below every deterministic rung. */
@@ -183,7 +190,22 @@ function ladderCandidates(node: AutomationStudioFlowNode, ladder: AutomationStud
       reason: `${node.id} carries a recorded state to wait for, and most failures on a site nobody controls are timing.`
     });
   }
-  if (ladder.interferenceNodeId && ladder.mayRepeat && attemptsLeft && !ladder.consumed.has("clear_interference")) {
+  // The layer the client reported over the page is the one in the way now, so
+  // its own way out comes before a Flow node that clears interference met
+  // before. Gated as the Flow node is, on `mayRepeat` and never `retryable`
+  // (above): a covered or `blocked_by_dialog` failure is not retryable, and is
+  // exactly what this rung is for.
+  const clearing = !ladder.mayRepeat || !attemptsLeft || ladder.consumed.has("clear_interference") ? undefined : ladder.obstructionPressable ? "obstruction" : ladder.interferenceNodeId ? "flow_node" : undefined;
+  if (clearing === "obstruction") {
+    candidates.push({
+      kind: "clear_interference",
+      priority: LADDER_PRIORITY.clear_interference,
+      label: "Close what was over the page, then attempt again",
+      clearsObstruction: true,
+      reason: `A layer stood over the page when ${node.id} ran, and it offers a way out that closes it without accepting anything.`
+    });
+  }
+  if (clearing === "flow_node" && ladder.interferenceNodeId) {
     candidates.push({
       kind: "clear_interference",
       priority: LADDER_PRIORITY.clear_interference,

@@ -1,5 +1,16 @@
 # Agent Instructions
 
+## Runtime Instructions
+
+Global shared policy loads from MeritPrompts for each runtime; this repository adds
+project rules and wins where they conflict. Codex sessions read [CODEX.md](CODEX.md);
+Claude Code sessions read [CLAUDE.md](CLAUDE.md). Install the global rules for the
+runtime in use before starting a session.
+
+Codex model ceiling: GPT-6.1 Sol at Max effort. Never use Astra for any
+role, fallback or review. Follow the shared Codex routing guide for worker
+models and escalation.
+
 ## Agent Roles
 
 **Senior supervisor agent** — the agent the user prompts directly. It owns
@@ -257,6 +268,16 @@ the build loop, not only in the model's instructions.
 
 ## Validation
 
+**Live model provider (user, 2026-10-30).** FluxIQ live model-backed tests use
+Anthropic Claude, with the downstream Lab reading `CLAUDE_API_KEY` from its
+repository's `.env.local` or explicitly supplied environment. Never expose or
+commit the value, or silently fall back to DeepSeek. Preserve scenarios and
+acceptance checks, and record the exact model, verdict, calls, billed cost and
+runtime for comparison. Provider-free tests remain provider-free; existing
+supervision and paid-launch requirements still apply.
+Claude live tests default to $5 per build (user, 2026-10-30), across all its
+calls; explicit lower limits still hold. The normal product default is separate.
+
 Before the final response for a code change, run the relevant checks and
 read their output:
 
@@ -284,8 +305,8 @@ a worker: workers are ephemeral, several may serve one brief, and a
 re-dispatched worker is still the same unit of work. Workers never commit, so
 agent identity travels in commit trailers rather than in a branch name.
 
-MeritClaude's automatic git management applies here only as this file allows:
-branches go through `pnpm task`, never MeritClaude's `branch.mjs`, and `main`
+MeritPrompts's automatic git management applies here only as this file allows:
+branches go through `pnpm task`, never MeritPrompts's `branch.mjs`, and `main`
 moves only as Committing And Pushing says.
 
 The supervisor picks the tier when it writes the brief:
@@ -368,7 +389,7 @@ and pushes it once a full sweep on that commit (`pnpm check`, `pnpm test`,
 `pnpm build`, and the whole vitest run) passed and nothing known to be broken is
 on it. Paired work promotes both repositories in the same unit. Promotion is a
 fast-forward only (`git push origin <dev-commit>:main`); if `main` has diverged
-from `dev`, stop and ask. Never promote through MeritClaude's
+from `dev`, stop and ask. Never promote through MeritPrompts's
 `branch.mjs promote`, which also publishes packages.
 
 Require explicit user approval every time for: opening a pull request into
