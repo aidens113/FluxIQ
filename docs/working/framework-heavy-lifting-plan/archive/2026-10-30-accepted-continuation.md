@@ -62,3 +62,14 @@ Verbatim ledger entries moved during the P5b continuation; decisions and validat
 - Outcome: Coreae354e9d/downstreamdf58a48e merged with Core0.14.0;70 Core contracts and downstream structure pass;3JSONs retained in downstream ignored test-runs/2026-10-30-t817-final.
 - Not verified: paid Claude behavior/performance, native Firefox or full sweep. No paid calls, panel operation, fixture/oracle changes or registry publish.
 
+### 2026-10-30 - Provider binding repaired after sweep failures (t819)
+- Cause: recovery supplied policy IDs and caller-paid judging supplied host as concrete providers; strict binding stopped both before key release/fetch. Recovery also lost model/key metadata.
+- Changed: actual configured settings propagate on both paths; only legacy host normalizes to unspecified. Unknown providers and mismatched models still refuse before key access; Core0.14.1.
+- Validation: lead `vitest run` on the two failing integrations plus resolver/caller regressions ->41 passed; recovery annotation and flow-settings directories ->176 passed; `pnpm --filter fluxiq check` ->exit0; `node scripts/structure-audit.mjs` ->passed476 warnings/1144 baseline. One new statement-packing violation was corrected and its rule passed.
+- Outcome: narrow acceptance passed; sweep2 remains frozen on old source and is not promotion evidence for this fix. No paid calls; main held pending corrected-source sweep within the daily limit.
+
+### 2026-10-30 - Remaining sweep failure files checked after t819 (t820)
+- Changed: two bootstrap service assertions now require exact canonical Flow metadata plus caller/provider rather than old caller-only inputs. Production behavior is unchanged.
+- Validation: lead seven previous runtime failure files ->37 passed/two stale assertions failed; corrected generation/extend ->14 passed; all five other files passed unchanged. Lead `vitest run .../content-reseal/tests/reseal-interruption.test.ts --maxWorkers=1 --minWorkers=1` ->3 passed, racing writer703ms; worker two runs also3/3, original timeout cause remains unproven and no timeout/guarantee changed.
+- Outcome: merged/pushedc7f33647 after70 mandatory contract tests; final Core types and audit476 warnings/1144 baseline pass, three libraries rebuilt. Corrected-source whole sweep still required before main; no paid calls. Downstream saved-repair callers also7/7 after rebuilding this fix.
+
