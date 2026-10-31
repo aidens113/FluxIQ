@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t825 Core0.17.1 ready for paired integration: lead301/28files, types/audits, SDK/downstream compatibility and Chromium Save regression pass. Core52eea41d backed up. No paid/full calls; main held.
+Status detail: t825 Core0.17.1 accepted/merged/pushed Core62c18d24/downstream2e1c90be;301lead tests/types/audits/Chromium pass, local filtered bundles refreshed. Next P8 CC8 typed transient path; no paid/full calls, main held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active continuation, 2026-10-31:** t825 Core0.17.1 ready for integration, source52eea41d backed up. Actual parser-valid ambiguous target failures had bypassed settlement through optional/general routes (act1/onward1/check0); shared target-unacted guard now holds act1/onward0/check1 with run.outcome_uncertain. Typed optional skips use canonical raw floor; nonfatal notDone, strict own-effect witness, explicit risk raises and exact legacy no-contract fallback preserved. Lead301unique tests/28files, Core/domain types, both audits1144/615, filtered SDK/domain builds pass after2fixture and3layout fixes. Chromium134 headless UTC job-board existing real Save lost-ack regression1/1passes on0.17.1, exact delta/no duplicate; new target-route cases are graph-unit proof, not browser proof. HTML MAIN test-runs/2026-10-31-t825-browser-report. Core private memory archive4verbatimblocks,794lines. Main local SDK still0.17 until integration refresh; t824 already pushed Core66e9e303/downstreamb72b0fee. Source/docs frozen, parent sync/merge/push pending. Read-only p8-skip/signals-discovery.md scopes CC8 before CC10 and identifies strict parser/adapter/tool-result loss; no future code yet. Full suites exhausted, main unchanged, Claude/$5 configured but no paid go/calls or panel. User .clinerules remains unstaged.
+**Active continuation, 2026-10-31:** t825 complete: Core0.17.1 merged/pushed Core62c18d24/downstream2e1c90be. Parser-valid ambiguous target failures no longer skip or state-route before settlement; actual graph tests hold act1/onward0/check1. Typed skipped-act truth preserves nonfatal notDone, strict own-effect proof, risk raises and exact legacy fallback. Lead301unique/28files plus overlapping58 correction rerun, Core/domain types, both audits1144/615,70 Core merge contracts and filtered SDK/domain builds pass; Core memory4blocks archived byte-exact,794lines. Chromium134 headless UTC job-board Save compatibility1/1passes on0.17.1; new target-routing cases remain graph-unit proof. HTML test-runs/2026-10-31-t825-browser-report; no background/panel/Firefox/model/whole-build acceptance claimed. Main Core/domain/extension filtered builds refreshed (22files perChrome/Firefox/e2e, existing Firefox ID placeholder). Remote task backups retained, private Core detached for normal pruning. Next CC8 end-to-end typed transient contract/parser/tool-result/producer/consumer paths from p8-skip/signals-discovery.md; host-side first, browser wire unchanged, CC10 serial afterward. Main remains held for later permitted full sweep; daily2used, Claude/$5 configured but no paid go/calls. User .clinerules remains unstaged.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -763,11 +763,11 @@ Settled accepted client effect floor is preserved verbatim in [the accepted arch
 
 ### 2026-10-31 - t825 skipped-effect consumer and memory compaction
 - Agent: Codex lead; Core worker p8_contract_runtime (SolMax), bounded red/green implementation.
-- Changed: four settled state/ledger blocks archived verbatim; Current State retains t824 acceptance and t825 scope.
-- Why: make room below the working-document limit without discarding evidence; design accepted; implementation released after setup completion.
+- Changed: typed skipped-act consumer, shared target-unacted routing eligibility and explicit-risk helper; four settled state/ledger blocks archived verbatim.
+- Why: prevent parser-valid unknown commits becoming optional/general route success before settlement; preserve nonfatal absence and legacy compatibility; keep memory below800lines.
 - Validation: `python -` ->4blocks byte-preserved,794lines; `pnpm.cmd --filter fluxiq check` ->exit0; `node scripts/structure-audit.mjs` ->passed1144; `pnpm.cmd exec vitest run src/programs/automation-studio/runtime/executor/tests/safe-state-routing-run.test.ts src/programs/automation-studio/runtime/executor/step-skip/tests/act-not-done-effect.test.ts src/programs/automation-studio/runtime/executor/step-skip/tests/act-not-done.test.ts src/programs/automation-studio/runtime/executor/target-evidence/tests/unacted.test.ts src/programs/automation-studio/runtime/executor/defensive/tests/lasting-act-client-floor.test.ts src/programs/automation-studio/runtime/executor/state-routing/tests/typed-skip.test.ts src/programs/automation-studio/runtime/executor/state-routing/tests/could-not-run.test.ts src/programs/automation-studio/runtime/executor/step-loop/tests/state-route.test.ts --maxWorkers=2 --minWorkers=1` ->8files58/58; lead unique301/28 across named commands in p8-skip/lead-acceptance.md.
-- Outcome: Narrow acceptance passed:301unique/28files, Core/domain types, both audits, SDK/domain builds and Chromium Save regression1/1; source52eea41d backed up. Paired integration pending; no full/paid calls.
-- Follow-up: worker red reproduced both real graph routes; finish shared guard/typed consumer, then lead independently validates named checks and artifacts.
+- Outcome: Accepted; merged/pushed Core62c18d24/downstream2e1c90be;301/28lead tests/types/audits,70merge contracts, filtered builds and Chromium1/1pass. No full/paid calls; main held.
+- Follow-up: CC8 typed transient end to end with host-side production and privacy-safe failure propagation, then CC10; live Claude comparison awaits user go.
 
 ## Open Questions
 
