@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P6 t799 independently verified and merged with Core 0.8.0; P5b t810 and P1b t811 remain in flight. Paired t816 adds the user's Claude live-test provider. The continuation handoff is in the paired downstream Current State.
+Status detail: P6 t799 and Claude/$5 live-test support t816 independently verified, merged and pushed with Core0.9.0; P5b t810 and P1b t811 remain in flight. The continuation handoff is in the paired downstream Current State.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -13,8 +13,8 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 **Executing, 2026-10-30.** P0, the per-pass act ledger, P4, P5a, P7, P1a and repair-from-step are merged. P6 t799 is
 also merged after lead verification (235 owning Core tests, affected types, final audit and 70 merge-contract tests;
-native installed-extension proof in the paired repository). P5b t810 and P1b t811 continue. Paired t816 adds Claude
-for live tests, with the user's $5 build allowance; no paid run has started in this continuation.
+native installed-extension proof in the paired repository). P5b t810 and P1b t811 continue. Paired t816 is merged and pushed:
+Claude runtime, keys/settings UI and live-test routing with the user's $5 whole-build allowance; no paid run has started.
 The rest of this section is the plan as written.
 
 The audit ran 2026-10-28 at the user's direction: make
@@ -761,6 +761,13 @@ The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10
 - Changed: publishable Core package version raised from 0.7.0 to 0.8.0 for the new P6 API/behavior; no registry operation.
 - Validation: `pnpm.cmd --filter fluxiq check` after the version bump -> exit 0 (28,212 ms).
 
+
+### 2026-10-30 - Claude live provider and five-dollar allowance integrated (t816)
+- Agent: Codex lead
+- Changed: native provider, encrypted-key/session/model routing, keys/settings UI and provider-aware Lab defaults; full evidence in `claude-live-provider-plan.md` and its paired downstream document.
+- Validation: lead owning checks -> Core native33, legacy196 and UI33 passed; downstream live150, non-live241, contracts11 and launcher7 passed; affected types/builds/audits passed; Core merge gate ->70 passed.
+- Validation: paired task finish and `git push origin dev` -> both merged and pushed; Core a89f69a4, downstream05a70666. No paid calls, panel management or full sweep.
+- Not verified: paid/browser Claude quality or comparison; main awaits a qualifying full sweep. Remote task backups retained.
 
 ## Open Questions
 
