@@ -14,7 +14,11 @@ export function automationStudioFlowBootstrapExecutionAuthority(input: {
   runtime(): AutomationStudioNativeNodeRuntime | undefined;
   binding(): object | undefined;
   scope: AutomationStudioFlowScope;
-}) {
+}): {
+  permissions: ReturnType<typeof automationStudioFlowBootstrapActionPermissions>;
+  personNeeded: ReturnType<typeof automationStudioFlowBootstrapPersonNeeded>;
+  rerunAuthority: ReturnType<typeof automationStudioLlmPriorNodesRuntimeAuthority>;
+} {
   const permissions = automationStudioFlowBootstrapActionPermissions(input.permission);
   // A person-only check and a permission request stay on this build's own thread and signal.
   const personNeeded = automationStudioFlowBootstrapPersonNeeded({

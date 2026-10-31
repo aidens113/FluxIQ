@@ -33,6 +33,15 @@ development and are rewritten to JavaScript extensions in emitted code and
 declarations. Package tarballs include only compiled output and a package
 README.
 
+The declaration postprocessor also resolves emitted imports with NodeNext
+without workspace `baseUrl` or `paths`. It rejects unresolved aliases,
+absolute paths, private package subpaths and relative imports outside the
+package's declaration output before the build can be stamped. Node built-ins,
+public package exports and emitted ambient modules remain valid. Returned
+objects that expose an owned execution contract retain that contract through
+an explicit return annotation, so declaration inference does not replace it
+with an internal workspace path.
+
 The runtime keeps its established public subpaths during the 0.1 compatibility
 period. New subpaths should be added only for an independently useful surface;
 internal folders are not automatically public API.
