@@ -1,7 +1,7 @@
 # Hosted Production Plan
 
 Status: Active
-Status detail: Hosted foundations through C0 are merged; C1 tenancy and E/D5 product foundations are undergoing final acceptance. C2/C3 routing and deployment gates remain.
+Status detail: C1 workspace/runtime foundation independently verified and ready to merge; E/D5 product acceptance continues. C2/C3 caller migration/routing and deployment gates remain.
 Created: 2026-10-17
 Last updated: 2026-10-30
 Owner: Lane lead hosted-production-planner (plan); the senior supervisor agent owns execution
@@ -753,6 +753,12 @@ Accepted lane A, C0 and follow-up validation moved verbatim to [archive/2026-10-
 - Agent: Codex lead
 - Changed: archived three accepted entries for C1/product continuation; retained all open decisions and H0 evidence.
 - Validation: Node extraction -> three accepted entries preserved verbatim, equality checked before replacing source range.
+
+### 2026-10-30 - C1 workspace foundation independently accepted (t813)
+- Agent: Codex lead; adversarial worker resume_t813, paired downstream report `reports/codex-1030/t813-result.md`.
+- Changed: workspace lifecycle barriers, profile IAM, tenant key custody, background-task drain and root-owned audit/reload cleanup; Core0.11.0. C2/C3 routing remains separate.
+- Validation: lead Core background-task tests ->9 passed; web workspace/provisioning/key-custody ->14files/123 passed; Core/web typechecks,3-library build and docs freshness passed; structure ->failures[],474warnings/1144baselined.
+- Not verified: tenant gateway sockets, browser/Next production behavior or full sweeps; no paid calls or panel management.
 
 ## Open Questions
 
