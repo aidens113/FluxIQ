@@ -50,10 +50,11 @@ describe("automationStudioLlmEvidenceRuntimeBindingChecked", () => {
     ...(systemInstructions === undefined ? {} : { systemInstructions: systemInstructions as never })
   });
 
-  it("returns a binding without instructions as it is", () => {
+  it("copies a binding without instructions and preserves absence", () => {
     const plain = binding();
 
-    expect(automationStudioLlmEvidenceRuntimeBindingChecked(plain)).toBe(plain);
+    expect(automationStudioLlmEvidenceRuntimeBindingChecked(plain)).toMatchObject({ domainId: plain.domainId, tools: plain.tools });
+    expect(automationStudioLlmEvidenceRuntimeBindingChecked(plain)).not.toBe(plain);
     expect(automationStudioLlmEvidenceRuntimeBindingChecked(undefined)).toBeUndefined();
   });
 

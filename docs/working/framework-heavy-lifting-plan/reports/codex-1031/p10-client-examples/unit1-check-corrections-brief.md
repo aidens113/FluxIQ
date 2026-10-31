@@ -1,0 +1,6 @@
+# P10 unit1 owning-check corrections
+Role: Standard worker gpt-6.1-sol medium; same t831 checker/tests ownership.
+Root observed58/4files tests pass. Types fail only examples-binding fixture's always-present optional examples property and dependent inference; audit has one banned as-never fixture cast. Logs paired Down test-runs/t831-unit1-{types,audit}.log. All t831 checks ended; writes authorized.
+Keep production contract/renderer/receiver behavior unchanged unless root agrees. Make HostBinding's optional examples member correctly declared/conditionally initialized under exactOptionalPropertyTypes, not always present as undefined. Preserve WeakMap/private-class receiver assertions and real service constructor/method store coverage.
+Replace as-never with a fully typed base binding and explicit isolated malformed-metadata injection helper (Object.defineProperty/unknown boundary); no cast that hides the whole port contract. Valid fixture paths use actual FlowScriptExamples type and omit absent fields. Correct any remaining explicit presence assertions without weakening oracles.
+No service/public shared barrels/P9/Down/source metadata/version/baseline/git/checks/builds/audits/provider/browser/panel changes. Report unit1-check-corrections.md, freeze promptly; standard return contract. Root reruns owning selector and typecheck/audit.
