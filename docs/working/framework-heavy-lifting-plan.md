@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P10 contract58tests and exact Down producer21tests/types accepted; structure split then Core consumer extraction. No full/paid calls.
+Status detail: P10 worked-example unit accepted with exact web parity and real handle/save validation; paired dev integration pending. P9 active separately.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,9 +11,9 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active t831, 2026-10-31:** Paired private task under fxwork/t831; parents pushed Core5bf93be1/Down069fdfe9. Core0.22 private SDK rebuilt115.668s. Optional metadata contract accepted58tests/types/audit and backed up workbranch faff8d3f; no dev integration yet. Down exact authored four tails pass21focused tests and package types36.882s; original four UTF8 byte/hash pins fixed before extraction. Structure gate found tools.ts805lines plus stale index; cohesive contract split active. Core consumer extraction brief ready, waiting for worker slot. Merge current dev and choose appropriate next source version before integration; no other branch source assumed.
+**Accepted private t831, 2026-10-31:** Paired worked-example unit under fxwork/t831, source/private SDK0.22. Optional strict receiver-compatible client metadata and all three Core consumers accepted:137owning tests/13files then corrected63/3files, package types20.623s/audit pass. Down79owning example tests pass, including all eleven parsed/accepted/saved graphs through public Core and actual web handle resolution, original four UTF8 byte/hash pins, full completion digest, actual candidate schema, and three missing-provenance refusals. Domain types12.959s/audit pass. No production validator/definition/example weakening; test helper corrected to include production resolution before save. SDK rebuilt82.428s. Root commits/backups and paired dev integration next; full suites/main held.
 
-**P10 first bounded unit:** Optional examples metadata, strict receiver-compatible copied validation and pure renderer accepted58tests/types/audit. Private0.22SDK current before extraction. Down four exact original tails accepted21tests/types; runtime-contract split frozen. Core all-three-consumer extraction frozen and lead tests/types/audit in progress; initial audit flags three newly overfull25-file test directories, no baseline growth allowed. Down migrated original parser/graph/schema assertions active with unchanged digest pins. Missing examples become generic grammar only; inline medium/facts/intent/fingerprint remain later work.
+**P10 first bounded unit:** Metadata contract accepted58tests; original Down producer21tests/types pass. Core extraction137tests then corrected63tests/3files, types20.623s/audit pass; SDK rebuilt82.428s, Core workbranch5e6b2a09 backed up. Down all91checks:78pass/13saved failures, types28.208s/audit pass. Root-cause trace found missing production handle resolution in migrated saved test helper, not an evidenced product defect; honest actual stores/resolver fixture correction active. Original eleven authored graph oracles and four exact byte/hash pins remain unchanged. Inline medium/facts/intent/fingerprint are later work; no dev integration until paired acceptance.
 
 **Parallel work:** t830 P9 private foundations/private provenance accepted and backed up workbranch1bd5aafc. D1 first176tests172pass/4fail and initial type/structure defects corrected in frozen source, pending fresh paired SDK/checks; strict production failure reader retained. D2 Core actual loop admission/authority wiring active; E instructions/actual UTF8 request test source authored, not checked. Each task owns separate Core/Down trees; root serializes integration and preserves both handoffs.
 
@@ -752,9 +752,16 @@ Accepted dated ledger moved verbatim to [the runtime context archive](framework-
 ### 2026-10-31 ? P10 consumer extraction owning acceptance
 
 - Changes: removed four worked-example tails from Core grammar; explicit examples reach candidate/subflow/completion consumers. Missing metadata never infers a web fallback. Down migrated original eleven-example graph/parser tests; acceptance pending fresh SDK.
-- Validation: `pnpm.cmd --filter fluxiq exec vitest run <unit3 owning selectors> --maxWorkers=2 --minWorkers=1` ->137tests/13files pass60.86s; after fixture/consolidation corrections, three touched owning files63tests pass30.83s. `pnpm.cmd --filter fluxiq check` ->exit0,20.623s; `node scripts/structure-audit.mjs` ->exit0, no baseline growth. Exact selectors/logs in lead-acceptance.md.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/flow-bootstrap/candidate/tests/authoring-loop.test.ts src/programs/automation-studio/runtime/flow-bootstrap/subflow-candidate/tests/builder-loop.test.ts src/programs/automation-studio/runtime/flow-bootstrap/plan/tests/flow-script-format.test.ts --maxWorkers=2 --minWorkers=1` ->63tests/3files pass30.83s; prior broader owning selection137tests/13files pass60.86s. `pnpm.cmd --filter fluxiq check` ->exit0,20.623s; `node scripts/structure-audit.mjs` ->exit0, no baseline growth. Exact selectors/logs in lead-acceptance.md.
 - Outcome: Partial; Core source accepted narrowly, private SDK rebuild in flight. Down complete byte/hash/parser/actual-registry acceptance still pending; no full/paid calls.
 - Follow-up: check actual web examples against refreshed public SDK and real definitions; retain all old oracles and fix evidenced incompatibilities before paired integration.
+
+### 2026-10-31 ? P10 exact web examples accepted
+
+- Changes: web owns four original worked-example tails; actual Core candidate/subflow/completion consumers use explicit validated binding metadata. All eleven examples resolve through real domain stores before strict saved validation.
+- Validation: `pnpm.cmd --filter @fluxiq-web-extension/domain test runtime/llm-evidence/script-examples` ->79tests pass912.3482ms; `pnpm.cmd --filter @fluxiq-web-extension/domain check` ->exit0,12.959s; `node scripts/structure-audit.mjs` ->exit0. Core owning gates and exact commands recorded above and in lead-acceptance.md.
+- Outcome: Done for this bounded unit; paired integration pending. Subflow byte parity is compositional Core actual-schema/Down original-byte proof, not browser or live model acceptance.
+- Follow-up: integrate/push paired dev, refresh shared SDK/domain, continue t830 P9. Broader P10 inline medium/facts/intent/fingerprint migrations remain. No full/paid calls or panel management.
 
 ## Open Questions
 
