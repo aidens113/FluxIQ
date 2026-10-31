@@ -20,10 +20,16 @@ the role check it replaced, by construction and by the parity tests (see
 [Parity](#parity)); only `service` narrows a `FluxIQUserAccess` user to their
 own resources.
 
-The running product still constructs the registry with no `iam` options, so it
-decides as `local` with a discarding audit sink; the profile, the per-workspace
-IAM store and the audit store are wired by lanes A and C (see
-[Not yet wired](#not-yet-wired)).
+`createGlobalProgramRuntime` builds the registry from the resolved deployment
+profile (`resolveFluxIQProfile(process.env)`, so `FLUXIQ_PROFILE` unset is
+`local`) and the `iam` option it is given (`FluxIQOptions.iam`): a local or
+self-hosted install decides exactly as before, and `service` decides by the
+policies `iam.source` attaches, recording each decision in `iam.audit`. Under
+`service` the same runtime also bounds the client gateway's ended sessions to
+one hour (`endedSessionMaxAgeMs`). `PlatformServices.workspaceIam(workspaceId)`
+returns the per-workspace `IamStore` provisioning attaches member policies to,
+which the web workspace manager passes as its lazy `iam.source`. Every service
+workspace, including the primary, shares the root-owned buffered decision audit.
 
 The plan's terms (principals, FRNs, policy kinds, actions) are in the
 [hosted production plan](../working/hosted-production-plan.md), "Permissions
@@ -778,7 +784,38 @@ persistent IAM audit file at `<fluxiq>/platform/iam-audit.sqlite`, the public or
 from `FLUXIQ_PUBLIC_ORIGIN` (default `http://127.0.0.1:3000`) and the
 single-tenancy workspace id from `FLUXIQ_WORKSPACE_ID` (default `workspace-main`).
 The web app's `getPlatformServices()`, in `provisioning-listener/platform-services.ts`,
-builds the same composition once per FluxIQ instance.
+builds the same composition once per primary FluxIQ instance. Its IAM audit store
+and buffered sink belong to the host root and survive primary reloads, so tenant
+registries keep writing to the same open sink. Runtime shutdown drains workspace
+work, flushes the decision audit and closes its SQLite handle.
+
+## Web workspace manager
+
+`apps/web/src/lib/workspaces/` owns the web server's instances. `local` and
+`self-hosted` keep the primary alone; `service` creates tenants on demand under
+layout v3. `getFluxIQ()` still returns the synchronous primary. `workspaceFluxIQ`
+validates the primary's session and leases the caller's workspace; on `service`
+it chooses their oldest active membership, breaking a creation-time tie by
+workspace id. Repository listing order never selects a workspace. Provisioning
+and existing callers remain single-workspace until lanes C2 and C3 migrate them.
+
+Tenant construction is shared per workspace id. Leases and the runtime's
+`activity()` counts pin an instance: open project databases, admitted background
+tasks, enabled interval tasks with a running scheduler outside maintenance, and
+connected gateway sessions. Idle tenants are evicted after 15 minutes, then by
+least-recent use when over the 100-entry cap (the primary counts and is never
+evicted). `FLUXIQ_WORKSPACE_IDLE_MS` and `FLUXIQ_WORKSPACE_CACHE_MAX` override
+these bounds. Busy entries may exceed the cap with an operator warning.
+
+Eviction closes instance-owned resources while retaining its manager-owned
+`HeldKeys`. Re-creation receives the same custody; deletion and shutdown revoke
+it. Acquires re-check deletion and shutdown after every lifecycle wait. A failed
+close blocks re-opening that root rather than overlapping its uncertain owner.
+The host-domain probe is fully closed during asynchronous startup/reload before
+the synchronous primary is created on that root; concurrent reloads share one
+operation and shutdown prevents a replacement. Changing the host root requires
+a runtime restart; reload refuses it before closing the current primary, keeping
+tenant storage and audit ownership on one root.
 
 ## Model keys
 
@@ -843,17 +880,9 @@ and `instanceHost`, the host of `FLUXIQ_PUBLIC_ORIGIN` when set.
 
 ## Not yet wired
 
-- **The registry's `iam` options** (`programs/_shared/runtime.ts`): the
-  profile (lane A), the per-workspace IAM store as `source` and the audit store
-  as `audit` (lane C). Until then every decision is the `local` one and no
-  decision is recorded.
 - **A startup refusal** of an undeclared registration under public profiles:
   only the completeness test enforces declarations.
 
-- **`apps/web/src/lib/fluxiq.ts`** does not start or close the private listener. It
-  needs a `provisioningListener` field on the runtime state, a start after the
-  client gateway (a dynamic import of `server/provisioning-listener`, because that
-  barrel imports this module) and a close before the gateway's.
 - **No package `bin`** launches `fluxiq accounts`.
 - **Routing.** Whatever gates unauthenticated visitors must allow `/welcome`,
   `/welcome/submit`, `/reset`, `/reset/request` and `/reset/submit`. No middleware

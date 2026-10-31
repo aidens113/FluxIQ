@@ -153,17 +153,20 @@ module.exports.registerFluxIQHost = (fluxiq) => {
 `);
     process.env.FLUXIQ_IMPORTER_ROOT = root;
     process.env.FLUXIQ_HOST_MODULE = modulePath;
+    process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
     delete process.env.FLUXIQ_DOMAIN_ID;
     delete process.env.FLUXIQ_HOST_DOMAIN;
 
     await loadFluxIQHostModule();
-    const fluxiq = createFluxIQWebInstance();
+    const fluxiq = await initializeFluxIQWebRuntime();
 
     expect(fluxiq.activeDomainId).toBe("example.domain");
     expect(fluxiq.paths.data).toBe(path.join(root, ".fluxiq"));
     expect(fluxiq.paths.domainRoot).toBe(path.join(root, ".fluxiq", "domains", "example.domain"));
     expect(fluxiq.paths.domainPrograms).toBe(path.join(root, "domains", "example.domain", "programs"));
 
+    await closeFluxIQWebRuntime();
+    delete (globalThis as typeof globalThis & { __fluxiqWebRuntime?: unknown }).__fluxiqWebRuntime;
     rmSync(root, { recursive: true, force: true });
   });
 });
@@ -270,9 +273,10 @@ module.exports.registerFluxIQHost = (fluxiq) => fluxiq.bindAutomationStudioReusa
     process.env.FLUXIQ_HOST_MODULE = modulePath;
     process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
     await loadFluxIQHostModule();
-    const fluxiq = createFluxIQWebInstance();
+    const fluxiq = await initializeFluxIQWebRuntime();
     expect(fluxiq.programs.automationStudio.reusableLlmContextStatus()).toMatchObject({ enabled: true, writeEnabled: true, contentProtection: "host.test-protection.v1" });
-    await fluxiq.close();
+    await closeFluxIQWebRuntime();
+    delete (globalThis as typeof globalThis & { __fluxiqWebRuntime?: unknown }).__fluxiqWebRuntime;
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -282,8 +286,9 @@ module.exports.registerFluxIQHost = (fluxiq) => fluxiq.bindAutomationStudioReusa
     writeFileSync(modulePath, `module.exports.registerFluxIQHost = (fluxiq) => fluxiq.bindAutomationStudioReusableLlmContext({ enabled: true, contentProtection: { providerId: '' } });\n`);
     process.env.FLUXIQ_IMPORTER_ROOT = root;
     process.env.FLUXIQ_HOST_MODULE = modulePath;
+    process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
     await loadFluxIQHostModule();
-    expect(() => createFluxIQWebInstance()).toThrow("host configuration is invalid");
+    await expect(initializeFluxIQWebRuntime()).rejects.toThrow("host configuration is invalid");
     rmSync(root, { recursive: true, force: true });
   });
 });
@@ -329,6 +334,7 @@ describe("web model-provider construction admission", () => {
     const globalState = globalThis as typeof globalThis & { __fluxiqWebRuntime?: unknown };
     delete globalState.__fluxiqWebRuntime;
     const create = vi.spyOn(FluxIQ, "create").mockImplementation((options) => ({
+      paths: { root, fluxiq: path.join(root, ".fluxiq") },
       activeDomainId: options?.domainId, domains: { summaries: () => [{ id: "admission.example" }] },
       registerDomain() { return this; }, inspectStorage: () => ({ layout: "v2" }), close: vi.fn(async () => {}),
       programs: { automationStudioClientGateway: { setClientRecordingContextProvider: vi.fn() } }

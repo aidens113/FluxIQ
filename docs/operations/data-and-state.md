@@ -62,6 +62,46 @@ rename the importer-defined domain. Selecting another domain changes domain
 runtime paths and filters/targets data, but never relocates identity, trusted
 clients, or Automation Studio projects.
 
+## Layout v3 (multi-tenant `service`)
+
+Single tenancy is unchanged: one `.fluxiq` under the host root, laid out as v2
+above. Only a multi-tenant (`service`) deployment uses layout v3, described by
+`framework/layout-v3/` (`fluxiqLayoutV3Paths`, `fluxiqWorkspaceRootDir`,
+`inspectFluxIQLayoutV3`, `initializeFluxIQLayoutV3`,
+`removeFluxIQWorkspaceRoot`). Nothing calls it under single tenancy.
+
+```text
+<dataRoot>/                          # the platform instance's host root
+  .fluxiq/                           # the platform's state, exactly as today
+    platform/                        # IAM audit and outbox
+  workspaces/                        # overridable to an operator volume
+    layout.json                      # { layoutVersion: 3, createdBy, createdAt }
+    <workspaceId>/                   # a complete root for one tenant
+      .fluxiq/                       # that tenant's own v2 storage root
+```
+
+Storage roots are never nested: a store resolves to the nearest `config.json`
+above it, so `workspaces/` must not lie inside any storage root, and
+`inspectFluxIQLayoutV3` reports such a layout as `invalid`, as it does an
+unreadable marker or one with another version. A workspace id must match
+`^[a-z0-9][a-z0-9-]{0,62}$` (provisioning's `randomUUID()` and
+`workspace-main` both do); anything else is refused with
+`storage.workspace_id_invalid:`, so a root is always a direct child of
+`workspaces/`. Removing a workspace deletes only that child.
+
+The web manager creates tenant instances lazily and keeps the primary open.
+Concurrent callers share construction; a lease or runtime activity prevents
+eviction. Idle tenants close after 15 minutes or when least recently used beyond
+the default 100 open entries (`FLUXIQ_WORKSPACE_IDLE_MS` and
+`FLUXIQ_WORKSPACE_CACHE_MAX`). A tenant's manager-owned key custody survives
+eviction, and its next instance receives that same custody. Workspace deletion
+and server shutdown revoke it. A failed close blocks re-opening the root until
+the server is restarted and the failure is resolved.
+
+The platform IAM audit at `.fluxiq/platform/iam-audit.sqlite` is one open store
+per host root across primary reloads. It is flushed and closed after workspace
+shutdown; tenant registries never retain a sink replaced by a reload.
+
 ## Global SQLite Database
 
 The global framework database is:
@@ -425,6 +465,11 @@ run:<runId>
 
 Writes are batched every 10 seconds. The service updates in-memory state
 immediately, then flushes a full state snapshot to SQLite on the batch window.
+Closing stops scheduler admission, awaits storage loading and all admitted task
+runs, and serially writes their final state before the instance closes SQLite.
+Concurrent close callers await the same drain. Reading `activity()` neither
+loads storage nor starts the scheduler; a stopped scheduler has no scheduled
+activity, and maintenance intervals do not keep an otherwise idle workspace open.
 
 ## Generated Documentation
 

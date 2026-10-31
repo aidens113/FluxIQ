@@ -19,6 +19,7 @@ export class BackgroundTasksService {
   private readonly runs = new Map<string, BackgroundTaskRun>();
   private readonly repository: Repository | undefined;
   private loaded = false;
+  private loading: Promise<void> | null = null;
   private timer: NodeJS.Timeout | null = null;
   private persistTimer: NodeJS.Timeout | null = null;
   private persistInFlight: Promise<void> | null = null;
@@ -26,6 +27,10 @@ export class BackgroundTasksService {
   private readonly stateWriteIntervalMs: number;
   private schedulerRunning = true;
   private schedulerStartedAtMs: number | undefined;
+  private runsInProgress = 0;
+  private readonly activeRuns = new Set<Promise<BackgroundTaskRun>>();
+  private closed = false;
+  private closePromise: Promise<void> | null = null;
 
   constructor(options: { repository?: Repository; pollIntervalMs?: number; stateWriteIntervalMs?: number } = {}) {
     this.pollIntervalMs = options.pollIntervalMs ?? 5_000;
@@ -84,6 +89,62 @@ export class BackgroundTasksService {
   }
 
   async run(taskId: string, payload?: JsonObject, nowMs = Date.now()): Promise<BackgroundTaskRun> {
+    if (this.closed) throw new Error("Background tasks service is closed");
+    this.runsInProgress += 1;
+    const pending = this.runOnce(taskId, payload, nowMs);
+    this.activeRuns.add(pending);
+    try {
+      return await pending;
+    } finally {
+      this.activeRuns.delete(pending);
+      this.runsInProgress -= 1;
+    }
+  }
+
+  /**
+   * What keeps this service busy, read without loading storage or starting the
+   * scheduler: nothing is scheduled before the tasks are loaded, and nothing
+   * runs then either. `scheduled` counts enabled tasks with an interval outside
+   * the built-in `maintenance` queue.
+   */
+  activity(): { running: number; scheduled: number } {
+    let scheduled = 0;
+    if (this.loaded && !this.closed && this.schedulerRunning) {
+      for (const task of this.tasks.values()) {
+        if (task.enabled && task.intervalMs && task.queue !== "maintenance") scheduled += 1;
+      }
+    }
+    return { running: this.runsInProgress, scheduled };
+  }
+
+  /**
+   * Stops the scheduler, refuses new runs, waits for admitted runs and loading,
+   * then persists their final state before the owning instance closes storage.
+   * Idempotent; concurrent callers await the same drain.
+   */
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closed = true;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.closePromise = this.finishClose();
+    return this.closePromise;
+  }
+
+  private async finishClose(): Promise<void> {
+    await Promise.allSettled([...this.activeRuns]);
+    if (this.loading) await this.loading;
+    if (this.repository && this.loaded) await this.flushPersist();
+    else if (this.persistInFlight) await this.persistInFlight;
+  }
+
+  private async runOnce(taskId: string, payload: JsonObject | undefined, nowMs: number): Promise<BackgroundTaskRun> {
     await this.load();
     const task = this.requireTask(taskId);
     if (!task.enabled) {
@@ -160,11 +221,13 @@ export class BackgroundTasksService {
   }
 
   async runDueTasks(nowMs = Date.now()): Promise<BackgroundTaskRun[]> {
+    if (this.closed) return [];
     await this.load();
-    if (!this.schedulerRunning) return [];
+    if (this.closed || !this.schedulerRunning) return [];
     const due = [...this.tasks.values()].filter((task) => task.enabled && task.intervalMs && task.nextRunAtMs && task.nextRunAtMs <= nowMs);
     const runs: BackgroundTaskRun[] = [];
     for (const task of due) {
+      if (this.closed || !this.schedulerRunning) break;
       runs.push(await this.run(task.id, undefined, nowMs));
     }
     return runs;
@@ -204,9 +267,22 @@ export class BackgroundTasksService {
     return task;
   }
 
-  private async load(): Promise<void> {
-    if (this.loaded) return;
-    this.loaded = true;
+  private load(): Promise<void> {
+    if (this.loaded) return Promise.resolve();
+    if (this.loading) return this.loading;
+    if (this.closed) return Promise.reject(new Error("Background tasks service is closed"));
+    const pending = this.loadState();
+    this.loading = pending;
+    void pending.then(() => {
+      this.loaded = true;
+      this.loading = null;
+    }, () => {
+      this.loading = null;
+    });
+    return pending;
+  }
+
+  private async loadState(): Promise<void> {
     if (!this.repository) return;
     const state = await this.readStoredState();
     const storedTaskIds = new Set(state.tasks.map((task) => task.id));
@@ -228,7 +304,7 @@ export class BackgroundTasksService {
   }
 
   private schedulePersist(): void {
-    if (!this.repository) return;
+    if (!this.repository || this.closed) return;
     if (this.stateWriteIntervalMs <= 0) {
       void this.flushPersist();
       return;
@@ -244,35 +320,40 @@ export class BackgroundTasksService {
     await this.flushPersist();
   }
 
-  private async flushPersist(): Promise<void> {
-    if (!this.repository) return;
+  private flushPersist(): Promise<void> {
+    if (!this.repository) return Promise.resolve();
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
-    if (this.persistInFlight) {
-      await this.persistInFlight;
-    }
+    const previous = this.persistInFlight ?? Promise.resolve();
+    // Every caller joins the chain before waiting, so two flushes waiting on
+    // one write cannot resume into overlapping writes during close.
+    const pending = previous.then(() => this.persistState(), () => this.persistState());
+    this.persistInFlight = pending;
+    const settled = () => {
+      if (this.persistInFlight === pending) this.persistInFlight = null;
+    };
+    void pending.then(settled, settled);
+    return pending;
+  }
+
+  private async persistState(): Promise<void> {
     const now = Date.now();
     const tasks = [...this.tasks.values()];
     const runs = [...this.runs.values()].sort((left, right) => right.queuedAtMs - left.queuedAtMs).slice(0, 500);
     const schedulerRunning = this.schedulerRunning;
-    this.persistInFlight = (async () => {
-      await this.repository!.put(record("scheduler", "scheduler", { recordType: "scheduler", running: schedulerRunning }, now));
-      for (const task of tasks) {
-        await this.repository!.put(record(`task:${task.id}`, "task", { recordType: "task", task: task as unknown as JsonObject }, now));
-      }
-      for (const run of runs) {
-        await this.repository!.put(record(`run:${run.id}`, "run", { recordType: "run", run: run as unknown as JsonObject }, now));
-      }
-    })().finally(() => {
-      this.persistInFlight = null;
-    });
-    await this.persistInFlight;
+    await this.repository!.put(record("scheduler", "scheduler", { recordType: "scheduler", running: schedulerRunning }, now));
+    for (const task of tasks) {
+      await this.repository!.put(record(`task:${task.id}`, "task", { recordType: "task", task: task as unknown as JsonObject }, now));
+    }
+    for (const run of runs) {
+      await this.repository!.put(record(`run:${run.id}`, "run", { recordType: "run", run: run as unknown as JsonObject }, now));
+    }
   }
 
   private startTimer(): void {
-    if (this.timer) return;
+    if (this.timer || this.closed) return;
     this.schedulerStartedAtMs = Date.now();
     this.timer = setInterval(() => {
       void this.runDueTasks();
