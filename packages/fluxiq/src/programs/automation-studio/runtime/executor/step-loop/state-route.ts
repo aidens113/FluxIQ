@@ -1,6 +1,7 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import { automationStudioNodeRouteSignatures } from "../../route-state/passive/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
+import { automationStudioTargetFailureProvesUnacted } from "../target-evidence/index.ts";
 import { missingTargetTrace } from "../graph-navigation.ts";
 import { recordRegionTransition } from "../region-execution.ts";
 import type { AutomationStudioNodeRetryPolicy } from "../retry-policy.ts";
@@ -46,6 +47,7 @@ export async function automationStudioStepStateRoute(
     retryPolicy: AutomationStudioNodeRetryPolicy;
   }
 ): Promise<AutomationStudioStepOutcome> {
+  if (!automationStudioTargetFailureProvesUnacted(step.attempt)) return { kind: "proceed" };
   const { flow, options, attempts, now } = ctx;
   const { node, attempt, attemptIndex, regionId } = step;
   const decide = () => decideAutomationStudioStateRoute({ flow, node, attempt, attempts, options, guard: ctx.routeGuard });

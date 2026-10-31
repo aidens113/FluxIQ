@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
+import { automationStudioTargetFailureProvesUnacted } from "../target-evidence/index.ts";
 import { automationStudioOptionalStepWayOn } from "./optional-step.ts";
 
 /**
@@ -18,22 +18,23 @@ import { automationStudioOptionalStepWayOn } from "./optional-step.ts";
  * its retries, and then the recovery ladder takes the same way on, spending no
  * recovery or reroute budget (t371).
  *
- * **Absent** is a failed attempt whose failure category is `target_not_found`:
- * the host looked at the page, after its own wait, and found no such target.
+ * **Absent** is a failed attempt whose failure category is `target_not_found`
+ * and whose evidence proves it did not act: a contradictory ambiguous or
+ * already-settled act must go through effect settlement before any route.
  * `target_ambiguous` is not absent (something matched), and neither is an
  * action that ran and failed; those keep the recovery ladder, as does a step
  * that is not sometimes-present.
  *
  * **Never silently, when the step does an act (r4b F4).** A step passed over
- * here whose own words name a lasting act (`./act-not-done.ts`) is not a
- * popup: unless the page already shows its effect, the run records and says
+ * here whose trusted contract names a lasting act (`./act-not-done.ts`), or
+ * whose legacy words do, is not silently fulfilled: unless the page shows its effect, the run records and says
  * that the act was not done (`../state-routing/decision.ts`, `notDone`).
  */
 export function automationStudioAbsentStepSkip(
   flow: AutomationStudioFlowDocument,
   node: AutomationStudioFlowNode,
-  attempt: Pick<AutomationStudioNodeAttemptTrace, "status" | "failure">
+  attempt: Parameters<typeof automationStudioTargetFailureProvesUnacted>[0]
 ): AutomationStudioFlowEdge | undefined {
-  if (attempt.status !== "failed" || attempt.failure?.category !== "target_not_found") return undefined;
+  if (attempt.failure?.category !== "target_not_found" || !automationStudioTargetFailureProvesUnacted(attempt)) return undefined;
   return automationStudioOptionalStepWayOn(flow, node);
 }

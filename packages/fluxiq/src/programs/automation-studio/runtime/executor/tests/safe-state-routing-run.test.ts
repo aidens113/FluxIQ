@@ -3,7 +3,11 @@
 // routing record, now naming the guard, and the recovery ladder runs.
 
 import { describe, expect, it } from "vitest";
+import { parseAutomationStudioFailureRecord, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionResult, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
+import { automationStudioRunGraphOptions } from "../../service/runtime-session/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../index.ts";
 
 type Host = NonNullable<AutomationStudioGraphExecutionOptions["hostRuntime"]>;
@@ -80,5 +84,128 @@ describe("a state route a safety guard refuses", () => {
       expect(attempt).toMatchObject({ status: "failed", stateRouting: { outcome: "no_match", matched: 0, refused: [{ toNodeId: "s1", guard: "repeats_lasting_act", nodeId: "s1" }] } });
     }
     expect(s2[0]!.recoveryDecision).toBeDefined();
+  });
+});
+
+function committingDefinition(id: string): AutomationStudioNodeDefinition {
+  return {
+    schemaVersion: "0.1",
+    id,
+    version: "1.0.0",
+    label: "Apply change",
+    description: "Apply a pending change.",
+    category: "custom",
+    source: { kind: "importer", domainId: "example", packageId: "example.package", implementationKey: id },
+    availability: { kind: "domain", domainId: "example" },
+    capabilities: { executable: true },
+    actionEffect: { effectClass: id === "example.commit" ? "commit" : "observe" },
+    inputs: [],
+    outputs: [],
+    parameters: []
+  };
+}
+
+const ambiguousMissing: AutomationStudioFailureRecord = {
+  category: "target_not_found",
+  code: "example.target.missing",
+  retryable: true,
+  stage: "target_resolution",
+  effect: "ambiguous"
+};
+
+async function targetFailureRun(optional: boolean, failure = ambiguousMissing, proof: "unknown" | "landed" | "not_landed" = "unknown") {
+  const calls = { act: 0, onward: 0, effectCheck: 0, observation: 0 };
+  const runtime = new AutomationStudioNativeNodeRuntime().register({
+    schemaVersion: "0.1",
+    sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
+    packageId: "example.package",
+    packageVersion: "1.0.0",
+    domainId: "example",
+    nodes: [committingDefinition("example.commit"), committingDefinition("example.onward")]
+  }, {
+    packageId: "example.package",
+    packageVersion: "1.0.0",
+    implementations: {
+      "example.commit": (): AutomationNodeExecutionResult => {
+        calls.act += 1;
+        if (proof === "not_landed" && calls.act > 1) return { outputs: {} };
+        return { status: "failed", route: "failed", outputs: {}, failure };
+      },
+      "example.onward": (): AutomationNodeExecutionResult => {
+        calls.onward += 1;
+        return { outputs: {} };
+      }
+    }
+  });
+  const apply: AutomationStudioFlowNode = {
+    id: "apply",
+    definitionId: "example.commit",
+    label: "No thanks",
+    metadata: { sometimesPresent: optional, effect: "observe", idempotent: true, declaredConsequences: [] }
+  };
+  const onward: AutomationStudioFlowNode = {
+    id: "onward",
+    definitionId: "example.onward",
+    metadata: signatures("after")
+  };
+  const flow = line([apply, onward, { id: "end", definitionId: "builtin.control.end" }]);
+  const trace = await runAutomationStudioGraph(flow, {
+    ...automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime }),
+    delay: async () => undefined,
+    hostRuntime: {
+      ...host({ current: "after" }),
+      observeRouteState: () => {
+        calls.observation += 1;
+        return { page: "after" };
+      },
+      actLanded: () => {
+        calls.effectCheck += 1;
+        return proof;
+      }
+    }
+  });
+  return { calls, trace };
+}
+
+describe("an ambiguous committing target failure before state routing", () => {
+  it.each([true, false])("settles the actual act before optional=%s can skip or match another step", async (optional) => {
+    expect(parseAutomationStudioFailureRecord(ambiguousMissing)).toEqual(ambiguousMissing);
+    const { trace, calls } = await targetFailureRun(optional);
+    expect.soft(calls).toEqual({ act: 1, onward: 0, effectCheck: 1, observation: 0 });
+    expect.soft(trace.failure?.code).toBe("run.outcome_uncertain");
+    expect.soft(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["apply"]);
+    expect.soft(trace.attempts[0]?.skipped).toBeUndefined();
+    expect.soft(trace.attempts[0]?.failure).toEqual(ambiguousMissing);
+  });
+
+  it("keeps a positively unacted optional commit nonfatal and truthfully not done", async () => {
+    const { trace, calls } = await targetFailureRun(true, { ...ambiguousMissing, effect: "unacted" });
+    expect(trace.status).toBe("succeeded");
+    expect(calls.act).toBe(1);
+    expect(calls.onward).toBe(1);
+    expect(calls.effectCheck).toBe(0);
+    expect(trace.attempts[0]).toMatchObject({ status: "succeeded", route: "skipped", skipped: { reason: "target_absent", notDone: true } });
+    expect(trace.attempts[0]?.fault).toBeUndefined();
+    expect(trace.attempts[0]?.recoveryDecision).toBeUndefined();
+  });
+
+  it.each(["landed", "not_landed"] as const)("preserves positive %s settlement without an automatic missing-target skip", async (proof) => {
+    const { trace, calls } = await targetFailureRun(true, ambiguousMissing, proof);
+    expect(trace.status).toBe("succeeded");
+    expect(calls.act).toBe(proof === "landed" ? 1 : 2);
+    expect(calls.onward).toBe(1);
+    expect(calls.effectCheck).toBe(1);
+    expect(trace.attempts.every((attempt) => attempt.skipped === undefined)).toBe(true);
+  });
+
+  it("distinguishes a parser-rejected after-action target record from the valid ambiguous bypass", async () => {
+    const invalid: AutomationStudioFailureRecord = { ...ambiguousMissing, stage: "verification" };
+    expect(parseAutomationStudioFailureRecord(invalid)).toBeNull();
+    const { trace, calls } = await targetFailureRun(true, invalid);
+    expect(calls.act).toBe(1);
+    expect(calls.onward).toBe(0);
+    expect(trace.failure?.code).toBe("run.outcome_uncertain");
+    expect(trace.attempts[0]?.failure).not.toEqual(invalid);
+    expect(trace.attempts[0]?.skipped).toBeUndefined();
   });
 });

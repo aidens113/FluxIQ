@@ -1,6 +1,7 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
-import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, type AutomationStudioNodeSideEffectClass } from "./contracts.ts";
+import type { AutomationStudioNodeSideEffectClass } from "./contracts.ts";
+import { automationStudioNodeExplicitLastingRisk } from "./explicit-lasting-risk.ts";
 
 /**
  * How consequential this node is.
@@ -99,10 +100,7 @@ export function automationStudioNodeRepeatCannotAct(node: AutomationStudioFlowNo
 export function automationStudioNodeRepeatIsSafe(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): boolean {
   if (actionEffect?.effectClass === "commit") return false;
   if (actionEffect?.effectClass === "state") {
-    const declared = node.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
-    if (Array.isArray(declared) && declared.some((consequence) => typeof consequence === "string" && consequence.length > 0)) return false;
-    if (node.metadata?.destructive === true || node.metadata?.externalSideEffect === true || node.metadata?.requiresApproval === true || node.parameterValues?.requiresApproval === true) return false;
-    if (node.metadata?.effect === "mutate" || node.parameterValues?.effect === "mutate") return false;
+    if (automationStudioNodeExplicitLastingRisk(node)) return false;
     return actionEffect.repeatSafe === true;
   }
   if (node.metadata?.idempotent === true) return true;

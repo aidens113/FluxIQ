@@ -11,6 +11,7 @@ export * from "./contracts.ts";
 export * from "./continuation.ts";
 export * from "./credited-hint.ts";
 export * from "./effect-check.ts";
+export * from "./explicit-lasting-risk.ts";
 export * from "./host-act-landed.ts";
 export * from "./lasting-act.ts";
 export * from "./ledger.ts";
