@@ -1,5 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../loop-configuration.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../../nodes/action-effect/index.ts";
 
 /** Closed host-local failures: never a producer's payload or error message. */
 export type AutomationStudioLlmRerunUnavailableReason =
@@ -9,7 +10,8 @@ export type AutomationStudioLlmRerunUnavailableReason =
   | "scope_unavailable" | "scope_unreadable" | "scope_changed" | "disposed"
   | "duplicate_call" | "tool_unavailable" | "foreign_record" | "record_missing"
   | "adapter_changed" | "adapter_input_changed" | "capsule_changed"
-  | "execution_closed" | "capsule_consumed" | "capsule_unconsumed";
+  | "execution_closed" | "capsule_consumed" | "capsule_unconsumed"
+  | "assessment_unproven" | "assessment_vetoed";
 
 export type AutomationStudioLlmRerunUnavailable = Readonly<{
   kind: "unavailable";
@@ -67,6 +69,8 @@ export type AutomationStudioLlmRerunExecutionAccess =
     /** Nonenumerable; the adapter must also verify its own identity registry. */
     capsule: object;
     consume(capsule: object): Readonly<{ kind: "consumed" }> | AutomationStudioLlmRerunExecutionRefused;
+    /** Fresh trusted actual main attempts; acknowledgement alone proves no dispatch. */
+    reportDispatch?(capsule: object, dispatch: AutomationStudioLlmRerunCaptureSnapshot["dispatch"]): Readonly<{ kind: "accepted" }> | AutomationStudioLlmRerunExecutionRefused;
   }>;
 
 // Everything below this point is Core-private and is NOT an SDK export.
@@ -94,6 +98,8 @@ export type AutomationStudioLlmRerunRecord = Readonly<{
   subject: object;
   referenceNow: number;
   resultCode: string | undefined;
+  /** Actual completed primary assessment and every auxiliary floor; absence is unproven. */
+  observedEffect?: AutomationStudioResolvedActionEffect;
   originalValue: JsonObject;
   execution: AutomationStudioLlmRerunResult;
 }>;
@@ -104,10 +110,15 @@ export type AutomationStudioLlmRerunLookup = Readonly<{
 }> | AutomationStudioLlmRerunUnavailable;
 
 /** A returned value is private/nonenumerable and still needs ordinary settlement. */
-export type AutomationStudioLlmRerunOutcome =
+export type AutomationStudioLlmRerunOutcome = (
   | AutomationStudioLlmRerunUnavailable
   | Readonly<{ kind: "returned"; result: AutomationStudioLlmRerunResult }>
-  | Readonly<{ kind: "unproven"; reason: AutomationStudioLlmRerunUnavailableReason; result: AutomationStudioLlmRerunResult }>;
+  | Readonly<{ kind: "unproven"; reason: AutomationStudioLlmRerunUnavailableReason; result: AutomationStudioLlmRerunResult }>
+  | Readonly<{ kind: "threw"; error: unknown }>
+) & Readonly<{
+  main: "unacted" | "unproven" | "receipt";
+  dispatch?: AutomationStudioLlmRerunCaptureSnapshot["dispatch"];
+}>;
 
 export type AutomationStudioLlmRerunProvenance = Readonly<{
   capture(request: AutomationStudioLlmRerunRequest, wrappedExecuteTool: AutomationStudioLlmRerunExecutor): Promise<AutomationStudioLlmRerunResult>;

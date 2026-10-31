@@ -4,7 +4,8 @@
 // **Why it exists (t194 w48).** Live run 13 (`run-muqbzu32-8691a65e`) read the
 // same list three times, and its last request carried all three reads whole:
 // 164,577 of its 290,929 characters. The window now shows only the newest
-// read's rows whole and replaces each earlier read's with `supersededBy`
+// read's rows whole in a dynamic tail and uses immutable own-call references
+// for historical held members from their first appearance
 // (`../context-window.ts`); this is how the model still gets an earlier read's
 // rows when it wants them. Core keeps every result whole already -- the window
 // only chooses what a decision is shown -- so the rows are answered from the

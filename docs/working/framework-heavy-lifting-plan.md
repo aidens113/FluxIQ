@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P9 A/B/C and private provenance accepted narrowly; SDK build then paired producer checks, loop/request integration pending. No full/paid calls.
+Status detail: P9 Core owning safety/loop gates accepted narrowly; legacy loop regressions running, parent sync/SDK/paired/browser acceptance next. Full/paid held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,13 +11,13 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active t830, 2026-10-31:** Paired task/t830-append-only-evidence under fxwork/t830, parents pushed Core5bf93be1/Down069fdfe9. Initial isolated dependency/SDK preparation finished exit0 with --skip-workspace-build (Core83.268s, other SDKs cached). Source version0.22 is lead-owned; private SDK still0.21 until final source freeze/rebuild, shared accepted SDK0.21 unchanged. A/B/C source accepted by lead157tests/8files, typecheck62.138s and audit; no loop offering yet. Private D0 provenance adds57new passing tests (155selection with98Cregressions), types59.273s/audit483warnings/1143baseline pass. Its public adapter-only API and private nonenumerable records are frozen; compiledSDK0.22 rebuild is running. D1 Down source frozen/unverified, D2 loop and E serialized request/instruction integration pending. Parallel t831 client-example contract is isolated under fxwork/t831; shared public/service/tools ownership stays serial.
+**Active t830, 2026-10-31:** Isolated paired P9 source0.22, private SDK predates D2/D3 and must rebuild after parent sync/version0.23. Foundations157tests/D0 initial155selection accepted/backed up1bd5aafc. D2/D3 now capture actual normalized primary permission effects before capped history, deny unsafe/stronger batch effects before asks/dispatch, preserve explicit original declarations/control shape, fresh actual producer receipt/private main status and post-receipt errors, and terminate on guard-record loss. Initial414owning tests412pass/2malformed fixture failures; corrected111tests/6files pass44.38s, package types59.177s and standalone audit pass. D1 producer source frozen,31old cycle allowances removed614to583; actual paired Core+web and installed browser specs source authored/unrun. Existing normal-loop370tests/27files pass63.22s; Core backup/parent sync next. P10 t831 shipped paired dev69dcecba/c084b96a, shared SDK/domain/compiled fourhash smoke current, no main promotion/full/paid/model calls or user panel management.
 
 **Accepted t829:** Private observed-repeat/history protection is merged and pushed. Core31 owning+190 affected safety/history tests, typecheck/audit and70 mandatory merge-contract tests pass; Down135domain+98extension tests and affected types/builds pass. Browser Chromium134.0.6998.35 company-website proof3 passes2cases42.3s: two actual reads then pre-third unacted refusal, versus seven intentional ForEach reads;19observations/0unavailable/0extra observer commands,28fresh successful replies, no repairs/gateway errors/page changes. Core native registry units and canonical policy-output required-receipt browser paths are distinct verified seams; direct importer execution remains intentionally refused in required mode. Shared0.21 SDK/domain/three extension bundles current; public observer smoke sends0commands. Remote task backups ea3a0126/ee502b5e retained; source merges6c45c83b/77e8b284; final dev5bf93be1/069fdfe9 verified equal origin/dev. Evidence main Down ignored test-runs/2026-10-31-t829-*; reports p8-repeat-history/.
 
 **Prior accepted runtime work:** t828 source-less identity recovery preserves source-bound precedence, effect floors and four attempts; full admitted command replies use exact hashing separate from small authority limits. t827 actionability and t826 typed temporary facts are accepted. Their full context and prior dated handoffs are preserved in the archive below, not repeated as current blockers.
 
-**Next P9 units:** A immutable historical view references + one full current-view/rows tail; B screened changed-key route projection; C safe prior-call batch primitive. D batch loop integration follows C/root interface acceptance; E request/instruction/schema regression proof follows A/B/D. Existing offered-only submission schema already works and should be preserved. Read p8-repeat-history/p9-executable-design.md before briefing; source-level design is not implementation acceptance. P10 first-unit design is p10-executable-design.md there; existing validated systemInstructions already works, and the proposed separate example seam remains unimplemented.
+**Remaining P9:** Finish D1 regression/structure corrections, D2 guarded actual loop integration, then E generic instructions and actual serialized UTF8 prefix/schema proof; provider-free paired adapter/loop and realistic browser acceptance follow. A/B/C and private D0 are accepted foundations, not complete batch functionality. P10 worked-example migration is isolated in t831; inline medium/facts/intent/fingerprint follow separately.
 
 **Standing constraints:** Both Oct31 full-suite slots are used: owning tests/types/builds and audits only; main promotion waits a complete permitted passing sweep. No paid GO: future live model tests use CLAUDE_API_KEY/Claude/$5 whole build, no fallback; no model/API calls now. Do not manage the user's panel or touch real data/profiles. Preserve main Down .clinerules/fluxiq.md hash b052f0e6b0e6c6de0ba973810c7632eda04aadfdd5314eaaa73710edd1101a8d. Product model guidance stays generic and never teaches realistic scenarios.
 
@@ -752,6 +752,13 @@ Accepted runtime ledger moved verbatim to [the runtime context archive](framewor
 - Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/llm/rerun-provenance/tests/provenance.test.ts src/programs/automation-studio/runtime/llm/node-reruns/tests/run-nodes.test.ts --maxWorkers=2 --minWorkers=1` ->155/2files pass26.68s (57new+98regression); `pnpm.cmd --filter fluxiq check` ->exit0,59.273s; structure audit ->passed483warnings/1143baseline, two old entries lowerable.
 - Outcome: Partial; Core components accepted, SDK0.22 rebuild running; Down D1 not verified and C tool unoffered. Original cycles/depth/fixture/type/packing findings corrected and recorded in reports/logs.
 - Follow-up: paired producer tests against fresh SDK, Core D2 admission/accounting and E actual serialized provider-prefix proof; no paid GO, full suites exhausted.
+
+### 2026-10-31 ? P9 actual settled safety and batch owning gates
+
+- Changes: neutral private assessment/veto scope, trusted primary effect proof, explicit original[]/closed controls, fresh producer receipt main accounting, no raw private errors, terminal list-guard loss; normal permission behavior preserved.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/llm/prior-nodes/tests src/programs/automation-studio/runtime/llm/rerun-provenance/tests/settled-safety.test.ts --maxWorkers=2 --minWorkers=1` ->111tests/6files pass44.38s; `pnpm.cmd --filter fluxiq check` ->exit0,59.177s; `node scripts/structure-audit.mjs` ->exit0. Prior414selection412pass,2malformed fixtures corrected without production weakening; exact commands/logs in lead-acceptance.md.
+- Outcome: Partial; Core owning accepted narrowly, existing loop regressions/parent sync/freshSDK/paired Domain/browser proof still required. No batch release yet.
+- Follow-up: preserve P10 main changes when syncing both task branches; advance next Core0.23, rerun relevant compatibility checks, then actual paired adapter and installed realistic browser acceptance.
 
 ## Open Questions
 

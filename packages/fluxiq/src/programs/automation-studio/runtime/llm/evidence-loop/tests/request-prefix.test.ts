@@ -30,11 +30,9 @@
 // So a request is a prefix of the next through the whole window, except where
 // the offer changed: then the miss starts in the schema, once.
 //
-// A domain that declares which keys of a result are its view of the target
-// has every view but the newest replaced by a reference (B1,
-// `../../context-window.ts`). The view a request shows whole becomes a
-// reference in the next, so the prefix then holds through every entry before
-// the current view -- each written once and never changed -- and no further.
+// Declared view members are references from their first appearance. Their
+// historical bytes stay fixed while the latest whole views move in a tail.
+// Compare captured serialized provider request bodies as UTF8, not JS offsets.
 
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -52,7 +50,7 @@ const KEY_ID = `secret:${randomUUID()}`;
 const TOOL_ID = "demo.act";
 
 /** One request as it went out: its two messages, and the user message parsed. */
-type Sent = { system: string; user: string; payload: SentPayload };
+type Sent = { wire: string; system: string; user: string; payload: SentPayload };
 type SentEntry = { callId: string; toolId: string; value: unknown };
 type SentPayload = { outputSchema?: unknown; context: { evidenceLoop: { evidence: SentEntry[]; tools?: unknown }; routing?: { situations?: unknown[] }; flowBootstrap?: { routing?: { situations?: unknown[]; situationsShown?: string } } } };
 
@@ -101,50 +99,48 @@ describe("the cached prefix of a build's decisions", () => {
         expect(matched, `call ${index} -> ${index + 1}: the prefix reaches the changed offer`).toBeGreaterThanOrEqual(offerChanged);
         continue;
       }
-      const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, shared);
-      expect(matched, `call ${index} -> ${index + 1}: first difference at ${matched}, inside ${pathAt(earlier, matched)}; must match through ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
+      const mustMatch = wireOffset(earlier, endOfEntry(earlier, shared));
+      expect(matched, `call ${index} -> ${index + 1}: first difference at ${matched}, inside the UTF8 provider request; must match through ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
       // The output schema, the node catalog and the tools are inside it.
-      for (const key of ['"outputSchema"', '"nodeCatalog"', '"tools"']) expect(prompt(earlier).indexOf(key), `call ${index} -> ${index + 1}: ${key} in the prefix`).toBeLessThan(matched);
+      for (const key of ['"outputSchema"', '"nodeCatalog"', '"tools"']) expect(wireOffset(earlier, earlier.user.indexOf(key)), `call ${index} -> ${index + 1}: ${key} in the prefix`).toBeLessThan(matched);
     }
   }, 60_000);
 
-  it("with views declared, shows only the newest whole, and every request is a prefix of the next through the entry before its view", async () => {
+  it("keeps every declared-view history byte fixed from its first appearance, with whole current views only in the tail", async () => {
     const sent = await build((call) => call <= 5
-      ? { kind: "tool_call", callId: `call.${call}`, toolId: TOOL_ID, input: { area: `area.${call}` }, add: true }
+      ? { kind: "tool_call", callId: `call.${call}`, toolId: TOOL_ID, input: { area: `area.${call}.caf\u00e9.\u{1f9ed}` }, add: true }
       : { kind: "complete", result: {} }, ["elements"]);
-
     expect(sent.length).toBeGreaterThanOrEqual(6);
-    for (const [index, request] of sent.entries()) {
+    for (const request of sent) {
       const evidence = request.payload.context.evidenceLoop.evidence;
-      const views = evidence.filter((entry) => isObject(entry.value) && "elements" in entry.value);
       const results = evidence.filter((entry) => entry.toolId === TOOL_ID);
-      // One whole view at most -- the newest result -- and every earlier result
-      // a reference to the one after it, keeping what the step said.
-      expect(views.map((entry) => entry.callId), `request ${index + 1}`).toEqual(results.slice(-1).map((entry) => entry.callId));
-      for (const [at, entry] of results.slice(0, -1).entries()) {
-        expect(entry.value, `request ${index + 1}, ${entry.callId}`).toEqual({ area: `area.${at + 1}`, status: "changed", supersededBy: results[at + 1]!.callId });
+      for (const entry of results) {
+        expect(isObject(entry.value)).toBe(true);
+        if (!isObject(entry.value)) throw new Error("Expected a projected tool result");
+        expect(entry.value.elements).toEqual({ "core.view_reference": { callId: entry.callId, group: "top" } });
+        expect(entry.value).not.toHaveProperty("supersededBy");
+      }
+      const current = evidence.filter((entry) => entry.toolId === "core.current_view");
+      expect(current).toHaveLength(results.length ? 1 : 0);
+      if (results.length) {
+        const latest = results.at(-1)!;
+        expect(current[0]!.value).toEqual({ groups: [{ group: "top", callId: latest.callId, value: {
+          elements: Array.from({ length: 60 }, (_, at) => ({ target: `target.${at}`, name: `Item ${at} in ${isObject(latest.value) ? String(latest.value.area) : ""}` }))
+        } }] });
       }
     }
     for (let index = 1; index < sent.length; index += 1) {
       const earlier = sent[index - 1]!;
       const later = sent[index]!;
-      const evidence = earlier.payload.context.evidenceLoop.evidence;
-      const view = evidence.findIndex((entry) => isObject(entry.value) && "elements" in entry.value);
-      const settled = view < 0 ? evidence.filter(isToolResult).length : view;
-      expect(JSON.stringify(later.payload.context.evidenceLoop.evidence.slice(0, settled)), `call ${index} -> ${index + 1}: entries before the view unchanged`).toBe(JSON.stringify(evidence.slice(0, settled)));
+      const history = earlier.payload.context.evidenceLoop.evidence.filter(isToolResult);
+      const shared = sharedToolResults(earlier.payload.context.evidenceLoop.evidence, later.payload.context.evidenceLoop.evidence);
+      expect(shared, "all prior tool/route history is immutable, including the immediately previous view").toBe(history.length);
       const matched = commonPrefixLength(prompt(earlier), prompt(later));
       const offerChanged = offerChangeStart(earlier, later);
-      if (offerChanged !== undefined) {
-        expect(matched, `call ${index} -> ${index + 1}: the prefix reaches the changed offer`).toBeGreaterThanOrEqual(offerChanged);
-        continue;
-      }
-      const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, settled);
-      expect(matched, `call ${index} -> ${index + 1}: first difference at ${matched}, inside ${pathAt(earlier, matched)}; must match through ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
+      const mustMatch = offerChanged ?? wireOffset(earlier, endOfEntry(earlier, shared));
+      expect(matched, `request ${index} -> ${index + 1}: UTF8 prefix reaches ${matched}, needs ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
     }
-    // The window grows by a reference per step, not by a page: the last request
-    // carries one page of 60 elements, where it used to carry five.
-    const last = sent.at(-1)!.payload.context.evidenceLoop.evidence;
-    expect(last.filter((entry) => isObject(entry.value) && "elements" in entry.value)).toHaveLength(1);
+    expect(sent.some((request) => request.wire.includes("caf\u00e9.\u{1f9ed}")), "the real serialized request exercises multibyte UTF8").toBe(true);
   }, 60_000);
 });
 
@@ -164,7 +160,7 @@ function isToolResult(entry: SentEntry): boolean { return !entry.toolId.startsWi
  * key; changed tools alone, from their key.
  */
 function offerChangeStart(earlier: Sent, later: Sent): number | undefined {
-  const at = (key: string) => earlier.system.length + 1 + earlier.user.indexOf(key) + key.length;
+  const at = (key: string) => wireOffset(earlier, earlier.user.indexOf(key) + key.length);
   if (JSON.stringify(earlier.payload.outputSchema) !== JSON.stringify(later.payload.outputSchema)) return at('"outputSchema":');
   if (JSON.stringify(earlier.payload.context.evidenceLoop.tools) !== JSON.stringify(later.payload.context.evidenceLoop.tools)) return at('"tools":');
   return undefined;
@@ -189,33 +185,24 @@ function endOfEntry(request: Sent, count: number): number {
   return start + opening.length + entries.reduce((total, entry, index) => total + JSON.stringify(entry).length + (index ? 1 : 0), 0);
 }
 
-function prompt(request: Sent): string { return `${request.system}\n${request.user}`; }
+function prompt(request: Sent): string { return request.wire; }
 
 function commonPrefixLength(left: string, right: string): number {
+  const leftBytes = Buffer.from(left, "utf8");
+  const rightBytes = Buffer.from(right, "utf8");
   let index = 0;
-  while (index < left.length && index < right.length && left.charCodeAt(index) === right.charCodeAt(index)) index += 1;
+  while (index < leftBytes.length && index < rightBytes.length && leftBytes[index] === rightBytes[index]) index += 1;
   return index;
 }
 
-/** Where an offset into the prompt falls, as a JSON path, for a failure message a person can act on. */
-function pathAt(request: Sent, offset: number): string {
-  const inUser = offset - request.system.length - 1;
-  if (inUser < 0) return "the system message";
-  const walk = (node: unknown, start: number, trail: string[]): { end: number; hit?: string[] } => {
-    const end = start + JSON.stringify(node).length;
-    if (inUser < start || inUser >= end) return { end };
-    if (node === null || typeof node !== "object") return { end, hit: trail };
-    let cursor = start + 1;
-    const entries = Array.isArray(node) ? node.map((item, index) => [String(index), item] as const) : Object.entries(node).filter(([, item]) => item !== undefined);
-    for (const [key, item] of entries) {
-      if (!Array.isArray(node)) cursor += JSON.stringify(key).length + 1;
-      const inner = walk(item, cursor, [...trail, key]);
-      if (inner.hit) return inner;
-      cursor = inner.end + 1;
-    }
-    return { end, hit: trail };
-  };
-  return walk(request.payload, 0, []).hit?.join(".") || "the user message";
+/** UTF8 offset in the actual captured wire body, including JSON string escaping. */
+function wireOffset(request: Sent, userOffset: number): number {
+  expect(userOffset).toBeGreaterThanOrEqual(0);
+  const quotedUser = JSON.stringify(request.user);
+  const start = request.wire.indexOf(quotedUser);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const escapedPrefix = JSON.stringify(request.user.slice(0, userOffset)).slice(1, -1);
+  return Buffer.byteLength(request.wire.slice(0, start + 1) + escapedPrefix, "utf8");
 }
 
 /** One evidence-guided build, answering the n-th decision call with `reply(n)`; every request it sent. */
@@ -232,7 +219,7 @@ async function build(reply: (call: number) => JsonObject, observedStateKeys?: re
       const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
       const system = body.messages.find((message) => message.role === "system")!.content;
       const user = body.messages.find((message) => message.role === "user")!.content;
-      sent.push({ system, user, payload: JSON.parse(user) as SentPayload });
+      sent.push({ wire: String(init?.body), system, user, payload: JSON.parse(user) as SentPayload });
       const content = JSON.stringify({ kind: "evidence_tool_decision", summary: "Next.", decision: reply(sent.length) });
       return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content } }], usage: { prompt_tokens: 1_200, completion_tokens: 150, total_tokens: 1_350 } }), { status: 200, headers: { "content-type": "application/json" } });
     }) as typeof fetch

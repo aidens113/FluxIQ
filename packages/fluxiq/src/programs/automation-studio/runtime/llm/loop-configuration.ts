@@ -82,6 +82,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * of the target a newer one replaced (`context-window.ts`).
    */
   executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal; referenceNow?: number }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /** Host-only canonical registry/permission scope. No port means prior-call batching is unavailable. */
+  rerunAuthority?: import("./prior-nodes/index.ts").AutomationStudioLlmPriorNodesAuthority | undefined;
   /**
    * The top-level keys of a tool result that are a view of the target -- a
    * page, for the web domain -- as the bound domain declared them

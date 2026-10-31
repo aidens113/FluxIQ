@@ -290,6 +290,7 @@ describe("Core-private frozen execution", () => {
     let rerunning = false;
     const wrapped: AutomationStudioLlmRerunExecutor = async (request) => {
       if (!rerunning) return f.producer(request);
+      await f.assess(request);
       const access = automationStudioLlmRerunExecution({ owner: f.owner, generation: f.generation, value: request.value });
       expect(access.kind).toBe("selected");
       if (access.kind === "selected" && mode !== "ignored") {
@@ -322,14 +323,19 @@ describe("Core-private frozen execution", () => {
     const actual = refused();
     const record = await f.seal("original", async (request) => {
       if (!rerunning) return f.producer(request);
+      await f.assess(request);
       const access = automationStudioLlmRerunExecution({ owner: f.owner, generation: f.generation, value: request.value });
-      if (access.kind === "selected") access.consume(access.capsule);
+      if (access.kind === "selected") {
+        access.consume(access.capsule);
+        f.report(access, "failed_unacted");
+      }
       return actual;
     });
     rerunning = true;
     const outcome = await f.provenance.execute(record, { callId: "failed" });
-    expect(outcome.kind).toBe("returned");
-    if (outcome.kind === "returned") expect(outcome.result).toBe(actual);
+    expect(outcome.kind).toBe("unproven");
+    expect(outcome.main).toBe("receipt");
+    if (outcome.kind === "unproven") expect(outcome.result).toBe(actual);
   });
 
   it("preserves execution throws while revoking the now-unproven selection", async () => {
@@ -338,12 +344,20 @@ describe("Core-private frozen execution", () => {
     const error = new Error("private-executor-error");
     const record = await f.seal("original", async (request) => {
       if (!rerunning) return f.producer(request);
+      await f.assess(request);
       const access = automationStudioLlmRerunExecution({ owner: f.owner, generation: f.generation, value: request.value });
-      if (access.kind === "selected") access.consume(access.capsule);
+      if (access.kind === "selected") {
+        access.consume(access.capsule);
+        f.report(access);
+      }
       throw error;
     });
     rerunning = true;
-    await expect(f.provenance.execute(record, { callId: "throws" })).rejects.toBe(error);
+    const outcome = await f.provenance.execute(record, { callId: "throws" });
+    expect(outcome.kind).toBe("threw");
+    expect(outcome.main).toBe("receipt");
+    if (outcome.kind === "threw") expect(outcome.error).toBe(error);
+    expect(outcome.dispatch?.attempts).toHaveLength(1);
     expect(f.provenance.lookup("original")).toEqual({ kind: "unavailable", reason: "result_unproven" });
     expect(JSON.stringify(f.provenance.lookup("original"))).not.toContain("private-executor-error");
   });
@@ -453,10 +467,12 @@ describe("host-local isolation and privacy", () => {
     expect(copy.automationStudioLlmRerunCapture).not.toBe(automationStudioLlmRerunCapture);
     const f = fixture();
     const wrapped: AutomationStudioLlmRerunExecutor = async (request) => {
+      await f.assess(request);
       const access = copy.automationStudioLlmRerunExecution({ owner: f.owner, generation: f.generation, value: request.value });
       if (access.kind === "selected") {
         expect(access.capsule).toBe(f.capsule);
         expect(access.consume(f.capsule)).toEqual({ kind: "consumed" });
+        f.report(access);
       } else {
         expect(access.kind).toBe("ordinary");
         const sink = copy.automationStudioLlmRerunCapture();
@@ -481,8 +497,12 @@ describe("host-local isolation and privacy", () => {
         heldCapture = automationStudioLlmRerunCapture();
         return f.producer(request);
       }
+      await f.assess(request);
       heldExecution = automationStudioLlmRerunExecution({ owner: f.owner, generation: f.generation, value: request.value });
-      if (heldExecution.kind === "selected") heldExecution.consume(heldExecution.capsule);
+      if (heldExecution.kind === "selected") {
+        heldExecution.consume(heldExecution.capsule);
+        f.report(heldExecution);
+      }
       return success();
     });
     rerunning = true;
@@ -500,13 +520,17 @@ describe("host-local isolation and privacy", () => {
     let selected = "";
     let rerunning = false;
     const wrapped: AutomationStudioLlmRerunExecutor = async (request) => {
+      await f.assess(request);
       if (!rerunning) {
         f.publish(f.snapshot({ adapterValue: request.value }));
         return success();
       }
       const access = automationStudioLlmRerunExecution({ owner: f.owner, generation: f.generation, value: request.value });
       selected = JSON.stringify(access);
-      if (access.kind === "selected") access.consume(access.capsule);
+      if (access.kind === "selected") {
+        access.consume(access.capsule);
+        f.report(access);
+      }
       return success();
     };
     const record = await f.seal("privacy", wrapped);

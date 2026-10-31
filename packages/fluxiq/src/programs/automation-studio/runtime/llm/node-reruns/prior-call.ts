@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import { readAutomationStudioResolvedActionEffect, type AutomationStudioResolvedActionEffect } from "../../../nodes/action-effect/index.ts";
+import { automationStudioResolvedActionEffectRepeatSafe, readAutomationStudioResolvedActionEffect, type AutomationStudioResolvedActionEffect } from "../../../nodes/action-effect/index.ts";
 import { automationStudioFlowDraftHoldsBinding } from "../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson, automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import { automationStudioLlmRunNodesReadReceipt } from "./result.ts";
@@ -35,9 +35,7 @@ export function automationStudioLlmRunNodesOriginal(prior: AutomationStudioLlmRu
 
 /** Trust comes from the producer, while the owning reader establishes shape and commit floors. */
 export function automationStudioLlmRunNodesEffectSafe(effect: AutomationStudioResolvedActionEffect): boolean {
-  const read = readAutomationStudioResolvedActionEffect(effect);
-  return read.permissionConsequences.length === 0
-    && (read.effectClass === "observe" || (read.effectClass === "state" && read.repeatSafe === true));
+  return automationStudioResolvedActionEffectRepeatSafe(effect);
 }
 
 /** Full JSON validation is the existing execution reader's, not another serializer. */

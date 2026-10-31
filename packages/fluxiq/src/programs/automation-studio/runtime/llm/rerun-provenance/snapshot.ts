@@ -6,9 +6,9 @@ import {
   automationStudioLlmRunNodesReadReceipt
 } from "../node-reruns/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE, AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE } from "../../flow-draft/index.ts";
+import { automationStudioLlmRerunReadDispatch } from "./dispatch.ts";
 import type {
   AutomationStudioLlmRerunCaptureSnapshot,
-  AutomationStudioLlmRerunDispatchAttempt,
   AutomationStudioLlmRerunResult,
   AutomationStudioLlmRerunUnavailable
 } from "./types.ts";
@@ -45,7 +45,7 @@ export function automationStudioLlmRerunReadSnapshot(value: AutomationStudioLlmR
     const parameters = automationStudioLlmRerunJsonSnapshot(own("parameters") as JsonObject);
     const adapter = automationStudioLlmRerunJsonSnapshot(own("adapterValue") as JsonObject);
     if (parameters.kind !== "valid" || adapter.kind !== "valid") return unavailable("invalid_snapshot");
-    const dispatch = readDispatch(own("dispatch"));
+    const dispatch = automationStudioLlmRerunReadDispatch(own("dispatch"), true);
     if (dispatch.kind === "unavailable") return dispatch;
     const snapshot: AutomationStudioLlmRerunCaptureSnapshot = Object.freeze({
       owner: own("owner") as object,
@@ -82,34 +82,6 @@ export function automationStudioLlmRerunReadSettlement(value: AutomationStudioLl
   } catch {
     return unavailable("result_unproven");
   }
-}
-
-function readDispatch(value: unknown): Readonly<{ kind: "valid"; value: AutomationStudioLlmRerunCaptureSnapshot["dispatch"] }> | AutomationStudioLlmRerunUnavailable {
-  if (!value || typeof value !== "object") return unavailable("dispatch_unproven");
-  const fields = Object.getOwnPropertyDescriptors(value);
-  const attempts = data(fields, "attempts");
-  const selected = data(fields, "selected");
-  if (!Array.isArray(attempts) || attempts.length === 0 || !identity(selected)) return unavailable("dispatch_unproven");
-  const seen = new Set<object>();
-  const copied: AutomationStudioLlmRerunDispatchAttempt[] = [];
-  for (let index = 0; index < attempts.length; index++) {
-    const attempt = Object.getOwnPropertyDescriptor(attempts, String(index))?.value as unknown;
-    if (!attempt || typeof attempt !== "object") return unavailable("dispatch_unproven");
-    const members = Object.getOwnPropertyDescriptors(attempt);
-    const attemptIdentity = data(members, "identity");
-    const receipt = data(members, "receipt");
-    const outcome = data(members, "outcome");
-    if (!identity(attemptIdentity) || seen.has(attemptIdentity) || (receipt !== undefined && !identity(receipt))) return unavailable("dispatch_unproven");
-    if (outcome !== "succeeded" && outcome !== "failed_unacted") return unavailable("dispatch_unproven");
-    seen.add(attemptIdentity);
-    const copy: AutomationStudioLlmRerunDispatchAttempt = receipt === undefined
-      ? Object.freeze({ identity: attemptIdentity, outcome })
-      : Object.freeze({ identity: attemptIdentity, receipt, outcome });
-    copied.push(copy);
-  }
-  const last = copied[copied.length - 1];
-  if (!last || last.identity !== selected || last.outcome !== "succeeded" || !last.receipt) return unavailable("dispatch_unproven");
-  return Object.freeze({ kind: "valid", value: Object.freeze({ attempts: Object.freeze(copied), selected }) });
 }
 
 function data(fields: Record<string, PropertyDescriptor>, name: string): unknown {

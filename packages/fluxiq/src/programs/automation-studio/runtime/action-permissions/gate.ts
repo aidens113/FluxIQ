@@ -60,6 +60,7 @@ import { AUTOMATION_STUDIO_ACTION_DECLARATIONS_MAX, type AutomationStudioActionD
 import { readAutomationStudioActionDeclaration, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionVerdict } from "./declaration.ts";
 import type { AutomationStudioInstructedConsequence } from "./instructed.ts";
 import { automationStudioActionPermissionProjection } from "./projection.ts";
+import { automationStudioActionAssessmentEffect, beginAutomationStudioActionAssessment } from "./assessment-observation/index.ts";
 import {
   AUTOMATION_STUDIO_ACTION_PERMISSION_CONTROL_NAME_MAX,
   AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION,
@@ -302,15 +303,19 @@ export class AutomationStudioActionPermissionGate {
   /** The check handed to the domain with one action. */
   checkFor(action: AutomationStudioActionPermissionAction): AutomationStudioActionPermissionCheck {
     return async (declaration) => {
+      const assessment = beginAutomationStudioActionAssessment(action);
       const read = readAutomationStudioActionDeclaration(declaration);
       // An action that only reads leaves nothing behind to permit, so what it
       // named cannot be a lasting consequence and is not treated as one. The
       // words are kept as `disregarded` rather than thrown away, because a
       // model calling a page read `create_new` is a fact about the guidance
       // worth being able to count.
-      const { effect, consequences, disregarded } = automationStudioActionPermissionProjection(read);
+      const projection = automationStudioActionPermissionProjection(read);
+      const { effect, consequences, disregarded } = projection;
+      const observedEffect = automationStudioActionAssessmentEffect(read, projection);
       const controlName = this.carriedName(read.controlName);
       const record = (verdict: AutomationStudioActionPermissionVerdict): AutomationStudioActionPermissionVerdict => {
+        assessment.settle({ effect: observedEffect, permitted: verdict.permitted });
         if (this.records.length < AUTOMATION_STUDIO_ACTION_DECLARATIONS_MAX) {
           // Every field by name, and an absent one omitted rather than spread
           // in: this record travels to a person and to a stored proposal, so a
@@ -329,6 +334,8 @@ export class AutomationStudioActionPermissionGate {
         }
         return verdict;
       };
+      // A host's private repeat scope can only refuse; ordinary permission still decides every other action.
+      if (assessment.veto(observedEffect)) return record({ permitted: false, missing: [], requestId: null });
       // An action that says it causes nothing lasting is permitted without
       // reading the instruction: there is nothing to permit, and a run whose
       // every action answers this way must not be charged for a derivation it
@@ -444,18 +451,25 @@ export class AutomationStudioActionPermissionGate {
  * declaration like any other and permits nothing that has a consequence.
  */
 export const automationStudioActionPermissionDenied: AutomationStudioActionPermissionCheck = async (declaration) => {
+  const assessment = beginAutomationStudioActionAssessment();
   const read = readAutomationStudioActionDeclaration(declaration);
   // Nothing declared is nothing to refuse. Refusing it here would make an
   // action that honestly says it causes nothing the one answer that cannot be
   // given, which is the incentive this whole seam exists to remove. An action
   // that only reads is the same case: there is nothing it could have done that
   // outlasts it, so there is nobody who would need to be asked.
-  const { consequences } = automationStudioActionPermissionProjection(read);
+  const projection = automationStudioActionPermissionProjection(read);
+  const observedEffect = automationStudioActionAssessmentEffect(read, projection);
+  if (assessment.veto(observedEffect)) {
+    assessment.settle({ effect: observedEffect, permitted: false });
+    return { permitted: false, missing: [], requestId: null };
+  }
   // Nor is there anybody to ask about making or editing something: those are
   // not gated anywhere (`destructive.ts`), so having no run behind the action
   // changes nothing about them. What it changes is that a gated class has no
   // person who could have permitted it, and no request to raise.
-  const missing = automationStudioDestructiveConsequences(consequences);
+  const missing = automationStudioDestructiveConsequences(projection.consequences);
+  assessment.settle({ effect: observedEffect, permitted: missing.length === 0 });
   if (!missing.length) return { permitted: true };
   return { permitted: false, missing, requestId: null };
 };

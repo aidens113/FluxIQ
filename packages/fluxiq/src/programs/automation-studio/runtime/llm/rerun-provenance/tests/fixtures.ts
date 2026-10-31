@@ -1,11 +1,13 @@
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
+import { AutomationStudioActionPermissionGate, type AutomationStudioActionDeclaration } from "../../../action-permissions/index.ts";
 import {
   automationStudioLlmRerunCapture,
   automationStudioLlmRerunExecution,
   createAutomationStudioLlmRerunProvenance,
   type AutomationStudioLlmRerunCaptureSnapshot,
   type AutomationStudioLlmRerunExecutor,
+  type AutomationStudioLlmRerunExecutionAccess,
   type AutomationStudioLlmRerunRecord,
   type AutomationStudioLlmRerunRequest,
   type AutomationStudioLlmRerunScope
@@ -68,15 +70,38 @@ export function fixture() {
     return sink.publish(input);
   }
 
+  async function assess(request: AutomationStudioLlmRerunRequest, declaration: Omit<Partial<AutomationStudioActionDeclaration>, "actionEffect"> & { actionEffect?: AutomationStudioActionDeclaration["actionEffect"] } = {}) {
+    const gate = new AutomationStudioActionPermissionGate({ stage: "authoring", endsOnRequest: false });
+    const { actionEffect, ...changes } = declaration;
+    const action: AutomationStudioActionDeclaration = {
+      consequences: [], control: { name: "Read inventory", kind: "list" }, verb: "read", effect: "observe",
+      actionEffect: { effectClass: "observe", permissionConsequences: [] }, ...changes
+    };
+    if (Object.hasOwn(declaration, "actionEffect")) {
+      if (actionEffect === undefined) delete action.actionEffect;
+      else action.actionEffect = actionEffect;
+    }
+    return await gate.checkFor({ kind: "exploration_step", id: request.toolId, ref: request.callId })(action);
+  }
+
+  function report(access: Extract<AutomationStudioLlmRerunExecutionAccess, { kind: "selected" }>, outcome: "succeeded" | "failed_unacted" | "uncertain" | "unknown" = "succeeded") {
+    if (!access.reportDispatch) throw new Error("test fresh dispatch reporting unavailable");
+    const identity = {};
+    const fresh = { attempts: [{ identity, receipt: {}, outcome }], selected: identity };
+    return access.reportDispatch(access.capsule, fresh);
+  }
+
   const producer: AutomationStudioLlmRerunExecutor = async (request) => {
     const forwarded: AutomationStudioLlmRerunRequest = { callId: request.callId, toolId: request.toolId, value: structuredClone(request.value) };
     if (request.referenceNow !== undefined) forwarded.referenceNow = request.referenceNow;
     requests.push(forwarded);
+    if (!(await assess(request)).permitted) return refused();
     const access = automationStudioLlmRerunExecution({ owner, generation, value: request.value });
     if (access.kind === "refused") return refused();
     if (access.kind === "selected") {
       if (access.capsule !== capsule || access.consume(capsule).kind !== "consumed") return refused();
       frozen++;
+      report(access);
       return success("warehouse.shelves.read");
     }
     normal++;
@@ -97,7 +122,7 @@ export function fixture() {
 
   return {
     provenance, owner, generation, capsule, subject, attempt, receipt, value, parameters, effectiveInputs,
-    requests, snapshot, publish, producer, request, seal,
+    requests, snapshot, publish, assess, report, producer, request, seal,
     get normal() { return normal; },
     get frozen() { return frozen; },
     get current() { return current; },
