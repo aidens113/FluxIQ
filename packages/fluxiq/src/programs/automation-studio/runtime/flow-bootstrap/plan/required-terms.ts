@@ -13,7 +13,7 @@
 // them, so a reader can see they were looked for.
 import type { AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 
-/** Words that ask for one kind of action, each group answered by any node whose identity, label, tags, description or shape names one of them. */
+/** Words that ask for one kind of action, each group answered by a node's declared operation identity. */
 const BOOTSTRAP_INTENT_EQUIVALENTS = [
   ["fill", "type", "enter", "input"],
   ["select", "choose", "pick", "option"],
@@ -35,7 +35,7 @@ export function automationStudioFlowBootstrapRequiredTerms(
 ): Array<{ term: string; provided: boolean }> {
   const tokens = new Set(tokenizeBootstrapText(instructionText));
   if (!tokens.size) return [];
-  const searchable = definitions.map(bootstrapDefinitionWords);
+  const searchable = definitions.map(bootstrapOperationIdentityWords);
   const provided = (terms: readonly string[]): boolean => searchable.some((words) => terms.some((term) => words.has(term)));
   const required: Array<{ term: string; provided: boolean }> = [];
   for (const equivalents of BOOTSTRAP_INTENT_EQUIVALENTS) {
@@ -50,19 +50,18 @@ function tokenizeBootstrapText(value: string): string[] {
   return [...new Set(value.toLowerCase().split(/[^a-z0-9]+/g).filter((term) => term.length >= 2))];
 }
 
-/** Every word a node is named or described by: its ids, label, tags, description, category, capabilities, ports and parameters. */
-function bootstrapDefinitionWords(definition: AutomationStudioNodeDefinition): ReadonlySet<string> {
+/**
+ * Only a node's operation names declare what it provides. Help can ask the
+ * author to choose a parameter, and a data port can hold an option, without
+ * the node providing an operation that chooses anything. That help and shape
+ * still reach the model through the whole catalog; neither grants capability.
+ */
+function bootstrapOperationIdentityWords(definition: AutomationStudioNodeDefinition): ReadonlySet<string> {
   return new Set([
     definition.id,
     definition.outputAction?.fixedOutputId ?? "",
     ...(definition.outputAction?.allowedOutputIds ?? []),
     definition.label,
-    ...(definition.tags ?? []),
-    definition.description,
-    definition.category,
-    ...Object.entries(definition.capabilities).filter(([, enabled]) => enabled).map(([key]) => key),
-    ...definition.inputs.map((port) => port.id),
-    ...definition.outputs.map((port) => port.id),
-    ...definition.parameters.map((parameter) => parameter.id)
+    ...(definition.tags ?? [])
   ].flatMap((text) => text.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean)));
 }

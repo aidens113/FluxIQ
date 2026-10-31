@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, parseAutomationStudioRecordOutput, type AutomationNodeParameter, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { buildAutomationStudioFlowBootstrapContext } from "../index.ts";
+import { automationStudioFlowBootstrapRequiredTerms } from "../required-terms.ts";
 import { webDomainNodeDefinitionsFixture } from "./web-domain-definitions-fixture.ts";
 
 // What the model is told about the nodes it can use: every offered node, in
@@ -220,5 +221,109 @@ describe("the start location a build was told", () => {
   it("is absent for a build that was given its target instead of told where it is", () => {
     expect(buildAutomationStudioFlowBootstrapContext({ registry: new AutomationStudioNodeRegistry(nodes), resolution }))
       .not.toHaveProperty("startLocation");
+  });
+});
+
+function operationDefinition(overrides: Partial<AutomationStudioNodeDefinition> = {}): AutomationStudioNodeDefinition {
+  return {
+    schemaVersion: "0.1",
+    id: "demo.execute",
+    version: "1.0.0",
+    label: "Execute",
+    description: "Perform the registered operation.",
+    category: "action",
+    source: { kind: "importer", domainId: "demo", implementationKey: "execute" },
+    availability: { kind: "domain", domainId: "demo" },
+    capabilities: { executable: true },
+    inputs: [],
+    outputs: [],
+    parameters: [],
+    ...overrides
+  };
+}
+
+const chooseInstruction = "Choose a mode.";
+
+describe("essential operations are provided by operation identity", () => {
+  it.each([
+    "Choose a value for the configuration.",
+    "Pick the supplied state signature.",
+    "Select the appropriate parameter value."
+  ])("does not treat incidental help as a selection operation: %s", (description) => {
+    const press = operationDefinition({ id: "demo.press", label: "Press", description });
+
+    expect(automationStudioFlowBootstrapRequiredTerms([press], chooseInstruction))
+      .toEqual([{ term: "choose", provided: false }]);
+  });
+
+  const incidentalShape: Array<[string, Partial<AutomationStudioNodeDefinition>]> = [
+    ["parameter id", { parameters: [{ id: "option", label: "Option", valueType: "string" }] }],
+    ["input port", { inputs: [{ id: "select", label: "Selection", role: "data", valueType: "string" }] }],
+    ["output port", { outputs: [{ id: "pick", label: "Picked value", role: "data", valueType: "string" }] }],
+    ["category", { category: "choose" }],
+    // Trait keys are not operation declarations, including an additional key
+    // supplied by an importer that happens to use an operation's name.
+    ["capability key", { capabilities: Object.assign({ executable: true as const }, { choose: true }) }]
+  ];
+
+  it.each(incidentalShape)("does not grant selection from an incidental %s", (_name, shape) => {
+    expect(automationStudioFlowBootstrapRequiredTerms([operationDefinition(shape)], chooseInstruction))
+      .toEqual([{ term: "choose", provided: false }]);
+  });
+
+  const operationIdentity: Array<[string, Partial<AutomationStudioNodeDefinition>]> = [
+    ["node id", { id: "demo.pick" }],
+    ["label", { label: "Choose" }],
+    ["tag", { tags: ["option"] }],
+    ["fixed output id", { outputAction: { fixedOutputId: "demo.select" } }],
+    ["allowed output id", { outputAction: { allowedOutputIds: ["demo.execute", "demo.select"] } }]
+  ];
+
+  it.each(operationIdentity)("recognizes a selection operation by its %s", (_name, identity) => {
+    expect(automationStudioFlowBootstrapRequiredTerms([operationDefinition(identity)], chooseInstruction))
+      .toEqual([{ term: "choose", provided: true }]);
+  });
+
+  it("still reports an unavailable operation beside an available one", () => {
+    expect(automationStudioFlowBootstrapRequiredTerms([operationDefinition({ id: "demo.scroll" })], "Choose a mode and scroll."))
+      .toEqual([{ term: "choose", provided: false }, { term: "scroll", provided: true }]);
+  });
+
+  it("keeps instruction token parsing and explicit foundation reporting", () => {
+    const nodes = [
+      operationDefinition({ id: "demo.begin" }),
+      operationDefinition({ id: "demo.finish" }),
+      operationDefinition({ id: "demo.select" })
+    ];
+
+    expect(automationStudioFlowBootstrapRequiredTerms(nodes, "PICK a mode."))
+      .toEqual([{ term: "pick", provided: true }, { term: "start", provided: true }, { term: "end", provided: true }]);
+    expect(automationStudioFlowBootstrapRequiredTerms(nodes, "")).toEqual([]);
+  });
+
+  it("keeps every offered node and its authoring help when an essential operation is missing", () => {
+    const description = "Press a control. Choose the state signature supplied as its configuration.";
+    const parameter = {
+      id: "configuration",
+      label: "Configuration",
+      valueType: "object" as const,
+      description: "Pick or select an observed state signature.",
+      example: { state: "ready" }
+    };
+    const press = operationDefinition({ id: "demo.press", label: "Press", description, parameters: [parameter] });
+    const context = buildAutomationStudioFlowBootstrapContext({
+      registry: new AutomationStudioNodeRegistry([press]),
+      resolution: { scope: { kind: "domain", domainId: "demo" } },
+      instructionText: chooseInstruction
+    });
+
+    expect(context.catalogSelection.missingRequiredTerms).toEqual(["choose"]);
+    expect(context.nodeCatalog).toHaveLength(1);
+    expect(context.nodeCatalog[0]).toMatchObject({
+      id: press.id,
+      description,
+      parameters: [{ id: parameter.id, type: parameter.valueType, description: parameter.description, example: parameter.example }]
+    });
+    expect(context.catalogTruncated).toBe(false);
   });
 });
