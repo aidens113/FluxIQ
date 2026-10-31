@@ -377,6 +377,16 @@ creation; it is idempotent, never overwrites, and runs lazily on first lookup,
 so no project is ever ownerless while an administrator exists. An id that is
 not a project answers no owner.
 
+Trusted in-process host initialization can record a project's creator with
+`recordAutomationStudioCreatedProjectOwner(service, projectId, userId)` from
+`fluxiq/automation-studio`, reusing that service's registered owner resolver.
+It refuses missing registration, nonexistent projects, empty owners and a
+different recorded creator. Repeating the same creator is safe, including a
+retry after creating the project but failing to assign its owner; a migration
+default can be replaced by the creator. This seam creates no session and
+does not authorize a user request. Ordinary callers use the IAM-gated
+`create-project` endpoint; host modules remain trusted server code.
+
 ## Catalog generator
 
 `generateIamActionCatalog` turns endpoint registrations (program id, endpoint,
@@ -878,6 +888,42 @@ without dropping that user's unlock. The runtime also passes the resolver a
 `flowSecretKeyId` lookup (it reads the Flow, so a build uses the Flow's own key)
 and `instanceHost`, the host of `FLUXIQ_PUBLIC_ORIGIN` when set.
 
+## Panel product manifest and platform hooks
+
+A downstream product brands the panel without forking it. Everything lives in
+`packages/fluxiq/src/platform/panel/` (subpath `fluxiq/platform/panel`; `apps/web`
+never imports `@fluxiq/contracts`).
+
+- **Host modules.** `FLUXIQ_HOST_MODULE` is a comma list of ES module paths.
+  `loadPlatformHostModules` imports each in order and calls its
+  `registerFluxIQPlatform(platform)`; the web app does this lazily through
+  `ensurePlatformModulesLoaded()` (`apps/web/src/app/product/`, Node runtime
+  only, memoised on `globalThis`). Concurrent callers share the same load;
+  failures are retained so partial registrations cannot run again. The
+  instrumentation hookup comes later.
+- **The registry** (`getPlatformRegistry()`, on `globalThis`) holds the product
+  (`setProduct(manifest, { assetsDir })`, validated by `panelProductSchema`,
+  once per process), the hooks (`account.created`, `workspace.created`,
+  `account.disabled`, `account.deleted`, `client.connected`, `client.revoked`;
+  asynchronous, failure-isolated, logged by name), email templates, and the
+  human-check, billing and entitlement ports.
+- **Branding.** `panelBranding(product)` gives name, logo, favicon, accent CSS
+  variables, links and sign-in copy, or the stock values without a product.
+  Accents must pass `checkPanelBrandContrast` against the panel's surfaces.
+  The root layout reads it on the server (`generateMetadata`, `<html style>`),
+  so no page flashes stock branding, and hands it to client components through
+  `PanelBrandingProvider`/`usePanelBranding()`, whose default is the stock
+  branding. With no product the markup and requests are unchanged.
+- **Assets.** `GET /product/assets/<name>` serves only a name the manifest
+  declares (`logo`, `favicon`, `signInArt`) from the registered `assetsDir`;
+  anything else is a bare 404. Types by extension, `nosniff`, one-hour public
+  cache, and a locked-down CSP on SVG. The route is outside `/api` and the
+  middleware does not gate it, so it works signed out.
+- **Onboarding.** `panelOnboardingCards` feeds the signed-in home
+  (`product/OnboardingCards.tsx`): "Get the extension" from the manifest's
+  stores, and "Add your model key" while the secret-keys snapshot is empty.
+  Cards render only when a product is registered.
+
 ## Not yet wired
 
 - **A startup refusal** of an undeclared registration under public profiles:
@@ -899,8 +945,9 @@ and `instanceHost`, the host of `FLUXIQ_PUBLIC_ORIGIN` when set.
   the routes for pairing approval, the Studio context, trace upload (no owner
   resolver for connected clients yet) and the program directory. Each needs a
   per-item filter or a narrower resource before the hosted panel can offer it.
-- **Projects created outside `create-project`** (a chat or a schedule calling
-  the service directly) get the default owner, not their creator.
+- **Projects created without creator recording** (a chat or a schedule calling
+  the service directly without the trusted host helper) get the default owner,
+  not their creator.
 - **No fast path on `service`.** The guardrail's `Deny` disables the
   full-access shortcut, so every hosted list is decided item by item.
 - **Routes are not in the generated catalog**, which lists endpoint sources

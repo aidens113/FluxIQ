@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4381
+- Public declarations: 4382
 - Class: 151
 - Interface: 10
 - Object: 568
 - Type: 2323
 - Type Alias: 1
-- Value: 1328
+- Value: 1329
 
 ## Public Declarations
 
@@ -4018,6 +4018,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `readRecordSets` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/run-outcome.ts` | - |
 | `readStorageConfig` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `recordAutomationStudioAdaptationReplays` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/adaptation-confidence/replay.ts` | - |
+| `recordAutomationStudioCreatedProjectOwner` | Value | `packages/fluxiq/src/programs/automation-studio/api/ownership/record-created-project-owner.ts` | - |
 | `RecordEnvelope` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
 | `RECORDING_STATE_INDEX_SCHEMA_VERSION` | Object | `packages/fluxiq/src/programs/automation-studio/storage/state-index.ts` | - |
 | `RecordingActionIndexItem` | Type | `packages/fluxiq/src/programs/automation-studio/storage/state-index.ts` | - |

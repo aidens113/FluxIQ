@@ -1,7 +1,7 @@
 # Hosted Production Plan
 
 Status: Active
-Status detail: C1 workspace/runtime foundation independently verified and merged; E/D5 product acceptance continues. C2/C3 caller migration/routing and deployment gates remain.
+Status detail: C1 workspace/runtime foundation merged; E/D5 product and owned seed independently verified and ready to integrate. C2/C3 caller migration/routing and deployment gates remain.
 Created: 2026-10-17
 Last updated: 2026-10-30
 Owner: Lane lead hosted-production-planner (plan); the senior supervisor agent owns execution
@@ -759,6 +759,12 @@ Accepted lane A, C0 and follow-up validation moved verbatim to [archive/2026-10-
 - Changed: workspace lifecycle barriers, profile IAM, tenant key custody, background-task drain and root-owned audit/reload cleanup; Core0.11.0; paired finish passed, Core70 contracts and merges f9affe6c/af6c544f. C2/C3 routing remains separate.
 - Validation: lead Core background-task tests ->9 passed; web workspace/provisioning/key-custody ->14files/123 passed; Core/web typechecks,3-library build and docs freshness passed; structure ->failures[],474warnings/1144baselined.
 - Not verified: tenant gateway sockets, browser/Next production behavior or full sweeps; no paid calls or panel management.
+
+### 2026-10-30 - E/D5 product and owned seed accepted (t814)
+- Agent: Codex lead; workers resume_t814/product_ownership_review, reports in paired downstream codex-1030 folder.
+- Changed: product/brand/assets registry and once-only host loading; additive trusted-host creator helper and serialized retry-safe owned seed. Core0.12.0; no wire/persistence format change.
+- Validation: lead panel32, web27, ownership36 and product18 passed; Core/web/product types,3libs, docs/model-text/structure passed. Real service-IAM tests prove owner/non-owner, fallback replacement, conflict and partial/concurrent retry behavior.
+- Not verified: later C2/C3 host/provisioning/email/discovery wiring, browser rendering or full sweeps; no paid calls/panel management.
 
 ## Open Questions
 
