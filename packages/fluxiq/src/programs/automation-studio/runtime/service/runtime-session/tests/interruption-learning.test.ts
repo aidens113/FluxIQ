@@ -15,7 +15,7 @@ import { runtimeRunDetailWithAdaptationContext, settleAutomationStudioJudgedProm
 import { bindAutomationStudioInRunRepair } from "../in-run-repair.ts";
 import { IN_RUN_REPAIR_FLOW_ID, IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_RUN_ID, IN_RUN_REPAIR_SUBFLOW_ID, inRunRepairGraph, inRunRepairWorld, type InRunRepairWorld } from "./in-run-repair-fixture.ts";
 
-const LAYER = { kind: "dialog" as const, control: "Maybe later", name: "Join the reading club", controlName: "Maybe later, thanks", wayOut: "way-out.0a1b", wayOutDefinitionId: "test.output.press" };
+const LAYER = { kind: "other" as const, control: "Maybe later", name: "Join the reading club", controlName: "Maybe later, thanks", wayOut: "way-out.0a1b", wayOutDefinitionId: "test.output.press" };
 const RESOLVED_TARGET: JsonObject = { selector: "#club-later", element: { accessibleName: "Maybe later, thanks" } };
 
 /** The world, with a domain that names the way out `t7` and resolves a step naming it to `RESOLVED_TARGET`. */

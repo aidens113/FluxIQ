@@ -7,7 +7,7 @@ import type { AutomationStudioClearedLayer } from "../../../executor/index.ts";
 import { automationStudioInterruptionHandlerPatch } from "../interruption-handler.ts";
 import { inRunRepairGraph } from "./in-run-repair-fixture.ts";
 
-const PANEL: AutomationStudioClearedLayer = { kind: "dialog", control: "Close help", name: "Archive help panel", controlName: "Close help panel", wayOut: "way-out.1c2d", wayOutDefinitionId: "test.output.press" };
+const PANEL: AutomationStudioClearedLayer = { kind: "other", control: "Close help", name: "Archive help panel", controlName: "Close help panel", wayOut: "way-out.1c2d", wayOutDefinitionId: "test.output.press" };
 
 describe("a handler learned for a closed layer", () => {
   it("is scoped to the part, not to the step the layer was first met at", () => {
@@ -26,5 +26,28 @@ describe("a handler learned for a closed layer", () => {
     expect(automationStudioInterruptionHandlerPatch({ graph, nodeId: "read", layer: PANEL, handle: "t3" })).toBeUndefined();
     // A different layer still gets its own.
     expect(automationStudioInterruptionHandlerPatch({ graph, nodeId: "open", layer: { ...PANEL, name: "Cookie notice" }, handle: "t4" })).toBeDefined();
+  });
+});
+
+describe("the fact a learned handler waits by", () => {
+  it("is the obstruction fact for a layer that carried an id, else dialog, and records the id", () => {
+    const withId = automationStudioInterruptionHandlerPatch({ graph: inRunRepairGraph(), nodeId: "read", layer: { ...PANEL, id: "help-1" }, handle: "t3" });
+    expect(withId?.when).toEqual([{ fact: "obstruction", op: "visible", value: "Archive help panel" }]);
+    expect(withId?.completionCheck).toEqual([{ fact: "obstruction", op: "absent", value: "Archive help panel" }]);
+    expect(withId?.metadata).toMatchObject({ layerId: "help-1" });
+    const without = automationStudioInterruptionHandlerPatch({ graph: inRunRepairGraph(), nodeId: "read", layer: PANEL, handle: "t3" });
+    expect(without?.when).toEqual([{ fact: "dialog", op: "visible", value: "Archive help panel" }]);
+    expect(without?.metadata).not.toHaveProperty("layerId");
+  });
+
+  it("treats a handler waiting by either fact as already answering the layer", () => {
+    const scope = { kind: "subflow", inherit: false };
+    const old = inRunRepairGraph();
+    old.nodes.push({ id: "h.old", definitionId: "builtin.control.handler", parameterValues: { scope, when: [{ fact: "dialog", op: "visible", value: "Archive help panel" }] } });
+    expect(automationStudioInterruptionHandlerPatch({ graph: old, nodeId: "read", layer: { ...PANEL, id: "help-1" }, handle: "t3" })).toBeUndefined();
+    const keyed = inRunRepairGraph();
+    keyed.nodes.push({ id: "h.id", definitionId: "builtin.control.handler", parameterValues: { scope, when: [{ fact: "obstruction", op: "visible", value: "Archive help panel" }] } });
+    expect(automationStudioInterruptionHandlerPatch({ graph: keyed, nodeId: "read", layer: PANEL, handle: "t3" })).toBeUndefined();
+    expect(automationStudioInterruptionHandlerPatch({ graph: keyed, nodeId: "read", layer: { ...PANEL, name: "Cookie notice" }, handle: "t4" })).toBeDefined();
   });
 });

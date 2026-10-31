@@ -28,7 +28,8 @@ import type { AutomationStudioRuntimeAddHandlerPatch, AutomationStudioRuntimePat
 export function automationStudioLayerHandlerPatch(input: {
   scope: AutomationStudioRuntimePatchHandlerScope;
   shown: AutomationStudioFactCondition;
-  gone: AutomationStudioFactCondition;
+  /** What proves the layer gone; absent for a handler that writes no check (a close a trial learned, `./trial.ts`). */
+  gone?: AutomationStudioFactCondition | undefined;
   press: { definitionId: string; label: string; parameters: JsonObject };
   reason: string;
   metadata: JsonObject;
@@ -38,7 +39,7 @@ export function automationStudioLayerHandlerPatch(input: {
     event: "before",
     scope: structuredClone(input.scope),
     when: [structuredClone(input.shown)],
-    completionCheck: [structuredClone(input.gone)],
+    ...(input.gone ? { completionCheck: [structuredClone(input.gone)] } : {}),
     steps: [{ definitionId: input.press.definitionId, label: input.press.label, parameters: structuredClone(input.press.parameters) }],
     then: { kind: "resume" },
     consequences: [],

@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 4329
-- Class: 150
+- Public declarations: 4343
+- Class: 151
 - Interface: 10
-- Object: 559
-- Type: 2305
+- Object: 560
+- Type: 2313
 - Type Alias: 1
-- Value: 1304
+- Value: 1308
 
 ## Public Declarations
 
@@ -559,6 +559,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_TARGET_SCALE` | Object | `packages/fluxiq/src/programs/automation-studio/testing/scale-fixtures.ts` | - |
 | `AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY` | Object | `packages/fluxiq/src/programs/automation-studio/model/tokens-per-run/tokens-per-run-default-cleared-key.ts` | Written on a Flow whose `trainingModeSettings.budgets.maxTokensPerRun` can no longer be the token cap Core once wrote into every new Flow. Until 2026-09-30 the default Flow settings (`../flows.ts`) carried `maxTokensPerRun: 12000`, which held an unattended recovery to 12,000 tokens and refused a whole page's diagnosis outright. The user's order that day was to remove every limit on what the model is passed: the model's own context window is the only bound on a request, and the run cost ceiling (then $0.25; now `AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by default) the bound on spending. So the default carries no token cap, and a stored Flow that still holds exactly 12,000 has it cleared where it is read (`runtime/service/flow-settings/tokens-per-run-default-migration.ts`). The web settings form never saved 12,000 as a person's choice -- it saved only a value that differed from it -- so a stored 12,000 without this key is always the default. The key says the clearing is done or was never needed: a new Flow is created with it, a cleared Flow is given it, and the settings form writes it on every save, so a 12,000 a person sets from now on is theirs and stays. |
 | `AUTOMATION_STUDIO_TRANSIENT_STATUSES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/transient-status.ts` | The statuses the runtime retries by default, for a caller that needs the list rather than the question. |
+| `AUTOMATION_STUDIO_TRIAL_CLOSE_LEARNED_FROM` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/trial.ts` | What a handler learned from a trial says it came from. |
 | `AUTOMATION_STUDIO_TRIAL_EVIDENCE_ASSERTION_OUTCOMES` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | How one checked assertion came out. `unverified` means its evidence was unavailable. |
 | `AUTOMATION_STUDIO_TRIAL_EVIDENCE_ORIGINS` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | Where the evidence behind a result came from. `recorded`: traces of what Core received during an earlier live run. `pure_computation`: computed from data already held, with no observation. `live`: observed in a live run now. `modeled`: synthetic or modeled input. `snapshot_evaluation`: a changed read answered by evaluating it against a page snapshot the trace recorded (P5), not by anything the recorded run observed for it; never live. |
 | `AUTOMATION_STUDIO_TRIAL_EVIDENCE_PROVENANCES` | Object | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/vocabulary.ts` | Whether a result is the record its trial produced (`original`) or a copy that left Core and came back through export and re-ingest (`derived`). |
@@ -874,7 +875,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioCheckpointRouteMarker` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts` | A handler's route to a checkpoint in a calling frame (C5), carried up by each Call Subflow attempt until that frame moves to `nodeId`. Ids only. |
 | `AutomationStudioChunkEvent` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/event-chunk-store.ts` | - |
 | `AutomationStudioClearedLayer` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/cleared-layer.ts` | One layer the client closed: its kind, and `control`, the words of the dismiss control it pressed ("Not now"), whitespace-collapsed, with token-shaped runs hidden and held to 40 characters. `control` stays in the trace; the chat never shows it. |
-| `AutomationStudioClearedLayerKind` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/cleared-layer.ts` | What a layer the client closed was: a consent notice, a rate-limit notice, a promotion, an assistant or chat widget, or `dialog` for a layer no classifier named. A closed vocabulary; a robot check is never closed. |
+| `AutomationStudioClearedLayerKind` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/cleared-layer.ts` | What a layer over the page was, in Core's generic words (header). A closed vocabulary; a robot check is never closed. |
 | `AutomationStudioClearReusableLlmContextScopeRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/llm.ts` | - |
 | `AutomationStudioClientGatewayBridge` | Class | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts` | - |
 | `AutomationStudioClientGatewayBridgeOptions` | Type | `packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts` | - |
@@ -1080,6 +1081,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioDomainBuildStateRefusal` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/domain-build-state/refusal.ts` | - |
 | `AutomationStudioDomainBuildStateScope` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/domain-build-state/types.ts` | Where a domain's value lives: one Flow, and within it one build or none. `buildId` absent means flow-scoped -- a value that outlives one build into later builds and runs of the same Flow. Present, it is the evidence build scope's `buildId` (`../llm/harness-options/evidence-build-scope.ts`): the build record's id, or the run's for a recovery exploration. |
 | `AutomationStudioDomainBuildStateStore` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/domain-build-state/store.ts` | - |
+| `AutomationStudioDroppedLayerHandler` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/dropped-handler.ts` | One handler left out of a submission, and why. |
+| `automationStudioDroppedLayerHandlerAdvice` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/dropped-handler-advice.ts` | - |
 | `AutomationStudioEffectCheckResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/effect-check.ts` | What the effect check answered about a lasting act whose outcome was uncertain. |
 | `AutomationStudioEffectiveInstructionSet` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts` | - |
 | `AutomationStudioElementMatcher` | Type | `packages/fluxiq/src/programs/automation-studio/fingerprinting/element-fingerprint.ts` | - |
@@ -1152,8 +1155,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioExplorationUnusableDecisionError` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/unusable-decision.ts` | - |
 | `automationStudioExploredEvidenceHandle` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/explored-evidence-label.ts` | - |
 | `automationStudioExploredEvidenceLabel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/explored-evidence-label.ts` | - |
-| `AutomationStudioExploredInterruption` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-interruptions.ts` | One explored press that cleared a layer covering the page (header). |
+| `AutomationStudioExploredInterruption` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-interruptions.ts` | One recorded close: an explored press, or a layer a trial pass met (header). |
 | `AutomationStudioExploredInterruptions` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-interruptions.ts` | Every explored press the domain answered as clearing a layer, oldest first (header). |
+| `AutomationStudioExploredPace` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/learned-paces.ts` | One step a trial slowed down, by its identity, and the pace it was raised to (header). |
+| `AutomationStudioExploredPress` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-interruptions.ts` | One explored press that cleared a layer covering the page (header). |
 | `AutomationStudioExploredToggles` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-toggles.ts` | Every explored press the domain answered as a toggle, oldest first (header). |
 | `AutomationStudioFactEvaluationContext` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/host-runtime.ts` | What Core hands the host beside a batch of fact conditions (state-aware recovery plan, C9): the frame's bound inputs and the run's values a condition's `{ input }` or `{ value }` compares with, and the node and attempt the boundary is at. The host resolves those bindings from here and never looks a value up itself. |
 | `AutomationStudioFailedStepRepairPort` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/step-failure-decision.ts` | The port the verification calls for a run that failed at a step. It answers the run with the attempt recorded and whether the Flow was changed, or nothing when the run was not routed -- in which case nothing was written and the failed run stands exactly as the ladder left it. |
@@ -1779,8 +1784,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLargeProjectFixture` | Type | `packages/fluxiq/src/programs/automation-studio/model/fixtures/large-project.ts` | - |
 | `AutomationStudioLargeProjectFixtureOptions` | Type | `packages/fluxiq/src/programs/automation-studio/model/fixtures/large-project.ts` | - |
 | `AutomationStudioLastingActCheck` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/effect-check.ts` | The caller's own check of whether a lasting act took effect, asked only after an attempt whose failure left that unknown: `landed`, `not_landed` (it did not happen, so making it again is not a second act) or `unknown`. |
+| `automationStudioLayerFact` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/trial.ts` | - |
 | `automationStudioLayerHandlerPatch` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/patch.ts` | - |
 | `AutomationStudioLazySqliteUiCacheStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/ui-cache-store.ts` | - |
+| `AutomationStudioLearnedPaces` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/learned-paces.ts` | Every step a trial slowed down, with the pace it was raised to (header). |
 | `AutomationStudioLegacyBackup` | Type | `packages/fluxiq/src/programs/automation-studio/model/legacy-retirement.ts` | - |
 | `AutomationStudioLegacyBackupManifest` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts` | - |
 | `AutomationStudioLegacyBackupVerification` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts` | - |
@@ -2093,6 +2100,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioObjectSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/file-store.ts` | - |
 | `AutomationStudioObjectWriteOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts` | - |
 | `AutomationStudioObservation` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/adapters.ts` | - |
+| `AutomationStudioObstruction` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/obstruction.ts` | The obstruction an attempt met (header). |
+| `AutomationStudioObstructionIntent` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/obstruction.ts` | What a way out of an obstruction does (CC7): closes it, accepts what it asks, or neither. Core presses only `dismiss`, then `neutral`, never `accept`. |
+| `AutomationStudioObstructionWayOut` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/obstruction.ts` | One way out of an obstruction (CC7). |
 | `AutomationStudioOfflineCandidateTrialInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | - |
 | `AutomationStudioOfflineCandidateTrialOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | - |
 | `AutomationStudioOfflineCandidateTrialRan` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/contracts.ts` | - |
@@ -2158,11 +2168,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioPersonNeededStep` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/person-needed.ts` | What the executor does about one failed attempt, as far as a person is concerned. |
 | `automationStudioPersonNeededToolCalls` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/parking/person-needed-tool-calls.ts` | - |
 | `AutomationStudioPersonNeededToolCalls` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/parking/person-needed-tool-calls.ts` | - |
+| `AutomationStudioPlanControlState` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/binding.ts` | A stateful control as one view showed it (CC9). Every field is the domain's and opaque to Core, which compares and passes them back and never reads inside: `state`, a short word for the state it showed; `ensures`, the domain's own toggle signature a press of it would leave from that state, in the form its press node takes as `ensureState`; `idempotentWith`, the node that sets the asked state itself, where the domain's library has one. |
 | `automationStudioPlanDetails` | Value | `packages/fluxiq/src/programs/automation-studio/storage/query-plan.ts` | - |
 | `AutomationStudioPlanFactTargetSite` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/plan-fact-targets.ts` | A fact condition whose target names a handle, and where it sits in the plan. |
 | `automationStudioPlanFactTargetSites` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/plan-fact-targets.ts` | - |
 | `AutomationStudioPlanHandleReach` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/binding.ts` | Which views a plan node's handles may resolve from (`resolvePlanNodeParameters`, `handleReach`). |
-| `AutomationStudioPlanHandleView` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/binding.ts` | The view one handle of a resolved node came from, as the domain numbers its captures (from 1, in the order exploration took them), and the location that view reported. A record of where a candidate's target was learned, never authority to act. |
+| `AutomationStudioPlanHandleView` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/binding.ts` | The view one handle of a resolved node came from, as the domain numbers its captures (from 1, in the order exploration took them), and the location that view reported. A record of where a candidate's target was learned, never authority to act. `control` (P6, client contract CC9, t799): what that view showed of the control itself, when the domain could tell it switches between states. Absent, the control is taken as stateless, as before. |
 | `automationStudioPlanMetadataFactHandlePaths` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/plan-fact-targets.ts` | - |
 | `automationStudioPlannedRetryWait` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/planned-retry-wait.ts` | - |
 | `AutomationStudioPlanNodeHandleSite` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/plan-node-handles.ts` | Where a handle is named inside a node's parameters, and which one. |
@@ -2948,7 +2959,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioTrialEvidenceSupport` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | What the trial's evidence could support. |
 | `AutomationStudioTrialEvidenceValidation` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | The validator's answer: the normalized result, or every issue found. |
 | `AutomationStudioTrialEvidenceVerdict` | Type | `packages/fluxiq/src/programs/automation-studio/model/offline-trial/types.ts` | - |
+| `AutomationStudioTrialInterruption` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/explored-interruptions.ts` | One layer a trial pass met and the run closed (header). |
 | `AutomationStudioTrialLatestRead` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | The latest read a ledger holds of one place: its reading, the domain's opaque state of that page, whether no lasting call or trial landed since (`fresh`), and its order among the ledger's reads (`seq`). |
+| `automationStudioTrialLayerHandlerPatch` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/trial.ts` | - |
 | `AutomationStudioTrialLeftAct` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | An act of this build in place at the trial's start, in the words of what it did. |
 | `AutomationStudioTrialLoggedRead` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One read a ledger logged for trial readings (`./read-log.ts`), with the ledger clock when it landed and its order. |
 | `AutomationStudioTrialNotRun` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/trial-change/contracts.ts` | One step of a trial not run on some passes, as a part's proof names it (t796, the trial's act ledger, `../../service/candidate-trial/act-ledger.ts`): its node and label, why (`guarded`: a guard routed past it because the optional step it runs only after, `after` by its label, was skipped; `unreached`: the pass never got to it), the passes it was not run on, and `of`, its repeat's passes (absent outside a repeat, where `passes` is `[1]`). |
@@ -4252,6 +4265,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `stepSkip` | Value | `packages/fluxiq/src/ui/activity-status/step-skip.ts` | - |
 | `StopClientRecordingRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/client.ts` | - |
 | `StopProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts` | - |
+| `subflowWaitsForLayer` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/layer-handlers/waits-for-layer.ts` | - |
 | `subscribeFluxIQPerformanceMetrics` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
 | `summarizeAutomationStudioRunResult` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/result-summary.ts` | - |
 | `summarizeAutomationStudioRuntimeRecoveryContext` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/context-summary.ts` | - |

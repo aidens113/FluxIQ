@@ -64,7 +64,7 @@ describe("a passed trial the site asked to slow down", () => {
 
     expect(evidence.verdict).toBe("yes");
     expect(String(evidence.instruction)).not.toContain("Complete now");
-    expect(String(evidence.instruction)).toContain("repeat pace:");
+    expect(String(evidence.instruction)).toContain("Core sets its pace to at least 5.5 s itself");
     expect(String(evidence.instruction)).toContain("5.5 s");
     expect(String(evidence.instruction)).toContain("t30");
     expect(String(evidence.instruction)).toContain("builtin.timing.wait");

@@ -13,16 +13,22 @@ const MERGE_NODE_ID = "builtin.control.merge";
 
 /** What the model is told when a passed trial met a slow-down the Flow does not answer yet (header). */
 function instruction(unhandled: readonly JsonObject[]): string {
+  const modelHasWork: boolean[] = [];
   const said = unhandled.map((entry) => {
-    const needs: string[] = [];
-    if (typeof entry.paceAtLeastMs === "number") needs.push(`\`repeat pace:\` of at least ${seconds(entry.paceAtLeastMs)} on the first step of the span it repeats in`);
+    const asks: string[] = [];
     if (typeof entry.wayOut === "string" && typeof entry.waitAtLeastMs === "number") {
-      needs.push(`right after it, inside the span, an \`optional: yes\` step that presses ${entry.wayOut}, and directly after that a \`builtin.timing.wait\` step with \`only after:\` naming it that waits at least ${seconds(entry.waitAtLeastMs)}, so a pass that meets the notice dismisses it, waits and goes on with the loop (or one handler covering the step that does the same)`);
+      asks.push(`right after it, inside the span, an \`optional: yes\` step that presses ${entry.wayOut}, and directly after that a \`builtin.timing.wait\` step with \`only after:\` naming it that waits at least ${seconds(entry.waitAtLeastMs)}, so a pass that meets the notice dismisses it, waits and goes on with the loop (or one handler covering the step that does the same)`);
     }
+    modelHasWork.push(asks.length > 0);
     const label = typeof entry.label === "string" ? ` (${JSON.stringify(entry.label)})` : "";
-    return `${typeof entry.step === "number" ? `Step ${entry.step}` : "A step"}${label} needs ${needs.join(", and ")}.`;
+    const name = `${typeof entry.step === "number" ? `Step ${entry.step}` : "A step"}${label}`;
+    // Core writes a pace itself (`../learned-paces.ts`, P6 CC8); what it cannot write, the model still does.
+    const pace = typeof entry.paceAtLeastMs === "number" ? `Core sets its pace to at least ${seconds(entry.paceAtLeastMs)} itself when the whole candidate is submitted again, so write no \`repeat pace:\` for it` : "";
+    const asked = asks.length ? `it${pace ? " also" : ""} needs ${asks.join(", and ")}` : "";
+    return `${name}: ${[pace, asked].filter(Boolean).join("; ")}.`;
   });
-  return `The trial passed, but the site asked the run to slow down, and this Flow does not answer that itself yet, so this revision cannot complete. ${said.join(" ")} Change the Flow, submit the whole candidate, then test the new revision, and complete only after a yes for it.`;
+  const next = modelHasWork.some(Boolean) ? "Change the Flow, submit the whole candidate, then test the new revision" : "Submit the whole candidate again, then test the new revision";
+  return `The trial passed, but the site asked the run to slow down, and this Flow does not answer that itself yet, so this revision cannot complete. ${said.join(" ")} ${next}, and complete only after a yes for it. A pace is written for a step as the trial ran it; if you change that step, the next trial has to learn its pace again.`;
 }
 
 /** One step a trial listed, with the paces the run learned for it; a learned pace whose step is not listed stands alone. */
