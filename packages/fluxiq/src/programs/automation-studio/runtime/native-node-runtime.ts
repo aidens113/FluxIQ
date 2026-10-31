@@ -1,7 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../model/index.ts";
-import { AutomationStudioImporterSdkRegistry, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
+import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort } from "../nodes/contracts.ts";
 import { automationStudioReferenceNow } from "./reference-now/index.ts";
 
@@ -66,6 +66,21 @@ export class AutomationStudioNativeNodeRuntime {
   }
 
   getDefinition(nodeId: string): AutomationStudioNodeDefinition | undefined { return this.sdk.nodes.get(nodeId); }
+  /** Only registered canonical definitions supply the runtime floor. */
+  resolveActionEffect(node: AutomationStudioFlowNode, parameterValues: Readonly<Record<string, unknown>> = node.parameterValues ?? {}): AutomationStudioResolvedActionEffect | undefined {
+    const definition = this.getDefinition(node.definitionId);
+    const own = definition ? resolveAutomationStudioNodeActionEffect(definition, parameterValues) : undefined;
+    if (node.definitionId !== "builtin.policy.action" || typeof parameterValues.outputId !== "string") return own;
+    const outputId = parameterValues.outputId.trim();
+    if (!outputId) return own;
+    const payload = parameterValues.parameters;
+    const parameters = payload && typeof payload === "object" && !Array.isArray(payload) && !isAutomationNodeParameterStateBinding(payload) ? payload as Readonly<Record<string, unknown>> : undefined;
+    const matches = this.listDefinitions().filter((candidate) => candidate.outputAction?.fixedOutputId === outputId || candidate.outputAction?.allowedOutputIds?.includes(outputId));
+    return combineAutomationStudioResolvedActionEffects([
+      own,
+      ...matches.map((candidate) => resolveAutomationStudioNodeActionEffect(candidate, parameters ?? (payload === undefined ? {} : Object.fromEntries(candidate.parameters.map((parameter) => [parameter.id, undefined])))))
+    ]);
+  }
   listDefinitions(): AutomationStudioNodeDefinition[] { return this.sdk.list().flatMap((manifest) => manifest.nodes); }
   getRuntimeCapabilities(): string[] { return [...this.grants.runtimeCapabilities]; }
   getRegistryResolution(scope: AutomationStudioFlowScope): AutomationStudioNodeRegistryResolution {
@@ -83,17 +98,19 @@ export class AutomationStudioNativeNodeRuntime {
 
   async execute(node: AutomationStudioFlowNode, inputs: Record<string, JsonValue>, signal?: AbortSignal, hostContext?: AutomationStudioNativeNodeContext["host"]): Promise<AutomationStudioNativeExecution | undefined> {
     const definition = this.getDefinition(node.definitionId); if (!definition || (definition.source.kind !== "importer" && definition.source.kind !== "code")) return undefined;
-    if (node.definitionVersion && node.definitionVersion !== definition.version) return failed(`Node ${definition.id} requires definition version ${node.definitionVersion}, but ${definition.version} is bound.`);
-    const binding = this.bindings.get(definition.id); if (!binding) return failed(`No trusted-local implementation is bound for ${definition.id}.`);
-    const denied = deniedRequirement(definition, this.grants); if (denied) return failed(`Native node ${definition.id} was denied ${denied}.`);
+    if (node.definitionVersion && node.definitionVersion !== definition.version) return failed(`Node ${definition.id} requires definition version ${node.definitionVersion}, but ${definition.version} is bound.`, true);
+    const binding = this.bindings.get(definition.id); if (!binding) return failed(`No trusted-local implementation is bound for ${definition.id}.`, true);
+    const denied = deniedRequirement(definition, this.grants); if (denied) return failed(`Native node ${definition.id} was denied ${denied}.`, true);
+    const actionEffect = this.resolveActionEffect(node);
     const controller = new AbortController(); const abort = () => controller.abort(signal?.reason); signal?.addEventListener("abort", abort, { once: true }); if (signal?.aborted) controller.abort(signal.reason);
     const logs: AutomationStudioNativeLogEntry[] = [];
     const timeoutMs = readPositiveNumber(node.metadata?.timeoutMs) ?? 30_000;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const isolatedInputs = Object.fromEntries(definition.inputs.flatMap((port) => inputs[port.id] === undefined ? [] : [[port.id, inputs[port.id]]])) as Record<string, JsonValue>;
-      const host = hostContext ? { ...hostContext, capabilityIds: [...hostContext.capabilityIds] } : undefined;
+      const host = hostContext || actionEffect ? { ...hostContext, capabilityIds: [...(hostContext?.capabilityIds ?? [])], sideEffectClass: hostContext?.sideEffectClass ?? "none" } : undefined;
       if (host) {
+        if (actionEffect && actionEffect.effectClass !== "observe" && (host.sideEffectClass === "none" || host.sideEffectClass === "internal")) host.sideEffectClass = "external";
         const referenceNow = automationStudioReferenceNow(host.referenceNow);
         if (referenceNow === undefined) delete host.referenceNow;
         else host.referenceNow = referenceNow;
@@ -135,6 +152,10 @@ function validateResultBoundary(definition: AutomationStudioNodeDefinition, resu
 }
 function redactLog(entry: AutomationStudioNativeLogEntry): AutomationStudioNativeLogEntry { return { level: entry.level, message: entry.message.slice(0, 2_000), ...(entry.data ? { data: redactObject(entry.data) } : {}) }; }
 function redactObject(value: JsonObject): JsonObject { return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, /secret|token|password|credential|authorization/i.test(key) ? "[REDACTED]" : item])) as JsonObject; }
-function failed(message: string): AutomationStudioNativeExecution { return { result: { status: "failed", route: "failed", outputs: { error: message } }, logs: [] }; }
+function failed(message: string, unacted = false): AutomationStudioNativeExecution {
+  const result: AutomationNodeExecutionResult = { status: "failed", route: "failed", outputs: { error: message } };
+  if (unacted) result.failure = { category: "graph_validation_or_unknown_node", code: "executor.native.refused", retryable: false, stage: "dispatch", effect: "unacted" };
+  return { result, logs: [] };
+}
 function readPositiveNumber(value: unknown): number | undefined { return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined; }
 function validateExtensionBindings(label: string, definitions: Array<{ id: string }> | undefined, implementations: Record<string, unknown> | undefined): void { const declared = new Set((definitions ?? []).map((item) => item.id)); const bound = new Set(Object.keys(implementations ?? {})); for (const id of bound) if (!declared.has(id)) throw new Error(`Implementation ${id} is not declared as an importer ${label}.`); for (const id of declared) if (!bound.has(id)) throw new Error(`Missing importer ${label} implementation ${id}.`); }

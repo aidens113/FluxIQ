@@ -1,4 +1,5 @@
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../model/index.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../nodes/index.ts";
 import { hostExpectationEvaluator } from "../host-runtime.ts";
 import { AUTOMATION_STUDIO_LADDER_RUNG_KINDS, type AutomationStudioGraphExecutionOptions, type AutomationStudioLadderRungKind, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryDecision } from "./contracts.ts";
 import { automationStudioExpectationRequest, automationStudioNodeReadinessState, automationStudioReadinessCeilingMs, automationStudioRecordedState } from "./recorded-state.ts";
@@ -32,6 +33,7 @@ export type AutomationStudioLadderRunInput = {
   flow: AutomationStudioFlowDocument;
   node: AutomationStudioFlowNode;
   attempt: AutomationStudioNodeAttemptTrace;
+  actionEffect?: AutomationStudioResolvedActionEffect | undefined;
   failedEdge: AutomationStudioFlowEdge | null;
   options: AutomationStudioGraphExecutionOptions;
   budgetState: { failedAttemptsForAction: number; recoveryAttemptsForSubflow: number; reroutesForRun: number; llmAttemptsForRun: number };
@@ -124,10 +126,10 @@ function ladderState(input: AutomationStudioLadderRunInput, attemptsForNode: num
     attemptsForNode,
     maxAttempts: input.policy.maxAttempts,
     // The node is passed so the policy can refuse to repeat an act on the world.
-    retryable: input.mayAbsorb !== false && automationStudioAttemptIsRetryable(input.attempt, input.node),
+    retryable: input.mayAbsorb !== false && automationStudioAttemptIsRetryable(input.attempt, input.node, input.actionEffect),
     // Nor after a wait or a cleared layer is a lasting act made again when this
     // failure left its outcome unknown: that is still the act repeated (t359).
-    mayRepeat: input.mayAbsorb !== false && (!automationStudioNodeMutates(input.node) || automationStudioNodeRepeatIsSafe(input.node)) && automationStudioAssessAttemptFault(input.attempt, input.node)?.actUncertain !== true,
+    mayRepeat: input.mayAbsorb !== false && (!automationStudioNodeMutates(input.node, input.actionEffect) || automationStudioNodeRepeatIsSafe(input.node, input.actionEffect)) && automationStudioAssessAttemptFault(input.attempt, input.node, 0, input.actionEffect)?.actUncertain !== true,
     expectationSatisfied: automationStudioExpectationSatisfiedAfterFailure(input.attempt.transitionComparison),
     // Waiting again is only worth offering when the run did not already see the
     // state before it attempted: if readiness held and the node still failed,

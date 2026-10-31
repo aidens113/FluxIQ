@@ -1,10 +1,10 @@
 // A lasting press or plan step and the notes Core gives it about its witness (t791 fixes 2 and 3),
 // split from action-permissions.test.ts when that file passed its line budget.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioActionDeclaration } from "../../action-permissions/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../action-permissions.ts";
-import { AutomationStudioSiteResetLedger } from "../site-reset/index.ts";
+import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetCalls } from "../site-reset/index.ts";
 
 // The notes a lasting step or press is given about its witness (t791 fixes 2 and 3): a press that names a ref showing nothing
 // of its change says so beside its answer, and a plan step with no witness is noted for its submission with the refs of its own
@@ -60,5 +60,59 @@ describe("the notes about a witness", () => {
     // The same node resolved again with a witness is no longer noted.
     await step("main.s1", { name: "Keep", kind: "button", subject: "s:atlas", item: "i:atlas", scope: "p:shelf-a", resource: TAB_A });
     expect(permissions.planStep.gaps?.().has("main.s1")).toBe(false);
+  });
+});
+
+describe("a trusted client floor at the bootstrap reset boundary", () => {
+  const ACTION: AutomationStudioActionDeclaration = {
+    effect: "observe", consequences: [], actionEffect: { effectClass: "commit", permissionConsequences: ["modify_existing"] },
+    control: { name: "Keep", kind: "button", place: "c:keep", state: "s:off", scope: "p:shelf" }, verb: "press"
+  };
+
+  it("keeps the project original-state precondition when the model says observe and none", async () => {
+    let effects = 0;
+    const permissions = automationStudioFlowBootstrapActionPermissions({
+      authoringMode: "project", permittedConsequences: [], instructionIds: [],
+      executeTool: async (call) => {
+        const answer = await call.permission!(ACTION);
+        if (answer.permitted) effects += 1;
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: answer.permitted }, effectApplied: answer.permitted };
+      }
+    });
+    expect(await permissions.executeTool({ callId: "keep", toolId: "custom.keep", value: {} })).toMatchObject({ resultCode: "candidate.create_baseline_unavailable", effectApplied: false });
+    expect(effects).toBe(0);
+  });
+
+  it("puts the effective union to the witness admission and returns its actual stamp", async () => {
+    const admitStep = vi.fn<NonNullable<AutomationStudioSiteResetCalls["admitStep"]>>(() => ({ via: "control" }));
+    const siteReset: AutomationStudioSiteResetCalls = {
+      claim: () => ({ kind: "none" }), target: () => ({ kind: "admit", on: "own", allowed: [] }), explored: () => undefined, admitStep
+    };
+    const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: [], instructionIds: [], siteReset, executeTool: async () => ({}) });
+    const stamped: unknown[] = [];
+    expect(await permissions.planStep({ definitionId: "demo.keep", ref: "main.keep", witnessed: (stamp) => stamped.push(stamp) })(ACTION)).toEqual({ permitted: true });
+    expect(admitStep).toHaveBeenCalledWith({ effect: "mutate", consequences: ["modify_existing"], control: { name: null, kind: null, place: "c:keep", state: "s:off", scope: "p:shelf" } }, "demo.keep", { ref: "main.keep" });
+    expect(stamped).toEqual([{ via: "control" }]);
+    expect(permissions.declarations()[0]).toMatchObject({ action: { effect: "mutate" }, consequences: ["modify_existing"], permitted: true });
+  });
+
+  it("keeps a refused inverse target unacted and shows its client classes to the ledger", async () => {
+    const target = vi.fn<AutomationStudioSiteResetCalls["target"]>(() => ({ kind: "refused", evidence: { code: "candidate.undo_unrelated" } }));
+    const siteReset: AutomationStudioSiteResetCalls = {
+      claim: () => ({ kind: "undo", undo: { act: "own-act", allowed: ["modify_existing"] } }), target, explored: () => undefined
+    };
+    let effects = 0;
+    const permissions = automationStudioFlowBootstrapActionPermissions({
+      permittedConsequences: [], instructionIds: [], siteReset,
+      executeTool: async (call) => {
+        const answer = await call.permission!(ACTION);
+        if (answer.permitted) effects += 1;
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: answer.permitted }, effectApplied: answer.permitted };
+      }
+    });
+    expect(await permissions.executeTool({ callId: "undo", toolId: "custom.keep", value: { undoes: "own-act" } })).toMatchObject({ resultCode: "candidate.undo_unrelated", effectApplied: false });
+    expect(target).toHaveBeenCalledWith("own-act", { effect: "mutate", consequences: ["modify_existing"], control: { place: "c:keep", state: "s:off", scope: "p:shelf" } });
+    expect(effects).toBe(0);
+    expect(permissions.declarations()).toEqual([]);
   });
 });

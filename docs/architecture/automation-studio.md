@@ -2554,6 +2554,9 @@ nor a change proposal.
 
 ## Canonical Node Definition Foundation
 
+The optional trusted client effect contract and its retry/permission boundary
+are described in [Trusted client action effects](automation-studio/client-action-effects.md).
+
 New Flow authoring uses `AutomationStudioNodeDefinition` and the scope-aware
 `AutomationStudioNodeRegistry`. The contract describes a node's identity and
 version, display/category metadata, ports, parameters, source, availability,

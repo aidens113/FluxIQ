@@ -2,6 +2,7 @@ import { parseAutomationStudioRecordsPath } from "@fluxiq/contracts/automation-s
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowScope } from "../model/flows.ts";
 import type { AutomationStudioValidationIssue, AutomationStudioValidationResult } from "../model/validation.ts";
+import { resolveAutomationStudioNodeActionEffect, type AutomationStudioNodeActionEffect } from "./action-effect/index.ts";
 import type {
   AutomationNodeClass,
   AutomationNodeDefinition,
@@ -77,6 +78,8 @@ export type AutomationStudioNodeDefinition = {
   capabilities: AutomationStudioNodeCapabilities;
   requiredRuntimeCapabilities?: string[];
   safety?: AutomationStudioNodeSafety;
+  /** Trusted client floor; free metadata and model claims cannot lower it. */
+  actionEffect?: AutomationStudioNodeActionEffect;
   outputAction?: AutomationStudioNodeOutputActionContract;
   inputs: AutomationNodePort[];
   outputs: AutomationNodePort[];
@@ -158,6 +161,11 @@ export function validateAutomationStudioNodeDefinition(definition: AutomationStu
   validatePorts(definition.inputs, issues, "inputs");
   validatePorts(definition.outputs, issues, "outputs");
   validateParameters(definition.parameters, issues);
+  try {
+    resolveAutomationStudioNodeActionEffect(definition);
+  } catch {
+    issue(issues, "node.invalid_action_effect", "Node actionEffect must declare a known class, known consequences and a declared boolean predicate.", "actionEffect");
+  }
   if (definition.safety?.requiredPermissions?.some((permission) => !permission.trim())) {
     issue(issues, "node.invalid_required_permission", "Node requiredPermissions cannot contain empty values.", "safety.requiredPermissions");
   }

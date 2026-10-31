@@ -39,6 +39,7 @@
 
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import { readAutomationStudioResolvedActionEffect, type AutomationStudioResolvedActionEffect } from "../../../nodes/action-effect/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import { automationStudioAssessAttemptFault, automationStudioBoundedRetryWaitMs, automationStudioFaultNotLanded, automationStudioRunEffectCheck, type AutomationStudioFaultAssessment, type AutomationStudioLastingActCheck } from "../defensive/index.ts";
 import { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioRetryBackoffMs } from "../retry-policy.ts";
@@ -105,6 +106,8 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
    * `metadata.effect` (`"mutate"` or `"observe"`) where the caller knows it.
    */
   node: AutomationStudioFlowNode;
+  /** Resolved floor supplied by the trusted dispatching client, never node metadata. */
+  actionEffect?: AutomationStudioResolvedActionEffect | undefined;
   /**
    * Whether a lasting act whose failure left its effect unknown took effect
    * after all. Without one, such an act ends `uncertain` and is not made again.
@@ -123,6 +126,7 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
   now?: () => number;
 }): Promise<AutomationStudioNodeRetryOutcome<T>> {
   const policy = AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY;
+  const actionEffect = input.actionEffect === undefined ? undefined : readAutomationStudioResolvedActionEffect(input.actionEffect);
   const now = input.now ?? Date.now;
   const delay = input.delay ?? unreferencedDelay;
   const faults: AutomationStudioFaultAssessment[] = [];
@@ -138,10 +142,10 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
     const startedAt = now();
     const result = await dispatch(attempt);
     const reading = input.read(result);
-    if (reading.ok || !reading.failure) return ended(result, attempt);
+    if (reading.ok || (!reading.failure && actionEffect?.effectClass !== "commit")) return ended(result, attempt);
     const traced = failedAttempt(input.node, attempt, startedAt, reading.failure, repress);
-    const assessed = automationStudioAssessAttemptFault(traced, input.node, now());
-    repress = reading.failure.certainNoEffect === true;
+    const assessed = automationStudioAssessAttemptFault(traced, input.node, now(), actionEffect);
+    repress = reading.failure?.certainNoEffect === true;
     // A lasting act whose failure left its effect unknown is checked, never blindly repeated (t359).
     const settled = assessed?.actUncertain ? await automationStudioRunEffectCheck(input.checkEffect, result, attempt) : undefined;
     if (assessed && (settled === "landed" || settled === "unknown")) {
@@ -162,6 +166,7 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
     if (input.signal?.aborted) return ended(result, attempt);
     // Immediately before the attempt it comes before, once, on a target lost without acting (t786).
     if (!input.reacquire || reacquire || attempt + 1 !== reacquireBefore || !automationStudioStaleTargetFailure(traced)) continue;
+    if (!reading.failure) continue;
     const found = await askReacquire(input.reacquire, { failure: reading.failure, attempt: attempt + 1, signal: input.signal });
     reacquire = found.outcome;
     if (found.outcome === "gone") return ended(found.result, attempt);
@@ -186,8 +191,9 @@ async function askReacquire<T>(
 }
 
 /** The attempt as the graph executor would have traced it, which is all the assessment reads; `repress` as `retry.repress` marks it. */
-function failedAttempt(node: AutomationStudioFlowNode, attempt: number, startedAt: number, failure: AutomationStudioFailureRecord, repress: boolean): AutomationStudioNodeAttemptTrace {
-  const traced: AutomationStudioNodeAttemptTrace = { attemptId: `${node.id}.attempt.${attempt}`, nodeId: node.id, definitionId: node.definitionId, startedAt, status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], failure };
+function failedAttempt(node: AutomationStudioFlowNode, attempt: number, startedAt: number, failure: AutomationStudioFailureRecord | undefined, repress: boolean): AutomationStudioNodeAttemptTrace {
+  const traced: AutomationStudioNodeAttemptTrace = { attemptId: `${node.id}.attempt.${attempt}`, nodeId: node.id, definitionId: node.definitionId, startedAt, status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [] };
+  if (failure) traced.failure = failure;
   if (!repress) return traced;
   return { ...traced, retry: { attemptNumber: attempt, maxAttempts: AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.maxAttempts, backoffMs: 0, rung: "retry_node", previousAttemptId: `${node.id}.attempt.${attempt - 1}`, repress: true } };
 }

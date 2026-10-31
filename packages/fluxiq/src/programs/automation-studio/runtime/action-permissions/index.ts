@@ -14,6 +14,8 @@ export * from "./declared.ts";
 export * from "./destructive.ts";
 export * from "./gate.ts";
 export * from "./instructed.ts";
+export * from "./projection.ts";
+export * from "./plan/index.ts";
 export * from "./instruction-quote/index.ts";
 export * from "./instruction-reading/index.ts";
 export * from "./instruction-route/index.ts";

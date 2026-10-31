@@ -28,6 +28,7 @@
 
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
 import { automationStudioNodeRouteSignatures, automationStudioRouteEffectSeen, observeAutomationStudioRouteState } from "../../route-state/passive/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import { automationStudioNodeActLasts } from "../defensive/index.ts";
@@ -63,13 +64,14 @@ export async function automationStudioAttemptWithRecordedEffect(
   flow: Pick<AutomationStudioFlowDocument, "flowId" | "ownerId" | "metadata">,
   node: AutomationStudioFlowNode,
   attempt: AutomationStudioNodeAttemptTrace,
-  options: AutomationStudioGraphExecutionOptions
+  options: AutomationStudioGraphExecutionOptions,
+  actionEffect?: AutomationStudioResolvedActionEffect
 ): Promise<AutomationStudioNodeAttemptTrace> {
   if (attempt.status !== "succeeded" || attempt.skipped || attempt.stateHeld) return attempt;
   // A step with its own expected state -- a `done when:` -- was judged by it already.
   const expectedState = attempt.transitionComparison?.expected.expectedState;
   if (expectedState && Object.keys(expectedState).length > 0) return attempt;
-  if (!automationStudioNodeActLasts(node)) return attempt;
+  if (!automationStudioNodeActLasts(node, actionEffect)) return attempt;
   const effect = automationStudioNodeRouteSignatures(node).effect;
   const hostRuntime = options.hostRuntime;
   if (!effect || !hostRuntime?.routeEffectSeen || !hostRuntime.observeRouteState) return attempt;

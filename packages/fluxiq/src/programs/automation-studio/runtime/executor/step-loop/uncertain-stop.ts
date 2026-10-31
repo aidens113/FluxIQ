@@ -1,7 +1,7 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import { emitAutomationStudioActivityThought } from "../../activity/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../contracts.ts";
-import { automationStudioAssessAttemptFault, automationStudioRunEffectCheck, type AutomationStudioEffectCheckResult } from "../defensive/index.ts";
+import { automationStudioAssessAttemptFault, automationStudioRunEffectCheck, automationStudioStopMessage, type AutomationStudioEffectCheckResult } from "../defensive/index.ts";
 import { automationStudioHostEffectCheck } from "../transition-comparison.ts";
 import { automationStudioRecordDefendedFault } from "./defended-fault.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
@@ -28,6 +28,18 @@ export function automationStudioOutcomeUncertainTrace(ctx: AutomationStudioStepL
   };
 }
 
+/** A child's completed uncertainty check is terminal in every calling frame. */
+export function automationStudioStepChildOutcomeStop(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, attemptIndex: number): AutomationStudioGraphExecutionTrace {
+  const { attempts, runState, now } = ctx;
+  const attempt = attempts[attemptIndex]!;
+  const fault = automationStudioAssessAttemptFault(attempt, node, now(), runState.actionEffects.get(node.id));
+  if (fault) attempts[attemptIndex] = { ...attempt, fault };
+  emitAutomationStudioActivityThought({ phase: "repairing", title: "Outcome uncertain", text: "A child run may already have made a lasting act and could not settle it, so the calling run stops without repeating it or taking another path.", ref: node.id });
+  automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: true, onFail: [] });
+  automationStudioRecordDefendedFault(runState, node.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault, "stopped", 0);
+  return automationStudioOutcomeUncertainTrace(ctx, node.id, automationStudioStopMessage(fault, attempt.message) ?? "Outcome uncertain: a child run could not settle its lasting act.");
+}
+
 /** Why the run stopped, then what the page showed, as a person reads it. */
 const STOPPED = "The step's answer never came back, and a run that must prove every act stops when one cannot be proved.";
 const PAGE_SAYS: Readonly<Record<AutomationStudioEffectCheckResult, string>> = {
@@ -52,12 +64,13 @@ const PAGE_SAYS: Readonly<Record<AutomationStudioEffectCheckResult, string>> = {
  */
 export async function automationStudioStepRequiredOutcomeStop(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, attemptIndex: number): Promise<AutomationStudioGraphExecutionTrace> {
   const { attempts, options, runState, now } = ctx;
-  const result = await automationStudioRunEffectCheck(automationStudioHostEffectCheck(node, options), attempts[attemptIndex]!, ctx.arrival.attempts);
+  const actionEffect = runState.actionEffects.get(node.id);
+  const result = await automationStudioRunEffectCheck(automationStudioHostEffectCheck(node, options, actionEffect), attempts[attemptIndex]!, ctx.arrival.attempts);
   attempts[attemptIndex] = { ...attempts[attemptIndex]!, effectCheck: { result, checkedAt: now() } };
   const reason = `${STOPPED} ${PAGE_SAYS[result]}`;
   emitAutomationStudioActivityThought({ phase: "repairing", title: "Outcome uncertain", text: reason, ref: node.id });
   automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: true, onFail: [] });
-  const fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, node, now());
+  const fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, node, now(), actionEffect);
   automationStudioRecordDefendedFault(runState, node.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault ? { ...fault, reason } : undefined, "stopped", 0);
   return automationStudioOutcomeUncertainTrace(ctx, node.id, `Outcome uncertain: ${reason}`);
 }

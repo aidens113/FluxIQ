@@ -29,7 +29,7 @@ import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 import type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
 import { automationStudioStepFailHandlerInScope, automationStudioStepOnFail } from "./on-fail.ts";
 import { automationStudioStepOnRetry } from "./on-retry.ts";
-import { automationStudioOutcomeUncertainTrace } from "./uncertain-stop.ts";
+import { automationStudioOutcomeUncertainTrace, automationStudioStepChildOutcomeStop } from "./uncertain-stop.ts";
 
 /**
  * Decides what a failed attempt comes to: its fault is assessed and the ladder
@@ -66,6 +66,10 @@ export async function automationStudioStepFailedAttempt(
 ): Promise<AutomationStudioStepOutcome> {
   const { flow, options, runState, now, attempts, values, effects, withholding } = ctx;
   const { node: failedNode, attempt, attemptIndex, regionId, retryPolicy } = step;
+  const actionEffect = runState.actionEffects.get(failedNode.id);
+  if (attempt.childTrace?.status === "failed" && attempt.childTrace.failure?.code === "run.outcome_uncertain") {
+    return { kind: "return", trace: automationStudioStepChildOutcomeStop(ctx, failedNode, attemptIndex) };
+  }
   // An authored stop ends the run with its own reason (C6, "What counts as a
   // true failure"): it is the planned ending of whatever led to it, never a
   // failure of its own, so no incident opens, no rung runs and no model is asked.
@@ -75,7 +79,7 @@ export async function automationStudioStepFailedAttempt(
   // whether this failure may be attempted again and the answer is this
   // assessment. Every fault lands on the run's defence ledger below,
   // whichever way the ladder goes.
-  let fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
+  let fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now(), actionEffect);
   // A failure that asked for a wait raises this node's pace for the rest of the run (`pacing/`), and its attempt says so.
   // Its hint counts from when the refused attempt settled, as the retry wait counts it, not from after its snapshot (t485).
   // A rate limit that stated no wait slows it too, by a growing step (`pacing/rate-limit-pace.ts`, P6 CC8).
@@ -92,18 +96,19 @@ export async function automationStudioStepFailedAttempt(
   await options.commandRun?.checkpoint();
   // C6 step 4: the effect check, before anything below can make the act again or take the run elsewhere.
   if (fault?.actUncertain) {
-    const result = await automationStudioRunEffectCheck(automationStudioHostEffectCheck(failedNode, options), attempts[attemptIndex]!, ctx.arrival.attempts);
+    const result = await automationStudioRunEffectCheck(automationStudioHostEffectCheck(failedNode, options, actionEffect), attempts[attemptIndex]!, ctx.arrival.attempts);
     attempts[attemptIndex] = { ...attempts[attemptIndex]!, effectCheck: { result, checkedAt: now() } };
     await options.commandRun?.checkpoint();
     if (options.signal?.aborted) return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", failedNode.id, "Run cancelled.") };
     if (result !== "not_landed") return settledUncertainAct(ctx, failedNode, attemptIndex, fault, result);
     // Did not land: unacted, so the ladder, the retry floor and every rung below apply as to any unacted fault.
-    fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
+    fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now(), actionEffect);
   }
   const ladder = await runAutomationStudioRecoveryLadder({
     flow,
     node: failedNode,
     attempt: attempts[attemptIndex]!,
+    actionEffect,
     failedEdge,
     options,
     budgetState: recoveryBudgetState(attempts, attemptIndex, failedNode.id, options.currentSubflowId, flow),
@@ -125,7 +130,7 @@ export async function automationStudioStepFailedAttempt(
   });
   const recoveryDecision = ladder.decision;
   // Nor is one that the clear_interference rung cleared and retried: that rung's retry is a repeat of a step that did not run, and the step then works (P6, w1's finding, t774).
-  if (!fault?.actUncertain && !(ladder.kind === "retry" && (automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode) || ladder.rung === "clear_interference"))) settleFailed();
+  if (!fault?.actUncertain && !(ladder.kind === "retry" && (automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode, actionEffect) || ladder.rung === "clear_interference"))) settleFailed();
   // A retry's wait, bounded and with a hint's elapsed time credited, settled before the recovery is worded (`defensive/planned-retry-wait.ts`).
   const settled = attempts[attemptIndex]!;
   const { wait, hint, siteAsked } = automationStudioPlannedRetryWait({
@@ -135,7 +140,7 @@ export async function automationStudioStepFailedAttempt(
   // What the ladder chose, in a person's words. A stop says what happens next,
   // so it is said once that is known: before On Fail when the Flow has a way on
   // from the failure, else where the run goes on, is fixed or ends (t428).
-  const runFacts = { attempts: ctx.arrival.attempts, actUncertain: fault?.actUncertain === true, mayAbsorb, retryable: automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode), test: automationStudioActivityInBuild(), ...siteAsked };
+  const runFacts = { attempts: ctx.arrival.attempts, actUncertain: fault?.actUncertain === true, mayAbsorb, retryable: automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode, actionEffect), test: automationStudioActivityInBuild(), ...siteAsked };
   let said = false;
   const tell = (next?: AutomationStudioRecoveryNext): void => {
     if (said) return;
@@ -197,7 +202,7 @@ export async function automationStudioStepFailedAttempt(
     // whatever the node was for. A Flow does not stop for a node whose
     // failure is not fatal to what the Flow is for, and the continuation
     // rule says which those are and why.
-    const continuation = automationStudioContinuationAfterFailure(flow, failedNode, fault);
+    const continuation = automationStudioContinuationAfterFailure(flow, failedNode, fault, actionEffect);
     if (continuation.continues) {
       runState.defence.continuePast(failedNode.id);
       automationStudioRecordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault ?? continuationFault(continuation.reason), "continued", 0);

@@ -107,6 +107,7 @@ async function resolvePress(
   };
   const result = await resolveAutomationStudioFlowBootstrapPlanParameters({
     plan,
+    resolveActionEffect: input.graphOptions.resolveActionEffect,
     projectId: input.context.projectId,
     flowId: input.context.flowId,
     binding: input.ports.llmEvidenceRuntime,

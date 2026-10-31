@@ -23,6 +23,7 @@ import {
   automationStudioStepAskOrPark,
   automationStudioStepBeforeNext,
   automationStudioStepCheckpointRoute,
+  automationStudioStepChildOutcomeStop,
   automationStudioStepEndFrameIncident,
   automationStudioStepEntry,
   automationStudioStepFailedAttempt,
@@ -416,6 +417,9 @@ async function executeAutomationStudioGraph(
       if (!gone && (!notShown || routing?.kind === "none")) runState.pace.started(node, now());
       // A stale target found again from its source is laid over its binding for this node's remaining attempts.
       const nodeValues = ctx.arrival.overlay ? { ...values, ...ctx.arrival.overlay } : values;
+      // A timeout belongs to this logical pass, even if its timer fires before
+      // the attempt reaches its first checkpoint.
+      runState.dispatchedActions.delete(node.id);
       const executed = gone ?? (notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
         ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState)
         : await executeWithRegionTimeout(
@@ -423,11 +427,12 @@ async function executeAutomationStudioGraph(
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
-          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } }), options.commandRun, options.startTimer
+          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution", effect: runState.dispatchedActions.has(node.id) ? "ambiguous" : "unacted" } }), options.commandRun, options.startTimer
         ));
       // A required command whose outcome stayed unknown latched the run, so no checkpoint is asked before it stops (`step-loop/uncertain-stop.ts`).
       const outcomeUnknown = executed.failure?.code === AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN.code;
-      if (!outcomeUnknown) await options.commandRun?.checkpoint();
+      const childOutcomeUnknown = executed.childTrace?.status === "failed" && executed.childTrace.failure?.code === "run.outcome_uncertain";
+      if (!outcomeUnknown && !childOutcomeUnknown) await options.commandRun?.checkpoint();
       // What the ladder and the recorded state contributed is stamped once, here,
       // so every attempt carries it however the node was executed.
       const attempt: AutomationStudioNodeAttemptTrace = {
@@ -456,6 +461,7 @@ async function executeAutomationStudioGraph(
       const attemptIndex = attempts.length;
       attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
       if (outcomeUnknown) return await automationStudioStepRequiredOutcomeStop(ctx, node, attemptIndex);
+      if (childOutcomeUnknown) return automationStudioStepChildOutcomeStop(ctx, node, attemptIndex);
       // A child that handed the run back to a checkpoint: here, or in a frame that called this one (`step-loop/checkpoint-route.ts`).
       const handedBack = automationStudioStepCheckpointRoute(ctx, node, attemptIndex);
       if (handedBack?.kind === "return") return handedBack.trace;

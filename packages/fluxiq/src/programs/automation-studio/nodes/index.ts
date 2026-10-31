@@ -1,4 +1,5 @@
 export * from "./contracts.ts";
+export * from "./action-effect/index.ts";
 export * from "./definitions.ts";
 export * from "./canonical-registry.ts";
 export * from "./importer-sdk.ts";

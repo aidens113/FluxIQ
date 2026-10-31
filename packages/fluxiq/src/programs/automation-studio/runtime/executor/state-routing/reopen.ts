@@ -46,12 +46,13 @@ export function automationStudioStateReopenOpener(input: {
   attempt: Pick<AutomationStudioNodeAttemptTrace, "status" | "failure"> & { outputs?: AutomationStudioNodeAttemptTrace["outputs"] | undefined };
   attempts: readonly AutomationStudioNodeAttemptTrace[];
   hostRuntime: AutomationStudioGraphExecutionOptions["hostRuntime"];
+  resolveActionEffect?: AutomationStudioGraphExecutionOptions["resolveActionEffect"];
 }): AutomationStudioFlowNode | undefined {
   if (!automationStudioTargetMeasuredNotShown(input.attempt)) return undefined;
   const shownOn = automationStudioNodeRouteSignatures(input.node).before;
   if (!shownOn) return undefined;
   const opener = nearestRecordedActor(input.flow, input.node.id, input.attempts);
-  if (!opener || automationStudioNodeActLasts(opener)) return undefined;
+  if (!opener || automationStudioNodeActLasts(opener, input.resolveActionEffect?.(opener))) return undefined;
   const left = automationStudioNodeRouteSignatures(opener).after!;
   return automationStudioCompareRouteSignatures(input.hostRuntime, left, shownOn).matches ? opener : undefined;
 }

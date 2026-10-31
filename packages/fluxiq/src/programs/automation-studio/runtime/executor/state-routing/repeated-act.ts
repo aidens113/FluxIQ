@@ -39,6 +39,7 @@ export function automationStudioRepeatedLastingAct(input: {
   attempts: readonly AutomationStudioNodeAttemptTrace[];
   hostRuntime: AutomationStudioGraphExecutionOptions["hostRuntime"];
   observed: JsonObject;
+  resolveActionEffect?: AutomationStudioGraphExecutionOptions["resolveActionEffect"];
 }): AutomationStudioRepeatedLastingAct | undefined {
   const { flow, fromNodeId, toNodeId } = input;
   const walk = automationStudioStateRouteSpan(flow, toNodeId, fromNodeId);
@@ -46,7 +47,7 @@ export function automationStudioRepeatedLastingAct(input: {
   walk.delete(fromNodeId);
   const completed = new Set(input.attempts.filter((attempt) => attempt.status === "succeeded" && !attempt.skipped).map((attempt) => attempt.nodeId));
   for (const node of flow.nodes) {
-    if (!walk.has(node.id) || !completed.has(node.id) || !automationStudioNodeActLasts(node)) continue;
+    if (!walk.has(node.id) || !completed.has(node.id) || !automationStudioNodeActLasts(node, input.resolveActionEffect?.(node))) continue;
     const effect = automationStudioNodeRouteSignatures(node).effect;
     const onPage = effect !== undefined && automationStudioRouteEffectHolds(input.hostRuntime, effect, input.observed).holds;
     return { nodeId: node.id, effect: onPage ? "on_page" : "unknown" };

@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../../nodes/index.ts";
+import type { AutomationStudioFlowNode } from "../../model/index.ts";
+import { defineOutput, IoRegistry } from "../../../../io/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, automationNodeStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationNodeExecutionResult, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeNodeContext, type AutomationStudioNodeDefinition } from "../../nodes/index.ts";
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioRecordBatch } from "../executor/index.ts";
 import { runAutomationStudioGraph } from "../executor.ts";
@@ -17,7 +19,32 @@ function node(overrides: Partial<AutomationStudioNodeDefinition> = {}): Automati
 }
 function manifest(nodes = [node()]): AutomationStudioImporterSdkManifest { return { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "example.package", packageVersion: "1.0.0", domainId: "example", nodes }; }
 
+function effectFlow(instance: AutomationStudioFlowNode): AutomationStudioFlowDocument {
+  return { schemaVersion: "0.1", flowId: "flow.effect", ownerKind: "routine", ownerId: "flow.effect", name: "Trusted effect", createdAt: 1, updatedAt: 1, nodes: [instance], edges: [] };
+}
+
 describe("trusted-local native node runtime", () => {
+  it("retains the trusted effect floor through manifest serialization, SDK copies and getDefinition without execution", () => {
+    const declared = node({
+      actionEffect: { effectClass: "state", commitWhen: "apply", permissionConsequences: ["create_new"] },
+      parameters: [{ id: "apply", label: "Apply", valueType: "boolean", defaultValue: false }]
+    });
+    const original = manifest([declared]);
+    const restored: AutomationStudioImporterSdkManifest = JSON.parse(JSON.stringify(structuredClone(original)));
+    const implementation = vi.fn(() => ({ outputs: {} }));
+    const runtime = new AutomationStudioNativeNodeRuntime().register(restored, {
+      packageId: original.packageId,
+      packageVersion: original.packageVersion,
+      implementations: { transform: implementation }
+    });
+    const definition = runtime.getDefinition(declared.id);
+    expect(definition?.actionEffect).toEqual(declared.actionEffect);
+    expect(runtime.sdk.get(original.packageId)?.nodes[0]?.actionEffect).toEqual(declared.actionEffect);
+    expect(runtime.listDefinitions()[0]?.actionEffect).toEqual(declared.actionEffect);
+    expect(definition && resolveAutomationStudioNodeActionEffect(definition, { apply: false })).toEqual({ effectClass: "commit", permissionConsequences: ["create_new"] });
+    expect(implementation).not.toHaveBeenCalled();
+  });
+
   it("passes a session reference through the canonical native host adapter and drops malformed direct references", async () => {
     const references: Array<number | undefined> = [];
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), {
@@ -274,5 +301,206 @@ describe("the records an importer node declares", () => {
     // The trace keeps a dataset marker where the rows were, never the rows.
     expect(trace.values.records).toHaveProperty("$dataset");
     expect(JSON.stringify(trace)).not.toContain("withheld-value");
+  });
+});
+
+describe("canonical action effects in real native and policy dispatch paths", () => {
+  it("retries a canonical safe state setter after verification while declared lasting classes still stop it", async () => {
+    for (const lasting of [false, true]) {
+      let calls = 0;
+      const implementation = (): AutomationNodeExecutionResult => {
+        calls += 1;
+        return calls < 3 ? { status: "failed", outputs: {}, failure: { category: "output_not_observed", code: "example.read_back", retryable: true, stage: "verification" } } : { outputs: {} };
+      };
+      const declared = node({ actionEffect: { effectClass: "state", repeatSafe: true } });
+      const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([declared]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+      const trace = await runAutomationStudioGraph(effectFlow({ id: "apply", definitionId: declared.id, metadata: { effect: "observe", idempotent: true, declaredConsequences: lasting ? ["modify_existing"] : [] } }), {
+        ...automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime }),
+        delay: async () => undefined
+      });
+      expect(calls).toBe(lasting ? 1 : 3);
+      expect(trace.status).toBe(lasting ? "failed" : "succeeded");
+      expect(trace.failure?.code).toBe(lasting ? "run.outcome_uncertain" : undefined);
+    }
+  });
+
+  it("refreshes conditional floors on each For Each pass in both true/false orders", async () => {
+    for (const order of [[true, false], [false, true]]) {
+      const dispatched: boolean[] = [];
+      let observationFailures = 0;
+      const declared = node({ actionEffect: { effectClass: "observe", commitWhen: "submit" }, parameters: [{ id: "submit", label: "Submit", valueType: "boolean", defaultValue: false }] });
+      const implementation = ({ parameters }: AutomationStudioNativeNodeContext): AutomationNodeExecutionResult => {
+        const submit = parameters.submit === true;
+        dispatched.push(submit);
+        if (submit && order[0] === false) throw new Error("Network error.");
+        if (!submit && observationFailures++ < 2) return { status: "failed", route: "failed", outputs: {}, message: "Network error." };
+        return { outputs: {} };
+      };
+      const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([declared]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+      const options = automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime });
+      const seen: Array<string | undefined> = [];
+      const resolver = options.resolveActionEffect!;
+      options.resolveActionEffect = (instance, values) => {
+        const effect = resolver(instance, values);
+        if (instance.definitionId === declared.id && values) seen.push(effect?.effectClass);
+        return effect;
+      };
+      const flow: AutomationStudioFlowDocument = {
+        ...effectFlow({ id: "list", definitionId: "builtin.data.constant", parameterValues: { value: order } }),
+        nodes: [
+          { id: "list", definitionId: "builtin.data.constant", parameterValues: { value: order } },
+          { id: "each", definitionId: "builtin.control.for-each" },
+          { id: "apply", definitionId: declared.id, parameterValues: { submit: automationNodeStateBinding("each.item") }, metadata: { effect: "observe", idempotent: true, declaredConsequences: [] } },
+          { id: "end", definitionId: "builtin.control.end" }
+        ],
+        edges: [
+          { id: "list-each", sourceNodeId: "list", sourcePortId: "success", targetNodeId: "each", targetPortId: "in" },
+          { id: "items", sourceNodeId: "list", sourcePortId: "value", targetNodeId: "each", targetPortId: "items" },
+          { id: "body", sourceNodeId: "each", sourcePortId: "body", targetNodeId: "apply", targetPortId: "in" },
+          { id: "again", sourceNodeId: "apply", sourcePortId: "success", targetNodeId: "each", targetPortId: "in" },
+          { id: "done", sourceNodeId: "each", sourcePortId: "done", targetNodeId: "end", targetPortId: "in" }
+        ]
+      };
+      const trace = await runAutomationStudioGraph(flow, { ...options, delay: async () => undefined });
+      expect(dispatched).toEqual(order[0] ? [true, false, false, false] : [false, false, false, true]);
+      expect(seen).toEqual(dispatched.map((submit) => submit ? "commit" : "observe"));
+      expect(trace.status).toBe(order[0] ? "succeeded" : "failed");
+      expect(trace.failure?.code).toBe(order[0] ? undefined : "run.outcome_uncertain");
+    }
+  });
+
+  it("settles canonical graph commits as landed or not-landed and retains all unacted retries", async () => {
+    for (const settlement of ["landed", "not_landed", "unknown", "unacted"] as const) {
+      const implementation = vi.fn((): AutomationNodeExecutionResult => ({ status: "failed", route: "failed", outputs: {}, failure: { category: "action_failed", code: "example.failed", retryable: true, stage: "execution", ...(settlement === "unacted" ? { effect: "unacted" } : {}) } }));
+      const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([node({ actionEffect: { effectClass: "commit" } })]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+      const trace = await runAutomationStudioGraph(effectFlow({ id: "apply", definitionId: "example.transform", metadata: { effect: "observe", idempotent: true } }), {
+        ...automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime }),
+        hostRuntime: { capabilities: [], actLanded: () => settlement === "unacted" ? "unknown" : settlement },
+        delay: async () => undefined
+      });
+      expect(implementation).toHaveBeenCalledTimes(settlement === "not_landed" || settlement === "unacted" ? 4 : 1);
+      expect(trace.status).toBe(settlement === "landed" ? "succeeded" : "failed");
+      expect(trace.failure?.code).toBe(settlement === "unknown" ? "run.outcome_uncertain" : undefined);
+    }
+  });
+
+  it("holds a native generic throw and timeout despite model observe/idempotency claims", async () => {
+    for (const timesOut of [false, true]) {
+      const implementation = vi.fn(() => {
+        if (timesOut) return new Promise<never>(() => undefined);
+        throw new Error("Lost reply.");
+      });
+      const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([node({ actionEffect: { effectClass: "commit" } })]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+      const trace = await runAutomationStudioGraph(effectFlow({ id: "apply", definitionId: "example.transform", metadata: { effect: "observe", idempotent: true, declaredConsequences: [], timeoutMs: 10 } }), {
+        ...automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime }),
+        delay: async () => undefined
+      });
+      expect(implementation).toHaveBeenCalledTimes(1);
+      expect(trace.failure?.code).toBe("run.outcome_uncertain");
+      expect(trace.attempts[0]?.effectCheck?.result).toBe("unknown");
+    }
+  });
+
+  it("raises the direct native host context and preserves grant/version refusals as unacted", async () => {
+    const classes: unknown[] = [];
+    const implementation = vi.fn(({ host }: AutomationStudioNativeNodeContext) => {
+      classes.push(host?.sideEffectClass);
+      return { outputs: {} };
+    });
+    const declared = node({ actionEffect: { effectClass: "commit" } });
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([declared]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+    await runtime.execute({ id: "apply", definitionId: declared.id }, {}, undefined, { capabilityIds: [], sideEffectClass: "none" });
+    await runtime.execute({ id: "apply", definitionId: declared.id }, {});
+    expect(classes).toEqual(["external", "external"]);
+    const mismatched = await runtime.execute({ id: "apply", definitionId: declared.id, definitionVersion: "2.0.0" }, {});
+    expect(mismatched?.result.failure).toMatchObject({ effect: "unacted", stage: "dispatch" });
+    const denied = new AutomationStudioNativeNodeRuntime().register(manifest([node({ actionEffect: { effectClass: "commit" }, safety: { requiredPermissions: ["example.write"] } })]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+    expect((await denied.execute({ id: "apply", definitionId: declared.id }, {}))?.result.failure).toMatchObject({ effect: "unacted", stage: "dispatch" });
+    expect(implementation).toHaveBeenCalledTimes(2);
+  });
+
+  it("never dispatches a successful commit again when host verification rejects it", async () => {
+    const implementation = vi.fn(() => ({ outputs: { result: 1 } }));
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([node({ actionEffect: { effectClass: "commit" } })]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+    const trace = await runAutomationStudioGraph(effectFlow({ id: "apply", definitionId: "example.transform", parameterValues: { expectedState: { conditions: [{ path: "ready", expected: true }] } }, metadata: { effect: "observe", idempotent: true } }), {
+      ...automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime }),
+      hostRuntime: { capabilities: ["expectation-evaluation"], expectationEvaluator: () => ({ passed: false, checkedConditionCount: 1 }) },
+      delay: async () => undefined
+    });
+    expect(implementation).toHaveBeenCalledTimes(1);
+    expect(trace.status).toBe("failed");
+    expect(trace.attempts[0]?.failure?.stage).toBe("verification");
+    expect(trace.failure?.code).not.toBe("run.outcome_uncertain");
+  });
+
+  it("resolves registered policy outputs and unions all matching canonical floors", async () => {
+    const definitions = [
+      node({ id: "example.reader", actionEffect: { effectClass: "observe" }, outputAction: { fixedOutputId: "example.apply" } }),
+      node({ id: "example.writer", actionEffect: { effectClass: "commit", permissionConsequences: ["modify_existing"] }, outputAction: { fixedOutputId: "example.apply" } })
+    ];
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(definitions), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: () => ({ outputs: {} }) } });
+    const dispatch = vi.fn(() => { throw new Error("Lost reply."); });
+    const io = new IoRegistry();
+    io.registerOutput("example", defineOutput({ definition: { id: "example.apply", title: "Apply" }, mode: "request", dispatch }));
+    const options = automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: ["example"], nativeNodeRuntime: runtime, io: { io, domainId: "example" } });
+    const instance: AutomationStudioFlowNode = { id: "apply", definitionId: "builtin.policy.action", parameterValues: { outputId: "example.apply", parameters: {} }, metadata: { effect: "observe", idempotent: true, declaredConsequences: [] } };
+    expect(options.resolveActionEffect?.(instance)).toEqual({ effectClass: "commit", permissionConsequences: ["modify_existing"] });
+    const trace = await runAutomationStudioGraph(effectFlow(instance), { ...options, delay: async () => undefined });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(trace.failure?.code).toBe("run.outcome_uncertain");
+    const unknown: AutomationStudioFlowNode = { ...instance, parameterValues: { outputId: "example.unregistered", parameters: {} } };
+    expect(options.resolveActionEffect?.(unknown)).toBeUndefined();
+    expect((await runAutomationStudioGraph(effectFlow(unknown), { ...options, delay: async () => undefined })).status).toBe("failed");
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("raises an emitted output floor before its dispatcher throws even when the native node declared none", async () => {
+    const emitter = node({ id: "example.emitter", source: { kind: "importer", domainId: "example", packageId: "example.package", implementationKey: "emit" }, outputAction: { fixedOutputId: "example.apply" } });
+    const floor = node({ id: "example.floor", actionEffect: { effectClass: "commit" }, outputAction: { fixedOutputId: "example.apply" } });
+    const emit = vi.fn(() => ({ outputs: {}, effects: [{ type: "policy.output.dispatch", payload: { outputId: "example.apply", parameters: {} } }] }));
+    const dispatch = vi.fn(() => { throw new Error("Network error."); });
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([emitter, floor]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { emit, transform: () => ({ outputs: {} }) } });
+    const trace = await runAutomationStudioGraph(effectFlow({ id: "apply", definitionId: emitter.id, metadata: { effect: "observe", idempotent: true } }), {
+      ...automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime }),
+      effectDispatcher: dispatch,
+      delay: async () => undefined
+    });
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(trace.failure?.code).toBe("run.outcome_uncertain");
+  });
+
+  it("preserves unresolved slots and specializes an actually resolved false conditional parameter", async () => {
+    const declared = node({ actionEffect: { effectClass: "state", commitWhen: "apply" }, parameters: [{ id: "apply", label: "Apply", valueType: "boolean", defaultValue: false }] });
+    const implementation = vi.fn(() => ({ outputs: {} }));
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([declared]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+    for (const missing of [true, false]) {
+      const options = automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime, inputs: missing ? {} : { apply: false } });
+      const seen: Array<string | undefined> = [];
+      const resolver = options.resolveActionEffect!;
+      options.resolveActionEffect = (instance, values) => {
+        const effect = resolver(instance, values);
+        if (values) seen.push(effect?.effectClass);
+        return effect;
+      };
+      const trace = await runAutomationStudioGraph(effectFlow({ id: "apply", definitionId: declared.id, parameterValues: { apply: automationNodeStateBinding("apply") } }), options);
+      expect(seen[0]).toBe(missing ? "commit" : "state");
+      expect(trace.status).toBe(missing ? "failed" : "succeeded");
+      if (missing) {
+        expect(trace.attempts[0]?.failure?.effect).toBe("unacted");
+        expect(trace.failure?.code).not.toBe("run.outcome_uncertain");
+      }
+    }
+    expect(implementation).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed before invoking a native action when trusted lookup throws", async () => {
+    const implementation = vi.fn(() => ({ outputs: {} }));
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([node({ actionEffect: { effectClass: "commit" } })]), { packageId: "example.package", packageVersion: "1.0.0", implementations: { transform: implementation } });
+    const options = automationStudioRunGraphOptions({ signal: new AbortController().signal, authorizedDomainIds: [], nativeNodeRuntime: runtime });
+    options.resolveActionEffect = () => { throw new Error("Registry unavailable."); };
+    const trace = await runAutomationStudioGraph(effectFlow({ id: "apply", definitionId: "example.transform" }), options);
+    expect(trace.status).toBe("failed");
+    expect(implementation).not.toHaveBeenCalled();
   });
 });

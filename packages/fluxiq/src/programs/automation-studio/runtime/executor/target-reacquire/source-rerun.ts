@@ -26,7 +26,9 @@ export async function automationStudioReacquireSourceRerun(ctx: AutomationStudio
     ...ctx.runState,
     records: automationStudioRecordTraceSummary(),
     variables: new Map(ctx.runState.variables),
-    loops: new Map(ctx.runState.loops)
+    loops: new Map(ctx.runState.loops),
+    actionEffects: new Map(ctx.runState.actionEffects),
+    dispatchedActions: new Set(ctx.runState.dispatchedActions)
   };
   // Numbered as the attempt about to run, under the source's id: no attempt of the run takes that id.
   const attempt = await executeAutomationStudioNode(ctx.flow, source, { ...ctx.values }, options, ctx.nextAttemptNumber(), ctx.withholding, runState);

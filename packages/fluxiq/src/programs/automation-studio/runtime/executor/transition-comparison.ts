@@ -1,7 +1,7 @@
 import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
-import type { AutomationNodeExpectationEvaluation } from "../../nodes/index.ts";
+import type { AutomationNodeExpectationEvaluation, AutomationStudioResolvedActionEffect } from "../../nodes/index.ts";
 import { EXPECTATION_REJECTED_FAILURE } from "../../nodes/policy/index.ts";
 import { hostExpectationEvaluator, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import { AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE, AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY, automationStudioHostActLanded, automationStudioNodeActLasts, type AutomationStudioEffectCheckResult, type AutomationStudioLastingActCheck } from "./defensive/index.ts";
@@ -211,7 +211,7 @@ export async function attemptWithHostExpectationEvaluation(
  * itself (`./defensive/host-act-landed.ts`, t430): the page, never the step's
  * declaration, says whether a press whose answer was lost landed.
  */
-export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, options: AutomationStudioGraphExecutionOptions): AutomationStudioLastingActCheck<AutomationStudioNodeAttemptTrace> {
+export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, options: AutomationStudioGraphExecutionOptions, actionEffect?: AutomationStudioResolvedActionEffect): AutomationStudioLastingActCheck<AutomationStudioNodeAttemptTrace> {
   return async (attempt) => {
     const evaluate = hostExpectationEvaluator(options.hostRuntime);
     const expectedState = attempt.transitionComparison?.expected.expectedState ?? expectedTransitionForNode(node, attempt).expectedState;
@@ -225,7 +225,7 @@ export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, 
       const windowMs = Math.max(automationStudioExpectationRequest(expectedState).timeoutMs, automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs));
       const read = await readExpectedFacts(facts, attempt, options, windowMs);
       if (read.truth === "true") return "landed";
-      return read.truth === "false" && !automationStudioNodeActLasts(node) ? "not_landed" : "unknown";
+      return read.truth === "false" && !automationStudioNodeActLasts(node, actionEffect) ? "not_landed" : "unknown";
     }
     if (!evaluate) return "unknown";
     const declared = automationStudioExpectationRequest(expectedState);

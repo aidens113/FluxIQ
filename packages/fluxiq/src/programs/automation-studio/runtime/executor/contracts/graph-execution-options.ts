@@ -1,7 +1,7 @@
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
-import type { AutomationNodeExecutionResult, AutomationNodePort, AutomationStudioNativeLogEntry } from "../../../nodes/index.ts";
+import type { AutomationNodeExecutionResult, AutomationNodePort, AutomationStudioNativeLogEntry, AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../../host-runtime.ts";
 import type { AutomationStudioParkingPort } from "../../parking/index.ts";
@@ -36,6 +36,8 @@ export type AutomationStudioGraphExecutionOptions = {
   now?: () => number;
   /** Fixed epoch milliseconds for relative task dates; live timing still uses now(). */
   referenceNow?: number;
+  /** Trusted client floor from the canonical registry; raw unresolved parameter slots must not be dropped. */
+  resolveActionEffect?: (node: AutomationStudioFlowNode, parameterValues?: Readonly<Record<string, unknown>>) => AutomationStudioResolvedActionEffect | undefined;
   signal?: AbortSignal;
   /**
    * How the run waits between retry attempts. A real timer by default; a test

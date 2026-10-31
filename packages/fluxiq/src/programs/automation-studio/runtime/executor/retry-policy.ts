@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
 import { AUTOMATION_STUDIO_MAX_RETRY_WAIT_MS, automationStudioAttemptFaultIsAbsorbed } from "./defensive/index.ts";
@@ -123,8 +124,8 @@ export function automationStudioRetryBackoffMs(policy: AutomationStudioNodeRetry
  * existing caller keeps working; pass it, or a mutating node loses its protection
  * against being acted twice.
  */
-export function automationStudioAttemptIsRetryable(attempt: AutomationStudioNodeAttemptTrace, node?: AutomationStudioFlowNode): boolean {
-  return automationStudioAttemptFaultIsAbsorbed(attempt, node);
+export function automationStudioAttemptIsRetryable(attempt: AutomationStudioNodeAttemptTrace, node?: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): boolean {
+  return automationStudioAttemptFaultIsAbsorbed(attempt, node, 0, actionEffect);
 }
 
 /**

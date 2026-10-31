@@ -41,6 +41,8 @@
 // that says repeating it is safe is never lasting.
 
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioResolvedActionEffect } from "../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY } from "./contracts.ts";
 import { automationStudioNodeMutates, automationStudioNodeRepeatIsSafe } from "./node-side-effect.ts";
 
 /**
@@ -48,12 +50,13 @@ import { automationStudioNodeMutates, automationStudioNodeRepeatIsSafe } from ".
  * strings, `[]` when the step declared `none`. Written by the build
  * (`../../flow-bootstrap/adaptation.ts`) and read here.
  */
-export const AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY = "declaredConsequences";
+export { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY } from "./contracts.ts";
 
 /** Whether this node's act outlasts it, so dispatching it again could act a second time. */
-export function automationStudioNodeActLasts(node: AutomationStudioFlowNode): boolean {
-  if (automationStudioNodeRepeatIsSafe(node)) return false;
-  if (automationStudioNodeMutates(node)) return true;
+export function automationStudioNodeActLasts(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): boolean {
+  if (actionEffect?.effectClass === "commit") return true;
+  if (automationStudioNodeRepeatIsSafe(node, actionEffect)) return false;
+  if (automationStudioNodeMutates(node, actionEffect)) return true;
   const declared = node.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
   return Array.isArray(declared) && declared.some((consequence) => typeof consequence === "string" && consequence.length > 0);
 }

@@ -5,7 +5,7 @@ import { AUTOMATION_STUDIO_REQUIRED_COMMAND_NOT_SENT, AUTOMATION_STUDIO_REQUIRED
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator, AutomationNodePort } from "../../../nodes/index.ts";
-import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../../nodes/index.ts";
+import { combineAutomationStudioResolvedActionEffects, getAutomationNodeDefinition, readAutomationStudioResolvedActionEffect, resolveAutomationNodeParameterValues } from "../../../nodes/index.ts";
 import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../../host-runtime.ts";
 import { AUTOMATION_STUDIO_ASK_EFFECT } from "../../parking/index.ts";
 import { nodeAttemptFromResult } from "../attempt-trace.ts";
@@ -99,6 +99,20 @@ export class AutomationStudioNodeAttemptExecution {
     const executionNode = resolvedParameters.missingPaths.length
       ? node
       : { ...node, parameterValues: resolvedParameters.values };
+    // This frame's floor is resolved before any host/native/output call. On a
+    // missing binding keep its raw slot; a dropped slot is not an absent value
+    // to which a trusted false schema default may honestly apply.
+    runState.actionEffects.delete(node.id);
+    try {
+      const actionEffect = options.resolveActionEffect?.(node, resolvedParameters.missingPaths.length ? authoredParameters : resolvedParameters.values);
+      if (actionEffect) runState.actionEffects.set(node.id, readAutomationStudioResolvedActionEffect(actionEffect));
+    } catch {
+      return {
+        attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [],
+        message: "The trusted action-effect declaration could not be resolved; the action was not run.",
+        failure: { category: "graph_validation_or_unknown_node", code: "executor.action_effect.resolve_failed", retryable: false, stage: "dispatch", effect: "unacted" }
+      };
+    }
     const hostCapabilities = hostRuntimeCapabilityIds(options.hostRuntime);
     if (resolvedParameters.missingPaths.length) {
       return {
@@ -117,12 +131,13 @@ export class AutomationStudioNodeAttemptExecution {
         // produced is a Flow defect, and a defect answers the same way however many
         // times it is asked, so the retry loop must be told so explicitly instead of
         // inferring it from a missing record.
-        failure: { category: "graph_validation_or_unknown_node", code: "executor.parameter.unresolved_state_path", retryable: false, stage: "dispatch" }
+        failure: { category: "graph_validation_or_unknown_node", code: "executor.parameter.unresolved_state_path", retryable: false, stage: "dispatch", effect: "unacted" }
       };
     }
     const beforeAction = await captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" }, runState);
+    if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
     if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
-      return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch" } }, options, beforeAction, hostCapabilities, runState);
+      return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch", effect: "unacted" } }, options, beforeAction, hostCapabilities, runState);
     }
     // A Call Subflow runs its sibling graph as a frame of this run, never through a host (`../frames/call-subflow.ts`).
     if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID) {
@@ -132,10 +147,12 @@ export class AutomationStudioNodeAttemptExecution {
         throw new Error("executor.unsupported_native_or_composite");
       }
       // Its `inputs` were resolved above, as every parameter is: each holds the value it gives the child.
+      runState.dispatchedActions.add(node.id);
       const called = await automationStudioCallSubflow({ node: executionNode, options: this.callFlowChildOptions(options, attemptId) });
       return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
     }
     if (!definition?.execute) {
+      if (!options.commandRun && options.nativeNodeExecutor) runState.dispatchedActions.add(node.id);
       const native = await (!options.commandRun ? options.nativeNodeExecutor?.({
         node: executionNode,
         // The run's own Flow inputs, then what an edge brings: a declared port is
@@ -148,7 +165,7 @@ export class AutomationStudioNodeAttemptExecution {
         hostContext: {
           ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}),
           capabilityIds: hostCapabilities,
-          sideEffectClass: automationStudioNodeSideEffectClass(executionNode),
+          sideEffectClass: automationStudioNodeSideEffectClass(executionNode, runState.actionEffects.get(node.id)),
           ...(beforeAction ? { currentStateRef: beforeAction, previousStateRef: beforeAction } : {}),
           ...(executionNode.parameterValues?.target !== undefined ? { target: executionNode.parameterValues.target } : {})
         }
@@ -163,6 +180,7 @@ export class AutomationStudioNodeAttemptExecution {
         await options.commandRun.stop("executor.unsupported_native_or_composite");
         throw new Error("executor.unsupported_native_or_composite");
       }
+      if (options.compositeExecutor) runState.dispatchedActions.add(node.id);
       const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options: this.callFlowChildOptions(options, attemptId) });
       if (composite) {
         return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
@@ -179,7 +197,7 @@ export class AutomationStudioNodeAttemptExecution {
         outputs: {},
         effects: [],
         message: `Node definition is not executable: ${node.definitionId}.`,
-        failure: { category: "graph_validation_or_unknown_node", code: "executor.node.not_executable", retryable: false, stage: "dispatch" }
+        failure: { category: "graph_validation_or_unknown_node", code: "executor.node.not_executable", retryable: false, stage: "dispatch", effect: "unacted" }
       }, options, beforeAction, hostCapabilities, runState);
     }
     // The node asks the host whether expected state holds; Core names which node
@@ -201,6 +219,7 @@ export class AutomationStudioNodeAttemptExecution {
         ...(options.signal ? { signal: options.signal } : {}),
         ...(expectationEvaluator ? { expectationEvaluator } : {})
       };
+      if (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== definition.execute) runState.dispatchedActions.add(node.id);
       let result = await definition.execute(context);
       const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, definition.outputs);
@@ -214,7 +233,7 @@ export class AutomationStudioNodeAttemptExecution {
       // no to every one of them. A provider that answered 503, a connection that
       // dropped, an answer that arrived truncated: each ended the run, and that
       // is what this catch exists to stop.
-      return await enrichAttemptWithHostState(executionNode, automationStudioNodeAttemptFailure(node, error, options, attemptNumber, startedAt, inputs), options, beforeAction, hostCapabilities, runState);
+      return await enrichAttemptWithHostState(executionNode, automationStudioNodeAttemptFailure(node, error, options, attemptNumber, startedAt, inputs, runState.dispatchedActions.has(node.id)), options, beforeAction, hostCapabilities, runState);
     }
   }
 
@@ -234,7 +253,7 @@ export class AutomationStudioNodeAttemptExecution {
   ): Promise<AutomationStudioNodeAttemptTrace> {
     const enriched = await enrichAttemptWithHostState(node, automationStudioAttemptAlreadyInState(attempt), options, beforeAction, hostCapabilities, runState);
     const judged = await attemptWithHostExpectationEvaluation(node, enriched, options);
-    return await automationStudioAttemptWithRecordedEffect(flow, node, judged, options);
+    return await automationStudioAttemptWithRecordedEffect(flow, node, judged, options, runState.actionEffects.get(node.id));
   }
 
   /** The attempt a dispatch belongs to, and the run state its captured rows are recorded in. */
@@ -273,7 +292,17 @@ export class AutomationStudioNodeAttemptExecution {
           issued = await options.commandRun.context(target.consumer, index);
         }
         if (!options.effectDispatcher) continue;
+        if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
+        // Native implementations may emit an output whose floor becomes known
+        // only now. Raise the same execution-only entry before dispatch throws.
+        if (effect.type === "policy.output.dispatch" && effect.payload && typeof effect.payload === "object" && !Array.isArray(effect.payload)) {
+          const outputNode: AutomationStudioFlowNode = { id: target.nodeId, definitionId: "builtin.policy.action", parameterValues: effect.payload };
+          const outputFloor = options.resolveActionEffect?.(outputNode, effect.payload);
+          const combined = combineAutomationStudioResolvedActionEffects([target.runState.actionEffects.get(target.nodeId), outputFloor]);
+          if (combined) target.runState.actionEffects.set(target.nodeId, combined);
+        }
         const dispatchContext = this.effectDispatchContext(options, withholding);
+        target.runState.dispatchedActions.add(target.nodeId);
         const answer = await options.effectDispatcher(effect, issued ? { ...dispatchContext, commandContext: issued.context } : dispatchContext);
         if (!answer) { if (issued) throw new Error("executor.required_result_missing"); continue; }
         // A check on the page that cleared by itself while this output waited is

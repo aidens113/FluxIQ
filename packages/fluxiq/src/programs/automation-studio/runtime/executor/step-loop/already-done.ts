@@ -40,7 +40,7 @@ export async function automationStudioStepAlreadyDone(
 ): Promise<Extract<AutomationStudioStepOutcome, { kind: "return" | "next" }> | undefined> {
   delete ctx.lifecycle.pendingAct;
   const invocation = ctx.options.invocation;
-  if (!invocation || invocation.frame.cursor.phase === "handler" || !automationStudioNodeActLasts(node)) return undefined;
+  if (!invocation || invocation.frame.cursor.phase === "handler" || !automationStudioNodeActLasts(node, ctx.options.resolveActionEffect?.(node))) return undefined;
   const key = automationStudioCompletedActIdentity({
     flow: ctx.flow,
     node,

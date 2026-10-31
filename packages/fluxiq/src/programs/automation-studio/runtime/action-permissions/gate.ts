@@ -59,6 +59,7 @@ import { automationStudioDestructiveConsequences } from "./destructive.ts";
 import { AUTOMATION_STUDIO_ACTION_DECLARATIONS_MAX, type AutomationStudioActionDeclarationRecord } from "./declared.ts";
 import { readAutomationStudioActionDeclaration, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionVerdict } from "./declaration.ts";
 import type { AutomationStudioInstructedConsequence } from "./instructed.ts";
+import { automationStudioActionPermissionProjection } from "./projection.ts";
 import {
   AUTOMATION_STUDIO_ACTION_PERMISSION_CONTROL_NAME_MAX,
   AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION,
@@ -302,15 +303,12 @@ export class AutomationStudioActionPermissionGate {
   checkFor(action: AutomationStudioActionPermissionAction): AutomationStudioActionPermissionCheck {
     return async (declaration) => {
       const read = readAutomationStudioActionDeclaration(declaration);
-      const named = automationStudioConsequencesInOrder(read.consequences);
       // An action that only reads leaves nothing behind to permit, so what it
       // named cannot be a lasting consequence and is not treated as one. The
       // words are kept as `disregarded` rather than thrown away, because a
       // model calling a page read `create_new` is a fact about the guidance
       // worth being able to count.
-      const observes = read.effect === "observe";
-      const consequences = observes ? [] : named;
-      const disregarded = observes ? named : [];
+      const { effect, consequences, disregarded } = automationStudioActionPermissionProjection(read);
       const controlName = this.carriedName(read.controlName);
       const record = (verdict: AutomationStudioActionPermissionVerdict): AutomationStudioActionPermissionVerdict => {
         if (this.records.length < AUTOMATION_STUDIO_ACTION_DECLARATIONS_MAX) {
@@ -318,7 +316,7 @@ export class AutomationStudioActionPermissionGate {
           // in: this record travels to a person and to a stored proposal, so a
           // renamed field must be a compile error here.
           const entry: AutomationStudioActionDeclarationRecord = {
-            action: { kind: action.kind, id: action.id, ref: action.ref, verb: read.verb, effect: read.effect },
+            action: { kind: action.kind, id: action.id, ref: action.ref, verb: read.verb, effect },
             control: { name: controlName, kind: read.controlKind },
             consequences: [...consequences],
             permitted: verdict.permitted
@@ -452,12 +450,12 @@ export const automationStudioActionPermissionDenied: AutomationStudioActionPermi
   // given, which is the incentive this whole seam exists to remove. An action
   // that only reads is the same case: there is nothing it could have done that
   // outlasts it, so there is nobody who would need to be asked.
-  if (read.effect === "observe") return { permitted: true };
+  const { consequences } = automationStudioActionPermissionProjection(read);
   // Nor is there anybody to ask about making or editing something: those are
   // not gated anywhere (`destructive.ts`), so having no run behind the action
   // changes nothing about them. What it changes is that a gated class has no
   // person who could have permitted it, and no request to raise.
-  const missing = automationStudioDestructiveConsequences(read.consequences);
+  const missing = automationStudioDestructiveConsequences(consequences);
   if (!missing.length) return { permitted: true };
   return { permitted: false, missing, requestId: null };
 };

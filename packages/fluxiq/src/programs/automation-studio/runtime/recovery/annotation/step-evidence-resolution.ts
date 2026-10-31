@@ -48,7 +48,7 @@
 // found. The domain's codes travel beside it for the record.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
+import { automationStudioActionPermissionDenied, resolveAutomationStudioPlanActionEffect, type AutomationStudioActionPermissionCheck, type AutomationStudioPlanActionEffectSource } from "../../action-permissions/index.ts";
 import type { AutomationStudioFactCondition } from "../../executor/lifecycle/index.ts";
 import type { AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import {
@@ -93,6 +93,7 @@ export function automationStudioRecoveryStepResolution(input: {
   ports: Pick<AutomationStudioRuntimeRecoveryPorts, "llmEvidenceRuntime">;
   projectId: string;
   flowId: string;
+  resolveActionEffect?: AutomationStudioPlanActionEffectSource["resolveActionEffect"];
   failureEvidence?: JsonObject | undefined;
   explorationEvidence?: AutomationStudioLlmContextPacket["explorationEvidence"] | undefined;
   permissionFor(definitionId: string): AutomationStudioActionPermissionCheck;
@@ -206,7 +207,8 @@ async function resolveOne(
 ): Promise<{ parameters: JsonObject | undefined } | Refused> {
   const binding = context.ports.llmEvidenceRuntime;
   if (typeof binding?.resolvePlanNodeParameters !== "function") {
-    return namesHandle ? refusedWith("step_unresolved", [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unsupported]) : { parameters: node.parameters };
+    const floor = resolveAutomationStudioPlanActionEffect(context, node, node.parameters ?? {});
+    if (!floor?.permissionConsequences.length) return namesHandle ? refusedWith("step_unresolved", [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unsupported]) : { parameters: node.parameters };
   }
   const plan: AutomationStudioFlowBootstrapPlan = {
     schemaVersion: "0.1",
@@ -217,6 +219,7 @@ async function resolveOne(
     plan,
     projectId: context.projectId,
     flowId: context.flowId,
+    resolveActionEffect: context.resolveActionEffect,
     binding,
     // Handles were shown: the packet is how the domain finds them, and a step naming one with no packet was refused before here.
     handlesIssued: true,

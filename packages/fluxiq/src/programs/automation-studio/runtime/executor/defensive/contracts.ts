@@ -1,5 +1,8 @@
 import type { AutomationStudioAdaptiveFailureClass, AutomationStudioFailureStage } from "@fluxiq/contracts/automation-studio";
 
+/** Authored consequence classes may raise a trusted non-committing action's risk. */
+export const AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY = "declaredConsequences";
+
 /**
  * What the default runtime does about one fault.
  *
