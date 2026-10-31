@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: P6 t799, Claude/$5 t816, P5b t810 and P1b t811 verified and merged. Paired t817 source is frozen for grounded toggle choice acceptance. Downstream Current State owns the handoff.
+Status detail: P6 t799, Claude/$5 t816, P5b t810 and P1b t811 merged. Paired t817 passed lead Core204/types/builds and native oracle/replay acceptance, ready for integration. Downstream Current State owns the handoff.
 Created: 2026-10-28
 Last updated: 2026-10-30
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
