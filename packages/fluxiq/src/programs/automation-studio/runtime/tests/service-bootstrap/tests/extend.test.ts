@@ -291,10 +291,11 @@ describe("extending a Flow that already exists", () => {
     expect(record.existingIds?.nodeIdByKey).toEqual({ s1: kept[0], s2: kept[1] });
   }, 60_000);
 
-  it("presents the extend build's caller to the resolver, and nothing else", async () => {
+  it("presents the extend build's caller and saved Flow settings to the resolver", async () => {
     const { instance, project, flow, resolutions } = await serviceWithAppliedFlow({
       decide: inOrder([...RERUN_CARRIED, reply("Keep the current steps.", { kind: "complete", result: { summary: "Keep the current steps." } })])
     });
+    const canonicalMetadata = (await instance.getFlow(project.id, flow.flowId)).metadata;
     await instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
       flowId: flow.flowId,
@@ -303,7 +304,7 @@ describe("extending a Flow that already exists", () => {
       caller: caller()
     });
 
-    expect(resolutions).toEqual([{ projectId: project.id, flowId: flow.flowId, caller: caller() }]);
+    expect(resolutions).toEqual([{ projectId: project.id, flowId: flow.flowId, caller: caller(), providerId: "host", metadata: canonicalMetadata }]);
   }, 60_000);
 
   it("refuses to build a second Flow beside the first, which is what create would have done", async () => {
