@@ -22,19 +22,18 @@ const PIN_GATED = [
   "automation-studio/delete-run-datasets",
   "automation-studio/execute-client-action",
   "automation-studio/rollback-flow-migration",
-  "automation-studio/seal-legacy-writes"
-];
-
-/**
- * Destructive endpoints nothing gates. Each is a declared gap, recorded in
- * `docs/architecture/automation-studio/persistence.md`: no operator auth
- * session reaches these programs, so a PIN could never be supplied to them.
- */
-const DECLARED_UNGATED = [
+  "automation-studio/seal-legacy-writes",
   "database-manager/run-migration",
   "deployment-sync/rollback",
   "deployment-sync/sync"
 ];
+
+/**
+ * Destructive endpoints nothing gates; each would be a declared gap, recorded in
+ * `docs/architecture/automation-studio/persistence.md`. None is left (t809:
+ * run-migration, sync and rollback now ask for the PIN).
+ */
+const DECLARED_UNGATED: string[] = [];
 
 const CLASSIFICATIONS: ProgramEndpointClassification[] = ["read", "authoring", "destructive", "program-gated", "destructive-ungated"];
 

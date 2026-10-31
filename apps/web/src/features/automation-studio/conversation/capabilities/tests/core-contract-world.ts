@@ -172,7 +172,9 @@ const identityAccess = {
   authorizeSessionPin: async (input: { sessionId?: string; pin?: string }) => {
     if (input.sessionId !== SESSION_ID || input.pin !== CONTRACT_PIN) throw new Error("The PIN was not accepted.");
     return { authorized: true };
-  }
+  },
+  // B3's project ownership asks for the users when it assigns a default owner (`api/ownership/ownerships.ts`).
+  snapshot: async () => ({ users: [], sessions: [] })
 };
 
 /** Core's registry with the Automation Studio API registered on `service`, and each endpoint's classification. */

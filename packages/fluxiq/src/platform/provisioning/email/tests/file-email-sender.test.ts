@@ -30,4 +30,20 @@ describe("FileEmailSender", () => {
     expect(bodies.find((body) => body.template === "account-exists")).toMatchObject({ subject: "Hi from Acme", text: "Go to https://app.example.test/" });
     expect(sender.kind).toBe("file");
   });
+
+  it("records welcomeUrl as data only when the message has one", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fluxiq-email-"));
+    directories.push(root);
+    const directory = join(root, "mailbox");
+    const sender = new FileEmailSender({ directory });
+    await sender.send({ template: "welcome", to: "a@example.test", variables: { displayName: "Ada", welcomeUrl: "https://app.example.test/welcome#token=t", expiresInHours: "24" } });
+    await sender.send({ template: "account-exists", to: "b@example.test", variables: { signInUrl: "https://app.example.test/", resetUrl: "https://app.example.test/reset" } });
+
+    const bodies = await Promise.all((await readdir(directory)).map(async (file) => JSON.parse(await readFile(join(directory, file), "utf8")) as Record<string, string>));
+    const welcome = bodies.find((body) => body.template === "welcome");
+    const exists = bodies.find((body) => body.template === "account-exists");
+    expect(welcome?.welcomeUrl).toBe("https://app.example.test/welcome#token=t");
+    expect(exists).toBeDefined();
+    expect("welcomeUrl" in (exists ?? {})).toBe(false);
+  });
 });

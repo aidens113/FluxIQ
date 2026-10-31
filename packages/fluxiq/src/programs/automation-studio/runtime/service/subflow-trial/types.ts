@@ -1,6 +1,6 @@
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity } from "../../flow-bootstrap/subflow-candidate/index.ts";
-import type { runAutomationStudioDetachedSubflow } from "../../flow-bootstrap/verification/index.ts";
+import type { runAutomationStudioDetachedSubflow, runAutomationStudioDetachedSubflowFrom } from "../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
 
@@ -58,6 +58,8 @@ export type AutomationStudioSubflowTrialPorts = Omit<AutomationStudioCandidateTr
   judge(input: AutomationStudioSubflowTrialJudgeInput): Promise<AutomationStudioBuildTestVerdict>;
   /** The partial runner; replaced only by tests. */
   execute?: typeof runAutomationStudioDetachedSubflow | undefined;
+  /** The from-step runner (`./from-step.ts`, t804); replaced only by tests. */
+  executeFrom?: typeof runAutomationStudioDetachedSubflowFrom | undefined;
 };
 
 /** One partial trial as Core keeps it, for the build record and its accounting. */

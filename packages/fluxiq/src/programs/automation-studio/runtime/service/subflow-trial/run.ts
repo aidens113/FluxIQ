@@ -86,6 +86,11 @@
 // `prepareStart` or this runner called it -- lands in the build's trace. A
 // trial refused before it runs opens no episode.
 //
+// **A run that stopped at one of the proposal's own steps names it (t804).**
+// The result's `stoppedAtKey` is that step's plan key (`./stopped-at.ts`), the
+// step a failed test is repaired on and a from-step run (`./from-step.ts`)
+// starts at; absent where the run stopped before the subflow or between steps.
+//
 // Earlier judged trials' advice reaches the judge, as in the whole trial
 // (`../candidate-trial/run.ts`, t752): the request's `earlierAdvice`, made by
 // the subflow gate, goes to the summary the judge reads, last.
@@ -116,6 +121,7 @@ import {
 import { automationStudioTrialChangeAfterRead } from "../../flow-bootstrap/trial-change/index.ts";
 import { automationStudioSubflowTrialPredecessorGap } from "./predecessor-gap.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
+import { automationStudioSubflowTrialStoppedAtKey } from "./stopped-at.ts";
 import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
 
 const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
@@ -238,7 +244,10 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: ports.actionAttempts?.(ended)?.filter((attempt) => !attempt.subflowTarget), flowNodes: frames.graph?.nodes, deniedEvidenceKeys: ports.deniedEvidenceKeys });
     const failed = Feedback.executionFailed({ code, ...shown, reads });
     const feedback = { ...failed.feedback, partial: true, entryPrepared: executed.entryPrepared, ...entryWords(executed.failedPredecessor, executed.planIssues) };
-    return answer(failed.verdict, feedback, { ...ran, execution: executed.receipt.status, code, judge: { ...NO_SPEND } }, acts);
+    const stopped = answer(failed.verdict, feedback, { ...ran, execution: executed.receipt.status, code, judge: { ...NO_SPEND } }, acts);
+    // The proposal's own step it stopped at, by plan key: the step a repair is checked from (header, t804).
+    const stoppedAtKey = automationStudioSubflowTrialStoppedAtKey(executed, scope.subflowKey);
+    return stoppedAtKey ? { ...stopped, result: { ...stopped.result, stoppedAtKey } } : stopped;
   }
   let summary: AutomationStudioRunResultSummary;
   try {

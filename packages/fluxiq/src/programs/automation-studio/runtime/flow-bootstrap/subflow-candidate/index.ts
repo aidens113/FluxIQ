@@ -11,4 +11,5 @@ export * from "./role-tools.ts";
 export * from "./done-before.ts";
 export * from "./disclosure-advice.ts";
 export * from "./repeated-advice.ts";
+export * from "./pending-repair.ts";
 export * from "./builder-loop.ts";

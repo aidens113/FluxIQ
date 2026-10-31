@@ -238,6 +238,12 @@
 // runs live in this same call, its evidence carrying the check's note (`offlineCheck`). An offline yes is never kept.
 // A port's own answer from the recording (`checkedAgainst` on its result: the single-subflow whole test the whole gate
 // kept, D48) is said and kept the same way, nothing recorded as left on the site; the hook and reset before it still ran.
+//
+// **A failed test is repaired on its failing step and checked from there (t804; Core's rule "build the whole Flow
+// first; test it whole only when it should work").** Where the port can run from a step (`fromStep`), a call with
+// `from` runs the latest proposal from that step on the page as it stands, never the part's test
+// (`./from-step-run.ts`); and a live whole test that failed leaves a repair standing (`./pending-repair.ts`), which
+// refuses the next whole test, and completion, `subflow.trial_from_step_first` until a run from that step passes it.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmStepLogReset } from "../../llm/step-log/index.ts";
@@ -260,16 +266,20 @@ import {
   AutomationStudioResultKeptConditionMemory,
   AutomationStudioResultStandingNoMemory,
   type AutomationStudioResultKeptCondition,
-  type AutomationStudioResultKeptConditionsCarrier,
-  type AutomationStudioResultStandingNoContradiction
+  type AutomationStudioResultKeptConditionsCarrier
 } from "../../result-verification/standing-no/index.ts";
 import type { AutomationStudioResultKeptEveryRow } from "../../result-verification/contracts/index.ts";
 import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as OFFLINE_WORDS } from "../offline-first/index.ts";
 import { automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { automationStudioTrialChangeContradictedNo, automationStudioTrialChangeSteps, type AutomationStudioTrialChangeOutcome, type AutomationStudioTrialChangeSession } from "../trial-change/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "./contracts.ts";
+import { automationStudioSubflowContradictedNo } from "./contradicted-no.ts";
+import { automationStudioSubflowFromStepRun } from "./from-step-run.ts";
+import { AutomationStudioSubflowPendingRepair } from "./pending-repair.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_REPAIR_WORDS as REPAIR_WORDS } from "./repair-words.ts";
 import { automationStudioSubflowTrialOfflineFirstCheck } from "./subflow-trial-offline-first.ts";
 import { automationStudioSubflowTrialResultRead } from "./subflow-trial-result.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_TEST_INPUT as TEST_INPUT } from "./test-input.ts";
 
 /**
  * A partial trial port that can run the deployment's start hook ahead of the
@@ -402,6 +412,9 @@ const CONTRADICTED_RETESTABLE = "The judge answered no, but Core's record of thi
   + "So that no is not taken: this revision is unsure, not closed. Test this same revision again, with the same revision and digest (retestsLeft says how many times), and do not make the change that no asks for. "
   + "Change the subflow only for a defect the trial's own reads, steps and stored rows show, submit it with core.submit_subflow, then test the new revision.";
 
+/** The code of a whole test, or a completion, refused while a failed test's repair is unchecked (header, t804). */
+const FROM_STEP_FIRST = "subflow.trial_from_step_first";
+
 /** The code of a yes the row check did not let stand (header, t692). */
 const ROWS_UNACCOUNTED = "subflow.trial_rows_unaccounted";
 
@@ -431,11 +444,8 @@ const ENTRY_NOT_PREPARED = "A subflow that runs before this one did not run to i
 export class AutomationStudioSubflowTrialGate {
   /** The model-facing test tool, described by whether a test is the judged whole run (header, t679). */
   readonly tool: AutomationStudioLlmEvidenceTool;
-  private static readonly toolInput: JsonObject = {
-    inputSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" },
-      cannotUndo: { type: "array", maxItems: 50, items: { type: "string", pattern: "^act-[1-9][0-9]{0,3}$" }, description: "Optional; leave it out. Core defaults it to the acts a reset listed apart as ones no call can settle. Give it only to name, among the acts a reset listed, those the site offers no control to undo. They stay on the site, and the judge is told." } },
-    required: ["revision", "digest"], additionalProperties: false }
-  };
+  /** The repair a failed whole test left standing, checked from its failing step (header, t804). */
+  private readonly repair: AutomationStudioSubflowPendingRepair;
   /** Each trial's answer as kept, with the kept conditions as of that trial (header, t641): what `standing` hands the submission controller. */
   private readonly verdicts = new Map<string, AutomationStudioSubflowTrialResult & AutomationStudioResultKeptConditionsCarrier>();
   private readonly closedDigests = new Map<string, JsonObject>();
@@ -466,8 +476,12 @@ export class AutomationStudioSubflowTrialGate {
     revisionsAfter?: number | undefined;
     /** Whether a test is a single-subflow plan's judged whole run, which the tool and a yes say (header, t679). */
     whole?: true | undefined;
+    /** The repair memory of this subflow, which a caller hands each brief of it (header, t804). Absent, the gate keeps its own. */
+    pendingRepair?: AutomationStudioSubflowPendingRepair | undefined;
   }) {
-    this.tool = { toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, effect: "mutate", description: input.whole ? WHOLE_DESCRIPTION : SUBFLOW_DESCRIPTION, inputSchema: structuredClone(AutomationStudioSubflowTrialGate.toolInput.inputSchema as JsonObject) };
+    const fromStep = typeof input.port?.fromStep === "function";
+    this.tool = { toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, effect: "mutate", description: `${input.whole ? WHOLE_DESCRIPTION : SUBFLOW_DESCRIPTION}${fromStep ? ` ${REPAIR_WORDS.description}` : ""}`, inputSchema: TEST_INPUT.schema(fromStep) };
+    this.repair = input.pendingRepair ?? new AutomationStudioSubflowPendingRepair();
     if (input.port !== undefined && typeof input.port !== "function") throw new Error("subflow.trial_port_invalid");
     // Earlier briefs' standing nos, at revisions below 1, oldest first (header, t634).
     const earlier = Array.isArray(input.port?.standingNos) ? input.port.standingNos : [];
@@ -485,22 +499,20 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   async test(value: JsonObject, callSignal?: AbortSignal): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
-    const revision = value.revision;
-    const digest = value.digest;
-    const cannotUndo = value.cannotUndo;
-    if (!Number.isSafeInteger(revision) || typeof digest !== "string" || Object.keys(value).some((key) => key !== "revision" && key !== "digest" && key !== "cannotUndo")
-      || (cannotUndo !== undefined && !(Array.isArray(cannotUndo) && cannotUndo.length <= 50 && cannotUndo.every((act) => typeof act === "string")))) {
-      return refused("subflow.trial_input_invalid", `Call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with exactly the latest proposal's revision (an integer) and digest (a string), as core.submit_subflow returned them, and, only to narrow what Core defaults, cannotUndo: the act ids a reset listed that the site cannot undo.`);
-    }
+    const read = TEST_INPUT.read(value, typeof this.input.port?.fromStep === "function");
+    if (!read.ok) return refused(read.code, read.instruction);
+    const { revision, digest, cannotUndo } = read.call;
     const port = this.input.port;
     if (!port) return refused("subflow.trial_unavailable", "No subflow trial runner is available here. Complete with the latest subflowKey, revision and digest; the proposal stays untried.");
     const latest = this.input.latest();
     // A revision at or below the one this brief starts from is an earlier brief's, said so beside this brief's own (header, t658).
-    const earlier = this.earlierBrief(revision as number);
-    if (!latest) return refused("subflow.trial_stale_revision", `${earlier}There is no valid latest proposal to test. Submit this subflow with core.submit_subflow, then test the revision and digest it returns.`, earlier ? { earlierRevision: revision as number } : {});
+    const earlier = this.earlierBrief(revision);
+    if (!latest) return refused("subflow.trial_stale_revision", `${earlier}There is no valid latest proposal to test. Submit this subflow with core.submit_subflow, then test the revision and digest it returns.`, earlier ? { earlierRevision: revision } : {});
     if (latest.revision !== revision || latest.digest !== digest) {
-      return refused("subflow.trial_stale_revision", `${earlier}Only the latest proposal can be tested. Test the revision and digest given here.`, { latestRevision: latest.revision, latestDigest: latest.digest, ...(earlier ? { earlierRevision: revision as number } : {}) });
+      return refused("subflow.trial_stale_revision", `${earlier}Only the latest proposal can be tested. Test the revision and digest given here.`, { latestRevision: latest.revision, latestDigest: latest.digest, ...(earlier ? { earlierRevision: revision } : {}) });
     }
+    // A run from a step checks a repair, on the page as it stands; it is never the part's test (header, t804).
+    if (read.call.from !== undefined && port.fromStep) return automationStudioSubflowFromStepRun({ from: read.call.from, latest, scope: this.input.scope, fromStep: port.fromStep, signal: callSignal ?? this.input.signal ?? this.fallbackSignal, reset: this.input.reset, offline: automationStudioCandidateTrialOffline(port), repair: this.repair });
     const closed = this.closedDigests.get(latest.digest);
     if (closed) return refused("subflow.trial_unchanged_after_no", "This exact proposal was already tried and judged no. Change it to address that feedback, submit it, then test the new revision.", { previousFeedback: closed });
     const repeated = this.repeatedFailures.get(key(latest));
@@ -509,6 +521,9 @@ export class AutomationStudioSubflowTrialGate {
     if (tried >= AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION) {
       return refused("subflow.trial_retest_limit", `This exact revision has been tested ${tried} times without a yes, so it is not tested again. Change the step the last feedback names, submit the subflow, then test the new revision.`, { trials: tried, maxTrials: AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION });
     }
+    // A failed test's repair is checked from its failing step before the whole part is tested again (header, t804).
+    const pending = port.fromStep ? this.repair.refuses(latest, read.call.fromStepImpossible) : undefined;
+    if (pending) return refused(FROM_STEP_FIRST, REPAIR_WORDS.refused(pending.step, latest), pending.step ? { repairStep: pending.step.key } : {});
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
     signal.throwIfAborted();
     // A revision's first test asks whether the recording already shows it failing, before anything is done on the site; once,
@@ -563,7 +578,7 @@ export class AutomationStudioSubflowTrialGate {
     }
     // A no whose remedy would take back what an earlier standing no of this subflow upheld is not taken (header, t633, t634).
     const contradiction = asked.answer.entryPrepared ? this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo }) : undefined;
-    const weighedAnswer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
+    const weighedAnswer = contradiction ? automationStudioSubflowContradictedNo(asked.answer, contradiction) : asked.answer;
     // The page this brief explored was changed by an act the start took back and no step does (header, t647).
     const explored = weighedAnswer.verdict !== "yes" && weighedAnswer.entryPrepared
       ? automationStudioSiteResetExploredOnAbsorbed({ absorbed: absorbedActs, owner: this.input.scope.briefId, steps: (latest.subflows ?? []).flatMap((subflow) => subflow.nodes ?? []), ran: weighedAnswer.acts, whose: "subflow" })
@@ -587,11 +602,13 @@ export class AutomationStudioSubflowTrialGate {
     if (!offlineYes) this.verdicts.set(key(answer), keptConditions.length ? { ...answer, keptConditions } : answer);
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
+    // A failed whole test leaves its repair standing, and its instruction says where (header, t804).
+    const repairSet = port.fromStep && !offline ? this.repair.afterWholeTest(answer, latest) : undefined;
     const retestsLeft = !repeatedStep && (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || offlineYes) ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes" && !offlineYes, partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
       entryPrepared: answer.entryPrepared, feedback: answer.feedback, promotionCredit: false,
-      instruction: `${kept ? `${kept.said} ` : recorded ? `${OFFLINE_WORDS.kept} ` : ""}${offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(repeatedStep) : instructionFor(answer, retestsLeft > 0, this.input.whole === true)}`,
+      instruction: `${kept ? `${kept.said} ` : recorded ? `${OFFLINE_WORDS.kept} ` : ""}${offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(repeatedStep) : instructionFor(answer, retestsLeft > 0, this.input.whole === true)}${repairSet ? ` ${REPAIR_WORDS.afterFailed(repairSet.step, repairSet.verdict)}` : ""}`,
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
       ...(unwitnessed ? { unwitnessed } : {}),
@@ -617,9 +634,13 @@ export class AutomationStudioSubflowTrialGate {
     if (answer?.verdict === "yes" && answer.entryPrepared) return { ok: true };
     const closed = this.closedDigests.get(receipt.digest);
     if (closed) return refusal("subflow.trial_unchanged_after_no", "This exact proposal was judged no and has not changed. Change it, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
-    if (!answer) return refusal("subflow.trial_required", `Test this proposal first: call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
     const repeated = this.repeatedFailures.get(key(receipt));
-    if (repeated) return refusal(`subflow.trial_${answer.verdict}`, repeatedInstruction(repeated), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, failedStep: repeated, trialFeedback: answer.feedback });
+    if (answer && repeated) return refusal(`subflow.trial_${answer.verdict}`, repeatedInstruction(repeated), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, failedStep: repeated, trialFeedback: answer.feedback });
+    // As the test refuses a whole test while a failed test's repair is unchecked, so does completion (header, t804).
+    const latest = this.input.port.fromStep ? this.input.latest() : undefined;
+    const pending = latest ? this.repair.refuses(latest, undefined) : undefined;
+    if (latest && pending) return refusal(FROM_STEP_FIRST, REPAIR_WORDS.refused(pending.step, latest), pending.step ? { repairStep: pending.step.key } : {});
+    if (!answer) return refusal("subflow.trial_required", `Test this proposal first: call ${AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
     const retestable = (this.trials.get(key(receipt)) ?? 0) < AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION;
     const advised = answer.verdict === "unsure" && answer.entryPrepared && retestable && typeof answer.feedback.contradictedByBuild !== "string" ? { retestAdvised: automationStudioCandidateRetestAdvised(answer) } : {};
     return refusal(`subflow.trial_${answer.verdict}`, instructionFor(answer, retestable, this.input.whole === true), { verdict: answer.verdict, entryPrepared: answer.entryPrepared, trialFeedback: answer.feedback, ...advised });
@@ -747,29 +768,6 @@ function key(receipt: { revision: number; digest: string }): string { return `${
 function withCoreFindings(answer: AutomationStudioSubflowTrialResult, found: readonly JsonObject[]): AutomationStudioSubflowTrialResult {
   const earlier = Array.isArray(answer.feedback.coreFindings) ? answer.feedback.coreFindings : [];
   return { ...answer, feedback: { ...answer.feedback, coreFindings: [...earlier, ...found] } };
-}
-
-/** A no the build's own record contradicts, kept as an unsure with Core's words beside the judge's (header, t633): its revision is not closed. */
-function notTaken(answer: AutomationStudioSubflowTrialResult, contradiction: AutomationStudioResultStandingNoContradiction): AutomationStudioSubflowTrialResult {
-  const said = contradiction.revision < 1 ? earlierBriefSaid(contradiction) : contradiction.said;
-  return { ...answer, verdict: "unsure", feedback: { ...answer.feedback, contradictedByBuild: said } };
-}
-
-/**
- * Core's words for a no an earlier brief's standing no contradicts (header,
- * t634): as `../../result-verification/standing-no/contradiction.ts` says it,
- * but naming the revision as an earlier brief's, since its number is not one
- * of this brief's. The conditions by Core's names and a count of rows, never
- * their labels. Generic words.
- */
-function earlierBriefSaid(found: AutomationStudioResultStandingNoContradiction): string {
-  const { conditions, rows } = found;
-  const them = conditions.length === 1 ? conditions[0]! : `${conditions.slice(0, -1).join(", ")} and ${conditions.at(-1)!}`;
-  const what = rows === 1 ? "a row" : `${rows} rows`;
-  const it = rows === 1 ? "it" : "them";
-  return `Core's record of this build contradicts this no. A revision of this subflow that an earlier brief tested, read without ${them}, stored ${what} that the no standing on its trial called not the kind of thing the request asks for; `
-    + `this revision reads with ${conditions.length === 1 ? "it" : "them"} and stores none of ${it}. Removing ${them}, as this no asks, would bring back exactly what answered that earlier no, `
-    + "so this no is not taken: the verdict is unsure, not no.";
 }
 
 /** An act as the model is shown it: its id, what it did, and the call that made it. */

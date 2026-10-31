@@ -8,9 +8,10 @@ import type { PlatformEmailTemplateOverrides } from "./types.ts";
 /**
  * The `file` sender, the local stand-in's mailbox: each message is rendered
  * and written as one JSON file (`<ms>-<random>.json` holding template, to,
- * subject, text and sentAt) in `directory`, readable only by its owner. The
- * text carries the message's links, so the directory is as private as a
- * mailbox. Nothing is logged.
+ * subject, text and sentAt, plus `welcomeUrl` as data when the message has
+ * one) in `directory`, readable only by its owner. The text and the record
+ * carry the message's links, so the directory is as private as a mailbox.
+ * Nothing is logged.
  */
 export class FileEmailSender implements EmailSender {
   readonly kind = "file";
@@ -29,7 +30,15 @@ export class FileEmailSender implements EmailSender {
     const sentAtMs = this.now();
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const name = `${sentAtMs}-${randomBytes(6).toString("hex")}.json`;
-    const body = { template: rendered.template, to: rendered.to, subject: rendered.subject, text: rendered.text, sentAt: new Date(sentAtMs).toISOString() };
+    const welcomeUrl = message.variables.welcomeUrl;
+    const body = {
+      template: rendered.template,
+      to: rendered.to,
+      subject: rendered.subject,
+      text: rendered.text,
+      ...(typeof welcomeUrl === "string" ? { welcomeUrl } : {}),
+      sentAt: new Date(sentAtMs).toISOString(),
+    };
     await writeFile(join(this.directory, name), `${JSON.stringify(body, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
   }
 }

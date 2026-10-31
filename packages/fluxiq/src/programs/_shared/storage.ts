@@ -331,7 +331,7 @@ function sqliteStateForPath(targetPath: string, strict = false): { repository: S
   const automationPrefix = "artifacts/automation-studio/";
   if (relative.startsWith(programPrefix)) {
     return {
-      repository: new SQLiteRepository({ rootDir: current, kind: "program.state", layoutVersion: 2, connections: programStateConnections }),
+      repository: new SQLiteRepository({ rootDir: current, kind: "program.state", layoutVersion: 2, connections: programStateConnections.forRoot(current) }),
       id: relative.slice(programPrefix.length).replace(/\.json$/i, ""),
       rootDir: current,
       kind: "program.state",
@@ -339,7 +339,7 @@ function sqliteStateForPath(targetPath: string, strict = false): { repository: S
   }
   if (relative.startsWith(automationPrefix)) {
     return {
-      repository: new SQLiteRepository({ rootDir: current, kind: "automation.state", layoutVersion: 2, connections: programStateConnections }),
+      repository: new SQLiteRepository({ rootDir: current, kind: "automation.state", layoutVersion: 2, connections: programStateConnections.forRoot(current) }),
       id: relative.slice(automationPrefix.length).replace(/\.json$/i, ""),
       rootDir: current,
       kind: "automation.state",
