@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t828 lead checks and real browser proof pass; final commits and paired dev integration pending. No full/paid calls; main held.
+Status detail: t828 accepted and integrated in both dev branches; shared SDK/bundles current0.20. Remaining P8 repeat guard/history; main held, no paid calls.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active t828, 2026-10-31:** Source-less identity recovery and full-result receipt integrity accepted locally. Lead Core122identity+62receipt tests, domain affected selections/native16, extension84, Labtrace4, affected types/builds and both audits pass; Corepacking allowance15to10/1143baseline, Down615 unchanged. Real Chromium134.0.6998.35 e2e-chromium social-network-feed proof8 passes1test/body45.6s: four actual target-not-found/unacted attempts with accepted ~354KB replies, fourth identity unmatched, zero gateway suppression/errors; Undo then explicit original-target refresh returns only selector/element patches, one required Like, exact unchanged other-post map. This proves automatic negative recovery and explicit positive refresh, not automatic fourth-attempt browser success (Core units cover that). Initial receipt hash256KiB rejection fixed at intake/observer with exact full-payload hashing; small authority bounds/unknown safety unchanged. Earlier locator/trace-field assertion mistakes and failed attempts recorded; artifacts1-8 ignored in main. Final extensioncheck21.723s passes; private SDK0.20 current, shared checkout0.19 until merge/refresh. Core taskd91ff313/Down09592ecd backups pushed; final docs/E2E commits and paired integration pending. Main held: both full-suite slots used. No paid/API calls/panel management; user clinerules preserved. NextP8repeatguard/history.
+**Accepted t828, 2026-10-31:** Source-less identity recovery and full-result receipt integrity accepted locally. Lead Core122identity+62receipt tests, domain affected selections/native16, extension84, Labtrace4, affected types/builds and both audits pass; Corepacking allowance15to10/1143baseline, Down615 unchanged. Real Chromium134.0.6998.35 e2e-chromium social-network-feed proof8 passes1test/body45.6s: four actual target-not-found/unacted attempts with accepted ~354KB replies, fourth identity unmatched, zero gateway suppression/errors; Undo then explicit original-target refresh returns only selector/element patches, one required Like, exact unchanged other-post map. This proves automatic negative recovery and explicit positive refresh, not automatic fourth-attempt browser success (Core units cover that). Initial receipt hash256KiB rejection fixed at intake/observer with exact full-payload hashing; small authority bounds/unknown safety unchanged. Earlier locator/trace-field assertion mistakes and failed attempts recorded; artifacts1-8 ignored in main. Final extensioncheck21.723s passes. Integrated Core4327ad27/downstream690de074; Core mandatory70merge contracts and Down structure gate pass. Shared SDK0.20/domain/Chrome/Firefox/e2e bundles refreshed79.474s/18.898s/24.039s,22files per target. Task backups45e13d1b/cc54135d retained. First Down merge refused a preserved handoff note, clean retry passed; Core finish required clean private worktree detachment, then passed. Final paired dev push follows this memory commit. Main held: both full-suite slots used. No paid/API calls/panel management; user clinerules preserved. NextP8repeatguard/history.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -636,17 +636,17 @@ Shipped 2026-10-29; see the Work Ledger. The phase text is in
 
 - Files:
   - `executor/defensive/lasting-act.ts:54` and the permission gate class: the union with CC12 `commit`.
-  - `executor/target-reacquire/before-attempt.ts`, `lineage.ts`: identity re-find at attempt 2 for any target; the
-    source-step path stays for row-bound targets.
+  - t828 accepted `executor/unbound-reacquire/` and `parameter-refresh/`: trusted identity refresh before the fourth attempt;
+    source-step recovery keeps precedence for row/output-bound targets and never falls back after source failure.
   - CC8 accepted t826: `llm/repeat-guard/retry-later.ts` uses strict typed unacted temporary facts; host produces
     them after wire parsing. Generic `executor/defensive/thrown-error.ts` transport/status fallback stays in Core.
   - `executor/step-skip/act-not-done.ts:26`: the effect class replaces English words.
   - A step-loop run-time repeat guard on (node, target, inputs, view digest) that ends after 2 identical unchanged repeats.
   - `recovery/in-run-repair/history.ts`: adds obstructions, paces, re-acquire and state-route records.
-- Contract: CC8, CC10, CC12, and `reacquireTarget` accepting an identity with no source step. Paired W8.
+- Contract: CC8, CC10, CC12; t828 adds optional `reacquireUnboundTarget` plus trusted `resolveTargetRefresh`/registered slots, preserving source-bound `reacquireTarget`. Paired W8.
 - Tests:
   - `executor/defensive/tests/lasting-act-client-floor.test.ts`
-  - `executor/target-reacquire/tests/before-attempt-identity.test.ts`
+  - `executor/unbound-reacquire/tests/` and `executor/parameter-refresh/tests/` (t828 accepted)
   - `llm/repeat-guard/tests/outcomes.test.ts` (plus real loop/amendment/privacy owning tests in t826 reports)
   - `executor/step-skip/tests/act-not-done-effect.test.ts`
   - `executor/step-loop/tests/run-repeat-guard.test.ts`
@@ -771,8 +771,8 @@ Accepted t827 ledger preserved verbatim in [the accepted archive](framework-heav
 - Changed: trusted target-refresh flags/hooks and resolved-parameter overlays; shared record gates/private capture provenance; native/authoring scoped recovery; exact full-result receipt hashing; owning tests, browser proof and architecture/status docs.
 - Why: recover a stale literal target without source lineage or wrong-record action; preserve legitimate large failed-result receipts without weakening authority or uncertain-effect safety.
 - Validation: `pnpm.cmd --filter fluxiq exec vitest run src/client-gateway/service/command-ledger/tests/controller.test.ts src/client-gateway/service/command-ledger/tests/dispatch.test.ts src/client-gateway/service/command-ledger/tests/dispatch-host-lease.test.ts src/programs/automation-studio/runtime/service/command-run/tests/controller.test.ts --maxWorkers=2 --minWorkers=1` ->62passed/4files; `pnpm.cmd --filter fluxiq check` ->exit0/56.093s; `node scripts/structure-audit.mjs` ->passed481warnings/1143baseline; earlier identity122passed/14files and SDKbuild pass, detailed lead report.
-- Outcome: Ready to integrate; strict real-browser negative/explicit-positive identity oracle passes; initial setup/test assertion failures and real receipt-size defect fixed/proven. No automatic positive fourth-attempt browser or paid qualification claimed.
-- Follow-up: commit/push task work, finish downstream then Core under narrow gates, refresh shared SDK/bundles; continue P8 repeat guard and bounded repair history. Main awaits later permitted full sweep; no paid go.
+- Outcome: Accepted and integrated Core4327ad27/downstream690de074; Core mandatory70merge contracts and Down structure gate pass. Real-browser strict oracle accepted; earlier setup/assertion errors and real receipt defect documented. Shared SDK/bundles current0.20.
+- Follow-up: final paired dev push, then P8 unchanged-repeat guard and bounded repair history. Main awaits a later permitted full sweep; no paid go, provider calls or user-panel management.
 
 ## Open Questions
 
