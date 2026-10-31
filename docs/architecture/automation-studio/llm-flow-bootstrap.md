@@ -291,9 +291,25 @@ toggle and the skip record.
   only when the target does not already show the signature, and otherwise answers
   `skipped: "already_in_state"`, which the executor records as a skipped attempt
   with no landed act. A plain press that repeats a toggle whose signature names
-  `idempotentWith` is refused `candidate.toggle_not_idempotent` at submission
+  `idempotentWith`, on a node that cannot take `ensureState`, is refused
+  `candidate.toggle_not_idempotent` at submission
   (`script-statements/toggle-idempotent.ts`). A toggle with no signature has no
   idempotent form and falls under the targeted-reset case.
+  A look can tie a step as well (t799, CC9): a handle view of the domain's
+  resolved answer may carry `control: { stateful: true, state?, ensures?,
+  idempotentWith? }` (`state` at most 40 characters, `ensures` a plain JSON
+  object of at most 4,096 characters in the form the press node's `ensureState`
+  takes; a field out of bound is dropped and the rest kept, and `control` is
+  read only on a step's own views, never on a page fact's). A step whose own
+  views all agree on `ensures` is tied to a toggle press, with the lowest
+  precedence after explored and trial presses, and its node gets
+  `ensureState := ensures` (`llm/harness-options/plan-parameter-resolution.ts`,
+  `script-statements/toggle-idempotent.ts`). A tie from a look never refuses:
+  a look is not evidence that the node flips the control, so a node that cannot
+  take `ensureState` stays a plain press. Where an explored or trial press named
+  an `idempotentWith`, a press node that takes `ensureState` is that idempotent
+  form and gets `ensureState` in place of the refusal; only a node that cannot
+  take it is refused `candidate.toggle_not_idempotent`.
   When several presses are tied to one step and their signatures disagree, the
   earliest decides (`script-statements/toggle-tie.ts`, t792): a later opposite
   press reversed the build's own act and names the site's before-state, never
@@ -317,6 +333,27 @@ toggle and the skip record.
   (`inherit: false`). Core writes it; the model writes nothing (t787). A Flow
   therefore does not depend on a layer the build dismissed once and the site
   remembered.
+- **Layers a trial closed become handlers too (t799).** A non-skipped trial
+  attempt that cleared a layer carrying a name, a `wayOutDefinitionId` and a
+  non-empty `controlRef` is recorded in the same place
+  (`kind: "trial_close"`, deduped by `id ?? name`; one record is shared by a
+  project build's briefs and subflow trials). The submission lowers these after
+  the explored ones, one per layer per part, and skips a part that already waits
+  for that layer (a handler whose `when` asks either the `obstruction` or the
+  `dialog` fact about the name). The handler is scoped to the part, fires when
+  the layer's fact is visible by name (`obstruction` if the layer had an `id`,
+  else `dialog`), presses `wayOutDefinitionId` run with `controlRef` as its parameters (the parameters the domain resolved for the press; web: `{ selector, element }`),
+  declares no consequence and carries `learnedFrom: "trial_close"` and
+  `layerId` in its metadata (`layer-handlers/trial.ts`). The cleared-layer
+  parser keeps `wayOutDefinitionId` and `controlRef` without a `wayOut` token
+  (the definition beside a token or a `controlRef`; a `controlRef` only beside
+  the definition).
+- **A handler the plan's check refuses is dropped alone and named (t799).** The
+  handlers are checked together first, then one by one; one whose press lacks a
+  required parameter is left out without taking the others, and the submission
+  adds one advice line naming each dropped layer and the issue code
+  (`layer-handlers/dropped-handler*.ts`). A plan valid without handlers stays
+  valid.
 - **No automatic cleanup.** The build does not put the site back when it ends.
   The ending row says per witness what the build changed ("held 9, now holds 11"),
   and the chat offers "Put it back", which runs the reset brief only on request.
@@ -1133,7 +1170,15 @@ category sentence), the pass and row, the wait asked, the wait taken and the
 pace, and a `said` sentence ending "From then on the run started this step at
 most once every 5.5 s." when a pace was learned. The paces a run learned are
 also said once at the top level under `paces`. The failure's own message is
-never read. Promotion keeps a learned pace: the deciding trial's learned pace
+never read. A rate limit with no wait hint also raises the pace (x1.5 from a
+1 s floor, capped at 60 s). Core writes the learned pace itself: at the next
+submission `flow-bootstrap/learned-paces.ts` sets each step's `paceMs` to the
+largest pace a trial learned for that step's identity (the definition and its
+parameters with `ensureState` off), rounded up to 100 ms, held to the plan's
+bound and never below the step's own; a resubmission of the same text counts as
+a new revision while a pace waits to be written. The slow-down instruction the
+model gets says so and asks only for the dismiss-and-wait step when a way out
+was named, not for a `repeat pace:` line. Promotion keeps a learned pace: the deciding trial's learned pace
 raises the matching plan node's `paceMs` (never lowers an authored one, held
 to the plan's bound), and the `candidateTrial` audit detail names
 `learnedPaces` and `raisedPaces` (`service/candidate-trial/promotion.ts`).

@@ -270,7 +270,7 @@ fields and malformed usage, normalizes provider throws to terminal diagnostics,
 and persists only a compact structured-result summary without provider
 free-text or arbitrary metadata.
 
-Core also exports a production transport seam and a built-in DeepSeek adapter.
+Core exports a production transport seam and built-in DeepSeek and native Anthropic (Claude) adapters.
 The adapter has one fixed HTTPS chat-completions URL and a configured set of
 DeepSeek models (`AUTOMATION_STUDIO_DEEPSEEK_MODELS`: `deepseek-flash`, the
 default, and `deepseek-v4-pro`); a model outside that set is refused by name,
@@ -290,6 +290,61 @@ reserved at its own measured input tokens and, when the provider prices calls
 never at its window-sized limit. Failed or usage-less calls are charged
 conservatively.
 
+**Native Anthropic (Claude), t816.** `createAutomationStudioAnthropicProvider`
+uses the fixed `https://api.anthropic.com/v1/messages` endpoint, API version
+`2026-10-21`, opaque per-call key release, manual redirects and bounded reads.
+`createAutomationStudioAnthropicPanelCommandModel` supplies the same transport
+for conversation decisions. Both stream SSE at the selected model's native
+128,000 output maximum; the harness's 8,000-token reply reservation is a budget
+estimate, never the wire output cap. Removed sampling parameters and unsupported
+`thinking: disabled` are not sent. Claude 4.5+ accepts input plus
+`max_tokens` beyond its context window when the input itself fits. Generation
+that fills the remaining window reports `model_context_window_exceeded`, which
+Core treats as paid truncation, never a successful structured answer; no page
+evidence is trimmed. See the provider's
+[overflow contract](https://platform.claude.com/docs/en/build-with-claude/context-windows#context-window-overflow-behavior). A request and its body read share the same
+deadline; refused, truncated and malformed paid replies retain usage and cost. Decoded
+content, nested JSON-text layers and the final structured answer are credential
+screened before raw reply logging or return. Rejected raw answers stay unlogged.
+
+The browser-safe `fluxiq/automation-studio/llm-models` export retains the
+DeepSeek names and adds `AUTOMATION_STUDIO_ANTHROPIC_MODELS`,
+`AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL` (`claude-sonnet-5-5`) and
+`AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS`. Sonnet, Haiku and Opus 5.5 have 1M
+context and 128K output. `FLUXIQ_LLM_DEFAULT_MODEL` accepts either provider's
+configured IDs; an explicit DeepSeek factory remains usable under a Claude
+global default. Explicit mismatched provider/model/key settings are refused;
+there is no cross-provider fallback. The host infers missing settings from a
+selected key's metadata, and resolves and validates its unlock on every call.
+Secret Keys stores the compatible `Anthropic` provider value while the panel
+labels it **Anthropic (Claude)**; Flow settings persist `anthropic` and the
+chosen model/key without loading key values.
+
+Both adapters share provider-neutral task prompts, evidence preflight, schemas
+and refusal screening under `runtime/llm/provider-task` and
+`provider-transport`. Anthropic receives a transformed native schema when its
+closed-object and grammar limits permit it. Arbitrary maps or schemas exceeding
+24 optional fields or 16 unions use a closed native envelope containing
+`result_json`, a serialized copy of the original answer. This reversible adapter
+framing preserves every nested parameter; the unchanged original schema is
+validated locally and Core's harness applies its usual semantic checks. No
+scenario-specific model guidance is introduced.
+
+Anthropic's `input_tokens` excludes cache creation and cache reads: Core adds
+both to its normalized input count, and prices uncached input, five-minute
+writes, one-hour writes, cache hits and output separately. Haiku's above-100k
+prompt tier applies to the whole prompt. Estimates reserve an all-write input
+case; charges use the provider's reported split, including unsuccessful paid
+replies. A stream interrupted before its final usage delta leaves the bill
+unknown, preserving Core's conservative reservation; its initial output count
+is never treated as the completed bill. Product spending defaults remain unchanged; an isolated Lab's explicit
+`FLUXIQ_LLM_RUN_COST_CEILING_USD=5` is honored and clamps Flow settings as usual.
+Rates and API details were checked on 2026-10-30 against Anthropic's
+[models](https://platform.claude.com/docs/en/models/overview),
+[Messages](https://platform.claude.com/docs/en/api/messages/create),
+[structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+and [pricing](https://platform.claude.com/docs/en/about-claude/pricing) references.
+
 **A model call is paid for by the person it is made for, and needs nothing
 else.** Building, exploring, repairing, verifying or judging, diagnosing and
 adapting a Flow all call the model on the caller's own unlocked Secret Keys
@@ -304,8 +359,8 @@ The shipped host binds one resolver,
 `createAutomationStudioSessionKeyProviderResolver`
 (`runtime/llm/session-key-provider.ts`), with
 `automationStudio.bindLlmExecutionProvider(resolver)`. A request with no
-caller resolves no provider. With a caller it returns the DeepSeek adapter
-whose secret is resolved per call: the newest enabled DeepSeek LLM key,
+caller resolves no provider. With a caller it returns the configured provider adapter
+whose secret is resolved per call: the Flow's chosen matching key, or the caller's own newest enabled key for that provider,
 released to the caller's own unlocked session by a one-use Secret Keys session
 reveal authorization, by the same rule the chat window's key follows
 (`runtime/llm/deepseek/panel-command-key.ts`). The unlock is established at
@@ -313,8 +368,9 @@ login and lives only in memory; Automation Studio never accepts or retains a
 password or PIN, and a person whose keys are locked, or who has signed out,
 gets no key and the call fails as `llm.provider_secret_unavailable`. The
 provider refuses an outbound body that contains the secret. The model is the
-request's `modelId` when that is a configured DeepSeek model, and Core's
-default otherwise. The resolution carries Core's default per-call token,
+request's supported `modelId`, the selected provider's default when only a
+provider is pinned, or Core's configured default. An unknown explicit model is
+refused. The resolution carries Core's default per-call token,
 timeout and cost limits (USD 0.25 per call, USD 2 per run) as defaults the run
 budget applies, not as checks of their own. Provider secrets are decrypted just
 in time at dispatch and never retained or persisted. Core never reads a
@@ -1070,13 +1126,20 @@ Retry waits, pace waits and Wait pauses share one wait,
   after-action snapshot. A limit the page states is not read: no record
   reaching Core carries one (a failure record carries only `retryAfterMs`, a
   closed layer only its kind and way out), and Core parses no page wording,
-  so refusals are the one source. Only when no earlier start explains the
+  so refusals are the one source. A rate limit without a wait hint (a failed
+  attempt's `obstruction` of kind `rate_limit`, or a cleared `rate_limit` layer
+  on any attempt) raises the node's pace to `min(60 s, max(1 s, ceil(pace *
+  1.5)))`, never below an authored pace (`pacing/rate-limit-pace.ts`,
+  `learnUnhinted` in `pace-keeper.ts`); a stated wait (`retryAfterMs`, a
+  transport hint) goes through the learning above. Only when no earlier start explains the
   refusal (the node's first act refused) does the pace rise to the hint. Each
   further hint grows the pace by half again at least, up to
   60 s (`AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS`); an authored pace is never
   lowered. Each attempt records `pace: { inForceMs, waitedMs, raisedToMs? }`
   and the trace lists each paced node under `trace.pace`. A candidate script
-  writes the pace with `repeat pace:`, and promotion keeps a pace a trial
+  writes the pace with `repeat pace:`, Core itself writes the pace a trial
+  learned as the step's `paceMs` at the next submission
+  (`flow-bootstrap/learned-paces.ts`), and promotion keeps a pace a trial
   learned ([LLM Flow Bootstrap Contract](automation-studio/llm-flow-bootstrap.md#script-statements-a-candidate-may-write)).
 - **A passed trial the site asked to slow down completes only once the Flow
   answers it** (t485; `runtime/flow-bootstrap/candidate/trial-gate.ts`). A
@@ -1467,16 +1530,18 @@ the element was left to the output's adapter.
 
 An attempt also records `clearedLayers` when a dispatch says the client closed
 layers the page put over itself while the output ran (state-aware recovery,
-C11). Each entry is `{ kind, control, name?, controlName?, wayOut?, wayOutDefinitionId? }`:
+C11). Each entry is `{ kind, control, id?, name?, controlName?, wayOut?, wayOutDefinitionId?, controlRef? }`:
 
 | Field | What it holds |
 | --- | --- |
-| `kind` | A closed word: `consent`, `rate_limit`, `promotion`, `assistant` or `dialog`. |
+| `kind` | A closed generic word: `overlay`, `notice`, `rate_limit`, `assistant` or `other`. The older words are still read and mapped (`consent` to `overlay`, `promotion` to `notice`, `dialog` to `other`, `runtime/executor/node-execution/layer-kind.ts`). |
+| `id` (t799) | An opaque id, stable for the same layer across visits: 1 to 80 characters of `[A-Za-z0-9._:-]`. |
 | `control` | The dismiss control's words, whitespace-collapsed, with token-shaped runs hidden and held to 40 characters. |
 | `name` (t516) | The layer's own name, as the client's page view labels the dialog. Bounded the same way, but held to 120 characters. |
 | `controlName` (t516) | The pressed control's own name, bounded as `name` is. |
 | `wayOut` (t470) | The domain's opaque reference to the control it pressed, kept only as a short token. The control's description stays in the domain. |
-| `wayOutDefinitionId` (t516) | The node definition a step pressing that way out runs, as the domain names it. An identifier, kept only beside `wayOut`. |
+| `wayOutDefinitionId` (t516) | The node definition a step pressing that way out runs, as the domain names it. An identifier, kept with a `wayOut` token or with a `controlRef`. |
+| `controlRef` (t799) | The opaque, durable target of the pressed way out: the parameters `wayOutDefinitionId`'s node runs with, as the domain resolved them (web: `{ selector, element }`); Core hands it back whole and never reads inside. A plain JSON object of at most 8 KB and 16 levels, refused whole if any key starts with `$` (a `$state` binding would read run values into the press). Kept only beside `wayOutDefinitionId`. |
 
 Core reads the field from the top of the dispatch payload, the same place it
 reads a dispatched `route` (`runtime/executor/node-execution/cleared-layers.ts`):
@@ -1489,6 +1554,38 @@ reads a dispatched `route` (`runtime/executor/node-execution/cleared-layers.ts`)
 Each attempt that closed any layer also says one step `interference` recovery
 row (see the client gateway's activity contract). The dismiss words and names
 stay on the trace and never reach the chat.
+
+**Obstruction: a layer that stood in the way (t799).** A dispatch whose target
+was covered, or that failed because a layer stood over the page, also reports
+`outputs.result.obstruction` (one object; the latest on an attempt wins, and it
+is recorded as the attempt trace's `obstruction`). A `web.action.rate_limited`
+failure reports one of kind `rate_limit`. The parser
+(`runtime/executor/node-execution/obstruction-of.ts`) drops the whole object
+when the kind is unusable or `dismiss` is not a list, and bad fields one at a
+time:
+
+| Field | What it holds |
+| --- | --- |
+| `kind` | The generic kind word, mapped as for a cleared layer. |
+| `id`, `name`, `covers` | Opaque layer id (token), the layer's name (120 characters), and what it covers (token). |
+| `retryAfterMs` | 1 to 600000, kept only on `rate_limit`, and only when the page stated it. |
+| `dismiss` | At most six ways out, each `{ intent: dismiss, accept or neutral, controlRef?, definitionId?, action?: "back" }`. |
+
+**The `clear_interference` rung presses the obstruction (t799).** For an
+attempt with a pressable obstruction the rung is offered ahead of the Flow's own
+interference node, whatever the failure's `retryable` (a non-retryable
+`blocked_by_dialog` still gets it), and under the usual gates: the step may be
+repeated, attempts remain, the rung is not spent
+(`executor/node-execution/obstruction-way-out.ts`, `executor/ladder-run.ts`).
+It picks the first way out whose intent is `dismiss`, else the first `neutral`,
+and never `accept`; the way out needs a `definitionId` and a `controlRef`
+(unless it is `action: "back"`). It runs a transient node
+`{ definitionId, parameterValues: controlRef }` that declares no
+consequence and is not added to the Flow, emits one `interference` recovery row
+about the failed step, waits for the target's readiness and attempts the step
+again. A press that fails spends the rung and the ladder goes on. A retry this
+rung makes does not first show a failed card (`step-loop/failed-attempt.ts`).
+The client's own press guard still refuses anything committing.
 
 **A closed layer becomes a handler of the Flow (t516).** The user's rule is
 that an interruption met in a run becomes a branch of the Flow: wait for it,
@@ -1510,10 +1607,13 @@ takes these steps:
    one `runtime/flow-bootstrap/layer-handlers/patch.ts` builds; a build gives a
    submitted Flow the same shape for a layer it cleared while exploring, t787):
    - the event is `before` that step, scoped to that step;
-   - `when` is `{ fact: "dialog", op: "visible", value: <name> }`;
+   - `when` is `{ fact: "obstruction", op: "visible", value: <name> }` for a
+     layer that carried an `id` (a client that sends one), else the same with
+     `fact: "dialog"`; `obstruction` is answered exactly as `dialog` is, and
+     `dialog` stays as its alias. Handlers are keyed by `id ?? name`;
    - the one step presses the way out by `wayOutDefinitionId` and the handle,
      and declares no lasting consequence;
-   - `completionCheck` is the same dialog `absent`;
+   - `completionCheck` is the same fact `absent`;
    - `then` is `resume`.
 3. The domain resolves the step's handle from the Flow's view history, as a
    build's step is resolved. A domain may reconstruct that view directly from

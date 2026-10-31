@@ -9,7 +9,7 @@ import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } fro
 import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../../host-runtime.ts";
 import { AUTOMATION_STUDIO_ASK_EFFECT } from "../../parking/index.ts";
 import { nodeAttemptFromResult } from "../attempt-trace.ts";
-import type { AutomationStudioClearedLayer, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "../contracts.ts";
+import type { AutomationStudioClearedLayer, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioObstruction, AutomationStudioRecordBatch } from "../contracts.ts";
 import { automationStudioFaultFromThrownError, automationStudioNodeSideEffectClass, automationStudioThrownErrorText } from "../defensive/index.ts";
 import { captureHostState, enrichAttemptWithHostState } from "../host-state.ts";
 import { automationStudioNodeOutputReferences, collectNodeInputs, collectWiredNodeInputs } from "../node-inputs.ts";
@@ -20,6 +20,7 @@ import { emitAutomationStudioActivity, emitAutomationStudioActivityClearedWait, 
 import { attemptWithHostExpectationEvaluation } from "../transition-comparison.ts";
 
 import { automationStudioClearedLayersOf } from "./cleared-layers.ts";
+import { automationStudioObstructionOf } from "./obstruction-of.ts";
 import { automationStudioResultPathOutputs } from "./result-path-outputs.ts";
 import { automationStudioAttemptWithRecordedEffect } from "./recorded-effect.ts";
 import { automationStudioAttemptAlreadyInState } from "./already-in-state.ts";
@@ -34,8 +35,10 @@ import { randomNodes } from "../../../nodes/random/index.ts";
 import { timingNodes } from "../../../nodes/timing/index.ts";
 
 // `cleared` collects the layers each dispatch of the attempt says the client
-// closed over the page (`./cleared-layers.ts`), in dispatch order.
-type RecordCaptureTarget = { runState: AutomationStudioRunState; nodeId: string; attemptId: string; consumer?: object; cleared?: AutomationStudioClearedLayer[] };
+// closed over the page (`./cleared-layers.ts`), in dispatch order;
+// `obstruction` keeps the layer the latest dispatch that reported one says
+// stood over the page (`./obstruction-of.ts`, CC7), a failed dispatch's too.
+type RecordCaptureTarget = { runState: AutomationStudioRunState; nodeId: string; attemptId: string; consumer?: object; cleared?: AutomationStudioClearedLayer[]; obstruction?: AutomationStudioObstruction };
 type EffectDispatchContext = Parameters<NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>>[1];
 const RECORDS_WRITE_EFFECT = "records.write";
 const PERSIST_FAILED_MESSAGE = "The output ran, but the records it returned could not be saved.";
@@ -153,7 +156,7 @@ export class AutomationStudioNodeAttemptExecution {
         // An importer's definition is the native runtime's, so it says which routes the node declares.
         const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
         const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, target, definition?.outputs ?? native.declaredOutputs);
-        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities, runState);
+        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
       if (options.commandRun && (!options.compositeExecutor || !options.commandRun.acceptsComposite(options.compositeExecutor))) {
         await options.commandRun.stop("executor.unsupported_native_or_composite");
@@ -199,7 +202,7 @@ export class AutomationStudioNodeAttemptExecution {
       let result = await definition.execute(context);
       const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, definition.outputs);
-      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target) }, options, beforeAction, hostCapabilities, runState);
+      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target) }, options, beforeAction, hostCapabilities, runState);
     } catch (error) {
       await options.commandRun?.stop("executor.attempt_failed");
       // The one place a node's throw becomes an attempt, and therefore the one
@@ -278,6 +281,11 @@ export class AutomationStudioNodeAttemptExecution {
         // Layers the client closed over the page while this output ran are read
         // off the dispatch payload before records are captured from it.
         target.cleared?.push(...automationStudioClearedLayersOf(answer.outputs?.result));
+        // So is the layer that stood over the page, which a failed dispatch
+        // carries at the same place (`../../io-policy.ts` keeps the payload on a
+        // failure as on a success): the interference rung presses its way out.
+        const obstruction = automationStudioObstructionOf(answer.outputs?.result);
+        if (obstruction) target.obstruction = obstruction;
         dispatched = await this.withCapturedRecords(effect, answer, options, target);
         // A required command that answered without a committed receipt either
         // never left -- nothing was claimed for it, so it is withdrawn and the
@@ -359,6 +367,11 @@ export class AutomationStudioNodeAttemptExecution {
     if (layers.length === 0) return {};
     emitAutomationStudioActivityStepInterference({ nodeId, kinds: layers.map((layer) => layer.kind) });
     return { clearedLayers: layers };
+  }
+
+  /** The layer the attempt's dispatches said stood over the page, kept on the attempt trace; none reported, no field. */
+  private static obstructionMet(target: RecordCaptureTarget): Pick<AutomationStudioNodeAttemptTrace, "obstruction"> {
+    return target.obstruction ? { obstruction: target.obstruction } : {};
   }
 
   // One card per node attempt, keyed under the Call Flow attempts it runs inside

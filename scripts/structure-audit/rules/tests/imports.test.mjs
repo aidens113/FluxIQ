@@ -201,3 +201,32 @@ test("a barrel that leads only to a type-only import of the importer does not le
   };
   assert.equal(skipsWith(files, "src/other/thing.ts"), 1);
 });
+
+// --- Directory-scoped forbidden specifiers. ---
+
+const SCOPED_CONFIG = {
+  testRootDirNames: ["tests", "e2e"],
+  forbiddenImports: [{ from: "apps/web/src", pattern: /^@fluxiq\/contracts(\/|$)/, reason: "Use fluxiq/<subpath>." }],
+  importBoundaries: []
+};
+
+const scopedFindings = (file, source) =>
+  run(makeCtx({ [file]: source }, SCOPED_CONFIG)).filter((finding) => finding.message.includes("fluxiq/<subpath>"));
+
+test("web source importing @fluxiq/contracts fails", () => {
+  assert.equal(scopedFindings("apps/web/src/a.ts", 'import { x } from "@fluxiq/contracts/x";').length, 1);
+});
+
+test("a type-only import and a re-export of @fluxiq/contracts fail", () => {
+  assert.equal(scopedFindings("apps/web/src/a.ts", 'import type { X } from "@fluxiq/contracts/client-gateway";').length, 1);
+  assert.equal(scopedFindings("apps/web/src/b.ts", 'export * from "@fluxiq/contracts";').length, 1);
+});
+
+test("a web test importing @fluxiq/contracts fails", () => {
+  assert.equal(scopedFindings("apps/web/src/feature/tests/a.test.ts", 'import { x } from "@fluxiq/contracts/x";').length, 1);
+});
+
+test("the same import outside apps/web/src, or via fluxiq, is allowed", () => {
+  assert.equal(scopedFindings("packages/fluxiq/src/a.ts", 'import { x } from "@fluxiq/contracts/x";').length, 0);
+  assert.equal(scopedFindings("apps/web/src/a.ts", 'import { x } from "fluxiq/client-gateway";').length, 0);
+});

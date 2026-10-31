@@ -43,14 +43,14 @@ const interferenceRows = () => seen.filter((event) => event.detail?.recovery?.ki
 
 describe("a Flow run whose output dispatch closed layers over the page", () => {
   it("keeps the layers on the attempt and says one recovery row about the node", async () => {
-    const trace = await inRun(answering({ status: "succeeded", clearedLayers: [{ kind: "promotion", control: "No thanks" }] }));
-    expect(trace.attempts[0]).toMatchObject({ status: "succeeded", clearedLayers: [{ kind: "promotion", control: "No thanks" }] });
+    const trace = await inRun(answering({ status: "succeeded", clearedLayers: [{ kind: "notice", control: "No thanks" }] }));
+    expect(trace.attempts[0]).toMatchObject({ status: "succeeded", clearedLayers: [{ kind: "notice", control: "No thanks" }] });
     const rows = interferenceRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       activityId: "run:run.1",
       phase: "running",
-      detail: { kind: "step", status: "succeeded", ref: "output", recovery: { kind: "interference", subject: "Closed a promotion the page put in the way", outcome: "succeeded" } }
+      detail: { kind: "step", status: "succeeded", ref: "output", recovery: { kind: "interference", subject: "Closed a notice the page put in the way", outcome: "succeeded" } }
     });
     // The dismiss words stay on the trace; the chat never carries them.
     expect(JSON.stringify(rows)).not.toContain("No thanks");
@@ -62,8 +62,24 @@ describe("a Flow run whose output dispatch closed layers over the page", () => {
     expect(interferenceRows().map((event) => event.detail?.recovery?.subject)).toEqual(["Closed a slow-down notice the page put in the way"]);
   });
 
+  // CC7 (t799): the layer that stood over the page rides on a failed dispatch's payload, where the IO paths keep it.
+  it("keeps on a failed attempt the layer its dispatch said stood over the page, and presses no way out that accepts", async () => {
+    const obstruction = { id: "layer.holds", kind: "dialog", name: "Place a hold", dismiss: [{ intent: "accept", definitionId: "test.output.press", controlRef: { handle: "h-join" } }], extra: "dropped" };
+    const trace = await inRun({ allowLlmDiagnosis: false, effectDispatcher: () => ({ status: "failed", route: "failed", outputs: { ok: false, result: { status: "failed", obstruction } }, message: "Covered.", failure: { category: "unexpected_state", code: "web.action.blocked_by_dialog", retryable: false, stage: "execution" } }) });
+    expect(trace.attempts[0]).toMatchObject({ status: "failed", obstruction: { id: "layer.holds", kind: "other", name: "Place a hold", dismiss: [{ intent: "accept", definitionId: "test.output.press", controlRef: { handle: "h-join" } }] } });
+    expect(trace.attempts[0]!.obstruction).not.toHaveProperty("extra");
+    expect(interferenceRows()).toEqual([]);
+  });
+
+  it("keeps no obstruction on an attempt whose dispatch reported none, or a malformed one", async () => {
+    for (const payload of [{ status: "failed" }, { obstruction: { kind: "robot_check", dismiss: [] } }, { obstruction: { kind: "notice" } }] as JsonValue[]) {
+      const trace = await inRun({ allowLlmDiagnosis: false, effectDispatcher: () => ({ status: "failed", route: "failed", outputs: { ok: false, result: payload }, message: "Covered.", failure: { category: "unexpected_state", code: "web.action.blocked_by_dialog", retryable: false, stage: "execution" } }) });
+      expect(trace.attempts[0]).not.toHaveProperty("obstruction");
+    }
+  });
+
   it("says several layers in one row", async () => {
-    await inRun(answering({ clearedLayers: [{ kind: "consent", control: "Reject" }, { kind: "dialog", control: "Close" }] }));
+    await inRun(answering({ clearedLayers: [{ kind: "overlay", control: "Reject" }, { kind: "other", control: "Close" }] }));
     expect(interferenceRows().map((event) => event.detail?.recovery?.subject)).toEqual(["Closed 2 notices the page put in the way"]);
   });
 
@@ -71,7 +87,7 @@ describe("a Flow run whose output dispatch closed layers over the page", () => {
     ["no field", { status: "succeeded" }],
     ["an empty list", { clearedLayers: [] }],
     ["only unknown kinds", { clearedLayers: [{ kind: "robot_check", control: "Close" }] }],
-    ["the field nested in the client's own result", { result: { clearedLayers: [{ kind: "dialog", control: "Close" }] } }]
+    ["the field nested in the client's own result", { result: { clearedLayers: [{ kind: "other", control: "Close" }] } }]
   ])("keeps and says nothing for %s", async (_name, payload) => {
     const trace = await inRun(answering(payload));
     expect(trace.attempts[0]).not.toHaveProperty("clearedLayers");

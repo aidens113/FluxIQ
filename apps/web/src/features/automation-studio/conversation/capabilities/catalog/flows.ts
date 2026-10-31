@@ -118,7 +118,7 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
       const read = await loadFlowSettingsDetail(context.transport, { projectId, flowId });
       if (!read.ok) return panelCapabilityResult(read, "", "The Flow could not be read, so nothing was changed.");
       const binding = flowModelBinding(projectId, flowModelFromDetail(read.payload?.flow));
-      if (!binding.ok) return { status: "failed", summary: "This Flow has no DeepSeek model key chosen. Choose one in the Flow's settings first.", error: "This Flow has no DeepSeek model key chosen." };
+      if (!binding.ok) return { status: "failed", summary: "This Flow has no model key chosen. Choose one in the Flow's settings first.", error: "This Flow has no model key chosen." };
       const saved = await saveFlowImprovementInstruction(context.transport, { projectId, flowId, instruction: str(args, "change") });
       if (!saved.ok) return panelCapabilityResult(saved, "", "What should change could not be saved, so nothing was built.");
       const improved = await improveFlowFromWebsiteAdaptation(context.transport, { projectId, flowId });

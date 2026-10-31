@@ -4,6 +4,7 @@
 // The Lab sets it from `--llm-model` so a build started from the extension's
 // chat -- whose new Flow names no model -- can run on another one (t233).
 
+import type { AutomationStudioSessionKeyPorts } from "../session-key.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL,
@@ -11,6 +12,13 @@ import {
   AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV,
   resolveAutomationStudioLlmDefaultModel
 } from "../models.ts";
+
+const unusedPorts: AutomationStudioSessionKeyPorts = {
+  snapshot: async () => ({ keys: [] }),
+  createSessionRevealAuthorization: async () => { throw new Error("This test never releases a key."); },
+  revealKeyWithAuthorization: async () => { throw new Error("This test never reveals a key."); },
+  revokeRevealAuthorization: () => undefined
+};
 
 const withModel = (value: string | undefined) => ({ [AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV]: value });
 
@@ -50,8 +58,8 @@ describe("the default model is read once, when Core loads", () => {
     expect(models.resolveAutomationStudioDeepSeekModel("deepseek-flash")).toBe("deepseek-flash");
     // The host's resolver: a new Flow has no `llmModel`, so its build names no model.
     const { createAutomationStudioSessionKeyProviderResolver } = await import("../../session-key-provider.ts");
-    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: {} as never });
-    const caller = { actorUserId: "user-1", actorSessionId: "session-1" } as never;
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: unusedPorts });
+    const caller = { actorUserId: "user-1", actorSessionId: "session-1" };
     expect(resolve({ projectId: "p", flowId: "f", caller })?.provider.metadata).toMatchObject({ provider: "deepseek", model: "deepseek-v4-pro" });
     expect(resolve({ projectId: "p", flowId: "f", caller, modelId: "deepseek-flash" })?.provider.metadata).toMatchObject({ model: "deepseek-flash" });
     // And it is priced at the model it calls, not at deepseek-flash's rates.
@@ -64,6 +72,18 @@ describe("the default model is read once, when Core loads", () => {
   it("stops Core at load when it names no configured model", async () => {
     vi.stubEnv(AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV, "gpt-9");
     vi.resetModules();
-    await expect(import("../models.ts")).rejects.toThrow(/FLUXIQ_LLM_DEFAULT_MODEL must name a DeepSeek model Core is configured for\. "gpt-9" is not a DeepSeek model/u);
+    await expect(import("../models.ts")).rejects.toThrow(/FLUXIQ_LLM_DEFAULT_MODEL must name a configured DeepSeek or Anthropic/u);
+  });
+
+  it("accepts a Claude default without breaking explicit DeepSeek imports", async () => {
+    vi.stubEnv(AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV, "claude-sonnet-5-5");
+    vi.resetModules();
+    const models = await import("../../models/index.ts");
+    expect(models.AUTOMATION_STUDIO_LLM_DEFAULT_MODEL).toBe("claude-sonnet-5-5");
+    expect(models.AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL).toBe("claude-sonnet-5-5");
+    expect(models.AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL).toBe("deepseek-flash");
+    const { createAutomationStudioSessionKeyProviderResolver } = await import("../../session-key-provider.ts");
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: unusedPorts });
+    expect(resolve({ projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" } })?.provider.metadata).toMatchObject({ provider: "anthropic", model: "claude-sonnet-5-5" });
   });
 });

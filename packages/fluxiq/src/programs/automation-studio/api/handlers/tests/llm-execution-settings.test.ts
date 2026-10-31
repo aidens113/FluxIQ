@@ -28,6 +28,12 @@ describe("Flow LLM execution settings API validation", () => {
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, timeoutMs: 25_000 } })).not.toThrow();
   });
 
+  it("accepts Claude settings and rejects explicit cross-provider model binding", () => {
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmProvider: "anthropic", llmModel: "claude-sonnet-5-5" })).not.toThrow();
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmProvider: "deepseek", llmModel: "claude-sonnet-5-5" })).toThrow(/does not belong/);
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmProvider: "anthropic" })).toThrow(/does not belong/);
+  });
+
   it("rejects unsupported providers, oversized totals, calls, retries, timeout, and cost", () => {
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmProvider: "openai" })).toThrow(/DeepSeek/);
     // The bound is the model's context window, 1,000,000 tokens: 64,001 is a legal setting now.
