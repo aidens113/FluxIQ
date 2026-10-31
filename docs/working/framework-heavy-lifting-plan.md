@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t828 accepted and integrated in both dev branches; shared SDK/bundles current0.20. Remaining P8 repeat guard/history; main held, no paid calls.
+Status detail: t829 provider-free repeat/history/browser acceptance complete; paired integration pending. P9/P10 bounded designs ready; no full/paid calls.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -10,6 +10,8 @@ Paired document: ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-pla
 Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/framework-heavy-lifting-plan/reports/ (fhl-debug-notes, fhl-step-workload, fhl-core-surface, fhl-domain-surface)
 
 ## Current State
+
+**Accepted provider-free t829, 2026-10-31 (integration pending):** Core0.21 repeat guard/history accepted:31 owning+190 safety/history tests, package types, audit481warnings/1143baseline; private SDK rebuilt79.888s. Down135domain+98extension tests pass; explicit observed assertions repaired initial test-only TS errors, host12rerun/typecheck31.533s pass. Domainbuild26.303s, extensiontypes61.661s/build40.345s and final spec typecheck pass; all3targets22files. Down audit239warnings and baseline615to614 (one old packing allowance removed). Real headed Chromium134.0.6998.35 UTC/en-US1280x720 company-website proof3 passes2cases42.3s: exactly2real reads then prethird unacted stop versus7intentional ForEach reads;19usable observations,0unavailable/extra observer commands, all28actual command replies successful/fresh IDs, no repairs/gateway errors/page changes. Required receipts preserved through canonical policy-output route; direct importer remains intentionally refused in required mode (Core units separately cover native registry). Earlier missing fixture dependency and refused direct-importer setup recorded with failed evidence. Evidence1-3 copied main ignored test-runs. No new full/paid calls/panel management. P9/P10 bounded designs ready; not implemented/accepted yet.
 
 **Accepted t828, 2026-10-31:** Source-less identity recovery and full-result receipt integrity accepted locally. Lead Core122identity+62receipt tests, domain affected selections/native16, extension84, Labtrace4, affected types/builds and both audits pass; Corepacking allowance15to10/1143baseline, Down615 unchanged. Real Chromium134.0.6998.35 e2e-chromium social-network-feed proof8 passes1test/body45.6s: four actual target-not-found/unacted attempts with accepted ~354KB replies, fourth identity unmatched, zero gateway suppression/errors; Undo then explicit original-target refresh returns only selector/element patches, one required Like, exact unchanged other-post map. This proves automatic negative recovery and explicit positive refresh, not automatic fourth-attempt browser success (Core units cover that). Initial receipt hash256KiB rejection fixed at intake/observer with exact full-payload hashing; small authority bounds/unknown safety unchanged. Earlier locator/trace-field assertion mistakes and failed attempts recorded; artifacts1-8 ignored in main. Final extensioncheck21.723s passes. Integrated Core4327ad27/downstream690de074; Core mandatory70merge contracts and Down structure gate pass. Shared SDK0.20/domain/Chrome/Firefox/e2e bundles refreshed79.474s/18.898s/24.039s,22files per target. Task backups45e13d1b/cc54135d retained. First Down merge refused a preserved handoff note, clean retry passed; Core finish required clean private worktree detachment, then passed. Final paired dev push follows this memory commit. Main held: both full-suite slots used. No paid/API calls/panel management; user clinerules preserved. NextP8repeatguard/history.
 
@@ -710,9 +712,9 @@ Shipped 2026-10-29; see the Work Ledger. The phase text is in
 - **Do not hide failures.** A Core-written chat line, a folded turn, an auto-completion or a batched re-run must still
   show each step and its reason. `unproven` and unsettleable acts are named in the ending, never dropped. Lab reporting
   must read structured data, not prose (W0).
-- **Do not weaken oracles or force passes.** Computed checks only add located defects. Only a yes passes. A fully
-  computed part does not pass without a model yes until the user decides otherwise (open question 1). Never accept a
-  fiction witness, and never relax the quote guard to let a yes through.
+- **Do not weaken oracles or force passes.** Computed checks only add located defects. The user permits a wholly
+  refuted judge no to pass only after a usable evidence-specific judge recheck; unrefuted new defects still block.
+  Never accept a fiction witness, invent a recheck or relax the quote guard to let a yes through.
 - **Do not reduce generality.** Flows stay general structure: no literal lists in place of signs, and no fixture-shaped
   defaults. Grammar additions are vocabulary, not shortcuts for one site.
 - **Do not grow client concepts in Core.** New contract fields are domain-neutral. No new `web.` literal, DOM word,
@@ -737,42 +739,29 @@ The wave-2 audit briefs (fhl-core-*) ran 2026-10-28 and are archived in
 [archive/2026-10-29-audit-briefs-and-p0.md](framework-heavy-lifting-plan/archive/2026-10-29-audit-briefs-and-p0.md).
 Each implementation lane's brief is in its dispatch and its report under the downstream `framework-heavy-lifting-plan/reports/`.
 
+Current t829 bounded briefs are under `reports/codex-1031/p8-repeat-history/`: Core guard plan, web digest discovery, and history plan. History has a separate implementation grant; guard/client source edits await a frozen optional observation seam. All behavior checks await production source freezes.
+
 ## Work Ledger
 
-The P0, t794, t796, P4 (t797), P5a (t795) and P7 (t800) entries moved on 2026-10-29 to
-[archive/2026-10-29-audit-briefs-and-p0.md](framework-heavy-lifting-plan/archive/2026-10-29-audit-briefs-and-p0.md).
+Accepted prior ledger index and t828 evidence moved verbatim to [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
-Accepted P1a, P7 follow-ups, repair-from-step, P6, Claude-provider and P5b ledger entries moved verbatim to
-[archive/2026-10-30-accepted-continuation.md](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
+### 2026-10-31 - t829 setup and accepted-memory compaction
+- Agent: Codex lead; planned three bounded workers.
+- Changed: paired task setup; three file-owned briefs and focused Current State; Core settled ledger index/t828 archived verbatim.
+- Why: finish P8 bounded execution and repair context without redoing accepted identity or receipt safety.
+- Validation: `pnpm.cmd task start runtime-repeat-history --worktree --core --skip-workspace-build` ->exit0, paired t829 trees and mandatory SDK libraries prepared, Core build77.335s; workspace build skipped, no product checks. Archive substring proof ->exact normalized block SHA256 110daea3498ec596f77454427e0593e12f5eedcebdea78cf8eae5577676abf73.
+- Outcome: Partial; setup accepted; history mapping and optional interface accepted at phase1: lead27tests/typecheck pass, archive links corrected without altering preserved block. Guard/client behavior implementation next, no browser acceptance yet.
+- Follow-up: complete setup, freeze optional observation contract, implement file-owned guard/history/client wiring; narrow checks and allowed realistic provider-free browser proof only.
 
-Settled earlier history compaction is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
-
-Accepted t811 and t817 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
-
-Accepted t819/t820 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
-
-Settled continuation compaction is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
-
-The settled sweep2 result is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
-
-Accepted t822 evidence is preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
-
-Accepted t823 assignment and lead acceptance are preserved verbatim in [the continuation archive](framework-heavy-lifting-plan/archive/2026-10-30-accepted-continuation.md).
-
-Settled accepted client effect floor is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
-
-Accepted t825 evidence and its compaction record are preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
-
-Accepted t826 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
-Accepted t827 ledger preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
-
-### 2026-10-31 - t828 source-less target recovery and receipt integrity
-- Agent: Codex lead; bounded Core, shared identity, native host, capture, structural and discovery workers.
-- Changed: trusted target-refresh flags/hooks and resolved-parameter overlays; shared record gates/private capture provenance; native/authoring scoped recovery; exact full-result receipt hashing; owning tests, browser proof and architecture/status docs.
-- Why: recover a stale literal target without source lineage or wrong-record action; preserve legitimate large failed-result receipts without weakening authority or uncertain-effect safety.
-- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/client-gateway/service/command-ledger/tests/controller.test.ts src/client-gateway/service/command-ledger/tests/dispatch.test.ts src/client-gateway/service/command-ledger/tests/dispatch-host-lease.test.ts src/programs/automation-studio/runtime/service/command-run/tests/controller.test.ts --maxWorkers=2 --minWorkers=1` ->62passed/4files; `pnpm.cmd --filter fluxiq check` ->exit0/56.093s; `node scripts/structure-audit.mjs` ->passed481warnings/1143baseline; earlier identity122passed/14files and SDKbuild pass, detailed lead report.
-- Outcome: Accepted and integrated Core4327ad27/downstream690de074; Core mandatory70merge contracts and Down structure gate pass. Real-browser strict oracle accepted; earlier setup/assertion errors and real receipt defect documented. Shared SDK/bundles current0.20.
-- Follow-up: final paired dev push, then P8 unchanged-repeat guard and bounded repair history. Main awaits a later permitted full sweep; no paid go, provider calls or user-panel management.
+### 2026-10-31 - t829 observed-repeat/history acceptance
+- Agent: Codex lead; Core/host/frame/browser file-owned workers, root corrections/verification.
+- Changed: private prethird-repeat gate, closed repair observations, optional host equality memo, positively observed frame coverage, native-browser proof and authored architecture.
+- Why: stop confirmed unchanged execution before another dispatch while preserving real counter/row progress and four-attempt safety.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/runtime-repeat/tests/bounded-evidence.test.ts src/programs/automation-studio/runtime/executor/step-loop/tests/run-repeat-guard.test.ts src/programs/automation-studio/runtime/composite-execution/tests/child-uncertainty.test.ts --maxWorkers=2 --minWorkers=1` ->31/3files pass; explicit affected recovery/safety selectors ->190/19files pass; exact evidence/commands in lead-acceptance.md and ignored logs.
+- Validation: package `check`/narrow builds ->all affected Core/domain/extension pass; domain135 + extension98 tests pass; both structure audits pass, baselines1143/614 (Down old allowance removed).
+- Validation: installed `native.spec.ts --workers=1` ->attempt3 two passed42.3s,2reads then prethird refusal/7ForEach reads,19observed/0extraobservercommands,28successful real replies; attempts1-2 failures/cause retained.
+- Outcome: provider-free accepted; paired integration/push pending. Current browser proves canonical policy output required receipts, not direct-importer support under required mode. No live Claude measurement or full sweep claimed.
+- Follow-up: finish/push both dev branches, refresh shared0.21 bundles; next P9 immutable evidence/batch units and P10 client examples. Main waits permitted full sweep; no paid GO.
 
 ## Open Questions
 

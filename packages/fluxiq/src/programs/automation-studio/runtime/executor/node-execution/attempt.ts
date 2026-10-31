@@ -37,6 +37,7 @@ import { timingNodes } from "../../../nodes/timing/index.ts";
 import { automationStudioRefreshInputs } from "../parameter-refresh/index.ts";
 import { automationStudioApplyParameterRefresh } from "../parameter-refresh/index.ts";
 import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refresh/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP, automationStudioRuntimeRepeatExecutionKind, type AutomationStudioRuntimeRepeatSample } from "../../runtime-repeat/index.ts";
 
 // `cleared` collects the layers each dispatch of the attempt says the client
 // closed over the page (`./cleared-layers.ts`), in dispatch order;
@@ -71,7 +72,8 @@ export class AutomationStudioNodeAttemptExecution {
     attemptNumber: number,
     withholding: AutomationStudioTraceWithholding,
     runState: AutomationStudioRunState,
-    parameterOverlay?: AutomationStudioParameterRefreshOverlay
+    parameterOverlay?: AutomationStudioParameterRefreshOverlay,
+    repeatSample?: AutomationStudioRuntimeRepeatSample
   ): Promise<AutomationStudioNodeAttemptTrace> {
     await options.commandRun?.checkpoint();
     const startedAt = options.now?.() ?? Date.now();
@@ -136,6 +138,26 @@ export class AutomationStudioNodeAttemptExecution {
     if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
     if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
       return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch", effect: "unacted" } }, options, beforeAction, hostCapabilities, runState);
+    }
+    if (repeatSample) {
+      const kind = automationStudioRuntimeRepeatExecutionKind(definition);
+      const effectiveInputs: Record<string, JsonValue> = {};
+      if (kind === "transparent") {
+        for (const port of definition?.inputs ?? []) {
+          const value = inputs[port.id];
+          if (value !== undefined) effectiveInputs[port.id] = value;
+        }
+      } else {
+        Object.assign(effectiveInputs, options.inputs ?? {}, collectWiredNodeInputs(flow, node, values));
+      }
+      const admitted = await repeatSample.before(executionNode, effectiveInputs, beforeAction, kind, attemptId);
+      await options.commandRun?.checkpoint();
+      if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
+      if (!admitted) {
+        // Only this graph-owned private sample can authorize the terminal stop.
+        repeatSample.stop();
+        return { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP.message, failure: { ...AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP.failure } };
+      }
     }
     // A Call Subflow runs its sibling graph as a frame of this run, never through a host (`../frames/call-subflow.ts`).
     if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID) {

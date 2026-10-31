@@ -220,13 +220,16 @@ export type AutomationStudioLlmInRunRepairAttempt = {
 
 /**
  * One recovery the run already tried: a retry, a handler, a state route, a
- * ladder rung, an earlier repair, or a counted failure. Ids, codes, counts and
- * outcomes beside the three fields every kind carries.
+ * ladder rung, an earlier repair, a counted failure, or a recorded obstruction,
+ * pace or target re-acquisition. Observation entries contain closed kinds,
+ * outcomes and bounded measurements only. Re-acquisition names its strategy
+ * and source node only for row/output provenance; identity has no source.
+ * An obstruction kind is not an obstruction code or proof of retry safety.
  */
 export type AutomationStudioLlmInRunRepairRecovery = {
   attemptId: string;
   nodeId: string;
-  kind: "retry" | "handler" | "state_route" | "ladder" | "repair" | "counted";
+  kind: "retry" | "handler" | "state_route" | "ladder" | "repair" | "counted" | "obstruction" | "pace" | "reacquire";
   [detail: string]: JsonValue;
 };
 

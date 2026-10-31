@@ -214,6 +214,11 @@ chains, or add a Start node, before running it.
 
 ## LLM-Assisted Deterministic Automation
 
+The [observed runtime repeat guard](automation-studio/observed-runtime-repeat.md)
+can stop a third identical dispatch after two positively observed unchanged
+visits. Its optional host evidence remains private and preserves existing
+retry, completed-act and uncertain-effect protections.
+
 The next additive Flow expansion treats a Flow as the complete automation
 object: interface, router, subflows, scoped instructions, runs, adaptations,
 settings, provenance, and publication lifecycle.

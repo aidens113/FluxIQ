@@ -8,6 +8,7 @@ import { collectNodeInputs } from "./node-inputs.ts";
 import { nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import { AutomationStudioNodeAttemptExecution, automationStudioNodeAttemptFailure } from "./node-execution/index.ts";
 import type { AutomationStudioParameterRefreshOverlay } from "./parameter-refresh/index.ts";
+import type { AutomationStudioRuntimeRepeatSample } from "../runtime-repeat/index.ts";
 
 /**
  * Executes one node and returns its attempt, stamped with the saved changes the
@@ -39,7 +40,8 @@ export async function executeAutomationStudioNode(
   attemptNumber: number,
   withholding: AutomationStudioTraceWithholding,
   runState: AutomationStudioRunState,
-  parameterOverlay?: AutomationStudioParameterRefreshOverlay
+  parameterOverlay?: AutomationStudioParameterRefreshOverlay,
+  repeatSample?: AutomationStudioRuntimeRepeatSample
 ): Promise<AutomationStudioNodeAttemptTrace> {
   // A fresh pass must not inherit the previous pass's floor, including when
   // the first checkpoint or local preparation fails. Raw unresolved values
@@ -68,13 +70,15 @@ export async function executeAutomationStudioNode(
     });
   }
   try {
-    const attempt = await AutomationStudioNodeAttemptExecution.execute(flow, node, values, options, attemptNumber, withholding, runState, parameterOverlay);
+    const attempt = await AutomationStudioNodeAttemptExecution.execute(flow, node, values, options, attemptNumber, withholding, runState, parameterOverlay, repeatSample);
     if (attempt.status === "failed" && runState.actionEffects.has(node.id) && !runState.dispatchedActions.has(node.id)) {
       attempt.failure = { ...(attempt.failure ?? { category: "graph_validation_or_unknown_node", code: "executor.action_effect.pre_dispatch_failed", retryable: false, stage: "dispatch" }), effect: "unacted" };
       if (attempt.fault) attempt.fault = { ...attempt.fault, effect: "unacted" };
     }
+    await repeatSample?.after(attempt);
     return nodeAttemptWithAdaptationIds(node, attempt);
   } catch (error) {
+    repeatSample?.abandon();
     const startedAt = options.now?.() ?? Date.now();
     return nodeAttemptWithAdaptationIds(node, automationStudioNodeAttemptFailure(node, error, options, attemptNumber, startedAt, collectNodeInputs(flow, node, values), runState.dispatchedActions.has(node.id)));
   }

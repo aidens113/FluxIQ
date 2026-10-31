@@ -1,56 +1,180 @@
 {
   "name": "fluxiq",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Domain-neutral FluxIQ framework runtime for Node.js.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./api-contracts": { "types": "./dist/api-contracts/index.d.ts", "import": "./dist/api-contracts/index.js" },
-    "./auth": { "types": "./dist/programs/identity-access/index.d.ts", "import": "./dist/programs/identity-access/index.js" },
-    "./client-gateway": { "types": "./dist/client-gateway/index.d.ts", "import": "./dist/client-gateway/index.js" },
-    "./automation-studio": { "types": "./dist/programs/automation-studio/index.d.ts", "import": "./dist/programs/automation-studio/index.js" },
-    "./automation-studio/testing": { "types": "./dist/programs/automation-studio/testing/index.d.ts", "import": "./dist/programs/automation-studio/testing/index.js" },
-    "./automation-studio/evidence-build-scope": { "types": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.d.ts", "import": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.js" },
-    "./automation-studio/candidate-authoring": { "types": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.d.ts", "import": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./api-contracts": {
+      "types": "./dist/api-contracts/index.d.ts",
+      "import": "./dist/api-contracts/index.js"
+    },
+    "./auth": {
+      "types": "./dist/programs/identity-access/index.d.ts",
+      "import": "./dist/programs/identity-access/index.js"
+    },
+    "./client-gateway": {
+      "types": "./dist/client-gateway/index.d.ts",
+      "import": "./dist/client-gateway/index.js"
+    },
+    "./automation-studio": {
+      "types": "./dist/programs/automation-studio/index.d.ts",
+      "import": "./dist/programs/automation-studio/index.js"
+    },
+    "./automation-studio/testing": {
+      "types": "./dist/programs/automation-studio/testing/index.d.ts",
+      "import": "./dist/programs/automation-studio/testing/index.js"
+    },
+    "./automation-studio/evidence-build-scope": {
+      "types": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.d.ts",
+      "import": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.js"
+    },
+    "./automation-studio/candidate-authoring": {
+      "types": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.d.ts",
+      "import": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.js"
+    },
     "./automation-studio/llm-models": {
-    "types": "./dist/programs/automation-studio/runtime/llm/models/index.d.ts",
-    "import": "./dist/programs/automation-studio/runtime/llm/models/index.js"
+      "types": "./dist/programs/automation-studio/runtime/llm/models/index.d.ts",
+      "import": "./dist/programs/automation-studio/runtime/llm/models/index.js"
+    },
+    "./automation-studio/action-permissions": {
+      "types": "./dist/programs/automation-studio/runtime/action-permissions/client/index.d.ts",
+      "import": "./dist/programs/automation-studio/runtime/action-permissions/client/index.js"
+    },
+    "./automation-studio/panel-capabilities": {
+      "types": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.d.ts",
+      "import": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.js"
+    },
+    "./automation-studio/nodes": {
+      "types": "./dist/programs/automation-studio/nodes/index.d.ts",
+      "import": "./dist/programs/automation-studio/nodes/index.js"
+    },
+    "./automation-studio/action-effect": {
+      "types": "./dist/programs/automation-studio/nodes/action-effect/index.d.ts",
+      "import": "./dist/programs/automation-studio/nodes/action-effect/index.js"
+    },
+    "./automation-studio/actionability": {
+      "types": "./dist/programs/automation-studio/runtime/actionability/index.d.ts",
+      "import": "./dist/programs/automation-studio/runtime/actionability/index.js"
+    },
+    "./automation-studio/dsl": {
+      "types": "./dist/programs/automation-studio/dsl/index.d.ts",
+      "import": "./dist/programs/automation-studio/dsl/index.js"
+    },
+    "./automation-studio/dsl/generator": {
+      "types": "./dist/programs/automation-studio/dsl/generator.d.ts",
+      "import": "./dist/programs/automation-studio/dsl/generator.js"
+    },
+    "./automation-studio/fingerprinting": {
+      "types": "./dist/programs/automation-studio/fingerprinting/index.d.ts",
+      "import": "./dist/programs/automation-studio/fingerprinting/index.js"
+    },
+    "./background-tasks": {
+      "types": "./dist/programs/background-tasks/index.d.ts",
+      "import": "./dist/programs/background-tasks/index.js"
+    },
+    "./components": {
+      "types": "./dist/components/index.d.ts",
+      "import": "./dist/components/index.js"
+    },
+    "./compute": {
+      "types": "./dist/programs/compute-control/index.d.ts",
+      "import": "./dist/programs/compute-control/index.js"
+    },
+    "./compute-control": {
+      "types": "./dist/programs/compute-control/index.d.ts",
+      "import": "./dist/programs/compute-control/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./data": {
+      "types": "./dist/programs/database-manager/index.d.ts",
+      "import": "./dist/programs/database-manager/index.js"
+    },
+    "./database-manager": {
+      "types": "./dist/programs/database-manager/index.d.ts",
+      "import": "./dist/programs/database-manager/index.js"
+    },
+    "./deployment-sync": {
+      "types": "./dist/programs/deployment-sync/index.d.ts",
+      "import": "./dist/programs/deployment-sync/index.js"
+    },
+    "./domains": {
+      "types": "./dist/domains/index.d.ts",
+      "import": "./dist/domains/index.js"
+    },
+    "./docs": {
+      "types": "./dist/programs/docs/index.d.ts",
+      "import": "./dist/programs/docs/index.js"
+    },
+    "./engine": {
+      "types": "./dist/engine/index.d.ts",
+      "import": "./dist/engine/index.js"
+    },
+    "./flows": {
+      "types": "./dist/flows/index.d.ts",
+      "import": "./dist/flows/index.js"
+    },
+    "./framework": {
+      "types": "./dist/framework/index.d.ts",
+      "import": "./dist/framework/index.js"
+    },
+    "./identity-access": {
+      "types": "./dist/programs/identity-access/index.d.ts",
+      "import": "./dist/programs/identity-access/index.js"
+    },
+    "./io": {
+      "types": "./dist/io/index.d.ts",
+      "import": "./dist/io/index.js"
+    },
+    "./production-runner": {
+      "types": "./dist/programs/production-runner/index.d.ts",
+      "import": "./dist/programs/production-runner/index.js"
+    },
+    "./platform": {
+      "types": "./dist/platform/index.d.ts",
+      "import": "./dist/platform/index.js"
+    },
+    "./platform/profile": {
+      "types": "./dist/platform/profile/index.d.ts",
+      "import": "./dist/platform/profile/index.js"
+    },
+    "./platform/panel": {
+      "types": "./dist/platform/panel/index.d.ts",
+      "import": "./dist/platform/panel/index.js"
+    },
+    "./programs": {
+      "types": "./dist/programs/index.d.ts",
+      "import": "./dist/programs/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js"
+    },
+    "./secret-keys": {
+      "types": "./dist/programs/secret-keys/index.d.ts",
+      "import": "./dist/programs/secret-keys/index.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "import": "./dist/ui/index.js"
+    }
   },
-  "./automation-studio/action-permissions": { "types": "./dist/programs/automation-studio/runtime/action-permissions/client/index.d.ts", "import": "./dist/programs/automation-studio/runtime/action-permissions/client/index.js" },
-    "./automation-studio/panel-capabilities": { "types": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.d.ts", "import": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.js" },
-    "./automation-studio/nodes": { "types": "./dist/programs/automation-studio/nodes/index.d.ts", "import": "./dist/programs/automation-studio/nodes/index.js" },
-    "./automation-studio/action-effect": { "types": "./dist/programs/automation-studio/nodes/action-effect/index.d.ts", "import": "./dist/programs/automation-studio/nodes/action-effect/index.js" },
-    "./automation-studio/actionability": { "types": "./dist/programs/automation-studio/runtime/actionability/index.d.ts", "import": "./dist/programs/automation-studio/runtime/actionability/index.js" },
-    "./automation-studio/dsl": { "types": "./dist/programs/automation-studio/dsl/index.d.ts", "import": "./dist/programs/automation-studio/dsl/index.js" },
-    "./automation-studio/dsl/generator": { "types": "./dist/programs/automation-studio/dsl/generator.d.ts", "import": "./dist/programs/automation-studio/dsl/generator.js" },
-    "./automation-studio/fingerprinting": { "types": "./dist/programs/automation-studio/fingerprinting/index.d.ts", "import": "./dist/programs/automation-studio/fingerprinting/index.js" },
-    "./background-tasks": { "types": "./dist/programs/background-tasks/index.d.ts", "import": "./dist/programs/background-tasks/index.js" },
-    "./components": { "types": "./dist/components/index.d.ts", "import": "./dist/components/index.js" },
-    "./compute": { "types": "./dist/programs/compute-control/index.d.ts", "import": "./dist/programs/compute-control/index.js" },
-    "./compute-control": { "types": "./dist/programs/compute-control/index.d.ts", "import": "./dist/programs/compute-control/index.js" },
-    "./core": { "types": "./dist/core/index.d.ts", "import": "./dist/core/index.js" },
-    "./data": { "types": "./dist/programs/database-manager/index.d.ts", "import": "./dist/programs/database-manager/index.js" },
-    "./database-manager": { "types": "./dist/programs/database-manager/index.d.ts", "import": "./dist/programs/database-manager/index.js" },
-    "./deployment-sync": { "types": "./dist/programs/deployment-sync/index.d.ts", "import": "./dist/programs/deployment-sync/index.js" },
-    "./domains": { "types": "./dist/domains/index.d.ts", "import": "./dist/domains/index.js" },
-    "./docs": { "types": "./dist/programs/docs/index.d.ts", "import": "./dist/programs/docs/index.js" },
-    "./engine": { "types": "./dist/engine/index.d.ts", "import": "./dist/engine/index.js" },
-    "./flows": { "types": "./dist/flows/index.d.ts", "import": "./dist/flows/index.js" },
-    "./framework": { "types": "./dist/framework/index.d.ts", "import": "./dist/framework/index.js" },
-    "./identity-access": { "types": "./dist/programs/identity-access/index.d.ts", "import": "./dist/programs/identity-access/index.js" },
-    "./io": { "types": "./dist/io/index.d.ts", "import": "./dist/io/index.js" },
-    "./production-runner": { "types": "./dist/programs/production-runner/index.d.ts", "import": "./dist/programs/production-runner/index.js" },
-    "./platform": { "types": "./dist/platform/index.d.ts", "import": "./dist/platform/index.js" },
-    "./platform/profile": { "types": "./dist/platform/profile/index.d.ts", "import": "./dist/platform/profile/index.js" },
-    "./platform/panel": { "types": "./dist/platform/panel/index.d.ts", "import": "./dist/platform/panel/index.js" },
-    "./programs": { "types": "./dist/programs/index.d.ts", "import": "./dist/programs/index.js" },
-    "./runtime": { "types": "./dist/runtime/index.d.ts", "import": "./dist/runtime/index.js" },
-    "./secret-keys": { "types": "./dist/programs/secret-keys/index.d.ts", "import": "./dist/programs/secret-keys/index.js" },
-    "./ui": { "types": "./dist/ui/index.d.ts", "import": "./dist/ui/index.js" }
-  },
-  "files": ["dist", "docs/reference/framework-reference.md", "README.md", "LICENSE.md"],
+  "files": [
+    "dist",
+    "docs/reference/framework-reference.md",
+    "README.md",
+    "LICENSE.md"
+  ],
   "scripts": {
     "build": "node ../../scripts/build-cache/cli.mjs fluxiq:build -- \"node ../../scripts/clean-library-output.mjs && node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b tsconfig.build.json --clean && node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b tsconfig.build.json && node ../../scripts/rewrite-declaration-imports.mjs dist && node ../../scripts/runtime-build-identity.mjs\"",
     "check": "node ../../scripts/build-cache/cli.mjs fluxiq:check -- \"node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/fluxiq-build/check.tsbuildinfo\"",
@@ -76,8 +200,16 @@
       "optional": true
     }
   },
-  "repository": { "type": "git", "url": "git+https://github.com/aidens113/FluxIQ.git", "directory": "packages/fluxiq" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aidens113/FluxIQ.git",
+    "directory": "packages/fluxiq"
+  },
   "homepage": "https://getfluxiq.com",
-  "bugs": { "url": "https://github.com/aidens113/FluxIQ/issues" },
-  "publishConfig": { "access": "public" }
+  "bugs": {
+    "url": "https://github.com/aidens113/FluxIQ/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

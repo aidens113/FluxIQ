@@ -5,6 +5,9 @@ import type { AutomationStudioFactCondition, AutomationStudioFactTruth } from ".
 import type { AutomationStudioSourcePlaceAnswer, AutomationStudioSourcePlaceRequest, AutomationStudioTargetReacquireAnswer, AutomationStudioTargetReacquireRequest } from "./executor/target-reacquire/index.ts";
 import type { AutomationStudioUnboundTargetReacquireAnswer, AutomationStudioUnboundTargetReacquireRequest } from "./executor/unbound-reacquire/index.ts";
 import type { AutomationStudioHostResourcePort } from "./project-agents/host-resources/index.ts";
+import type { AutomationStudioRuntimeRepeatObservation, AutomationStudioRuntimeRepeatObservationInput } from "./runtime-repeat/index.ts";
+
+export type { AutomationStudioRuntimeRepeatObservation, AutomationStudioRuntimeRepeatObservationInput } from "./runtime-repeat/index.ts";
 
 export type AutomationStudioHostRuntimeCapability =
   | "action-dispatch"
@@ -150,6 +153,16 @@ export type AutomationStudioHostRuntimeBoundary = {
    */
   routeEffectSeen?(effect: JsonObject, observed: JsonObject): AutomationStudioRouteEffectSighting;
   captureStateSnapshot?(input: AutomationStudioHostRuntimeActionContext & { point: "before_action" | "after_action" | "after_wait_retry" | "after_patch_test" }): AutomationStudioHostStateSnapshotRef | Promise<AutomationStudioHostStateSnapshotRef>;
+  /**
+   * Private equality evidence for the resolved action, derived from its
+   * already accepted capture without another action or capture. Complete
+   * evidence identifies the relevant resource/document, subject and semantic
+   * state; missing scope, partial coverage or an unidentified subject is
+   * unavailable. Tokens never enter snapshot refs, summaries, traces or model
+   * context, and establish no permission, effect certainty or retry authority.
+   * A missing method or unavailable answer preserves existing execution.
+   */
+  observeRuntimeRepeat?(input: AutomationStudioRuntimeRepeatObservationInput): AutomationStudioRuntimeRepeatObservation | Promise<AutomationStudioRuntimeRepeatObservation>;
   /**
    * What `node`'s step changed between the two snapshots, stored on the
    * attempt as `stateRefs.stateDiff` and otherwise opaque to Core. Two keys

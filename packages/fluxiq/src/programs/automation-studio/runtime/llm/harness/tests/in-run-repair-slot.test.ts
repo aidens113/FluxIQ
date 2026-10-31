@@ -101,6 +101,33 @@ describe("an in-run repair request", () => {
       expect(packed.promptVersion, taskKind).not.toContain("in_run_repair");
     }
   });
+
+  it("packs new observations whole within the mixed newest-40 history and screening rules", () => {
+    const input = slot();
+    const observations: AutomationStudioLlmInRunRepairContext["recoveriesTried"] = [
+      { attemptId: "a.obstruction", nodeId: "save", kind: "obstruction", obstructionKind: "rate_limit", retryAfterMs: 12.5 },
+      { attemptId: "a.pace", nodeId: "save", kind: "pace", inForceMs: 10, waitedMs: 0, raisedToMs: 20 },
+      { attemptId: "a.source", nodeId: "save", kind: "reacquire", strategy: "row", sourceNodeId: "read", outcome: "found", returned: true },
+      { attemptId: "a.identity", nodeId: "save", kind: "reacquire", strategy: "identity", outcome: "unmatched" },
+      { attemptId: "a.route", nodeId: "save", kind: "state_route", outcome: "no_match", candidates: 2, matched: 0, closeness: 0 }
+    ];
+    const token = `sk-${"b2".repeat(16)}`;
+    input.omitted = { recoveriesTried: 3 };
+    input.recoveriesTried = [
+      ...Array.from({ length: 40 }, (_, index) => ({ attemptId: `old.${index}`, nodeId: "save", kind: "retry" as const })),
+      ...observations,
+      { attemptId: "a.secret", nodeId: "save", kind: "reacquire", strategy: "output", sourceNodeId: token, outcome: "unavailable" },
+      { attemptId: "a.locator", nodeId: "save", kind: "reacquire", strategy: "output", sourceNodeId: "#submit-week > button.primary", outcome: "gone" }
+    ];
+    const packed = packAutomationStudioLlmContext({ ...notInRun(), inRunRepair: input }).inRunRepair!;
+    expect(packed.recoveriesTried).toHaveLength(40);
+    expect(packed.recoveriesTried[0]?.attemptId).toBe("old.6");
+    expect(packed.recoveriesTried.slice(-6, -1)).toEqual(observations);
+    expect(packed.omitted).toEqual({ recoveriesTried: 10 });
+    expect(JSON.stringify(packed)).not.toContain(token);
+    expect(JSON.stringify(packed)).not.toContain("#submit-week");
+    expect(packed.recoveriesTried.at(-1)?.attemptId).toBe("a.locator");
+  });
 });
 
 // User rule: model guidance never teaches to the test. The instruction's example
