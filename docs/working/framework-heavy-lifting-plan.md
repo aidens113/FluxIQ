@@ -1,7 +1,7 @@
 # Framework Heavy-Lifting Plan
 
 Status: Active
-Status detail: t825 Core0.17.1 accepted/merged/pushed Core62c18d24/downstream2e1c90be;301lead tests/types/audits/Chromium pass, local filtered bundles refreshed. Next P8 CC8 typed transient path; no paid/full calls, main held.
+Status detail: t826 typed temporary-failure source accepted273Core/contract tests plus focused host checks/types/build and Chromium saved-once proof; paired integration pending. No full/paid calls; main held.
 Created: 2026-10-28
 Last updated: 2026-10-31
 Owner: framework-heavy-lifting sub-supervisor (for the lead supervisor)
@@ -11,7 +11,7 @@ Related: downstream evidence reports in ../!FluxIQWebExtension/docs/working/fram
 
 ## Current State
 
-**Active continuation, 2026-10-31:** t825 complete: Core0.17.1 merged/pushed Core62c18d24/downstream2e1c90be. Parser-valid ambiguous target failures no longer skip or state-route before settlement; actual graph tests hold act1/onward0/check1. Typed skipped-act truth preserves nonfatal notDone, strict own-effect proof, risk raises and exact legacy fallback. Lead301unique/28files plus overlapping58 correction rerun, Core/domain types, both audits1144/615,70 Core merge contracts and filtered SDK/domain builds pass; Core memory4blocks archived byte-exact,794lines. Chromium134 headless UTC job-board Save compatibility1/1passes on0.17.1; new target-routing cases remain graph-unit proof. HTML test-runs/2026-10-31-t825-browser-report; no background/panel/Firefox/model/whole-build acceptance claimed. Main Core/domain/extension filtered builds refreshed (22files perChrome/Firefox/e2e, existing Firefox ID placeholder). Remote task backups retained, private Core detached for normal pruning. Next CC8 end-to-end typed transient contract/parser/tool-result/producer/consumer paths from p8-skip/signals-discovery.md; host-side first, browser wire unchanged, CC10 serial afterward. Main remains held for later permitted full sweep; daily2used, Claude/$5 configured but no paid go/calls. User .clinerules remains unstaged.
+**Active continuation, 2026-10-31:** t826-runtime-transient-signal source accepted, paired dev integration pending. Contracts0.4.0/Core0.18.0: strict transient flag, optional CONTROL-only tool failure, original uncertainty/authority and all-attempt history retained, malformed metadata drops alone, raw dumps project before serialization. Authoring repeat memory/refusal streak/amendment replay use strict transient+retryable+unacted with actual !effectApplied/!personNeeded; no web-English admission. Host annotates parsed RATE_LIMITED/classified TRANSPORT_TRANSIENT only after existing wire parsing; browser constructors/wire unchanged. Lead273unique named Core/contract tests pass, types/audit1144 pass,3SDKlibs rebuilt. Down235initial tests231pass4old-expectation failures; focused final82pass covers4/new cautious fixtures/retry typings; types/build pass. Audit615 passed before final test-only repairs, final gate pending. Chromium headless UTC job-board real Save lost-ack compatibility1pass (2.6s test/about1.6min overall), no duplicate/unsave/alternative; new host contract tested provider-free through actual public Core loop, not browser authoring. Task-owned reports p8-transient/; HTML/logs retained MAIN ignored test-runs/2026-10-31-t826-*. t825 dev Coree784f2e9/downstreame0c03bf7; MAIN bundles0.17.1 until integration refresh. No paid go/calls/panel or further whole suites; both daily sweeps used, main held. User .clinerules unstaged. Next CC10 after paired acceptance.
 
 Settled settled clock and catalog state is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
@@ -638,8 +638,8 @@ Shipped 2026-10-29; see the Work Ledger. The phase text is in
   - `executor/defensive/lasting-act.ts:54` and the permission gate class: the union with CC12 `commit`.
   - `executor/target-reacquire/before-attempt.ts`, `lineage.ts`: identity re-find at attempt 2 for any target; the
     source-step path stays for row-bound targets.
-  - `llm/repeat-guard/retry-later.ts:7` and `executor/defensive/thrown-error.ts`: CC8 `transient` first; the English
-    list becomes the web client's fallback.
+  - CC8 accepted t826: `llm/repeat-guard/retry-later.ts` uses strict typed unacted temporary facts; host produces
+    them after wire parsing. Generic `executor/defensive/thrown-error.ts` transport/status fallback stays in Core.
   - `executor/step-skip/act-not-done.ts:26`: the effect class replaces English words.
   - A step-loop run-time repeat guard on (node, target, inputs, view digest) that ends after 2 identical unchanged repeats.
   - `recovery/in-run-repair/history.ts`: adds obstructions, paces, re-acquire and state-route records.
@@ -647,7 +647,7 @@ Shipped 2026-10-29; see the Work Ledger. The phase text is in
 - Tests:
   - `executor/defensive/tests/lasting-act-client-floor.test.ts`
   - `executor/target-reacquire/tests/before-attempt-identity.test.ts`
-  - `llm/repeat-guard/tests/retry-later-transient.test.ts`
+  - `llm/repeat-guard/tests/outcomes.test.ts` (plus real loop/amendment/privacy owning tests in t826 reports)
   - `executor/step-skip/tests/act-not-done-effect.test.ts`
   - `executor/step-loop/tests/run-repeat-guard.test.ts`
   - `recovery/in-run-repair/tests/history-record.test.ts`
@@ -761,13 +761,15 @@ Accepted t823 assignment and lead acceptance are preserved verbatim in [the cont
 
 Settled accepted client effect floor is preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
 
-### 2026-10-31 - t825 skipped-effect consumer and memory compaction
-- Agent: Codex lead; Core worker p8_contract_runtime (SolMax), bounded red/green implementation.
-- Changed: typed skipped-act consumer, shared target-unacted routing eligibility and explicit-risk helper; four settled state/ledger blocks archived verbatim.
-- Why: prevent parser-valid unknown commits becoming optional/general route success before settlement; preserve nonfatal absence and legacy compatibility; keep memory below800lines.
-- Validation: `python -` ->4blocks byte-preserved,794lines; `pnpm.cmd --filter fluxiq check` ->exit0; `node scripts/structure-audit.mjs` ->passed1144; `pnpm.cmd exec vitest run src/programs/automation-studio/runtime/executor/tests/safe-state-routing-run.test.ts src/programs/automation-studio/runtime/executor/step-skip/tests/act-not-done-effect.test.ts src/programs/automation-studio/runtime/executor/step-skip/tests/act-not-done.test.ts src/programs/automation-studio/runtime/executor/target-evidence/tests/unacted.test.ts src/programs/automation-studio/runtime/executor/defensive/tests/lasting-act-client-floor.test.ts src/programs/automation-studio/runtime/executor/state-routing/tests/typed-skip.test.ts src/programs/automation-studio/runtime/executor/state-routing/tests/could-not-run.test.ts src/programs/automation-studio/runtime/executor/step-loop/tests/state-route.test.ts --maxWorkers=2 --minWorkers=1` ->8files58/58; lead unique301/28 across named commands in p8-skip/lead-acceptance.md.
-- Outcome: Accepted; merged/pushed Core62c18d24/downstream2e1c90be;301/28lead tests/types/audits,70merge contracts, filtered builds and Chromium1/1pass. No full/paid calls; main held.
-- Follow-up: CC8 typed transient end to end with host-side production and privacy-safe failure propagation, then CC10; live Claude comparison awaits user go.
+Accepted t825 evidence and its compaction record are preserved verbatim in [the accepted archive](framework-heavy-lifting-plan/archive/2026-10-31-accepted-client-effect.md).
+
+### 2026-10-31 - t826 typed transient signal
+- Agent: Codex lead; contract worker gpt-6.1-sol max, readers first.
+- Changed: strict transient reader and public CONTROL projection, tool optional failure reader; contracts0.4/Core0.18. Consumer/producer disjoint source work released after interface verification.
+- Why: structured temporary failure is lost before authoring guards; preserve uncertainty and private comparisons while making the control path typed.
+- Validation: `pnpm.cmd --filter fluxiq check` ->exit0,52.7s; `node scripts/structure-audit.mjs` ->passed1144unchanged after one test statement-packing fix; `node scripts/build-cache/cli.mjs contracts:build fluxiq:build client-gateway-websocket:build` ->exit0. Lead named134 reader/contract tests plus70 consumer tests (204unique), dump6 repeated after formatting passes; exact commands in paired lead-acceptance.md.
+- Outcome: Partial; source acceptance complete. Host mechanical/type/legacy-fixture fixes verified, filtered types/build and Chromium Save compatibility1pass. Initial235 host231pass4fail, final82pass covers all4/new cases; no full/API/model calls.
+- Follow-up: final Down structure gate and paired integration; reports/HTML/logs retained, main and paid comparison held. Lead additional69 Core regression tests pass (273unique total).
 
 ## Open Questions
 

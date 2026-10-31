@@ -20,7 +20,8 @@ import {
   automationStudioLlmEvidenceRerunRequest,
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopDraftChange,
-  type AutomationStudioLlmEvidenceLoopTrace
+  type AutomationStudioLlmEvidenceLoopTrace,
+  type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE, automationStudioLlmStepLogAnswer } from "../step-log/index.ts";
 import { automationStudioLlmEvidenceRefusedOfAKind } from "./refusal-run.ts";
@@ -240,7 +241,8 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   iteration: number,
   held: AutomationStudioLlmEvidenceRerunHeld,
   rerun: AutomationStudioFlowDraftStep | undefined,
-  attempt: AutomationStudioRerunAttempt
+  attempt: AutomationStudioRerunAttempt,
+  execution?: Pick<AutomationStudioLlmEvidenceToolExecutionResult, "failure" | "resultCode" | "resultReason" | "effectApplied" | "personNeeded"> | undefined
 ): AutomationStudioLlmEvidenceRerunSettled {
   automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
   if (held.retained) tellRetained(context, iteration, held.retained, attempt);
@@ -263,12 +265,18 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
     applied: held.applied + settled.applied + (tookItsPlace && changed ? 1 : 0),
     changed: changed ? "yes" : "no"
   });
+  // Draft steps retain only a summary. Retry admission needs the performed
+  // call's own facts; a missing execution supplies no certainty by default.
+  const executionFacts = execution === undefined ? { resultCode: rerun?.resultCode } : {
+    resultCode: execution.resultCode, resultReason: execution.resultReason,
+    failure: execution.failure, effectApplied: execution.effectApplied, personNeeded: execution.personNeeded
+  };
   if (tookItsPlace && attempt.kind === "accepted") {
-    context.repeats.amended({ signature: held.before.signature, draft: draftAfter, changed, callId: attempt.callId, resultCode: rerun.resultCode });
+    context.repeats.amended({ signature: held.before.signature, draft: draftAfter, changed, callId: attempt.callId, ...executionFacts });
   } else if (attempt.kind === "failed" && rerun !== undefined && !changed) {
     // A rerun that ran and did not work left the Flow as it was: the same reset and replay on this draft fails the same way
-    // (`../repeat-guard/outcomes.ts`), so the identical decision is refused unrun too, unless its result says to try again later.
-    context.repeats.amended({ signature: held.before.signature, draft: draftAfter, changed: false, failed: true, callId: attempt.callId, resultCode: rerun.resultCode });
+    // (`../repeat-guard/outcomes.ts`), unless the actual execution supplies safe temporary failure facts.
+    context.repeats.amended({ signature: held.before.signature, draft: draftAfter, changed: false, failed: true, callId: attempt.callId, ...executionFacts });
   }
   return {
     row: held.amendments.held.length ? { amended: settled.applied, ...(refused.length ? { amendmentsRefused: refused } : {}) } : {},

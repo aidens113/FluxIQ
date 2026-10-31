@@ -7,8 +7,8 @@ import { automationStudioLlmEvidenceRepeatGuard, type AutomationStudioLlmEvidenc
 
 const trialInput = { revision: 2, digest: "sha256:rev2" };
 const evidence = { ok: false, code: "candidate.trial_reset_required", actsToRestore: [{ act: "act-12", did: "pressed Buy Now" }], instruction: "Put the site back first." };
-// The trial gates' result as the loop records it (`../../evidence-loop.ts`, `recorded`), but without the gates' own
-// `retry_allowed` reason, which `../retry-later.ts` exempts on its own (last test): the precondition must hold without it.
+// The trial gates' result as the loop records it (`../../evidence-loop.ts`, `recorded`). Their diagnostic
+// `retry_allowed` reason grants no exemption: a later call must meet the precondition.
 const refusedTrial = (callId: string, code = "candidate.trial_reset_required"): AutomationStudioLlmEvidenceCallOutcome => ({
   callId, toolId: "core.test_subflow", input: trialInput, stateBefore: "cart", stateAfter: "cart", effect: "mutate", proposes: true,
   effectApplied: false, refused: true, resultCode: code, answer: JSON.stringify({ ...evidence, code })
@@ -71,10 +71,12 @@ describe("a trial refused until the site is put back", () => {
     expect(guard.blocks("core.run_node", press)).toMatchObject({ callId: "p1", outcome: "changed_nothing" });
   });
 
-  it("with the gates' own `retry_allowed` reason, is never stored as a failure at all", () => {
+  it("does not lift the precondition from a `retry_allowed` reason alone", () => {
     const guard = automationStudioLlmEvidenceRepeatGuard();
     guard.seen("cart");
     guard.recorded({ ...refusedTrial("t1"), resultReason: "retry_allowed" });
+    expect(guard.blocks("core.test_subflow", trialInput)).toMatchObject({ callId: "t1", outcome: "failed" });
+    guard.recorded(look("l1"));
     expect(guard.blocks("core.test_subflow", trialInput)).toBeUndefined();
   });
 });

@@ -14,6 +14,7 @@
 // could not read ends the run or is fed back.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { projectAutomationStudioFailureControlRecord, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID,
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES,
@@ -122,10 +123,10 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
  * (live run `run-mup2u8o3-6697c4be`, call `search2`).
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS: readonly string[] = [
-  "kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "draft"
+  "kind", "evidence", "effectApplied", "failure", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "draft"
 ];
 
-type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
+type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
 
 /** The result read from what a tool returned, or nothing when it is not one. */
 export function automationStudioLlmEvidenceParseToolExecutionResult(
@@ -176,7 +177,7 @@ function readToolExecution(
     // itself succeeded or failed on its own, and losing the whole result over a
     // diagnostic that arrived malformed would throw away the very thing the
     // reader wanted to read.
-    return { result: {
+    const result: ParsedToolExecution = {
       evidence: value.evidence,
       effectApplied: value.effectApplied,
       ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }),
@@ -206,7 +207,11 @@ function readToolExecution(
       // without them the test runs a repeat once, as it always did.
       ...(isJsonObject(value.outputs) ? { outputs: value.outputs } : {}),
       ...(draft ? { draft: draft.draft } : {})
-    } };
+    };
+    // Optional metadata is data: an accessor cannot erase an executed call.
+    const failure = projectAutomationStudioFailureControlRecord(Object.getOwnPropertyDescriptor(value, "failure")?.value);
+    if (failure) result.failure = failure;
+    return { result };
   }
   if (!isJsonValue(value)) return { refused: "not_json" };
   return { result: { evidence: value, effectApplied: effect !== "mutate" } };

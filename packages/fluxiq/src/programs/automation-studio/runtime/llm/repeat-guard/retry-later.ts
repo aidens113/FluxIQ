@@ -1,12 +1,13 @@
-// Whether a call's outcome says it may work if made again later: a rate limit,
-// a control briefly disabled, a page still loading. Such a call is never a
-// repeat to refuse (`./outcomes.ts`), and never one more refusal of a kind in a
-// row (`../decision-handlers/refusal-run.ts`).
+import { projectAutomationStudioFailureControlRecord } from "@fluxiq/contracts/automation-studio";
 
-/** Words in a result code or reason that say the call may work if made again later. */
-const RETRY_LATER = /rate[_-]?limit|too[_-]?many|throttl|retry|disabled|busy|not[_-]?ready|loading|timed[_-]?out|timeout|try[_-]?again/iu;
-
-/** Whether `resultCode` or `resultReason` says the call may work if made again later. */
-export function automationStudioLlmEvidenceRetriesLater(resultCode: string | undefined, resultReason: string | undefined): boolean {
-  return RETRY_LATER.test(`${resultCode ?? ""} ${resultReason ?? ""}`);
+/**
+ * A validated temporary failure of a call that certainly did not act. Temporary
+ * cause alone grants nothing: the producer must permit the unchanged retry,
+ * report it unacted, and agree with the actual execution and person-needed
+ * facts. Missing or malformed metadata remains a repeat to refuse.
+ */
+export function automationStudioLlmEvidenceRetriesLater(call: { failure?: unknown; effectApplied?: unknown; personNeeded?: unknown }): boolean {
+  if (call.effectApplied !== false || call.personNeeded !== undefined) return false;
+  const failure = projectAutomationStudioFailureControlRecord(call.failure);
+  return failure?.transient === true && failure.retryable === true && failure.effect === "unacted";
 }

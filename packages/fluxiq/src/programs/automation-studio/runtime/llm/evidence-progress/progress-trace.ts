@@ -33,6 +33,7 @@
 import { automationStudioLlmStepLogDirectory, automationStudioLlmStepLogTool } from "../step-log/index.ts";
 import { automationStudioLlmBuildTrace } from "./build-trace.ts";
 import { automationStudioLlmEvidenceDecisionDump } from "./decision-dump.ts";
+import { automationStudioLlmEvidenceToolExecutionControl } from "./tool-execution-control.ts";
 
 // Method signatures, so any loop input whose own requests carry more fields fits.
 type Traceable = {
@@ -46,7 +47,7 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
   const tracing = automationStudioLlmBuildTrace.on(env);
   const dump = automationStudioLlmEvidenceDecisionDump(env);
   if (!tracing && !dump && !automationStudioLlmStepLogDirectory(env)) return input;
-  const execute = automationStudioLlmStepLogTool((request: Parameters<T["executeTool"]>[0]) => input.executeTool(request), env);
+  const execute = automationStudioLlmStepLogTool(async (request: Parameters<T["executeTool"]>[0]) => automationStudioLlmEvidenceToolExecutionControl(await input.executeTool(request)), env);
   const log = (line: string) => automationStudioLlmBuildTrace.line(line, env, write);
   log("loop start");
   const decide = async (request: Parameters<T["decide"]>[0]) => {

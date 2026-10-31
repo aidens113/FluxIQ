@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { projectAutomationStudioFailureControlRecord } from "../../../index.ts";
+import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS,
@@ -394,5 +396,73 @@ describe("a result that is not one names the check it failed", () => {
     const cyclic: Record<string, unknown> = { ok: true };
     cyclic.self = cyclic;
     expect(refusal({ ...base, evidence: cyclic }, "observe")).toBe(invalid("evidence_not_json"));
+  });
+});
+
+describe("optional control-only failure on an executed tool result", () => {
+  const failure = {
+    category: "action_failed" as const,
+    code: "example.temporarily_busy",
+    retryable: false,
+    stage: "execution" as const,
+    effect: "ambiguous" as const,
+    transient: true as const,
+    expected: "PRIVATE_EXPECTED_MARKER",
+    actual: "PRIVATE_ACTUAL_MARKER",
+    evidenceDigest: "a".repeat(64)
+  };
+
+  it("recognizes the key and carries the same strict public control projection, never comparison text", () => {
+    const executed: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "example.busy" }, effectApplied: true, failure };
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(executed, "mutate");
+    expect(AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS).toContain("failure");
+    expect(automationStudioLlmEvidenceToolResultInvalidCode(executed, "mutate")).toBeUndefined();
+    expect(parsed?.failure).toEqual(projectAutomationStudioFailureControlRecord(failure));
+    expect(parsed?.failure).not.toBe(failure);
+    expect(parsed?.evidence).toBe(executed.evidence);
+    expect(parsed?.effectApplied).toBe(true);
+    expect(parsed?.failure).toMatchObject({ retryable: false, effect: "ambiguous", transient: true });
+    expect(JSON.stringify(parsed)).not.toContain(failure.expected);
+    expect(JSON.stringify(parsed)).not.toContain(failure.actual);
+    expect(JSON.stringify(parsed)).not.toContain(failure.evidenceDigest);
+    const roundtrip: AutomationStudioLlmEvidenceToolExecutionResult = { ...executed, failure: parsed!.failure! };
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(roundtrip, "mutate")).toEqual(parsed);
+  });
+
+  it("drops malformed failure alone while preserving authoritative effect, evidence and person-needed facts", () => {
+    const malformed: JsonValue[] = [null, false, [], {}, { ...failure, transient: false }, { ...failure, transient: null }, { ...failure, category: "auth_required" }, { ...failure, message: "PRIVATE_MESSAGE_MARKER" }, { ...failure, actual: 1 }];
+    for (const effectApplied of [true, false]) {
+      for (const invalid of malformed) {
+        const executed: JsonObject = { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "example.actual_call" }, effectApplied, personNeeded: true, resultCode: "example.actual_call", failure: invalid };
+        const parsed = automationStudioLlmEvidenceParseToolExecutionResult(executed, "mutate");
+        expect(parsed).toEqual({ evidence: executed.evidence, effectApplied, personNeeded: true, resultCode: "example.actual_call" });
+        expect(automationStudioLlmEvidenceToolResultInvalidCode(executed, "mutate")).toBeUndefined();
+      }
+    }
+  });
+
+  it("keeps old envelopes and unknown outer-key policy while refusing hostile optional failure metadata alone", () => {
+    const executed: JsonObject = { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true };
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(executed, "mutate")).toEqual({ evidence: executed.evidence, effectApplied: true });
+    expect(automationStudioLlmEvidenceToolResultInvalidCode({ ...executed, unknownOuterKey: true, failure }, "mutate")).toBe("llm_evidence_loop.tool_result_invalid.unknown_key");
+    const hostile = new Proxy({}, { ownKeys: () => { throw new Error("Malformed optional record."); } });
+    expect(automationStudioLlmEvidenceParseToolExecutionResult({ ...executed, failure: hostile }, "mutate")).toEqual({ evidence: executed.evidence, effectApplied: true });
+    Object.defineProperty(executed, "failure", { enumerable: true, get: () => { throw new Error("Malformed optional accessor."); } });
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(executed, "mutate")).toEqual({ evidence: executed.evidence, effectApplied: true });
+  });
+
+  it.each([true, false])("records an actual call and shows only its evidence when its private optional failure is valid=%s", async (valid) => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "press", input: { target: "target.1" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { finished: true } });
+    const executeTool = vi.fn(async (): Promise<JsonValue> => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, code: "example.actual_call" }, effectApplied: true, failure: valid ? failure : { ...failure, transient: false } }));
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], minToolCalls: 1, draft: false, decide, executeTool, unusableDecisions: { stalled } });
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 1 } });
+    expect(result.trace).toContainEqual(expect.objectContaining({ decision: "tool_call", effectApplied: true }));
+    for (const marker of [failure.expected, failure.actual, failure.evidenceDigest]) {
+      expect(JSON.stringify(decide.mock.calls)).not.toContain(marker);
+      expect(JSON.stringify(result.trace)).not.toContain(marker);
+    }
   });
 });

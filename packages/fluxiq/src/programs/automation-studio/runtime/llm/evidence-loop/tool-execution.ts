@@ -6,12 +6,16 @@
 // call -- which is what lets one tool run a whole library of actions.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
 
 export type AutomationStudioLlmEvidenceToolExecutionResult = {
   kind: "llm_evidence_tool_execution";
   evidence: JsonValue;
   effectApplied: boolean;
+  /** Optional control-only failure; the reader strips comparison text/digests.
+   * Malformed metadata is dropped without erasing the call's actual facts. */
+  failure?: AutomationStudioFailureRecord;
   /** True only when every target handle from before this mutation still names
    * the same target afterwards. Consumers may omit it and stay conservative. */
   targetsUnchanged?: boolean;

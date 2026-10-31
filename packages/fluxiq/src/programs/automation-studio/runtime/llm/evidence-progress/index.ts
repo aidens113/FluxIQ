@@ -21,3 +21,4 @@ export * from "./progress-trace.ts";
 export * from "./refusal-run.ts";
 export * from "./stall-redirect.ts";
 export * from "./redirect-facts.ts";
+export * from "./tool-execution-control.ts";

@@ -6,6 +6,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
+import { automationStudioLlmEvidenceRefusedCallRun } from "../refusal-run.ts";
+import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "../types.ts";
 
 const press = { toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true };
 type Shown = ReadonlyArray<{ toolId: string; value: JsonObject }>;
@@ -40,6 +42,32 @@ function decisions(...then: JsonObject[]) {
 const keep = (step: number) => ({ kind: "amend_draft", amendments: [{ step, change: "keep" }] });
 
 describe("decisions refused for one reason, three in a row", () => {
+  it("counts legacy temporary words and unsafe failure claims, while exempting only a typed temporary unacted call", () => {
+    type Call = Parameters<typeof automationStudioLlmEvidenceRefusedCallRun>[2];
+    const temporary: Call = {
+      refused: true, effectApplied: false, effect: "mutate", resultCode: "client.busy_timeout", resultReason: "retry_allowed",
+      failure: { category: "action_failed", code: "client.capacity", retryable: true, effect: "unacted", transient: true }
+    };
+    const variants: Array<[string, Partial<Call>, boolean]> = [
+      ["typed temporary", {}, false],
+      ["legacy words", { failure: undefined }, true],
+      ["not temporary", { failure: { category: "timeout", code: "client.capacity", retryable: true, effect: "unacted" } }, true],
+      ["ambiguous", { failure: { ...temporary.failure!, effect: "ambiguous" } }, true],
+      ["not retryable", { failure: { ...temporary.failure!, retryable: false } }, true],
+      ["policy", { failure: { ...temporary.failure!, category: "blocked_by_capability_or_policy" } }, true],
+      ["person needed", { personNeeded: true }, true],
+      ["certain no effect alone", { failure: { category: "action_failed", code: "client.capacity", retryable: true, effect: "unacted", certainNoEffect: true } }, true]
+    ];
+    for (const [label, change, counts] of variants) {
+      const refused = vi.fn(() => 1);
+      const context = {
+        input: {}, trace: [], accounting: {}, draftSteps: [], evidence: [], refusalRun: { refused }, accountEvidence: () => undefined
+      } as unknown as AutomationStudioLlmEvidenceDecisionHandlerContext;
+      expect(automationStudioLlmEvidenceRefusedCallRun(context, 1, { ...temporary, ...change }), label).toBeUndefined();
+      expect(refused, label).toHaveBeenCalledTimes(counts ? 1 : 0);
+    }
+  });
+
   it("keeps of three different steps already in the Flow: warned at the second, the round stalls at the third", async () => {
     const decide = decisions(keep(1), keep(2), keep(3));
 

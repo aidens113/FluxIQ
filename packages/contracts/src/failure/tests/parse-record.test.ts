@@ -141,4 +141,29 @@ describe("parseAutomationStudioFailureRecord", () => {
     const hostile = new Proxy({}, { ownKeys: () => { throw new Error("boom"); } });
     expect(parseAutomationStudioFailureRecord(hostile)).toBeNull();
   });
+
+  it("round-trips a strictly true transient claim independently of retry permission and effect", () => {
+    for (const retryable of [true, false]) {
+      for (const effect of ["unacted", "ambiguous"] as const) {
+        const record = { category: "action_failed", code: "example.temporarily_busy", retryable, stage: "execution", effect, transient: true };
+        expect(parseAutomationStudioFailureRecord(record)).toEqual(record);
+        expect(parseAutomationStudioFailureRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
+      }
+    }
+    expect(parseAutomationStudioFailureRecord({ category: "timeout", code: "example.wait", retryable: false, transient: true })).toEqual({ category: "timeout", code: "example.wait", retryable: false, transient: true });
+    expect(parseAutomationStudioFailureRecord({ category: "timeout", code: "example.wait", retryable: true, transient: undefined })).toEqual({ category: "timeout", code: "example.wait", retryable: true });
+  });
+
+  it("rejects false, null, unknown and contradictory transient claims", () => {
+    const base = { category: "timeout", code: "example.wait", retryable: true };
+    for (const transient of [false, null, "true", 1, {}, []]) {
+      expect(parseAutomationStudioFailureRecord({ ...base, transient })).toBeNull();
+    }
+    for (const category of ["auth_required", "user_intervention_required", "blocked_by_capability_or_policy", "external_side_effect_denied", "graph_validation_or_unknown_node", "missing_router_or_subflow_target"]) {
+      expect(parseAutomationStudioFailureRecord({ category, code: "example.refused", retryable: false, transient: true })).toBeNull();
+      expect(parseAutomationStudioFailureRecord({ category, code: "example.refused", retryable: false })).not.toBeNull();
+    }
+    expect(parseAutomationStudioFailureRecord({ ...base, transient: true, temporary: true })).toBeNull();
+    expect(parseAutomationStudioFailureRecord({ ...base, category: "unknown_category", transient: true })).toBeNull();
+  });
 });
