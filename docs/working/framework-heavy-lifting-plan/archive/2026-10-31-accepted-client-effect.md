@@ -50,3 +50,15 @@ Moved verbatim from framework-heavy-lifting-plan.md on 2026-10-31.
 - Follow-up: paired dev pushes then CC10/P8 remainder; evidence retained. Lead273unique named tests/types/audits pass, both full sweep slots used/main held, no paid go.
 
 End of preserved source blocks.
+
+## Accepted t827 target observations
+
+### 2026-10-31 - t827 typed actionability discovery
+- Agent: Codex lead; discovery worker SolMax for mixed-version action safety.
+- Changed: paired setup; frozen portable exact actionability API/pure export, source0.5/0.19; readers first; t826 accepted evidence archived verbatim. Wire stays nested payload.
+- Why: portable actionability must survive strict readers without losing executed results or becoming act permission.
+- Validation: `pnpm.cmd task start runtime-actionability-signal --worktree --core --skip-workspace-build` ->exit0, both task trees created, mandatory3CoreSDK builds pass (Core87.2s); exact owning commands in downstream p8-actionability/lead-acceptance.md ->338 Core/contract tests accepted, 31 domain/final68 extension reruns pass, native Chromium three tests pass, both final audits pass1144/615 unchanged.
+- Outcome: Implementation accepted; 338 Core/contract tests, affected domain/extension reruns, types/builds and three native fixture proofs pass. Both final audits and paired dev integration pass; main filtered SDK/domain/extension bundles current.
+- Follow-up: push both dev branches, then remaining P8 identity/repeat/history work. Main held for next permitted full sweep; no paid go/full suite.
+
+Accepted t827 archive ends here.
