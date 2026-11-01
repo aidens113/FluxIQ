@@ -1,0 +1,16 @@
+Role: Heavy worker; gpt-6.1-sol max. Task t838.
+Goal: Replace ordinal inferred definition-pair fields with exact row-owned semantic term/value readers, preserving whole picker roundtrip.
+Worktree C:/Users/osrs_/FluxStuff/fxwork/t838/!FluxIQWebExtension; no main/pinned edits.
+Read: this brief, field-read-discovery.md beside it, first Current State paragraph of FHL, stable Domain request/schema edit.
+STABLE WIRE: text field definition?: {term:string,part:"term"|"value"}; selector ifpresent scopes definitionlists withinitem, absent searches item's own definitionlists. Exact whitespace-normalized term, unique across scoped rowowned lists; no position/value/fuzzyfallback. dl/dt/dd semantic associations must preserve list ownership, exclude nestedlist terms fromouterpairs. Missing/duplicate term or nonunique associated value unreadable. Old specs unchanged. Root owns request/schema; do not edit Domain.
+Owned content/extraction paths: infer-fields.ts, field-reader.ts, field-spec.ts, content-fields.ts, path-equivalence/prune.ts, template-kind/kind-columns.ts; focused definition-field/association.ts and index.ts; direct owning tests.
+Owned Extension roundtrip: shared/extraction-messages.ts; background/extraction/definition.ts; panel/extraction/view-model.ts and confirm-payload.ts; background/tests/extraction-confirm.test.ts and panel/extraction/tests/{view-model,confirm-payload}.test.ts.
+Must not touch other source/e2e, Domain/Core, package versions, shared docs/architecture, git/artifacts. If another needed copy/leafmodule is found message lead first. Report extension-fix.md beside brief.
+Inference/dedup/prune must keep different semantic terms distinct despite identical markup, replace ordinal term/value candidates, emit stable definitions for later unseen rows, retain exact same association through coverage/read/evidence sampling.
+Live reader and coverage must share one resolver. Support flat dl/dt/dd and grouped pair markup. Never select another credential on missing/duplicate/ambiguous term. Preserve hidden/sensitive/control/excluded-column privacy checks before reading. Structural dt labels may label fields; no dd/record sample values in proposals or keys.
+Normalize newfield metadata in test helpers instead of dropping it. Keep normal UI labels natural; no implementationdetail UI controls.
+Parser/reader defense: malformed active metadata refused, nontext inactive member leftbehind, lines:true+definition refused; deepclone term/part where wires/picker payloads are constructed. Selector scopes lists, not exactterm positionalelement.
+Tests use unrelated synthetic records: reorder/insert/remove pairs; laterrow beyond detection sample; same markup/differentterm; missing/duplicate/ambiguous values; nestedlists; hidden/sensitive/excluded; 4column values and privacy; everyroundtrip copy. Original source identity/counts may change only where semanticdef identity improves.
+Coordinate semantics with /root/field_read_discovery (Domain worker); no shared file edits. Stablecontract changes require lead.
+Run narrow owning extension test files from discovery report plus own tests. No fullsuite/package builds/types, browser/provider calls. Lead owns compilation/audit/realistic-site browser acceptance.
+Return Outcome;Changed;Validation exactcommand->observed;Notverified;Report;Notes(max3lines). Freeze edits when done.

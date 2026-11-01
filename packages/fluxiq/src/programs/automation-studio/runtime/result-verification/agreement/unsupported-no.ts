@@ -4,12 +4,13 @@ import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directi
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "../unsettled/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../verdict/index.ts";
 import { automationStudioResultDefectsLocated, type AutomationStudioResultRefutedDefect } from "../located-defects/index.ts";
+import { automationStudioResultUnconfirmedInspection } from "../unconfirmed-inspection/index.ts";
 
 type Verification = AutomationStudioResultVerification;
 type Reading = NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
 type RefutedRow = NonNullable<Verification["refutedRows"]>[number];
 /** What Core's record says of one no: whether it names a defect Core finds, Core's words for each it does not, and each defect Core's record of its row refutes, `wholly` where that is every defect, at least one (t810). */
-type Support = { supported: boolean; findings: string[]; refuted: AutomationStudioResultRefutedDefect[]; wholly: boolean };
+type Support = { supported: boolean; findings: string[]; refuted: AutomationStudioResultRefutedDefect[]; wholly: boolean; unmeasured: NonNullable<Reading["defects"]> };
 
 /** Core's own findings that locate a defect themselves: rows a yes passed over, and rows a text condition left out that state a kept number (`../verdict/`). */
 const CORE_LOCATED: ReadonlySet<string> = new Set([
@@ -60,6 +61,8 @@ const CORE_LOCATED: ReadonlySet<string> = new Set([
  * repair as the unconfirmed reading, and the repair dropped the right
  * condition. The unsure outcome's `unconfirmedReading` holds only what that no
  * read the request to ask (`expected`); Core's findings stay in `unsupportedNo`.
+ * A structured claim whose own cell was not measured may separately request
+ * a fresh inspection, explicitly unconfirmed and bound to this build's test.
  *
  * **A no whose every defect row Core's record of that row refutes (t810,
  * framework plan P5b).** Run `run-mvud43a2-445c7f17`: a correct Flow, and
@@ -109,6 +112,7 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   const notTaken = new Map<1 | 2, string[]>();
   // How many defects each refused no's re-ask listed, or `undefined` where it gave no answer that could be read: the reason's words (header, t790).
   const named = new Map<1 | 2, number | undefined>();
+  const unmeasured = new Map<1 | 2, NonNullable<Reading["defects"]>>();
   for (const call of nos) {
     const was = before.get(call)!;
     recordRows(refutedRows, call, was.refuted);
@@ -128,6 +132,7 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
     if (now && !now.supported) {
       notTaken.set(call, now.findings);
       named.set(call, again.repair?.judgement?.defects?.length ?? 0);
+      if (now.unmeasured.length) unmeasured.set(call, now.unmeasured);
     }
   }
   const verdicts = [...(settled.verdicts ?? []), ...asked];
@@ -160,6 +165,9 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
   const basis = yes ? "model_disagreed" as const : "model_unconfirmed" as const;
   // Nothing of a no Core could not ground is carried on: no reading, no advice (header, t771).
   const reading = expectedOf([...notTaken.keys()].map((call) => (modelNo(calls[call - 1]!) ? calls[call - 1]! : before.get(call)!.verification).repair?.judgement), record);
+  const inspection = automationStudioResultUnconfirmedInspection.issue({
+    summary, calls: [...unmeasured].map(([call, cells]) => ({ call, unmeasured: cells }))
+  });
   const both = notTaken.size === 2;
   return {
     schemaVersion: settled.schemaVersion,
@@ -172,6 +180,7 @@ export async function automationStudioResultVerificationReaskUnsupportedNo(input
     verdicts,
     calls: verdicts.length,
     unsupportedNo,
+    ...(inspection ? { unconfirmedInspection: inspection } : {}),
     ...(reading ? { unconfirmedReading: reading } : {}),
     ...(yes?.answeredReading ? { answeredReading: { ...yes.answeredReading } } : {}),
     // Core's record of the judged build test, for the gate that keeps the build's trials (`./standing-record.ts`); never model-facing.
@@ -194,14 +203,14 @@ function modelYes(verification: Verification): boolean {
  * it found, stands on Core's own finding.
  */
 function supportOf(verification: Verification, record: AutomationStudioResultNoRecord, summary: AutomationStudioRunResultSummary, requestText: string | undefined): Support {
-  if ((verification.repair?.findings ?? []).some((finding) => CORE_LOCATED.has(finding.code))) return { supported: true, findings: [], refuted: [], wholly: false };
+  if ((verification.repair?.findings ?? []).some((finding) => CORE_LOCATED.has(finding.code))) return { supported: true, findings: [], refuted: [], wholly: false, unmeasured: [] };
   // Persisted legacy diagnoses may omit this optional list and keep the existing prose-weighing rules. Current negative replies cannot reach here without a list: the task-specific harness decoder rejects omission.
   const defects = verification.repair?.judgement?.defects;
-  if (defects === undefined) return { supported: true, findings: [], refuted: [], wholly: false };
-  if (!defects.length) return { supported: false, findings: ["It listed no defect."], refuted: [], wholly: false };
+  if (defects === undefined) return { supported: true, findings: [], refuted: [], wholly: false, unmeasured: [] };
+  if (!defects.length) return { supported: false, findings: ["It listed no defect."], refuted: [], wholly: false, unmeasured: [] };
   const found = automationStudioResultDefectsLocated(defects, { record, summary, requestText });
   const refuted = found.refuted ?? [];
-  return { supported: found.located.length > 0, findings: found.findings, refuted, wholly: refuted.length === defects.length };
+  return { supported: found.located.length > 0, findings: found.findings, refuted, wholly: refuted.length === defects.length, unmeasured: found.unmeasured ?? [] };
 }
 
 /**

@@ -105,6 +105,18 @@ export type AutomationStudioResultVerification = import("../standing-no/index.ts
    */
   unsupportedNo?: { calls: Array<1 | 2>; findings: string[]; reasked: true };
   /**
+   * A current build test's screened allegations whose row cell Core did not
+   * measure, after the rejecting calls were re-asked. Private Core provenance
+   * binds this inspection hint to that summary, Flow and round. It requires a
+   * fresh read, establishes no defect, and authorizes no act or acceptance.
+   */
+  unconfirmedInspection?: {
+    readonly status: "unconfirmed";
+    readonly reason: "row_cell_unmeasured";
+    readonly requiresFreshRead: true;
+    readonly claims: ReadonlyArray<{ readonly call: 1 | 2; readonly row: string; readonly column: string; readonly claimedValue: string; readonly requestWords: string; readonly claimedStep?: string }>;
+  };
+  /**
    * On a double no where Core's record could weigh them (`./agreement.ts`,
    * t664): one entry per call, `recordContradicts` where the record refutes its
    * no wholly or in part, absent where the no stands whole. Recomputed when a

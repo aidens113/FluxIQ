@@ -8,6 +8,8 @@ import type { AutomationStudioResultVerificationReport } from "../../verify.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../verdict/index.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 import { LOAN_REQUEST, loanRunSummary } from "../../agreement/tests/loan-fixture.ts";
+import { automationStudioResultUnconfirmedInspection } from "../../unconfirmed-inspection/index.ts";
+import { inspectionFixture } from "../../unconfirmed-inspection/tests/fixture.ts";
 
 const instruction: AutomationStudioFlowInstruction = {
   schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Goal", body: LOAN_REQUEST,
@@ -35,5 +37,28 @@ describe("the build test's judge over a no that names no defect Core can find (t
     const verdict = await judge({ summary: loanRunSummary(), budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "unknown", unsupportedNo: true, unconfirmedReading: { advice: expect.stringContaining("compare dates") } });
     expect(verdict.verdict === "unknown" && verdict.standingNo).toEqual(STANDING);
+  });
+
+  it("carries the actual re-asked unmeasured defect as an inspection hypothesis, without no/advice authority", async () => {
+    const summary = inspectionFixture.summary();
+    const judge = automationStudioBuildTestJudge({ instructions: [inspectionFixture.instruction], deniedEvidenceKeys: [], projectId: "project", flowId: "flow", verify: (request) => inspectionFixture.report(request.summary) });
+    const verdict = await automationStudioResultUnconfirmedInspection.during({ round: 1, flowSignature: "flow", replaySignature: "replay" }, () => judge({ summary }));
+    expect(verdict).toMatchObject({ verdict: "unknown", unsupportedNo: true, unconfirmedInspection: { status: "unconfirmed", requiresFreshRead: true } });
+    expect(verdict).not.toHaveProperty("advice");
+    expect(verdict).not.toHaveProperty("stillAchievable");
+    expect(verdict).not.toHaveProperty("oneCallSaidYes");
+  });
+
+  it("drops copied hints, another summary's hint, and a not-judged verdict", async () => {
+    const summary = inspectionFixture.summary();
+    const report = await automationStudioResultUnconfirmedInspection.during({ round: 1, flowSignature: "flow", replaySignature: "replay" }, () => inspectionFixture.report(summary));
+    for (const { outcome, currentSummary } of [{ outcome: structuredClone(report), currentSummary: summary }, { outcome: report, currentSummary: inspectionFixture.summary() }]) {
+      const judge = automationStudioBuildTestJudge({ instructions: [inspectionFixture.instruction], projectId: "project", flowId: "flow", verify: async () => outcome });
+      const verdict = await judge({ summary: currentSummary });
+      expect(verdict.verdict).toBe("unknown");
+      expect(verdict).not.toHaveProperty("unconfirmedInspection");
+    }
+    const judge = automationStudioBuildTestJudge({ instructions: [inspectionFixture.instruction], projectId: "project", flowId: "flow", verify: async () => report });
+    expect(await judge({ summary, budget: { maxCostUsd: 0 } })).toMatchObject({ verdict: "not_judged" });
   });
 });

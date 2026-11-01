@@ -189,6 +189,7 @@ import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplay
 import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../llm/evidence-loop/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
+import { automationStudioResultUnconfirmedInspection } from "../../result-verification/unconfirmed-inspection/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
@@ -625,6 +626,7 @@ function traceTested(refusal: "cancelled" | "evidence_limit" | { issueCodes: rea
 /** Whether the judge said no, with what was asked still achievable or unsure, and named what to change: what buys one more round after one without measured progress. */
 function judgedFixNamed(judgement: AutomationStudioFlowBootstrapJudgement): boolean {
   const judge = judgement.judge;
+  if (judge?.verdict === "unknown") return automationStudioResultUnconfirmedInspection.forRound(judge.unconfirmedInspection, { round: judgement.round, ...(judgement.flowSignature === undefined ? {} : { replaySignature: judgement.flowSignature }) }) !== undefined;
   return judge?.verdict === "no" && judge.stillAchievable !== "no" && Boolean(judge.advice?.trim());
 }
 
@@ -663,7 +665,13 @@ async function judgeAccounted(
   const overshootBefore = input.purse?.overshootUsd ?? 0;
   let verdict: AutomationStudioFlowBootstrapTestVerdict;
   try {
-    verdict = await judge({ ...request, budget: input.purse ? { ...budget, maxCostUsd: input.purse.leftUsd() } : budget });
+    verdict = await automationStudioResultUnconfirmedInspection.during({ round: request.round, flowSignature: automationStudioFlowDraftFlowSignature(request.loop.steps), replaySignature: automationStudioFlowDraftReplaySignature(request.loop.steps) }, async () => {
+      const answer = await judge({ ...request, budget: input.purse ? { ...budget, maxCostUsd: input.purse.leftUsd() } : budget });
+      if (answer.verdict !== "unknown" || !answer.unconfirmedInspection || automationStudioResultUnconfirmedInspection.forCurrent(answer.unconfirmedInspection)) return answer;
+      const current = { ...answer };
+      delete current.unconfirmedInspection;
+      return current;
+    });
   } catch (error) {
     if (!cancellation(error)) throw error;
     return "cancelled";
