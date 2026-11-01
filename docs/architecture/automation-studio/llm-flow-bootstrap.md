@@ -4041,6 +4041,16 @@ a no Core could not ground observed or advised is carried on: its unsure outcome
 `unconfirmedReading` holds only what it read the request to ask and `recordContradicts`, and a
 later trial's judge is told the advice of earlier trials judged no only (`earlierAdvice`).
 
+An unmeasured structured row-cell allegation has a separate, explicitly
+unconfirmed inspection path. Core may ask the builder to obtain fresh evidence
+for that row/read when its own locator lacked the claimed cell. This hint is
+bound privately to the current judged summary, Flow, replay, round and judge
+invocation; copied, fabricated or stale hints do not qualify. It neither
+restores unsupported model advice as a fact nor changes an unknown verdict
+into acceptance. An actionable hint permits the existing one-stall repair
+grace, under the same purse and action gates; a second stalled round still
+stops. Unknown results without such a hint retain the existing stop behavior.
+
 ### Refuted defect rows, cited yeses and located-only advice (framework plan P5b, t810)
 
 Demo run `run-mvud43a2-445c7f17` stored exactly the rows asked for and ended unverified: every judge

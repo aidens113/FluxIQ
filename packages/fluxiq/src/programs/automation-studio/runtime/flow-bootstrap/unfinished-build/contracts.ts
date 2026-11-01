@@ -11,6 +11,7 @@ import type {
   AutomationStudioLlmEvidenceLoopUnreadable
 } from "../../llm/index.ts";
 import type { AutomationStudioRequestRowsNamed } from "../../result-verification/request-rows/index.ts";
+import type { AutomationStudioResultVerification } from "../../result-verification/contracts/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound } from "../generation-failure/index.ts";
 
 /** Why a live round stopped without the model saying the Flow was ready, where no budget was the reason. */
@@ -69,7 +70,7 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
  */
 export type AutomationStudioFlowBootstrapTestVerdict =
   | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string; confidence?: number; unconfirmedAdvice?: AutomationStudioFlowBootstrapYesAdvice }
-  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading; oneCallSaidYes?: true; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
+  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading; unconfirmedInspection?: AutomationStudioResultVerification["unconfirmedInspection"]; oneCallSaidYes?: true; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
   | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; fix?: string[]; checked?: string[]; checkedRows?: AutomationStudioRequestRowsNamed[]; records?: AutomationStudioFlowBootstrapJudgedRecords; stillAchievable?: AutomationStudioFlowBootstrapStillAchievable; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
 
 /**
@@ -147,6 +148,8 @@ export type AutomationStudioFlowBootstrapJudgedWrong = {
    * verdict.
    */
   unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading;
+  /** An unknown's current-test inspection hypothesis; private provenance is checked before use. */
+  unconfirmedInspection?: AutomationStudioResultVerification["unconfirmedInspection"];
   /**
    * An `unknown`'s only: one of its two judge calls said the test does what
    * was asked (`model_disagreed`). The pair, not the judge's words: what a

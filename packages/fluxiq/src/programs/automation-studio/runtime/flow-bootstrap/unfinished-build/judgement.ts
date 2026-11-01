@@ -71,6 +71,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftStepCarriedJoin } from "../../flow-draft/carried-step/index.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplayOutcomeWord, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepCopy, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioRequestRowsNamed } from "../../result-verification/request-rows/index.ts";
+import { automationStudioResultUnconfirmedInspection } from "../../result-verification/unconfirmed-inspection/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import { automationStudioFlowBootstrapJudgeInSeedNumbers } from "./test-step-numbers.ts";
 import type {
@@ -186,7 +187,7 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
   const checkedIds = new Set(input.steps.filter((step) => step.id !== undefined && checkedOnly([step]).size > 0).map((step) => step.id));
   const { done, todo, proven, checked } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.id !== undefined && workedIds.has(step.id)).map((step) => step.position)), new Set(seed.filter((step) => step.id !== undefined && checkedIds.has(step.id)).map((step) => step.position)));
   // In the seed's step numbers: the test numbered them as the round's draft did (`./test-step-numbers.ts`).
-  const judge = automationStudioFlowBootstrapJudgeInSeedNumbers(judgedWrong(input.verdict), input.steps);
+  const judge = automationStudioFlowBootstrapJudgeInSeedNumbers(judgedWrong(input.verdict, { round: input.round, flowSignature: automationStudioFlowDraftFlowSignature(input.steps), replaySignature: automationStudioFlowDraftReplaySignature(seed) }), input.steps);
   // A verdict that judged nothing, or another Flow's test, is no evidence this Flow ran: a `no` is always about the loop's own test.
   const testedThisFlow = input.verdict.verdict === "no" || input.verdict.flowSignature === automationStudioFlowDraftFlowSignature(input.steps);
   const notRun = automationStudioFlowBootstrapStepsNotRunInThisBuild(seed);
@@ -233,18 +234,20 @@ export function automationStudioFlowBootstrapYesNotAboutThisFlow(verdict: Extrac
  * found -- stays the test's.
  */
 export function automationStudioFlowBootstrapWithJudgeAccount(judgement: AutomationStudioFlowBootstrapJudgement, verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>): AutomationStudioFlowBootstrapJudgement {
-  return { ...judgement, judge: judgedWrong(verdict) };
+  return { ...judgement, judge: judgedWrong(verdict, { round: judgement.round, ...(verdict.flowSignature === undefined ? {} : { flowSignature: verdict.flowSignature }), ...(judgement.flowSignature === undefined ? {} : { replaySignature: judgement.flowSignature }) }) };
 }
 
 /** The judge's account, as a judgement keeps it: only what it said. */
-function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>): AutomationStudioFlowBootstrapJudgedWrong {
+function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>, context: { round: number; flowSignature?: string; replaySignature?: string }): AutomationStudioFlowBootstrapJudgedWrong {
   if (verdict.verdict !== "no") {
     const reading = verdict.verdict === "unknown" ? readingOf(verdict.unconfirmedReading) : undefined;
+    const inspection = verdict.verdict === "unknown" && verdict.flowSignature === context.flowSignature ? automationStudioResultUnconfirmedInspection.forRound(verdict.unconfirmedInspection, context) : undefined;
     return {
       verdict: verdict.verdict,
       findings: verdict.why ? [verdict.why] : [],
       ...(verdict.untestedCarried?.length ? { untestedCarried: [...verdict.untestedCarried] } : {}),
       ...(reading ? { unconfirmedReading: reading } : {}),
+      ...(inspection ? { unconfirmedInspection: inspection } : {}),
       // Which pair it was -- one call said yes -- never its words: what a repair after a `no` is measured by (`./progress.ts`).
       ...(verdict.verdict === "unknown" && verdict.oneCallSaidYes === true ? { oneCallSaidYes: true as const } : {})
     };
@@ -315,7 +318,7 @@ export function automationStudioFlowBootstrapJudgementValue(judgement: Automatio
     actsTodo: [...judgement.todo],
     ...(judgement.lastIssueCodes.length ? { lastRefusedFor: [...judgement.lastIssueCodes] } : {}),
     ...(judgement.notRunInThisBuild?.length ? { notRunInThisBuild: [...judgement.notRunInThisBuild] } : {}),
-    ...(judgement.judge ? { judge: judgeValue(judgement.judge) } : {}),
+    ...(judgement.judge ? { judge: judgeValue(judgement.judge, judgement) } : {}),
     ...(judgement.fixSteps?.length ? { whereToFix: judgement.fixSteps.map(whereStepStarts) } : {})
   };
 }
@@ -357,7 +360,8 @@ function whereStepStarts(position: number): string {
  * already screened by the judge -- a `no`'s, and an `unknown`'s one
  * unconfirmed reading.
  */
-function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong): JsonObject {
+function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong, context: AutomationStudioFlowBootstrapJudgement): JsonObject {
+  const inspection = judge.verdict === "unknown" ? automationStudioResultUnconfirmedInspection.forRound(judge.unconfirmedInspection, { round: context.round, ...(context.flowSignature === undefined ? {} : { replaySignature: context.flowSignature }) }) : undefined;
   return {
     verdict: judge.verdict,
     ...(judge.expected ? { expected: judge.expected } : {}),
@@ -373,6 +377,7 @@ function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong): JsonObject
     // How the judge's own step numbers read in the draft's (`./test-step-numbers.ts`; `resume.ts` says what it is).
     ...(judge.testStepIsDraftStep ? { testStepIsDraftStep: { ...judge.testStepIsDraftStep } } : {}),
     // An unknown's one unconfirmed reading, under its own key so it is never read as a no (`resume.ts` says what it is).
-    ...(judge.unconfirmedReading ? { unconfirmedReading: { ...judge.unconfirmedReading } } : {})
+    ...(judge.unconfirmedReading ? { unconfirmedReading: { ...judge.unconfirmedReading } } : {}),
+    ...(inspection ? { unconfirmedInspection: automationStudioResultUnconfirmedInspection.value(inspection) } : {})
   };
 }

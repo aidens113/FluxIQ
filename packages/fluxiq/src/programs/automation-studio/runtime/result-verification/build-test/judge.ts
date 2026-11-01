@@ -116,6 +116,7 @@ import { automationStudioResultVerificationDeadlineMs, automationStudioResultVer
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
 import { automationStudioResultCheckedRowsNamed, type AutomationStudioRequestRowsNamed } from "../request-rows/index.ts";
 import type { AutomationStudioResultStandingNoRecord } from "../standing-no/index.ts";
+import { automationStudioResultUnconfirmedInspection } from "../unconfirmed-inspection/index.ts";
 import {
   verifyAutomationStudioRunResult,
   type AutomationStudioResultVerificationReport,
@@ -209,6 +210,8 @@ export type AutomationStudioBuildTestVerdict =
      * its reading rides in `unconfirmedReading`, labelled so.
      */
     unsupportedNo?: true;
+    /** Core-issued, current-test allegations requiring inspection, never a finding or repair authority. */
+    unconfirmedInspection?: AutomationStudioResultVerification["unconfirmedInspection"];
     /**
      * Only on a `not_judged` whose every call answered yes and Core held the
      * yes for the exclusion evidence it lacked
@@ -382,7 +385,8 @@ export function automationStudioBuildTestJudge(deps: {
     const record = outcome.standingNo ? { standingNo: structuredClone(outcome.standingNo) } : {};
     // ...and a no that still named no defect Core finds, as the fact (t752).
     const unsupported = outcome.unsupportedNo ? { unsupportedNo: true as const } : {};
-    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), ...(doubt ? { doubtContradicted: doubt } : {}), ...unsupported, ...record, spent };
+    const inspection = outcome.unsupportedNo ? automationStudioResultUnconfirmedInspection.forSummary(outcome.unconfirmedInspection, judged) : undefined;
+    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(answered ? { answeredReading: { ...answered } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), ...(doubt ? { doubtContradicted: doubt } : {}), ...unsupported, ...(inspection ? { unconfirmedInspection: inspection } : {}), ...record, spent };
   };
 }
 

@@ -18,6 +18,7 @@ import { automationStudioResultAskedTestedValueOnly } from "./tested-value-only.
 import { automationStudioResultAskedUntestedColumn } from "./untested-column.ts";
 
 type Defect = AutomationStudioLlmVerificationDefect;
+type UnmeasuredCell = { unmeasured: true; finding: string };
 type Context = {
   record: AutomationStudioResultNoRecord;
   summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets" | "flowShape" | "buildTest">;
@@ -39,10 +40,11 @@ export type AutomationStudioResultRefutedDefect = { defect: Defect; evidence: Au
 export function automationStudioResultDefectsLocated(
   defects: readonly Defect[],
   context: Context
-): { located: Defect[]; findings: string[]; refuted?: AutomationStudioResultRefutedDefect[] } {
+): { located: Defect[]; findings: string[]; refuted?: AutomationStudioResultRefutedDefect[]; unmeasured?: Defect[] } {
   const located: Defect[] = [];
   const findings: string[] = [];
   const refuted: AutomationStudioResultRefutedDefect[] = [];
+  const unmeasured: Defect[] = [];
   // Core's record of the steps the run took, read once and only for an act defect (`./act-steps.ts`, t766).
   let steps: AutomationStudioResultActStep[] | undefined;
   const actSteps = (): AutomationStudioResultActStep[] => (steps ??= automationStudioResultActSteps(context.summary));
@@ -53,16 +55,19 @@ export function automationStudioResultDefectsLocated(
     const missing = notFound(defect, context, actSteps, leftOutRecords);
     if (missing === undefined) located.push(defect);
     else if (typeof missing === "string") findings.push(missing);
-    else {
+    else if ("unmeasured" in missing) {
+      findings.push(missing.finding);
+      unmeasured.push(defect);
+    } else {
       findings.push(missing.finding);
       refuted.push({ defect, evidence: missing.evidence, quote: missing.quote });
     }
   }
-  return { located, findings, ...(refuted.length ? { refuted } : {}) };
+  return { located, findings, ...(refuted.length ? { refuted } : {}), ...(unmeasured.length ? { unmeasured } : {}) };
 }
 
 /** Why Core does not find one defect in its record -- Core's record of its row refuting it, where it does (t810) -- or nothing where it finds it. */
-function notFound(defect: Defect, context: Context, actSteps: () => AutomationStudioResultActStep[], leftOutRecords: () => Map<string, AutomationStudioResultLeftOutRowRecord[]>): string | AutomationStudioResultDefectRowRefutation | undefined {
+function notFound(defect: Defect, context: Context, actSteps: () => AutomationStudioResultActStep[], leftOutRecords: () => Map<string, AutomationStudioResultLeftOutRowRecord[]>): string | AutomationStudioResultDefectRowRefutation | UnmeasuredCell | undefined {
   const { record, summary } = context;
   // Core cannot locate non-row requirements by row membership. Keep the uncertainty explicit; never infer correctness from this boundary.
   if (defect.kind === "other") return "This requirement is not measurable by Core\'s row-membership checks; it remains unconfirmed against the original request.";
@@ -187,7 +192,7 @@ function named(label: string, rest: string, record: AutomationStudioResultNoReco
  * label says it. A claim about a row's group, date or kind that its own cells
  * do not bear out is no defect Core finds.
  */
-function askedCellNotFound(defect: Defect, quoted: string, cells: ReadonlyArray<Record<string, string>>, label: string | undefined): string | undefined {
+function askedCellNotFound(defect: Defect, quoted: string, cells: ReadonlyArray<Record<string, string>>, label: string | undefined): string | UnmeasuredCell | undefined {
   const column = bare(defect.column ?? "");
   const value = defect.value === undefined ? "" : fold(defect.value);
   if (!column || !value) return `${quoted} is a row a read saw and left out, but the defect names no column and value of that row which make it a row the request asks for: name the column and quote that row's own value in it.`;
@@ -199,7 +204,7 @@ function askedCellNotFound(defect: Defect, quoted: string, cells: ReadonlyArray<
   const held = cells.flatMap((row) => Object.entries(row).filter(([key]) => named.has(key)).map(([, cell]) => cell));
   if (!held.length) {
     if (label !== undefined && value.length >= 3 && fold(label).includes(value)) return undefined;
-    return `Core holds no cell "${defect.column}" of ${quoted}, and its label does not say "${defect.value}", so whether the request asks for that row is unconfirmed.`;
+    return { unmeasured: true, finding: `Core holds no cell "${defect.column}" of ${quoted}, and its label does not say "${defect.value}", so whether the request asks for that row is unconfirmed.` };
   }
   if (held.some((cell) => fold(cell) === value || (value.length >= 3 && fold(cell).includes(value)))) return undefined;
   const said = [...new Set(held.map((cell) => (cell.trim() ? `"${cell}"` : "no value")))].join(" or ");
