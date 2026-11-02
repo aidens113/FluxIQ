@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioStepReacquire } from "../../target-reacquire/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
-import type { AutomationStudioUnboundTargetReacquireAnswer } from "../answer.ts";
-import { automationStudioRootInvocation } from "../../frames/index.ts";
+import { automationStudioStepReacquire } from "../../../../../../engine/automation/target-reacquire/index.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../../../engine/automation/index.ts";
+import type { AutomationStudioUnboundTargetReacquireAnswer } from "../../../../../../runtime/automation-host/contracts/index.ts";
+import { automationStudioRootInvocation } from "../../../../../../engine/automation/frames/index.ts";
 import { context, found, stale } from "./fixtures.ts";
 
 const policy = (maxAttempts = 4) => ({ maxAttempts, backoffMs: [] });

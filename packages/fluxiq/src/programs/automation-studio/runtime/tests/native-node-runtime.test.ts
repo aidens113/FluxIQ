@@ -10,6 +10,8 @@ import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBoo
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
 import { automationStudioRunGraphOptions } from "../service/runtime-session/index.ts";
 
+import { createElementMatcher } from "../../../../runtime/target-matching/index.ts";
+
 function node(overrides: Partial<AutomationStudioNodeDefinition> = {}): AutomationStudioNodeDefinition {
   return {
     schemaVersion: "0.1", id: "example.transform", version: "1.0.0", label: "Transform", description: "Importer transform", category: "custom",
@@ -139,12 +141,15 @@ describe("trusted-local native node runtime", () => {
     });
   });
 
-  it("provides the common element matcher to native implementations", async () => {
+  it("provides the registered domain matcher to native implementations", async () => {
+    const domainMatcher = createElementMatcher();
     const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), {
+      elementMatcher: domainMatcher,
       packageId: "example.package",
       packageVersion: "1.0.0",
       implementations: {
         transform: ({ elementMatcher }) => {
+          expect(elementMatcher).toBe(domainMatcher);
           const best = elementMatcher.bestCandidate({ visibleText: "Save", id: "save" }, [{ candidateId: "wrong", visibleText: "Cancel" }, { candidateId: "right", visibleText: "Save", id: "save" }]);
           return { outputs: { result: best?.candidateId === "right" ? 1 : 0 } };
         }
@@ -153,9 +158,34 @@ describe("trusted-local native node runtime", () => {
     await expect(runtime.execute({ id: "native", definitionId: "example.transform" }, {})).resolves.toMatchObject({ result: { outputs: { result: 1 } } });
   });
 
+  it("fails closed when an importer asks to score targets without a registered matcher", async () => {
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest(), {
+      packageId: "example.package", packageVersion: "1.0.0",
+      implementations: { transform: ({ elementMatcher }) => ({ outputs: { result: elementMatcher.bestCandidate({ label: "Save" }, [{ candidateId: "save", label: "Save" }]) ? 1 : 0 } }) }
+    });
+    expect(runtime.getElementMatcher("example")).toBeUndefined();
+    await expect(runtime.execute({ id: "native", definitionId: "example.transform" }, {})).resolves.toMatchObject({ result: { status: "failed", outputs: { error: expect.stringContaining("No element matcher is registered for domain example") } } });
+  });
+
+  it("keeps registered matchers isolated by domain and refuses conflicting registrations", () => {
+    const first = createElementMatcher();
+    const second = createElementMatcher({ weights: { entityId: 100 } });
+    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest([]), { packageId: "example.package", packageVersion: "1.0.0", implementations: {}, elementMatcher: first });
+    const other = { ...manifest([]), domainId: "other", packageId: "other.package" };
+    runtime.register(other, { packageId: other.packageId, packageVersion: "1.0.0", implementations: {}, elementMatcher: second });
+    expect(runtime.getElementMatcher("example")).toBe(first);
+    expect(runtime.getElementMatcher("other")).toBe(second);
+    expect(runtime.getElementMatcher("unregistered")).toBeUndefined();
+    expect(() => runtime.domainElementMatcher("unregistered").bestCandidate({ entityId: "record" }, [{ candidateId: "record", entityId: "record" }])).toThrow("No element matcher is registered for domain unregistered");
+    expect(() => runtime.register({ ...manifest([]), packageId: "conflicting.package" }, { packageId: "conflicting.package", packageVersion: "1.0.0", implementations: {}, elementMatcher: second })).toThrow("A different element matcher is already registered for domain example");
+    expect(runtime.getElementMatcher("example")).toBe(first);
+  });
+
   it("provides registered target resolvers to native implementations", async () => {
     const withResolver = { ...manifest(), targetResolvers: [{ id: "element", version: "1.0.0", description: "Resolves element targets" }] };
+    const matcher = createElementMatcher();
     const runtime = new AutomationStudioNativeNodeRuntime().register(withResolver, {
+      elementMatcher: matcher,
       packageId: "example.package",
       packageVersion: "1.0.0",
       implementations: {
@@ -165,7 +195,10 @@ describe("trusted-local native node runtime", () => {
         }
       },
       targetResolvers: {
-        element: (target) => ({ kind: "element", fingerprint: { selector: String(target.selector ?? "") } })
+        element: (target, context) => {
+          expect(context.elementMatcher).toBe(matcher);
+          return { kind: "element", fingerprint: { selector: String(target.selector ?? "") } };
+        }
       }
     });
     await expect(runtime.execute({ id: "native", definitionId: "example.transform" }, {})).resolves.toMatchObject({ result: { outputs: { result: 1 } } });

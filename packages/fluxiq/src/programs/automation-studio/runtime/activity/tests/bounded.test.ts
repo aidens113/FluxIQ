@@ -1,7 +1,7 @@
 import { CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
-import { boundedAutomationStudioActivity } from "../bounded.ts";
-import type { AutomationStudioActivityInput } from "../contracts.ts";
+import { boundedAutomationStudioActivity } from "../index.ts";
+import type { AutomationStudioActivityInput } from "../index.ts";
 
 const base: AutomationStudioActivityInput = {
   activityId: "build:b1",

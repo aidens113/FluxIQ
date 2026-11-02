@@ -10,11 +10,9 @@ import { IoRegistry } from "../../../io/index.ts";
 import type { FluxIQRuntimeCommandStatus, FluxIQRuntimeWithheldValues, RuntimeService } from "../../../runtime/index.ts";
 import { readRuntimeTargetActionability } from "../../../runtime/result-control/index.ts";
 import { normalizeAutomationStudioElementTarget, type AutomationStudioElementTarget, type PolicyAction } from "../model/index.ts";
-import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
+import type { ElementMatcher } from "../../../runtime/target-matching/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution } from "../nodes/contracts.ts";
 import { automationStudioReferenceNow } from "./reference-now/index.ts";
-
-const elementMatcher = createAutomationStudioElementMatcher();
 
 type PolicyOutputAction = Pick<PolicyAction, "outputId" | "actionType" | "parameters" | "confirmationInputId" | "confirmationTimeoutMs" | "metadata">;
 type ConfirmationOutcome = { ok: true } | { ok: false; error: string; cancelled: boolean };
@@ -26,13 +24,14 @@ export async function dispatchPolicyOutput(
   domainId: string | null | undefined,
   action: PolicyOutputAction,
   signal?: AbortSignal,
-  commandContext?: ClientGatewayCommandContext
+  commandContext?: ClientGatewayCommandContext,
+  elementMatcher?: ElementMatcher
 ): Promise<AutomationNodeExecutionResult> {
   const outputId = action.outputId?.trim();
   if (!outputId) return missingOutputIdResult("IO runtime");
   const output = io.getOutput(domainId, outputId);
   if (!output) return unregisteredOutputResult(outputId);
-  const prepared = prepareElementTargetAction(io, domainId, action);
+  const prepared = prepareElementTargetAction(io, domainId, action, elementMatcher);
   if (!prepared.ok) return elementTargetRejectionResult(outputId, prepared);
   action = prepared.action;
   const confirmation = awaitConfirmation(io, domainId, action, signal);
@@ -61,7 +60,7 @@ export async function dispatchPolicyOutput(
   }), ...clearedWaitField(result.clearedWait), ...actionabilityField(result) };
 }
 
-export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined) {
+export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined, elementMatcher?: ElementMatcher) {
   return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; commandContext?: ClientGatewayCommandContext }): Promise<AutomationNodeExecutionResult | undefined> => {
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
     const payload = effect.payload as JsonObject;
@@ -73,11 +72,11 @@ export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string 
       ...(typeof payload.confirmationTimeoutMs === "number" ? { confirmationTimeoutMs: payload.confirmationTimeoutMs } : {}),
       ...(payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata) ? { metadata: payload.metadata as JsonObject } : {})
     };
-    return dispatchPolicyOutput(io, domainId, action, context?.signal, context?.commandContext);
+    return dispatchPolicyOutput(io, domainId, action, context?.signal, context?.commandContext, elementMatcher);
   };
 }
 
-export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined, runtime: RuntimeService) {
+export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined, runtime: RuntimeService, elementMatcher?: ElementMatcher) {
   return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; referenceNow?: number; withheldValues?: FluxIQRuntimeWithheldValues; commandContext?: ClientGatewayCommandContext }): Promise<AutomationNodeExecutionResult | undefined> => {
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
     const payload = effect.payload as JsonObject;
@@ -85,10 +84,10 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
     const outputId = action.outputId?.trim();
     if (!outputId) return missingOutputIdResult("runtime");
     if (!io.hasOutput(domainId, outputId)) return unregisteredOutputResult(outputId);
-    const prepared = prepareElementTargetAction(io, domainId, action);
+    const prepared = prepareElementTargetAction(io, domainId, action, elementMatcher);
     if (!prepared.ok) return elementTargetRejectionResult(outputId, prepared);
     action = prepared.action;
-    if (!await runtimeCanDispatchOutput(runtime, domainId, outputId)) return dispatchPolicyOutput(io, domainId, action, context?.signal, context?.commandContext);
+    if (!await runtimeCanDispatchOutput(runtime, domainId, outputId)) return dispatchPolicyOutput(io, domainId, action, context?.signal, context?.commandContext, elementMatcher);
     const confirmation = awaitConfirmation(io, domainId, action, context?.signal);
     const referenceNow = automationStudioReferenceNow(context?.referenceNow);
     const result = await runtime.dispatch({
@@ -229,7 +228,8 @@ function actionabilityField(result: unknown): Pick<AutomationNodeExecutionResult
 function prepareElementTargetAction(
   io: IoRegistry,
   domainId: string | null | undefined,
-  action: PolicyOutputAction
+  action: PolicyOutputAction,
+  elementMatcher: ElementMatcher | undefined
 ): { ok: true; action: PolicyOutputAction; diagnostics?: JsonObject; resolution?: AutomationNodeTargetResolution } | ElementTargetRejection {
   const outputId = action.outputId?.trim() ?? "";
   const output = outputId ? io.getOutput(domainId, outputId) : undefined;
@@ -245,7 +245,7 @@ function prepareElementTargetAction(
       failure: coreFailure("graph_validation_or_unknown_node", "element_target.missing_fingerprint", false, "target_resolution")
     };
   }
-  const resolved = resolveElementTarget(target, elementTargetMinimumConfidence(output));
+  const resolved = resolveElementTarget(target, elementTargetMinimumConfidence(output), elementMatcher);
   if (!resolved.ok) return resolved;
   return {
     ok: true,
@@ -261,7 +261,8 @@ function prepareElementTargetAction(
 
 function resolveElementTarget(
   target: AutomationStudioElementTarget,
-  minimumConfidence: number
+  minimumConfidence: number,
+  elementMatcher: ElementMatcher | undefined
 ): { ok: true; target: AutomationStudioElementTarget; diagnostics: JsonObject; resolution: AutomationNodeTargetResolution } | ElementTargetRejection {
   if (!target.candidates?.length) {
     // Nothing to score against, so no floor was applied, and the trace must not name one as if it had been.
@@ -273,6 +274,13 @@ function resolveElementTarget(
     };
   }
   const candidateCount = target.candidates.length;
+  if (!elementMatcher) {
+    return {
+      ok: true, target,
+      diagnostics: { status: "unresolved_no_matcher", reason: "No domain matcher was supplied, so Core left target resolution and confidence measurement to the output adapter." },
+      resolution: { status: "unresolved_no_matcher", candidateCount }
+    };
+  }
   const best = elementMatcher.bestCandidate(target.fingerprint, target.candidates);
   if (!best) {
     return {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
-import { automationNodeStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioNodeDefinition, type AutomationStudioResolvedActionEffect } from "../../../../nodes/index.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import { automationNodeStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioNodeDefinition, type AutomationStudioResolvedActionEffect } from "../../../../../../components/automation/index.ts";
 import { automationStudioSkippedStepDoesAct } from "../index.ts";
 
 type Node = Parameters<typeof automationStudioSkippedStepDoesAct>[0];

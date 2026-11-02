@@ -1,7 +1,7 @@
-import type { AutomationStudioAdaptiveFailureClass } from "./adaptive-class.ts";
+import type { RuntimeAdaptiveFailureClass } from "./adaptive-class.ts";
 
 /** Where in an action's life a failure happened. */
-export const AUTOMATION_STUDIO_FAILURE_STAGES = Object.freeze([
+export const RUNTIME_FAILURE_STAGES = Object.freeze([
   "target_resolution",
   "dispatch",
   "execution",
@@ -9,7 +9,7 @@ export const AUTOMATION_STUDIO_FAILURE_STAGES = Object.freeze([
   "verification"
 ] as const);
 
-export type AutomationStudioFailureStage = (typeof AUTOMATION_STUDIO_FAILURE_STAGES)[number];
+export type RuntimeFailureStage = (typeof RUNTIME_FAILURE_STAGES)[number];
 
 /**
  * What a failure says about the act itself, when the producer can say.
@@ -20,12 +20,12 @@ export type AutomationStudioFailureStage = (typeof AUTOMATION_STUDIO_FAILURE_STA
  * to be missing. A record without one says nothing, and Core reads its stage and
  * category instead.
  */
-export const AUTOMATION_STUDIO_FAILURE_EFFECTS = Object.freeze(["unacted", "ambiguous"] as const);
+export const RUNTIME_FAILURE_EFFECTS = Object.freeze(["unacted", "ambiguous"] as const);
 
-export type AutomationStudioFailureEffect = (typeof AUTOMATION_STUDIO_FAILURE_EFFECTS)[number];
+export type RuntimeFailureEffect = (typeof RUNTIME_FAILURE_EFFECTS)[number];
 
-/** Bounds `parseAutomationStudioFailureRecord` enforces; a record that exceeds them is dropped, not truncated. */
-export const AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS = Object.freeze({
+/** Bounds `parseRuntimeFailureRecord` enforces; a record that exceeds them is dropped, not truncated. */
+export const RUNTIME_FAILURE_RECORD_LIMITS = Object.freeze({
   codeMaxLength: 200,
   textMaxLength: 1024,
   /** An hour. The runtime honours far less than this; the bound only keeps a nonsense value off the record. */
@@ -37,15 +37,15 @@ export const AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS = Object.freeze({
  * `code`. Carried as `failure` on client-gateway action results, runtime
  * command results, output dispatch results, node execution results, attempt
  * traces, and run action records. Validate any value that crossed a process or
- * storage boundary with `parseAutomationStudioFailureRecord`.
+ * storage boundary with `parseRuntimeFailureRecord`.
  */
-export type AutomationStudioFailureRecord = {
-  category: AutomationStudioAdaptiveFailureClass;
+export type RuntimeFailureRecord = {
+  category: RuntimeAdaptiveFailureClass;
   /** Producer-owned stable machine code, for example `web.target.selector_miss`: letters, digits, `.`, `_`, `:`, `-`. */
   code: string;
   /** True when retrying the same action unchanged can succeed without a person or a Flow edit. */
   retryable: boolean;
-  stage?: AutomationStudioFailureStage;
+  stage?: RuntimeFailureStage;
   /** A short description of what was expected. Never raw page content, credentials, or recorded data. */
   expected?: string;
   /** A short description of what was observed instead, under the same rule as `expected`. */
@@ -53,11 +53,11 @@ export type AutomationStudioFailureRecord = {
   /** Lowercase SHA-256 hex digest of the failure evidence packet captured with this failure. */
   evidenceDigest?: string;
   /**
-   * The producer's statement about the act (`AUTOMATION_STUDIO_FAILURE_EFFECTS`):
+   * The producer's statement about the act (`RUNTIME_FAILURE_EFFECTS`):
    * `unacted` when it demonstrably did not happen, so a node that acts on the
    * world may still be repeated.
    */
-  effect?: AutomationStudioFailureEffect;
+  effect?: RuntimeFailureEffect;
   /**
    * How long the source said to wait before the same request is made again, in
    * whole milliseconds: a page's "try again in 12 seconds". Only on a retryable
@@ -79,4 +79,14 @@ export type AutomationStudioFailureRecord = {
    * whether the action happened: retryable and effect remain independent.
    */
   transient?: true;
+};
+
+// Compatibility names retained for existing Automation Studio consumers.
+export {
+  type RuntimeFailureStage as AutomationStudioFailureStage,
+  type RuntimeFailureEffect as AutomationStudioFailureEffect,
+  RUNTIME_FAILURE_STAGES as AUTOMATION_STUDIO_FAILURE_STAGES,
+  RUNTIME_FAILURE_EFFECTS as AUTOMATION_STUDIO_FAILURE_EFFECTS,
+  RUNTIME_FAILURE_RECORD_LIMITS as AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS,
+  type RuntimeFailureRecord as AutomationStudioFailureRecord
 };

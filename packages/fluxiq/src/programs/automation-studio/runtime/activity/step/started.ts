@@ -1,4 +1,4 @@
-import type { AutomationStudioActivityEmission } from "../contracts.ts";
+import type { AutomationStudioActivityEmission } from "../index.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
 import { automationStudioActivityPassWords, type AutomationStudioActivityLoopPass } from "../loop/index.ts";
 import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "../wording/index.ts";

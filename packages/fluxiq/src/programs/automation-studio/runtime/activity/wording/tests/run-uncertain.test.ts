@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityRunUncertainEnding } from "../run-uncertain.ts";
+import { automationStudioActivityRunUncertainEnding } from "../index.ts";
 
 // t412: a run stopped as Outcome uncertain ends on "Stopped", never "Run failed".
 describe("automationStudioActivityRunUncertainEnding", () => {

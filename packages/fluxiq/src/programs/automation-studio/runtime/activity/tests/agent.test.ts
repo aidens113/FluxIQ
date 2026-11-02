@@ -2,12 +2,12 @@
 // publish path from the agent frame, never threaded through an emission site.
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "../agent.ts";
-import { bindAutomationStudioActivityRun } from "../bind.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
-import { emitAutomationStudioActivity } from "../emit.ts";
-import { AutomationStudioActivityHub } from "../hub.ts";
-import { runWithAutomationStudioActivity } from "../scope.ts";
+import { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "../index.ts";
+import { bindAutomationStudioActivityRun } from "../index.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { emitAutomationStudioActivity } from "../index.ts";
+import { AutomationStudioActivityHub } from "../index.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

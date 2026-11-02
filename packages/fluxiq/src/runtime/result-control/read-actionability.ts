@@ -1,8 +1,8 @@
-import { parseAutomationStudioTargetActionabilityRecord, type AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
+import { parseRuntimeTargetActionabilityRecord, type RuntimeTargetActionabilityRecord } from "@fluxiq/contracts/runtime";
 
 type ActionabilityReading =
   | { kind: "absent" }
-  | { kind: "valid"; record: AutomationStudioTargetActionabilityRecord }
+  | { kind: "valid"; record: RuntimeTargetActionabilityRecord }
   | { kind: "rejected"; reason: "not_record" | "accessor_metadata" | "invalid_record" }
   | { kind: "unreadable"; reason: "property_reflection_failed" };
 
@@ -13,7 +13,7 @@ export function readRuntimeTargetActionability(value: unknown): ActionabilityRea
     const descriptor = Object.getOwnPropertyDescriptor(value, "actionability");
     if (!descriptor) return { kind: "absent" };
     if (!("value" in descriptor)) return { kind: "rejected", reason: "accessor_metadata" };
-    const record = parseAutomationStudioTargetActionabilityRecord(descriptor.value);
+    const record = parseRuntimeTargetActionabilityRecord(descriptor.value);
     return record ? { kind: "valid", record } : { kind: "rejected", reason: "invalid_record" };
   } catch {
     return { kind: "unreadable", reason: "property_reflection_failed" };

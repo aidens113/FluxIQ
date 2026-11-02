@@ -1,6 +1,4 @@
-import { andNode } from "./and.ts";
-import { compareNode } from "./compare.ts";
-import { notNode } from "./not.ts";
-import { orNode } from "./or.ts";
-
-export const logicNodes = [compareNode, andNode, orNode, notNode];
+// Compatibility exports; the framework owns this implementation.
+export {
+  logicNodes
+} from "../../../../components/automation/logic/index.ts";

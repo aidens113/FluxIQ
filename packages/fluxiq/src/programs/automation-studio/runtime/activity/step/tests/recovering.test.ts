@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { activityActionOf } from "../../../../../../ui/index.ts";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
-import { emitAutomationStudioActivityStepRecovering } from "../recovering.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
+import { emitAutomationStudioActivityStepRecovering } from "../index.ts";
 
 // R4a attempt 2, `run-mv2pgqkj-f3552c70`, trial 3 (step 0092) and moment 12:
 // the Flow's "clear the quantity field" step (`web.output.dom-clear`) failed

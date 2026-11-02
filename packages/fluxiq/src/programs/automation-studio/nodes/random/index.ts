@@ -1,6 +1,4 @@
-import { jitterNode } from "./jitter.ts";
-import { randomChoiceNode } from "./random-choice.ts";
-import { randomNumberNode } from "./random-number.ts";
-import { weightedChoiceNode } from "./weighted-choice.ts";
-
-export const randomNodes = [randomNumberNode, randomChoiceNode, weightedChoiceNode, jitterNode];
+// Compatibility exports; the framework owns this implementation.
+export {
+  randomNodes
+} from "../../../../components/automation/random/index.ts";

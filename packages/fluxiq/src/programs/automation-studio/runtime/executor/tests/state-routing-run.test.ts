@@ -7,9 +7,11 @@
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../activity/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../index.ts";
+import { runAutomationStudioGraph } from "../index.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../../../engine/automation/index.ts";
 
 type Host = NonNullable<AutomationStudioGraphExecutionOptions["hostRuntime"]>;
 type Dispatcher = NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>;

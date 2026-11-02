@@ -16,13 +16,14 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowDocument } from "../../../../model/index.ts";
-import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowArtifact } from "../../../../model/index.ts";
+import { AutomationStudioNodeRegistry } from "../../../../../../components/automation/index.ts";
 import { normalizeAutomationStudioFlowBuildPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../../flow-bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/harness-options/index.ts";
 import { automationStudioNodeRouteSignatures } from "../../../route-state/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../../index.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../../../../../../engine/automation/index.ts";
 
 type Host = NonNullable<AutomationStudioGraphExecutionOptions["hostRuntime"]>;
 type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]>;
@@ -53,7 +54,7 @@ const domain: Resolver = (input) => {
 };
 
 /** The Flow the build saves, from the model's plan to the laid-out graph, and its node ids by plan key. */
-async function savedFlow(signed?: { before: string; after: string }): Promise<{ flow: AutomationStudioFlowDocument; id: Record<string, string> }> {
+async function savedFlow(signed?: { before: string; after: string }): Promise<{ flow: AutomationStudioFlowArtifact; id: Record<string, string> }> {
   const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({
     plan: plan(signed), projectId: "project.coupon", flowId: "flow.coupon", binding: { resolvePlanNodeParameters: domain }, handlesIssued: true, handleReach: "view_history", writtenByModel: true
   });
@@ -65,7 +66,7 @@ async function savedFlow(signed?: { before: string; after: string }): Promise<{ 
     parentFlow: createBlankAutomationStudioFlowArtifact({ flowId: "flow.coupon", projectId: "project.coupon", name: "Coupon", now: 1 }),
     buildPlan: validated.validated, sourceInstructionIds: ["instruction.1"], now: 1
   });
-  const flow = topology.subflows[0]!.graphFlow as unknown as AutomationStudioFlowDocument;
+  const flow = topology.subflows[0]!.graphFlow;
   const id = Object.fromEntries(flow.nodes.map((node) => [String(node.metadata?.bootstrapSymbolicKey), node.id]));
   return { flow, id };
 }

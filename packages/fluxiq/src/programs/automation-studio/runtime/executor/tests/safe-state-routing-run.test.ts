@@ -4,11 +4,14 @@
 
 import { describe, expect, it } from "vitest";
 import { parseAutomationStudioFailureRecord, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionResult, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION } from "../../../nodes/index.ts";
+import type { AutomationNodeExecutionResult, AutomationStudioNodeDefinition } from "../../../../../components/automation/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../index.ts";
 import { automationStudioRunGraphOptions } from "../../service/runtime-session/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../index.ts";
+import { runAutomationStudioGraph } from "../index.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../../../../../engine/automation/index.ts";
 
 type Host = NonNullable<AutomationStudioGraphExecutionOptions["hostRuntime"]>;
 type Dispatcher = NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>;

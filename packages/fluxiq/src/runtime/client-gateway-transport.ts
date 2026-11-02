@@ -1,4 +1,4 @@
-import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { parseRuntimeFailureRecord } from "@fluxiq/contracts/runtime";
 import { readRuntimeTargetActionability } from "./result-control/index.ts";
 import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../client-gateway/service/command-ledger/index.ts";
 import type {
@@ -70,7 +70,7 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
       // The client is untrusted: its failure record survives only when it parses.
       const { failure: reported, clearedWait: reportedWait, ...result }: ClientGatewayActionResult = await response.result;
       const clearedWait = readableClearedWait(reportedWait);
-      const failure = parseAutomationStudioFailureRecord(reported);
+      const failure = parseRuntimeFailureRecord(reported);
       return hostResultFromGateway({ ...result, ...(failure ? { failure } : {}), ...(clearedWait ? { clearedWait } : {}) });
     }
     if (command.kind === "capture_snapshot") {

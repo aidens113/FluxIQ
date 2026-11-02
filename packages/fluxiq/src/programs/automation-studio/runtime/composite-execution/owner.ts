@@ -1,5 +1,5 @@
 import type { JsonValue } from "../../../../core/index.ts";
-import { getCallFlowConfiguration, validateFlowComposition, type AutomationStudioFlowArtifact, type AutomationStudioPublishedFlowSnapshot } from "../../model/index.ts";
+import { getCallFlowConfiguration, validateFlowComposition, type AutomationStudioFlowArtifact, type AutomationStudioFlowDocument, type AutomationStudioPublishedFlowSnapshot } from "../../model/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../executor.ts";
 import { automationStudioChildInvocation, automationStudioRootInvocation, type AutomationStudioSubflowGraphRunner } from "../executor/frames/index.ts";
 import { compileAutomationStudioRegions } from "../region-compiler.ts";
@@ -39,9 +39,15 @@ export class AutomationStudioCanonicalExecution {
     if (stack.includes(key)) return { status: "failed", startedAt: Date.now(), finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: `Composite Flow cycle detected at ${key}.` };
     return runDocument(snapshot, inputs, [...stack, key], executionOptions);
   };
-  const runDocument = async (document: Pick<AutomationStudioFlowArtifact, "flowId" | "name" | "nodes" | "edges"> & { regions?: AutomationStudioFlowArtifact["regions"]; regionHandoffs?: AutomationStudioFlowArtifact["regionHandoffs"] }, inputs: Record<string, JsonValue>, stack: string[], executionOptions: AutomationStudioGraphExecutionOptions) => {
+  const runDocument = async (document: Pick<AutomationStudioFlowArtifact, "flowId" | "nodes" | "edges"> & { name?: string; scope?: AutomationStudioFlowArtifact["scope"]; regions?: AutomationStudioFlowArtifact["regions"]; regionHandoffs?: AutomationStudioFlowArtifact["regionHandoffs"] }, inputs: Record<string, JsonValue>, stack: string[], executionOptions: AutomationStudioGraphExecutionOptions) => {
     await executionOptions.commandRun?.checkpoint();
-    const compiled = compileAutomationStudioRegions(document as AutomationStudioFlowArtifact);
+    const compiled = compileAutomationStudioRegions({
+      nodes: document.nodes,
+      edges: document.edges,
+      ...(document.scope !== undefined ? { scope: document.scope } : {}),
+      ...(document.regions !== undefined ? { regions: document.regions } : {}),
+      ...(document.regionHandoffs !== undefined ? { regionHandoffs: document.regionHandoffs } : {})
+    });
     if (!compiled.ok) return { status: "failed", startedAt: Date.now(), finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: `Invalid Flow regions: ${compiled.issues.map((issue) => issue.code).join(", ")}` } satisfies AutomationStudioGraphExecutionTrace;
     const compositeExecutor: NonNullable<AutomationStudioGraphExecutionOptions["compositeExecutor"]> = async ({ node, inputs: callInputs, options: parentOptions }) => {
       const call = getCallFlowConfiguration(node);
@@ -50,7 +56,11 @@ export class AutomationStudioCanonicalExecution {
       if (!snapshot) return { result: { status: "failed", route: "failed", effects: [] } };
       const { target: _target, ...bindings } = call;
       const crossed = await automationStudioCallAcrossBoundary({
-        contract: snapshot,
+        contract: {
+          interface: snapshot.interface,
+          errors: snapshot.errors,
+          ...(snapshot.executionDefaults !== undefined ? { executionDefaults: snapshot.executionDefaults } : {})
+        },
         bindings,
         callInputs,
         parentOptions,
@@ -64,7 +74,8 @@ export class AutomationStudioCanonicalExecution {
       return { ...crossed, compositeTarget: { flowId: snapshot.flowId, version: snapshot.version, flowDigest: snapshot.flowDigest } };
     };
     this.registered.add(compositeExecutor);
-    return runAutomationStudioGraph({ schemaVersion: "0.1", flowId: document.flowId, ownerKind: "routine", ownerId: document.flowId, name: document.name, nodes: document.nodes, edges: document.edges, createdAt: 0, updatedAt: 0 }, {
+    const graph: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: document.flowId, ownerKind: "routine", ownerId: document.flowId, name: document.name ?? document.flowId, nodes: document.nodes, edges: document.edges, createdAt: 0, updatedAt: 0 };
+    return runAutomationStudioGraph(graph, {
     ...executionOptions,
     inputs,
     compositeExecutor,

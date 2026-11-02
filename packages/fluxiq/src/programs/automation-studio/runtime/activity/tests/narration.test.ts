@@ -10,10 +10,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
-import { automationStudioActivityDecisionReason } from "../decision-reason.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
-import { observeAutomationStudioEvidenceLoop } from "../observer.ts";
-import { runWithAutomationStudioActivity } from "../scope.ts";
+import { automationStudioActivityDecisionReason } from "../index.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { observeAutomationStudioEvidenceLoop } from "../index.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

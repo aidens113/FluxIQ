@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityStepNumbers } from "../numbers.ts";
+import { automationStudioActivityStepNumbers } from "../index.ts";
 
 const node = (id: string, definitionId = "web.output.dom-click") => ({ id, definitionId });
 const edge = (sourceNodeId: string, targetNodeId: string) => ({ sourceNodeId, targetNodeId });

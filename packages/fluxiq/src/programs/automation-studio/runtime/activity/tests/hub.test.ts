@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { AutomationStudioActivityHub } from "../hub.ts";
-import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "../limits.ts";
-import type { AutomationStudioActivityInput } from "../contracts.ts";
+import { AutomationStudioActivityHub } from "../index.ts";
+import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "../index.ts";
+import type { AutomationStudioActivityInput } from "../index.ts";
 
 function input(projectId: string, label = "Deciding the next step"): AutomationStudioActivityInput {
   return { activityId: "build:b1", subject: { kind: "build", id: "b1", projectId }, phase: "thinking", label };

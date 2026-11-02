@@ -1,4 +1,10 @@
-// Barrel for the account of an untyped provider throw: what it was, as read by
-// the normalizer (`read.ts`). The screen that makes its message publishable is
-// the harness's (`../harness/throw-screen.ts`), beside the screens it reuses.
-export * from "./read.ts";
+// Compatibility exports; the framework runtime owns this capability.
+export {
+  AUTOMATION_STUDIO_LLM_PROVIDER_THROW_LIMITS,
+  automationStudioLlmProviderThrowRead
+} from "../../../../../runtime/models/failures/throw/index.ts";
+export type {
+  AutomationStudioLlmProviderThrowWithheld,
+  AutomationStudioLlmProviderThrow,
+  AutomationStudioLlmProviderThrowRead
+} from "../../../../../runtime/models/failures/throw/index.ts";

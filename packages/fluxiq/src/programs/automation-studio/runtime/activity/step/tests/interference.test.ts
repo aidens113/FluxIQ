@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
-import { emitAutomationStudioActivityStepInterference } from "../interference.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
+import { emitAutomationStudioActivityStepInterference } from "../index.ts";
 
 // C11: a layer the client closed over the page is said as a step recovery in
 // Core's own words, never the dismiss control's.

@@ -1,2 +1,2 @@
-// A partial run: where a run asked to stop after a node ends (`AutomationStudioGraphExecutionOptions.stopAfterNodeId`).
-export { automationStudioStopAfterNode, type AutomationStudioRunMove, type AutomationStudioStopAfterNode } from "./stop-after-node.ts";
+// Compatibility export; implementation belongs to the framework.
+export { automationStudioStopAfterNode, type AutomationStudioRunMove, type AutomationStudioStopAfterNode } from "../../../../../engine/automation/partial-run/index.ts";

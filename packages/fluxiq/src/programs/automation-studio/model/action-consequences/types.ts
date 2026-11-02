@@ -1,3 +1,4 @@
-import type { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "./values.ts";
-
-export type AutomationStudioActionConsequence = (typeof AUTOMATION_STUDIO_ACTION_CONSEQUENCES)[number];
+// Compatibility exports; the framework owns this implementation.
+export type {
+  AutomationStudioActionConsequence
+} from "../../../../components/automation/action-effect/consequences/index.ts";

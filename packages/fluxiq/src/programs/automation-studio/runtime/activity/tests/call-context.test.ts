@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/index.ts";
 import { activityActionOf } from "../../../../../ui/index.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
-import { observeAutomationStudioEvidenceLoop } from "../observer.ts";
-import { runWithAutomationStudioActivity } from "../scope.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { observeAutomationStudioEvidenceLoop } from "../index.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

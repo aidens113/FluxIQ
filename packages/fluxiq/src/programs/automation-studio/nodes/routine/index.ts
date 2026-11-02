@@ -1,4 +1,4 @@
-import { approvalNode } from "./approval.ts";
-import { taskPolicyNode } from "./task-policy.ts";
-
-export const routineNodes = [taskPolicyNode, approvalNode];
+// Compatibility exports; the framework owns this implementation.
+export {
+  routineNodes
+} from "../../../../components/automation/routine/index.ts";

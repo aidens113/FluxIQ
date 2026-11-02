@@ -11,8 +11,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AutomationStudioConversationAsk, AutomationStudioConversationAskInput } from "../../conversations/index.ts";
-import { automationStudioConversationParkingPort, type AutomationStudioConversationParkingHost } from "../conversation-port.ts";
-import type { AutomationStudioAsk } from "../ask.ts";
+import { automationStudioConversationParkingPort, type AutomationStudioConversationParkingHost } from "../index.ts";
+import type { AutomationStudioAsk } from "../index.ts";
 
 const SUBJECT = { kind: "run", id: "run.7" } as const;
 const PROJECT_ID = "project.one";

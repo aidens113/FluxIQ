@@ -1,4 +1,4 @@
-import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type { RuntimeFailureRecord } from "@fluxiq/contracts/runtime";
 import type { JsonObject } from "../core/index.ts";
 import {
   FLUXIQ_RUNTIME_WITHHELD_VALUE,
@@ -70,7 +70,7 @@ export function withheldResult(result: FluxIQRuntimeCommandResult, withheld: Wit
   return kept;
 }
 
-function withheldFailure(failure: AutomationStudioFailureRecord, withheld: WithheldLookup): AutomationStudioFailureRecord {
+function withheldFailure(failure: RuntimeFailureRecord, withheld: WithheldLookup): RuntimeFailureRecord {
   const kept = { ...failure };
   if (failure.expected !== undefined) kept.expected = withheld.text(failure.expected);
   if (failure.actual !== undefined) kept.actual = withheld.text(failure.actual);

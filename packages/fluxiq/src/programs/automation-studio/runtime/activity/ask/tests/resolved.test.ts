@@ -1,10 +1,10 @@
 import type { ClientGatewayActivity, ClientGatewayActivityResolution } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft } from "../../../parking/index.ts";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
-import { emitAutomationStudioActivityWaitingOnAsk } from "../ask.ts";
-import { emitAutomationStudioActivityAskResolved } from "../resolved.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
+import { emitAutomationStudioActivityWaitingOnAsk } from "../index.ts";
+import { emitAutomationStudioActivityAskResolved } from "../index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

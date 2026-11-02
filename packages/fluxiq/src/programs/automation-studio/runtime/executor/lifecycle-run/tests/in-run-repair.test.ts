@@ -4,12 +4,12 @@
 
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
-import type { AutomationStudioGraphExecutionTrace } from "../../contracts.ts";
-import { runAutomationStudioGraph } from "../../graph-run.ts";
-import { adding, failingAtRow, popupAtRow, pressCounts, REFUSED, repairer, replacing, rowsFlow, rowsRun, STOP } from "./in-run-repair-fixtures.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import type { AutomationStudioGraphExecutionTrace } from "../../../../../../engine/automation/index.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
+import { adding, failingAtRow, popupAtRow, pressCounts, REFUSED, repairer, replacing, rowsFlow, rowsRun, STOP } from "../../../../../../engine/automation/lifecycle-run/tests/in-run-repair-fixtures.ts";
 import { factHost, framedRun, lasting, retryPlannedTrue, withRows } from "./recovery-paths-fixtures.ts";
-import { closer, fact, landedCounts, line, page, pageOptions, press } from "./wiring-fixtures.ts";
+import { closer, fact, landedCounts, line, page, pageOptions, press } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 /** The node ids the run attempted, in order, leaving out handler bodies. */
 const path = (trace: AutomationStudioGraphExecutionTrace) => trace.attempts.filter((attempt) => !attempt.nodeId.startsWith("h.")).map((attempt) => attempt.nodeId);
@@ -176,7 +176,7 @@ describe("in-run repair at the failing step", () => {
     const weak = closer("h.fail", { event: "fail", scope: { kind: "nodes", nodeIds: ["s2"] }, when: [fact("cleared")], completionCheck: [fact("never-known")] }, resolve);
     const flow = line("graph.main", [press("s1"), press("s2", "s2", STOP), press("s3")], [weak]);
     const strong = closer("h.fail", { event: "fail", scope: { kind: "nodes", nodeIds: ["s2"] }, when: [fact("cleared")], completionCheck: [fact("cleared")] }, resolve);
-    const repair = repairer((request) => ({ kind: "overlay", repairId: "repair-hf", unit: request.unit, graph: replacing(request.graph, "h.fail", strong.nodes[0]!) }));
+    const repair = repairer((request) => ({ kind: "overlay", repairId: "repair-hf", unit: request.unit, graph: { ...request.graph, nodes: request.graph.nodes.map(node => node.id === "h.fail" ? strong.nodes[0]! : node) } }));
     const trace = await runAutomationStudioGraph(flow, pageOptions(current, { repairIncident: repair.callback }));
 
     expect(repair.requests.map((request) => request.unit)).toEqual([{ kind: "handler", handlerNodeId: "h.fail" }]);

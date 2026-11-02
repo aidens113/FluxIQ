@@ -11,7 +11,7 @@
 
 import { ACTIVITY_ACTION_REFUSAL_WORDS, activityActionOf } from "../../../../../ui/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, type AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
-import type { AutomationStudioActivityEmission } from "../contracts.ts";
+import type { AutomationStudioActivityEmission } from "../index.ts";
 
 /**
  * Every reason the draft can refuse an amendment for has Core's words in the

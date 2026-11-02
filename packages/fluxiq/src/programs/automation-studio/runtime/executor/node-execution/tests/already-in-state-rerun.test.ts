@@ -6,9 +6,9 @@
 // second leaves them on instead of switching them back.
 
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioGraphExecutionOptions } from "../../contracts.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../../../../../../engine/automation/index.ts";
 import { framedRun } from "../../lifecycle-run/tests/recovery-paths-fixtures.ts";
-import { line, page, pageOptions, press } from "../../lifecycle-run/tests/wiring-fixtures.ts";
+import { line, page, pageOptions, press } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 const IDS = ["one", "two", "three"];
 const steps = () => IDS.map((id) => press(id, id, { declaredConsequences: ["modify_existing"] }));

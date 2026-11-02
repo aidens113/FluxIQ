@@ -474,22 +474,9 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
   parentAttemptId?: string;
   metadata?: JsonObject;
 };
+import type { AutomationStudioFlowRunStateRouteNoMatchCause } from "../../../flows/executable/execution/index.ts";
+export type { AutomationStudioFlowRunStateRouteNoMatchCause } from "../../../flows/executable/execution/index.ts";
 
-/**
- * Why state routing found no way on for a step that could not run (t661), as
- * the routing decision tells its cases apart (`runtime/executor/state-routing/decision.ts`):
- *
- * - `effect_not_on_page`: the step recorded its own effect, the page did not
- *   show it, and no other step recorded an expected starting page.
- * - `effect_route_refused`: the page showed the step's own effect, going on
- *   past it was refused, and no other step recorded an expected starting page.
- * - `matches_refused`: the page matched other steps' expected starting pages,
- *   and a safety guard refused going on at each (`refused` names them).
- * - `matching_steps_already_acted`: the steps whose starting page matched had
- *   already acted in this run, and nothing showed their effect gone.
- * - `no_step_matches_page`: the page matched no step's expected starting page.
- */
-export type AutomationStudioFlowRunStateRouteNoMatchCause = "effect_not_on_page" | "effect_route_refused" | "matches_refused" | "matching_steps_already_acted" | "no_step_matches_page";
 
 /** One way on state routing refused: the guard's closed code and the node the route led to. */
 export type AutomationStudioFlowRunStateRouteRefusal = { guard: "unbound_value" | "repeats_lasting_act" | "not_checkpoint" | "checkpoint_when_not_true" | "ready_state_not_true"; toNodeId: string };
@@ -655,40 +642,18 @@ export type AutomationStudioFlowExpansionInventory = {
   adaptations?: AutomationStudioFlowAdaptation[];
   policy?: AutomationStudioAdaptationPolicy;
 };
+import type { AutomationStudioFlowRunLifecycleEvent } from "../../../flows/executable/execution/index.ts";
+export type { AutomationStudioFlowRunLifecycleEvent } from "../../../flows/executable/execution/index.ts";
 
-// What a run's detail keeps of state-aware recovery (state-aware recovery plan,
-// C6, C11): the lifecycle handler an attempt ran, where a frame began, what a
-// failure counted as, and the record of each handler execution the runtime
-// stream holds. Ids, closed codes and times only: never page text, a value
-// read from the page, or a handler's resolved outputs. The executor's trace
-// (`runtime/executor/contracts.ts`) holds the same shapes; the run detail is
-// projected from it (`runtime/service/summaries/recovery-trace.ts`).
-
-/** A lifecycle boundary a handler may fire at (C3). */
-export type AutomationStudioFlowRunLifecycleEvent = "start" | "before" | "retry" | "fail" | "before_next";
 
 /** A three-valued fact answer: `unknown` is never `true`. */
 export type AutomationStudioFlowRunFactTruth = "true" | "false" | "unknown";
 
 /** What one condition answered: its truth, a reference to the evidence kept, and when it was captured. */
 export type AutomationStudioFlowRunConditionEvidence = { truth: AutomationStudioFlowRunFactTruth; evidenceRef?: string; capturedAt: number };
+import type { AutomationStudioFlowRunHandlerDisposition } from "../../../flows/executable/execution/index.ts";
+export type { AutomationStudioFlowRunHandlerDisposition } from "../../../flows/executable/execution/index.ts";
 
-/**
- * How a handler body ended once the dispatcher decided it (C5). An
- * `unhandled` keeps why, as the executor's closed codes
- * (`runtime/executor/lifecycle/unhandled-reason.ts`, t411): the body's own
- * ending, a check that did not hold, a refused route and the `guard` that
- * refused it, a spent budget. Absent on a record from before t411.
- */
-export type AutomationStudioFlowRunHandlerDisposition =
-  | { kind: "resume" }
-  | { kind: "route"; checkpointId: string }
-  | { kind: "resolve" }
-  | {
-    kind: "unhandled";
-    reason?: "written_unhandled" | "body_failed" | "completion_check_not_true" | "disposition_not_allowed" | "resolve_missing_outputs" | "route_refused" | "budget_spent" | "already_tried" | "no_body" | "core_stop";
-    guard?: "checkpoint_not_found" | "checkpoint_not_holding" | "requires_unbound" | "passes_uncertain_act" | "unreachable" | "unguarded" | "repeats_unrecorded_act";
-  };
 
 /** The lifecycle handler that ran at an attempt. */
 export type AutomationStudioFlowRunLifecycleRecord = {
@@ -709,26 +674,5 @@ export type AutomationStudioFlowRunEntryRecord = {
 
 /** What a failed attempt counted as (C6): only `true_failure` reaches in-run repair. */
 export type AutomationStudioFlowRunFailureClass = "true_failure" | "planned_fail" | "retry" | "skip" | "state_route" | "uncertain";
-
-/**
- * One handler execution, as the runtime stream keeps it (`handler_execution`,
- * beside `recovery_attempt`). `executionId` is unique within the run.
- * `disposition` is the decided way on; `outcome` says whether the body ran to
- * its end (`succeeded`), failed inside (`failed`), or was refused before it
- * ran (`refused`: a budget, an occurrence already run, or a disposition the
- * event does not allow). `incidentId` is absent at boundaries that open no
- * incident (`start`, `before`, `before_next`).
- */
-export type AutomationStudioFlowRunHandlerExecutionRecord = {
-  executionId: string;
-  handlerId: string;
-  event: AutomationStudioFlowRunLifecycleEvent;
-  /** The invocation ids of the frames the handler fired in, outermost first. */
-  framePath: string[];
-  nodeId: string;
-  incidentId?: string;
-  disposition: AutomationStudioFlowRunHandlerDisposition;
-  outcome: "succeeded" | "failed" | "refused";
-  startedAt: number;
-  finishedAt?: number;
-};
+import type { AutomationStudioFlowRunHandlerExecutionRecord } from "../../../flows/executable/execution/index.ts";
+export type { AutomationStudioFlowRunHandlerExecutionRecord } from "../../../flows/executable/execution/index.ts";

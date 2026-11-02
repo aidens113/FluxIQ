@@ -1,3 +1,4 @@
+import { runAgentIterations, type AgentIterationResult } from "../../../../runtime/agents/iteration/index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
@@ -8,7 +9,6 @@ import {
   automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf, automationStudioFlowDraftSetRoutePlaces,
   type AutomationStudioFlowDraftStep
 } from "../flow-draft/index.ts";
-// The record of every decision and what the loop answered it, and what one decision is shown beside the window (`decision-context/`).
 import {
   AutomationStudioLlmDecisionContextRecorder,
   automationStudioLlmDecisionContextShown,
@@ -85,8 +85,6 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION
 import { createAutomationStudioLlmRerunProvenance, type AutomationStudioLlmRerunScope } from "./rerun-provenance/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID } from "./node-reruns/index.ts";
 import { automationStudioLlmEvidenceBatchMember, automationStudioLlmEvidenceToolAdmission, automationStudioLlmEvidenceToolWithdrawal, automationStudioLlmPriorNodesLoop, automationStudioLlmPriorNodesSettlementContext, automationStudioLlmPriorNodesUnsettled } from "./prior-nodes/index.ts";
-// The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is bounded by the same three numbers, and a constant
-// both directories read is how an import edge grows between them. Re-exported so every consumer still reads it from runtime/llm/.
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
 /** What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. */
 export type { AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
@@ -109,8 +107,6 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID } from "./decision-conte
 /** The bounds a loop may be given (`budget`), and the entry it shows the model what is left under. */
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, type AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 
-/** Provider-neutral decision policy for bounded evidence loops, in
- * `evidence-loop-decision.ts` with the rest of the grammar. */
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION } from "./evidence-loop-decision.ts";
 
 /** Far backstop for unusable decisions; the no-progress, cost and time gates bind underneath it. */
@@ -613,8 +609,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accountEvidence(resumed.value);
     evidence.push(resumed);
   }
-  for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
-    if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
+  return await runAgentIterations({
+    maxIterations: limits.maxIterations,
+    iterate: async (iteration): Promise<AgentIterationResult<AutomationStudioLlmEvidenceLoopResult>> => {
+    if (input.signal?.aborted) return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting) };
     accounting.iterations = iteration;
     rows.decisionStarts(); // Clears what the last decision was shown, and completes Core's answers to it in the step log.
     let decision: AutomationStudioLlmEvidenceLoopDecision | undefined;
@@ -632,7 +630,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const eligibleToolIds = new Set(eligibleTools.map((tool) => tool.toolId));
     const canComplete = accounting.toolCalls - counters.failedToolCalls >= limits.minToolCalls;
     offeredCompletion = canComplete;
-    if (!eligibleTools.length && !canComplete) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+    if (!eligibleTools.length && !canComplete) return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) };
     // What the budget leaves (`loop-budget.ts`), cost read from the purse in use:
     // told to the model as the newest entry, and a last decision offered only completion.
     const purseFigures = purse.figures();
@@ -643,7 +641,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // No decision left for tokens or time (cost never counts to none: the purse decides). The budget is what
     // ran out, which a retry raises; what the last decision happened to be is recorded beside it, not the ending.
     lastRemaining = remaining || undefined;
-    if (remaining && remaining.decisionsLeft === 0) { accounting.iterations = iteration - 1; return exhausted("budget"); } // This decision was never asked for, so it is not counted.
+    if (remaining && remaining.decisionsLeft === 0) { accounting.iterations = iteration - 1; return { kind: "complete", result: exhausted("budget") }; } // This decision was never asked for, so it is not counted.
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
     // The wrap-up (`./loop-budget.ts`): the last few decisions offer finishing
     // and amending, so a refused completion still has turns to be answered in; a candidate's keeps submitting and testing, without which it cannot complete (t383).
@@ -673,27 +671,27 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const binding = drafting ? { steps: draftSteps, nodeOf: input.nodeOf } : undefined; // A written call's `$step` reads the draft it joins after its last step (P5, t270).
       decision = automationStudioLlmEvidenceParseDecision(raw, binding);
       refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend, unknownTool: { known: toolIds, shown: offered.length ? offered : tools } }, binding) : undefined;
-    } catch (thrown) { const costRefusal = purse.refused(thrown); if (costRefusal) { accounting.iterations = iteration - 1; return exhausted("budget", costRefusal); } // Not sent: the purse could not pay for it at worst, the only cost ending.
-      if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
+    } catch (thrown) { const costRefusal = purse.refused(thrown); if (costRefusal) { accounting.iterations = iteration - 1; return { kind: "complete", result: exhausted("budget", costRefusal) }; } // Not sent: the purse could not pay for it at worst, the only cost ending.
+      if (input.signal?.aborted) return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting) };
       let error = thrown;
       const unusableUsage = automationStudioLlmFailedDecisionUsage(input.unusableDecisions !== undefined && thrown instanceof AutomationStudioLlmUnusableDecisionError ? thrown : undefined);
       automationStudioLlmEvidenceLoopAddUsage(accounting, unusableUsage);
       if (unusableUsage) reportedDecisions += 1;
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError && automationStudioLlmProviderUnanswered(thrown.issueCodes)) {
         recordRow({ iteration, decision: "unusable", resultCode: thrown.issueCodes[0]!, ...(unusableUsage ? { usage: unusableUsage } : {}) });
-        if (!unanswered.unanswered(thrown.issueCodes[0]!)) continue;
-        return failure(draftSteps, "llm_evidence_loop.provider_unavailable", trace, accounting, undefined, undefined, unanswered.summary());
+        if (!unanswered.unanswered(thrown.issueCodes[0]!)) return { kind: "continue" };
+        return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.provider_unavailable", trace, accounting, undefined, undefined, unanswered.summary()) };
       }
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
         unanswered.answered(); // A reply arrived, unusable or not.
         if (automationStudioLlmReplyUnreadable(thrown.issueCodes)) {
           const asked = unreadableReply(iteration, thrown, offers());
-          if (asked === "ask_again") continue;
-          return asked;
+          if (asked === "ask_again") return { kind: "continue" };
+          return { kind: "complete", result: asked };
         }
         unreadable.readable();
         const refused = refuseDecision(iteration, thrown.issueCodes, offers(), unusableUsage, thrown.reply?.case, thrown.fieldIssues);
-        if (refused === "ask_again") continue;
+        if (refused === "ask_again") return { kind: "continue" };
         error = refused.error;
       }
       if (input.propagateDecisionErrors) throw error;
@@ -703,22 +701,22 @@ export async function runAutomationStudioLlmEvidenceLoop(
       automationStudioLlmEvidenceLoopAddUsage(accounting, usage);
       if (usage) reportedDecisions += 1;
       const refused = refuseDecision(iteration, refusal.issueCodes, offers(), usage, undefined, undefined, refusal.unknownTool);
-      if (refused === "ask_again") continue;
+      if (refused === "ask_again") return { kind: "continue" };
       if (input.propagateDecisionErrors) throw refused.error;
-      return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+      return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting) };
     }
-    if (!decision) return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
+    if (!decision) return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting) };
     automationStudioLlmEvidenceLoopAddUsage(accounting, decision.usage);
     if (decision.usage) reportedDecisions += 1;
     if (decision.kind === "complete") {
       const next = await automationStudioLlmEvidenceHandleCompletion(handling, iteration, decision);
-      if (next.kind === "end") return next.result;
-      continue;
+      if (next.kind === "end") return { kind: "complete", result: next.result };
+      return { kind: "continue" };
     }
     if (decision.kind === "amend_draft") {
       const next = automationStudioLlmEvidenceHandleAmendment(handling, iteration, decision, canAmend);
-      if (next.kind === "end") return next.result;
-      if (next.kind === "continue") continue;
+      if (next.kind === "end") return { kind: "complete", result: next.result };
+      if (next.kind === "continue") return { kind: "continue" };
       // From here the rerun is an ordinary call -- the same budget, the same
       // digests, the same draft entry -- with one exception, below: it is not a
       // repeat. The model has just said to do this again, and answering it from
@@ -731,8 +729,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     }
     if (decision.toolId === AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID && priorNodes.enabled) {
       const ended = await priorNodes.run(decision);
-      if (ended) return ended;
-      continue;
+      if (ended) return { kind: "complete", result: ended };
+      return { kind: "continue" };
     }
     // A look withdrawn after an ignored redirect, asked for anyway: refused as
     // an unusable decision -- never run, and never answered from memory, which
@@ -740,8 +738,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const admitted = admission(decision, { eligibleToolIds, offered, withholds: wrapUp.withholds }, { rerunning });
     if (admitted.withdrawn) {
       const ended = automationStudioLlmEvidenceToolWithdrawal({ context: handling, iteration, decision, refuse: (codes) => refuseDecision(iteration, codes, offers(), decision.usage) });
-      if (ended) return ended;
-      continue;
+      if (ended) return { kind: "complete", result: ended };
+      return { kind: "continue" };
     }
     counters.unusableInARow = 0;
     // A candidate's offered finishing tool may use the final slot; ordinary
@@ -749,10 +747,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (admitted.deadline) {
       lastRemaining = { ...lastRemaining, decisionsLeft: 0, limitedBy: "duration", secondsLeft: 0 };
       recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds, "llm_evidence_loop.duration_limit"));
-      return exhausted("budget");
+      return { kind: "complete", result: exhausted("budget") };
     }
-    if (admitted.final) { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return exhausted("budget"); }
-    if (!admitted.tool) return failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting);
+    if (admitted.final) { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return { kind: "complete", result: exhausted("budget") }; }
+    if (!admitted.tool) return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting) };
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.
     const tool = admitted.tool;
@@ -761,11 +759,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const triedHere = admitted.triedHere;
     if (triedHere) {
       const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);
-      if (next.kind === "stalled") { if (input.propagateDecisionErrors) throw next.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
-      if (next.kind === "end") return next.result;
+      if (next.kind === "stalled") { if (input.propagateDecisionErrors) throw next.error; return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) }; }
+      if (next.kind === "end") return { kind: "complete", result: next.result };
       const recovered = next.kind === "recover" ? await recover(iteration, next.call) : undefined;
-      if (recovered) return recovered;
-      continue;
+      if (recovered) return { kind: "complete", result: recovered };
+      return { kind: "continue" };
     }
     if (admitted.answered) {
       const code = admitted.code!;
@@ -776,8 +774,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const check: AutomationStudioLlmEvidenceAnswerCheckOutcome = admitted.withheld ? { kind: "answer" } : automationStudioLlmEvidenceAnswerCheck(handling, { answeredByCallId: by, requestSignature: toolRequestSignature });
       if (check.kind === "answer") {
         const next = automationStudioLlmEvidenceHandleAnsweredRequest(handling, iteration, decision, code, by, toolRequestSignature);
-        if (next.kind === "end") return next.result;
-        continue;
+        if (next.kind === "end") return { kind: "complete", result: next.result };
+        return { kind: "continue" };
       }
       verifying = check;
     }
@@ -790,10 +788,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // the same borrowing, one file down, that made an exhausted loop read as a
     // refused one. Same code, because both are an allowance running out; the
     // record now names which.
-    if (accounting.toolCalls >= limits.maxToolCalls) return exhausted("tool_calls");
+    if (accounting.toolCalls >= limits.maxToolCalls) return { kind: "complete", result: exhausted("tool_calls") };
     const ended = await runCall(iteration, callId, decision, tool, toolRequestSignature, { replaces: rerunReplaces, held: rerunHeld, verifying });
-    if (ended) return ended;
-  }
-  return exhausted("iterations");
+    if (ended) return { kind: "complete", result: ended };
+
+      return { kind: "continue" };
+    },
+    exhausted: () => exhausted("iterations")
+  });
   } finally { provenance.dispose(); }
 }

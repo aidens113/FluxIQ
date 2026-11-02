@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { automationStudioActivityDecisionReason } from "../decision-reason.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../scope.ts";
-import { emitAutomationStudioActivityThought } from "../thought.ts";
+import { automationStudioActivityDecisionReason } from "../index.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
+import { emitAutomationStudioActivityThought } from "../index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION } from "../../../parking/index.ts";
-import { automationStudioActivityAskResolution } from "../resolution.ts";
+import { automationStudioActivityAskResolution } from "../index.ts";
 
 const check = { kind: "choice" as const, control: { name: "robot check", kind: AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND } };
 const permission = { kind: "permission" as const, control: { name: "Buy", kind: "button" } };

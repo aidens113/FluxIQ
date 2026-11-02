@@ -1,3 +1,4 @@
+import { sendDeepSeekRequest as send, automationStudioDeepSeekHttpFailure as httpFailure, automationStudioDeepSeekEnvelopeCostUsd as panelCommandCostUsd } from "../../../../../runtime/models/providers/deepseek/index.ts";
 // DeepSeek reading a person's message in the chat window.
 //
 // The adapter beside this (`provider.ts`) answers Core's structured Flow tasks
@@ -38,8 +39,6 @@ import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekMod
 import { isRecord } from "./json-record.ts";
 import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
-import { raceAutomationStudioDeepSeekSignal } from "./signal-race.ts";
-import { automationStudioDeepSeekBalanceExhausted } from "./balance-exhausted.ts";
 import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
 export type AutomationStudioDeepSeekPanelCommandOptions = {
@@ -126,40 +125,12 @@ function transcriptMessage(turn: AutomationStudioConversationModelTurn): { role:
   return { role: "assistant", content: turn.author === "panel" ? `[The panel reported] ${turn.text}` : turn.text };
 }
 
-async function send(fetchImpl: typeof fetch, body: string, key: string, signal: AbortSignal): Promise<Response> {
-  let sent: Promise<Response> | undefined;
-  try {
-    sent = fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json" },
-      body,
-      redirect: "error",
-      signal
-    });
-    return await raceAutomationStudioDeepSeekSignal(sent, signal);
-  } catch (error) {
-    if (signal.aborted) {
-      // A reply that still arrives after the time limit is let go unread, so it holds no connection open.
-      if (sent) void Promise.resolve(sent).then(releaseLateReply, /* best-effort: the timeout is already thrown */ () => undefined);
-      throw new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not answer in time.", true);
-    }
-    throw new AutomationStudioLlmProviderError("llm.provider_network_error", error instanceof Error ? `DeepSeek could not be reached (${error.name}).` : "DeepSeek could not be reached.", true);
-  }
-}
+
 
 /** Cancels the body of a reply that came after its call gave up. Nothing waits on it, so a failed cancel is only a connection the server will close. */
-function releaseLateReply(late: Response): void {
-  late.body?.cancel().catch(/* best-effort: nobody reads this reply */ () => undefined);
-}
 
-function httpFailure(status: number, envelope: { value: unknown } | { notJson: unknown }): AutomationStudioLlmProviderError {
-  // An empty account first, under any status: DeepSeek's 402, or an error whose own words say so (`./balance-exhausted.ts`).
-  const error = "value" in envelope && isRecord(envelope.value) && isRecord(envelope.value.error) ? envelope.value.error : undefined;
-  if (automationStudioDeepSeekBalanceExhausted(status, error)) return new AutomationStudioLlmProviderError("llm.provider_balance_exhausted", `DeepSeek refused the call: the account's balance is exhausted (${status}).`, false, status);
-  if (status === 401 || status === 403) return new AutomationStudioLlmProviderError("llm.provider_auth_failed", `DeepSeek refused the key (${status}).`, false, status);
-  if (status === 429) return new AutomationStudioLlmProviderError("llm.provider_rate_limited", "DeepSeek is rate limiting.", true, status);
-  return new AutomationStudioLlmProviderError("llm.provider_http_error", `DeepSeek answered ${status}.`, status >= 500, status);
-}
+
+
 
 /** DeepSeek's envelope, read once: its value, or the error that refused it as JSON, which `panelCommandContent` reports. */
 function panelCommandEnvelope(text: string): { value: unknown } | { notJson: unknown } {
@@ -175,20 +146,7 @@ function panelCommandEnvelope(text: string): { value: unknown } | { notJson: unk
  * step log prices it (`../step-log/model-step.ts`). Undefined when the reply
  * carries no usage, or counts the pricing refuses.
  */
-function panelCommandCostUsd(envelope: unknown, model: AutomationStudioDeepSeekModel, sentAtMs: number): number | undefined {
-  const usage = isRecord(envelope) && isRecord(envelope.usage) ? envelope.usage : undefined;
-  if (!usage) return undefined;
-  const inputTokens = usage.prompt_tokens;
-  const outputTokens = usage.completion_tokens;
-  if (typeof inputTokens !== "number" || typeof outputTokens !== "number") return undefined;
-  try {
-    return estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, automationStudioDeepSeekCacheHitInputTokens(usage, inputTokens) ?? 0, model, sentAtMs);
-  } catch (error) {
-    // Counts the pricing refuses (negative, fractional, past Core's limit) leave the reply unpriced; any other throw is a defect.
-    if (error instanceof RangeError) return undefined;
-    throw error;
-  }
-}
+
 
 /** The model's own words out of DeepSeek's envelope. The conversation parses them; an empty answer is a malformed one. */
 function panelCommandContent(read: { value: unknown } | { notJson: unknown }): string {

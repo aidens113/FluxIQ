@@ -9,10 +9,12 @@
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../../model/index.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowEdge } from "../../../../../../flows/executable/graph/index.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
-import { runAutomationStudioGraph } from "../../graph-run.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../../../../../engine/automation/index.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
 
 export type Card = { id: string; title: string; saves: number };
 export type Host = NonNullable<AutomationStudioGraphExecutionOptions["hostRuntime"]>;

@@ -5,10 +5,10 @@
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../../../engine/automation/index.ts";
 import { answering, framedRun, withRows } from "../../lifecycle-run/tests/recovery-paths-fixtures.ts";
-import { line, page, pageOptions, press } from "../../lifecycle-run/tests/wiring-fixtures.ts";
-import { automationStudioAttemptAlreadyInState } from "../already-in-state.ts";
+import { line, page, pageOptions, press } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
+import { automationStudioAttemptAlreadyInState } from "../../../../../../engine/automation/node-execution/index.ts";
 
 /** A press whose act lasts and changes something that exists, labelled as a person reads it. */
 const flip = () => ({ ...press("flip", "flip", { declaredConsequences: ["modify_existing"] }), label: "Switch the setting" });

@@ -3,7 +3,7 @@
 // automation's other Subflow graphs offered to its Call Subflow nodes.
 
 import type { JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowArtifact, AutomationStudioFlowSubflow } from "../../../model/index.ts";
+import type { AutomationStudioFlowArtifact, AutomationStudioFlowDocument, AutomationStudioFlowSubflow } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
 import type { AutomationStudioSubflowGraph, AutomationStudioSubflowGraphSource } from "../../executor/frames/index.ts";
 import { automationStudioFlowGraphVersion, type AutomationStudioFlowGraphVersion } from "../../flow-version/index.ts";
@@ -75,9 +75,10 @@ function automationStudioSubflowGraphSource(input: {
   const read = async (record: AutomationStudioFlowSubflow): Promise<AutomationStudioSubflowGraph | undefined> => {
     const artifact = record.graphFlowId ? await input.loadGraph(record.graphFlowId) : undefined;
     if (!artifact || !automationStudioSubflowGraphIsOwned(record, artifact, input.parentFlowId, input.representationOf)) return undefined;
+    const graph: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: artifact.flowId, ownerKind: "routine", ownerId: artifact.flowId, name: artifact.name, nodes: artifact.nodes, edges: artifact.edges, createdAt: artifact.createdAt, updatedAt: artifact.updatedAt, ...(artifact.metadata ? { metadata: artifact.metadata } : {}) };
     return {
       subflowId: record.subflowId,
-      graph: { schemaVersion: "0.1", flowId: artifact.flowId, ownerKind: "routine", ownerId: artifact.flowId, name: artifact.name, nodes: artifact.nodes, edges: artifact.edges, createdAt: artifact.createdAt, updatedAt: artifact.updatedAt, ...(artifact.metadata ? { metadata: artifact.metadata } : {}) },
+      graph,
       graphRevision: automationStudioFlowGraphVersion({ flow: artifact }).revision,
       artifact
     };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityTimeLimitTold } from "../time-limit-told.ts";
+import { automationStudioActivityTimeLimitTold } from "../index.ts";
 
 // What a build its time limit stopped says (t601, t608), and what it says of
 // the whole Flow when the limit cut a test of it (G2, social

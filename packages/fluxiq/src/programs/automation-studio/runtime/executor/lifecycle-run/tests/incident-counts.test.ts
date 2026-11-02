@@ -3,9 +3,9 @@
 // with no Handlers too, and a run that met no failure keeps the trace it had.
 
 import { describe, expect, it } from "vitest";
-import { runAutomationStudioGraph } from "../../graph-run.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
 import { retryPlannedTrue } from "./recovery-paths-fixtures.ts";
-import { line, page, pageOptions, press } from "./wiring-fixtures.ts";
+import { line, page, pageOptions, press } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 describe("incident records for every run", () => {
   it("records a retry, a planned fail and a true failure in a run with no Handlers, without stamping its attempts", async () => {

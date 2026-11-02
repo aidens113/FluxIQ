@@ -4,8 +4,8 @@
 // words for loops that read no list, a list of one page, and what is no member.
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
 import { automationStudioActivityLoops, automationStudioActivityLoopWords, automationStudioActivityPassWords } from "../index.ts";
 
 let seen: ClientGatewayActivity[] = [];

@@ -1,13 +1,15 @@
 import type { JsonValue } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../model/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionResult, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION } from "../../../../nodes/index.ts";
+import type { AutomationNodeExecutionResult, AutomationStudioNodeDefinition } from "../../../../../../components/automation/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../index.ts";
 import { automationStudioRunGraphOptions } from "../../../service/runtime-session/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
-import type { AutomationStudioStepLoopContext } from "../../step-loop/index.ts";
-import { automationStudioRunState } from "../../run-state.ts";
-import type { AutomationStudioUnboundTargetReacquireRequest } from "../request.ts";
-import type { AutomationStudioUnboundTargetReacquireAnswer } from "../answer.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../../../../../engine/automation/index.ts";
+import type { AutomationStudioStepLoopContext } from "../../../../../../engine/automation/step-loop/index.ts";
+import { automationStudioRunState } from "../../../../../../engine/automation/state/index.ts";
+import type { AutomationStudioUnboundTargetReacquireRequest } from "../../../../../../runtime/automation-host/contracts/index.ts";
+import type { AutomationStudioUnboundTargetReacquireAnswer } from "../../../../../../runtime/automation-host/contracts/index.ts";
 
 export const stale = { category: "target_not_found" as const, code: "example.target.stale", retryable: true, stage: "target_resolution" as const, effect: "unacted" as const };
 export const found: AutomationStudioUnboundTargetReacquireAnswer = { outcome: "found", patches: [{ operation: "set", parameterId: "selector", value: "fresh" }, { operation: "set", parameterId: "element", value: { identity: "specimen-17", address: "fresh" } }] };

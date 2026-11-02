@@ -1,17 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { defaultAutomationStudioFlowSettingsMetadata, type AutomationStudioFlowDocument, type AutomationStudioFlowNode } from "../../../model/index.ts";
-import {
-  AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY,
-  AUTOMATION_STUDIO_READINESS_CAP_MS,
-  AUTOMATION_STUDIO_READINESS_FLOOR_MS,
-  automationStudioAttemptIsRetryable,
-  automationStudioNodeReadinessState,
-  automationStudioNodeRetryPolicy,
-  automationStudioReadinessCeilingMs,
-  automationStudioRecordedState,
-  automationStudioRetryBackoffMs,
-  type AutomationStudioNodeAttemptTrace
-} from "../index.ts";
+import { defaultAutomationStudioFlowSettingsMetadata } from "../../../model/index.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
+import { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, AUTOMATION_STUDIO_READINESS_CAP_MS, AUTOMATION_STUDIO_READINESS_FLOOR_MS, automationStudioAttemptIsRetryable, automationStudioNodeReadinessState, automationStudioNodeRetryPolicy, automationStudioReadinessCeilingMs, automationStudioRecordedState, automationStudioRetryBackoffMs, type AutomationStudioNodeAttemptTrace } from "../../../../../engine/automation/index.ts";
 
 const node: AutomationStudioFlowNode = { id: "act", definitionId: "builtin.policy.action" };
 

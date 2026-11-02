@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "../../limits.ts";
-import { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "../run-ending.ts";
+import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "../../index.ts";
+import { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "../index.ts";
 
 /** The run record of `run-musp39u8-9ac026ab`, as far as the ending reads it. */
 const refuted = {

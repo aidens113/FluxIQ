@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
+import { createElementMatcher, type ElementMatcher } from "../../../runtime/target-matching/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../model/index.ts";
 import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort } from "../nodes/index.ts";
@@ -37,7 +37,9 @@ export class AutomationStudioNativeNodeRuntime {
   private readonly targetResolvers = new Map<string, AutomationStudioTargetResolverImplementation>();
   private readonly comparators = new Map<string, AutomationStudioComparatorImplementation>();
   private readonly grants: Required<AutomationStudioNativeRuntimeGrants>;
-  readonly elementMatcher = createAutomationStudioElementMatcher();
+  /** @deprecated Neutral matching only; execution contexts use registered domain matchers. */
+  readonly elementMatcher = createElementMatcher();
+  private readonly elementMatchers = new Map<string, ElementMatcher>();
 
   constructor(grants: AutomationStudioNativeRuntimeGrants = {}) {
     this.grants = { permissions: [...(grants.permissions ?? [])], runtimeCapabilities: [...(grants.runtimeCapabilities ?? [])], networkDestinations: [...(grants.networkDestinations ?? [])], secretHandles: [...(grants.secretHandles ?? [])], filesystemRoots: [...(grants.filesystemRoots ?? [])], process: grants.process === true, childProcess: grants.childProcess === true };
@@ -58,7 +60,10 @@ export class AutomationStudioNativeNodeRuntime {
       if (!manifest.nodes.some((node) => node.id === nodeId)) throw new Error(`Parameter contract ${nodeId} is not declared by manifest ${manifest.packageId}.`);
       if (typeof contract !== "function") throw new Error(`Parameter contract ${nodeId} must be a function.`);
     }
+    const registeredMatcher = this.elementMatchers.get(manifest.domainId);
+    if (bundle.elementMatcher && registeredMatcher && registeredMatcher !== bundle.elementMatcher) throw new Error(`A different element matcher is already registered for domain ${manifest.domainId}.`);
     this.sdk.register(manifest);
+    if (bundle.elementMatcher) this.elementMatchers.set(manifest.domainId, bundle.elementMatcher);
     // Bound on the registry that validation of a generated plan reads, never on the definition, which stays plain data.
     for (const [nodeId, contract] of Object.entries(bundle.parameterContracts ?? {})) this.sdk.nodes.bindParameterContract(nodeId, contract);
     for (const node of manifest.nodes) { const key = node.source.kind === "importer" || node.source.kind === "code" ? node.source.implementationKey : ""; const implementation = bundle.implementations[key]; if (implementation) this.bindings.set(node.id, { manifest, implementation }); }
@@ -67,6 +72,10 @@ export class AutomationStudioNativeNodeRuntime {
     for (const [id, implementation] of Object.entries(bundle.comparators ?? {})) this.comparators.set(`${manifest.domainId}:${id}`, implementation);
     return this;
   }
+
+  /** A matcher is scoped to one registered domain, never inferred from target fields. */
+  getElementMatcher(domainId: string | null | undefined): ElementMatcher | undefined { return domainId ? this.elementMatchers.get(domainId) : undefined; }
+  domainElementMatcher(domainId: string): ElementMatcher { return this.getElementMatcher(domainId) ?? unavailableElementMatcher(domainId); }
 
   getDefinition(nodeId: string): AutomationStudioNodeDefinition | undefined { return this.sdk.nodes.get(nodeId); }
   /** Only canonical registered target-field declarations grant a refresh write-set. */
@@ -127,7 +136,7 @@ export class AutomationStudioNativeNodeRuntime {
         else host.referenceNow = referenceNow;
         Object.freeze(host);
       }
-      const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), ...(host ? { host } : {}), elementMatcher: this.elementMatcher, resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) }));
+      const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), ...(host ? { host } : {}), elementMatcher: this.domainElementMatcher(binding.manifest.domainId), resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) }));
       const result = await Promise.race([execution, new Promise<AutomationNodeExecutionResult>((resolve) => { timer = setTimeout(() => { resolve({ status: "failed", route: "failed", outputs: { error: `Native node exceeded ${timeoutMs}ms timeout.` } }); controller.abort(new Error("Native node timeout.")); }, timeoutMs); })]);
       const boundaryError = validateResultBoundary(definition, result); if (boundaryError) return { ...failed(boundaryError), logs };
       return { result: projectRuntimeTargetActionability(result), logs, declaredOutputs: definition.outputs };
@@ -138,7 +147,7 @@ export class AutomationStudioNativeNodeRuntime {
   private async resolveTarget(domainId: string, resolverId: string, target: JsonObject, signal: AbortSignal): Promise<JsonObject | null> {
     const resolver = this.getTargetResolver(domainId, resolverId);
     if (!resolver) throw new Error(`No target resolver ${resolverId} is registered for domain ${domainId}.`);
-    return await resolver(target, { signal, elementMatcher: this.elementMatcher });
+    return await resolver(target, { signal, elementMatcher: this.domainElementMatcher(domainId) });
   }
 }
 
@@ -170,3 +179,8 @@ function failed(message: string, unacted = false): AutomationStudioNativeExecuti
 }
 function readPositiveNumber(value: unknown): number | undefined { return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined; }
 function validateExtensionBindings(label: string, definitions: Array<{ id: string }> | undefined, implementations: Record<string, unknown> | undefined): void { const declared = new Set((definitions ?? []).map((item) => item.id)); const bound = new Set(Object.keys(implementations ?? {})); for (const id of bound) if (!declared.has(id)) throw new Error(`Implementation ${id} is not declared as an importer ${label}.`); for (const id of declared) if (!bound.has(id)) throw new Error(`Missing importer ${label} implementation ${id}.`); }
+
+function unavailableElementMatcher(domainId: string): ElementMatcher {
+  const unavailable = (): never => { throw new Error(`No element matcher is registered for domain ${domainId}. Register an explicit domain matcher before resolving targets.`); };
+  return { weights: Object.freeze({ ...createElementMatcher().weights }), scoreCandidate: unavailable, scoreCandidates: unavailable, bestCandidate: unavailable, candidatesFromStateSnapshot: unavailable };
+}

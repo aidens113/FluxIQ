@@ -57,10 +57,11 @@ runtime keeps clear folders rather than many tiny workspace packages.
 | `src/domains` | domain manifest and registry contracts | built-in domain packages |
 | `src/programs` | global framework programs, program catalog, scope model, and global program API registry | domain program implementations |
 | `src/api-contracts` | shared API schemas | private domain payloads |
-| `src/flows` | flow graph model and validation | runtime side effects |
+| `src/flows` | flow graph model, executable graph contracts and validation | runtime side effects or editor/project persistence |
 | `src/framework` | host-project bootstrap and top-level FluxIQ class | domain implementation code |
 | `src/components` | component metadata and neutral node packs | domain actions |
-| `src/engine` | session lifecycle and node dispatch | domain decision logic |
+| `src/engine` | session lifecycle, node dispatch and automation graph execution | domain decision logic or editor/project persistence |
+| `src/runtime` | runtime services, host ports, execution support and domain adapter boundaries | concrete browser/DOM interpretation or program persistence |
 | `src/io` | input/output adapter contracts, streams, dispatch, and validation | domain implementation details |
 | `src/ui` | reusable React UI primitives | domain-specific screens |
 
@@ -79,6 +80,7 @@ Global program internals use the layout described in
 - [Automation Studio Importer Guide](../integrations/automation-studio-importing-repos.md)
 - [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
 - [Runtime Kernel](runtime-kernel.md)
+- [Runtime Ownership](runtime-ownership.md)
 - [Platform: The IAM Engine](platform.md) — inert IAM evaluator, store, audit,
   authorizer and catalog generator under `src/platform/`
 - [Documentation System](docs-system.md)

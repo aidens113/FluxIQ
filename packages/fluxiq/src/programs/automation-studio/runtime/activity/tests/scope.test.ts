@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { bindAutomationStudioActivityRun } from "../bind.ts";
+import { bindAutomationStudioActivityRun } from "../index.ts";
 import { automationStudioConversationCallCause } from "../../conversations/commands/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
-import { withAutomationStudioBuildActivity } from "../build.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
-import { emitAutomationStudioActivity } from "../emit.ts";
-import { withAutomationStudioRunActivity } from "../run.ts";
-import { runWithAutomationStudioActivity } from "../scope.ts";
+import { withAutomationStudioBuildActivity } from "../index.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { emitAutomationStudioActivity } from "../index.ts";
+import { withAutomationStudioRunActivity } from "../index.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
 import { emitAutomationStudioActivityStep } from "../step/index.ts";
 
 let seen: ClientGatewayActivity[] = [];

@@ -3,7 +3,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { IoRegistry } from "../../../../../io/index.ts";
 import { safeSegment } from "../../../../_shared/storage.ts";
 import type { RecordingSession } from "../../../model/index.ts";
-import type { AutomationStudioElementMatcher } from "../../../fingerprinting/index.ts";
+import type { ElementMatcher } from "../../../../../runtime/target-matching/index.ts";
 import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperImplementation } from "../../../nodes/index.ts";
 import type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact } from "../../recording-flow-proposal.ts";
 import { recordingActionEntryCandidate } from "../recording-projections/index.ts";
@@ -30,7 +30,7 @@ export type RecordingMapperBinding = {
 export type RecordingProposalForMapperInput = {
   mapper: RecordingMapperBinding;
   io: IoRegistry;
-  elementMatcher: AutomationStudioElementMatcher;
+  elementMatcher: ElementMatcher;
   projectId: string;
   domainId: string;
   recording: RecordingSession;

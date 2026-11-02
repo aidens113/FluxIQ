@@ -12,10 +12,28 @@ import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher, di
 import { packAutomationStudioLlmContext } from "../llm/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../service/index.ts";
 
+import { createElementMatcher } from "../../../../runtime/target-matching/index.ts";
+
+const matcher = createElementMatcher();
 const effect = { type: "policy.output.dispatch", payload: { outputId: "activate-element", parameters: { elementId: "confirm" } } };
 const action = { actionType: "activate-element", outputId: "activate-element", parameters: { elementId: "confirm" } };
 // Every candidate scores below zero against this fingerprint, so the matcher returns none.
 const unmatchedTarget = { kind: "element", fingerprint: { visibleText: "Save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel" }] };
+
+describe("explicit domain target matching", () => {
+  it("delegates opaque candidates without claiming confidence when no matcher was supplied", async () => {
+    const target = { kind: "element", fingerprint: { selector: "#save", visibleText: "Save" }, candidates: [{ candidateId: "unrelated", selector: "#cancel", visibleText: "Cancel" }] };
+    const actionWithTarget = { ...action, parameters: { target } };
+    const direct = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 1 }), "example", actionWithTarget);
+    const throughRuntime = await createRuntimePolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example", runtimeReturning({ status: "succeeded" }))({ type: effect.type, payload: { ...effect.payload, parameters: { target } } });
+    for (const result of [direct, throughRuntime]) {
+      expect(result).toMatchObject({ status: "success", targetResolution: { status: "unresolved_no_matcher", candidateCount: 1 } });
+      expect(result?.targetResolution).not.toHaveProperty("minimumConfidence");
+      expect(result?.targetResolution).not.toHaveProperty("confidence");
+      expect(result?.outputs?.elementTargetResolution).toMatchObject({ status: "unresolved_no_matcher" });
+    }
+  });
+});
 
 describe("policy output dispatch failures", () => {
   it("retains measured target facts independently of IO/runtime success and failure", async () => {
@@ -152,7 +170,7 @@ describe("policy output dispatch failures", () => {
   });
 
   it("records a typed target resolution for no match, a weak match, and a confident match", async () => {
-    const unmatched = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", { ...action, parameters: { target: unmatchedTarget } });
+    const unmatched = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", { ...action, parameters: { target: unmatchedTarget } }, undefined, undefined, matcher);
     expect(unmatched).toMatchObject({
       status: "failed",
       failure: { category: "target_not_found", code: "element_target.no_match", retryable: true, stage: "target_resolution" },
@@ -162,7 +180,7 @@ describe("policy output dispatch failures", () => {
     const weak = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 0.99 }), "example", {
       ...action,
       parameters: { target: { kind: "element", fingerprint: { visibleText: "Save", testId: "save" }, candidates: [{ candidateId: "save-text", visibleText: "Save" }] } }
-    });
+    }, undefined, undefined, matcher);
     expect(weak).toMatchObject({
       status: "failed",
       failure: { category: "target_not_found", code: "element_target.below_confidence", retryable: true, stage: "target_resolution" },
@@ -174,7 +192,7 @@ describe("policy output dispatch failures", () => {
     const strong = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", {
       ...action,
       parameters: { target: { kind: "element", fingerprint: { visibleText: "Save", testId: "save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel", testId: "cancel" }, { candidateId: "save", visibleText: "Save", testId: "save" }] } }
-    });
+    }, undefined, undefined, matcher);
     expect(strong).toMatchObject({ status: "success", targetResolution: { status: "matched", candidateId: "save", candidateCount: 2 } });
     expect(strong).not.toHaveProperty("failure");
   });
@@ -236,7 +254,7 @@ describe("failure propagation from dispatch to diagnosis", () => {
 
   it("carries an element target miss to the attempt trace and a target override candidate", async () => {
     const flow = actionFlow({ target: unmatchedTarget });
-    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example") });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example", matcher) });
     const attempt = trace.attempts[0]!;
 
     expect(attempt).toMatchObject({ failure: { category: "target_not_found" }, targetResolution: { status: "no_match", candidateCount: 1 } });

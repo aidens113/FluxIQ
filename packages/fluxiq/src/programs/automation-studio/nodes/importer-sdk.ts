@@ -1,6 +1,8 @@
 import type { AutomationStudioRecordOutput } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioElementMatcher } from "../fingerprinting/index.ts";
+import type { ElementMatcher } from "../../../runtime/target-matching/index.ts";
+import type { AutomationStudioNativeLogEntry } from "../../../runtime/automation-host/index.ts";
+export type { AutomationStudioNativeLogEntry } from "../../../runtime/automation-host/index.ts";
 import type { AutomationNodeExecutionResult } from "./contracts.ts";
 import { AutomationStudioNodeRegistry } from "./canonical-registry.ts";
 import { validateAutomationStudioNodeDefinition, type AutomationStudioNodeDefinition, type AutomationStudioNodeParameterContract } from "./definitions.ts";
@@ -69,7 +71,6 @@ export type AutomationStudioImporterSdkManifest = {
   metadata?: JsonObject;
 };
 
-export type AutomationStudioNativeLogEntry = { level: "debug" | "info" | "warning" | "error"; message: string; data?: JsonObject };
 export type AutomationStudioNativeNodeContext = {
   inputs: Readonly<Record<string, JsonValue>>;
   parameters: Readonly<Record<string, JsonValue>>;
@@ -84,25 +85,27 @@ export type AutomationStudioNativeNodeContext = {
     sideEffectClass: "none" | "internal" | "external" | "destructive";
     target?: JsonValue;
   }>;
-  elementMatcher: AutomationStudioElementMatcher;
+  elementMatcher: ElementMatcher;
   resolveTarget(resolverId: string, target: JsonObject): Promise<JsonObject | null>;
   log(entry: AutomationStudioNativeLogEntry): void;
 };
 export type AutomationStudioNativeNodeImplementation = (context: AutomationStudioNativeNodeContext) => AutomationNodeExecutionResult | Promise<AutomationNodeExecutionResult>;
 export type AutomationStudioRecordingMapperContext = {
   signal: AbortSignal;
-  elementMatcher: AutomationStudioElementMatcher;
+  elementMatcher: ElementMatcher;
   /** The mapper-visible entries after this observation, in timeline order, at most 32: where a mapper reads what an action led to. */
   following: readonly AutomationStudioRecordingMapperObservation[];
 };
 export type AutomationStudioRecordingMapperImplementation = (observation: AutomationStudioRecordingMapperObservation, context: AutomationStudioRecordingMapperContext) => AutomationStudioRecordingMapperResult | Promise<AutomationStudioRecordingMapperResult>;
-export type AutomationStudioTargetResolverImplementation = (target: JsonObject, context: { signal: AbortSignal; elementMatcher: AutomationStudioElementMatcher }) => JsonObject | null | Promise<JsonObject | null>;
+export type AutomationStudioTargetResolverImplementation = (target: JsonObject, context: { signal: AbortSignal; elementMatcher: ElementMatcher }) => JsonObject | null | Promise<JsonObject | null>;
 export type AutomationStudioComparatorImplementation = (left: JsonValue, right: JsonValue) => { equal: boolean; score?: number };
 
 export type AutomationStudioImporterImplementationBundle = {
   packageId: string;
   packageVersion: string;
   implementations: Record<string, AutomationStudioNativeNodeImplementation>;
+  /** Explicit matcher for this manifest domain. Missing adapters cannot score targets. */
+  elementMatcher?: ElementMatcher;
   recordingMappers?: Record<string, AutomationStudioRecordingMapperImplementation>;
   targetResolvers?: Record<string, AutomationStudioTargetResolverImplementation>;
   comparators?: Record<string, AutomationStudioComparatorImplementation>;

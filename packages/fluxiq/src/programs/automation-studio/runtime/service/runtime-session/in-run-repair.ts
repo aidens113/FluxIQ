@@ -43,6 +43,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import { automationStudioActionPermissionDenied, automationStudioConsequencesInOrder, type AutomationStudioActionConsequence, type AutomationStudioActionPermissionGate } from "../../action-permissions/index.ts";
 import { emitAutomationStudioActivityThought } from "../../activity/index.ts";
+import { automationStudioLegacyGraphRequest } from "../../legacy-envelope/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
 import type { AutomationStudioIncidentRepair, AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../executor/lifecycle-run/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "../../llm/build-purse/index.ts";
@@ -80,6 +81,8 @@ export type AutomationStudioInRunRepairBinding = {
   useReusableContext?: true | undefined;
   now?: (() => number) | undefined;
 };
+
+type StudioIncidentRepairRequest = AutomationStudioIncidentRepairRequest & { graph: AutomationStudioFlowDocument };
 
 type Purse = AutomationStudioInRunRecovery["purse"];
 type PatchInput = Parameters<AutomationStudioInRunRecovery["apply"]>[0];
@@ -132,8 +135,10 @@ async function repairIncident(
   input: AutomationStudioInRunRepairBinding,
   ledger: AutomationStudioInRunRepairLedger,
   purse: Purse,
-  request: AutomationStudioIncidentRepairRequest
+  executorRequest: AutomationStudioIncidentRepairRequest
 ): Promise<AutomationStudioIncidentRepair> {
+  const request = automationStudioLegacyGraphRequest(executorRequest);
+  if (!request) return { kind: "none", reason: "The frame did not carry its Studio Flow context, so no repair was requested." };
   const repairId = `repair.${input.runId}.${request.incident.incidentId}`;
   const at = { nodeId: request.failedAttempt.nodeId, framePath: request.framePath };
   const base = { repairId, incidentId: request.incident.incidentId, nodeId: at.nodeId, framePath: [...at.framePath], unit: request.unit as unknown as JsonObject };
@@ -204,7 +209,7 @@ async function repairIncident(
  */
 async function applyInRun(step: {
   input: AutomationStudioInRunRepairBinding;
-  request: AutomationStudioIncidentRepairRequest;
+  request: StudioIncidentRepairRequest;
   patches: PatchInput;
   partSubflowId: string | undefined;
   partGraph: AutomationStudioFlowDocument | undefined;
@@ -255,7 +260,7 @@ function refusedPatches(step: { patches: PatchInput; fix: Fix }, refusal: Refusa
 /** Each patch, in order, held to the plan's kinds, the request's unit, the permission gate and the preflight, and overlaid on the graph the one before it left. */
 async function applyPatches(
   input: AutomationStudioInRunRepairBinding,
-  request: AutomationStudioIncidentRepairRequest,
+  request: StudioIncidentRepairRequest,
   answer: PatchInput,
   partSubflowId: string | undefined,
   partGraph: AutomationStudioFlowDocument | undefined
@@ -329,7 +334,7 @@ async function applyPatches(
  * target do, and say what they would lastingly do; a fix that says nothing does
  * not run, and with no gate to ask none runs.
  */
-async function permissionFor(gate: AutomationStudioActionPermissionGate | undefined, patch: AutomationStudioRuntimePatch, request: AutomationStudioIncidentRepairRequest): Promise<{ outcome: "not_acting" | "permitted" | "undeclared" } | { outcome: "required"; sentence: string }> {
+async function permissionFor(gate: AutomationStudioActionPermissionGate | undefined, patch: AutomationStudioRuntimePatch, request: StudioIncidentRepairRequest): Promise<{ outcome: "not_acting" | "permitted" | "undeclared" } | { outcome: "required"; sentence: string }> {
   if (patch.kind !== "temporary_target_override" && patch.kind !== "temporary_action_sequence" && patch.kind !== "add_handler" && patch.kind !== "replace_unit") return { outcome: "not_acting" };
   if (patch.consequences === undefined) return { outcome: "undeclared" };
   const declared = automationStudioConsequencesInOrder(patch.consequences);
@@ -374,17 +379,18 @@ function text(value: unknown): string | undefined {
 }
 
 /** The part's graph as this run runs it: a fix of this run first, else the frame's own when it is the part, else the saved graph. Absent only when the Flow keeps no such graph; a read that fails throws. */
-async function partGraphFor(input: AutomationStudioInRunRepairBinding, ledger: AutomationStudioInRunRepairLedger, request: AutomationStudioIncidentRepairRequest, subflowId: string): Promise<AutomationStudioFlowDocument | undefined> {
+async function partGraphFor(input: AutomationStudioInRunRepairBinding, ledger: AutomationStudioInRunRepairLedger, request: StudioIncidentRepairRequest, subflowId: string): Promise<AutomationStudioFlowDocument | undefined> {
   const kept = ledger.partGraph(subflowId);
   if (kept) return kept;
   if (request.subflowId === subflowId) return request.graph;
   const saved = await input.ports.subflowGraphForRecovery?.(input.context.projectId, input.context.flowId, subflowId);
   // The interface stays with the graph: it is the part's contract.
-  return saved ? { ...canonicalFlowDocument(saved), interface: saved.interface } as AutomationStudioFlowDocument : undefined;
+  const graph = saved ? { ...canonicalFlowDocument(saved), interface: saved.interface } : undefined;
+  return graph;
 }
 
 /** The run so far as a run detail, which the recovery reads as it reads a run that ended. Statuses and ids only reach the model. */
-function runSoFar(input: AutomationStudioInRunRepairBinding, request: AutomationStudioIncidentRepairRequest): AutomationStudioFlowRunDetail {
+function runSoFar(input: AutomationStudioInRunRepairBinding, request: StudioIncidentRepairRequest): AutomationStudioFlowRunDetail {
   const startedAt = request.attempts[0]?.startedAt ?? request.failedAttempt.startedAt;
   const session: AutomationStudioRuntimeSession = {
     schemaVersion: "0.1",

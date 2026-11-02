@@ -8,10 +8,12 @@
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../../model/index.ts";
-import type { AutomationNodeExecutionResult } from "../../../../../nodes/index.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../../flows/executable/graph/index.ts";
+import type { AutomationNodeExecutionResult } from "../../../../../../../components/automation/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../activity/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../../index.ts";
+import { runAutomationStudioGraph } from "../../../index.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../../../../../engine/automation/index.ts";
 
 const BLOCKED_FAILURE = { category: "unexpected_state" as const, code: "web.action.blocked_by_dialog", retryable: false, stage: "execution" as const };
 const TIMEOUT_FAILURE = { category: "timeout" as const, code: "web.action.timeout", retryable: true, stage: "execution" as const };

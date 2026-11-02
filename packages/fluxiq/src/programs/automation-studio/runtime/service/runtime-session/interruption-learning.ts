@@ -27,6 +27,7 @@ import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowIntervention } from "../../../model/index.ts";
 import { automationStudioActionPermissionDenied } from "../../action-permissions/index.ts";
+import { automationStudioLegacyGraphRequest } from "../../legacy-envelope/index.ts";
 import type { AutomationStudioIncidentRepair, AutomationStudioInterruptionLearningRequest } from "../../executor/lifecycle-run/index.ts";
 import { prepareAutomationStudioInRunRepair } from "../../live-patch.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
@@ -44,8 +45,10 @@ const LEARNED_FROM = "defence_close";
 export async function learnAutomationStudioInterruption(
   input: AutomationStudioInRunRepairBinding,
   ledger: AutomationStudioInRunRepairLedger,
-  request: AutomationStudioInterruptionLearningRequest
+  executorRequest: AutomationStudioInterruptionLearningRequest
 ): Promise<AutomationStudioIncidentRepair> {
+  const request = automationStudioLegacyGraphRequest(executorRequest);
+  if (!request) return { kind: "none", reason: "The frame did not carry its Studio Flow context, so the interruption was not learned." };
   const { layer, attempt } = request;
   // One successful attempt can clear several layers; each fix needs its own
   // receipt and kept-overlay identity for the judged end.

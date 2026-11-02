@@ -9,4 +9,9 @@
  * One word in one place (t728, extension-core boundary audit): Core named it
  * in three files and the web domain in a fourth, and nothing kept them alike.
  */
-export const AUTOMATION_STUDIO_REPEATED_ANSWER_REASON = "answered_the_same_again";
+export const RUNTIME_REPEATED_ANSWER_REASON = "answered_the_same_again";
+
+// Compatibility names retained for existing Automation Studio consumers.
+export {
+  RUNTIME_REPEATED_ANSWER_REASON as AUTOMATION_STUDIO_REPEATED_ANSWER_REASON
+};

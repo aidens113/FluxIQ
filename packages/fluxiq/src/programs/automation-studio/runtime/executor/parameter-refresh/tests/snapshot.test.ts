@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioRefreshSnapshot } from "../snapshot.ts";
-import { automationStudioRefreshScope } from "../scope.ts";
+import { automationStudioRefreshSnapshot } from "../../../../../../engine/automation/parameter-refresh/index.ts";
+import { automationStudioRefreshScope } from "../../../../../../engine/automation/parameter-refresh/index.ts";
 import { refresh } from "../../unbound-reacquire/tests/fixtures.ts";
 
 describe("isolated bounded identity data", () => {

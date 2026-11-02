@@ -1,2 +1,4 @@
-/** Observation, transient state, or an action whose effect may outlast it. */
-export type AutomationStudioActionEffectClass = "observe" | "state" | "commit";
+// Compatibility exports; the framework owns this implementation.
+export type {
+  AutomationStudioActionEffectClass
+} from "../../../../components/automation/action-effect/index.ts";

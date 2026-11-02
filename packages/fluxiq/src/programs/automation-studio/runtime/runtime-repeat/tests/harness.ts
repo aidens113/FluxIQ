@@ -1,11 +1,12 @@
 import type { JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionResult, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../engine/automation/tests/fixture-contracts.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION } from "../../../nodes/index.ts";
+import type { AutomationNodeExecutionResult, AutomationStudioNodeDefinition } from "../../../../../components/automation/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../index.ts";
 import { automationStudioRunGraphOptions } from "../../service/runtime-session/index.ts";
-import type { AutomationStudioHostStateSnapshotRef } from "../../host-runtime.ts";
-import type { AutomationStudioRuntimeRepeatObservation } from "../observation.ts";
-import type { AutomationStudioRuntimeRepeatObservationInput } from "../observation-input.ts";
+import type { AutomationStudioHostStateSnapshotRef } from "../../../../../runtime/automation-host/index.ts";
+import type { AutomationStudioRuntimeRepeatObservation } from "../../../../../runtime/repeat/index.ts";
+import type { AutomationStudioRuntimeRepeatObservationInput } from "../../../../../runtime/repeat/index.ts";
 
 /** Real importer registration/execution, with isolated provider-free capture observations. */
 export function runtimeRepeatHarness() {
@@ -32,7 +33,7 @@ export function runtimeRepeatHarness() {
   const options = automationStudioRunGraphOptions({ signal: controller.signal, authorizedDomainIds: ["specimens"], nativeNodeRuntime: native, maxSteps: 35, hostRuntime: {
     capabilities: ["state-snapshot"],
     captureStateSnapshot: ({ node }) => {
-      if (node.definitionId !== definition.id) throw new Error("This Core node has no external capture.");
+      if (node.definitionId !== definition.id) return { kind: "unavailable", reason: "unsupported_node" };
       const ref = { stateSnapshotId: `snapshot.${captures.length + 1}`, stateRef: `capture.${captures.length + 1}`, capturedAt: captures.length + 1 };
       captures.push(ref);
       accepted.set(ref, { kind: "observed", coverage: "complete", resource: state.resource, target: { kind: "identified", key: typeof node.parameterValues?.subject === "string" ? node.parameterValues.subject : state.target }, viewDigest: state.view });

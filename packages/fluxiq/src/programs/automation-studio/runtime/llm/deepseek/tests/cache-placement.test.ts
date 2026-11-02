@@ -66,7 +66,32 @@ describe("where a build's request puts what does not change", () => {
     expect(shown).toEqual([
       "core.route_state.1", "explore-1", "core.route_state.2", "submit-1", "test-1", "core.route_state.3", "core.evidence_history", "core.budget.3"
     ]);
-    expect(evidenceOf(later)[5]).toMatchObject({ toolId: AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID, value: { state: { "state.page.path": "/trial.step-1" } } });
+    const situations = evidenceOf(later).filter((entry) => entry.toolId === AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID);
+    expect(situations.map((entry) => entry.value)).toEqual([
+      { seen: "where a run starts, before any step runs", state: { "state.page.path": "/start" } },
+      { seen: "after exploring with core.run_node", baseSituation: "core.route_state.1", updates: { "state.page.path": "/explore-1" }, removed: [] },
+      { seen: "after exploring with core.run_node", baseSituation: "core.route_state.2", updates: { "state.page.path": "/trial.step-1" }, removed: [] }
+    ]);
+    // Later situations carry deltas. The provider must still be able to read
+    // every complete state from that first baseline and the named prior state.
+    const states = new Map<string, JsonObject>();
+    for (const situation of situations) {
+      const value = situation.value;
+      let state: JsonObject;
+      if (typeof value.baseSituation === "string") {
+        const base = states.get(value.baseSituation);
+        expect(base, `missing baseline ${value.baseSituation}`).toBeDefined();
+        state = { ...base };
+        for (const key of value.removed as string[]) delete state[key];
+        Object.assign(state, value.updates);
+      } else state = { ...(value.state as JsonObject) };
+      states.set(situation.callId, state);
+    }
+    expect([...states]).toEqual([
+      ["core.route_state.1", { "state.page.path": "/start" }],
+      ["core.route_state.2", { "state.page.path": "/explore-1" }],
+      ["core.route_state.3", { "state.page.path": "/trial.step-1" }]
+    ]);
   });
 
   it("keeps a situation where it was first shown on every later decision", async () => {

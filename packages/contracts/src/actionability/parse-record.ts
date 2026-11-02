@@ -1,13 +1,13 @@
-import type { AutomationStudioTargetActionabilityRecord } from "./record.ts";
+import type { RuntimeTargetActionabilityRecord } from "./record.ts";
 
 type ActionabilityValidation =
-  | { kind: "valid"; record: AutomationStudioTargetActionabilityRecord }
+  | { kind: "valid"; record: RuntimeTargetActionabilityRecord }
   | { kind: "rejected"; reason: "not_plain_record" | "unknown_key" | "actionable_not_data" | "actionable_not_boolean" | "cause_on_actionable" | "cause_missing" | "cause_not_data" | "cause_unknown" }
   | { kind: "unreadable"; reason: "record_reflection_failed" };
 
 /** Reads only exact plain data, returning a fresh minimal record or unknown.
  * Accessors are never invoked, and malformed optional metadata never throws. */
-export function parseAutomationStudioTargetActionabilityRecord(value: unknown): AutomationStudioTargetActionabilityRecord | undefined {
+export function parseRuntimeTargetActionabilityRecord(value: unknown): RuntimeTargetActionabilityRecord | undefined {
   const validation = validateActionability(value);
   return validation.kind === "valid" ? validation.record : undefined;
 }
@@ -36,3 +36,8 @@ function validateActionability(value: unknown): ActionabilityValidation {
     return { kind: "unreadable", reason: "record_reflection_failed" };
   }
 }
+
+// Compatibility names retained for existing Automation Studio consumers.
+export {
+  parseRuntimeTargetActionabilityRecord as parseAutomationStudioTargetActionabilityRecord
+};
