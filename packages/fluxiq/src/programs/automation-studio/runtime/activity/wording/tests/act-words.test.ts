@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityActsSaid } from "../act-words.ts";
+import { automationStudioActivityActsSaid } from "../index.ts";
 
 // t738: acts of the build in a person's words. Three presses on nameless controls were each said as "one more
 // change" and then kept once; a reset named acts by their ledger ids.

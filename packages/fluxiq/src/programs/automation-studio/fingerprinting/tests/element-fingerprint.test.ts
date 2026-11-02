@@ -70,7 +70,7 @@ describe("automation studio element fingerprint matcher", () => {
       { candidateId: "candidate", label: "Continue", role: "link" }
     );
     expect(score.positiveContributions.some((item) => item.signalPath === "label")).toBe(true);
-    expect(score.negativeContributions.some((item) => item.signalPath === "selector")).toBe(true);
-    expect(score.failedSignals).toEqual(expect.arrayContaining(["selector", "role"]));
+    expect(score.negativeContributions.some((item) => item.signalPath === "selector")).toBe(false);
+    expect(score.failedSignals).toEqual(expect.arrayContaining(["role"]));
   });
 });

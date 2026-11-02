@@ -1,26 +1,2 @@
-// The default defensive policy every node executes under.
-//
-// Nothing here is opt-in. The seam that dispatches a node -- `node-execution.ts`
-// for the dispatch itself, `graph-run.ts` for the attempt loop around it --
-// applies this to every node it runs, whether the node is one of Core's
-// built-ins, a domain's output, a host-executed one, a composite Flow, or one
-// written after this was. A node asks for none of it and cannot decline it; a
-// node or a Flow may only tighten or loosen the numbers.
-export * from "./assess.ts";
-export * from "./contracts.ts";
-export * from "./continuation.ts";
-export * from "./credited-hint.ts";
-export * from "./effect-check.ts";
-export * from "./explicit-lasting-risk.ts";
-export * from "./host-act-landed.ts";
-export * from "./lasting-act.ts";
-export * from "./ledger.ts";
-export * from "./node-side-effect.ts";
-export * from "./not-landed.ts";
-export * from "./output-reads.ts";
-export * from "./planned-retry-wait.ts";
-export * from "./result-message.ts";
-export * from "./retry-hint.ts";
-export * from "./retry-wait.ts";
-export * from "./thrown-error.ts";
-export * from "./transient-status.ts";
+// Compatibility export; implementation belongs to the framework.
+export { automationStudioAssessAttemptFault, automationStudioAttemptFaultIsAbsorbed, AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, type AutomationStudioFaultDisposition, type AutomationStudioFaultEffect, type AutomationStudioFaultSource, type AutomationStudioFaultAssessment, type AutomationStudioNodeSideEffectClass, type AutomationStudioFailureContinuation, automationStudioContinuationAfterFailure, automationStudioCreditedHintMs, AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY, AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE, type AutomationStudioEffectCheckResult, type AutomationStudioLastingActCheck, automationStudioRunEffectCheck, automationStudioNodeExplicitLastingRisk, automationStudioHostActLanded, automationStudioNodeActLasts, automationStudioStopMessage, type AutomationStudioDefenceOutcome, type AutomationStudioDefenceEntry, type AutomationStudioDefenceSummary, type AutomationStudioDefenceLedger, automationStudioDefenceLedger, automationStudioNodeSideEffectClass, automationStudioNodeMutates, automationStudioNodeRepeatCannotAct, automationStudioNodeRepeatIsSafe, automationStudioFaultNotLanded, type AutomationStudioOutputRead, automationStudioOutputReads, automationStudioPlannedRetryWait, automationStudioFaultFromResultMessage, AUTOMATION_STUDIO_MAX_RETRY_HINT_MS, automationStudioRetryHintMs, AUTOMATION_STUDIO_MAX_RETRY_WAIT_MS, AUTOMATION_STUDIO_MAX_NODE_RETRY_WAIT_MS, AUTOMATION_STUDIO_MAX_RUN_RETRY_WAIT_MS, type AutomationStudioRetryWait, automationStudioBoundedRetryWaitMs, automationStudioRunMayStillAbsorb, automationStudioFaultFromThrownError, automationStudioThrownErrorText, AUTOMATION_STUDIO_TRANSIENT_STATUSES, automationStudioTransientStatusEffect } from "../../../../../engine/automation/defensive/index.ts";

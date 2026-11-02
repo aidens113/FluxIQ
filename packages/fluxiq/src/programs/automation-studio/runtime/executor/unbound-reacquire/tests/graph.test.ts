@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../../core/index.ts";
-import { runAutomationStudioGraph } from "../../graph-run.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
 import { setup, found } from "./fixtures.ts";
-import type { AutomationStudioUnboundTargetReacquireAnswer } from "../answer.ts";
-import { automationStudioRootInvocation } from "../../frames/index.ts";
-import { automationStudioCompletedActIdentity } from "../../lifecycle-run/index.ts";
+import type { AutomationStudioUnboundTargetReacquireAnswer } from "../../../../../../runtime/automation-host/contracts/index.ts";
+import { automationStudioRootInvocation } from "../../../../../../engine/automation/frames/index.ts";
+import { automationStudioCompletedActIdentity } from "../../../../../../engine/automation/lifecycle-run/index.ts";
 
 describe("source-less identity recovery through real execution", () => {
   it.each(["native", "output"] as const)("refreshes only target fields through %s dispatch and resolved captures", async (kind) => {

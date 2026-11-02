@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBlankAutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
+import * as candidateGraphs from "../candidate-graphs.ts";
 import { runAutomationStudioDetachedCandidate } from "../index.ts";
 
 function fixture() {
@@ -362,4 +363,44 @@ describe("detached candidate normal execution", () => {
     const result = await runAutomationStudioDetachedCandidate(input);
     expect(result).toMatchObject({ code: "candidate.execution_error", receipt: { status: "failed", executedNodeCount: 2, commands: [] }, trace: { status: "succeeded" } });
   });
+});
+
+function callingChild() {
+  const value = fixture();
+  const primary = value.plan.subflows[0]!;
+  primary.nodes = [{ key: "call", definitionId: "builtin.control.call-subflow", definitionVersion: "1.0.0", parameters: { subflowId: "helper" } }];
+  primary.edges = [];
+  value.plan.subflows.push({ key: "helper", name: "Helper", role: "utility", nodes: [{ key: "value", definitionId: "builtin.data.constant", definitionVersion: "1.0.0", parameters: { value: "child-produced" } }], edges: [] });
+  value.recompile();
+  return value;
+}
+
+it("runs a called candidate child using its actual producer-owned Studio artifact", async () => {
+  const { input } = callingChild();
+  const result = await runAutomationStudioDetachedCandidate(input);
+  expect(result.receipt.status).toBe("succeeded");
+  const child = result.trace?.attempts.find(attempt => attempt.definitionId === "builtin.control.call-subflow")?.childTrace;
+  expect(child?.status).toBe("succeeded");
+  expect(child?.attempts[0]?.definitionId).toBe("builtin.data.constant");
+});
+
+it("refuses a similarly shaped child artifact without the producing source's Studio context", async () => {
+  const { input } = callingChild();
+  const source = candidateGraphs.automationStudioCandidateGraphSource;
+  const spy = vi.spyOn(candidateGraphs, "automationStudioCandidateGraphSource").mockImplementation((...args) => {
+    const produced = source(...args);
+    return { ...produced, load: async subflowId => {
+      const target = await produced.load(subflowId);
+      return target?.artifact ? { ...target, artifact: structuredClone(target.artifact) } : target;
+    } };
+  });
+  try {
+    const result = await runAutomationStudioDetachedCandidate(input);
+    expect(result.receipt.status).toBe("failed");
+    const child = result.trace?.attempts.find(attempt => attempt.definitionId === "builtin.control.call-subflow")?.childTrace;
+    expect(child?.message).toContain("did not carry its produced Studio context");
+    expect(child?.attempts).toEqual([]);
+  } finally {
+    spy.mockRestore();
+  }
 });

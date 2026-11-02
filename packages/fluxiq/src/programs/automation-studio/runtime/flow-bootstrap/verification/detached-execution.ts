@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import type { ExecutableGraph } from "../../../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../model/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
@@ -110,16 +111,18 @@ export async function runAutomationStudioDetachedCandidate(input: {
     // is therefore the number of written `on failed:` branches the graph
     // declares, so each of those can be taken once and a real failure past them
     // still stops the trial; a graph that declares none keeps zero.
+    const candidateSource = automationStudioCandidateGraphSource(topology, parent, fresh);
     const executionOptions: AutomationStudioGraphExecutionOptions = { ...options, ...(signal ? { signal } : {}), currentSubflowId: selected.subflow.subflowId,
-      subflowGraphs: automationStudioCandidateGraphSource(topology, parent, fresh),
+      subflowGraphs: candidateSource,
       allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [],
       recoveryBudget: candidateRecoveryBudget(graph),
       ...(from ? { startNodeId: from.nodeId } : {})
     };
     // Each invoked graph gets only its own authored alternatives. A root with none must not fence off a helper's declared way on.
     executionOptions.invocation = automationStudioRootInvocation(graph, executionOptions, async (target, childOptions, onExecuted) => {
-      const child = target.artifact;
-      if (!child || !await fresh()) return { status: signal?.aborted ? "cancelled" : "failed", startedAt: now(), finishedAt: now(), attempts: [], values: {}, effects: [], message: "The detached candidate child graph was unavailable or stale." };
+      const child = candidateSource.artifactFor(target.artifact);
+      if (!child) return { status: signal?.aborted ? "cancelled" : "failed", startedAt: now(), finishedAt: now(), attempts: [], values: {}, effects: [], message: "The detached candidate child graph did not carry its produced Studio context." };
+      if (!await fresh()) return { status: signal?.aborted ? "cancelled" : "failed", startedAt: now(), finishedAt: now(), attempts: [], values: {}, effects: [], message: "The detached candidate child graph was unavailable or stale." };
       return runCanonicalAutomationStudioFlow(child, snapshots, { ...childOptions, allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], recoveryBudget: candidateRecoveryBudget(child) }, input.deprecatedPublicationIds ?? [], onExecuted);
     });
     const trace = await runCanonicalAutomationStudioFlow(graph, snapshots, executionOptions, input.deprecatedPublicationIds ?? []);
@@ -136,7 +139,7 @@ export async function runAutomationStudioDetachedCandidate(input: {
 }
 
 /** Bound recovery to the invoked graph's explicit failed routes, with no model or patch allowance. */
-function candidateRecoveryBudget(graph: AutomationStudioFlowArtifact) {
+function candidateRecoveryBudget(graph: Pick<ExecutableGraph, "nodes" | "edges">) {
   const authoredRoutes = authoredFailedRoutes(graph);
   return { maxRecoveryAttemptsPerSubflow: authoredRoutes, maxReroutesPerRun: authoredRoutes, maxAdaptationOrLlmAttemptsPerRun: 0 };
 }
@@ -147,7 +150,7 @@ function executedAttempts(trace: AutomationStudioGraphExecutionTrace | undefined
 }
 
 /** How many written `on failed:` branches the graph's steps declare: every `failed` way out but an optional step's way on, which spends no budget. */
-function authoredFailedRoutes(graph: AutomationStudioFlowArtifact): number {
+function authoredFailedRoutes(graph: Pick<ExecutableGraph, "nodes" | "edges">): number {
   const optionalWayOns = new Set(graph.nodes.map((node) => automationStudioOptionalStepWayOn(graph, node)?.id).filter((id) => id !== undefined));
   return graph.edges.filter((edge) => edge.sourcePortId === "failed" && !optionalWayOns.has(edge.id)).length;
 }

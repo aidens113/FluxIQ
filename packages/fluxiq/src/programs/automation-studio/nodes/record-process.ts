@@ -1,12 +1,4 @@
-// The record-processing readers, re-exported by name so browser code judges a
-// `where` condition, reads a number or a date, dedupes and sorts with Core's own
-// functions rather than a copy kept equal by a parity test (t728, lane S; audit
-// findings 4B/4C). The extension content script and the domain reach
-// `@fluxiq/contracts` only through `fluxiq` subpaths, and this one is
-// browser-safe: never route these through the `fluxiq/automation-studio`
-// barrel, which pulls in `node:crypto`. The date condition readers and their
-// parity table (t800, K1) are here for the same reason: a domain's grammar asks
-// Core whether a bound or a `within` names a date, and runs the shared cases.
+// Compatibility exports; the framework owns this implementation.
 export {
   AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
   AUTOMATION_STUDIO_RECORD_CONDITION_DATE_CASES,
@@ -28,7 +20,7 @@ export {
   readAutomationStudioRecordNumber,
   readAutomationStudioRecordSortValue,
   sortAutomationStudioRecordRows
-} from "@fluxiq/contracts/automation-studio";
+} from "../../../components/automation/index.ts";
 export type {
   AutomationStudioRecordCondition,
   AutomationStudioRecordConditionDateCase,
@@ -39,4 +31,4 @@ export type {
   AutomationStudioRecordSortReading,
   AutomationStudioRecordSortType,
   AutomationStudioRecordValueReadingCase
-} from "@fluxiq/contracts/automation-studio";
+} from "../../../components/automation/index.ts";

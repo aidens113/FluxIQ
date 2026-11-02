@@ -3,9 +3,9 @@
 // instruction the chat never showed.
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS, emitAutomationStudioBuildRequest } from "../build.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../scope.ts";
+import { AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS, emitAutomationStudioBuildRequest } from "../index.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

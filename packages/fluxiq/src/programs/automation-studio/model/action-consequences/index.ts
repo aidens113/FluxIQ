@@ -1,6 +1,11 @@
-export * from "./in-order.ts";
-export * from "./is-consequence.ts";
-export * from "./parse-permitted.ts";
-export * from "./phrases.ts";
-export * from "./types.ts";
-export * from "./values.ts";
+// Compatibility exports; the framework owns this implementation.
+export {
+  automationStudioConsequencesInOrder,
+  isAutomationStudioActionConsequence,
+  parseAutomationStudioPermittedConsequences,
+  AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES,
+  AUTOMATION_STUDIO_ACTION_CONSEQUENCES
+} from "../../../../components/automation/action-effect/consequences/index.ts";
+export type {
+  AutomationStudioActionConsequence
+} from "../../../../components/automation/action-effect/consequences/index.ts";

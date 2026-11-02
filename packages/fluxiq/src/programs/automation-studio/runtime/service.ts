@@ -2097,7 +2097,7 @@ export class AutomationStudioService {
     }
     for (const mapper of mappers) {
       const pass = await recordingProposalForMapper({
-        mapper, io: this.ioRuntime.io, elementMatcher: this.nativeNodeRuntime.elementMatcher,
+        mapper, io: this.ioRuntime.io, elementMatcher: this.nativeNodeRuntime.domainElementMatcher(domainId),
         projectId: project.id, domainId, recording, mapperTimeline, entryCounts,
         stateIndex: recordingStateIndex, noticeMetadata: openRecordingProposalNotice(recording).metadata
       });

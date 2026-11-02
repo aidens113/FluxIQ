@@ -6,11 +6,11 @@
 // parent's On Fail path takes; a graph with no check asks nothing.
 
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
-import { runAutomationStudioGraph } from "../../graph-run.ts";
-import { edge, HANDLER, HANDLER_END } from "./lifecycle-fixtures.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
+import { edge, HANDLER, HANDLER_END } from "../../../../../../engine/automation/lifecycle-run/tests/lifecycle-fixtures.ts";
 import { answering, factHost } from "./recovery-paths-fixtures.ts";
-import { fact, line, page, pageOptions, press } from "./wiring-fixtures.ts";
+import { fact, line, page, pageOptions, press } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 const stop = { onFailure: "stop" };
 const RESULT_GOOD = { "fluxiq.successCheck": [fact("result-good")] };

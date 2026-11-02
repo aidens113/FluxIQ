@@ -13,13 +13,13 @@ import { TEST_HOST_WORDS } from "../../../../../ui/activity-status/tests/test-ho
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "../../project-agents/supervisor/index.ts";
 import { structurePlan, taskSpec } from "../../project-agents/tests/fixtures.ts";
-import { withAutomationStudioBuildActivity } from "../build.ts";
+import { withAutomationStudioBuildActivity } from "../index.ts";
 import { automationStudioActivityCallContext } from "../call-context.ts";
 import { automationStudioActivityRefusedCall } from "../decision-answer/index.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
-import { observeAutomationStudioEvidenceLoop } from "../observer.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { observeAutomationStudioEvidenceLoop } from "../index.ts";
 import { emitAutomationStudioProjectPlanCard, emitAutomationStudioProjectReceiptCard } from "../project/index.ts";
-import { runWithAutomationStudioActivity } from "../scope.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
 import { automationStudioActivityToolCall } from "../wording/index.ts";
 
 let seen: ClientGatewayActivity[] = [];

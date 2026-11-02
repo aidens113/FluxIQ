@@ -6,12 +6,12 @@
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument } from "../../../../model/index.ts";
-import { runAutomationStudioGraph } from "../../graph-run.ts";
-import { edge } from "../../lifecycle-run/tests/lifecycle-fixtures.ts";
-import { repairer, STOP } from "../../lifecycle-run/tests/in-run-repair-fixtures.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../../engine/automation/tests/fixture-contracts.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
+import { edge } from "../../../../../../engine/automation/lifecycle-run/tests/lifecycle-fixtures.ts";
+import { repairer, STOP } from "../../../../../../engine/automation/lifecycle-run/tests/in-run-repair-fixtures.ts";
 import { withRows } from "../../lifecycle-run/tests/recovery-paths-fixtures.ts";
-import { closer, fact, line, page, pageOptions, press } from "../../lifecycle-run/tests/wiring-fixtures.ts";
+import { closer, fact, line, page, pageOptions, press } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 /** The ladder's last thought for `nodeId`: the row that says why it stopped and what comes next. */
 function ladderEnd(rows: readonly ClientGatewayActivity[], nodeId: string): string | undefined {

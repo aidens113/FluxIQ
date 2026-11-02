@@ -1,13 +1,2 @@
-export * from "./attempt.ts";
-export * from "./failure.ts";
-export * from "./attempt-inputs.ts";
-export * from "./shared-inputs.ts";
-export * from "./whole-inputs.ts";
-export * from "./recorded-effect.ts";
-export * from "./already-in-state.ts";
-export type { AutomationStudioClearedLayer, AutomationStudioClearedLayerKind } from "./cleared-layer.ts";
-export type { AutomationStudioObstruction, AutomationStudioObstructionIntent, AutomationStudioObstructionWayOut } from "./obstruction.ts";
-export * from "./result-path-outputs.ts";
-export * from "./layer-kind.ts";
-export * from "./obstruction-of.ts";
-export * from "./obstruction-way-out.ts";
+// Compatibility export; implementation belongs to the framework.
+export { AutomationStudioNodeAttemptExecution, automationStudioNodeAttemptFailure, automationStudioAttemptInputs, automationStudioTraceWithSharedInputs, automationStudioWithWholeAttemptInputs, AUTOMATION_STUDIO_RECORDED_EFFECT_UNSEEN_FAILURE, automationStudioAttemptWithRecordedEffect, automationStudioAttemptAlreadyInState, type AutomationStudioClearedLayer, type AutomationStudioClearedLayerKind, type AutomationStudioObstruction, type AutomationStudioObstructionIntent, type AutomationStudioObstructionWayOut, automationStudioResultPathOutputs, automationStudioLayerKindOf, automationStudioObstructionOf, automationStudioObstructionWayOut } from "../../../../../engine/automation/node-execution/index.ts";

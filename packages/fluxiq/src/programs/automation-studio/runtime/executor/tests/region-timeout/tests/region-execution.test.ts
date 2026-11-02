@@ -5,8 +5,8 @@
 // wall wait; the live environment's options carry none, so the region timeout
 // stays the real `setTimeout`, as before.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioNodeAttemptTrace } from "../../../index.ts";
-import { executeWithRegionTimeout } from "../../../region-execution.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../../../../engine/automation/index.ts";
+import { executeWithRegionTimeout } from "../../../../../../../engine/automation/regions/index.ts";
 import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironment } from "../../../../environment/index.ts";
 
 function attempt(status: AutomationStudioNodeAttemptTrace["status"], message: string): AutomationStudioNodeAttemptTrace {

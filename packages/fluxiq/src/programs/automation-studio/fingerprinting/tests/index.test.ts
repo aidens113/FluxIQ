@@ -1,18 +1,5 @@
-// What `fluxiq/automation-studio/fingerprinting` promises, and the promise a
-// machine has to keep.
-//
-// The subpath exists so a browser host -- a content script, a worker, anything
-// without a Node runtime -- can score element candidates with the same matcher
-// the framework scores them with, instead of writing a second one that drifts.
-// That is only true while the module graph behind the barrel stays free of
-// runtime imports: the top-level `fluxiq/automation-studio` barrel reaches
-// `node:crypto` and `node:perf_hooks` through `dsl/` and `testing/`, and a
-// browser bundler reports those as resolution errors before tree-shaking can
-// drop them.
-//
-// So the guarantee is checked here rather than written down. A value import
-// added to any module in this closure fails this test, which is the only thing
-// that stops the subpath quietly becoming Node-only again.
+// The legacy public subpath remains browser safe while forwarding generic
+// matching to its framework owner. Concrete web scoring is supplied by domains.
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -41,13 +28,14 @@ describe("the fingerprinting subpath", () => {
     });
   });
 
-  it("reaches no runtime import outside its own directory, so a browser can bundle it", async () => {
+  it("reaches only the neutral matching owner outside its compatibility directory", async () => {
     const closure = await runtimeClosure(path.join(fingerprintingDir, "index.ts"));
-    const escaping = closure.filter((file) => path.relative(fingerprintingDir, file).startsWith(".."));
+    const canonical = path.resolve(packageRoot, "src/runtime/target-matching");
+    const escaping = closure.filter((file) => path.relative(fingerprintingDir, file).startsWith("..") && path.relative(canonical, file).startsWith(".."));
     expect(escaping).toEqual([]);
   });
 
-  it("imports every module outside its directory as a type, and no Node built-in at all", async () => {
+  it("has no Node or external runtime imports in its browser-safe closure", async () => {
     const closure = await runtimeClosure(path.join(fingerprintingDir, "index.ts"));
     const offenders: string[] = [];
     for (const file of closure) {

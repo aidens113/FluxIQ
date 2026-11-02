@@ -1,3 +1,5 @@
+import { AUTOMATION_STUDIO_DEFAULT_MAX_REROUTES_PER_RUN, AUTOMATION_STUDIO_DEFAULT_MAX_RECOVERY_ATTEMPTS_PER_SUBFLOW, AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_INCIDENT, AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_RUN } from "../../../flows/executable/recovery/index.ts";
+export { AUTOMATION_STUDIO_DEFAULT_MAX_REROUTES_PER_RUN, AUTOMATION_STUDIO_DEFAULT_MAX_RECOVERY_ATTEMPTS_PER_SUBFLOW, AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_INCIDENT, AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_RUN } from "../../../flows/executable/recovery/index.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { EvidenceReference, AutomationStudioSchemaVersion } from "./evidence.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "./artifacts.ts";
@@ -8,10 +10,8 @@ import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "./flow-size/index.ts";
 import { AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY } from "./tokens-per-run/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD } from "./run-cost-ceiling/index.ts";
 
-/** The workspace in which a canonical Flow is authored and may execute. */
-export type AutomationStudioFlowScope =
-  | { kind: "global" }
-  | { kind: "domain"; domainId: string };
+export type { AutomationStudioFlowScope } from "../../../flows/executable/index.ts";
+import type { AutomationStudioFlowScope } from "../../../flows/executable/index.ts";
 
 /** Public Flows are reusable composite-node candidates within their scope. */
 export type AutomationStudioFlowVisibility = "private" | "public";
@@ -118,55 +118,24 @@ export function withAutomationStudioInterventionMode(metadata: JsonObject | unde
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+import type { AutomationStudioFlowValueType } from "../../../flows/executable/interface/index.ts";
+export type { AutomationStudioFlowValueType } from "../../../flows/executable/interface/index.ts";
 
-export type AutomationStudioFlowValueType =
-  | { kind: "string" }
-  | { kind: "number" }
-  | { kind: "boolean" }
-  | { kind: "null" }
-  | { kind: "json" }
-  | { kind: "unknown" }
-  | { kind: "array"; item: AutomationStudioFlowValueType }
-  | { kind: "record"; properties?: Record<string, AutomationStudioFlowValueType>; additionalProperties?: boolean }
-  | { kind: "schema"; schemaId: string; schemaVersion?: string };
+import type { AutomationStudioFlowPort } from "../../../flows/executable/interface/index.ts";
+export type { AutomationStudioFlowPort } from "../../../flows/executable/interface/index.ts";
 
-export type AutomationStudioFlowPort = {
-  id: string;
-  name: string;
-  valueType: AutomationStudioFlowValueType;
-  description?: string;
-  required?: boolean;
-  defaultValue?: JsonValue;
-  metadata?: JsonObject;
-};
+import type { AutomationStudioFlowInterface } from "../../../flows/executable/interface/index.ts";
+export type { AutomationStudioFlowInterface } from "../../../flows/executable/interface/index.ts";
 
-export type AutomationStudioFlowInterface = {
-  inputs: AutomationStudioFlowPort[];
-  outputs: AutomationStudioFlowPort[];
-};
+import type { AutomationStudioFlowErrorDefinition } from "../../../flows/executable/interface/index.ts";
+export type { AutomationStudioFlowErrorDefinition } from "../../../flows/executable/interface/index.ts";
 
-export type AutomationStudioFlowErrorDefinition = {
-  id: string;
-  description?: string;
-  metadata?: JsonObject;
-};
+import type { AutomationStudioFlowVariable } from "../../../flows/executable/interface/index.ts";
+export type { AutomationStudioFlowVariable } from "../../../flows/executable/interface/index.ts";
 
-export type AutomationStudioFlowVariable = {
-  id: string;
-  name: string;
-  valueType: AutomationStudioFlowValueType;
-  initialValue?: JsonValue;
-  description?: string;
-  metadata?: JsonObject;
-};
+import type { AutomationStudioFlowExecutionDefaults } from "../../../flows/executable/interface/index.ts";
+export type { AutomationStudioFlowExecutionDefaults } from "../../../flows/executable/interface/index.ts";
 
-export type AutomationStudioFlowExecutionDefaults = {
-  timeoutMs?: number;
-  maxConcurrency?: number;
-  /** Explicit domain grants required for a global Flow to call a domain Flow. */
-  authorizedDomainIds?: string[];
-  metadata?: JsonObject;
-};
 
 export type AutomationStudioFlowPublication =
   | { status: "draft" }
@@ -222,24 +191,6 @@ export type AutomationStudioFlowArtifact = {
   updatedAt: number;
   metadata?: JsonObject;
 };
-
-// The run-level recovery budget's defaults (state-aware recovery plan, C7), one
-// named constant each. The budget is one ledger for the whole run, carried
-// across Subflow frames and never reset by entering or leaving one; it never
-// lowers a node below its four attempts and never counts an optional step's
-// way on. `runtime/executor/lifecycle/budget.ts` reads these.
-
-/** Routes to a checkpoint, and authored failed routes and reroutes, per run. */
-export const AUTOMATION_STUDIO_DEFAULT_MAX_REROUTES_PER_RUN = 2;
-
-/** Known alternatives tried per incident (stored as `maxRecoveryAttemptsPerSubflow`). */
-export const AUTOMATION_STUDIO_DEFAULT_MAX_RECOVERY_ATTEMPTS_PER_SUBFLOW = 2;
-
-/** Handler runs for one recovery incident. */
-export const AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_INCIDENT = 3;
-
-/** Handler runs in one whole run, every frame included. */
-export const AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_RUN = 12;
 
 /**
  * What a Flow nobody has configured is allowed to do about itself.

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS, type ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
-import { emitAutomationStudioActivityStepSkipped } from "../skipped.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
+import { emitAutomationStudioActivityStepSkipped } from "../index.ts";
 
 // t416: a step skipped rather than run says so in a closed field, so a client
 // never has to tell it from the row's shape.

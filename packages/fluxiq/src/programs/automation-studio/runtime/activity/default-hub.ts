@@ -1,4 +1,2 @@
-import { AutomationStudioActivityHub } from "./hub.ts";
-
-/** The one hub every emission in this process publishes to. */
-export const automationStudioActivityHub = new AutomationStudioActivityHub();
+// Compatibility export; implementation belongs to the framework.
+export { automationStudioActivityHub } from "../../../../runtime/activity/index.ts";

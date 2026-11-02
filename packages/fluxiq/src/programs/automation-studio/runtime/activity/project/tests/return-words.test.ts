@@ -4,9 +4,9 @@
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { brief, builderReturn, structurePlan, taskSpec } from "../../../project-agents/tests/fixtures.ts";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { boundedAutomationStudioProjectCard } from "../../project-card-bounds.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { boundedAutomationStudioProjectCard } from "../../../../../../runtime/activity/index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
 import { emitAutomationStudioProjectBriefCard, emitAutomationStudioProjectReturnCard } from "../index.ts";
 import { automationStudioProjectReturnWords } from "../return-words.ts";
 

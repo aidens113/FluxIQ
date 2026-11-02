@@ -3,14 +3,16 @@
 // was failed `executor.graph.unvisited_nodes`, which the model was told was a wiring fault. A loop that ran no passes
 // is a valid ending; a node the run still owed is not excused by it.
 import { describe, expect, it } from "vitest";
-import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowDocument, type AutomationStudioFlowNode } from "../../../../model/index.ts";
-import { AutomationStudioNodeRegistry, type AutomationNodePort } from "../../../../nodes/index.ts";
+import { createBlankAutomationStudioFlowArtifact } from "../../../../model/index.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import { AutomationStudioNodeRegistry, type AutomationNodePort } from "../../../../../../components/automation/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, normalizeAutomationStudioFlowBuildPlan, validateAutomationStudioFlowBootstrapPlan } from "../../../flow-bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
-import { hasUnvisitedAutomationStudioNodes } from "../../graph-navigation.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../../../../../engine/automation/index.ts";
+import { hasUnvisitedAutomationStudioNodes } from "../../../../../../engine/automation/graph-navigation/index.ts";
 import { runAutomationStudioGraph } from "../../index.ts";
-import { automationStudioZeroPassLoopBodies } from "../index.ts";
+import { automationStudioZeroPassLoopBodies } from "../../../../../../engine/automation/graph-navigation/index.ts";
 
 const edge = (sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId = "in") => ({ id: `${sourceNodeId}.${sourcePortId}.${targetNodeId}`, sourceNodeId, sourcePortId, targetNodeId, targetPortId });
 const constant = (id: string, value: unknown = id): AutomationStudioFlowNode => ({ id, definitionId: "builtin.data.constant", parameterValues: { value } } as AutomationStudioFlowNode);

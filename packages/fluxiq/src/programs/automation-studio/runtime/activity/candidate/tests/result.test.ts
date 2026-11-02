@@ -3,7 +3,7 @@
 // revision, a digest, a run id, a node id, a code or a handle (t362).
 import { describe, expect, it } from "vitest";
 import { automationStudioActivityCandidateResult } from "../index.ts";
-import { automationStudioActivityRunRefused } from "../run-refused.ts";
+import { automationStudioActivityRunRefused } from "../index.ts";
 
 const INTERNAL = /core\.|revision|digest|\bcandidate\b|trial_|run\.|web\.|flow_bootstrap|\bt\d{2,}\b|[0-9a-f]{16,}/iu;
 const ran = (evidence: Record<string, unknown>, resultCode?: string) => ({ kind: "llm_evidence_tool_execution", evidence, effectApplied: false, ...(resultCode ? { resultCode } : {}) });

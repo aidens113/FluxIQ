@@ -5,8 +5,8 @@
 
 import { afterEach, beforeEach, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { withAutomationStudioBuildActivity } from "../build.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
+import { withAutomationStudioBuildActivity } from "../index.ts";
+import { automationStudioActivityHub } from "../index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 
 let seen: ClientGatewayActivity[] = [];

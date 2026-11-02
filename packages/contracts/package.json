@@ -1,6 +1,6 @@
 {
   "name": "@fluxiq/contracts",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Browser-safe shared contracts for FluxIQ programs, clients, and recording integrations.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -8,6 +8,9 @@
   "engines": { "node": ">=22" },
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./runtime": { "types": "./dist/runtime.d.ts", "import": "./dist/runtime.js" },
+    "./records": { "types": "./dist/records.d.ts", "import": "./dist/records.js" },
+    "./recording-capture": { "types": "./dist/recording-capture.d.ts", "import": "./dist/recording-capture.js" },
     "./core": { "types": "./dist/core.d.ts", "import": "./dist/core.js" },
     "./client-gateway": { "types": "./dist/client-gateway.d.ts", "import": "./dist/client-gateway.js" },
     "./program-api": { "types": "./dist/program-api.d.ts", "import": "./dist/program-api.js" },

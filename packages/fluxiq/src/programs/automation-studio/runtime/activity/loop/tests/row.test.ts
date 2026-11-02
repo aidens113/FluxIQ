@@ -3,8 +3,8 @@
 // refused press and its retry could not be told from the next row's.
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
 import { emitAutomationStudioActivityStep } from "../../step/index.ts";
 import { automationStudioActivityLoopWords } from "../index.ts";
 

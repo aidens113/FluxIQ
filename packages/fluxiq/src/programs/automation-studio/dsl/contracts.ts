@@ -32,25 +32,7 @@ export type AutomationStudioFlowDefinition = {
   dependencies?: AutomationStudioFlowDependency[];
 };
 
-export type AutomationStudioFlowSourceLocation = { moduleId: string; line: number; column: number };
-export type AutomationStudioFlowCompilerDiagnostic = {
-  severity: "error" | "warning" | "info";
-  code: string;
-  message: string;
-  path?: string;
-  location?: AutomationStudioFlowSourceLocation;
-  remediation?: string;
-};
-
-export type AutomationStudioCompiledFlowPlan = {
-  schemaVersion: "0.1";
-  compilerVersion: "0.1";
-  digest: string;
-  flow: AutomationStudioFlowArtifact;
-  nodeRegionIds: Record<string, string>;
-  dependencyPins: AutomationStudioFlowDependency[];
-};
-
-export type AutomationStudioFlowCompilation =
-  | { ok: true; diagnostics: AutomationStudioFlowCompilerDiagnostic[]; plan: AutomationStudioCompiledFlowPlan }
-  | { ok: false; diagnostics: AutomationStudioFlowCompilerDiagnostic[] };
+export type { FlowSourceLocation as AutomationStudioFlowSourceLocation, FlowCompilerDiagnostic as AutomationStudioFlowCompilerDiagnostic } from "../../../flows/executable/dsl/index.ts";
+import type { CompiledFlowPlan, FlowCompilation } from "../../../flows/executable/dsl/index.ts";
+export type AutomationStudioCompiledFlowPlan = CompiledFlowPlan<AutomationStudioFlowArtifact>;
+export type AutomationStudioFlowCompilation = FlowCompilation<AutomationStudioFlowArtifact>;

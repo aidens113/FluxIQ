@@ -5,9 +5,9 @@
 // a route to a calling frame's checkpoint unwinds the child and continues there.
 
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
 import { checkpoint, factHost, failingFirst, framedRun, lasting, recoveryRows, withRows } from "./recovery-paths-fixtures.ts";
-import { closer, fact, landedCounts, line, page, pageOptions, press } from "./wiring-fixtures.ts";
+import { closer, fact, landedCounts, line, page, pageOptions, press } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 const stop = { onFailure: "stop" };
 

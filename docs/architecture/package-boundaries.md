@@ -27,6 +27,11 @@ naming and branding.
 
 ## Exports And Builds
 
+The neutral browser-safe contract entry points `@fluxiq/contracts/runtime`,
+`@fluxiq/contracts/records` and `@fluxiq/contracts/recording-capture` own
+result control, record processing/datasets and capture policy. The legacy
+Automation Studio contract entry point reexports the same authorities for compatibility.
+
 All packages are ESM-only and expose conditional `types` and `import` entries
 from `dist/`. Relative source imports use TypeScript extensions during local
 development and are rewritten to JavaScript extensions in emitted code and
@@ -53,34 +58,13 @@ subpath instead of reaching into runtime source or importing the Node-oriented
 `fluxiq/automation-studio` barrel; permission declaration, gating, instruction
 authority, services, and storage remain server-only implementation surfaces.
 
-`fluxiq` is a Node.js package, but one of its subpaths is not. The runtime is
-the only place the element matcher lives, and a host that scores element
-candidates does so where the elements are — in a browser. So
-`fluxiq/automation-studio/fingerprinting` publishes the fingerprint contracts
-and `createAutomationStudioElementMatcher` on their own, away from the
-`fluxiq/automation-studio` barrel, which reaches `node:crypto` and
-`node:perf_hooks` through `dsl/` and `testing/` and therefore cannot be
-resolved by a browser bundler at all. The subpath's compiled graph is three
-files with no runtime imports of any kind; that is not a claim about today's
-code but an invariant, checked by
-`src/programs/automation-studio/fingerprinting/tests/index.test.ts`, which
-fails if any module in the closure gains a value import. The alternative — a
-second matcher written in the browser host — would give two different answers
-to the same question within a release.
+`fluxiq/runtime/target-matching` publishes browser-safe neutral matching contracts, score aggregation and state identity matching. It does not interpret selectors, XPath, HTML tags, URL metadata, classes or attributes. Domains register their matcher explicitly for importer, recording and output dispatch contexts. Without a registered matcher, Core delegates unresolved target selection to the host rather than choosing with an incomplete score.
 
-Two of that matcher's scoring constants are no longer Core's to change alone.
-`MISSING_STABLE_IDENTIFIER_SIMILARITY` (−0.1) and
-`CONTRADICTED_STABLE_IDENTIFIER_SIMILARITY` (−0.8) in
-`fingerprinting/element-fingerprint.ts` are calibrated against a spec in the
-downstream FluxIQ Web Extension repository: returning the first to its former
-−0.55 was measured there to turn the `reworded-aria` case in
-`apps/extension/e2e/content/tests/identity-resolution.spec.ts` red. Changing
-either weight is therefore a cross-repository change. Re-measure that spec, push
-both `dev` branches in the same work unit, and give the release a minor version
-and a migration note — these numbers reach a consumer as `confidence`, and the
-runtime's own safety gates read it.
+The web domain owns its calibrated comparisons and snapshot projection under `domain/src/element-fingerprint/` in the downstream repository. The extension and domain use that single implementation. Its missing/contradicted stable-identifier similarities remain -0.1 and -0.8; the ownership migration preserves these values. Web identity regressions are validated downstream.
 
-`fluxiq/automation-studio/nodes` is the other browser-safe seam for contract
+The legacy `fluxiq/automation-studio/fingerprinting` subpath remains a browser-safe compatibility surface for its names and serialized shapes. Its zero-argument factory now performs neutral state matching; callers requiring web comparisons must provide/register the downstream web matcher. Core never imports a downstream implementation. See [runtime ownership](runtime-ownership.md) for the migration map.
+
+`fluxiq/components/automation` is the browser-safe node seam (the legacy `fluxiq/automation-studio/nodes` export remains compatible) for contract
 logic a browser host must not restate. Since t728 it re-exports by name, from
 `@fluxiq/contracts/automation-studio`, record processing
 (`nodes/record-process.ts`): the condition, sort and presence vocabularies,

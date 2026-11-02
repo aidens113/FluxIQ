@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityLeftTold } from "../left-told.ts";
+import { automationStudioActivityLeftTold } from "../index.ts";
 
 // What a build left on the site, as the person reads it (t567 lane 4). A failed
 // build's chat listed every press in the ledger's words -- the same link four

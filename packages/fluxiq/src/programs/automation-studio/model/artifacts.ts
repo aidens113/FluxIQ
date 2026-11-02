@@ -6,28 +6,12 @@ export type AutomationStudioProjectArtifactKind = "task" | "routine" | "config" 
 
 /** @deprecated Ownership is retained only for legacy Flow-document compatibility. */
 export type AutomationStudioFlowOwnerKind = "task" | "routine" | "policy";
+import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
+export type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 
-export type AutomationStudioFlowNode = {
-  id: string;
-  definitionId: string;
-  /** Exact node-definition version used to author this instance. Optional only for legacy documents. */
-  definitionVersion?: string;
-  label?: string;
-  description?: string;
-  parameterValues?: JsonObject;
-  position?: { x: number; y: number };
-  metadata?: JsonObject;
-};
+import type { AutomationStudioFlowEdge } from "../../../flows/executable/graph/index.ts";
+export type { AutomationStudioFlowEdge } from "../../../flows/executable/graph/index.ts";
 
-export type AutomationStudioFlowEdge = {
-  id: string;
-  sourceNodeId: string;
-  targetNodeId: string;
-  sourcePortId?: string;
-  targetPortId?: string;
-  label?: string;
-  metadata?: JsonObject;
-};
 
 /** @deprecated Use owner-independent AutomationStudioFlowArtifact for new writes. */
 export type AutomationStudioFlowDocument = {

@@ -13,6 +13,26 @@ export const CONFIG = {
   // Import specifiers that must never appear in this repository's sources.
   forbiddenImports: [
     {
+      from: "packages/fluxiq/src/runtime",
+      pattern: /(?:@fluxiq\/contracts\/automation-studio|programs\/automation-studio|^fluxiq\/automation-studio(?:\/|$))/,
+      reason: "The framework runtime owns generic execution contracts. Import @fluxiq/contracts/runtime; Automation Studio adapts to the framework runtime, never the reverse."
+    },
+    {
+      from: "packages/fluxiq/src/components/automation",
+      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation-studio(?:\/|$)/,
+      reason: "Framework nodes use neutral runtime, records and recording-capture contracts, without a Studio dependency."
+    },
+    {
+      from: "packages/fluxiq/src/engine/automation",
+      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation-studio(?:\/|$)/,
+      reason: "Graph execution uses neutral runtime and record contracts, without a Studio dependency."
+    },
+    {
+      from: "packages/fluxiq/src/flows/executable",
+      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation-studio(?:\/|$)/,
+      reason: "Executable graph contracts and compilation must be usable without Studio."
+    },
+    {
       pattern: /fluxiq-web-extension|FluxIQWebExtension/i,
       reason: "FluxIQ Core must never import a downstream domain repository."
     },
@@ -44,6 +64,26 @@ export const CONFIG = {
   // `import "..."` for effect, or a dynamic `import()`.
   importBoundaries: [
     {
+      from: "packages/fluxiq/src/components/automation",
+      to: "packages/fluxiq/src/programs/automation-studio",
+      reason: "Automation nodes are framework capabilities; Studio composes the node pack and must not own any dependency of it."
+    },
+    {
+      from: "packages/fluxiq/src/flows/executable",
+      to: "packages/fluxiq/src/programs/automation-studio",
+      reason: "Executable flow contracts are framework-owned; editor and project models adapt to these contracts."
+    },
+    {
+      from: "packages/fluxiq/src/engine/automation",
+      to: "packages/fluxiq/src/programs/automation-studio",
+      reason: "The automation executor is framework-owned; program composition and persistence cannot be dependencies of the engine."
+    },
+    {
+      from: "packages/fluxiq/src/runtime/automation-host",
+      to: "packages/fluxiq/src/engine/automation",
+      reason: "Host ports own the contracts consumed by the engine; they cannot depend back on the executor."
+    },
+    {
       from: "packages/fluxiq/src/programs/automation-studio/runtime/llm",
       to: "packages/fluxiq/src/programs/automation-studio/runtime/recovery",
       valueOnly: true,
@@ -66,6 +106,9 @@ export const CONFIG = {
   browserBundles: {
     consumer: "the web extension's browser bundles",
     entries: [
+      "packages/fluxiq/src/components/automation/index.ts",
+      "packages/fluxiq/src/components/automation/action-effect/index.ts",
+      "packages/fluxiq/src/runtime/target-matching/index.ts",
       "packages/fluxiq/src/programs/automation-studio/nodes/index.ts",
       "packages/fluxiq/src/programs/automation-studio/nodes/action-effect/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/actionability/index.ts",
@@ -174,6 +217,21 @@ export const CONFIG = {
   // trial gates' offline-first words and contract (P6, t769). `to`
   // is everything that holds or replays a recorded gateway trace.
   reachBoundaries: [
+    {
+      name: "program-independent execution capabilities",
+      from: [
+        "packages/fluxiq/src/components/automation/",
+        "packages/fluxiq/src/flows/executable/",
+        "packages/fluxiq/src/engine/automation/",
+        "packages/fluxiq/src/runtime/automation-host/",
+        "packages/fluxiq/src/runtime/models/",
+        "packages/fluxiq/src/runtime/agents/",
+        "packages/fluxiq/src/runtime/target-matching/"
+      ],
+      to: ["packages/fluxiq/src/programs/automation-studio/"],
+      reason: "Reusable runtime capabilities must remain usable without Automation Studio; legacy program APIs delegate toward these owners.",
+      remedy: "Move shared contracts into their framework owner or inject the program adapter through an explicit port."
+    },
     {
       name: "trace-free model guidance",
       from: [

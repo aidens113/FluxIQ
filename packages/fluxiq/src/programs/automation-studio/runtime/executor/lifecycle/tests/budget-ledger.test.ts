@@ -1,17 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../../core/index.ts";
-import {
-  AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_INCIDENT,
-  AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_RUN,
-  AUTOMATION_STUDIO_DEFAULT_MAX_RECOVERY_ATTEMPTS_PER_SUBFLOW,
-  AUTOMATION_STUDIO_DEFAULT_MAX_REROUTES_PER_RUN,
-  defaultAutomationStudioFlowSettingsMetadata,
-  type AutomationStudioFlowDocument
-} from "../../../../model/index.ts";
-import { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioNodeRetryPolicy } from "../../retry-policy.ts";
-import { automationStudioLifecycleBudget } from "../budget.ts";
-import { AUTOMATION_STUDIO_EMPTY_LIFECYCLE_LEDGER, chargeAutomationStudioLifecycleBudget, type AutomationStudioLifecycleCharge, type AutomationStudioLifecycleLedger } from "../budget-ledger.ts";
-import { automationStudioHandlerOccurrenceKey } from "../incident.ts";
+import { AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_INCIDENT, AUTOMATION_STUDIO_DEFAULT_MAX_HANDLER_RUNS_PER_RUN, AUTOMATION_STUDIO_DEFAULT_MAX_RECOVERY_ATTEMPTS_PER_SUBFLOW, AUTOMATION_STUDIO_DEFAULT_MAX_REROUTES_PER_RUN } from "../../../../../../engine/automation/recovery/index.ts";
+import { defaultAutomationStudioFlowSettingsMetadata } from "../../../../model/index.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../../engine/automation/tests/fixture-contracts.ts";
+import { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioNodeRetryPolicy } from "../../../../../../engine/automation/index.ts";
+import { automationStudioLifecycleBudget } from "../../../../../../engine/automation/lifecycle/index.ts";
+import { AUTOMATION_STUDIO_EMPTY_LIFECYCLE_LEDGER, chargeAutomationStudioLifecycleBudget, type AutomationStudioLifecycleCharge, type AutomationStudioLifecycleLedger } from "../../../../../../engine/automation/lifecycle/index.ts";
+import { automationStudioHandlerOccurrenceKey } from "../../../../../../engine/automation/lifecycle/index.ts";
 
 const budget = automationStudioLifecycleBudget();
 

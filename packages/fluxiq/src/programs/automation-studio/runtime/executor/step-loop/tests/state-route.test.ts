@@ -12,9 +12,9 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../../../host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../../../../runtime/automation-host/index.ts";
 import { factHost, framedRun } from "../../lifecycle-run/tests/recovery-paths-fixtures.ts";
-import { closer, fact, line, page, pageOptions, press, type Page } from "../../lifecycle-run/tests/wiring-fixtures.ts";
+import { closer, fact, line, page, pageOptions, press, type Page } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 /** "choose store", with the effect its recording left: what the page gained, by name. */
 const chooseStore = () => press("choose", "choose", { routeSignatures: { effect: { shows: "Millbrook" } } });

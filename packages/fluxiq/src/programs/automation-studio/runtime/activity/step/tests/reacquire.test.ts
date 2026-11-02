@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { personFacingTextFaults } from "../../../../../../ui/index.ts";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
-import { emitAutomationStudioActivityStepReacquire } from "../reacquire.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
+import { emitAutomationStudioActivityStepReacquire } from "../index.ts";
 
 // t786, D8: a stale target found again, or found gone, is said as one step
 // recovery in Core's own words, naming the source step by its label at most.

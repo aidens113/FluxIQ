@@ -1,3 +1,4 @@
-export function collectionName(value: unknown): string {
-  return String(value ?? "").trim();
-}
+// Compatibility exports; the framework owns this implementation.
+export {
+  collectionName
+} from "../../../../components/automation/database/index.ts";

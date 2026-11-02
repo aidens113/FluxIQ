@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
-import { automationStudioActivityHub } from "../default-hub.ts";
-import { observeAutomationStudioEvidenceLoop } from "../observer.ts";
-import { runWithAutomationStudioActivity } from "../scope.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { observeAutomationStudioEvidenceLoop } from "../index.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
 import { emitAutomationStudioActivityStep } from "../step/index.ts";
 
 /** A dotted id such as `core.run_node`: never in a sentence a person reads. */

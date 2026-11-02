@@ -1,6 +1,4 @@
-import type { JsonValue } from "../../../../core/index.ts";
-
-export function jsonParameter(value: unknown, fallback: JsonValue): JsonValue {
-  if (value === undefined) return fallback;
-  return value as JsonValue;
-}
+// Compatibility exports; the framework owns this implementation.
+export {
+  jsonParameter
+} from "../../../../components/automation/policy/index.ts";

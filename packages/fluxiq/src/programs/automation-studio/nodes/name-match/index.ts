@@ -1,11 +1,17 @@
-export * from "./candidate.ts";
-export * from "./edit-distance.ts";
-export * from "./match.ts";
-export * from "./match-name.ts";
-export * from "./normalize.ts";
-export * from "./score-floor.ts";
-export * from "./similarity.ts";
-export * from "./synonyms.ts";
-export * from "./token-credit.ts";
-export * from "./token-overlap.ts";
-export * from "./value-shape.ts";
+// Compatibility exports; the framework owns this implementation.
+export {
+  automationStudioNameEditDistance,
+  automationStudioMatchName,
+  normalizeAutomationStudioName,
+  AUTOMATION_STUDIO_NAME_MATCH_SCORE_FLOOR,
+  automationStudioNameSimilarity,
+  automationStudioNameSynonymCredit,
+  automationStudioNameTokenCredit,
+  automationStudioNameTokenOverlap
+} from "../../../../components/automation/name-match/index.ts";
+export type {
+  AutomationStudioNameCandidate,
+  AutomationStudioNameMatch,
+  AutomationStudioNameTokenOverlapResult,
+  AutomationStudioNameValueShape
+} from "../../../../components/automation/name-match/index.ts";

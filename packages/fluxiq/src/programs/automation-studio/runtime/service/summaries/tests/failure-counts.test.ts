@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
-import { failingAtRow, REFUSED, repairer, replacing, rowsFlow, rowsRun, STOP } from "../../../executor/lifecycle-run/tests/in-run-repair-fixtures.ts";
+import { failingAtRow, REFUSED, repairer, replacing, rowsFlow, rowsRun, STOP } from "../../../../../../engine/automation/lifecycle-run/tests/in-run-repair-fixtures.ts";
 import { retryPlannedTrue } from "../../../executor/lifecycle-run/tests/recovery-paths-fixtures.ts";
-import { press } from "../../../executor/lifecycle-run/tests/wiring-fixtures.ts";
+import { press } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 import { automationStudioRunFailureCounts, runtimeSessionToFlowRunDetail } from "../index.ts";
 
 // Retries, planned fails and true failures, counted for every run from the

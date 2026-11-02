@@ -5,14 +5,15 @@
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../model/index.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/index.ts";
-import type { AutomationStudioFactEvaluationContext, AutomationStudioHostRuntimeBoundary } from "../../../host-runtime.ts";
-import type { AutomationStudioGraphExecutionOptions } from "../../contracts.ts";
-import { automationStudioRootInvocation } from "../../frames/index.ts";
-import { runAutomationStudioGraph } from "../../graph-run.ts";
-import { edge } from "./lifecycle-fixtures.ts";
-import { line, page, pageOptions, press, type Page } from "./wiring-fixtures.ts";
+import type { AutomationStudioFactEvaluationContext, AutomationStudioHostRuntimeBoundary } from "../../../../../../runtime/automation-host/index.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../../../../../../engine/automation/index.ts";
+import { automationStudioRootInvocation } from "../../../../../../engine/automation/frames/index.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
+import { edge } from "../../../../../../engine/automation/lifecycle-run/tests/lifecycle-fixtures.ts";
+import { line, page, pageOptions, press, type Page } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 /** What a named fact answers, given what the host was told about the run. */
 export type FactAnswer = (fact: string, context: AutomationStudioFactEvaluationContext) => "true" | "false" | "unknown";

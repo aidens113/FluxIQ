@@ -1,30 +1,10 @@
-export type AutomationStudioValidationSeverity = "error" | "warning" | "info";
-
-export type AutomationStudioValidationIssue = {
-  severity: AutomationStudioValidationSeverity;
-  code: string;
-  message: string;
-  path: string;
-};
-
-export type AutomationStudioValidationResult = {
-  ok: boolean;
-  issues: AutomationStudioValidationIssue[];
-};
-
-export function addIssue(
-  issues: AutomationStudioValidationIssue[],
-  severity: AutomationStudioValidationSeverity,
-  code: string,
-  message: string,
-  path: string
-): void {
-  issues.push({ severity, code, message, path });
-}
-
-export function result(issues: AutomationStudioValidationIssue[]): AutomationStudioValidationResult {
-  return {
-    ok: issues.every((issue) => issue.severity !== "error"),
-    issues
-  };
-}
+// Compatibility exports; the framework owns this implementation.
+export {
+  addIssue,
+  result
+} from "../../../../flows/executable/validation/index.ts";
+export type {
+  AutomationStudioValidationSeverity,
+  AutomationStudioValidationIssue,
+  AutomationStudioValidationResult
+} from "../../../../flows/executable/validation/index.ts";

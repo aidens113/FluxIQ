@@ -3,7 +3,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowInterface, AutomationStudioFlowScope } from "./flows.ts";
 import type { AutomationStudioFlowNode } from "./artifacts.ts";
 import type { AutomationStudioValidationIssue, AutomationStudioValidationResult } from "./validation.ts";
-import type { AutomationStudioNodeDefinition } from "../nodes/definitions.ts";
+import type { AutomationStudioNodeDefinition } from "../nodes/index.ts";
 
 export type AutomationStudioPublishedFlowSnapshot = {
   schemaVersion: "0.1";
@@ -40,12 +40,18 @@ export type AutomationStudioFlowPublicationRecord = {
   deprecatedAt?: number;
   deprecationReason?: string;
 };
+import type { AutomationStudioCallFlowTarget } from "../../../flows/executable/composite/index.ts";
+export type { AutomationStudioCallFlowTarget } from "../../../flows/executable/composite/index.ts";
 
-export type AutomationStudioCallFlowTarget = { flowId: string; version: string; scope: AutomationStudioFlowScope };
-export type AutomationStudioCallFlowBinding = { targetPortId: string; valueKey: string };
-export type AutomationStudioCallFlowConfiguration = { target: AutomationStudioCallFlowTarget; inputBindings?: AutomationStudioCallFlowBinding[]; outputBindings?: AutomationStudioCallFlowBinding[]; errorBindings?: AutomationStudioCallFlowBinding[] };
+import type { AutomationStudioCallFlowBinding } from "../../../flows/executable/composite/index.ts";
+export type { AutomationStudioCallFlowBinding } from "../../../flows/executable/composite/index.ts";
 
-const callFlowMetadataKey = "fluxiq.callFlow";
+import type { AutomationStudioCallFlowConfiguration } from "../../../flows/executable/composite/index.ts";
+export type { AutomationStudioCallFlowConfiguration } from "../../../flows/executable/composite/index.ts";
+
+
+import { CALL_FLOW_METADATA_KEY as callFlowMetadataKey, getCallFlowConfiguration } from "../../../flows/executable/composite/index.ts";
+export { getCallFlowConfiguration } from "../../../flows/executable/composite/index.ts";
 
 export function createPublishedFlowSnapshot(flow: AutomationStudioFlowArtifact, version: string, publishedAt = Date.now(), metadata: { publishedBy?: string; changelog?: string; dependencyDigests?: Map<string, string>; requiredRuntimeCapabilities?: Iterable<string> } = {}): AutomationStudioPublishedFlowSnapshot {
   const interfaceSnapshot = structuredClone(flow.interface);
@@ -84,18 +90,6 @@ export function projectPublishedFlowSnapshotToNodeDefinition(snapshot: Automatio
 export function createCallFlowNode(input: { id: string; target: AutomationStudioCallFlowTarget; label?: string; position?: { x: number; y: number }; inputBindings?: AutomationStudioCallFlowBinding[]; outputBindings?: AutomationStudioCallFlowBinding[]; errorBindings?: AutomationStudioCallFlowBinding[] }): AutomationStudioFlowNode {
   const configuration: AutomationStudioCallFlowConfiguration = { target: structuredClone(input.target), ...(input.inputBindings?.length ? { inputBindings: structuredClone(input.inputBindings) } : {}), ...(input.outputBindings?.length ? { outputBindings: structuredClone(input.outputBindings) } : {}), ...(input.errorBindings?.length ? { errorBindings: structuredClone(input.errorBindings) } : {}) };
   return { id: input.id, definitionId: compositeNodeDefinitionId(input.target), definitionVersion: input.target.version, ...(input.label ? { label: input.label } : {}), ...(input.position ? { position: input.position } : {}), metadata: { [callFlowMetadataKey]: configuration } as JsonObject };
-}
-
-export function getCallFlowConfiguration(node: AutomationStudioFlowNode): AutomationStudioCallFlowConfiguration | null {
-  const value = node.metadata?.[callFlowMetadataKey];
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const target = (value as Record<string, unknown>).target;
-  if (!target || typeof target !== "object" || Array.isArray(target)) return null;
-  const targetValue = target as Record<string, unknown>;
-  const scope = targetValue.scope;
-  if (typeof targetValue.flowId !== "string" || typeof targetValue.version !== "string" || !isFlowScope(scope)) return null;
-  const configuration = value as Record<string, unknown>;
-  return { target: { flowId: targetValue.flowId, version: targetValue.version, scope }, ...readBindings(configuration, "inputBindings"), ...readBindings(configuration, "outputBindings"), ...readBindings(configuration, "errorBindings") };
 }
 
 export function validateFlowComposition(input: { flow: AutomationStudioFlowArtifact; publishedSnapshots: AutomationStudioPublishedFlowSnapshot[]; deprecatedPublicationIds?: Iterable<string>; authorizedDomainIds?: Iterable<string>; runtimeCapabilities?: Iterable<string> }): AutomationStudioValidationResult {
@@ -144,18 +138,12 @@ function validateBindings(bindings: AutomationStudioCallFlowBinding[] | undefine
     if (!binding.valueKey.trim()) issues.push({ severity: "error", code: "flow.call_binding_missing_value", message: "Call Flow bindings must have a value key.", path: `${path}.${index}.valueKey` });
   }
 }
-function readBindings(value: Record<string, unknown>, key: "inputBindings" | "outputBindings" | "errorBindings"): Partial<Pick<AutomationStudioCallFlowConfiguration, typeof key>> {
-  const bindings = value[key]; if (!Array.isArray(bindings)) return {};
-  const valid = bindings.filter((item): item is AutomationStudioCallFlowBinding => Boolean(item && typeof item === "object" && typeof (item as Record<string, unknown>).targetPortId === "string" && typeof (item as Record<string, unknown>).valueKey === "string"));
-  return valid.length ? { [key]: valid } : {};
-}
 function sameScope(left: AutomationStudioFlowScope, right: AutomationStudioFlowScope): boolean { return left.kind === right.kind && (left.kind === "global" || left.domainId === (right as { domainId: string }).domainId); }
 function compositionScopeAllows(caller: AutomationStudioFlowScope, target: AutomationStudioFlowScope, authorizedDomainIds: Iterable<string> | undefined): boolean {
   if (sameScope(caller, target)) return true;
   if (caller.kind === "domain" && target.kind === "global") return true;
   return caller.kind === "global" && target.kind === "domain" && new Set(authorizedDomainIds ?? []).has(target.domainId);
 }
-function isFlowScope(value: unknown): value is AutomationStudioFlowScope { return Boolean(value && typeof value === "object" && !Array.isArray(value) && (((value as { kind?: unknown }).kind === "global") || ((value as { kind?: unknown }).kind === "domain" && typeof (value as { domainId?: unknown }).domainId === "string"))); }
 function flowValueTypeToNodeValueType(value: AutomationStudioFlowArtifact["interface"]["inputs"][number]["valueType"]): "string" | "number" | "boolean" | "object" | "array" | "any" { if (value.kind === "string") return "string"; if (value.kind === "number") return "number"; if (value.kind === "boolean") return "boolean"; if (value.kind === "array") return "array"; if (value.kind === "record" || value.kind === "schema" || value.kind === "json") return "object"; return "any"; }
 function digestFlowPublication(value: unknown): string { return `sha256:${createHash("sha256").update(stableStringify(value)).digest("hex")}`; }
 function stableStringify(value: unknown): string { if (value === null || typeof value !== "object") return JSON.stringify(value); if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`; const record = value as Record<string, unknown>; return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`; }

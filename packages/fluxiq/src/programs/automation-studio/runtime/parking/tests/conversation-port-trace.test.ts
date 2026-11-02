@@ -11,8 +11,8 @@ import type { ClientGatewayTraceEvent } from "../../../../../client-gateway/inde
 import type { AutomationStudioConversationAsk } from "../../conversations/index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../../gateway-trace/index.ts";
 import { episode, newEpisodes, storedEvents, type EpisodesHarness } from "../../gateway-trace/tests/episode-builders.ts";
-import type { AutomationStudioAsk } from "../ask.ts";
-import { automationStudioConversationParkingPort, type AutomationStudioConversationParkingHost } from "../conversation-port.ts";
+import type { AutomationStudioAsk } from "../index.ts";
+import { automationStudioConversationParkingPort, type AutomationStudioConversationParkingHost } from "../index.ts";
 
 const ASK: AutomationStudioAsk = {
   askId: "ask.trace",

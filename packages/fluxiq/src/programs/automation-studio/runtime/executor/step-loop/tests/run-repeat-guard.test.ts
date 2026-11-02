@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../model/index.ts";
-import { runAutomationStudioGraph, resumeAutomationStudioGraphRun } from "../../graph-run.ts";
-import { automationStudioChildInvocation, automationStudioRootInvocation } from "../../frames/index.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../../engine/automation/tests/fixture-contracts.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import { runAutomationStudioGraph, resumeAutomationStudioGraphRun } from "../../index.ts";
+import { automationStudioChildInvocation, automationStudioRootInvocation } from "../../../../../../engine/automation/frames/index.ts";
 import { automationStudioCallAcrossBoundary, type AutomationStudioCallBoundaryRequest } from "../../../composite-execution/index.ts";
 import { runtimeRepeatHarness } from "../../../runtime-repeat/tests/harness.ts";
 

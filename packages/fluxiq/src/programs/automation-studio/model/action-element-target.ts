@@ -3,6 +3,8 @@ import type { StateBounds, StatePath } from "./state.ts";
 
 export type AutomationStudioElementTargetSource = "recording" | "runtime" | "mapper" | "operator" | "inferred";
 
+/** Persisted interchange: browser fields round-trip as opaque domain evidence.
+ * Core never supplies browser scoring; the registered domain matcher owns their meaning. */
 export type AutomationStudioElementTargetFingerprint = {
   visibleText?: string;
   accessibleName?: string;

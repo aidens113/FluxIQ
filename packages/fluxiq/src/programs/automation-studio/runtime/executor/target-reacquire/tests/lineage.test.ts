@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
-import { automationStudioReacquireSourceReadOnly, automationStudioTargetLineage } from "../index.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import { automationStudioReacquireSourceReadOnly, automationStudioTargetLineage } from "../../../../../../engine/automation/target-reacquire/index.ts";
 import { cardsFlow, edge, graph, press, readCards, saveCard } from "./reacquire-fixtures.ts";
 
 const forEach = (id: string): AutomationStudioFlowNode => ({ id, definitionId: "builtin.control.for-each" });

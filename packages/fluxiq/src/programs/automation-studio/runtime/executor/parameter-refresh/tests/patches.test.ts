@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioRefreshPatches } from "../patches.ts";
-import { automationStudioApplyParameterRefresh } from "../apply.ts";
-import { automationStudioRefreshInputs } from "../inputs.ts";
+import { automationStudioRefreshPatches } from "../../../../../../engine/automation/parameter-refresh/index.ts";
+import { automationStudioApplyParameterRefresh } from "../../../../../../engine/automation/parameter-refresh/index.ts";
+import { automationStudioRefreshInputs } from "../../../../../../engine/automation/parameter-refresh/index.ts";
 import { context, refresh } from "../../unbound-reacquire/tests/fixtures.ts";
-import type { AutomationStudioParameterRefreshOverlay } from "../overlay.ts";
+import type { AutomationStudioParameterRefreshOverlay } from "../../../../../../engine/automation/parameter-refresh/index.ts";
 
 describe("trusted target patches and arrival isolation", () => {
   it("atomically sets/removes only declared optional fields without touching a wrapper", () => {

@@ -1,5 +1,4 @@
-import { databaseInsertNode } from "./insert.ts";
-import { databaseQueryNode } from "./query.ts";
-import { databaseUpdateNode } from "./update.ts";
-
-export const databaseNodes = [databaseQueryNode, databaseInsertNode, databaseUpdateNode];
+// Compatibility exports; the framework owns this implementation.
+export {
+  databaseNodes
+} from "../../../../components/automation/database/index.ts";

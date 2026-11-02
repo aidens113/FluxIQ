@@ -6,14 +6,15 @@
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../../model/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
-import { automationStudioChildInvocation, automationStudioRootInvocation } from "../../frames/index.ts";
-import { edge, graph } from "../../lifecycle-run/tests/lifecycle-fixtures.ts";
+import type { AutomationStudioFlowEdge } from "../../../../../../flows/executable/graph/index.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../../../../../engine/automation/index.ts";
+import { automationStudioChildInvocation, automationStudioRootInvocation } from "../../../../../../engine/automation/frames/index.ts";
+import { edge, graph } from "../../../../../../engine/automation/lifecycle-run/tests/lifecycle-fixtures.ts";
 import { checkpoint, failingFirst, framedRun, withRows } from "../../lifecycle-run/tests/recovery-paths-fixtures.ts";
-import { closer, fact, landedCounts, line, page, pageOptions, press, type Page } from "../../lifecycle-run/tests/wiring-fixtures.ts";
-import { automationStudioStepLifecycleRouteGuard } from "../lifecycle-route-guard.ts";
-import type { AutomationStudioStepLoopContext } from "../loop-context.ts";
+import { closer, fact, landedCounts, line, page, pageOptions, press, type Page } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
+import { automationStudioStepLifecycleRouteGuard } from "../../../../../../engine/automation/step-loop/index.ts";
+import type { AutomationStudioStepLoopContext } from "../../../../../../engine/automation/step-loop/index.ts";
 
 /** The requests, each row's first column its name, as a read list keeps it. */
 const PEOPLE = [{ name: "Amara Osei", id: "amara" }, { name: "Jonas Weber", id: "jonas" }, { name: "Lin Zhao", id: "lin" }, { name: "Freya Holm", id: "freya" }];

@@ -7,8 +7,9 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_TARGET_GONE_CODE, type AutomationStudioTargetReacquireAnswer } from "../index.ts";
-import { repairer } from "../../lifecycle-run/tests/in-run-repair-fixtures.ts";
+import { AUTOMATION_STUDIO_TARGET_GONE_CODE } from "../../../../../../engine/automation/target-reacquire/index.ts";
+import type { AutomationStudioTargetReacquireAnswer } from "../../../../../../runtime/automation-host/contracts/index.ts";
+import { repairer } from "../../../../../../engine/automation/lifecycle-run/tests/in-run-repair-fixtures.ts";
 import { attemptsOf, cardsFlow, cardsOptions, edge, graph, matchingHost, press, readCards, reacquireRows, redrawnPage, runCards, saveCard, type Card, type Host } from "./reacquire-fixtures.ts";
 
 const statuses = (attempts: readonly { status: string }[]) => attempts.map((attempt) => attempt.status);

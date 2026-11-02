@@ -1,3 +1,2 @@
-// A node run outside a graph run -- a build exploring, a build testing its
-// draft -- under the same retry policy a graph run gives every node (t355).
-export { automationStudioDispatchWithNodeRetries, type AutomationStudioLastingActCheck, type AutomationStudioNodeRetryOutcome, type AutomationStudioNodeRetryReacquire, type AutomationStudioNodeRetryReading } from "./retries.ts";
+// Compatibility export; implementation belongs to the framework.
+export { automationStudioDispatchWithNodeRetries, type AutomationStudioLastingActCheck, type AutomationStudioNodeRetryOutcome, type AutomationStudioNodeRetryReacquire, type AutomationStudioNodeRetryReading } from "../../../../../engine/automation/outside-graph/index.ts";

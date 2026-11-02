@@ -1,11 +1,12 @@
-import type { AutomationStudioActivityScope } from "./contracts.ts";
-import { automationStudioActivityStorage } from "./storage.ts";
+import type { AutomationStudioActivityScope } from "../../../../runtime/activity/index.ts";
+import { runWithAutomationStudioActivity as runScopedActivity } from "../../../../runtime/activity/index.ts";
+import { runWithRuntimeActivityPresentation } from "../../../../runtime/activity/presentation/index.ts";
+import { currentAutomationStudioConversation } from "../conversations/context/index.ts";
+import { automationStudioRuntimePresentation } from "./runtime-presentation.ts";
 
-/**
- * Runs `fn` as one unit of work: every `emitAutomationStudioActivity` it
- * reaches, however deep, is published under `scope`. `pending` holds emission
- * back until `bindAutomationStudioActivityRun` names the run.
- */
+/** Studio composes its conversation and presentation into the framework scope. */
 export function runWithAutomationStudioActivity<T>(scope: AutomationStudioActivityScope, fn: () => T, options: { pending?: boolean } = {}): T {
-  return automationStudioActivityStorage.run({ scope: { ...scope }, pending: options.pending === true }, fn);
+  const conversationId = scope.conversationId ?? currentAutomationStudioConversation(scope.projectId)?.conversationId;
+  const scoped = conversationId === undefined ? scope : { ...scope, conversationId };
+  return runWithRuntimeActivityPresentation({ invoke: automationStudioRuntimePresentation }, () => runScopedActivity(scoped, fn, options));
 }

@@ -1,3 +1,5 @@
+import { automationStudioDeepSeekCompletion } from "../../../../../runtime/models/providers/deepseek/index.ts";
+import { automationStudioProviderRefusalMessageScreen } from "../provider-transport/index.ts";
 import type {
   AutomationStudioLlmProvider,
   AutomationStudioLlmStructuredResponse,
@@ -29,10 +31,9 @@ import { automationStudioDeepSeekRefusalText, readAutomationStudioDeepSeekRefusa
 import { automationStudioDeepSeekBalanceExhausted } from "./balance-exhausted.ts";
 import { validateAutomationStudioDeepSeekRequest } from "./preflight.ts";
 import { automationStudioDeepSeekMalformedReply, parseAutomationStudioDeepSeekEnvelope } from "./response-envelope.ts";
-import { automationStudioLlmStepLogModelStep, type AutomationStudioLlmStepLogModelStep } from "../step-log/index.ts";
+import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
-export const AUTOMATION_STUDIO_DEEPSEEK_ORIGIN = "https://api.deepseek.com";
-export const AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL = `${AUTOMATION_STUDIO_DEEPSEEK_ORIGIN}/chat/completions`;
+export { AUTOMATION_STUDIO_DEEPSEEK_ORIGIN, AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "../../../../../runtime/models/providers/deepseek/index.ts";
 /**
  * The model this adapter sends when its caller names none.
  *
@@ -135,183 +136,16 @@ async function runDeepSeekTask(input: {
     const kind = error instanceof Error && typeof error.name === "string" && /^[A-Za-z]{1,40}$/.test(error.name) ? error.name : "non_error";
     throw new AutomationStudioLlmProviderError("llm.provider_request_construction_failed", `DeepSeek request construction failed (${kind}).`);
   }
-  const controller = new AbortController();
-  let timedOut = false;
-  let secret = "";
-  const abortFromParent = () => controller.abort(input.signal?.reason);
-  if (input.signal?.aborted) abortFromParent();
-  else input.signal?.addEventListener("abort", abortFromParent, { once: true });
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, input.request.timeoutMs);
-  // The step log's record of this exchange (`../step-log/`): opened just before the
-  // request is sent, never handed the credential or a header. Undefined when off.
-  let step: AutomationStudioLlmStepLogModelStep | undefined;
-  try {
-    try {
-      secret = await waitForAbortable(input.resolveSecret({
-        provider: "deepseek",
-        secretReference: input.secretReference,
-        projectId: input.request.context.projectId,
-        flowId: input.request.context.flowId,
-        requestId: input.request.requestId,
-        purpose: "llm_provider_request",
-        outboundBody: body,
-        signal: controller.signal
-      }), controller.signal);
-    } catch {
-      if (timedOut) throw new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek secret resolution exceeded the request timeout.", true);
-      if (input.signal?.aborted) throw parentSignalFailure(input.signal);
-      throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured DeepSeek secret could not be resolved.");
-    }
-    if (typeof secret !== "string" || !secret.trim()) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured DeepSeek secret could not be resolved.");
-    if (body.includes(secret)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The outbound request contains the configured credential.");
-    // `price` lets the step log price a failed call from the reply's own usage,
-    // as the panel's chat call does, where no refusal carried a cost.
-    const model = input.model;
-    // When the call is sent: what it is billed at, peak or off-peak (`./pricing.ts`, t254).
-    const sentAtMs = input.now();
-    step = automationStudioLlmStepLogModelStep({
-      provider: "deepseek", model, url: AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, body, taskKind: input.request.taskKind, requestId: input.request.requestId, stage: input.request.context.stage, iteration: input.request.context.evidenceLoop?.iteration,
-      price: (usage) => estimateAutomationStudioDeepSeekCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheHitInputTokens, model, sentAtMs)
-    });
-    const response = await input.fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      redirect: "manual",
-      signal: controller.signal,
-      headers: {
-        "authorization": `Bearer ${secret}`,
-        "content-type": "application/json",
-        "accept": "application/json",
-        "x-request-id": input.request.requestId,
-        "idempotency-key": input.request.idempotencyKey
-      },
-      body
-    });
-    // A reply the call never reads for itself is read for the step log from a copy.
-    if (step && (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))) await stepLogReply(step, response, input.maxResponseBytes, controller.signal);
-    if (response.redirected || (response.status >= 300 && response.status < 400) || (response.url && response.url !== AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL)) {
-      throw new AutomationStudioLlmProviderError("llm.provider_redirect_rejected", "DeepSeek redirected outside the fixed provider endpoint.");
-    }
-    // The refusal body is read under the same signal: a 4xx/5xx DeepSeek starts
-    // and never finishes ends with the call's deadline too (t617).
-    if (!response.ok) throw await deepSeekRefusalFailure(response, input, body, secret, controller.signal);
-    if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
-      throw automationStudioDeepSeekMalformedReply({ case: "media_type" }, "DeepSeek returned a non-JSON media type.");
-    }
-    // Read under the call's own signal: a reply DeepSeek starts and never
-    // finishes (blank lines while it queues the request) ends with the call's
-    // deadline, not when Node's fetch lets go of the body (t613).
-    const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, input.maxResponseBytes, controller.signal);
-    step?.reply(bytes, response.status);
-    let envelope: unknown;
-    try {
-      envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
-    } catch {
-      throw automationStudioDeepSeekMalformedReply({ case: "envelope_not_json" }, "DeepSeek returned malformed JSON.");
-    }
-    const parsed = parseAutomationStudioDeepSeekEnvelope(envelope, input.request, input.model, sentAtMs);
-    step?.succeeded(parsed.response, parsed.usage);
-    return parsed;
-  } catch (error) {
-    // The body read's own timeout (`./signal-race.ts`) is renamed for whichever
-    // deadline actually ended the call: this request's, or the caller's.
-    const endedBySignal = error instanceof AutomationStudioLlmProviderError && error.code === "llm.provider_timeout" && controller.signal.aborted;
-    const failure = error instanceof AutomationStudioLlmProviderError && !endedBySignal
-      ? error
-      : timedOut
-        ? new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not respond before the request timeout.", true)
-        : input.signal?.aborted
-          ? parentSignalFailure(input.signal)
-          : new AutomationStudioLlmProviderError("llm.provider_network_error", "The DeepSeek request failed at the network boundary.", true);
-    step?.failed(failure);
-    throw failure;
-  } finally {
-    clearTimeout(timer);
-    input.signal?.removeEventListener("abort", abortFromParent);
-    secret = "";
-  }
-}
-
-/**
- * The failure for a reply that is not a success, carrying what the provider said
- * about it and the shape of the request it refused.
- *
- * **Every non-2xx comes through here, which is the point.** The auth and
- * rate-limit statuses used to be decided above `!response.ok` and thrown without
- * the body being read, so two of the statuses a person can actually act on -- a
- * credential the provider rejected, a ceiling it enforced -- were among the ones
- * that said least. The codes and their retryability are unchanged; what is new
- * is that all of them carry the refusal.
- *
- * **The record is published, and that is what it is for.** It used to say here
- * that it never would be -- that a run's bundle took this failure's `code` and
- * `status` and nothing else. That was true while nothing outside the throw could
- * read it, and it was also the whole defect: a build refused with a 400 could say
- * it had been refused and nothing about why. The record now travels out of the
- * harness typed (`../refusal-record.ts`) and into a stored Flow Bootstrap
- * failure's `accounting.providerRefusal`, so the caller of a failed build gets
- * the field the provider objected to.
- *
- * What holds instead of "never published" is that nothing unscreened is: every
- * field is screened here, against the configured credential and Core's own
- * locator screen (`refusal.ts`), and bounded again centrally before it is
- * carried. The one thing that must not change without weighing that is what this
- * adapter puts *into* the record.
- */
-async function deepSeekRefusalFailure(
-  response: Response,
-  input: { request: AutomationStudioLlmTaskRequest; model: AutomationStudioDeepSeekModel; maxResponseBytes: number },
-  body: string,
-  credential: string,
-  signal: AbortSignal
-): Promise<AutomationStudioLlmProviderError> {
-  const refusal = await readAutomationStudioDeepSeekRefusal({
-    response,
-    maxResponseBytes: input.maxResponseBytes,
-    request: automationStudioDeepSeekRequestShape({ request: input.request, model: input.model, body }),
-    credential,
-    signal
-  });
-  const said = automationStudioDeepSeekRefusalText(refusal);
-  // Before the status checks: an empty account is its own code under any status (`./balance-exhausted.ts`).
-  if (automationStudioDeepSeekBalanceExhausted(response.status, refusal.error)) {
-    return new AutomationStudioLlmProviderError("llm.provider_balance_exhausted", "DeepSeek refused the request: the account's balance is exhausted.", false, response.status, undefined, said);
-  }
-  if (response.status === 401 || response.status === 403) {
-    return new AutomationStudioLlmProviderError("llm.provider_auth_failed", "DeepSeek rejected the configured credential.", false, response.status, undefined, said);
-  }
-  if (response.status === 429) {
-    return new AutomationStudioLlmProviderError("llm.provider_rate_limited", "DeepSeek rate limited the request.", true, response.status, undefined, said);
-  }
-  return new AutomationStudioLlmProviderError("llm.provider_http_error", "DeepSeek returned an unsuccessful HTTP status.", response.status >= 500, response.status, undefined, said);
-}
-
-/**
- * The raw body of a reply the call itself never reads -- a refusal, a redirect,
- * a non-JSON media type -- for the step log, read from a clone under the same
- * byte ceiling so the call's own read of it is untouched.
- */
-async function stepLogReply(step: AutomationStudioLlmStepLogModelStep, response: Response, maxResponseBytes: number, signal: AbortSignal): Promise<void> {
-  try {
-    step.reply(await readAutomationStudioDeepSeekBoundedResponse(response.clone(), maxResponseBytes, signal), response.status);
-  } catch {
-    /* best-effort: an unread copy only leaves response.json absent */
-  }
-}
-
-function parentSignalFailure(signal: AbortSignal): AutomationStudioLlmProviderError {
-  return automationStudioLlmSignalTimedOut(signal)
-    ? new AutomationStudioLlmProviderError("llm.provider_timeout", "The DeepSeek request exceeded its authorized execution deadline.", true)
-    : new AutomationStudioLlmProviderError("llm.provider_aborted", "The DeepSeek request was cancelled.");
-}
-
-function waitForAbortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
-  return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(new DOMException("Aborted", "AbortError"));
-    signal.addEventListener("abort", abort, { once: true });
-    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  return automationStudioDeepSeekCompletion({
+    body, model: input.model, fetchImpl: input.fetchImpl, maxResponseBytes: input.maxResponseBytes, timeoutMs: input.request.timeoutMs, now: input.now,
+    ...(input.signal ? { signal: input.signal } : {}),
+    requestId: input.request.requestId, idempotencyKey: input.request.idempotencyKey, taskKind: input.request.taskKind,
+    ...(input.request.context.stage ? { stage: input.request.context.stage } : {}),
+    ...(input.request.context.evidenceLoop?.iteration ? { iteration: input.request.context.evidenceLoop.iteration } : {}),
+    observe: automationStudioLlmStepLogModelStep,
+    screenMessage: automationStudioProviderRefusalMessageScreen,
+    requestShape: () => automationStudioDeepSeekRequestShape({ request: input.request, model: input.model, body }),
+    resolveKey: (signal) => input.resolveSecret({ provider: "deepseek", secretReference: input.secretReference, projectId: input.request.context.projectId, flowId: input.request.context.flowId, requestId: input.request.requestId, purpose: "llm_provider_request", outboundBody: body, signal }),
+    readEnvelope: (value, sentAtMs) => parseAutomationStudioDeepSeekEnvelope(value, input.request, input.model, sentAtMs)
   });
 }

@@ -9,9 +9,9 @@ import {
   type AutomationStudioAskAnswer,
   type AutomationStudioParkingPort
 } from "../../../parking/index.ts";
-import { automationStudioActivityHub } from "../../default-hub.ts";
-import { runWithAutomationStudioActivity } from "../../scope.ts";
-import { automationStudioActivityAskPort } from "../port.ts";
+import { automationStudioActivityHub } from "../../index.ts";
+import { runWithAutomationStudioActivity } from "../../index.ts";
+import { automationStudioActivityAskPort } from "../index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

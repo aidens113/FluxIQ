@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityEndedReason } from "../ended-reason.ts";
+import { automationStudioActivityEndedReason } from "../index.ts";
 
 // Why the supervisor ended a build, as the person reads it (t567 lane 4). A job-board build's chat
 // read "the single subflow save halvard jobs was briefed twice and both builders failed with flow

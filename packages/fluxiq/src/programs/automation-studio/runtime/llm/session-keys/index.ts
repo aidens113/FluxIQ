@@ -1,1 +1,1 @@
-export * from "./key.ts";
+export { releaseAutomationStudioSessionProviderKey, automationStudioSessionKeyProvider, type AutomationStudioSessionKeySummary, type AutomationStudioSessionKeyPorts, type AutomationStudioSessionKeyOptions } from "../../../../../runtime/models/secrets/index.ts";

@@ -4,10 +4,10 @@
 // asked of a graph that declares no entry.
 
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
-import { runAutomationStudioGraph } from "../../graph-run.ts";
+import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
+import { runAutomationStudioGraph } from "../../index.ts";
 import { factHost, framedRun, recoveryRows, withRows } from "./recovery-paths-fixtures.ts";
-import { closer, fact, line, page, pageOptions, press, type Page } from "./wiring-fixtures.ts";
+import { closer, fact, line, page, pageOptions, press, type Page } from "../../../../../../engine/automation/lifecycle-run/tests/wiring-fixtures.ts";
 
 /** start -> search -> cart -> pay -> done; `cart` and `pay` are alternative entries. */
 function shop() {
