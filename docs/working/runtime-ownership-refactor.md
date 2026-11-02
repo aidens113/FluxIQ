@@ -1,7 +1,7 @@
 # Runtime Ownership And Web Boundary Refactor
 
 Status: Active
-Status detail: First capability group package and focused browser checks pass; paired dev integration next; remaining runtime and final reusable chat UI phases required.
+Status detail: First capability group merged and pushed in both repositories; t843 SDK/native, environment/control/resources and state/recording foundation workers active; final reusable chat UI phase remains required.
 Created: 2026-11-01
 Last updated: 2026-11-02
 Owner: Senior supervisor agent
@@ -11,15 +11,15 @@ Related: [architecture](../architecture/README.md)
 
 ## Current State
 
-User authorized the complete Core/downstream ownership audit and refactor with Core workers, followed by the reusable chat widget package. Work is isolated on paired task/t842-runtime-boundary-refactor branches under C:/Users/osrs_/FluxStuff/fxwork/t842; these belong to the original repositories, not separate cloned histories. Original downstream changes are preserved.
+User authorized the complete Core/downstream ownership audit and refactor with Core workers, followed by the reusable chat widget package. The first capability group is merged and pushed to both original dev branches. Follow-on work is isolated on paired task/t843-runtime-foundations branches under C:/Users/osrs_/FluxStuff/fxwork/t843; these belong to the original repositories, not separate cloned histories. Original downstream changes are preserved.
 Core owns neutral framework/runtime mechanisms; downstream owns active browser/DOM/selector/tab interpretation. Existing public entry points forward to canonical implementations for compatibility.
 Implemented first capability group: neutral contracts, canonical automation nodes and engine/host support, provider/model and agent primitives, executable DSL/validation, and downstream calibrated web matcher with explicit domain registration.
 Core package typecheck and library build pass. Selected Core run passed 2,350 tests and found eight failures; all five affected files subsequently passed their 22 tests after verified fixes. The preexisting cache test oracle was separately reproduced on original dev and corrected without production behavior changes.
 Downstream: domain build/check and 55 host tests passed; the latest additional focused domain selection passed 80 tests. Test runner build/check and 32 persisted-run tests passed. Extension check passes from its valid build-cache stamp.
 Exact matcher parity against original dev passed 582 comparisons; source-aliased identity/resolver checks passed 222 tests. The 34-case realistic-site Chromium identity selection now passes after correcting demonstrably stale test stimuli/expectations, with original calibrated scores and safety oracles preserved; independent lead Chromium rerun of all nine repaired cases passed (47.7 seconds).
 Structure: Core full audit/pre-push gate passes; baseline only shrank (seven lowered, 33 removed). Downstream test responsibilities/helpers are split and the full structure audit passes with zero failures. Mirror check confirms 72 audit files match Core.
-No paid runs, live providers, panel management or full daily sweeps started.
-Core first-group commits are backed up on origin/task/t842-runtime-boundary-refactor. Next: finish independent browser verification, integrate/push this coherent first group to both real dev checkouts, then start paired follow-on work with the prepared R1/R2/R4/R5 briefs.
+No paid runs, live providers or panel management started. First daily full sweeps are running on the stable original Core and downstream dev commits; Core library build currency was independently verified before downstream launch. This is the first sweep allowance used.
+Both first-group dev branches are pushed; original Core task-finish independently passed its 70 mandatory prompt tests and downstream task-finish passed the full structure gate. Main is unchanged pending full sweep. Next: workers implement R1 SDK/native/adapters, R2 environment/control/resources then R4 compiled/composites, and R5 state/recording foundations under disjoint briefs; lead owns exports/shared interfaces and integration.
 Remaining source work is explicitly required: SDK/native/adapter binding; environment/run control/resources; IO/graph options; compiled/composite execution; shared state/recording/gateway/normalization; router/gates/context; reusable authoring/repair/verification; remaining active browser semantics. Do not claim the audit/refactor complete at this checkpoint.
 User requirement (2026-11-02): AFTER fully completing both repositories' audit/refactor, extract extension chat stream UI/component data to a separate reusable Core package (tentatively @fluxiq/ui-components), usable by any project/client. The extension consumes the standardized widget through downstream browser bindings. This is required continuation work.
 
@@ -51,6 +51,25 @@ The current cuts cover nodes, engine, host ports, provider/agent primitives, DSL
 See `runtime-ownership-refactor/reports/residual-runtime.md` for the complete remaining-area inventory and exact moves.
 
 ## Work Ledger
+
+### 2026-11-02 ? t843 foundation dispatch and context packing
+- Agent: senior supervisor
+- Changed: disjoint R1/R2/R5 worker assignments; one canonical ExecutableFlowRunStatus authority with exact Studio alias; actual reusable context packer moved to runtime/models/context with minimal candidate/disposition contracts and exact old function facade. Studio store composes canonical candidate with its persistence-only fields.
+- Validation: `pnpm.cmd --filter fluxiq exec vitest run src/runtime/models/context/tests/pack.test.ts src/programs/automation-studio/runtime/tests/reusable-llm-context.test.ts` -> two files, five tests passed; original whole-projection/order/dedup tests moved intact and legacy function identity preserved.
+- Validation: standalone strict NodeNext typecheck of canonical context index and execution run-status -> exit 0, no diagnostics (exactOptionalPropertyTypes and noUncheckedIndexedAccess enabled).
+- Outcome: Partial
+- Follow-up: service/store integration and package checks at coordinated t843 source freeze; do not run broad validation against peers' changing source.
+
+
+### 2026-11-02 ? Integrate t842 and continue t843
+- Agent: senior supervisor
+- Changed: merged first capability group to both original dev checkouts; opened paired task/t843-runtime-foundations with separate Core/downstream worktrees.
+- Validation: downstream `pnpm.cmd task finish t842` -> full structure gate passed, merged, worktree removed.
+- Validation: Core `pnpm.cmd task finish t842 --skip-checks` -> mandatory three prompt-contract files/70 tests passed; merged through Core tooling. Broad check intentionally left to daily sweep after already passing focused checks.
+- Validation: `git push origin dev` in both original repositories -> succeeded. Backup task branches also pushed; no main or package publication.
+- Outcome: Accepted
+- Follow-up: execute all remaining ownership phases; first daily full sweep runs on stable dev while source work continues only in t843. Do not move shared chat UI until both full audits/refactors are complete.
+
 
 ### 2026-11-02 ? First extraction acceptance
 - Agent: senior supervisor

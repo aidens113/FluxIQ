@@ -6,3 +6,4 @@ export * from "./transport/index.ts";
 export * from "./retry/index.ts";
 export * from "./secrets/index.ts";
 export * from "./providers/index.ts";
+export * from "./context/index.ts";

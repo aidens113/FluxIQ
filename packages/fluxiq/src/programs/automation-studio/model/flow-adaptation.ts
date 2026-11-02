@@ -1,5 +1,6 @@
 import type { AutomationStudioFailureRecord, AutomationStudioRunDatasetSummary, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { ExecutableFlowRunStatus } from "../../../flows/executable/execution/index.ts";
 import type { AutomationConditionExpression } from "./conditions.ts";
 import type { EvidenceReference, StateFactReference } from "./evidence.ts";
 import type { AutomationStudioFlowScope } from "./flows.ts";
@@ -249,15 +250,7 @@ export type AutomationStudioFlowChangeProposal = {
   metadata?: JsonObject;
 };
 
-export type AutomationStudioFlowRunStatus =
-  | "queued"
-  | "running"
-  | "waiting"
-  | "succeeded"
-  | "failed"
-  | "cancelled"
-  /** Left `running` by a process that ended; its last lasting act is unknown (C8, the orphaned-run sweep). */
-  | "interrupted";
+export type AutomationStudioFlowRunStatus = ExecutableFlowRunStatus;
 
 export type AutomationStudioFlowInterventionSummary = {
   interventionId: string;

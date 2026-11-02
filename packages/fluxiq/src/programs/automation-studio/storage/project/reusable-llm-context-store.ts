@@ -1,3 +1,10 @@
+import type {
+  ReusableModelContextCandidate,
+  ReusableModelContextOutcome as AutomationStudioReusableLlmContextOutcome,
+  ReusableModelContextReviewerState as AutomationStudioReusableLlmContextReviewerState,
+  ReusableModelContextValidationState as AutomationStudioReusableLlmContextValidationState
+} from "../../../../runtime/models/context/index.ts";
+export type { AutomationStudioReusableLlmContextOutcome, AutomationStudioReusableLlmContextReviewerState, AutomationStudioReusableLlmContextValidationState };
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
@@ -22,14 +29,10 @@ const MAX_JSON_DEPTH = 64;
 const FORBIDDEN_KEY = /^(?:authorization|cookie|cookies|credential|credentials|fragment|header|headers|password|query|secret|selectedtext|token|tokens)$/u;
 const FORBIDDEN_COMPOUND_KEY = /(?:accesstoken|authtoken|bearertoken|refreshtoken|sessiontoken|cookiejar|credential|password|passwd|requestheaders?|responseheaders?|rawhtml|rawpage|rawdata|pagesnapshot|rawsnapshot|querystring|urlquery|urlfragment|selectedtext|enteredvalue|inputvalue|formvalue|selectedvalue)/u;
 
-export type AutomationStudioReusableLlmContextOutcome = "succeeded" | "failed" | "rejected" | "reverted" | "unknown";
-export type AutomationStudioReusableLlmContextReviewerState = "unreviewed" | "approved" | "rejected" | "reverted";
-export type AutomationStudioReusableLlmContextValidationState = "unknown" | "validated" | "applied";
 export type AutomationStudioReusableLlmContextTag = Readonly<{ name: string; value: string }>;
 
-export type AutomationStudioReusableLlmContextRecord = {
+export type AutomationStudioReusableLlmContextRecord = ReusableModelContextCandidate & {
   contractVersion: typeof AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_VERSION;
-  recordId: string;
   projectId: string;
   flowId: string;
   subflowId?: string;
@@ -38,15 +41,7 @@ export type AutomationStudioReusableLlmContextRecord = {
   evidenceSchemaVersion: string;
   sanitizerVersion: string;
   compatibilityTags: AutomationStudioReusableLlmContextTag[];
-  promptProjection: JsonValue;
-  outcome: AutomationStudioReusableLlmContextOutcome;
-  reviewerState: AutomationStudioReusableLlmContextReviewerState;
-  validationState: AutomationStudioReusableLlmContextValidationState;
-  sourceRunIds: string[];
-  sourceAdaptationIds: string[];
   byteCount: number;
-  contentDigest: string;
-  createdAt: number;
   lastUsedAt: number;
   expiresAt: number;
 };
