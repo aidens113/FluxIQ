@@ -1,7 +1,7 @@
 # Runtime Ownership And Web Boundary Refactor
 
 Status: Active
-Status detail: First capability extraction validated at package level; browser matcher integration under repair; remaining runtime and final reusable chat UI phases required.
+Status detail: First capability group package and focused browser checks pass; paired dev integration next; remaining runtime and final reusable chat UI phases required.
 Created: 2026-11-01
 Last updated: 2026-11-02
 Owner: Senior supervisor agent
@@ -16,10 +16,10 @@ Core owns neutral framework/runtime mechanisms; downstream owns active browser/D
 Implemented first capability group: neutral contracts, canonical automation nodes and engine/host support, provider/model and agent primitives, executable DSL/validation, and downstream calibrated web matcher with explicit domain registration.
 Core package typecheck and library build pass. Selected Core run passed 2,350 tests and found eight failures; all five affected files subsequently passed their 22 tests after verified fixes. The preexisting cache test oracle was separately reproduced on original dev and corrected without production behavior changes.
 Downstream: domain build/check and 55 host tests passed; the latest additional focused domain selection passed 80 tests. Test runner build/check and 32 persisted-run tests passed. Extension check passes from its valid build-cache stamp.
-Exact matcher parity against original dev passed 582 comparisons; source-aliased identity/resolver checks passed 222 tests. These do not substitute for browser checks: the 34-case realistic-site Chromium identity selection currently reveals failures, assigned for investigation without weakening safety or assertions.
-Structure audit: Core source has no new violations (working index needs regeneration); downstream requires a cohesive test-file split and index regeneration. Mirror check confirms 72 audit files match Core.
+Exact matcher parity against original dev passed 582 comparisons; source-aliased identity/resolver checks passed 222 tests. The 34-case realistic-site Chromium identity selection now passes after correcting demonstrably stale test stimuli/expectations, with original calibrated scores and safety oracles preserved; independent lead Chromium rerun of all nine repaired cases passed (47.7 seconds).
+Structure: Core full audit/pre-push gate passes; baseline only shrank (seven lowered, 33 removed). Downstream test responsibilities are split and affected structure rules pass. Mirror check confirms 72 audit files match Core.
 No paid runs, live providers, panel management or full daily sweeps started.
-Next: repair browser integration, independently rerun affected checks and structure gates, commit/integrate/push this coherent first group to both real dev checkouts, then continue all residual ownership phases.
+Core first-group commits are backed up on origin/task/t842-runtime-boundary-refactor. Next: finish independent browser verification, integrate/push this coherent first group to both real dev checkouts, then start paired follow-on work with the prepared R1/R2/R4/R5 briefs.
 Remaining source work is explicitly required: SDK/native/adapter binding; environment/run control/resources; IO/graph options; compiled/composite execution; shared state/recording/gateway/normalization; router/gates/context; reusable authoring/repair/verification; remaining active browser semantics. Do not claim the audit/refactor complete at this checkpoint.
 User requirement (2026-11-02): AFTER fully completing both repositories' audit/refactor, extract extension chat stream UI/component data to a separate reusable Core package (tentatively @fluxiq/ui-components), usable by any project/client. The extension consumes the standardized widget through downstream browser bindings. This is required continuation work.
 
@@ -51,6 +51,18 @@ The current cuts cover nodes, engine, host ports, provider/agent primitives, DSL
 See `runtime-ownership-refactor/reports/residual-runtime.md` for the complete remaining-area inventory and exact moves.
 
 ## Work Ledger
+
+### 2026-11-02 ? First extraction acceptance
+- Agent: senior supervisor
+- Changed: canonical execution group, downstream matcher migration, explicit capture boundary and cohesive test support; prepared remaining source briefs and R6/R7 ownership plans.
+- Validation: Core `pnpm.cmd --filter fluxiq exec vitest run src/programs/automation-studio/runtime/llm/deepseek/tests/system-prompt.test.ts src/programs/automation-studio/runtime/flow-bootstrap/plan/tests/extraction-vocabulary.test.ts src/programs/automation-studio/runtime/flow-bootstrap/plan/tests/issue-feedback.test.ts` -> three files, 70 tests passed.
+- Validation: downstream test-runner and extension checks after latest Core build -> exit 0; both rebuilt successfully rather than relying on an outdated stamp.
+- Validation: compiled persisted-run and target-resolution selections after cohesive test split -> 32 passed, zero failed.
+- Validation: `pnpm.cmd --filter @fluxiq-web-extension/extension test:content -- --workers=2 identity-resolution.spec.ts identity-ambiguity.spec.ts identity-veto.spec.ts` -> actual complete output: 34 passed; independent lead run of the same specs with the nine repaired cases selected by --grep -> nine passed, zero failed (47.7 seconds). Earlier failures exposed stale retry/place-context expectations; production scoring/target/retry logic unchanged.
+- Validation: Core task branch commit and push -> succeeded; paired dev/main not yet merged or pushed.
+- Outcome: Partial
+- Follow-up: independent browser result and paired narrow-gated integration, then all remaining required source groups and final reusable UI package.
+
 
 ### 2026-11-02 ? Package integration and browser gate
 - Agent: senior supervisor
