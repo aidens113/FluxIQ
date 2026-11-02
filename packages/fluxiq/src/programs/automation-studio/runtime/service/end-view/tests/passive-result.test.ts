@@ -17,9 +17,13 @@ function runtime(observe: Observe) {
 
 describe("passive domain result observation", () => {
   it("preserves the callback through checked binding and sends current evidence to actual trial and saved summaries", async () => {
-    const observe = vi.fn(async (_request: Parameters<Observe>[0]) => ({ page: CURRENT, bookkeeping: "withheld" }));
-    const bound = automationStudioLlmEvidenceRuntimeBindingChecked(runtime(observe));
-    expect(bound.observeResult).toBe(observe);
+    const observe = vi.fn(async function (this: ReturnType<typeof runtime>, _request: Parameters<Observe>[0]) {
+      expect(this).toBe(source);
+      return { page: CURRENT, bookkeeping: "withheld" };
+    });
+    const source = runtime(observe);
+    const bound = automationStudioLlmEvidenceRuntimeBindingChecked(source);
+    expect(bound.observeResult).toBeTypeOf("function");
     const read = automationStudioRunEndViewReader(bound)!;
     const fixture = trialFixture();
     fixture.ports.deniedEvidenceKeys = ["private"];
@@ -31,7 +35,7 @@ describe("passive domain result observation", () => {
     await verify(context, { ports: { ...context.ports, deniedEvidenceKeys: ["private"], readEndView: read } });
     expect(context.requests[0]?.context.resultSummary?.endView).toEqual({ view: { page: CURRENT } });
     expect(observe).toHaveBeenCalledTimes(2);
-    expect(bound.executeTool).not.toHaveBeenCalled();
+    expect(source.executeTool).not.toHaveBeenCalled();
     for (const [request] of observe.mock.calls) {
       expect(request.signal).toBeInstanceOf(AbortSignal);
       expect(await request.permission({ consequences: ["move_money"], verb: "press", control: { name: "Transfer", kind: "button" } })).toMatchObject({ permitted: false });

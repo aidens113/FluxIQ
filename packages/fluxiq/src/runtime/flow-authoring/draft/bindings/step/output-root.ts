@@ -1,0 +1,1 @@
+export const AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT = "$step";

@@ -5,7 +5,7 @@ import type { JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioCallFlowConfiguration } from "../../../flows/executable/composite/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import { isAutomationNodeParameterStateBinding, resolveAutomationNodeParameterValues, type AutomationNodeExecutionResult } from "../../../components/automation/index.ts";
-import { automationStudioCallAcrossBoundary } from "../composite/index.ts";
+import { automationStudioCallAcrossBoundary } from "../composite/boundary.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../index.ts";
 import { automationStudioNodeOutputReferences } from "../graph-navigation/index.ts";
 import { automationStudioChildInvocation } from "./child-frame.ts";

@@ -13,7 +13,7 @@ import { AutomationStudioBuildCancellation } from "../../../service/flow-bootstr
 import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../../service/paths/index.ts";
 import { automationStudioProjectStructurePlan, automationStudioProjectTaskSpec, type AutomationStudioProjectStructurePlan, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTaskSpec } from "../../contracts/index.ts";
 import { AutomationStudioHostLeaseScope, type AutomationStudioHostResourceLease } from "../../host-resources/index.ts";
-import { StubHost } from "../../host-resources/tests/stub-host.ts";
+import { StubHost } from "../../../../../../runtime/host-resources/tests/stub-host.ts";
 import { AutomationStudioProjectBuildRecordStore } from "../../record/index.ts";
 import { createAutomationStudioProjectDispatcher, type AutomationStudioProjectBriefPortFactory, type AutomationStudioProjectBuilderPorts, type AutomationStudioProjectDispatchResult, type AutomationStudioProjectDispatcherInput } from "../index.ts";
 

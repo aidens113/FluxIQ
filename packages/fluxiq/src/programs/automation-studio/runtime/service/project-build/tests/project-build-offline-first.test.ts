@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../project-agents/host-resources/index.ts";
-import { StubHost } from "../../../project-agents/host-resources/tests/stub-host.ts";
+import { StubHost } from "../../../../../../runtime/host-resources/tests/stub-host.ts";
 import type { AutomationStudioProjectBuildRecordStore } from "../../../project-agents/index.ts";
 import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { AutomationStudioOfflineTrialInstallation } from "../../offline-first/index.ts";

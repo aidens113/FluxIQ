@@ -10,6 +10,9 @@ export * from "./domain-build-state/index.ts";
 export * from "./durable-behavior/index.ts";
 export * from "./composite-executor.ts";
 export * from "./compiled-plan.ts";
+// Studio supplies the legacy failure-classification adapter at these entry points.
+export { runAutomationStudioCompiledPlan } from "./compiled-plan.ts";
+export { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
 export * from "./executor.ts";
 export * from "./flow-bootstrap/index.ts";
 // Published here, not through the flow-bootstrap barrel: see that barrel.

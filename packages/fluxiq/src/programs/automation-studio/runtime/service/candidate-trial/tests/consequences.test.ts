@@ -49,9 +49,11 @@ describe("a candidate trial and a normal run gate declared consequences alike", 
     expect(outcome.record.execution).toBe("succeeded");
     expect(trial).toEqual(normal);
     expect(trial).toHaveLength(1);
-    // The trial handed the detached runner the run's own options: no permission, gate or dispatcher of its own.
-    expect(received).toBe(handed);
-    expect(Object.keys(received!).sort()).toEqual(Object.keys(handed!).sort());
+    // The trial freezes its reference time while retaining every caller option and callback.
+    expect(received).toEqual({ ...handed, referenceNow: 100 });
+    expect(received?.nativeNodeExecutor).toBe(handed?.nativeNodeExecutor);
+    expect(received?.signal).toBe(handed?.signal);
+    expect(handed).not.toHaveProperty("referenceNow");
     expect(received).not.toHaveProperty("permittedConsequences");
   });
 });

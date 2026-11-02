@@ -31,4 +31,8 @@ export { automationStudioAttemptInputs, automationStudioWithWholeAttemptInputs }
 export { AUTOMATION_STUDIO_WITHHELD_VALUE } from "./trace/index.ts";
 // The page address a saved trace withheld from a step's controls, read back for a trial act alone (t738).
 export { automationStudioExecutedLocations } from "./executed-locations/index.ts";
+export * from "./environment/index.ts";
+export * from "./compiled-plan/index.ts";
+export * from "./composite/index.ts";
+export * from "./integration/index.ts";
 export { automationStudioExpectationSatisfiedAfterFailure, compareAutomationStudioTransition } from "./transitions/index.ts";

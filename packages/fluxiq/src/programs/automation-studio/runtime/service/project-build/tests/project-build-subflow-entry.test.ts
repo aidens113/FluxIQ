@@ -16,7 +16,7 @@ import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode, Automat
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../project-agents/host-resources/index.ts";
-import { StubHost } from "../../../project-agents/host-resources/tests/stub-host.ts";
+import { StubHost } from "../../../../../../runtime/host-resources/tests/stub-host.ts";
 import type { AutomationStudioProjectBuildRecordStore } from "../../../project-agents/index.ts";
 import { automationStudioBuildTestJudge, summarizeAutomationStudioRunResult } from "../../../result-verification/index.ts";
 import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";

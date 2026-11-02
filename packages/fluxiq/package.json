@@ -1,6 +1,6 @@
 {
   "name": "fluxiq",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Domain-neutral FluxIQ framework runtime for Node.js.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -203,6 +203,58 @@
     "./ui": {
       "types": "./dist/ui/index.d.ts",
       "import": "./dist/ui/index.js"
+    },
+    "./runtime/environment": {
+      "types": "./dist/runtime/environment/index.d.ts",
+      "import": "./dist/runtime/environment/index.js"
+    },
+    "./runtime/run-control": {
+      "types": "./dist/runtime/run-control/index.d.ts",
+      "import": "./dist/runtime/run-control/index.js"
+    },
+    "./runtime/host-resources": {
+      "types": "./dist/runtime/host-resources/index.d.ts",
+      "import": "./dist/runtime/host-resources/index.js"
+    },
+    "./components/automation/importer": {
+      "types": "./dist/components/automation/importer/index.d.ts",
+      "import": "./dist/components/automation/importer/index.js"
+    },
+    "./components/automation/target-refresh": {
+      "types": "./dist/components/automation/target-refresh/index.d.ts",
+      "import": "./dist/components/automation/target-refresh/index.js"
+    },
+    "./runtime/native-execution": {
+      "types": "./dist/runtime/native-execution/index.d.ts",
+      "import": "./dist/runtime/native-execution/index.js"
+    },
+    "./runtime/adapters": {
+      "types": "./dist/runtime/adapters/index.d.ts",
+      "import": "./dist/runtime/adapters/index.js"
+    },
+    "./runtime/state": {
+      "types": "./dist/runtime/state/index.d.ts",
+      "import": "./dist/runtime/state/index.js"
+    },
+    "./runtime/recording": {
+      "types": "./dist/runtime/recording/index.d.ts",
+      "import": "./dist/runtime/recording/index.js"
+    },
+    "./runtime/output-dispatch": {
+      "types": "./dist/runtime/output-dispatch/index.d.ts",
+      "import": "./dist/runtime/output-dispatch/index.js"
+    },
+    "./engine/automation/integration": {
+      "types": "./dist/engine/automation/integration/index.d.ts",
+      "import": "./dist/engine/automation/integration/index.js"
+    },
+    "./runtime/flow-authoring": {
+      "types": "./dist/runtime/flow-authoring/index.d.ts",
+      "import": "./dist/runtime/flow-authoring/index.js"
+    },
+    "./runtime/execution-admission": {
+      "types": "./dist/runtime/execution-admission/index.d.ts",
+      "import": "./dist/runtime/execution-admission/index.js"
     }
   },
   "files": [

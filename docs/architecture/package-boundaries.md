@@ -47,6 +47,14 @@ objects that expose an owned execution contract retain that contract through
 an explicit return annotation, so declaration inference does not replace it
 with an internal workspace path.
 
+For an inferred qualified import through a physical workspace `dist` alias, the
+postprocessor can select an existing public export only after NodeNext resolution
+and TypeScript declaration-origin identity prove it exports the requested symbol.
+It preserves qualifiers and generic arguments. Private, unresolved, namespace and
+unproven imports still fail atomically. Library build fingerprints include the
+static local dependency closure of their build scripts, so changes to these
+declaration helpers invalidate the owning build.
+
 The runtime keeps its established public subpaths during the 0.1 compatibility
 period. New subpaths should be added only for an independently useful surface;
 internal folders are not automatically public API.

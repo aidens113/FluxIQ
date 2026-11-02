@@ -9,3 +9,4 @@ export * from "./record-output.ts";
 export * from "./record-process.ts";
 export * from "./recording-capture.ts";
 export * from "./registry.ts";
+export * from "./composite/index.ts";

@@ -56,13 +56,16 @@ function watched() {
 }
 
 describe("a candidate trial's environment", () => {
-  it("is live by default: today's run id shape, the options exactly as built, and no channel scope", async () => {
+  it("is live by default: today's run id shape, caller options with frozen reference time, and no channel scope", async () => {
     const { fixture, scopes, given } = watched();
     delete fixture.ports.newRunId;
     const { result, record } = await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
     expect(record.execution).toBe("succeeded");
     expect(result.trialRunId).toMatch(/^trial\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u);
-    expect(given.options).toBe(given.built);
+    expect(given.options).toEqual({ ...given.built, referenceNow: 100 });
+    expect(given.options?.nativeNodeExecutor).toBe(given.built?.nativeNodeExecutor);
+    expect(given.options?.signal).toBe(given.built?.signal);
+    expect(given.built).not.toHaveProperty("referenceNow");
     expect(given.options?.random).toBeUndefined();
     expect(scopes.length).toBeGreaterThanOrEqual(4);
     expect(scopes.every(([, scope]) => scope === undefined)).toBe(true);
@@ -82,6 +85,7 @@ describe("a candidate trial's environment", () => {
     expect(given.options?.delay).toBe(environment.delay);
     expect(given.options?.random).toBe(environment.random);
     expect(given.options?.nativeNodeExecutor).toBe(given.built?.nativeNodeExecutor);
+    expect(given.options?.referenceNow).toBe(5_000);
   });
 
   it("keeps a live environment's randomness unset, as a normal run leaves it", async () => {

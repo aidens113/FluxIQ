@@ -2,6 +2,7 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { isBuiltin } from "node:module";
 import path from "node:path";
 import ts from "typescript";
+import { createPublicImportResolver } from "./declarations/index.mjs";
 
 const outputRoot = path.resolve(process.argv[2] ?? "dist");
 // Resolve the published graph as an ESM consumer does. Inheriting the build's
@@ -30,11 +31,12 @@ for (const filePath of await declarationFiles(outputRoot)) {
   declarations.push({ filePath, source, syntax, imports: imports.filter(ts.isStringLiteralLike) });
 }
 
+const publicImport = createPublicImportResolver(declarations, compilerOptions);
 for (const declaration of declarations) {
   const replacements = [];
   for (const literal of declaration.imports) {
     const relative = /^\.{1,2}(?:\/|$)/u.test(literal.text);
-    const specifier = relative ? literal.text.replace(/\.ts$/u, ".js") : literal.text;
+    const specifier = relative ? literal.text.replace(/\.ts$/u, ".js") : publicImport(literal) ?? literal.text;
     let issue;
     if (path.posix.isAbsolute(specifier) || path.win32.isAbsolute(specifier) || /^[a-z][a-z\d+.-]*:/iu.test(specifier) && !isBuiltin(specifier) || specifier.includes("\\")) {
       issue = "absolute or platform-specific path";

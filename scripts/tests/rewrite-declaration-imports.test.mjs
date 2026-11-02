@@ -118,7 +118,7 @@ test("honors require-only export conditions for import equals and import type", 
   assert.equal(result.status, 0, result.output);
 }));
 
-test("rejects the actual four leaked imports before writing any declaration", async () => fixture(async ({ dist }) => {
+test("rewrites inferred workspace imports through their exact public entry", async () => fixture(async ({ dist }) => {
   await write(dist, "value.d.ts", "export type Value = string;\n");
   const original = [
     'export type Value = import("./value.ts").Value;',
@@ -127,12 +127,10 @@ test("rejects the actual four leaked imports before writing any declaration", as
   ].join("\n");
   await write(dist, "index.d.ts", original);
   const result = rewrite(dist);
-  assert.notEqual(result.status, 0);
-  assert.match(result.output, /Nonportable declaration imports/);
-  assert.match(result.output, /index\.d\.ts:2:\d+/);
-  assert.match(result.output, /not resolvable without workspace aliases/);
-  assert.equal((result.output.match(/"packages\/contracts\/dist\/core\.js"/g) ?? []).length, 4);
-  assert.equal(await readFile(path.join(dist, "index.d.ts"), "utf8"), original);
+  assert.equal(result.status, 0, result.output);
+  const after = await readFile(path.join(dist, "index.d.ts"), "utf8");
+  assert.equal((after.match(/"@fluxiq\/contracts\/core"/g) ?? []).length, 4);
+  assert.match(after, /\.\/value\.js/);
 }));
 
 test("ignores build baseUrl/paths and rejects an arbitrary unresolved alias", async () => fixture(async ({ owner, dist }) => {
@@ -142,6 +140,50 @@ test("ignores build baseUrl/paths and rejects an arbitrary unresolved alias", as
   const result = rewrite(dist);
   assert.notEqual(result.status, 0);
   assert.match(result.output, /@private\/values.*not resolvable without workspace aliases/);
+}));
+
+test("proves leaf symbol origins through public barrels and preserves specialized generics", async () => fixture(async ({ contracts, dist }) => {
+  await write(contracts, "package.json", JSON.stringify({ name: "@fluxiq/contracts", type: "module", exports: {
+    ".": { types: "./dist/index.d.ts" },
+    "./runtime": { types: "./dist/runtime.d.ts" },
+    "./legacy": { types: "./dist/legacy.d.ts" }
+  } }));
+  await write(contracts, "dist/internal/action.d.ts", 'export type ActionResult<T> = { value: T };\nexport namespace Shapes { export type Value<T> = { nested: T }; }\n');
+  await write(contracts, "dist/legacy.d.ts", 'import type { ActionResult as GenericResult } from "./internal/action.js";\nexport type ActionResult = GenericResult<number>;\n');
+  await write(contracts, "dist/runtime.d.ts", 'export type { ActionResult, Shapes } from "./internal/action.js";\n');
+  await write(contracts, "dist/index.d.ts", 'export type { ActionResult, Shapes } from "./runtime.js";\nexport type Extra = string;\n');
+  await write(dist, "index.d.ts", [
+    'export type Result = import("packages/contracts/dist/internal/action.js").ActionResult<string>;',
+    'export type Nested = import("packages/contracts/dist/internal/action.js").Shapes.Value<number>;',
+    'export type Legacy = import("packages/contracts/dist/legacy.js").ActionResult;'
+  ].join("\n"));
+  const result = rewrite(dist);
+  assert.equal(result.status, 0, result.output);
+  const after = await readFile(path.join(dist, "index.d.ts"), "utf8");
+  assert.match(after, /import\("@fluxiq\/contracts\/runtime"\)\.ActionResult<string>/);
+  assert.match(after, /import\("@fluxiq\/contracts\/runtime"\)\.Shapes.Value<number>/);
+  assert.match(after, /import\("@fluxiq\/contracts\/legacy"\)\.ActionResult;/);
+  noDiagnostics(checkedProgram([path.join(dist, "index.d.ts")], { noEmit: true }).diagnostics);
+}));
+
+test("rejects unproven leaf origins, namespace imports and private forms atomically", async () => fixture(async ({ contracts, dist }) => {
+  await write(contracts, "dist/internal/hidden.d.ts", 'export type JsonValue = string;\nexport type Private = string;\n');
+  for (const source of [
+    'export type Hidden = import("packages/contracts/dist/internal/hidden.js").JsonValue;',
+    'export type Hidden = import("packages/contracts/dist/internal/hidden.js").Private;',
+    'export type Hidden = import("packages/contracts/dist/internal/hidden.js");',
+    'export type Hidden = typeof import("packages/contracts/dist/core.js").JsonValue;',
+    'import type { JsonValue } from "packages/contracts/dist/core.js"; export type Hidden = JsonValue;',
+    'export type Hidden = import("@fluxiq/contracts/dist/core.js").JsonValue;'
+  ]) {
+    const original = `export type Local = import("./value.ts").Value;\n${source}`;
+    await write(dist, "value.d.ts", "export type Value = string;\n");
+    await write(dist, "index.d.ts", original);
+    const result = rewrite(dist);
+    assert.notEqual(result.status, 0, source);
+    assert.match(result.output, /Nonportable declaration imports/);
+    assert.equal(await readFile(path.join(dist, "index.d.ts"), "utf8"), original);
+  }
 }));
 
 test("rejects absolute, platform-specific, and escaping relative paths", async () => fixture(async ({ owner, dist, contracts }) => {
@@ -154,6 +196,23 @@ test("rejects absolute, platform-specific, and escaping relative paths", async (
   }
 }));
 
+test("rejects platform-specific workspace aliases even when their symbol is public", async () => fixture(async ({ workspace, contracts, dist }) => {
+  const packageSegment = "contracts\\..\\contracts";
+  // Windows resolves this back to contracts; on POSIX a symlink gives the same
+  // physical target so the regression exercises a publicly resolvable origin.
+  if (process.platform !== "win32") {
+    await symlink(contracts, path.join(workspace, "packages", packageSegment), "dir");
+  }
+  const specifier = `packages/${packageSegment}/dist/core.js`;
+  assert.equal(await realpath(path.join(workspace, specifier.replace(/\.js$/u, ".d.ts"))), await realpath(path.join(contracts, "dist/core.d.ts")));
+  const original = `export type Value = import(${JSON.stringify(specifier)}).JsonValue;\n`;
+  await write(dist, "index.d.ts", original);
+  const result = rewrite(dist);
+  assert.notEqual(result.status, 0, result.output);
+  assert.match(result.output, /absolute or platform-specific path/);
+  assert.equal(await readFile(path.join(dist, "index.d.ts"), "utf8"), original);
+}));
+
 test("rejects private package subpaths and missing relative targets", async () => fixture(async ({ dist }) => {
   for (const specifier of ["@fluxiq/contracts/dist/core.js", "./missing.ts", "node:missing-builtin"]) {
     await write(dist, "index.d.ts", `export * from ${JSON.stringify(specifier)};\n`);
@@ -163,7 +222,7 @@ test("rejects private package subpaths and missing relative targets", async () =
   }
 }));
 
-test("real declaration emit fails for inferred workspace aliases and explicit owned contracts pass an external strict consumer", async () => fixture(async ({ root, workspace, owner, dist }) => {
+test("real inferred and explicit declaration emit pass an external strict consumer after rewriting", async () => fixture(async ({ root, workspace, owner, dist }) => {
   await write(owner, "src/core.ts", 'export type { JsonObject, JsonValue } from "@fluxiq/contracts/core";\n');
   await write(owner, "src/contracts.ts", [
     'import type { JsonObject, JsonValue } from "./core.ts";',
@@ -203,9 +262,6 @@ test("real declaration emit fails for inferred workspace aliases and explicit ow
   await emit("");
   const inferred = await readFile(path.join(dist, "create.d.ts"), "utf8");
   assert.match(inferred, /import\("packages\/contracts\/dist\/core\.js"\)/);
-  const rejected = rewrite(dist);
-  assert.notEqual(rejected.status, 0, rejected.output);
-  assert.match(rejected.output, /packages\/contracts\/dist\/core\.js/);
   // Independently prove why the emitted SDK fails without the workspace config.
   // Resolve .ts declaration links only for this diagnostic; leave the aliases intact.
   for (const name of ["index.d.ts", "create.d.ts", "contracts.d.ts"]) {
@@ -214,6 +270,9 @@ test("real declaration emit fails for inferred workspace aliases and explicit ow
   }
   const brokenConsumer = checkedProgram([consumerFile], { noEmit: true });
   assert.ok(brokenConsumer.diagnostics.some((diagnostic) => diagnostic.code === 2307 && ts.flattenDiagnosticMessageText(diagnostic.messageText, " ").includes("packages/contracts/dist/core.js")));
+  const repaired = rewrite(dist);
+  assert.equal(repaired.status, 0, repaired.output);
+  noDiagnostics(checkedProgram([consumerFile], { noEmit: true }).diagnostics);
 
   await emit(": { executeTool: Executor; authority: Authority }");
   const accepted = rewrite(dist);

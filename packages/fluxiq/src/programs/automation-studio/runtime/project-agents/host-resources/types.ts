@@ -1,2 +1,2 @@
-// Compatibility export; implementation belongs to the framework.
-export * from "../../../../../runtime/automation-host/index.ts";
+// Compatibility type exports.
+export type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourceGrant, AutomationStudioHostResourceHolder, AutomationStudioHostResourceLease, AutomationStudioHostResourcePort, AutomationStudioHostResourceSnapshot } from "../../../../../runtime/host-resources/index.ts";

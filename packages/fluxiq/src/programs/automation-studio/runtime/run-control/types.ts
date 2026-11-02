@@ -1,2 +1,2 @@
-// Compatibility export; implementation belongs to the framework.
-export * from "../../../../runtime/automation-host/index.ts";
+// Compatibility type exports.
+export type { AutomationStudioRunCheckpoint, AutomationStudioRunCheckpointOutcome, AutomationStudioRunControlEvent, AutomationStudioRunControlGate, AutomationStudioRunControlHolder, AutomationStudioRunControlPhase, AutomationStudioRunControlSnapshot, AutomationStudioRunControlState } from "../../../../runtime/run-control/index.ts";

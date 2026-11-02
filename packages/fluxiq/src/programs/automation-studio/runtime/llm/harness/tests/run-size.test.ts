@@ -284,13 +284,18 @@ describe("the harness's context-window check", () => {
     const provider = sendingDeepSeek();
     const probe = await decide(provider, { maxInputTokens: 2_000_000, maxOutputTokens: 2_000, maxTotalTokens: 2_002_000 });
     const sent = provider.measureInput!(probe.request);
-    const window = { maxInputTokens: sent.estimatedInputTokens - 1, maxOutputTokens: 2_000, maxTotalTokens: sent.estimatedInputTokens + 1_999 };
+    // The input budget is itself printed in the instructions. Calibrate at the
+    // actual window's digit width before placing the limit exactly one token below it.
+    const calibrated = await decide(provider, { maxInputTokens: sent.estimatedInputTokens, maxOutputTokens: 2_000, maxTotalTokens: sent.estimatedInputTokens + 2_000 });
+    const actualSize = provider.measureInput!(calibrated.request);
+    const window = { maxInputTokens: actualSize.estimatedInputTokens - 1, maxOutputTokens: 2_000, maxTotalTokens: actualSize.estimatedInputTokens + 1_999 };
     const refused = await decide(provider, window);
 
     expect(refused.providerInvocation).toBe("not_attempted");
     // The size it states is the sent messages' own, not the packed request's.
     const measured = provider.measureInput!(refused.request);
-    expect(measured.estimatedInputTokens).toBeGreaterThan(window.maxInputTokens);
+    expect(measured.estimatedInputTokens).toBe(window.maxInputTokens + 1);
+    expect(refused.request.tokenLimits).toEqual(window);
     const diagnostic = refused.diagnostics.find((entry) => entry.code === "llm_budget.input_limit_exceeded");
     expect(diagnostic?.metadata).toMatchObject({ estimatedInputTokens: measured.estimatedInputTokens, estimatedInputBytes: measured.estimatedInputBytes });
   });

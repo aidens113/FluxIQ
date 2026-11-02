@@ -44,13 +44,16 @@ function watched() {
 }
 
 describe("a partial trial's environment", () => {
-  it("is live by default: today's run id shape, the options exactly as built, and no channel scope", async () => {
+  it("is live by default: today's run id shape, caller options with frozen reference time, and no channel scope", async () => {
     const { fixture, scopes, given } = watched();
     delete fixture.ports.newRunId;
     const { result, record } = await runAutomationStudioSubflowTrial(fixture.request(), fixture.ports);
     expect(record.execution).toBe("succeeded");
     expect(result.trialRunId).toMatch(/^subflow-trial\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u);
-    expect(given.options).toBe(given.built);
+    expect(given.options).toEqual({ ...given.built, referenceNow: 100 });
+    expect(given.options?.nativeNodeExecutor).toBe(given.built?.nativeNodeExecutor);
+    expect(given.options?.signal).toBe(given.built?.signal);
+    expect(given.built).not.toHaveProperty("referenceNow");
     expect(scopes.every(([, scope]) => scope === undefined)).toBe(true);
     expect(automationStudioSubflowTrialPort("build.1", fixture.ports).port.environmentKind).toBe("live");
   });
@@ -68,6 +71,7 @@ describe("a partial trial's environment", () => {
     expect(given.options?.now).toBe(environment.now);
     expect(given.options?.delay).toBe(environment.delay);
     expect(given.options?.random).toBe(environment.random);
+    expect(given.options?.referenceNow).toBe(7_000);
     expect(scopes.map(([what]) => what)).toEqual(expect.arrayContaining(["runner", "rows", "end view"]));
     expect(scopes.every(([, scope]) => scope === environment.scopeId)).toBe(true);
   });

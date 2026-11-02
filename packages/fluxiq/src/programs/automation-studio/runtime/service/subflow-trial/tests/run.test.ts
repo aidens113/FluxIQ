@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../project-agents/host-resources/index.ts";
-import { StubHost } from "../../../project-agents/host-resources/tests/stub-host.ts";
+import { StubHost } from "../../../../../../runtime/host-resources/tests/stub-host.ts";
 import type { AutomationStudioPrepareCandidateStart } from "../../candidate-trial/index.ts";
 import { runAutomationStudioSubflowTrial } from "../index.ts";
 import { part, subflowTrialFixture as fixture } from "./fixtures.ts";

@@ -8,7 +8,7 @@
 //     files (sources, manifests and configs -- `transpilePackages` and the
 //     tsconfig `paths` point the web app at `src`) and its ignored `dist/`,
 //     which is what a NodeNext compile of a dependant reads;
-//   - every script the command runs with `node <path>`;
+//   - every script the command runs with `node <path>` and its local imports;
 //   - the repository's `package.json`, `pnpm-workspace.yaml`,
 //     `pnpm-lock.yaml` and `tsconfig.base.json`;
 //   - the build-cache sources, minus their tests, so a change to how a
@@ -51,6 +51,7 @@ import { REPOSITORY_ROOT } from "../repository-root.mjs";
 import { STAMP_VERSION } from "../stamp/index.mjs";
 import { STEPS } from "../steps.mjs";
 import { readWorkspacePackages } from "./workspace-packages.mjs";
+import { scriptDependencies } from "./script-dependencies.mjs";
 
 const REPOSITORY_FILES = ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "tsconfig.base.json"];
 const INSTALLED_LOCKFILE = "node_modules/.pnpm/lock.yaml";
@@ -101,7 +102,8 @@ export function resolveStep(stepName, options = {}) {
       git(dependency.dir);
       walk(path.join(dependency.dir, "dist"));
     }
-    for (const [, script] of step.command.matchAll(NODE_SCRIPT)) git(path.resolve(packageDir, script));
+    const scripts = [...step.command.matchAll(NODE_SCRIPT)].map(([, script]) => path.resolve(packageDir, script));
+    for (const script of scriptDependencies(scripts, repoRoot)) git(script);
     for (const file of REPOSITORY_FILES) git(path.join(repoRoot, file));
     const cacheSources = path.join(repoRoot, "scripts", "build-cache");
     git(cacheSources, [path.join(cacheSources, "tests")]);

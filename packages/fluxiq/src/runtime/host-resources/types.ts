@@ -1,0 +1,1 @@
+export type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourceGrant, AutomationStudioHostResourceHolder, AutomationStudioHostResourceLease, AutomationStudioHostResourcePort, AutomationStudioHostResourceSnapshot } from "../automation-host/index.ts";

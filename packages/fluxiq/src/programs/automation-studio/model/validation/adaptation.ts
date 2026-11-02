@@ -1,4 +1,5 @@
-import type { AutomationStudioAdaptationPolicy, AutomationStudioDeterministicPath, AutomationStudioDeterministicPathNode, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeOrigin, AutomationStudioFlowChangeProposal, AutomationStudioFlowInstruction, AutomationStudioFlowRouter, AutomationStudioFlowSubflow } from "../index.ts";
+import { parseExecutableChangeOrigin as parseAutomationStudioFlowChangeOrigin, hasOnlyKeys, isOriginText } from "../../../../flows/executable/change/index.ts";
+import type { AutomationStudioAdaptationPolicy, AutomationStudioDeterministicPath, AutomationStudioDeterministicPathNode, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeProposal, AutomationStudioFlowInstruction, AutomationStudioFlowRouter, AutomationStudioFlowSubflow } from "../index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "../flow-size/index.ts";
 import { validateConditionExpression } from "./condition.ts";
@@ -9,9 +10,7 @@ const VALIDATION_RESULT_KINDS: ReadonlySet<unknown> = new Set(["trial", "replay"
 /** A basis entry is a check code, never prose or page text. */
 const VALIDATION_BASIS_CODE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 const VALIDATION_BASIS_MAX_ENTRIES = 16;
-const ORIGIN_ID_MAX_LENGTH = 256;
-const ORIGIN_SIGNATURE_MAX_LENGTH = 512;
-const ORIGIN_MAX_INSTRUCTION_IDS = 64;
+
 const DETERMINISTIC_PATH_ID_MAX_LENGTH = 256;
 const DETERMINISTIC_PATH_LABEL_MAX_LENGTH = 200;
 const DETERMINISTIC_PATH_NODE_KEYS = ["nodeId", "definitionId", "definitionVersion", "label", "parameters", "target", "expectation"];
@@ -252,64 +251,13 @@ function isJsonValue(value: unknown): boolean {
  * - `edge_case`: instruction ids (possibly none), and a run when there are
  *   none; a failure signature only with its run.
  */
-export function parseAutomationStudioFlowChangeOrigin(value: unknown): AutomationStudioFlowChangeOrigin | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record);
-  if (record.entryPoint === "instruction") {
-    if (!hasOnlyKeys(keys, ["entryPoint", "instructionIds"])) return undefined;
-    const instructionIds = originIdList(record.instructionIds);
-    return instructionIds?.length ? { entryPoint: "instruction", instructionIds } : undefined;
-  }
-  if (record.entryPoint === "run_failure") {
-    if (!hasOnlyKeys(keys, ["entryPoint", "runId", "failedNodeId", "failureSignature"])) return undefined;
-    const { runId, failedNodeId, failureSignature } = record;
-    if (!isOriginText(runId, ORIGIN_ID_MAX_LENGTH) || !isOriginText(failedNodeId, ORIGIN_ID_MAX_LENGTH) || !isOriginText(failureSignature, ORIGIN_SIGNATURE_MAX_LENGTH)) return undefined;
-    return { entryPoint: "run_failure", runId, failedNodeId, failureSignature };
-  }
-  if (record.entryPoint === "edge_case") {
-    if (!hasOnlyKeys(keys, ["entryPoint", "instructionIds", "runId", "failureSignature"])) return undefined;
-    const instructionIds = originIdList(record.instructionIds);
-    const { runId, failureSignature } = record;
-    if (!instructionIds) return undefined;
-    if (runId !== undefined && !isOriginText(runId, ORIGIN_ID_MAX_LENGTH)) return undefined;
-    if (failureSignature !== undefined && (runId === undefined || !isOriginText(failureSignature, ORIGIN_SIGNATURE_MAX_LENGTH))) return undefined;
-    if (!instructionIds.length && runId === undefined) return undefined;
-    return {
-      entryPoint: "edge_case",
-      instructionIds,
-      ...(typeof runId === "string" ? { runId } : {}),
-      ...(typeof failureSignature === "string" ? { failureSignature } : {})
-    };
-  }
-  return undefined;
-}
+export { parseExecutableChangeOrigin as parseAutomationStudioFlowChangeOrigin } from "../../../../flows/executable/change/index.ts";
 
 function isValidationBasis(value: unknown): value is string[] {
   return Array.isArray(value)
     && value.length <= VALIDATION_BASIS_MAX_ENTRIES
     && value.every((entry) => typeof entry === "string" && VALIDATION_BASIS_CODE.test(entry))
     && new Set(value).size === value.length;
-}
-
-function hasOnlyKeys(keys: string[], allowed: string[]): boolean {
-  return keys.every((key) => allowed.includes(key));
-}
-
-function originIdList(value: unknown): string[] | undefined {
-  if (!Array.isArray(value) || value.length > ORIGIN_MAX_INSTRUCTION_IDS) return undefined;
-  if (!value.every((entry) => isOriginText(entry, ORIGIN_ID_MAX_LENGTH)) || new Set(value).size !== value.length) return undefined;
-  return [...value] as string[];
-}
-
-// Non-empty, bounded, no surrounding whitespace, and no C0 control character or DEL.
-function isOriginText(value: unknown, maxLength: number): value is string {
-  if (typeof value !== "string" || value.length === 0 || value.length > maxLength || value.trim() !== value) return false;
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code < 0x20 || code === 0x7f) return false;
-  }
-  return true;
 }
 
 export function validateAutomationStudioAdaptationPolicy(policy: AutomationStudioAdaptationPolicy): AutomationStudioValidationResult {

@@ -30,7 +30,7 @@ import { automationStudioArrivalPlanNode } from "../../../flow-bootstrap/verific
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { automationStudioProjectStructurePlan, automationStudioProjectTaskSpec } from "../../../project-agents/contracts/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../project-agents/host-resources/index.ts";
-import { StubHost } from "../../../project-agents/host-resources/tests/stub-host.ts";
+import { StubHost } from "../../../../../../runtime/host-resources/tests/stub-host.ts";
 import { automationStudioProjectAssembly } from "../../../project-agents/supervisor/index.ts";
 import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { PRESS, part, subflowTrialFixture } from "../../subflow-trial/tests/fixtures.ts";

@@ -11,24 +11,11 @@
 // a question is waiting on *them*, while one waiting out a timer or an outside
 // state is not.
 
-import type { AutomationStudioRuntimeSession } from "../../model/index.ts";
+import { automationStudioRunProgressStatus, type AutomationStudioRunProgressFacts, type AutomationStudioRunProgressStatus } from "../../../../runtime/run-control/index.ts";
 import type { AutomationStudioRunControlSnapshot } from "./types.ts";
 
-export const AUTOMATION_STUDIO_RUN_PROGRESS_STATUSES = [
-  "ready",
-  "running",
-  "waiting",
-  "paused",
-  "adapting",
-  "user_action_required",
-  "completed",
-  "failed",
-  "stopped",
-  "interrupted"
-] as const;
-
-export type AutomationStudioRunProgressStatus = typeof AUTOMATION_STUDIO_RUN_PROGRESS_STATUSES[number];
-
+export { AUTOMATION_STUDIO_RUN_PROGRESS_STATUSES } from "../../../../runtime/run-control/index.ts";
+export type { AutomationStudioRunProgressStatus } from "../../../../runtime/run-control/index.ts";
 export type AutomationStudioRunProgress = {
   status: AutomationStudioRunProgressStatus;
   label: string;
@@ -49,26 +36,12 @@ const LABELS: Record<AutomationStudioRunProgressStatus, string> = {
   interrupted: "Interrupted"
 };
 
-type SessionFacts = Pick<AutomationStudioRuntimeSession, "status"> & { trace?: { parked?: unknown } | undefined };
+type SessionFacts = AutomationStudioRunProgressFacts;
 
 export function automationStudioRunProgress(session: SessionFacts, control: AutomationStudioRunControlSnapshot | null): AutomationStudioRunProgress {
-  const status = progressStatus(session, control);
+  const status = automationStudioRunProgressStatus(session, control);
   const detail = progressDetail(status, control);
   return { status, label: LABELS[status], ...(detail ? { detail } : {}) };
-}
-
-function progressStatus(session: SessionFacts, control: AutomationStudioRunControlSnapshot | null): AutomationStudioRunProgressStatus {
-  switch (session.status) {
-    case "queued": return "ready";
-    case "succeeded": return "completed";
-    case "failed": return "failed";
-    case "cancelled": return "stopped";
-    case "interrupted": return "interrupted";
-    case "waiting": return session.trace?.parked ? "user_action_required" : "waiting";
-    case "running":
-      if (control?.state === "paused") return control.holder === "person" ? "user_action_required" : "paused";
-      return control?.phase === "adapting" ? "adapting" : "running";
-  }
 }
 
 function progressDetail(status: AutomationStudioRunProgressStatus, control: AutomationStudioRunControlSnapshot | null): string | undefined {

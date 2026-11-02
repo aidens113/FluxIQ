@@ -6,3 +6,4 @@ export { resolveStep } from "./resolve-step.mjs";
 export { tsconfigReferences } from "./tsconfig-references.mjs";
 export { findUnregisteredScripts } from "./unregistered-scripts.mjs";
 export { readWorkspacePackages } from "./workspace-packages.mjs";
+export { scriptDependencies } from "./script-dependencies.mjs";

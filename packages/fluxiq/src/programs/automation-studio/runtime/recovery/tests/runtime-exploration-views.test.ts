@@ -9,7 +9,7 @@ import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.
 import { runAutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
 
 describe("what a repair's exploration is shown of the views it took", () => {
-  it("the newest whole, each earlier one by the call that replaced it", async () => {
+  it("keeps each historical view as its own immutable reference and publishes the newest whole view", async () => {
     const shown: Array<Map<string, JsonValue>> = [];
     const decisions: JsonObject[] = [
       { kind: "tool_call", callId: "call.look.1", toolId: "shop.look", input: { area: "order" } },
@@ -40,8 +40,11 @@ describe("what a repair's exploration is shown of the views it took", () => {
       now: () => 1_000
     });
 
-    expect(shown[1]?.get("call.look.1")).toEqual({ area: "order", controls: [{ handle: "c1", name: "Control in order" }] });
-    expect(shown[2]?.get("call.look.1")).toEqual({ area: "order", supersededBy: "call.look.2" });
-    expect(shown[2]?.get("call.look.2")).toEqual({ area: "refunds", controls: [{ handle: "c1", name: "Control in refunds" }] });
+    const first = { area: "order", controls: { "core.view_reference": { callId: "call.look.1", group: "top" } } };
+    expect(shown[1]?.get("call.look.1")).toEqual(first);
+    expect(shown[2]?.get("call.look.1")).toEqual(first);
+    expect(shown[1]?.get("core.current_view")).toEqual({ groups: [{ group: "top", callId: "call.look.1", value: { controls: [{ handle: "c1", name: "Control in order" }] } }] });
+    expect(shown[2]?.get("call.look.2")).toEqual({ area: "refunds", controls: { "core.view_reference": { callId: "call.look.2", group: "top" } } });
+    expect(shown[2]?.get("core.current_view")).toEqual({ groups: [{ group: "top", callId: "call.look.2", value: { controls: [{ handle: "c1", name: "Control in refunds" }] } }] });
   });
 });

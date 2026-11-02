@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../../../core/index.ts";
 import { applyAutomationStudioFlowDraftAmendments, AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA } from "../index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../step.ts";
@@ -266,7 +267,7 @@ describe("binding a step's arguments", () => {
   it("refuses a leaf that is not a binding, a key the step does not have, and a malformed form, changing nothing", () => {
     const draft = loopDraft();
     const before = structuredClone(draft);
-    const refusedFor = (input: Record<string, unknown>) => applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: input as never }]).refused;
+    const refusedFor = (input: JsonObject) => applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input }]).refused;
     expect(refusedFor({ query: "red towels" })).toEqual([{ step: 2, reason: "bind_not_a_binding", parameter: "query" }]);
     expect(refusedFor({ query: { $input: "query" }, options: { limit: 7 } })).toEqual([{ step: 2, reason: "bind_not_a_binding", parameter: "options.limit" }]);
     expect(refusedFor({})).toEqual([{ step: 2, reason: "bind_not_a_binding" }]);
@@ -325,7 +326,7 @@ describe("binding a step's arguments", () => {
       effect: "mutate", effectApplied: true, disposition: "kept", acts: ["a2.size"]
     }];
     const before = structuredClone(draft);
-    const refusedFor = (input: Record<string, unknown>) => applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "bind", input: input as never }]).refused;
+    const refusedFor = (input: JsonObject) => applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "bind", input }]).refused;
     // 0021: a binding form on the target itself.
     expect(refusedFor({ target: { $input: "paperTowelVariant", test: { handle: "t667" } } })).toEqual([{ step: 1, reason: "bind_new_key", parameter: "target", control: true, bindable: [] }]);
     // A form below it, under the parameters wrapper.

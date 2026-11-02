@@ -1,75 +1,39 @@
 import { describe, expect, it } from "vitest";
-import {
-  assertValidRecordingIndex,
-  emptyRecordingIndex,
-  recordingIndexStateObjectRefs,
-  sortRecordingIndex,
-  validateRecordingIndex,
-  type RecordingIndex
-} from "../state-index.ts";
+import { assertValidRecordingIndex, emptyRecordingIndex, recordingIndexStateObjectRefs, validateRecordingIndex, type RecordingIndex } from "../state-index.ts";
+import { validateRecordingIndex as canonicalValidate } from "../../../../runtime/recording/indexing/index.ts";
+import { automationStudioRecordingReferenceReader } from "../recording-index-policy/index.ts";
 
 const projectId = "project.one";
 const stateRef = `automation-object://project/${encodeURIComponent(projectId)}/${"a".repeat(64)}`;
 const screenshotRef = `automation-object://project/${encodeURIComponent(projectId)}/${"b".repeat(64)}`;
 
-describe("Recording state index contracts", () => {
-  it("accepts a valid action-to-state index", () => {
+describe("Studio recording index reference policy", () => {
+  it("keeps valid full legacy projections compatible with explicit canonical validation", () => {
     const index = fixtureIndex();
-
-    expect(validateRecordingIndex(index)).toEqual([]);
+    expect(validateRecordingIndex(index)).toStrictEqual([]);
+    expect(validateRecordingIndex(index)).toStrictEqual(canonicalValidate(index, automationStudioRecordingReferenceReader));
     expect(() => assertValidRecordingIndex(index)).not.toThrow();
     expect(recordingIndexStateObjectRefs(index)).toEqual([stateRef, screenshotRef].sort());
   });
 
-  it("accepts action visual target summaries distinct from state links", () => {
+  it("retains exact invalid and cross-project object-reference diagnostics", () => {
     const index = fixtureIndex();
-    index.actions["action.click"]!.visualTarget = {
-      entityId: "checkout.submit",
-      entityKind: "button",
-      statePath: { namespace: "app", path: "elements.submit.visible" },
-      stateSnapshotId: "state.snapshot",
-      visualFrameId: "viewport",
-      visualLayerId: "element.submit",
-      confidence: 0.9
-    };
-
-    expect(validateRecordingIndex(index)).toEqual([]);
-  });
-
-  it("rejects missing state refs and missing action links", () => {
-    const index = fixtureIndex();
-    index.entries["entry.action"]!.stateSnapshotId = "state.missing";
-    index.actions["action.click"]!.stateAtActionId = "state.missing";
-    index.actions["action.click"]!.visualTarget = { entityId: "checkout.submit", stateSnapshotId: "state.missing" };
-    index.states["state.snapshot"]!.linkedActionIds = ["action.missing"];
-
-    expect(validateRecordingIndex(index).map((issue) => issue.code)).toEqual([
-      "missing_state",
-      "missing_state",
-      "missing_state",
-      "missing_action"
-    ]);
-    expect(() => assertValidRecordingIndex(index)).toThrow("Recording state index is invalid");
-  });
-
-  it("rejects object refs from another project", () => {
-    const index = fixtureIndex();
+    index.states["state.snapshot"]!.stateRef = "invalid-ref";
     index.states["state.snapshot"]!.screenshotRef = `automation-object://project/${encodeURIComponent("project.two")}/${"c".repeat(64)}`;
-
-    expect(validateRecordingIndex(index)).toMatchObject([
-      {
-        code: "cross_project_ref",
-        path: "states.state.snapshot.objectRefs"
-      }
+    expect(validateRecordingIndex(index)).toStrictEqual([
+      { code: "invalid_object_ref", path: "states.state.snapshot.objectRefs", message: "Object reference is not an Automation Studio content ref: invalid-ref" },
+      { code: "cross_project_ref", path: "states.state.snapshot.objectRefs", message: "Object reference points to project project.two, expected project.one." }
     ]);
+    expect(() => assertValidRecordingIndex(index)).toThrow("Recording state index is invalid:\n- states.state.snapshot.objectRefs: Object reference is not an Automation Studio content ref: invalid-ref");
   });
 
-  it("sorts records deterministically", () => {
-    const index = emptyRecordingIndex({ projectId, recordingId: "recording.one", startedAt: 10, updatedAt: 20 });
-    index.entries.b = { entryId: "b", type: "action" };
-    index.entries.a = { entryId: "a", type: "observation" };
-
-    expect(Object.keys(sortRecordingIndex(index).entries)).toEqual(["a", "b"]);
+  it("keeps the existing API ref syntax and encoded same-project identity interpretation", () => {
+    const index = fixtureIndex();
+    index.states["state.snapshot"]!.stateRef = `/api/programs/automation-studio/state-assets/${encodeURIComponent(projectId)}/${"d".repeat(64)}`;
+    expect(validateRecordingIndex(index)).toEqual([]);
+    expect(automationStudioRecordingReferenceReader.accepts(stateRef, { projectId })).toBe(true);
+    expect(automationStudioRecordingReferenceReader.accepts(stateRef, { projectId: "other" })).toBe(false);
+    expect(automationStudioRecordingReferenceReader.validate("object://arbitrary", { projectId })).toStrictEqual({ ok: false, code: "invalid_object_ref", message: "Object reference is not an Automation Studio content ref: object://arbitrary" });
   });
 });
 

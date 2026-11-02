@@ -9,3 +9,7 @@ export * from "./version/index.ts";
 export * from "./adaptation/index.ts";
 export * from "./recovery/index.ts";
 export * from "./regions/compilation/index.ts";
+export type { ExecutableDefinitionStatus } from "./definition-status.ts";
+export * from "./routing/index.ts";
+export * from "./compiled-plan/index.ts";
+export * from "./change/index.ts";

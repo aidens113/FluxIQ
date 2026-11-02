@@ -2,7 +2,7 @@
 // one, the judge's request is byte for byte what it was; with one, the parts
 // and what nobody asked for ride as a labelled section subordinate to the
 // instructions, on every call. No model is called: the provider is scripted.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { verifyAutomationStudioRunResult, type AutomationStudioResultVerificationRequest } from "../../verify.ts";
@@ -54,6 +54,7 @@ const judge = (provider: AutomationStudioLlmProvider, verify?: (request: Automat
 const bytes = (request: AutomationStudioLlmTaskRequest | undefined) => JSON.stringify(request).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gu, "<minted>");
 
 describe("the build-test judge without a checklist", () => {
+  afterEach(() => vi.restoreAllMocks());
   it("hands verify the very summary it was given, as before", async () => {
     const given = summary();
     const verified: AutomationStudioResultVerificationRequest[] = [];
@@ -68,6 +69,7 @@ describe("the build-test judge without a checklist", () => {
   });
 
   it("sends the provider the same bytes with the field absent, and with the checklist the checklist is the only difference", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const without = scripted();
     await judge(without.provider)({ summary: summary() });
     const absent = scripted();

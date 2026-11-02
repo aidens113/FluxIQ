@@ -1,31 +1,7 @@
+import type { AutomationStudioSchemaVersion, EvidenceLayer, EvidenceReference } from "@fluxiq/contracts/recording";
+export type { AutomationStudioSchemaVersion, EvidenceLayer, EvidenceReference } from "@fluxiq/contracts/recording";
 import type { JsonObject } from "../../../core/index.ts";
 import type { EvidenceAnchor, StatePresentationMetadata, StateValue } from "./state.ts";
-
-export type AutomationStudioSchemaVersion = "0.1";
-
-export type EvidenceLayer =
-  | "raw_recording"
-  | "normalized_timeline"
-  | "signal_mining"
-  | "evidence_fact"
-  | "evidence_observation"
-  | "state_action_correlation"
-  | "evidence_claim"
-  | "learned_task_model"
-  | "policy_graph"
-  | "runtime_execution";
-
-export type EvidenceReference = {
-  layer: EvidenceLayer;
-  artifactId: string;
-  entryId?: string;
-  signalPath?: string;
-  noteId?: string;
-  relationship?: string;
-  confidence?: number;
-  metadata?: JsonObject;
-};
-
 export type StateFactReference = {
   snapshotId?: string;
   namespace: string;
@@ -33,7 +9,6 @@ export type StateFactReference = {
   observedAt?: number;
   evidence?: EvidenceReference;
 };
-
 export type StateFact = StateFactReference & {
   id?: string;
   value?: StateValue;
@@ -42,7 +17,6 @@ export type StateFact = StateFactReference & {
   presentation?: StatePresentationMetadata;
   metadata?: JsonObject;
 };
-
 export type NodeEvidenceRole =
   | "eligibility"
   | "negative_eligibility"
@@ -52,7 +26,6 @@ export type NodeEvidenceRole =
   | "context"
   | "invariant"
   | "ignored";
-
 export type EvidenceComparator =
   | { kind: "exists" }
   | { kind: "equals"; value: unknown }
@@ -60,7 +33,6 @@ export type EvidenceComparator =
   | { kind: "numeric"; operator: ">" | ">=" | "<" | "<=" | "==" | "!="; value: number }
   | { kind: "changed" }
   | { kind: "custom"; comparatorId: string; parameters?: JsonObject };
-
 export type NodeEvidenceBinding = {
   id: string;
   nodeId: string;
@@ -74,7 +46,6 @@ export type NodeEvidenceBinding = {
   provenance?: EvidenceReference[];
   metadata?: JsonObject;
 };
-
 export type GeneratedMetadata = {
   generatedBy: "user" | "assistant" | "signal_miner" | "runtime_trainer" | "import" | "migration";
   generatedAt: number;

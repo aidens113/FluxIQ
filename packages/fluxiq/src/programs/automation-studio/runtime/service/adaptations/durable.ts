@@ -1,3 +1,4 @@
+import { executableAdaptationRequiresChangeProposal as adaptationRequiresChangeProposal } from "../../../../../flows/executable/change/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import {
   type AutomationStudioFlowAdaptation,
@@ -7,7 +8,6 @@ import {
   validateAutomationStudioFlow
 } from "../../../model/index.ts";
 import type { AutomationStudioFlowMutations, AutomationStudioFlowStore, AutomationStudioFlowWriter } from "../flows/index.ts";
-import { AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES } from "./gates.ts";
 import { assertFlowValidationOk, durableAdaptationMutationRecord, type AutomationStudioAdaptationPatches } from "./patches.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { mapWithConcurrency, uniqueStrings, upsertBy } from "../collections.ts";
@@ -212,8 +212,5 @@ export class AutomationStudioDurableAdaptations {
   }
 }
 
-export function adaptationRequiresChangeProposal(adaptation: AutomationStudioFlowAdaptation): boolean {
-  return adaptation.patch.some((patch) => AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES[patch.kind]?.requiresProposal !== false);
-}
-
+export { executableAdaptationRequiresChangeProposal as adaptationRequiresChangeProposal } from "../../../../../flows/executable/change/index.ts";
 

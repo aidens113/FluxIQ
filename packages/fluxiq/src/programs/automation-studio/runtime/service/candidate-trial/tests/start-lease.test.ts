@@ -9,7 +9,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { automationStudioLiveRunEnvironment } from "../../../environment/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler, type AutomationStudioHostResourceLease } from "../../../project-agents/host-resources/index.ts";
-import { StubHost } from "../../../project-agents/host-resources/tests/stub-host.ts";
+import { StubHost } from "../../../../../../runtime/host-resources/tests/stub-host.ts";
 import { automationStudioCandidateTrialPort, automationStudioCandidateTrialStart, type AutomationStudioPrepareCandidateStart } from "../index.ts";
 import { trialFixture } from "./fixtures.ts";
 

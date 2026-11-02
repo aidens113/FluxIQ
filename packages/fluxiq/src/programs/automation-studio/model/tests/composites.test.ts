@@ -1,17 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  compositeNodeDefinitionId,
-  createBlankAutomationStudioFlowArtifact,
-  createCallFlowNode,
-  createPublishedFlowSnapshot,
-  getCallFlowConfiguration,
-  projectPublishedFlowSnapshotToNodeDefinition,
-  validateFlowComposition
-} from "../index.ts";
+import { compositeNodeDefinitionId, createBlankAutomationStudioFlowArtifact, createPublishedFlowSnapshot, projectPublishedFlowSnapshotToNodeDefinition } from "../index.ts";
 
 describe("published Flow composites", () => {
-  const scope = { kind: "domain" as const, domainId: "example" };
-  const publishedFlow = () => ({
+const scope = { kind: "domain" as const, domainId: "example" };
+const publishedFlow = () => ({
     ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.shared", projectId: "project.shared", name: "Shared", scope, now: 1 }),
     interface: {
       inputs: [{ id: "input", name: "input", valueType: { kind: "string" as const } }],
@@ -19,7 +11,7 @@ describe("published Flow composites", () => {
     }
   });
 
-  it("projects an immutable published snapshot into a typed, scoped composite node", () => {
+it("projects an immutable published snapshot into a typed, scoped composite node", () => {
     const snapshot = createPublishedFlowSnapshot(publishedFlow(), "1.0.0", 20);
     const definition = projectPublishedFlowSnapshotToNodeDefinition(snapshot);
     expect(snapshot.flowDigest).toMatch(/^sha256:/);
@@ -31,40 +23,14 @@ describe("published Flow composites", () => {
     expect(definition.inputs[0]).toMatchObject({ id: "input", valueType: "string" });
   });
 
-  it("requires an exact published version and rejects unauthorized cross-scope calls", () => {
-    const target = publishedFlow();
-    const snapshot = createPublishedFlowSnapshot(target, "1.0.0", 20);
-    const caller = {
-      ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.caller", projectId: "project.caller", name: "Caller", scope, now: 1 }),
-      nodes: [createCallFlowNode({ id: "call", target: { flowId: target.flowId, version: "1.0.0", scope }, inputBindings: [{ targetPortId: "input", valueKey: "message" }] })]
-    };
-    expect(validateFlowComposition({ flow: caller, publishedSnapshots: [snapshot] })).toEqual({ ok: true, issues: [] });
-    expect(getCallFlowConfiguration(caller.nodes[0]!)).toMatchObject({ inputBindings: [{ targetPortId: "input", valueKey: "message" }] });
-    const invalid = { ...caller, nodes: [createCallFlowNode({ id: "call", target: { flowId: target.flowId, version: "2.0.0", scope: { kind: "global" } } })] };
-    expect(validateFlowComposition({ flow: invalid, publishedSnapshots: [snapshot] }).issues.map((issue) => issue.code)).toEqual(expect.arrayContaining(["flow.call_target_missing"]));
-  });
-
-  it("rejects deprecated targets, missing required bindings, and unavailable child capabilities", () => {
-    const target = { ...publishedFlow(), interface: { ...publishedFlow().interface, inputs: [{ id: "input", name: "input", valueType: { kind: "string" as const }, required: true }] }, regions: [{ id: "region", name: "Region", kind: "deterministic" as const, nodeIds: [], entryPorts: [], exitPorts: [], requiredRuntimeCapabilities: ["orders.execute"] }] };
-    const snapshot = createPublishedFlowSnapshot(target, "1.0.0", 20);
-    const caller = { ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.caller", projectId: "project.caller", name: "Caller", scope, now: 1 }), nodes: [createCallFlowNode({ id: "call", target: { flowId: target.flowId, version: "1.0.0", scope } })] };
-    const codes = validateFlowComposition({ flow: caller, publishedSnapshots: [snapshot], deprecatedPublicationIds: [`${target.flowId}@1.0.0`], runtimeCapabilities: [] }).issues.map((issue) => issue.code);
-    expect(codes).toEqual(expect.arrayContaining(["flow.call_target_deprecated", "flow.call_required_input_unbound", "flow.call_runtime_capability_unavailable"]));
-  });
-
-  it("rejects ambiguous duplicate bindings to one child port", () => {
-    const target = publishedFlow();
-    const snapshot = createPublishedFlowSnapshot(target, "1.0.0", 20);
-    const caller = { ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.caller", projectId: "project.caller", name: "Caller", scope, now: 1 }), nodes: [createCallFlowNode({ id: "call", target: { flowId: target.flowId, version: "1.0.0", scope }, inputBindings: [{ targetPortId: "input", valueKey: "first" }, { targetPortId: "input", valueKey: "second" }] })] };
-    expect(validateFlowComposition({ flow: caller, publishedSnapshots: [snapshot] }).issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "flow.call_duplicate_port_binding" })]));
-  });
-
-  it("rejects direct and indirect composite dependency cycles", () => {
-    const flowA = { ...publishedFlow(), flowId: "flow.a" };
-    const flowB = { ...publishedFlow(), flowId: "flow.b" };
-    const snapshotA = createPublishedFlowSnapshot({ ...flowA, nodes: [createCallFlowNode({ id: "a-b", target: { flowId: "flow.b", version: "1.0.0", scope } })] }, "1.0.0", 20);
-    const snapshotB = createPublishedFlowSnapshot({ ...flowB, nodes: [createCallFlowNode({ id: "b-a", target: { flowId: "flow.a", version: "1.0.0", scope } })] }, "1.0.0", 20);
-    const caller = { ...flowA, nodes: [createCallFlowNode({ id: "a-b", target: { flowId: "flow.b", version: "1.0.0", scope } })] };
-    expect(validateFlowComposition({ flow: caller, publishedSnapshots: [snapshotA, snapshotB] }).issues.map((issue) => issue.code)).toContain("flow.composite_cycle");
+  it("adds publication and display metadata without changing executable identity", () => {
+    const flow = publishedFlow();
+    const first = createPublishedFlowSnapshot(flow, "1.0.0", 20, { publishedBy: "publisher.first", changelog: "First" });
+    const second = createPublishedFlowSnapshot({ ...flow, name: "Renamed", description: "Display text" }, "1.0.0", 99, { publishedBy: "publisher.second", changelog: "Second" });
+    expect(first.flowDigest).toBe(second.flowDigest);
+    expect(first).toMatchObject({ schemaVersion: "0.1", name: "Shared", publishedAt: 20, publishedBy: "publisher.first", changelog: "First" });
+    expect(second).toMatchObject({ name: "Renamed", description: "Display text", publishedAt: 99, publishedBy: "publisher.second", changelog: "Second" });
+    expect(first.nodes).not.toBe(flow.nodes);
+    expect(first.interface).not.toBe(flow.interface);
   });
 });

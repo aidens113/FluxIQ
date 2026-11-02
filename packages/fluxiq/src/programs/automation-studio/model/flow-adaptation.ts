@@ -1,3 +1,6 @@
+import type { ExecutableChangeProposalMode, ExecutableChangeProposalStatus, ExecutableChangeProposalKind, ExecutableAdaptationRiskLevel, ExecutableAdaptationStatus, ExecutableChangeEntryPoint, ExecutableChangeOrigin, ExecutableChangeValidationKind, ExecutableAdaptationValidationResult } from "../../../flows/executable/change/index.ts";
+import type { ExecutableDefinitionStatus } from "../../../flows/executable/index.ts";
+import type { ExecutableRouteTarget, ExecutableRouteRule, ExecutableRouter, ExecutableSubflowTarget, ExecutableRouteDecision } from "../../../flows/executable/routing/index.ts";
 import type { AutomationStudioFailureRecord, AutomationStudioRunDatasetSummary, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { ExecutableFlowRunStatus } from "../../../flows/executable/execution/index.ts";
@@ -6,12 +9,9 @@ import type { EvidenceReference, StateFactReference } from "./evidence.ts";
 import type { AutomationStudioFlowScope } from "./flows.ts";
 import type { AutomationStudioInterventionMode } from "./flows.ts";
 
-export type AutomationStudioFlowExpansionStatus = "active" | "disabled" | "archived";
+export type AutomationStudioFlowExpansionStatus = ExecutableDefinitionStatus;
 
-export type AutomationStudioRouteTarget = {
-  kind: "subflow";
-  subflowId: string;
-};
+export type AutomationStudioRouteTarget = ExecutableRouteTarget;
 
 export type AutomationStudioFlowRouteGroup = {
   schemaVersion: "0.1";
@@ -27,31 +27,22 @@ export type AutomationStudioFlowRouteGroup = {
   metadata?: JsonObject;
 };
 
-export type AutomationStudioFlowRouteRule = {
+export type AutomationStudioFlowRouteRule = ExecutableRouteRule & {
   schemaVersion: "0.1";
-  ruleId: string;
   routerId: string;
   name: string;
   description?: string;
-  target: AutomationStudioRouteTarget;
-  order: number;
-  status: AutomationStudioFlowExpansionStatus;
-  condition?: AutomationConditionExpression;
   confidence?: number;
   createdAt: number;
   updatedAt: number;
   metadata?: JsonObject;
 };
 
-export type AutomationStudioFlowRouter = {
+export type AutomationStudioFlowRouter = ExecutableRouter<AutomationStudioFlowRouteRule> & {
   schemaVersion: "0.1";
-  routerId: string;
-  flowId: string;
   projectId: string;
   name: string;
   description?: string;
-  rules: AutomationStudioFlowRouteRule[];
-  fallback?: AutomationStudioRouteTarget | { kind: "fail"; message?: string };
   status: AutomationStudioFlowExpansionStatus;
   createdAt: number;
   updatedAt: number;
@@ -67,15 +58,13 @@ export type AutomationStudioSubflowRole =
   | "fallback"
   | "utility";
 
-export type AutomationStudioFlowSubflow = {
+export type AutomationStudioFlowSubflow = ExecutableSubflowTarget & {
   schemaVersion: "0.1";
-  subflowId: string;
   flowId: string;
   projectId: string;
   name: string;
   description?: string;
   role: AutomationStudioSubflowRole;
-  status: AutomationStudioFlowExpansionStatus;
   tags?: string[];
   graphFlowId?: string;
   routeTags?: string[];
@@ -137,29 +126,11 @@ export type AutomationStudioFlowInstruction = {
   metadata?: JsonObject;
 };
 
-export type AutomationStudioChangeProposalMode = "auto" | "manual" | "mixed";
+export type AutomationStudioChangeProposalMode = ExecutableChangeProposalMode;
 
-export type AutomationStudioChangeProposalStatus =
-  | "pending"
-  | "auto_approved"
-  | "approved"
-  | "rejected"
-  | "applied"
-  | "superseded"
-  | "cancelled";
+export type AutomationStudioChangeProposalStatus = ExecutableChangeProposalStatus;
 
-export type AutomationStudioChangeProposalKind =
-  | "create_subflow"
-  | "edit_subflow"
-  | "edit_router"
-  | "edit_expectation"
-  | "edit_action_target"
-  | "edit_recovery"
-  | "insert_deterministic_path"
-  | "promote_adaptation"
-  | "edit_instruction"
-  | "add_handler"
-  | "replace_unit";
+export type AutomationStudioChangeProposalKind = ExecutableChangeProposalKind;
 
 /**
  * The durable form of a unit repair (state-aware recovery plan, C12), the two
@@ -309,16 +280,7 @@ export type AutomationStudioFlowRunFailureCounts = {
   repairedInRun: number;
 };
 
-export type AutomationStudioRouteDecisionRecord = {
-  decisionId: string;
-  routerId: string;
-  selectedRuleId?: string;
-  selectedSubflowId?: string;
-  fallbackUsed?: boolean;
-  rejectedRuleIds?: string[];
-  decidedAt: number;
-  metadata?: JsonObject;
-};
+export type AutomationStudioRouteDecisionRecord = ExecutableRouteDecision;
 
 export type AutomationStudioSubflowExecutionRecord = {
   entryId: string;
@@ -510,20 +472,12 @@ export type AutomationStudioFlowRunDetail = {
   metadata?: JsonObject;
 };
 
-export type AutomationStudioAdaptationRiskLevel = "low" | "medium" | "high" | "destructive";
+export type AutomationStudioAdaptationRiskLevel = ExecutableAdaptationRiskLevel;
 
-export type AutomationStudioFlowAdaptationStatus =
-  | "proposed"
-  | "testing"
-  | "validated"
-  | "applied"
-  | "rejected"
-  | "disabled"
-  | "reverted"
-  | "superseded";
+export type AutomationStudioFlowAdaptationStatus = ExecutableAdaptationStatus;
 
 /** Which of the three ways into the flow-improvement loop produced a change. */
-export type AutomationStudioFlowChangeEntryPoint = "instruction" | "run_failure" | "edge_case";
+export type AutomationStudioFlowChangeEntryPoint = ExecutableChangeEntryPoint;
 
 /**
  * Where a change came from, whichever entry point produced it. A Flow
@@ -532,10 +486,7 @@ export type AutomationStudioFlowChangeEntryPoint = "instruction" | "run_failure"
  * Ids and Core failure signatures only, never page text or values.
  * `parseAutomationStudioFlowChangeOrigin` is the only reader of a stored one.
  */
-export type AutomationStudioFlowChangeOrigin =
-  | { entryPoint: "instruction"; instructionIds: string[] }
-  | { entryPoint: "run_failure"; runId: string; failedNodeId: string; failureSignature: string }
-  | { entryPoint: "edge_case"; instructionIds: string[]; runId?: string; failureSignature?: string };
+export type AutomationStudioFlowChangeOrigin = ExecutableChangeOrigin;
 
 /**
  * How a validation result was observed: a `trial` of the candidate on the live
@@ -544,19 +495,10 @@ export type AutomationStudioFlowChangeOrigin =
  * has none and reads as `trial`. A structural check is never a validation
  * result; it stays in `metadata.structuralChecks`.
  */
-export type AutomationStudioFlowChangeValidationKind = "trial" | "replay";
+export type AutomationStudioFlowChangeValidationKind = ExecutableChangeValidationKind;
 
 /** One observed run of a change. */
-export type AutomationStudioFlowAdaptationValidationResult = {
-  runId: string;
-  status: "succeeded" | "failed";
-  checkedAt: number;
-  detail?: string;
-  /** Absent on records written before this field existed: read it as `trial`. */
-  kind?: AutomationStudioFlowChangeValidationKind;
-  /** The verdict's evidence, as check codes only. Present only on a success. */
-  basis?: string[];
-};
+export type AutomationStudioFlowAdaptationValidationResult = ExecutableAdaptationValidationResult;
 
 export type AutomationStudioFlowAdaptation = {
   schemaVersion: "0.1";
