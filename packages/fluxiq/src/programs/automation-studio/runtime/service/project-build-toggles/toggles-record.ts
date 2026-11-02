@@ -1,6 +1,7 @@
 import { AutomationStudioExploredToggles } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioExploredToggle } from "../../flow-bootstrap/script-statements/index.ts";
 import { AutomationStudioProjectRecordRefusal, type AutomationStudioProjectBuildRecordStore, type AutomationStudioProjectBuildRef, type AutomationStudioProjectBuildToggle } from "../../project-agents/index.ts";
+import { AutomationStudioProjectWriteCompletion, invokeAutomationStudioProjectWriteCallback } from "../../project-agents/record-completion/index.ts";
 
 // The build's toggles, written into the build record as they are recorded
 // (t792; debug run-mvswfjbq-d0a95f6e, fix 2): every press the domain answered
@@ -32,14 +33,18 @@ type TrialEnvironment = { readonly exploredToggles?: unknown };
 type Records = Pick<AutomationStudioProjectBuildRecordStore, "recordToggle">;
 
 export class AutomationStudioProjectBuildTogglesRecord {
-  private record: { records: Records; ref: AutomationStudioProjectBuildRef } | undefined;
+  private record: { records: Records; ref: AutomationStudioProjectBuildRef; recordToggle: Records["recordToggle"] } | undefined;
   /** Each toggle written or being written, by its whole value. */
   private readonly written = new Set<string>();
   private writing: Promise<void> = Promise.resolve();
   private failure: { error: unknown } | undefined;
   private readonly left: string[] = [];
+  private unobserved = false;
+  private readonly completion: AutomationStudioProjectWriteCompletion;
 
-  private constructor(private readonly toggles: AutomationStudioExploredToggles) {}
+  private constructor(private readonly toggles: AutomationStudioExploredToggles) {
+    this.completion = AutomationStudioProjectWriteCompletion.for(this, togglesSyncAndFlushed);
+  }
 
   /** The build's one record of toggles: its trial environment's, or one kept for that environment (header). */
   static toggles(environment: TrialEnvironment): AutomationStudioExploredToggles {
@@ -73,20 +78,33 @@ export class AutomationStudioProjectBuildTogglesRecord {
 
   /** Writes into this build's record from now on, starting with every toggle recorded so far. */
   bind(records: Records, ref: AutomationStudioProjectBuildRef): void {
-    this.record = { records, ref };
+    this.record = { records, ref, recordToggle: records.recordToggle };
     this.sync();
   }
 
   /** Writes every toggle not written yet, in the order recorded, one write at a time; nothing before the record is bound. */
-  sync(): void {
+  sync(invocation?: object): void {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
     const record = this.record;
     if (!record) return;
     for (const toggle of this.toggles.list()) {
       const key = JSON.stringify(toggle);
       if (this.written.has(key)) continue;
       this.written.add(key);
-      this.writing = this.writing.then(() => this.write(record, toggle));
+      if (!frame) this.unobserved = true;
+      const write = this.write;
+      this.writing = this.writing.then(() => write.call(this, record, toggle, frame));
     }
+  }
+
+  /** Returns the exact Promise whose completed queue this producer can authenticate. */
+  syncAndFlushed(invocation?: object): Promise<void> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
+    togglesSync.call(this, invocation);
+    const returned = togglesFlush.call(this).then(() => {
+      if (!this.unobserved) this.completion.completed(returned, frame, { disposition: "settled", completionDigest: "project.toggles.flushed", assessmentDigest: "project.toggles.actual_callbacks_completed" });
+    });
+    return returned;
   }
 
   /** Waits for every write asked so far; throws the first that failed for a reason other than the record's own refusal. */
@@ -100,9 +118,9 @@ export class AutomationStudioProjectBuildTogglesRecord {
     return [...this.left];
   }
 
-  private async write(record: { records: Records; ref: AutomationStudioProjectBuildRef }, toggle: AutomationStudioExploredToggle): Promise<void> {
+  private async write(record: NonNullable<AutomationStudioProjectBuildTogglesRecord["record"]>, toggle: AutomationStudioExploredToggle, frame: ReturnType<typeof AutomationStudioProjectWriteCompletion.capture>): Promise<void> {
     try {
-      await record.records.recordToggle(record.ref, {
+      const value = {
         from: toggle.trialNodes?.length ? "trial" : "explored",
         node: toggle.node,
         ...(toggle.callId ? { callId: toggle.callId } : {}),
@@ -113,7 +131,9 @@ export class AutomationStudioProjectBuildTogglesRecord {
         signature: structuredClone(toggle.signature),
         ...(toggle.beforeSignature ? { beforeSignature: structuredClone(toggle.beforeSignature) } : {}),
         ...(toggle.idempotentWith ? { idempotentWith: toggle.idempotentWith } : {})
-      });
+      } satisfies Parameters<Records["recordToggle"]>[1];
+      const child = Object.freeze({});
+      await invokeAutomationStudioProjectWriteCallback(frame, { receiver: record.records, callback: record.recordToggle, args: [record.ref, value, child] }, child);
     } catch (error) {
       if (error instanceof AutomationStudioProjectRecordRefusal) {
         this.left.push(`${toggle.node} (${error.code})`);
@@ -123,3 +143,7 @@ export class AutomationStudioProjectBuildTogglesRecord {
     }
   }
 }
+
+const togglesSync = AutomationStudioProjectBuildTogglesRecord.prototype.sync;
+const togglesFlush = AutomationStudioProjectBuildTogglesRecord.prototype.flushed;
+const togglesSyncAndFlushed = AutomationStudioProjectBuildTogglesRecord.prototype.syncAndFlushed;

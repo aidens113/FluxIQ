@@ -1,0 +1,3 @@
+import type { EvidenceReference } from "../../model/index.ts";
+import { RecordingIngressShapes as S } from "../../../../client-gateway/recording/decoding/index.ts";
+export const isStudioRecordingEvidence = S.object<EvidenceReference>({ layer: S.oneOf("raw_recording", "normalized_timeline", "signal_mining", "evidence_fact", "evidence_observation", "state_action_correlation", "evidence_claim", "learned_task_model", "policy_graph", "runtime_execution"), artifactId: S.string, entryId: S.optional(S.string), signalPath: S.optional(S.string), noteId: S.optional(S.string), relationship: S.optional(S.string), confidence: S.optional(S.number), metadata: S.optional(S.jsonObject) });

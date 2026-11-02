@@ -22,6 +22,7 @@
 // and freshness, plan validation and normalization, the candidate graph
 // source, the root invocation and each graph's own failed-route budget.
 
+import { inheritAutomationExecutionObservation } from "../../../../../engine/automation/execution-admission/index.ts";
 import { isDeepStrictEqual } from "node:util";
 import { automationStudioReferenceNow } from "../../reference-now/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
@@ -38,8 +39,10 @@ export async function runAutomationStudioDetachedSubflowFrom(input: AutomationSt
   const now = input.options?.now ?? Date.now;
   const startedAt = now();
   const { referenceNow: suppliedReferenceNow, ...baseOptions } = input.options ?? {};
+  if (input.options) inheritAutomationExecutionObservation(input.options, baseOptions);
   const referenceNow = automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
   const options = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
+  inheritAutomationExecutionObservation(baseOptions, options);
   const candidateIdentity = automationStudioDetachedSubflowCandidateIdentity(identity);
   const refused = (code: string, planIssues?: string[]): AutomationStudioDetachedSubflowResult => ({
     partial: true,
@@ -89,6 +92,7 @@ export async function runAutomationStudioDetachedSubflowFrom(input: AutomationSt
     ...(ran.candidateGraphs ? { candidateGraphs: ran.candidateGraphs } : {})
   };
 }
+
 
 /** The target as the root frame (header): the only primary, its interface taken off, the router's fallback; its parts beside it as they are. */
 function rootPlan(target: AutomationStudioDetachedSubflowProposal): AutomationStudioFlowBootstrapPlan {

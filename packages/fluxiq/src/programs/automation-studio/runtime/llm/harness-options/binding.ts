@@ -11,6 +11,8 @@
 // own options appear beside them as soon as a host port is bound.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../build-execution/tools/index.ts";
+import { automationStudioLlmBindingFieldOrigin } from "../binding-origin/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type {
   AutomationStudioRuntimeTargetOverrideEvidenceValidation,
@@ -601,9 +603,17 @@ export function automationStudioHarnessOptionRegistry(input: {
     // to run, a definition is nothing the model can use.
     const memory = runNode ? input.nodeDescriptions : undefined;
     const runImplementation = bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID];
-    if (memory && runImplementation) bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID] = automationStudioLlmRunNodeDescribingFailures(runImplementation, memory);
+    if (memory && runImplementation) {
+      const described = automationStudioLlmRunNodeDescribingFailures(runImplementation, memory);
+      AutomationStudioBuildToolFactories.remember(described, "frame");
+      bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID] = described;
+    }
     registry.register(bundle);
-    if (memory) registry.register(automationStudioLlmDescribeNodesBundle(memory));
+    if (memory) {
+      const describe = automationStudioLlmDescribeNodesBundle(memory);
+      for (const implementation of Object.values(describe.implementations)) AutomationStudioBuildToolFactories.remember(implementation, "pure");
+      registry.register(describe);
+    }
   }
   return registry;
 }
@@ -697,19 +707,24 @@ function scopedOption(tool: AutomationStudioLlmEvidenceTool, domainId: string): 
 }
 
 function executionFor(binding: AutomationStudioLlmEvidenceRuntimeBinding, toolId: string, startLocation?: string): AutomationStudioHarnessOptionImplementation {
-  return (input) => binding.executeTool({
-    projectId: input.projectId,
-    flowId: input.flowId,
-    callId: input.callId,
-    toolId,
-    value: input.value,
-    ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    ...(input.referenceNow !== undefined ? { referenceNow: input.referenceNow } : {}),
-    // Every call of this build, including the opening call the loop makes
-    // before the first paid decision: the arrival at it when the binding
-    // declares one, and otherwise the free look, which is where a domain says
-    // "you are not there yet, and here is where you are meant to be".
-    ...(startLocation === undefined ? {} : { startLocation }),
-    permission: input.permission
-  });
+  const execute: AutomationStudioHarnessOptionImplementation = input => {
+    const callback = binding.executeTool;
+    const original = automationStudioLlmBindingFieldOrigin(binding, "executeTool", callback);
+    const placed = {
+      projectId: input.projectId,
+      flowId: input.flowId,
+      callId: input.callId,
+      toolId,
+      value: input.value,
+      ...(input.signal !== undefined ? { signal: input.signal } : {}),
+      ...(input.referenceNow !== undefined ? { referenceNow: input.referenceNow } : {}),
+      // Every call of this build, including its opening observation, keeps its start.
+      ...(startLocation === undefined ? {} : { startLocation }),
+      permission: input.permission
+    };
+    inheritAutomationStudioBuildToolRequest(input, placed);
+    return invokeAutomationStudioBuildToolCallback(placed, { ...original, args: [placed] }, input.signal);
+  };
+  AutomationStudioBuildToolFactories.remember(execute, "frame");
+  return execute;
 }

@@ -1,3 +1,12 @@
+import { summarizeNativeRuntime, type NativeRuntimeSummary } from "../../../runtime/native-execution/index.ts";
+import { pinNativeExecutionCompletions, type NativeManagedCompletionRegistration } from "../../../runtime/native-execution/admission/index.ts";
+import type { ExecutionScopeAttestor } from "../../../runtime/execution-admission/index.ts";
+import { captureExecutionCallbackCompletions, type ExecutionCallbackCompletionConfiguration, type ExecutionCallbackCompletionPolicy } from "../../../runtime/execution-observation/index.ts";
+import { closeAutomationStudioRuntimeResources } from "./service/lifecycle/index.ts";
+import { createAutomationStudioBuildExecution, bindAutomationStudioObservedBuildTools, automationStudioExecutionGatewayTargets, AutomationStudioProjectBuildToolObservers } from "./build-execution/index.ts";
+import { bindTrialExecutionSource } from "./candidate-trials/observation/index.ts";
+import { AutomationStudioExecutionAdmissionController } from "./service/execution-admission/index.ts";
+import { automationStudioCanonicalFlowSettingsRevision, resolveAutomationStudioFlowExecutionBinding, type AutomationStudioFlowExecutionBinding } from "./service/flow-binding/index.ts";
 import { AutomationInstructionError, AutomationStudioInstructionAuthority, requiredRecordingDescription, supportingAutomationRecordings, instructionBoundRunGate } from "./service/instruction-led/index.ts";
 import { bindTrustedModuleIdentity, type TrustedModuleBuildIdentity } from "../../../runtime/build-identity/modules/index.ts";
 import { readCoreRuntimeBuildIdentity } from "../../../runtime/build-identity/index.ts";
@@ -226,7 +235,8 @@ export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySumma
 import { ProgramJsonStore, programDataFile, programStateConnections, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
-import type { RuntimeService } from "../../../runtime/index.ts";
+import type { ClientGatewayRuntimeTransport, RuntimeService } from "../../../runtime/index.ts";
+import type { OutputGatewayTarget } from "../../../runtime/output-dispatch/index.ts";
 import { automationStudioRunEndViewReader } from "./service/end-view/index.ts";
 import { promoteAutomationStudioCandidateTrial, type AutomationStudioPrepareCandidateStart } from "./service/candidate-trial/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER, AutomationStudioProjectBuildPermissions, automationStudioProjectBuildWholeTrials, promoteAutomationStudioProjectBuild, runAutomationStudioProjectBuild } from "./service/project-build/index.ts";
@@ -253,7 +263,6 @@ import {
   AutomationStudioProjectAdaptationStore,
   AutomationStudioProjectDatabasePool,
   AutomationStudioProjectGraphRepository,
-  AutomationStudioProjectFlowResourceRepository,
   AutomationStudioProjectReusableLlmContextStore,
   type AutomationStudioProjectContentProtection,
   type AutomationStudioReusableLlmContextList,
@@ -275,7 +284,7 @@ import {
 import { adaptationApprovalModeForStore, adaptationEvidenceForStore, adaptationFromTypedStoreDetail, adaptationPolicySummaryFromPolicy, adaptationSummaryFromAdaptation, changeProposalSummaryFromProposal, type AutomationStudioChangeProposalSummaryPage, type ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
 import { AutomationStudioBootstrapInstructionInventory, automationStudioFlowBootstrapGenerationContext, generateAutomationStudioFlowCandidateDraft, automationStudioFlowBootstrapUnusableDecisions, AutomationStudioBuildCancellation, saveAutomationStudioFlowGenerationGoal, assertAutomationStudioBootstrapPermissionAnswered, automationStudioFlowBootstrapBuildJudge, automationStudioFlowBootstrapBuiltLoop, automationStudioFlowBootstrapCreationPurse, assertAutomationStudioBootstrapTarget, automationStudioBootstrapAppliedParent, assertExactObjectFields, automationStudioBootstrapPermissionOutcome, automationStudioBootstrapStateDigestHook, automationStudioFlowBootstrapExtendSubject, automationStudioFlowBootstrapGenerationReadiness, automationStudioObservedTestTool, bootstrapAdaptationAuditEvent, bootstrapHarnessAccounting, evidenceTraceAuditDetail, readAutomationStudioFlowBootstrapGenerationRequest, requiredBootstrapCommandId, requiredBootstrapDigest, requiredBootstrapSettingsRevision, sanitizeEvidenceLoopTrace, type AutomationStudioBootstrapPermissionOutcome, type AutomationStudioFlowBootstrapGenerationReadiness, type AutomationStudioGenerateFlowBootstrapAdaptationInput, type AutomationStudioGenerateFlowBootstrapAdaptationResultFor, type AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
 import { flowMapExpansionStatus, nextRouteGroupOrder, nextRouteOrder, removeUndefinedRouteRuleFields, routeConditionFromInput, routeRuleMetadataWithGroup, routeRuleMetadataWithoutGroup, sqlRouterGroupToFlowGroup, sqlRouterRouteToFlowRule, withFlowMapRouteGroups, type AutomationStudioRouterRoutePage, type AutomationStudioRouterTargetReferenceBatch, type AutomationStudioSubflowTargetPage, type UpsertFlowMapRouteGroupInput, type UpsertFlowMapRouteInput } from "./service/flow-map-routes/index.ts";
-import { adaptationPolicyFromFlowMetadata, automationStudioFlowSettingsFingerprint, mergedFlowSettingsMetadata, trainingModeSettingsFromMetadata } from "./service/flow-settings/index.ts";
+import { adaptationPolicyFromFlowMetadata, mergedFlowSettingsMetadata, trainingModeSettingsFromMetadata } from "./service/flow-settings/index.ts";
 import { normalizeCustomHierarchyNode, requiredHierarchyId } from "./service/hierarchy-nodes/index.ts";
 import { readJsonLinePage } from "./service/json-lines/index.ts";
 import { listAutomationStudioProjectProblems, type AutomationStudioProblemPage } from "./service/problems/index.ts";
@@ -296,6 +305,10 @@ export type { AutomationStudioReusableLlmContextFeatureStatus, AutomationStudioR
 export { normalizeAutomationStudioRuntimeInterventionMode } from "./service/runtime-adaptation/index.ts";
 export type { AutomationStudioRuntimeAdaptationContext } from "./service/runtime-adaptation/index.ts";
 export type AutomationStudioServiceOptions = {
+  /** Trusted resource owner; never supplied by a model request or a reset/page result. */
+  executionScopeAttestor?: ExecutionScopeAttestor;
+  /** Trusted original callback contracts; constructor snapshot, never request metadata. */
+  executionCallbackCompletions?: ExecutionCallbackCompletionConfiguration;
   dataDir?: string;
   storageRootDir?: string;
   customNodeRootDir?: string;
@@ -378,6 +391,8 @@ export class AutomationStudioService {
   private readonly flowRunAudit: AutomationStudioFlowRunAudit;
   private readonly recordingDeletion: AutomationStudioRecordingDeletion;
   /** Run datasets (CD16, CD17), and the conversation a person and FluxIQ talk in: reached as fields so the frozen facade gains no methods (C8). */
+  readonly executionAdmission: AutomationStudioExecutionAdmissionController;
+  private readonly executionGatewayTargets: OutputGatewayTarget[] = [];
   readonly runDatasets: AutomationStudioRunDatasets; readonly commandContexts: AutomationStudioCommandContextController; readonly commandExecution: AutomationStudioCommandExecutionController;
   readonly conversations: AutomationStudioConversations;
   private readonly proposalApproval: AutomationStudioProposalApproval;
@@ -388,6 +403,9 @@ export class AutomationStudioService {
   private readonly ready: Promise<void>;
   private ioRuntime?: { io: IoRegistry; domainId: string | null };
   private nativeNodeRuntime?: AutomationStudioNativeNodeRuntime;
+  private nativeExecutionCompletions: readonly NativeManagedCompletionRegistration[] = Object.freeze([]);
+  private readonly executionCallbackCompletions: ExecutionCallbackCompletionPolicy | undefined;
+  private hostExecutionCallbackCompletions: ExecutionCallbackCompletionPolicy | undefined;
   private hostRuntime: AutomationStudioHostRuntimeBoundary | undefined;
   private runtimeService?: RuntimeService;
   private llmProviderResolver?: AutomationStudioServiceOptions["llmProviderResolver"];
@@ -421,6 +439,7 @@ export class AutomationStudioService {
   private reusableLlmContextFreshEvidenceSelector: NonNullable<AutomationStudioServiceOptions["reusableLlmContext"]>["selectForFreshEvidence"];
   readonly domainBuildState = new AutomationStudioDomainBuildStateStore(() => this.projectPaths); // What a registered domain keeps per build or per Flow, reached through `automationStudioDomainBuildState` (`./domain-build-state/`, t728).
   constructor(options: AutomationStudioServiceOptions = {}) {
+    this.executionCallbackCompletions = options.executionCallbackCompletions ? captureExecutionCallbackCompletions(options.executionCallbackCompletions) : undefined;
     this.repositories = options.repositories ?? createCanonicalAutomationStudioMemoryRepositories();
     this.llmProviderResolver = automationStudioLlmResolverWithDomainInstructions(options.llmProviderResolver, () => this.llmEvidenceRuntime); // Every provider resolved stamps the bound domain's instructions (`llm/domain-instructions/`).
     this.llmEvidenceRuntime = automationStudioLlmEvidenceRuntimeBindingChecked(options.llmEvidenceRuntime); // A bad `systemInstructions` fails here, at bind, not mid-build.
@@ -471,6 +490,7 @@ export class AutomationStudioService {
     this.flowRunAudit = new AutomationStudioFlowRunAudit(automationStudioFacadePorts(this));
     this.runDatasets = new AutomationStudioRunDatasets(this.projects, this.runtimeProjectDatabasePool); this.commandContexts = new AutomationStudioCommandContextController({ ...(this.projectDatabasePool ? { pool: this.projectDatabasePool } : {}), getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId) });
     this.commandExecution = new AutomationStudioCommandExecutionController({ ...(this.projectDatabasePool ? { pool: this.projectDatabasePool } : {}), getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId) });
+    this.executionAdmission = new AutomationStudioExecutionAdmissionController({ ...(this.projectDatabasePool ? { pool: this.projectDatabasePool } : {}), ...(options.executionScopeAttestor ? { scopeAttestor: options.executionScopeAttestor } : {}), requiredOwner: this.commandExecution, getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId) });
     this.conversations = new AutomationStudioConversations(this.runtimeProjectDatabasePool).bindDomainInstructions(() => this.llmEvidenceRuntime?.systemInstructions?.text); // The chat is told what every Flow model call is told.
     this.recordingDeletion = new AutomationStudioRecordingDeletion(this.projectPaths, this.recordingPaths, this.indexes, this.objectDocuments, this.recordings, this.repositories, automationStudioFacadePorts(this), this.objectStore, this.recordingStateIndexes);
     this.proposalApproval = new AutomationStudioProposalApproval(this.projectPaths, this.projects, this.recordings, this.repositories, this.flowSubflowMigration, automationStudioFacadePorts(this));
@@ -507,9 +527,7 @@ export class AutomationStudioService {
   }
 
   async close(): Promise<void> {
-    const errors: unknown[] = [];
-    for (const close of [() => this.commandExecution.close(), () => this.commandContexts.close(), () => this.parkedRunExpiry.close(), () => this.uiCache.close(), () => this.runtimeProjectDatabasePool?.closeAll()]) try { await close(); } catch (error) { errors.push(error); }
-    if (errors.length) throw new AggregateError(errors, "automation_studio.close_failed");
+    await closeAutomationStudioRuntimeResources([() => this.executionAdmission.close(), () => this.commandExecution.close(), () => this.commandContexts.close(), () => this.parkedRunExpiry.close(), () => this.uiCache.close(), () => this.runtimeProjectDatabasePool?.closeAll()]);
   }
 
   /** Connects Automation Studio policy execution to importer-registered IO. */
@@ -519,19 +537,29 @@ export class AutomationStudioService {
   }
 
   /** Binds explicitly registered importer and trusted-local Code Node implementations. */
-  bindNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime, identity?: TrustedModuleBuildIdentity | null): this { bindTrustedModuleIdentity(this, identity); this.nativeNodeRuntime = runtime; return this; }
+  bindNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime, identity?: TrustedModuleBuildIdentity | null, registrations: readonly NativeManagedCompletionRegistration[] = []): this {
+    const completions = pinNativeExecutionCompletions(registrations);
+    bindTrustedModuleIdentity(this, identity);
+    this.nativeNodeRuntime = runtime;
+    this.nativeExecutionCompletions = completions;
+    return this;
+  }
 
-  bindHostRuntime(runtime: AutomationStudioHostRuntimeBoundary): this { this.hostRuntime = runtime; return this; }
+  bindHostRuntime(runtime: AutomationStudioHostRuntimeBoundary, configuration?: ExecutionCallbackCompletionConfiguration): this {
+    const completions = configuration ? captureExecutionCallbackCompletions(configuration) : undefined;
+    this.hostRuntime = runtime;
+    this.hostExecutionCallbackCompletions = completions;
+    return this;
+  }
 
-  bindRuntimeService(runtime: RuntimeService): this { this.runtimeService = runtime; return this; }
+  bindRuntimeService(runtime: RuntimeService, gatewayTransport?: ClientGatewayRuntimeTransport): this {
+    if (gatewayTransport) this.executionGatewayTargets.push(...automationStudioExecutionGatewayTargets(gatewayTransport));
+    this.runtimeService = runtime;
+    return this;
+  }
 
-  nativeRuntimeSummary(domainId?: string | null): { bound: boolean; definitionCount: number; recordingMapperCount: number } {
-    const runtime = this.nativeNodeRuntime;
-    return {
-      bound: Boolean(runtime),
-      definitionCount: runtime?.listDefinitions().length ?? 0,
-      recordingMapperCount: runtime && domainId ? runtime.listRecordingMappers(domainId).length : 0
-    };
+  nativeRuntimeSummary(domainId?: string | null): NativeRuntimeSummary {
+    return summarizeNativeRuntime(this.nativeNodeRuntime, domainId);
   }
 
   async readProjectObjectAsset(projectId: string, sha256: string): Promise<AutomationStudioObjectAsset> {
@@ -568,8 +596,7 @@ export class AutomationStudioService {
 
   async listRecordingSessions(projectId?: string | null): Promise<RecordingSession[]> {
     await this.ready;
-    if (projectId) await this.loadProjectRecordings(projectId);
-    return await this.repositories.recordingSessions.list();
+    return await this.recordings.listRecordingSessions(projectId);
   }
 
   async listRecordingSessionSummaries(projectId?: string | null): Promise<RecordingSession[]> {
@@ -689,10 +716,10 @@ export class AutomationStudioService {
         : (await this.repositories.recordingSessions.list()).map((recording) => recording.recordingId);
 
       for (const recordingId of recordingIds) {
-        const key = `${project.id}:${recordingId}`;
+        const key = JSON.stringify([project.id, recordingId]);
         if (seen.has(key)) continue;
         seen.add(key);
-        const recording = await this.repositories.recordingSessions.get(recordingId);
+        const recording = await this.recordings.loadProjectRecording(project.id, recordingId);
         if (!recording) continue;
         summaries.push(recordingSummaryFromSession(recording, project.id));
       }
@@ -706,17 +733,19 @@ export class AutomationStudioService {
 
   async createRecording(input: CreateRecordingSessionInput & { projectId?: string | null; domainId?: string | null }): Promise<RecordingSession> {
     await this.ready;
-    const description = requiredRecordingDescription(input.description);
-    const created = createRecordingSession({ ...input, description, environment: { ...input.environment, domainId: input.domainId ?? input.environment?.domainId ?? null } });
-    const recording = input.projectId
-      ? { ...created, metadata: { ...(created.metadata ?? {}), projectId: input.projectId } }
-      : created;
-    await this.repositories.recordingSessions.put(recording);
-    if (input.projectId) {
-      await this.writeProjectRecordingSession(input.projectId, recording);
-      if (recording.taskId) await this.linkRecordingToCanonicalFlow(input.projectId, recording.taskId, recording.recordingId);
-    }
-    return recording;
+    return await this.locks.withRecordingMutationLock(this.projectPaths.root ? input.projectId : undefined, input.recordingId, async () => {
+      const description = requiredRecordingDescription(input.description);
+      const created = createRecordingSession({ ...input, description, environment: { ...input.environment, domainId: input.domainId ?? input.environment?.domainId ?? null } });
+      const recording = input.projectId
+        ? { ...created, metadata: { ...(created.metadata ?? {}), projectId: input.projectId } }
+        : created;
+      await this.recordings.mirror.put(recording, { projectId: input.projectId, createExclusive: !this.projectPaths.root });
+      if (input.projectId) {
+        await this.writeProjectRecordingSession(input.projectId, recording);
+        if (recording.taskId) await this.linkRecordingToCanonicalFlow(input.projectId, recording.taskId, recording.recordingId);
+      }
+      return recording;
+    });
   }
 
   private async linkRecordingToCanonicalFlow(projectId: string, flowId: string, recordingId: string): Promise<void> {
@@ -750,7 +779,7 @@ export class AutomationStudioService {
         await this.writeRecordingStateIndex(input.projectId, stored);
         await this.writeProjectRecordingIndexSummary(input.projectId, stored);
       }
-      await this.repositories.recordingSessions.put(stored);
+      await this.recordings.mirror.put(stored, { projectId: input.projectId });
       return this.recordings.appendResult(next, stored);
     });
   }
@@ -768,7 +797,7 @@ export class AutomationStudioService {
       const finalized = finalizeRecordingSession(recording, input.endedAt);
       const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(finalized, input.projectId);
       if (input.projectId) await this.writeProjectRecordingSession(input.projectId, stored);
-      await this.repositories.recordingSessions.put(stored);
+      await this.recordings.mirror.put(stored, { projectId: input.projectId });
       return finalized;
     });
   }
@@ -894,10 +923,10 @@ export class AutomationStudioService {
   async normalizeRecording(input: { projectId?: string | null; recordingId: string; options?: NormalizationOptions }): Promise<NormalizedTimeline> {
     const recording = await this.getRecordingSession(input.recordingId, input.projectId);
     const generated = normalizeRecordingTimeline(recording, input.options);
-    const normalized = input.projectId && this.objectStore
+    const normalized = input.projectId
       ? { ...generated, metadata: { ...(generated.metadata ?? {}), projectId: input.projectId } }
       : generated;
-    await this.repositories.normalizedTimelines.put(normalized);
+    await this.recordings.normalizations.put(normalized, input.projectId);
     if (input.projectId) await this.writeProjectNormalizedTimeline(input.projectId, normalized);
     return normalized;
   }
@@ -917,42 +946,11 @@ export class AutomationStudioService {
   }
 
   async deleteRecording(input: { projectId?: string | null; recordingId: string }): Promise<{ deletedRecordingId: string; deletedProposalIds: string[] }> {
-    return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
-      await this.repositories.recordingSessions.delete(input.recordingId);
-      let deletedProposalIds: string[] = [];
-      if (input.projectId && this.projectPaths.root) {
-        const pipelineIndex = await this.indexes.readPipelineIndex(input.projectId).catch(() => emptyPipelineIndex());
-        deletedProposalIds = uniqueStrings([
-          ...(pipelineIndex.policyProposals ?? []).filter((item) => item.recordingId === input.recordingId).map((item) => item.proposalId),
-          ...(pipelineIndex.recordingFlowProposals ?? []).filter((item) => item.recordingId === input.recordingId).map((item) => item.proposalId)
-        ]);
-        for (const timeline of await this.repositories.normalizedTimelines.list()) {
-          if (timeline.recordingId === input.recordingId || timeline.metadata?.projectId === input.projectId && timeline.recordingId === input.recordingId) {
-            await this.repositories.normalizedTimelines.delete(timeline.normalizedTimelineId);
-          }
-        }
-        await this.deleteProjectRecordingPipeline(input.projectId, input.recordingId);
-        await this.indexes.writeRecordingIndex(input.projectId, (index) => ({
-          recordings: (index.recordings ?? []).filter((item) => item.recordingId !== input.recordingId),
-          normalizedTimelines: (index.normalizedTimelines ?? []).filter((item) => item.recordingId !== input.recordingId)
-        }));
-        if (this.objectStore) {
-          const live = await this.recordingDeletion.collectLiveProjectObjectReferences(input.projectId);
-          await this.objectStore.deleteRecordingObjects(input.projectId, input.recordingId, live);
-          await ProgramJsonStore.deletePath(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
-          await removePathWithRetry(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
-          await this.recordingDeletion.pruneUnreferencedProjectObjects(input.projectId);
-        } else {
-          await removePathWithRetry(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
-        }
-        await this.recordings.deleteOrphanedPhysicalRecordingSessionDirectories(input.projectId);
-      }
-      return { deletedRecordingId: input.recordingId, deletedProposalIds };
-    });
+    return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => await this.recordingDeletion.deleteRecording(input, (projectId, recordingId) => this.deleteProjectRecordingPipeline(projectId, recordingId)));
   }
 
   async deleteRecordings(input: { projectId?: string | null; recordingIds?: string[] }): Promise<{ deletedRecordingIds: string[]; deletedProposalIds: string[] }> {
-    return await this.recordingDeletion.deleteRecordings(input);
+    return await this.recordingDeletion.deleteRecordings(input, (projectId, recordingId, operation) => this.locks.withRecordingMutationLock(projectId, recordingId, operation));
   }
 
   async deleteProposal(input: { projectId: string; proposalId: string; kind?: "policy" | "recording_flow" | "auto" }): Promise<{ deletedProposalId: string; kind: "policy" | "recording_flow"; recordingId?: string }> {
@@ -1452,28 +1450,13 @@ export class AutomationStudioService {
   getFlowBootstrapGenerationRuntimeReadiness(): AutomationStudioFlowBootstrapGenerationReadiness {
     return automationStudioFlowBootstrapGenerationReadiness({ providerResolverConfigured: typeof this.llmProviderResolver === "function", candidateStartPrepared: this.prepareCandidateStart !== undefined, ...(this.nativeNodeRuntime ? { nativeNodeRuntime: this.nativeNodeRuntime } : {}), ...(this.llmEvidenceRuntime ? { llmEvidenceRuntime: this.llmEvidenceRuntime } : {}) }); }
 
-  async getLlmExecutionBinding(projectId: string, flowId: string): Promise<{ executionDigest: string; settingsRevision: number }> {
-    const [flow, executionDigest] = await Promise.all([
-      this.getFlow(projectId, flowId),
-      this.getLlmExecutionDependencyDigest(projectId, flowId)
-    ]);
-    let settingsRevision: number;
-    if (this.projectDatabasePool && this.projectPaths.root) {
-      const repository = await AutomationStudioProjectFlowResourceRepository.open({
-        pool: this.projectDatabasePool,
-        projectId
-      });
-      try {
-        const persisted = await repository.getFlow(flowId);
-        if (!persisted) throw new Error(`Flow ${flowId} has no canonical settings revision.`);
-        settingsRevision = persisted.settingsRevision;
-      } finally {
-        await repository.close();
-      }
-    } else {
-      settingsRevision = automationStudioFlowSettingsFingerprint(flow);
-    }
-    return { executionDigest, settingsRevision };
+  async getLlmExecutionBinding(projectId: string, flowId: string): Promise<AutomationStudioFlowExecutionBinding> {
+    const canonicalPool = this.projectPaths.root ? this.projectDatabasePool : undefined;
+    return resolveAutomationStudioFlowExecutionBinding({
+      getFlow: (project, flow) => this.getFlow(project, flow),
+      getExecutionDigest: (project, flow) => this.getLlmExecutionDependencyDigest(project, flow),
+      ...(canonicalPool ? { canonicalSettingsRevision: (project: string, flow: string) => automationStudioCanonicalFlowSettingsRevision(canonicalPool, project, flow) } : {})
+    }, projectId, flowId);
   }
 
   private async runFlowBootstrapLlmHarness(input: Parameters<typeof runAutomationStudioLlmHarness>[0]): ReturnType<typeof runAutomationStudioLlmHarness> {
@@ -1486,6 +1469,7 @@ export class AutomationStudioService {
     let failureStage: AutomationStudioFlowBootstrapFailureStage = "pre_provider_validation";
     let failureCode: AutomationStudioFlowBootstrapPhaseFailureCode = "flow_bootstrap.invalid_input";
     let failureAccounting: AutomationStudioBootstrapAccounting | undefined;
+    let buildExecution: Awaited<ReturnType<typeof createAutomationStudioBuildExecution>> | undefined;
     let buildProviderCharge: (() => AutomationStudioLlmBuildPurseCharged) | undefined, buildPermissions: Pick<ReturnType<typeof automationStudioFlowBootstrapActionPermissions>, "instructed"> | undefined; // The gate, so a failed build says what its instruction was read to ask for (`instructedConsequences`).
     try {
       // Every field of the request, read and refused in one place
@@ -1500,6 +1484,7 @@ export class AutomationStudioService {
         if (mode === "extend" && !extend) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.blank_target_required");
         failureCode = "flow_bootstrap.canonical_settings_binding_unavailable";
         const binding = await this.getLlmExecutionBinding(projectId, flowId);
+        if (this.projectDatabasePool && this.projectPaths.root) buildExecution = await createAutomationStudioBuildExecution(this.executionAdmission, { projectId, flowId }, this.nativeNodeRuntime, this.executionGatewayTargets, this.nativeExecutionCompletions, [this.executionCallbackCompletions, this.hostExecutionCallbackCompletions].filter((policy): policy is ExecutionCallbackCompletionPolicy => policy !== undefined));
         failureCode = "flow_bootstrap.pending_adaptation_check_failed";
         const pending = (await this.bootstrapAdaptations.listFlowBootstrapAdaptations(projectId, flowId))
           .find((adaptation) => adaptation.status === "proposed" || adaptation.status === "validated");
@@ -1554,6 +1539,7 @@ export class AutomationStudioService {
         const storedIncomplete = input.evidenceGuided && !authoringMode && !extend ? await this.incompleteDrafts.get(projectId, flowId) : undefined;
         const callStartLocation = automationStudioFlowBootstrapIncompleteDraftContinuation(storedIncomplete, { baseDependencyDigest: binding.executionDigest, sourceInstructionIds: resolvedInstructions.instructionIds }) ? undefined : startLocation;
         const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution }), buildId = automationStudioGatewayTraceBuildId(), harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation: callStartLocation, nodeDescriptions }).evidenceLoopBinding({ projectId, flowId, buildId }, { ...resolution, allowSideEffectsWithoutPolicy: true }); // The nodes this build has been shown whole, shared by every round of it (`llm/node-tools/node-descriptions.ts`).
+        if (buildExecution) bindAutomationStudioObservedBuildTools(harnessOptions, buildExecution.toolObserver);
         const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider, automationStudioLlmRunCostCeilingUsd(adaptationPolicyFromFlowMetadata(parent, flowSettings).maxEstimatedCostUsdPerRun, repairCostLeftUsd)); // A repair build spends only what its repair has left (`service/runtime-adaptation/refuted-result-port.ts`).
         // One purse per Flow creation, the only cost authority, under which the build's whole body runs; its record is kept or dropped however the build ends (`service/flow-bootstrap-commands/creation-purse.ts`).
         const testCalls = resolveAutomationStudioLlmBuildCallLimit();
@@ -1571,7 +1557,12 @@ export class AutomationStudioService {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
           const signal = AbortSignal.any([creation.signal(permissions.signal), personNeeded.signal, ...(this.buildCancellation.signal() ? [this.buildCancellation.signal()!] : [])]);
           const candidateId = `candidate.${randomUUID()}`, trialEnvironment = { ...automationStudioServiceTrialEnvironment(this.trialCollaborators, { projectId, flowId, sourceInstructionIds: resolvedInstructions.instructionIds, startLocation, registry, resolution, observedStateKeys: harnessOptions.observedStateKeys, prepareStart: this.prepareCandidateStart }), exploredToggles: permissions.exploredToggles, exploredInterruptions: permissions.exploredInterruptions, exploredPaces: new AutomationStudioLearnedPaces() }; // The build's trial environment, made by the function the trial-ports seam makes a host's with (`service/trial-ports/environment.ts`); its trials tell the build's toggle record what they pressed, and its interruption record what layers they closed (t799), the one every submission reads (t787: a project build's briefs share it, `service/project-build/brief-ports.ts`).
+          if (buildExecution) {
+            bindTrialExecutionSource(trialEnvironment, buildExecution.trials);
+            AutomationStudioProjectBuildToolObservers.bind(trialEnvironment, buildExecution.toolObserver);
+          }
           const trials = automationStudioProjectBuildWholeTrials({ candidateId, environment: trialEnvironment, binding: this.llmEvidenceRuntime, judge: { provider: unresolvedProvider.provider, timeoutMs: unresolvedProvider.timeoutMs, instructions, signal }, ledger: projectLedger, phase: repairBrief ? "repair" : "test" }), project = projectLedger ? { buildId, repair: Boolean(repairBrief), ledger: projectLedger, paths: { projects: this.projectPaths, flows: this.flowPaths }, host: this.hostRuntime?.hostResources, hostRuntime: this.hostRuntime, cancellation: this.buildCancellation, flowInputs: parent.interface.inputs, instructions, binding: this.llmEvidenceRuntime, permissions: permissionGround, personAsk, runHarness, trialEnvironment } : undefined; // The trial runner (t340) and its judge (`service/project-build/whole-trials.ts`): each trial runs the exact submitted candidate once, from its declared start (D1's hook first, when set), in a session of its own under a run's executor options, and the judge, under the build's per-call timeout (t473), sees only that run; the candidate id is minted here because every trial names it. A project build's own ports (`service/project-build/`).
+          if (buildExecution && project) AutomationStudioProjectBuildToolObservers.bind(project, buildExecution.toolObserver);
           const generated = await (project ? automationStudioEvidenceBuildBound(project.buildId, runAutomationStudioProjectBuild.bind(undefined, project)) : generateAutomationStudioFlowCandidateDraft)({
             ...(candidateSource ? { originalSource: candidateSource } : {}), candidateId, trial: trials.port, ...(siteReset ? { siteReset } : {}), trialSpend: trials.spent, trialRecords: trials.records, maxConsecutiveUnusableDecisions: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, // The legacy round's bound, asked again under the same options (`service/flow-bootstrap-commands/unusable-decisions.ts`, t354).
             submission: { projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, exploredToggles: permissions.exploredToggles, exploredInterruptions: permissions.exploredInterruptions, exploredPaces: trialEnvironment.exploredPaces, instructionText: bootstrapInstructionText, baseDependencyDigest: binding.executionDigest, signal, ...(candidateSource ? { originalSource: candidateSource } : {}), ...(startLocation === undefined ? {} : { startLocation }) },
@@ -1734,7 +1725,10 @@ export class AutomationStudioService {
     } catch (error) {
       if (error instanceof AutomationInstructionError) throw error;
       throw automationStudioFlowBootstrapGenerationCatch(error, failureStage, failureAccounting, failureCode, buildProviderCharge?.().calls, buildPermissions?.instructed());
-    } finally { repairCharged?.(buildProviderCharge?.()); }
+    } finally {
+      try { await buildExecution?.continuation.close(); }
+      finally { repairCharged?.(buildProviderCharge?.()); }
+    }
   };
   async createFlowBootstrapAdaptation(input: {
     projectId: string;
@@ -2305,16 +2299,7 @@ export class AutomationStudioService {
   }
 
   async listProjectNormalizedTimelines(projectId: string): Promise<NormalizedTimeline[]> {
-    if (this.objectStore) {
-      return (await this.repositories.normalizedTimelines.list()).filter((timeline) => timeline.metadata?.projectId === projectId);
-    }
-    const index = await this.indexes.readRecordingIndex(projectId);
-    const timelines: NormalizedTimeline[] = [];
-    for (const item of index.normalizedTimelines ?? []) {
-      const timeline = await this.repositories.normalizedTimelines.get(item.normalizedTimelineId);
-      if (timeline) timelines.push(timeline);
-    }
-    return timelines;
+    return await this.recordings.normalizations.list(projectId);
   }
 
   async listProjectNormalizedTimelineSummaries(projectId: string): Promise<RecordingIndex["normalizedTimelines"]> {
@@ -2323,20 +2308,7 @@ export class AutomationStudioService {
   }
 
   async getProjectNormalizedTimeline(projectId: string, normalizedTimelineId: string): Promise<NormalizedTimeline> {
-    const index = await this.indexes.readRecordingIndex(projectId);
-    const item = (index.normalizedTimelines ?? []).find((candidate) => candidate.normalizedTimelineId === normalizedTimelineId);
-    if (!item) throw new Error(`Unknown normalized timeline for project ${projectId}: ${normalizedTimelineId}`);
-    const existing = await this.repositories.normalizedTimelines.get(normalizedTimelineId);
-    if (existing && existing.recordingId === item.recordingId) return existing;
-    if (!this.projectPaths.root) throw new Error(`Normalized timeline is not loaded: ${normalizedTimelineId}`);
-    const stored = await new ProgramJsonStore<JsonObject>(
-      this.recordingPaths.recordingDerivedFile(projectId, item.recordingId, "normalization", "timelines", `${safeSegment(normalizedTimelineId)}.json`),
-      () => ({})
-    ).read();
-    const normalized = stored.normalizedTimeline as unknown as NormalizedTimeline | undefined;
-    if (!normalized?.normalizedTimelineId) throw new Error(`Normalized timeline is missing: ${normalizedTimelineId}`);
-    await this.repositories.normalizedTimelines.put(normalized);
-    return normalized;
+    return await this.recordings.normalizations.get(projectId, normalizedTimelineId);
   }
 
   async startRuntimeSession(input: {
@@ -4106,7 +4078,7 @@ export class AutomationStudioService {
     await this.flowWriter.writeGeneratedFlowConfig(projectId, synchronized);
   }
   private async writeRecordingPipelineArtifact(projectId: string, recordingId: string, kind: PipelineArtifactKind, id: string, artifact: JsonObject): Promise<void> {
-    const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
+    const recording = await this.recordings.loadProjectRecording(projectId, recordingId);
     if (!recording) return;
     await this.recordings.ensureProjectRecordingPipeline(projectId, recording);
     await this.objectDocuments.writeArtifactDocument(projectId, this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, kind, id), artifact);
@@ -4114,7 +4086,7 @@ export class AutomationStudioService {
   }
 
   private async writeRecordingPipelineNormalizedTimeline(projectId: string, normalized: NormalizedTimeline): Promise<void> {
-    const recording = await this.repositories.recordingSessions.get(normalized.recordingId) ?? await this.getRecordingSession(normalized.recordingId, projectId).catch(() => null);
+    const recording = await this.recordings.loadProjectRecording(projectId, normalized.recordingId);
     if (!recording) return;
     await this.recordings.ensureProjectRecordingPipeline(projectId, recording);
     await new ProgramJsonStore<JsonObject>(
@@ -4258,14 +4230,7 @@ export class AutomationStudioService {
     for (const item of index.recordings ?? []) {
       await this.recordings.loadProjectRecording(projectId, item.recordingId);
     }
-    for (const item of index.normalizedTimelines ?? []) {
-      const stored = await new ProgramJsonStore<JsonObject>(
-        this.recordingPaths.recordingDerivedFile(projectId, item.recordingId, "normalization", "timelines", `${safeSegment(item.normalizedTimelineId)}.json`),
-        () => ({})
-      ).read();
-      const normalized = stored.normalizedTimeline as unknown as NormalizedTimeline | undefined;
-      if (normalized?.normalizedTimelineId) await this.repositories.normalizedTimelines.put(normalized);
-    }
+    for (const item of index.normalizedTimelines ?? []) await this.recordings.normalizations.get(projectId, item.normalizedTimelineId);
   }
 
   private async writeRecordingStateIndex(projectId: string, recording: RecordingSession): Promise<void> {

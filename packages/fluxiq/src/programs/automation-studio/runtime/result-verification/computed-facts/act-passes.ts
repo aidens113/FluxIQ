@@ -1,3 +1,5 @@
+import { readTrialNotRun } from "../../../../../flows/executable/verification/trial/index.ts";
+import type { TrialNotRunHistory as StepNotRun } from "../../../../../flows/executable/verification/trial/index.ts";
 // Each pass of a repeat ran the step carrying the part's requested act
 // (framework plan P5, K4).
 //
@@ -23,9 +25,6 @@
 // `not_run` proof is a fail with or without one.
 
 import type { AutomationStudioResultComputedDefect, AutomationStudioResultComputedFact, AutomationStudioResultComputedFactsInput } from "../contracts/index.ts";
-
-/** One step serving a part that did not run on some pass of the trial, as t796 shapes it (header). */
-type StepNotRun = { nodeId: string; label?: string; reason: "guarded" | "unreached"; after?: string; passes: number[] | "every"; of?: number };
 
 type Proof = NonNullable<AutomationStudioResultComputedFactsInput["summary"]["siteChange"]>["proofs"][number];
 
@@ -59,19 +58,7 @@ export function automationStudioResultActPassesFact(input: AutomationStudioResul
 
 /** A proof's `notRun` where it carries one of the proposed shape (header): `undefined` where it carries none, so no fact is computed. */
 function notRunOf(proof: Proof): StepNotRun[] | undefined {
-  const raw = (proof as Proof & { notRun?: unknown }).notRun;
-  if (!Array.isArray(raw)) return undefined;
-  const entries = raw.filter(isStepNotRun);
-  return entries.length === raw.length ? entries : undefined;
-}
-
-function isStepNotRun(value: unknown): value is StepNotRun {
-  if (typeof value !== "object" || value === null) return false;
-  const entry = value as Record<string, unknown>;
-  const passes = entry.passes === "every" || (Array.isArray(entry.passes) && entry.passes.length > 0 && entry.passes.every((pass) => Number.isInteger(pass) && (pass as number) > 0));
-  return typeof entry.nodeId === "string" && entry.nodeId.length > 0 && passes && (entry.reason === "guarded" || entry.reason === "unreached")
-    && (entry.label === undefined || typeof entry.label === "string") && (entry.after === undefined || typeof entry.after === "string")
-    && (entry.of === undefined || Number.isInteger(entry.of));
+  return readTrialNotRun((proof as Proof & { notRun?: unknown }).notRun);
 }
 
 /** One step that did not run, in Core's words: the step, the passes, and why. */

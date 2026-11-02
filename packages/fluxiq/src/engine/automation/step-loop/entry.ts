@@ -5,6 +5,7 @@ import { emitAutomationStudioActivityStepRecovery } from "../../../runtime/activ
 import { automationStudioSubflowContract, selectAutomationStudioEntry } from "../lifecycle/index.ts";
 import { automationStudioConditionEvidence, observeAutomationStudioFacts } from "../lifecycle-run/index.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
+import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
 
 /**
  * Where a new frame begins (state-aware recovery plan, C2): its default entry,
@@ -35,7 +36,7 @@ export async function automationStudioStepEntry(ctx: AutomationStudioStepLoopCon
     groups: entries.map((entry) => ({ key: entry.id, conditions: entry.when })),
     context: { inputs, values: ctx.values, nodeId: defaultNode.id, ...(ctx.options.signal ? { signal: ctx.options.signal } : {}) },
     now: ctx.now
-  });
+  }, automationCallbackObservation(ctx.options));
   if (observation.problem && invocation && !invocation.run.lifecycle.problems.includes(observation.problem)) invocation.run.lifecycle.problems.push(observation.problem);
   const selection = selectAutomationStudioEntry({ entries, defaultNodeId: defaultNode.id, whenResults: observation.results, bound: boundNames(inputs) });
   const chosen = selection.kind === "entry" ? ctx.nodesById.get(selection.nodeId) : undefined;

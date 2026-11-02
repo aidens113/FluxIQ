@@ -5,6 +5,7 @@ import type { OutputDispatchIo } from "./ports/index.ts";
 import type { OutputTargetPreparer } from "./target-preparer.ts";
 import { registeredOutputActionFromPayload } from "./effect-action.ts";
 import { dispatchRegisteredOutput } from "./io.ts";
+import { OutputObservationBindings } from "./admission/internal/index.ts";
 export function createIoOutputEffectDispatcher(io: OutputDispatchIo, domainId: string | null | undefined, targetPreparer?: OutputTargetPreparer) {
   return async (effect: {
     type: string;
@@ -17,6 +18,6 @@ export function createIoOutputEffectDispatcher(io: OutputDispatchIo, domainId: s
       return undefined;
     const payload = effect.payload as JsonObject;
     const action = registeredOutputActionFromPayload(payload);
-    return dispatchRegisteredOutput(io, domainId, action, context?.signal, context?.commandContext, targetPreparer);
+    return dispatchRegisteredOutput(io, domainId, action, context?.signal, context?.commandContext, targetPreparer, OutputObservationBindings.take(context));
   };
 }

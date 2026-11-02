@@ -3,6 +3,7 @@ import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/i
 import type { AutomationStudioHostStateSnapshotRef } from "../../../runtime/automation-host/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { AutomationStudioRunState } from "../state/index.ts";
+import { invokeAutomationCallback } from "../execution-admission/kernel/index.ts";
 
 /**
  * How recent the page the last attempt ended on must be for the next attempt
@@ -38,7 +39,7 @@ export async function captureHostState(
   if (!capture) return undefined;
   const offered = ended && now(options) - ended.receivedAt <= PAGE_ENDED_FRESH_MS ? ended.ref : undefined;
   try {
-    const outcome = await Promise.resolve(capture.call(options.hostRuntime, offered ? { ...input, previousStateRef: offered } : input));
+    const outcome = await invokeAutomationCallback(options, { receiver: options.hostRuntime, callback: capture, args: [offered ? { ...input, previousStateRef: offered } : input] });
     if ("stateSnapshotId" in outcome) return outcome;
     return undefined;
   } catch (cause) {
@@ -64,13 +65,13 @@ export async function enrichAttemptWithHostState(
   let stateDiff: JsonObject | undefined;
   if (inspectStateDiff && (beforeAction || afterAction)) {
     try {
-      stateDiff = await Promise.resolve(inspectStateDiff.call(options.hostRuntime, {
+      stateDiff = await invokeAutomationCallback(options, { receiver: options.hostRuntime, callback: inspectStateDiff, args: [{
         ...(beforeAction ? { before: beforeAction } : {}),
         ...(afterAction ? { after: afterAction } : {}),
         node,
         attemptId: attempt.attemptId,
         inputs: attempt.inputs
-      }));
+      }] });
     } catch {
       stateDiff = undefined;
     }

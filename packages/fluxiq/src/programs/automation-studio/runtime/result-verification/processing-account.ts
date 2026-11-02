@@ -1,3 +1,4 @@
+import type { ResultProcessingCondition, ResultProcessingAccount } from "../../../../flows/executable/verification/records/index.ts";
 // A record set's processing account as the judge is shown it (t493).
 //
 // **Why.** Live run `run-mv6bg8d8-1a461436` (C round 14): the saved answer's
@@ -39,22 +40,10 @@ import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
  * `request-rows/` may flag them. No model is shown it
  * (`read-account/without-tested-label.ts`).
  */
-export type AutomationStudioResultProcessingCondition = {
-  /** Its place in `process.where`, counting from 1 (header); absent only on a condition built by hand. */
-  number?: number;
-  condition?: string;
-  rejected: number;
-  alone: number;
-  leftOutOnlyByThis?: string[];
-  testedLabel?: true;
-  /** How Core read the tested value on a few rows the answer kept (`./value-readings/`, t511). */
-  valuesRead?: string[];
-};
+export type AutomationStudioResultProcessingCondition = ResultProcessingCondition;
 
 /** A record set's processing account as the judge is shown it: the store's counts and passes, and each condition said (`processing-account.ts`). */
-export type AutomationStudioResultProcessingAccount = Omit<AutomationStudioRecordProcessingAccount, "conditions"> & {
-  conditions?: AutomationStudioResultProcessingCondition[];
-};
+export type AutomationStudioResultProcessingAccount = ResultProcessingAccount;
 
 /** What a label that may not be said reads as: the read account's own word (`./read-account/alone-rows.ts`). */
 const WITHHELD_LABEL = "(withheld)";

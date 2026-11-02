@@ -26,6 +26,10 @@ import { automationStudioOfflineFirstAnswer } from "./answer.ts";
 import type { AutomationStudioOfflineFirstRecord, AutomationStudioOfflineFirstSpent, AutomationStudioOfflineFirstSubflow, AutomationStudioOfflineFirstSubflowInput } from "./contracts.ts";
 import { AutomationStudioOfflineFirstSources } from "./sources.ts";
 import { automationStudioOfflineFirstSpend } from "./spend.ts";
+import { automationStudioOfflineFirstDisabled } from "./disabled.ts";
+import { observeCandidateTrialChoice } from "../../candidate-trials/authority/index.ts";
+import { trialExecutionSource } from "../../candidate-trials/observation/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies } from "../../flow-bootstrap/reset-observation/index.ts";
 
 type Answer = AutomationStudioTrialOfflineFirstAnswer<AutomationStudioSubflowTrialResult>;
 
@@ -42,10 +46,10 @@ export function automationStudioOfflineFirstSubflow(input: AutomationStudioOffli
     if (record.trialRunId !== undefined) liveJudges.set(record.trialRunId, { judge: { ...record.judge } });
     return sources.observeSubflow(record);
   };
-  const offlineFirst = async (request: AutomationStudioSubflowTrialRequest): Promise<Answer> => {
+  const choose = async (request: AutomationStudioSubflowTrialRequest): Promise<Answer> => {
     request.signal.throwIfAborted();
-    input.liveRecords?.().forEach(observe);
     if (!installation) return notTried("offline_trials_off");
+    input.liveRecords?.().forEach(observe);
     if (request.scope.buildId !== buildId) return notTried("offline_request_mismatch");
     if ((ports.environment?.kind ?? "live") !== "live") return notTried("offline_port_not_live");
     const source = sources.latest(AutomationStudioOfflineFirstSources.subflowScope(buildId, request.scope.subflowKey));
@@ -66,6 +70,14 @@ export function automationStudioOfflineFirstSubflow(input: AutomationStudioOffli
     }
     return answer;
   };
+  const offlineFirst: AutomationStudioOfflineFirstSubflow["offlineFirst"] = !installation
+    ? async request => await automationStudioOfflineFirstDisabled(trialExecutionSource(ports), request.signal)
+    : async (request): Promise<Answer> => {
+    const source = trialExecutionSource(ports);
+    return await observeCandidateTrialChoice(source, request,
+      JSON.stringify(["partial.offline_choice", request.scope, request.proposal.revision, request.proposal.digest]), { receiver: undefined, callback: choose, args: [request] }, request.signal);
+  };
+  if (!installation) AutomationStudioSiteResetCallbackPolicies.rememberLexical(offlineFirst, "pure");
   return {
     offlineFirst,
     observe,

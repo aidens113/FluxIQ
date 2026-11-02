@@ -1,3 +1,4 @@
+import type { TrialSiteChangeUnwitnessed } from "../../../../../flows/executable/verification/trial/index.ts";
 // What a trial's readings say of its steps with no witness (t791 fix 4,
 // `./unwitnessed-steps.ts`). Pure.
 //
@@ -29,7 +30,7 @@ const TEXT_CAP = 200;
 const OPEN: ReadonlySet<string> = new Set(["no_change", "already_in_end_state"]);
 
 /** The packet's note of the steps with no witness (header): each by its label and the trial steps it acted at. */
-export type AutomationStudioTrialSiteChangeUnwitnessed = { steps: Array<{ label?: string; ranAs: number[] }>; parts: string[]; said: string; omitted?: number };
+export type AutomationStudioTrialSiteChangeUnwitnessed = TrialSiteChangeUnwitnessed;
 
 /**
  * `outcome` with the gap its steps with no witness leave said, and their parts' proofs left open (header); as it is when

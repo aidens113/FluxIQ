@@ -193,6 +193,9 @@ import { automationStudioSubflowBuilderTools } from "./role-tools.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-submission.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowTrialPreparingPort } from "./subflow-trial-gate.ts";
+import { inheritPartialTrialContext } from "../../candidate-trials/partial/index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, bindAutomationStudioObservedBuildTools } from "../../build-execution/tools/index.ts";
+import { AuthoringExecutionScope } from "../../../../../runtime/flow-authoring/execution/observation/index.ts";
 
 /**
  * Calls a builder's budget keeps back from its count of decisions left: the
@@ -288,6 +291,14 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   /** The repair memory of this subflow (header, t804): a caller that passes one memory to each brief of it holds a repair brief to its build brief's failed test. Absent, the builder keeps its own. */
   pendingRepair?: AutomationStudioSubflowPendingRepair | undefined;
 }): Promise<AutomationStudioSubflowBuilderOutcome> {
+  const originalExecuteTool = input.loop.executeTool;
+  const bindingObserver = AutomationStudioProjectBuildToolObservers.of(input.loop);
+  const toolObserver = AutomationStudioProjectBuildToolObservers.of(originalExecuteTool);
+  if (bindingObserver && bindingObserver !== toolObserver) throw new Error("execution_observation.tool_binding_changed");
+  const executeOriginal: AutomationStudioLlmEvidenceLoopInput["executeTool"] = call => {
+    if (toolObserver && input.loop.executeTool !== originalExecuteTool) throw new Error("execution_observation.tool_binding_changed");
+    return originalExecuteTool.call(input.loop, call);
+  };
   const signals = [input.loop.signal, input.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
   const submission: ScopedInput["submission"] = signal ? { ...input.submission, signal } : input.submission;
@@ -298,6 +309,8 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   const repair = input.pendingRepair ?? new AutomationStudioSubflowPendingRepair();
   const fromStep = typeof input.trial?.port?.fromStep === "function";
   const gate = new AutomationStudioSubflowTrialGate({ scope: input.scope, latest: () => controller.latest(), port: input.trial?.port, signal, ...(input.trial?.reset ? { reset: input.trial.reset } : {}), ...after, ...(whole ? { whole: true as const } : {}), pendingRepair: repair });
+  inheritPartialTrialContext(input.loop, gate);
+  inheritPartialTrialContext(input, gate);
   // The submit answer's next step where the port can run from a step (header, t804): from the failing step while a repair stands, else the test with when to ask for it.
   const withRepair = (proposal: AutomationStudioSubflowProposal, testNext: string): string => {
     if (!fromStep) return testNext;
@@ -314,7 +327,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
   let entryActs: string[] = [];
   // One test, a core.test_subflow call's or the one a submission folds in (header, t811): answered the same way, and its trial counted.
   const test = async (value: JsonObject, callId: string, callSignal: AbortSignal | undefined) => {
-    const { answered, trial } = await automationStudioSubflowBuilderTest({ gate, advice, value, callId, signal: callSignal ?? signal, moves: input.trial?.moves, tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look) });
+    const { answered, trial } = await automationStudioSubflowBuilderTest({ gate, advice, value, callId, signal: callSignal ?? signal, moves: input.trial?.moves, tools: input.loop.tools, executeTool: executeOriginal });
     if (trial) {
       tried = true;
       lastTrial = trial;
@@ -399,10 +412,11 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     // The receipt of the latest proposal, or an honest ending (header): either whole, and a passing receipt stands whatever else it carries (t601).
     completionSchema: completionSchema(subflowKey),
     executeTool: async (call) => {
+      if (toolObserver && (input.loop.executeTool !== originalExecuteTool || AuthoringExecutionScope.of(call)?.context.toolObserver !== toolObserver)) throw new Error("execution_observation.tool_binding_changed");
       // The page the test left, when it ran or its checks moved the tab (header, t738), and the advice already given left out (t741 D).
       if (call.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID) return await test(call.value, call.callId, call.signal);
       if (call.toolId !== AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID) {
-        const ran = await input.loop.executeTool(call);
+        const ran = await executeOriginal(call);
         // A read refused for a cut-short text field, so later advice to add that field is said as the order that can pass (S5).
         advice.saw(ran);
         // What the preparation run landed, as the opening look's entry note lists it (header, t676).
@@ -413,7 +427,7 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
       const asked = THEN.read(call.value, fromStep);
       if (!asked.ok) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: asked.code, instruction: asked.instruction }, effectApplied: false, targetsUnchanged: true, resultCode: asked.code };
       tried = true;
-      const submitted = await controller.submit(asked.submission, { trialOf: (proposal) => gate.standing(proposal), refuted: (digest) => gate.refuted(digest) });
+      const submitted = await controller.submit(asked.submission, { trialOf: (proposal) => gate.standing(proposal), refuted: (digest) => gate.refuted(digest) }, call);
       if (!submitted.ok) {
         const refusal = automationStudioCandidateSubmissionRefusal(submitted);
         return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...refusal };
@@ -452,9 +466,18 @@ export async function runAutomationStudioSubflowBuilderLoop(input: {
     if (!proposal || repair.standing) return undefined;
     return gate.completion({ revision: proposal.revision, digest: proposal.digest }).ok ? { subflowKey, revision: proposal.revision, digest: proposal.digest } : undefined;
   });
+  if (toolObserver) {
+    AutomationStudioBuildToolFactories.remember(discovery.executeTool, "frame");
+    bindAutomationStudioObservedBuildTools(discovery, toolObserver);
+  }
   if (signal) discovery.signal = signal;
   if (input.callScope !== undefined) discovery.callScope = input.callScope;
-  const loop = await runAutomationStudioLlmEvidenceLoop({ ...(input.observe ? input.observe(discovery) : discovery), checkCompletion });
+  inheritPartialTrialContext(input.loop, discovery);
+  const observed = input.observe ? input.observe(discovery) : discovery;
+  inheritPartialTrialContext(discovery, observed);
+  const checked = { ...observed, checkCompletion };
+  inheritPartialTrialContext(observed, checked);
+  const loop = await runAutomationStudioLlmEvidenceLoop(checked);
   const proposal = controller.latest();
   return { loop, proposal, trial: gate.standing(proposal), ...(loop.ok && ended ? { ended } : {}), ...(lastTrial ? { lastTrial } : {}), promotionAllowed: false };
 }

@@ -49,6 +49,9 @@ import { runAutomationStudioSubflowFromStep } from "./from-step.ts";
 import { runAutomationStudioSubflowTrial } from "./run.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import type { AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
+import { PartialTrialAdmission, bindPartialTrialFrame, inheritPartialTrialContext, invokePartialTrialPort, isPartialTrialReadOnly, partialTrialContext } from "../../candidate-trials/partial/index.ts";
+import { trialExecutionSource } from "../../candidate-trials/observation/index.ts";
+import type { ExecutionReservation } from "../../../../../runtime/execution-admission/index.ts";
 
 /** The port, the partial trials it ran, and what their judges spent. */
 export function automationStudioSubflowTrialPort(buildId: string, ports: AutomationStudioSubflowTrialPorts): {
@@ -58,10 +61,10 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
 } {
   const records: AutomationStudioSubflowTrialRecord[] = [];
   /** The start the hook made ahead of the reset check, by brief, revision and digest, for that trial only (header). */
-  const ready = new Map<string, AutomationStudioCandidateTrialStart>();
+  const ready = new Map<string, { start: AutomationStudioCandidateTrialStart; reservation: ExecutionReservation | undefined }>();
   /** Whether each judged trial's yes was confirmed by the converse question, by its run id (header, t692). */
   const converse = new Map<string, AutomationStudioSubflowTrialRowCheck>();
-  const run = async (request: Parameters<AutomationStudioSubflowTrialPreparingPort>[0]): Promise<AutomationStudioSubflowTrialResult> => {
+  const perform = async (request: Parameters<AutomationStudioSubflowTrialPreparingPort>[0]): Promise<AutomationStudioSubflowTrialResult> => {
     // A request of another build runs nothing; the run refuses a proposal of another scope itself.
     if (request.scope.buildId !== buildId) {
       return {
@@ -76,7 +79,9 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
       };
     }
     const key = keyOf(request.scope.briefId, request.proposal.revision, request.proposal.digest);
-    const start = ready.get(key);
+    const retained = ready.get(key);
+    const parent = partialTrialContext(request);
+    const start = retained && retained.reservation === parent?.parent.reservation ? retained.start : undefined;
     ready.delete(key);
     // The judge calls are held at the largest prompt an earlier partial trial's judge was sent (`../candidate-trial/judging-fits.ts`, t661).
     const prompt = automationStudioTrialLargestJudgePrompt(records);
@@ -87,29 +92,45 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
   };
   const environmentKind = ports.environment?.kind ?? "live";
   // A run from one step (header, t804): never a trial, so nothing of it is recorded here, spent or offered to `checkRows`.
-  const fromStep: AutomationStudioSubflowFromStepPort = async (request) => {
+  const performFromStep: AutomationStudioSubflowFromStepPort = async (request) => {
     if (request.scope.buildId === buildId) return await runAutomationStudioSubflowFromStep(request, ports);
     const { scope, proposal, fromKey } = request;
     const code = "subflow.trial_other_build";
     return { fromStep: true, identity: { buildId: scope.buildId, briefId: scope.briefId, planDigest: scope.planDigest, subflowKey: scope.subflowKey }, revision: proposal.revision, digest: proposal.digest,
       fromKey, status: "not_run", passedKeys: [], code, feedback: { fromStep: true, from: fromKey, status: "not_run", passed: false, code } };
   };
+  const performChecked: AutomationStudioSubflowTrialPreparingPort = async request => isPartialTrialReadOnly(request) ? await invokePartialTrialPort(request, port, request) : await perform(request);
+  const run: AutomationStudioSubflowTrialPreparingPort = async request => request.scope.buildId === buildId && (trialExecutionSource(port) || partialTrialContext(request))
+    ? await invocation.run(request, { receiver: undefined, callback: performChecked, args: [request] }) : await perform(request);
+  const fromStep: AutomationStudioSubflowFromStepPort = async request => request.scope.buildId === buildId && (trialExecutionSource(port) || partialTrialContext(request))
+    ? await invocation.run(request, { receiver: undefined, callback: performFromStep, args: [request] }, true) : await performFromStep(request);
   const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind, ...(environmentKind === "live" ? { fromStep } : {}) });
+  const invocation = new PartialTrialAdmission(port, port);
+  inheritPartialTrialContext(ports, port);
+  bindPartialTrialFrame(run, true);
+  bindPartialTrialFrame(fromStep, true);
   // The gate's row check, answered from the converse of this build's own trials (header, t692).
   port.checkRows = async ({ scope, trialRunId }) => (scope.buildId === buildId && trialRunId ? converse.get(trialRunId) : undefined);
   // An offline trial runs no start hook, so only a live port offers one (header, Decision 6).
   if (ports.prepareStart && environmentKind === "live") {
-    port.prepareStart = async ({ scope, revision, digest, signal }) => {
+    port.prepareStart = async (input) => {
+      const { scope, revision, digest, signal } = input;
       // Another build's trial is refused unrun, so nothing is put back for it.
       if (scope.buildId !== buildId) return "none";
+      const parent = partialTrialContext(input);
+      const source = trialExecutionSource(port);
+      if (source && (!parent || parent.callbacks !== source.callbacks)) throw new Error("subflow.trial_admission_required");
       const key = keyOf(scope.briefId, revision, digest);
       ready.delete(key);
       // A trial the purse cannot judge does not start, so the site is not put back for it (t661).
       if (automationStudioTrialJudgingShortfall({ code: "subflow.trial_unaffordable", judgeInputTokens: automationStudioTrialLargestJudgePrompt(records) })) return "none";
-      const start = await automationStudioSubflowTrialStart({ scope, revision, digest, signal }, ports);
-      ready.set(key, start);
+      const request = { scope, revision, digest, signal };
+      inheritPartialTrialContext(input, request);
+      const start = await automationStudioSubflowTrialStart(request, ports);
+      ready.set(key, { start, reservation: parent?.parent.reservation });
       return start.status === "reset" ? "reset" : start.status === "failed" ? "failed" : "none";
     };
+    bindPartialTrialFrame(port.prepareStart);
   }
   return {
     port,

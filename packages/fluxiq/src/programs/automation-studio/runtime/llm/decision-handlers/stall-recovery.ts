@@ -25,6 +25,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/supersede.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "./types.ts";
+import { deferAutomationStudioStallAnnouncement } from "../stall-recovery/index.ts";
 
 /** The entry the note is shown under; a newer one replaces the older. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID = "core.stall_recovery";
@@ -59,9 +60,11 @@ export function automationStudioLlmEvidenceStallRecovery(
   if (!context.toolIds.has(answer.call.toolId) || accounting.toolCalls >= limits.maxToolCalls) return { kind: "stall", issueCodes: [...issueCodes] };
   const callId = `${AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID}.${iteration}.${answer.call.toolId}`;
   const note: JsonObject = { code: RECOVERED_CODE, stalledOn: [...issueCodes], ran: { toolId: answer.call.toolId, input: structuredClone(answer.call.input) }, ranAs: callId, instruction: INSTRUCTION };
-  context.accountEvidence(note);
-  automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID);
-  evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID, value: note });
-  context.repeats.stallRecovered();
-  return { kind: "recover", call: { kind: "tool_call", callId, toolId: answer.call.toolId, input: structuredClone(answer.call.input) } };
+  const call = { kind: "tool_call" as const, callId, toolId: answer.call.toolId, input: structuredClone(answer.call.input) };
+  deferAutomationStudioStallAnnouncement(call, () => {
+    context.accountEvidence(note);
+    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID);
+    evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID, value: note });
+  });
+  return { kind: "recover", call };
 }

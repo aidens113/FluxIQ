@@ -88,6 +88,7 @@ import { automationStudioTrialChangeBegin, automationStudioTrialChangeUnwitnesse
 import type { AutomationStudioSiteResetProjectLedger } from "./project-ledger.ts";
 import type { AutomationStudioSiteResetStepReachAnswer } from "../reset-admission/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNWITNESSED_STEP_WORDS as UNWITNESSED_WORDS } from "./unwitnessed-step-words.ts";
+import { AutomationStudioSiteResetCallbackPolicies, AutomationStudioSiteResetObservation, AutomationStudioSiteResetSessions, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../reset-observation/index.ts";
 
 /** The classes the site's own controls can reverse: a step declaring only these has its gap said where it has no witness (header). */
 const REVERSIBLE: ReadonlySet<string> = new Set<AutomationStudioActionConsequence>(["create_new", "modify_existing", "delete"]);
@@ -98,57 +99,99 @@ export function automationStudioSiteResetProjectReset(input: {
   /** The phase's own brief's ledger, which its trials' acts go into; absent for the supervisor, which records none. */
   own?: AutomationStudioSiteResetLedger | undefined;
   /** The start check, under the signal of the trial or phase being prepared. */
-  checks(signal: AbortSignal | undefined): AutomationStudioSiteResetChecks;
+  checks(signal: AbortSignal | undefined, invocation?: object): AutomationStudioSiteResetChecks;
 }): AutomationStudioSiteResetTrialReset {
   const { project, own } = input;
   /** The own brief's ledger, then every other one that recorded an act, in the order their first act was recorded. */
-  const ledgers = (): AutomationStudioSiteResetLedger[] => [...new Set([...(own ? [own] : []), ...project.snapshot().acts.map((act) => project.forBrief(act.owner))])];
-  const session = (ask: AutomationStudioTrialChangeAsk, look: NonNullable<AutomationStudioSiteResetChecks["lookAt"]>) => sessionOver(ledgers(), ask, look);
-  const resolves = (witness: unknown): boolean => project.stepWitnessResolves?.(witness) === true;
-  return {
+  const ledgers = (invocation?: object): AutomationStudioSiteResetLedger[] => {
+    const snapshot = invokeAutomationStudioSiteResetSync(invocation, { receiver: project, callback: project.snapshot, args: [] });
+    return [...new Set([...(own ? [own] : []), ...snapshot.acts.map(act => invokeAutomationStudioSiteResetSync(invocation, { receiver: project, callback: project.forBrief, args: [act.owner] }))])];
+  };
+  const session = (ask: AutomationStudioTrialChangeAsk, look: NonNullable<AutomationStudioSiteResetChecks["lookAt"]>, invocation?: object) => sessionOver(ledgers(invocation), ask, look, invocation);
+  const resolves = (witness: unknown, invocation?: object): boolean => {
+    const resolve = project.stepWitnessResolves;
+    return resolve ? invokeAutomationStudioSiteResetSync(invocation, { receiver: project, callback: resolve, args: [witness] }) === true : false;
+  };
+  const reset: AutomationStudioSiteResetTrialReset = {
     async beforeTrial(signal, cannotUndo, options) {
-      const base = input.checks(signal);
+      const base = await invokeAutomationStudioSiteResetCallback(options, { receiver: input, callback: input.checks, args: [signal, options] }, signal);
       const { change: ask, ...rest } = options ?? {};
       // The one refusal left (header, t775): just the in-place acts of any brief that already show an asked end state.
       if (ask && rest.startReset !== true) {
-        const all = ledgers();
-        const carried = (step: AutomationStudioTrialChangeAsk["steps"][number]): boolean => all.some((ledger) => ledger.trialChange().carried(step));
-        const clashing = all.map((ledger) => ({ ledger, acts: ledger.endStateClash(ask, carried) })).filter((entry) => entry.acts.length);
-        if (clashing.length) return refusedTogether(clashing.map((entry) => entry.ledger.startsInEndState(entry.acts)));
+        const all = ledgers(options);
+        const carried = (step: AutomationStudioTrialChangeAsk["steps"][number]): boolean => all.some(ledger => {
+          const port = invokeAutomationStudioSiteResetSync(carried, { receiver: ledger, callback: ledger.trialChange, args: [] });
+          return invokeAutomationStudioSiteResetSync(carried, { receiver: port, callback: port.carried, args: [step] });
+        });
+        AutomationStudioSiteResetCallbackPolicies.rememberLexical(carried, "pure");
+        const clashing: { ledger: AutomationStudioSiteResetLedger; acts: ReturnType<AutomationStudioSiteResetLedger["endStateClash"]> }[] = [];
+        for (const ledger of all) {
+          const acts = await invokeAutomationStudioSiteResetCallback(options, { receiver: ledger, callback: ledger.endStateClash, args: [ask, carried] }, signal, carried);
+          if (acts.length) clashing.push({ ledger, acts });
+        }
+        if (clashing.length) return refusedTogether(clashing.map(entry => invokeAutomationStudioSiteResetSync(options, { receiver: entry.ledger, callback: entry.ledger.startsInEndState, args: [entry.acts] })));
       }
       let start: Promise<AutomationStudioSiteResetComparison> | undefined;
       // Core's own looks (L1): each place once per ask, its read reaching every ledger through the caller, whichever ledger asked first.
       const looked = new Set<string>();
       const lookAt = base.lookAt;
-      const look = lookAt ? { lookAt: async (location: string) => {
+      const look = lookAt ? { lookAt: async function(this: AutomationStudioSiteResetChecks, location: string) {
         if (looked.has(location)) return;
         looked.add(location);
-        await lookAt(location);
+        await invokeAutomationStudioSiteResetCallback(this, { receiver: base, callback: lookAt, args: [location] }, signal, base);
       } } : {};
-      const checks: AutomationStudioSiteResetChecks = { compare: () => (start ??= base.compare()), ...(base.compareAt ? { compareAt: base.compareAt } : {}), ...look };
+      const compareAt = base.compareAt;
+      const compare = base.compare;
+      const checks: AutomationStudioSiteResetChecks = {
+        compare() { return start ??= invokeAutomationStudioSiteResetCallback(this, { receiver: base, callback: compare, args: [] }, signal, base); },
+        ...(compareAt ? { compareAt(this: AutomationStudioSiteResetChecks, place: Parameters<NonNullable<AutomationStudioSiteResetChecks["compareAt"]>>[0]) { return invokeAutomationStudioSiteResetCallback(this, { receiver: base, callback: compareAt, args: [place] }, signal, base); } } : {}),
+        ...look
+      };
+      for (const callback of [checks.compare, checks.compareAt, checks.lookAt]) if (callback) AutomationStudioSiteResetCallbackPolicies.remember(checks, callback, "frame");
       const decisions: AutomationStudioSiteResetDecision[] = [];
-      for (const ledger of ledgers()) {
+      for (const ledger of ledgers(options)) {
         signal?.throwIfAborted();
-        decisions.push(await ledger.beforeTrial(checks, cannotUndo, rest));
+        decisions.push(await invokeAutomationStudioSiteResetCallback(options, { receiver: ledger, callback: ledger.beforeTrial, args: [checks, cannotUndo, rest] }, signal, rest));
       }
       // The trial's before readings, once, for the whole build (header, t775); its looks move the target, so it goes back to the start after them.
-      const read = ask && lookAt ? await session(ask, lookAt) : undefined;
-      if (read) await base.compare();
+      const read = ask && lookAt ? await session(ask, (location, initial) => invokeAutomationStudioSiteResetCallback(options, { receiver: base, callback: lookAt, args: [location, initial] }, signal, base), options) : undefined;
+      if (read) await invokeAutomationStudioSiteResetCallback(options, { receiver: base, callback: base.compare, args: [] }, signal, base);
       // The steps with no witness, said to the judge as unread whether or not anything else was read (header, t791).
-      const gap = ask ? unwitnessed(ask.steps, resolves).map((step) => step.step) : [];
-      const change = ask && gap.length ? automationStudioTrialChangeUnwitnessedSession({ session: read, steps: ask.steps, parts: ask.parts, unwitnessed: gap, leftFromEarlier: () => ledgers().flatMap((ledger) => ledger.trialChange().leftFromEarlier()) }) : read;
+      const gap = ask ? unwitnessed(ask.steps, witness => resolves(witness, options)).map(step => step.step) : [];
+      const change = ask && gap.length ? automationStudioTrialChangeUnwitnessedSession({ session: read, steps: ask.steps, parts: ask.parts, unwitnessed: gap, leftFromEarlier: () => ledgers(options).flatMap(ledger => {
+        const port = invokeAutomationStudioSiteResetSync(options, { receiver: ledger, callback: ledger.trialChange, args: [] });
+        return invokeAutomationStudioSiteResetSync(options, { receiver: port, callback: port.leftFromEarlier, args: [] });
+      }) }) : read;
+      if (change) AutomationStudioSiteResetSessions.bind(change, options);
       const joinedDecision = joined(decisions);
       return change && joinedDecision.kind === "admit" ? { ...joinedDecision, change } : joinedDecision;
     },
     trialRan(acts, trialRunId) {
+      if (AutomationStudioSiteResetObservation.of(acts)) return (async () => {
+        const left: AutomationStudioSiteResetNamedAct[] = [];
+        if (own) {
+          const invocation = Object.freeze({});
+          left.push(...await invokeAutomationStudioSiteResetCallback(acts, { receiver: own, callback: own.trialRanObserved, args: [acts, trialRunId, invocation] }, undefined, invocation));
+        }
+        for (const ledger of ledgers(acts)) if (ledger !== own) {
+          const invocation = Object.freeze({});
+          left.push(...await invokeAutomationStudioSiteResetCallback(acts, { receiver: ledger, callback: ledger.trialRanObserved, args: [[], trialRunId, invocation] }, undefined, invocation));
+        }
+        return left;
+      })();
       const left = own ? own.trialRan(acts, trialRunId) : [];
       for (const ledger of ledgers()) if (ledger !== own) left.push(...ledger.trialRan([], trialRunId));
       return left;
     },
     admit(steps) {
-      return admitted(steps, resolves, (step) => project.stepReach?.(step));
+      const reach = project.stepReach;
+      return admitted(steps, witness => resolves(witness, steps), step => reach ? invokeAutomationStudioSiteResetSync(steps, { receiver: project, callback: reach, args: [step] }) : undefined);
     }
   };
+  AutomationStudioSiteResetCallbackPolicies.remember(reset, reset.beforeTrial, "frame");
+  if (reset.trialRan) AutomationStudioSiteResetCallbackPolicies.remember(reset, reset.trialRan, "frame");
+  if (reset.admit) AutomationStudioSiteResetCallbackPolicies.remember(reset, reset.admit, "frame");
+  return reset;
 }
 
 /** The trial's admission (header): always admitted, noting under `unwitnessed` each reversible lasting step whose stamp is missing or no longer resolves. */
@@ -187,16 +230,21 @@ function joined(decisions: readonly AutomationStudioSiteResetDecision[]): Automa
  * own brief's, or the first that holds an act), every read reaching it as it reaches every ledger; what of the build is on
  * the site, and whether a step's change was seen, asked of every ledger.
  */
-function sessionOver(ledgers: readonly AutomationStudioSiteResetLedger[], ask: AutomationStudioTrialChangeAsk, look: NonNullable<AutomationStudioSiteResetChecks["lookAt"]>): Promise<AutomationStudioTrialChangeSession | undefined> {
+function sessionOver(ledgers: readonly AutomationStudioSiteResetLedger[], ask: AutomationStudioTrialChangeAsk, look: NonNullable<AutomationStudioSiteResetChecks["lookAt"]>, invocation?: object): Promise<AutomationStudioTrialChangeSession | undefined> {
   const reader = ledgers[0];
   if (!reader) return Promise.resolve(undefined);
-  const ports = ledgers.map((ledger) => ledger.trialChange());
+  const ports = ledgers.map(ledger => invokeAutomationStudioSiteResetSync(invocation, { receiver: ledger, callback: ledger.trialChange, args: [] }));
   const own = ports[0]!;
   const port: AutomationStudioTrialChangeLedgerPort = {
-    places: own.places, latest: own.latest, seq: own.seq,
-    leftFromEarlier: () => ports.flatMap((entry) => entry.leftFromEarlier()),
-    carried: (step) => ports.some((entry) => entry.carried(step)),
-    start: (place) => ports.map((entry) => entry.start?.(place)).find((counts) => counts !== undefined)
+    places: witness => invokeAutomationStudioSiteResetSync(invocation, { receiver: own, callback: own.places, args: [witness] }),
+    latest: place => invokeAutomationStudioSiteResetSync(invocation, { receiver: own, callback: own.latest, args: [place] }),
+    seq: () => invokeAutomationStudioSiteResetSync(invocation, { receiver: own, callback: own.seq, args: [] }),
+    leftFromEarlier: () => ports.flatMap(entry => invokeAutomationStudioSiteResetSync(invocation, { receiver: entry, callback: entry.leftFromEarlier, args: [] })),
+    carried: step => ports.some(entry => invokeAutomationStudioSiteResetSync(invocation, { receiver: entry, callback: entry.carried, args: [step] })),
+    start: place => ports.map(entry => {
+      const start = entry.start;
+      return start ? invokeAutomationStudioSiteResetSync(invocation, { receiver: entry, callback: start, args: [place] }) : undefined;
+    }).find(counts => counts !== undefined)
   };
   return automationStudioTrialChangeBegin({ steps: ask.steps, parts: ask.parts, port, look: (location, start) => look(location, start) });
 }

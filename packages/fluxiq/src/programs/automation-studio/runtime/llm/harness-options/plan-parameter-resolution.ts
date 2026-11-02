@@ -168,6 +168,10 @@ import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParameters
 import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";
 // The leaf directory, not the route-state barrel: it imports nothing of the runtime but types.
 import { automationStudioReadRouteSignature } from "../../route-state/signatures/index.ts";
+import { AuthoringExecutionScope, invokeAuthoringExecutionCallback, invokeAuthoringExecutionSync } from "../../../../../runtime/flow-authoring/execution/observation/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/policies/index.ts";
+import { AutomationStudioProjectBuildToolObservers } from "../../build-execution/tools/index.ts";
+import type { ExecutionCallbackCall } from "../../../../../runtime/execution-observation/index.ts";
 
 type ParameterResolver = Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters">;
 
@@ -222,6 +226,8 @@ export type AutomationStudioFlowBootstrapPlanParameterResolution =
  * Returns a new plan; the one passed in is not changed.
  */
 export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: {
+  /** Actual admitted Core submit invocation; never forwarded to the domain. */
+  originalInvocation?: object | undefined;
   plan: AutomationStudioFlowBootstrapPlan;
   projectId: string;
   flowId: string;
@@ -234,7 +240,7 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
    * `automationStudioActionPermissionDenied`: a plan resolved with no build
    * behind it has nobody to ask, so no step with a lasting consequence passes.
    */
-  permissionFor?: ((step: { definitionId: string; ref: string; witnessed?: (stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void }) => AutomationStudioActionPermissionCheck) | undefined;
+  permissionFor?: ((step: { definitionId: string; ref: string; originalInvocation?: object | undefined; witnessed?: (stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void }) => AutomationStudioActionPermissionCheck) | undefined;
   /**
    * The nodes, by `<subflow key>.<node key>`, that the Flow being extended
    * already contains and the build left exactly as they were
@@ -271,6 +277,10 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
   const resolvedNodeKeys: string[] = [];
   const handleViews: AutomationStudioFlowBootstrapPlanHandleView[] = [];
   const controlIntents = new Map<string, AutomationStudioResolvedControlIntent>();
+  const permissionFor = input.permissionFor;
+  const current = AuthoringExecutionScope.of(input.originalInvocation);
+  const configured = input.originalInvocation && AutomationStudioProjectBuildToolObservers.of(input.originalInvocation);
+  if (configured && (!current || current.context.toolObserver !== configured)) throw new Error("execution_observation.plan_scope_required");
   // Every step in plan order as the plan holds it now, before a fact or a node is resolved into it (header, t748 U1b).
   const runOrder = input.handleReach === undefined ? undefined : plan.subflows.flatMap((subflow) => subflow.nodes.map((node) => ({ definitionId: node.definitionId, parameters: structuredClone(automationStudioPlanStepConsequences(node).parameters) })));
   let position = -1;
@@ -301,7 +311,10 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       // Core's stamp alone (header, t751): none until this node's check is told one.
       delete node.resetWitness;
       const told: { witness?: AutomationStudioSiteResetWitnessStamp | undefined } = {};
-      const permission = input.permissionFor?.({ definitionId: node.definitionId, ref, witnessed: (stamp) => { told.witness = stamp; } }) ?? automationStudioActionPermissionDenied;
+      const witnessed = (stamp: AutomationStudioSiteResetWitnessStamp | undefined): void => { told.witness = stamp; };
+      const step = { definitionId: node.definitionId, ref, witnessed, ...(current ? { originalInvocation: input.originalInvocation } : {}) };
+      ExecutionCallbackPolicies.remember(step, witnessed, "pure");
+      const permission = permissionFor ? invokeAuthoringExecutionSync(input.originalInvocation, { receiver: input, callback: permissionFor, args: [step] }) : automationStudioActionPermissionDenied;
       const preceding = runOrder && position <= MAX_PRECEDING_STEPS ? structuredClone(runOrder.slice(0, position)) : undefined;
       const outcome = await resolveNode(node, input, permission, input.inheritedNodeRefs?.has(ref) === true, input.modelWrittenParameters?.get(ref), preceding);
       const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
@@ -362,9 +375,45 @@ type NodeOutcome =
 /** What a domain's refusal named beside one of its codes (header, t489): the field it could not use and the names it can. */
 type RefusalDetail = AutomationStudioFlowBootstrapIssueDetail & { code: string };
 
+/** Only the original per-resolution carrier receives the entered raw callback scope. */
+async function invokePlanResolver<TReceiver, TArguments extends unknown[], TResult>(originalInvocation: object | undefined, request: object, call: ExecutionCallbackCall<TReceiver, TArguments, TResult>): Promise<Awaited<TResult>> {
+  const pinned = { receiver: call.receiver, callback: call.callback, args: [...call.args] as TArguments };
+  const current = AuthoringExecutionScope.of(originalInvocation);
+  const observer = originalInvocation && AutomationStudioProjectBuildToolObservers.of(originalInvocation);
+  if (observer) {
+    if (!current || current.context.toolObserver !== observer || !current.context.toolRequest) throw new Error("execution_observation.plan_scope_required");
+    observer.bindParent(request, current.context.parent, current.context.toolRequest);
+    AutomationStudioProjectBuildToolObservers.bind(request, observer);
+    return await observer.invoke(pinned, request, undefined, request);
+  }
+  if (!current) return await pinned.callback.apply(pinned.receiver, pinned.args);
+  const callbacks = current.context.callbacks;
+  ExecutionCallbackPolicies.manage(callbacks, pinned);
+  const managed = callbacks.isManaged(pinned);
+  const prepared = await callbacks.prepare(callbacks.forParent(current.context.parent), pinned);
+  if (AuthoringExecutionScope.of(originalInvocation) !== current) throw new Error("execution_observation.plan_scope_changed");
+  const child = new AuthoringExecutionScope(request, { ...current.context, parent: callbacks.context(prepared) }, current.options, AuthoringExecutionScope.of(request));
+  let primary: { error: unknown } | undefined;
+  try {
+    const returned = await callbacks.invoke(prepared, pinned);
+    if (!managed) callbacks.unknown(prepared);
+    await callbacks.flush();
+    return returned;
+  } catch (error) {
+    primary = { error };
+    throw error;
+  } finally {
+    try { child.close(); }
+    catch (cleanupError) {
+      if (primary) throw new AggregateError([primary.error, cleanupError], "Plan resolver and scope restoration failed.");
+      throw cleanupError;
+    }
+  }
+}
+
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
-  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined; handleEvidence?: JsonObject | undefined; writtenByModel?: boolean | undefined } & AutomationStudioPlanActionEffectSource,
+  input: { projectId: string; flowId: string; originalInvocation?: object | undefined; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined; handleEvidence?: JsonObject | undefined; writtenByModel?: boolean | undefined } & AutomationStudioPlanActionEffectSource,
   permission: AutomationStudioActionPermissionCheck,
   inherited: boolean,
   modelKeys?: readonly string[] | undefined,
@@ -388,8 +437,23 @@ async function resolveNode(
   // declared anything, or names a handle, is the build's own and goes on.
   if (inherited && step.declared === undefined && !namesHandle) return stripped(step, parameters);
   let projection: ReturnType<typeof automationStudioPlanPermissionProjection>;
+  let request: Parameters<NonNullable<ParameterResolver["resolvePlanNodeParameters"]>>[0];
   try {
-    projection = automationStudioPlanPermissionProjection({ actionEffect: resolveAutomationStudioPlanActionEffect(input, node, parameters), consequences: step.declared, permission });
+    const original = {
+      actionEffect: resolveAutomationStudioPlanActionEffect(input, node, parameters),
+      consequences: step.declared,
+      permission
+    };
+    const observed = AuthoringExecutionScope.of(input.originalInvocation);
+    const projected: Parameters<typeof automationStudioPlanPermissionProjection>[0] = {
+      ...original,
+      permission: declaration => {
+        const current = AuthoringExecutionScope.of(request);
+        if (observed && (!current || current.context.callbacks !== observed.context.callbacks || current.context.parent.reservation !== observed.context.parent.reservation)) throw new Error("execution_observation.plan_scope_required");
+        return invokeAuthoringExecutionCallback(request, { receiver: original, callback: permission, args: [declaration] }, undefined, declaration);
+      }
+    };
+    projection = automationStudioPlanPermissionProjection(projected);
   } catch {
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
   }
@@ -407,7 +471,7 @@ async function resolveNode(
   }
   let answer: unknown;
   try {
-    answer = await resolver.call(input.binding, {
+    request = {
       projectId: input.projectId,
       flowId: input.flowId,
       nodeDefinitionId: node.definitionId,
@@ -420,7 +484,8 @@ async function resolveNode(
       ...(input.handleEvidence ? { handleEvidence: structuredClone(input.handleEvidence) } : {}),
       ...(input.writtenByModel ? { writtenByModel: true as const } : {}),
       ...(!input.writtenByModel && modelKeys?.length ? { modelWrittenParameters: [...modelKeys] } : {})
-    });
+    };
+    answer = await invokePlanResolver(input.originalInvocation, request, { receiver: input.binding, callback: resolver, args: [request] });
   } catch {
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.failed);
   }

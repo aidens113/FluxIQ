@@ -10,7 +10,10 @@ export function observeBuilderCalls(told: (subflowKey: string, entry: { callId: 
   const spy = vi.spyOn(builders, "runAutomationStudioSubflowBuilderLoop").mockImplementation(input => runBuilder({ ...input, observe: loop => {
     const observed = input.observe ? input.observe(loop) : loop;
     return { ...observed, executeTool: async call => {
-      const answered = await observed.executeTool(call);
+      const answered = await observed.executeTool(call).catch((error: unknown) => {
+        console.error("Isolated builder callback diagnostic", call.callId, error);
+        throw error;
+      });
       const value = (answered as { evidence?: JsonObject }).evidence;
       if (value) told(input.scope.subflowKey, { callId: call.callId, toolId: call.toolId, value: structuredClone(value) });
       return answered;

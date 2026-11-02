@@ -8,12 +8,8 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioInstructedConsequencesSchema, type AutomationStudioInstructedActText } from "../instructed.ts";
 import { AUTOMATION_STUDIO_INSTRUCTION_ROUTE_SCHEMA } from "../instruction-route/index.ts";
+import { composeActionInstructionReadingSchema } from "../../../../../runtime/action-permissions/instruction/reading/index.ts";
 
 export function automationStudioInstructionReadingSchema(acts: readonly AutomationStudioInstructedActText[]): JsonObject {
-  const consequences = structuredClone(automationStudioInstructedConsequencesSchema(acts)) as JsonObject & { required: string[]; properties: Record<string, JsonObject> };
-  return {
-    ...consequences,
-    required: [...consequences.required, "route"],
-    properties: { ...consequences.properties, route: structuredClone(AUTOMATION_STUDIO_INSTRUCTION_ROUTE_SCHEMA) }
-  };
+  return composeActionInstructionReadingSchema(automationStudioInstructedConsequencesSchema(acts), AUTOMATION_STUDIO_INSTRUCTION_ROUTE_SCHEMA);
 }

@@ -3,6 +3,8 @@ import type { AutomationStudioProjectTrialRef } from "../contracts/index.ts";
 import type { AutomationStudioProjectDispatchSpend } from "./ending.ts";
 import type { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import type { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.ts";
+import { bindPartialTrialFrame, inheritPartialTrialContext } from "../../candidate-trials/partial/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../../flow-bootstrap/reset-observation/index.ts";
 
 // The partial-trial port one build or repair brief's gate is given
 // (`./run-brief.ts`): the brief's own port, each trial it answers listed as a
@@ -64,7 +66,7 @@ export function automationStudioProjectDispatchTrialPort(input: {
     const result = await listed(request);
     answered = result;
     const ref = receipts.list().at(-1);
-    if (ref) input.remember(ref, result);
+    if (ref) await invokeAutomationStudioSiteResetCallback(request, { receiver: input, callback: input.remember, args: [ref, result] }, request.signal);
     spend.trial = structuredClone(result);
     return result;
   };
@@ -83,19 +85,24 @@ export function automationStudioProjectDispatchTrialPort(input: {
   const plan = JSON.stringify([scope.subflowKey, scope.planDigest]);
   const advised = input.advised?.get(plan) ?? [];
   if (advised.length) asked.earlierTrials = structuredClone(advised);
-  asked.weighed = (trial) => {
+  asked.weighed = async function (this: AutomationStudioSubflowTrialPreparingPort, trial) {
     const { answer } = trial;
     const heardFromPort = answered !== undefined && answered.identity?.briefId === answer.identity.briefId && answered.revision === answer.revision && answered.digest === answer.digest;
     answered = undefined;
     // An answer the port did not give is a trial the gate kept from the recording.
-    const ref = heardFromPort ? receipts.weighed(answer) : receipts.kept(answer);
-    if (ref) input.remember(ref, answer);
+    const ref = heardFromPort
+      ? invokeAutomationStudioSiteResetSync(this, { receiver: receipts, callback: receipts.weighed, args: [answer] })
+      : invokeAutomationStudioSiteResetSync(this, { receiver: receipts, callback: receipts.kept, args: [answer] });
+    if (ref) await invokeAutomationStudioSiteResetCallback(this, { receiver: input, callback: input.remember, args: [ref, answer] });
     if (!heardFromPort) spend.trial = structuredClone(answer);
     const heard = spend.trial;
     if (heard && heard.identity?.briefId === answer.identity.briefId && heard.revision === answer.revision && heard.digest === answer.digest) spend.trial = structuredClone(answer);
-    if (trial.standingNo !== undefined) standingNos.stood(scope, trial.standingNo);
+    if (trial.standingNo !== undefined) invokeAutomationStudioSiteResetSync(this, { receiver: standingNos, callback: standingNos.stood, args: [scope, trial.standingNo] });
     if (trial.advised && input.advised) input.advised.set(plan, [...(input.advised.get(plan) ?? []), structuredClone(trial.advised)].slice(-3));
-    port.weighed?.(structuredClone(trial));
+    if (port.weighed) await invokeAutomationStudioSiteResetCallback(this, { receiver: port, callback: port.weighed, args: [structuredClone(trial)] }, undefined, port);
   };
+  AutomationStudioSiteResetCallbackPolicies.remember(asked, asked.weighed, "frame");
+  inheritPartialTrialContext(port, asked);
+  bindPartialTrialFrame(asked, true);
   return asked;
 }

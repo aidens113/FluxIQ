@@ -1,16 +1,6 @@
 import type { AutomationStudioFlowIntervention } from "../../../model/index.ts";
+import { CompletedVerificationChecks } from "../../../../../runtime/result-verification/control/index.ts";
 
-/** Actual completed check receipts, retained even when a later check never finishes. */
-export class AutomationStudioCompletedVerificationChecks {
-  private records: AutomationStudioFlowIntervention[] = [];
-  private closed = false;
-
-  record = (intervention: AutomationStudioFlowIntervention): void => {
-    if (!this.closed) this.records.push(intervention);
-  };
-
-  finish(): AutomationStudioFlowIntervention[] {
-    this.closed = true;
-    return [...this.records];
-  }
-}
+/** Studio keeps its original full intervention receipt; collection is framework-owned. */
+export type AutomationStudioCompletedVerificationChecks = CompletedVerificationChecks<AutomationStudioFlowIntervention>;
+export const AutomationStudioCompletedVerificationChecks = CompletedVerificationChecks<AutomationStudioFlowIntervention>;

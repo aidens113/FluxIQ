@@ -42,6 +42,7 @@ import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceT
 import type { AutomationStudioAsk, AutomationStudioAskStage } from "./ask.ts";
 import { automationStudioAskedPersonNeeded, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioPersonNeededOutcome } from "./person-needed-ask.ts";
 import type { AutomationStudioParkingPort } from "./port.ts";
+import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolDescendant, invokeAutomationStudioBuildToolAuxiliary, invokeAutomationStudioBuildToolDelegate, observeAutomationStudioBuildToolParkingPort, withAutomationStudioBuildToolCallbackScope } from "../build-execution/forwarding/index.ts";
 
 /** How many times one piece of work may put the question to a person. */
 export const AUTOMATION_STUDIO_PERSON_NEEDED_MAX_ASKS = 3;
@@ -141,26 +142,38 @@ export function automationStudioPersonNeededToolCalls(input: {
   const asked = async (call: ToolCall): Promise<void> => {
     if (asks >= maxAsks) end("asks_exhausted");
     asks += 1;
-    const port = input.ask?.port;
-    if (!port) return end("unreachable");
+    const originalPort = input.ask?.port;
+    if (!originalPort) return end("unreachable");
+    const port = observeAutomationStudioBuildToolParkingPort(call, originalPort);
     const ask = automationStudioPersonNeededAsk(
       { ...automationStudioPersonNeededAskDraft({ timeoutMs: input.ask?.timeoutMs }), askId: newAskId() },
       { stage: input.stage }
     );
-    input.onAsk?.(ask);
+    const onAsk = input.onAsk;
+    if (onAsk) await invokeAutomationStudioBuildToolAuxiliary(call, { receiver: input, callback: onAsk, args: [ask] }, call.signal);
     const now = input.ask?.now;
     const outcome = await automationStudioAskedPersonNeeded({ port, ...(input.signal ? { signal: input.signal } : {}), ...(now ? { now } : {}) }, ask);
     if (outcome !== "done") end(outcome);
-    input.onCleared?.(call);
+    const onCleared = input.onCleared;
+    if (onCleared) await invokeAutomationStudioBuildToolAuxiliary(call, { receiver: input, callback: onCleared, args: [call] }, call.signal);
   };
 
   /** A fresh look at the target, or why there is none: no look to take, or one that threw. */
-  const freshLook = async (call: ToolCall): Promise<FreshLook> => {
+  const lookRequest = (call: ToolCall): ToolCall | undefined => {
+    if (!look) return undefined;
+    const placed = { callId: automationStudioPersonNeededLookCallId(call.callId), toolId: look.toolId, value: structuredClone(look.initialObservation!.input), ...(call.signal ? { signal: call.signal } : {}) };
+    inheritAutomationStudioBuildToolDescendant(call, placed);
+    return placed;
+  };
+
+  const freshLook = async (call: ToolCall, delegate: ExecuteTool, first: ToolCall | undefined): Promise<FreshLook> => {
     if (!look) return { seen: false, why: "no_look" };
+    let placed = first;
     for (;;) {
       let ran: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult;
       try {
-        ran = await input.executeTool({ callId: automationStudioPersonNeededLookCallId(call.callId), toolId: look.toolId, value: structuredClone(look.initialObservation!.input), ...(call.signal ? { signal: call.signal } : {}) });
+        if (!placed) throw new Error("execution_observation.internal_look_missing");
+        ran = await invokeAutomationStudioBuildToolDelegate(placed, { receiver: input, callback: delegate, args: [placed] }, placed.signal);
       } catch (error) {
         // The work stopping is not a look that failed.
         if (stopped.signal.aborted) throw error;
@@ -171,6 +184,7 @@ export function automationStudioPersonNeededToolCalls(input: {
       // The person said Continue and the check is still there, or another one
       // came up: asked again, within the same bound.
       if (automationStudioToolResultNeedsPerson(ran)) {
+        placed = lookRequest(call);
         await asked(call);
         continue;
       }
@@ -180,15 +194,20 @@ export function automationStudioPersonNeededToolCalls(input: {
     }
   };
 
-  return {
-    executeTool: async (call) => {
-      const ran = await input.executeTool(call);
+  const executeTool: ExecuteTool = async (call) => withAutomationStudioBuildToolCallbackScope(call, async () => {
+      const delegate = input.executeTool;
+      const ran = await invokeAutomationStudioBuildToolDelegate(call, { receiver: input, callback: delegate, args: [call] }, call.signal);
       if (!automationStudioToolResultNeedsPerson(ran)) return ran;
       if (ended) end(ended);
+      const first = lookRequest(call);
       await asked(call);
-      const now = await freshLook(call);
-      return standing(ran, now, input.clearedResultCode?.(call.value));
-    },
+      const now = await freshLook(call, delegate, first);
+      const clearedCode = input.clearedResultCode;
+      return standing(ran, now, clearedCode ? await invokeAutomationStudioBuildToolAuxiliary(call, { receiver: input, callback: clearedCode, args: [call.value] }, call.signal) : undefined);
+    }, input);
+  AutomationStudioBuildToolFactories.remember(executeTool, "frame");
+  return {
+    executeTool,
     signal: stopped.signal,
     ended: () => ended,
     asks: () => asks

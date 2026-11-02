@@ -8,6 +8,8 @@ import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudio
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
 import { observeAutomationStudioRouteState, readAutomationStudioRouteState, type AutomationStudioRouteStateObservation } from "./observe.ts";
 import { automationStudioSignRouteEffect, automationStudioSignRouteState, type AutomationStudioRouteSignatures } from "./signatures/index.ts";
+import { AutomationStudioBuildToolFactories, invokeAutomationStudioBuildToolDelegate, withAutomationStudioBuildToolCallbackScope } from "../build-execution/tools/index.ts";
+import { AutomationStudioSiteResetObservation } from "../flow-bootstrap/reset-observation/index.ts";
 
 /** What a Flow build routes with, kept current as its exploration moves the page. */
 export type AutomationStudioBuildRouting = {
@@ -153,7 +155,11 @@ export async function startAutomationStudioBuildRouting(input: {
   const pageless = new Set(input.pageless ?? []);
   // `after` is the call whose page the state was observed on; absent for the start.
   const observations: Array<{ seen: string; state: JsonObject; after?: string }> = [];
-  const observe = (signal: AbortSignal | undefined) => observeAutomationStudioRouteState({ hostRuntime: input.hostRuntime, projectId: input.projectId, flowId: input.flowId, ...(signal ? { signal } : {}) });
+  const observation = (original?: object) => {
+    const context = AutomationStudioSiteResetObservation.of(original)?.context;
+    return context?.callbacks.forParent(context.parent);
+  };
+  const observe = (signal: AbortSignal | undefined, original?: object) => observeAutomationStudioRouteState({ hostRuntime: input.hostRuntime, projectId: input.projectId, flowId: input.flowId, ...(signal ? { signal } : {}) }, observation(original));
   // Unsettled only while a deferred start waits for the free first look.
   let start: AutomationStudioRouteStateObservation | undefined;
   const settleStart = (observation: AutomationStudioRouteStateObservation): void => {
@@ -219,19 +225,20 @@ export async function startAutomationStudioBuildRouting(input: {
       const entries = projected.map((entry) => ({ ...entry, value: JSON.parse(JSON.stringify(entry.value)) as JsonObject }));
       return { evidence: placedAfterTheirCalls(evidence, entries, placed), context: { ...whole, situations: [], situationsShown: SITUATIONS_SHOWN } };
     },
-    recording: <C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>) => async (call: C): Promise<X> => {
-      if (pageless.has(call.toolId)) return await executeTool(call);
+    recording: <C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>) => {
+      const wrapped = async (call: C): Promise<X> => withAutomationStudioBuildToolCallbackScope(call, async () => {
+      if (pageless.has(call.toolId)) return await invokeAutomationStudioBuildToolDelegate(call, { receiver: undefined, callback: executeTool, args: [call] }, call.signal);
       const freeFirstLook = calls === 0 && call.callId.startsWith(FREE_FIRST_LOOK_CALL_PREFIX);
       calls += 1;
       // Anything else may move the page, so the start is read before it does.
-      if (!start && !freeFirstLook) settleStart(await observe(call.signal));
+      if (!start && !freeFirstLook) settleStart(await observe(call.signal, call));
       const ran: { callId: string; toolId: string; state?: JsonObject } = { callId: call.callId, toolId: call.toolId };
       // Cleared until this call reports the page it left: one that throws may still have moved it.
       const found = left;
       left = undefined;
       let result: X;
       try {
-        result = await executeTool(call);
+        result = await invokeAutomationStudioBuildToolDelegate(call, { receiver: undefined, callback: executeTool, args: [call] }, call.signal);
       } finally {
         // A call that threw may still have moved the page; it reports nothing, so the next decision observes.
         newest = ran;
@@ -240,21 +247,24 @@ export async function startAutomationStudioBuildRouting(input: {
       const carried = reportedRouteState(result);
       if (carried) ran.state = carried;
       if (!start && freeFirstLook) {
-        const observed = carried ? { ok: true as const, state: carried } : await observe(call.signal);
+        const observed = carried ? { ok: true as const, state: carried } : await observe(call.signal, call);
         settleStart(observed);
         // Observed right after the look, so it is also the state the look left.
         if (observed.ok) ran.state = observed.state;
       }
       const digests = reportedDigests(result);
       const leftDigest = digests.after;
-      const signed = leftDigest !== undefined && ran.state ? automationStudioSignRouteState(input.hostRuntime, ran.state) : undefined;
+      const signed = leftDigest !== undefined && ran.state ? automationStudioSignRouteState(input.hostRuntime, ran.state, observation(call)) : undefined;
       if (leftDigest !== undefined && signed?.ok) signatures.set(leftDigest, signed.signature);
       if (found && ran.state && digests.before === found.digest && leftDigest !== undefined && leftDigest !== found.digest) {
-        const effect = automationStudioSignRouteEffect(input.hostRuntime, found.state, ran.state);
+        const effect = automationStudioSignRouteEffect(input.hostRuntime, found.state, ran.state, observation(call));
         if (effect.ok) effects.set(effectKey(found.digest, leftDigest), effect.signature);
       }
       if (leftDigest !== undefined && ran.state) left = { digest: leftDigest, state: ran.state };
       return result;
+      });
+      AutomationStudioBuildToolFactories.remember(wrapped, "frame");
+      return wrapped;
     },
     signaturesOf: (step) => {
       const before = step.stateBefore === undefined ? undefined : signatures.get(step.stateBefore);
@@ -265,12 +275,12 @@ export async function startAutomationStudioBuildRouting(input: {
     observing: (decide) => async (decision) => {
       // What the page is now, once anything has had to learn it.
       let current: AutomationStudioRouteStateObservation | undefined = ranSinceObserved && newest?.state ? { ok: true, state: newest.state } : undefined;
-      if (!start) settleStart(current ??= await observe(decision.signal));
+      if (!start) settleStart(current ??= await observe(decision.signal, decision));
       // Only a host that could observe the start is asked again, and only
       // when a call ran since the last decision: that call may have moved the page.
       if (start?.ok && ranSinceObserved) {
         ranSinceObserved = false;
-        current ??= await observe(decision.signal);
+        current ??= await observe(decision.signal, decision);
         if (current.ok) observations.push({ seen: `after exploring with ${newest?.toolId ?? "a tool"}`, state: current.state, ...(newest ? { after: newest.callId } : {}) });
       }
       return await decide(decision);

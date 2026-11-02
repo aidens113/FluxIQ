@@ -11,6 +11,9 @@ import { AutomationStudioNodeAttemptExecution } from "./attempt.ts";
 import { automationStudioNodeAttemptFailure } from "./failure.ts";
 import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refresh/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "../repeat/index.ts";
+import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
+
+const observedAttemptKernel = registerAutomationExecutionKernel(undefined, executeNodeBody, "attempt");
 
 /**
  * Executes one node and returns its attempt, stamped with the saved changes the
@@ -45,6 +48,22 @@ export async function executeAutomationStudioNode(
   parameterOverlay?: AutomationStudioParameterRefreshOverlay,
   repeatSample?: AutomationStudioRuntimeRepeatSample
 ): Promise<AutomationStudioNodeAttemptTrace> {
+  const frame = await prepareAutomationFrame(options, { receiver: undefined, callback: executeNodeBody }, observedAttemptKernel);
+  if (!frame) return await executeNodeBody(flow, node, values, options, attemptNumber, withholding, runState, parameterOverlay, repeatSample);
+  return await invokeAutomationFrame(frame, { receiver: undefined, callback: executeNodeBody, args: [flow, node, values, frame.options, attemptNumber, withholding, runState, parameterOverlay, repeatSample] });
+}
+
+async function executeNodeBody(
+  flow: AutomationStudioFlowDocument,
+  node: AutomationStudioFlowNode,
+  values: Record<string, JsonValue>,
+  options: AutomationStudioGraphExecutionOptions,
+  attemptNumber: number,
+  withholding: AutomationStudioTraceWithholding,
+  runState: AutomationStudioRunState,
+  parameterOverlay?: AutomationStudioParameterRefreshOverlay,
+  repeatSample?: AutomationStudioRuntimeRepeatSample
+): Promise<AutomationStudioNodeAttemptTrace> {
   // A fresh pass must not inherit the previous pass's floor, including when
   // the first checkpoint or local preparation fails. Raw unresolved values
   // provide a conservative floor until this attempt can specialize them.
@@ -52,7 +71,9 @@ export async function executeAutomationStudioNode(
   runState.dispatchedActions.delete(node.id);
   try {
     if (parameterOverlay?.effectFailure) throw new Error("executor.action_effect.resolve_failed");
-    const actionEffect = combineAutomationStudioResolvedActionEffects([options.resolveActionEffect?.(node), parameterOverlay?.floor]);
+    const resolve = options.resolveActionEffect;
+    const resolved = resolve ? invokeAutomationCallbackSync(options, { receiver: options, callback: resolve, args: [node] }) : undefined;
+    const actionEffect = combineAutomationStudioResolvedActionEffects([resolved, parameterOverlay?.floor]);
     if (actionEffect) runState.actionEffects.set(node.id, actionEffect);
   } catch {
     const startedAt = options.now?.() ?? Date.now();

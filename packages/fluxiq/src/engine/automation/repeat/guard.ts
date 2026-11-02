@@ -12,6 +12,7 @@ import { automationStudioRuntimeRepeatCheckpoint } from "./checkpoint.ts";
 import { automationStudioRuntimeRepeatComponent } from "../../../runtime/repeat/index.ts";
 import { automationStudioRuntimeRepeatDigest } from "../../../runtime/repeat/index.ts";
 import { automationStudioReadRuntimeRepeatObservation } from "../../../runtime/repeat/index.ts";
+import { invokeAutomationCallback } from "../execution-admission/kernel/index.ts";
 
 /** One frame's bounded, private evidence for two completed unchanged visits. */
 export function automationStudioRuntimeRepeatGuard() {
@@ -74,7 +75,7 @@ export function automationStudioRuntimeRepeatGuard() {
           const method = observer(host);
           if (!method) return { kind: "unavailable", reason: "unsupported" };
           const request: AutomationStudioRuntimeRepeatObservationInput = { node: resolved, attemptId, inputs, stateRef, point, ...(options.signal ? { signal: options.signal } : {}) };
-          return automationStudioReadRuntimeRepeatObservation(await method.call(host, request));
+          return automationStudioReadRuntimeRepeatObservation(await invokeAutomationCallback(options, { receiver: host, callback: method, args: [request] }));
         } catch {
           return { kind: "unavailable", reason: "unreadable" };
         }

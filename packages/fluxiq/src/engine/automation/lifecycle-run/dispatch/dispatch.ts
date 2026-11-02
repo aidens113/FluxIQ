@@ -1,3 +1,4 @@
+import { automationCallbackObservation } from "../../execution-admission/kernel/index.ts";
 // The lifecycle dispatcher at run time (state-aware recovery plan, C3-C5, C7).
 //
 // This module owns dispatching one lifecycle event at one node of the frame
@@ -268,7 +269,7 @@ async function observe(dispatch: Dispatch, groups: readonly AutomationStudioFact
       ...(input.options.signal ? { signal: input.options.signal } : {})
     },
     now: dispatch.now
-  });
+  }, automationCallbackObservation(input.options));
   dispatch.observations += observation.calls;
   if (observation.problem) dispatch.run.lifecycle.problems.push(observation.problem);
   return observation.results;

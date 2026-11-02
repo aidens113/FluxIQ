@@ -18,7 +18,7 @@ import { automationStudioActivityHub } from "../../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, type AutomationStudioParkingPort } from "../../../parking/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding/index.ts";
 import { blankFixture, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 /** Only the domain's account of the check carries this; the model must never be sent it. */

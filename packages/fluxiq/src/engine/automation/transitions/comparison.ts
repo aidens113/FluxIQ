@@ -3,7 +3,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import type { AutomationNodeExpectationEvaluation, AutomationStudioResolvedActionEffect } from "../../../components/automation/index.ts";
 import { EXPECTATION_REJECTED_FAILURE } from "../../../components/automation/policy/index.ts";
-import { hostExpectationEvaluator, type AutomationStudioHostStateSnapshotRef } from "../../../runtime/automation-host/index.ts";
+import { type AutomationStudioHostStateSnapshotRef } from "../../../runtime/automation-host/index.ts";
 import { AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE, AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY, automationStudioHostActLanded, automationStudioNodeActLasts, type AutomationStudioEffectCheckResult, type AutomationStudioLastingActCheck } from "../defensive/index.ts";
 import { automationStudioFactConditionsHold } from "../lifecycle/index.ts";
 import { parseAutomationStudioFactConditions } from "../lifecycle/index.ts";
@@ -14,6 +14,8 @@ import { actualTransitionForAttempt } from "./actual.ts";
 import { automationStudioExpectationRequest, automationStudioReadinessCeilingMs, automationStudioRecordedState } from "./recorded.ts";
 import type { AutomationStudioActualTransition, AutomationStudioExpectedTransition, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison, AutomationStudioTransitionComparisonStatus } from "../contracts.ts";
 import { expectedTransitionForNode } from "./expected.ts";
+
+import { invokeAutomationCallback, automationCallbackObservation } from "../execution-admission/kernel/index.ts";
 
 // How a structured failure category reads as a transition comparison for a
 // failed attempt. Typed as exhaustive, so a new category cannot ship without
@@ -132,7 +134,7 @@ export async function attemptWithHostExpectationEvaluation(
   attempt: AutomationStudioNodeAttemptTrace,
   options: AutomationStudioGraphExecutionOptions
 ): Promise<AutomationStudioNodeAttemptTrace> {
-  const evaluate = hostExpectationEvaluator(options.hostRuntime);
+  const evaluate = options.hostRuntime?.expectationEvaluator;
   const expectedState = attempt.transitionComparison?.expected.expectedState;
   // A waiting attempt has not finished, and the expectation node already asked
   // the host itself, so neither is asked twice. An expected state with no keys
@@ -145,13 +147,13 @@ export async function attemptWithHostExpectationEvaluation(
   const stateRef = currentStateRef(attempt);
   const ask = (timeoutMs?: number): Promise<AutomationNodeExpectationEvaluation> => {
     const request = automationStudioExpectationRequest(expectedState, timeoutMs);
-    return Promise.resolve(evaluate(request.conditions, request.mode, request.timeoutMs, {
+    return invokeAutomationCallback(options, { receiver: options.hostRuntime, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
       source: "transition_comparison",
       nodeId: attempt.nodeId,
       attemptId: attempt.attemptId,
       ...(stateRef ? { stateRef } : {}),
       ...(options.signal ? { signal: options.signal } : {})
-    }));
+    }] });
   };
   const ceilingMs = automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs);
   let evaluation: AutomationNodeExpectationEvaluation;
@@ -215,11 +217,12 @@ export async function attemptWithHostExpectationEvaluation(
  */
 export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, options: AutomationStudioGraphExecutionOptions, actionEffect?: AutomationStudioResolvedActionEffect): AutomationStudioLastingActCheck<AutomationStudioNodeAttemptTrace> {
   return async (attempt) => {
-    const evaluate = hostExpectationEvaluator(options.hostRuntime);
+    const host = options.hostRuntime;
+    const evaluate = host?.expectationEvaluator;
     const expectedState = attempt.transitionComparison?.expected.expectedState ?? expectedTransitionForNode(node, attempt).expectedState;
     if (!expectedState || Object.keys(expectedState).length === 0) {
       const timeoutMs = automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs);
-      return await automationStudioHostActLanded(options.hostRuntime, { node, attemptId: attempt.attemptId, timeoutMs, ...(options.signal ? { signal: options.signal } : {}) });
+      return await automationStudioHostActLanded(options.hostRuntime, { node, attemptId: attempt.attemptId, timeoutMs, ...(options.signal ? { signal: options.signal } : {}) }, automationCallbackObservation(options));
     }
     if (automationStudioExpectationSatisfiedAfterFailure(attempt.transitionComparison)) return "landed";
     const facts = expectedFacts(expectedState);
@@ -234,13 +237,13 @@ export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, 
     const windowMs = Math.max(declared.timeoutMs, automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs));
     const request = automationStudioExpectationRequest(expectedState, windowMs);
     const stateRef = currentStateRef(attempt);
-    const verdict = await evaluate(request.conditions, request.mode, request.timeoutMs, {
+    const verdict = await invokeAutomationCallback(options, { receiver: host, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
       source: "transition_comparison",
       nodeId: attempt.nodeId,
       attemptId: attempt.attemptId,
       ...(stateRef ? { stateRef } : {}),
       ...(options.signal ? { signal: options.signal } : {})
-    });
+    }] });
     return effectCheckVerdict(verdict, request.conditions.length, request.mode);
   };
 }
@@ -302,7 +305,7 @@ async function readExpectedFacts(
   };
   let waitedMs = 0;
   for (;;) {
-    const observation = await observeAutomationStudioFacts({ hostRuntime: options.hostRuntime, groups: [{ key: "expected", conditions: facts }], context, ...(options.now ? { now: options.now } : {}) });
+    const observation = await observeAutomationStudioFacts({ hostRuntime: options.hostRuntime, groups: [{ key: "expected", conditions: facts }], context, ...(options.now ? { now: options.now } : {}) }, automationCallbackObservation(options));
     const answers = observation.results.get("expected") ?? [];
     const read: ExpectedFactsRead = { truth: automationStudioFactConditionsHold(facts, answers), settled: answers.filter((answer) => answer.truth !== "unknown").length };
     const final = read.truth === "true" || observation.calls === 0 || observation.problem !== undefined || waitedMs >= windowMs || options.signal?.aborted === true;

@@ -16,6 +16,7 @@
 // - Where the change came from, and what the failure it answers observed and
 //   expected, are returned as ids, codes and counts only, never values.
 import type { JsonObject } from "../../../../core/index.ts";
+import { copyAutomationExecutionOptions } from "../../../../engine/automation/execution-admission/index.ts";
 import { parseAutomationStudioFlowChangeOrigin, type AutomationStudioFlowChangeOrigin, type AutomationStudioFlowDocument, type AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExpectationEvaluationContext, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
 import {
@@ -71,7 +72,7 @@ const FAILED_ROUTE = "failed";
 
 export async function trialAutomationStudioFlowChange(request: AutomationStudioFlowChangeTrialRequest): Promise<AutomationStudioFlowChangeTrialReport> {
   const evaluations = new Map<string, HostEvaluation>();
-  const options: AutomationStudioGraphExecutionOptions = { ...request.options, inputs: request.seedValues };
+  const options = copyAutomationExecutionOptions(copyAutomationExecutionOptions(request.options), { inputs: request.seedValues });
   if (request.startNodeId) options.startNodeId = request.startNodeId;
   else delete options.startNodeId;
   const hostRuntime = observedHostRuntime(request.options.hostRuntime, evaluations);

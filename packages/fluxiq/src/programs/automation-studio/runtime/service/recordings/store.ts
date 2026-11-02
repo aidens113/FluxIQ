@@ -25,6 +25,8 @@ import { pipelineIndexWithoutRecording, type AutomationStudioServiceIndexes } fr
 import type { AutomationStudioObjectDocuments } from "../object-documents.ts";
 import { mapWithConcurrency } from "../collections.ts";
 import { upsertBy } from "../collections.ts";
+import { RecordingProjectMirror } from "./mirror.ts";
+import { RecordingProjectNormalizations } from "./normalizations.ts";
 
 // Recording sessions and the derived pipeline written beside them: the
 // pipeline index, its artifact documents, and the physical cleanup that
@@ -33,6 +35,8 @@ import { upsertBy } from "../collections.ts";
 // exist; nothing here runs before that wiring completes.
 export class AutomationStudioRecordingStore {
   private ready: Promise<void> = Promise.resolve();
+  readonly mirror: RecordingProjectMirror<RecordingSession>;
+  readonly normalizations: RecordingProjectNormalizations;
 
   constructor(
     private readonly paths: AutomationStudioProjectPaths,
@@ -43,10 +47,33 @@ export class AutomationStudioRecordingStore {
     private readonly repositories: CanonicalAutomationStudioRepositories,
     private readonly objectStore?: AutomationStudioObjectStore,
     private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool
-  ) {}
+  ) {
+    this.mirror = new RecordingProjectMirror(repositories.recordingSessions, recording => recording.recordingId);
+    this.normalizations = new RecordingProjectNormalizations(paths, recordingPaths, indexes, repositories.normalizedTimelines);
+  }
 
   bindReady(ready: Promise<void>): void {
     this.ready = ready;
+  }
+
+  async listRecordingSessions(projectId?: string | null): Promise<RecordingSession[]> {
+    await this.ready;
+    if (!projectId) return await this.repositories.recordingSessions.list();
+    if (!this.paths.root) {
+      const recordings: RecordingSession[] = [];
+      for (const item of await this.repositories.recordingSessions.list()) {
+        const recording = await this.mirror.readOwned(item.recordingId, projectId);
+        if (recording) recordings.push(recording);
+      }
+      return recordings;
+    }
+    const index = await this.indexes.readRecordingIndex(projectId);
+    const recordings: RecordingSession[] = [];
+    for (const item of index.recordings ?? []) {
+      const recording = await this.loadProjectRecording(projectId, item.recordingId);
+      if (recording) recordings.push(recording);
+    }
+    return recordings;
   }
 
   appendResult(prepared: RecordingSession, stored: RecordingSession): RecordingSession {
@@ -60,12 +87,14 @@ export class AutomationStudioRecordingStore {
   }
 
   async savePublic(recording: RecordingSession, projectId: string | null | undefined, persist: (projectId: string, stored: RecordingSession) => Promise<void>): Promise<void> {
+    if (projectId) assertRecordingProject(projectId, recording);
     const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(recording, projectId);
     if (projectId) await persist(projectId, stored);
-    await this.repositories.recordingSessions.put(stored);
+    await this.mirror.put(stored, { projectId });
   }
 
   async saveRemoval(projectId: string, recording: RecordingSession, persist: () => Promise<void>, writeTimeline: () => Promise<void>): Promise<void> {
+    assertRecordingProject(projectId, recording);
     const previous = await this.getRawRecordingSession(recording.recordingId, projectId);
     if (this.runtimeProjectDatabasePool && this.paths.root) {
       const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
@@ -76,7 +105,7 @@ export class AutomationStudioRecordingStore {
     }
     await persist();
     await writeTimeline();
-    await this.repositories.recordingSessions.put(recording);
+    await this.mirror.put(recording, { projectId });
   }
 
   async getRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
@@ -162,6 +191,7 @@ export class AutomationStudioRecordingStore {
   }
 
   async ensureProjectRecordingPipeline(projectId: string, recording: RecordingSession): Promise<RecordingPipelineDocument> {
+    assertRecordingProject(projectId, recording);
     await this.projects.ensureProjectStructure(projectId);
     const pipelineId = recordingPipelineId(recording.recordingId);
     const store = new ProgramJsonStore<RecordingPipelineDocument>(
@@ -197,30 +227,32 @@ export class AutomationStudioRecordingStore {
   }
 
   async getRawRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
-    if (projectId) await this.loadProjectRecording(projectId, recordingId);
-    const recording = await this.repositories.recordingSessions.get(recordingId);
+    // The mirror is keyed globally. A different project may replace its slot
+    // while a scoped load awaits storage, so never reread that slot afterward.
+    const recording = projectId ? await this.loadProjectRecording(projectId, recordingId) : await this.repositories.recordingSessions.get(recordingId);
     if (!recording) throw new Error(`Unknown Automation Studio recording: ${recordingId}`);
     return recording;
   }
 
-  async loadProjectRecording(projectId: string, recordingId: string): Promise<void> {
-    if (!this.paths.root) return;
-    const existing = await this.repositories.recordingSessions.get(recordingId);
+  async loadProjectRecording(projectId: string, recordingId: string): Promise<RecordingSession | null> {
+    const existing = await this.mirror.readOwned(recordingId, projectId);
     if (existing && existing.metadata?.summaryOnly !== true) {
       const recovered = await this.recoverCompletion(projectId, existing);
-      if (recovered !== existing) await this.repositories.recordingSessions.put(recovered);
-      return;
+      return recovered !== existing ? await this.mirror.put(recovered, { projectId, loaded: true }) : recovered;
     }
+    if (!this.paths.root) return null;
     const stored = await new ProgramJsonStore<JsonObject>(
       path.join(this.recordingPaths.recordingSessionDirectory(projectId, recordingId), "recording.json"),
       () => ({})
     ).read();
     const recording = stored.recording as unknown as RecordingSession | undefined;
-    if (recording?.recordingId) {
-      const storedTimeline = await this.readRecordingTimeline(projectId, recordingId);
-      const timeline = storedTimeline.length ? storedTimeline : recording.timeline;
-      await this.repositories.recordingSessions.put(await this.recoverCompletion(projectId, { ...recording, timeline }));
-    }
+    if (!recording?.recordingId) return null;
+    if (recording.recordingId !== recordingId) throw new Error("Recording storage identity conflict.");
+    assertRecordingProject(projectId, recording);
+    const storedTimeline = await this.readRecordingTimeline(projectId, recordingId);
+    const timeline = storedTimeline.length ? storedTimeline : recording.timeline;
+    const recovered = await this.recoverCompletion(projectId, { ...recording, timeline });
+    return await this.mirror.put(recovered, { projectId, loaded: true });
   }
 
   private async recoverCompletion(projectId: string, recording: RecordingSession): Promise<RecordingSession> {
@@ -476,12 +508,19 @@ export class AutomationStudioRecordingStore {
   }
 
   async writeRecordingPipelineArtifacts(projectId: string, recordingId: string, artifacts: Array<{ kind: PipelineArtifactKind; id: string; artifact: JsonObject }>): Promise<void> {
-    const recording = await this.repositories.recordingSessions.get(recordingId) ?? await this.getRecordingSession(recordingId, projectId).catch(() => null);
+    const recording = await this.loadProjectRecording(projectId, recordingId);
     if (!recording || !artifacts.length) return;
     await this.ensureProjectRecordingPipeline(projectId, recording);
     await mapWithConcurrency(artifacts, PIPELINE_ARTIFACT_IO_CONCURRENCY, async (item) => this.objectDocuments.writeArtifactDocument(projectId, this.recordingPaths.recordingPipelineArtifactFile(projectId, recordingId, item.kind, item.id), item.artifact));
     await this.updateRecordingPipeline(projectId, recordingId, (pipeline) => artifacts.reduce((next, item) => addRecordingPipelineArtifactId(next, item.kind, item.id), pipeline));
   }
+}
+
+function assertRecordingProject(projectId: string, recording: RecordingSession): void {
+  const owner = recording.metadata?.projectId;
+  // Legacy project files may omit ownership metadata; their actual directory
+  // supplies the scope. An explicit different owner can never be adopted.
+  if (owner !== undefined && owner !== null && owner !== projectId) throw new Error("Recording project ownership conflict.");
 }
 
 export const PIPELINE_ARTIFACT_IO_CONCURRENCY = 16;

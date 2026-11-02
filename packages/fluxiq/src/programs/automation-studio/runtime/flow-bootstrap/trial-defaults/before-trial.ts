@@ -13,18 +13,39 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioSiteResetBeforeTrialOptions, AutomationStudioSiteResetDecision, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import { observeCandidateTrialCallback } from "../../candidate-trials/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies, AutomationStudioSiteResetObservation, automationStudioSiteResetTrialContext, invokeAutomationStudioSiteResetCallback } from "../reset-observation/index.ts";
 
 /** Per reset: the ids its answers listed so far (`listed`), and those it listed as closed, unsettleable (`closed`), each in first-listed order. */
 const memory = new WeakMap<AutomationStudioSiteResetTrialReset, { listed: Set<string>; closed: Set<string> }>();
 
 /** Asks `reset` before a trial, with `cannotUndo` defaulted to the acts it closed and narrowed to the acts it listed when supplied (header). */
-export async function automationStudioTrialDefaultsBeforeTrial(reset: AutomationStudioSiteResetTrialReset, signal: AbortSignal | undefined, supplied: unknown, options: AutomationStudioSiteResetBeforeTrialOptions): Promise<AutomationStudioSiteResetDecision> {
+export async function automationStudioTrialDefaultsBeforeTrial(reset: AutomationStudioSiteResetTrialReset, signal: AbortSignal | undefined, supplied: unknown, options: AutomationStudioSiteResetBeforeTrialOptions, invocation?: object): Promise<AutomationStudioSiteResetDecision> {
   const known = memory.get(reset) ?? { listed: new Set<string>(), closed: new Set<string>() };
   memory.set(reset, known);
   const cannotUndo = Array.isArray(supplied)
     ? supplied.filter((id): id is string => typeof id === "string" && known.listed.has(id))
     : known.closed.size ? [...known.closed] : undefined;
-  const decision = await reset.beforeTrial(signal, cannotUndo, options);
+  const beforeTrial = reset.beforeTrial;
+  const caller = invocation ?? reset;
+  const original = automationStudioSiteResetTrialContext(caller);
+  const args: Parameters<typeof beforeTrial> = [signal, cannotUndo, options];
+  const call = { receiver: reset, callback: beforeTrial, args };
+  if (original) AutomationStudioSiteResetCallbackPolicies.manage(original.callbacks, call);
+  let scope: AutomationStudioSiteResetObservation | undefined;
+  let decision: AutomationStudioSiteResetDecision;
+  try {
+    decision = AutomationStudioSiteResetObservation.of(caller)
+      ? await invokeAutomationStudioSiteResetCallback(caller, call, signal, options)
+      : await observeCandidateTrialCallback(caller, "reset", call, async parent => {
+      if (!original) return;
+      if (original.toolObserver) {
+        if (!original.originalRoot || !original.prepareToolParent) throw new Error("site_reset.original_tool_root_required");
+        await original.prepareToolParent(options, parent, original.originalRoot);
+      }
+      scope = new AutomationStudioSiteResetObservation(options, { ...original, parent, toolRequest: options });
+      });
+  } finally { scope?.close(); }
   if (decision.kind === "refuse") {
     note(known, decision.evidence.actsToUndo);
     note(known, decision.evidence.actsUnsettleable);

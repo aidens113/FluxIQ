@@ -19,7 +19,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTask
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding/index.ts";
 import { caller, isJudgeRequest, judgeReply, mockProvider } from "./fixtures.ts";
 
 const OPEN_ID = "domain.example.open";

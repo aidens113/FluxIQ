@@ -1,3 +1,4 @@
+import { copyAutomationExecutionOptions, inheritAutomationExecutionObservation } from "../execution-admission/index.ts";
 // The typed boundary every call crosses (state-aware recovery plan, C1): a Call
 // Flow node into a published, version-pinned Flow, and a Call Subflow node into
 // a sibling Subflow graph of the same automation. One implementation, so the
@@ -69,14 +70,19 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
   // the parent's: the child runs as a frame of its own.
   const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, invocation: _parentInvocation, ...childBase } = parentOptions;
   // The child's defaults come from its declared interface: authored, not supplied (`trace-withholding.ts`, `supply`).
-  const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, ...request.childOverrides, inputs: childInputs, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
+  const overridden = copyAutomationExecutionOptions(childBase, request.childOverrides);
+  const childOptions = copyAutomationExecutionOptions(overridden, { inputs: childInputs, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) });
+  inheritAutomationExecutionObservation(parentOptions, childOptions);
   let childTrace: AutomationStudioGraphExecutionTrace = { status: "failed", startedAt: now, finishedAt: now, attempts: [], values: {}, effects: [], message: "Child Flow did not execute." };
   let childFrame: AutomationStudioInvocationOptions | undefined;
   let childUncertain = false;
   for (let attempt = 0; attempt < Math.max(1, request.maxAttempts); attempt += 1) {
     await parentOptions.commandRun?.checkpoint();
     const framed = childFrame = request.frame(childInputs);
-    childTrace = await runAutomationStudioChildWithBounds((signal) => request.runChild({ ...childOptions, signal, ...(framed ? { invocation: framed } : {}) }), boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun);
+    childTrace = await runAutomationStudioChildWithBounds((signal) => {
+      const bounded = copyAutomationExecutionOptions(childOptions, { signal, ...(framed ? { invocation: framed } : {}) });
+      return request.runChild(bounded);
+    }, boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun);
     childUncertain = childTrace.status === "failed" && childTrace.failure?.code === "run.outcome_uncertain";
     // The child already failed closed on an unresolved lasting act. A whole
     // child retry or a latched run's checkpoint cannot settle that act.

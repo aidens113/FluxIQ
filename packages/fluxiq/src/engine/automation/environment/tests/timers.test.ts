@@ -13,4 +13,37 @@ describe("the engine timer environment adapter", () => {
     const own = () => ({ cancel: () => undefined });
     expect(automationStudioEnvironmentExecutorOptions({ inputs: {}, startTimer: own }, automationStudioLiveRunEnvironment).startTimer).toBe(own);
   });
+
+  it("retains the original general clock owner without widening the existing region timer", () => {
+    const kinds: string[] = [];
+    class Environment {
+      readonly kind = "live" as const;
+      readonly delay = automationStudioLiveRunEnvironment.delay;
+      readonly random = automationStudioLiveRunEnvironment.random;
+      readonly newRunId = automationStudioLiveRunEnvironment.newRunId;
+      readonly within = automationStudioLiveRunEnvironment.within;
+      #time = 42;
+      now(): number { return this.#time; }
+      startTimer(wait: { readonly kind: string }, _delay: number, fire: () => void) {
+        expect(this.#time).toBe(42);
+        kinds.push(wait.kind);
+        fire();
+        return { cancel() {} };
+      }
+    }
+    const environment = new Environment();
+    const region = (wait: { readonly kind: "region_timeout" }) => {
+      kinds.push(wait.kind);
+      return { cancel() {} };
+    };
+    const applied = automationStudioEnvironmentExecutorOptions({ startTimer: region }, environment);
+    expect(applied.clock).toBe(environment);
+    expect(applied.clock?.now()).toBe(42);
+    let fired = false;
+    applied.clock?.startTimer?.({ kind: "exploration_deadline" }, 1, () => { fired = true; });
+    applied.startTimer?.({ kind: "region_timeout" }, 1, () => undefined);
+    expect(fired).toBe(true);
+    expect(applied.startTimer).toBe(region);
+    expect(kinds).toEqual(["exploration_deadline", "region_timeout"]);
+  });
 });

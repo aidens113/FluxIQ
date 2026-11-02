@@ -1,5 +1,9 @@
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { automationStudioCandidateTrialOffline, type AutomationStudioCandidateTrialPort } from "../../flow-bootstrap/candidate/index.ts";
+import { inheritCandidateTrialAuthority } from "../../candidate-trials/index.ts";
+import { inheritTrialExecutionSource, inheritTrialExecutionObservation } from "../../candidate-trials/observation/index.ts";
+import { bindCandidateTrialReadOnly, invokeCandidateTrialReadOnly, candidateTrialOfflineLease } from "../../candidate-trials/mode/index.ts";
+import { bindCandidateTrialFrame } from "../../candidate-trials/authority/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../flow-bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../result-verification/index.ts";
@@ -10,6 +14,7 @@ import { automationStudioWholeTrialPorts } from "../trial-ports/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "./supervisor-ledger.ts";
+import { invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../../flow-bootstrap/reset-observation/index.ts";
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-toggles/index.ts";
 
@@ -94,28 +99,44 @@ export function automationStudioProjectBuildWholeTrials(input: {
   const offline = automationStudioCandidateTrialOffline(trials.port);
   // The build's one record of toggles, which the whole trials' presses are told to through the environment (`../project-build-toggles/toggles-record.ts`, t792).
   const togglesWritten = AutomationStudioProjectBuildTogglesRecord.of(AutomationStudioProjectBuildTogglesRecord.toggles(environment));
-  const run: AutomationStudioCandidateTrialPort = async (request) => {
+  const perform = async (request: Parameters<AutomationStudioCandidateTrialPort>[0], readOnly = false): Promise<Awaited<ReturnType<AutomationStudioCandidateTrialPort>>> => {
     let result: Awaited<ReturnType<AutomationStudioCandidateTrialPort>>;
     try {
-      result = await trials.port(request);
+      result = readOnly ? await invokeCandidateTrialReadOnly(trials.port, request) : await trials.port(request);
     } finally {
       // What its presses told that record, written into the build record (t792).
-      togglesWritten.sync();
+      if (!readOnly) {
+        const invocation = {};
+        await invokeAutomationStudioSiteResetCallback(request, { receiver: togglesWritten, callback: togglesWritten.syncAndFlushed, args: [invocation] }, request.signal, invocation);
+      }
     }
-    if (!offline && result.acts?.length) {
+    if (!readOnly && !offline && result.acts?.length) {
       // Refresh original pre-effect scope authority without overwriting current evidence.
-      ledger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER).trialRan(result.acts, result.trialRunId);
-      AutomationStudioProjectBuildActsRecord.of(ledger).trialRan(result.acts, result.trialRunId);
+      const supervisor = invokeAutomationStudioSiteResetSync(request, { receiver: ledger, callback: ledger.forBrief, args: [AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER] });
+      const trial = {};
+      await invokeAutomationStudioSiteResetCallback(request, { receiver: supervisor, callback: supervisor.trialRanObserved, args: [result.acts, result.trialRunId, trial] }, request.signal, trial);
+      const writer = AutomationStudioProjectBuildActsRecord.of(ledger);
+      const written = {};
+      await invokeAutomationStudioSiteResetCallback(request, { receiver: writer, callback: writer.trialRanAndFlushed, args: [result.acts, result.trialRunId, written] }, request.signal, written);
     }
     // How its start was made, as every phase of the build is told (header).
     const phaseStart = AutomationStudioProjectBuildPhaseStart.trialStart({ phase: "whole_trial", feedback: result.feedback, arrival, startLocation: environment.startLocation });
     return { ...result, feedback: { ...result.feedback, phaseStart } };
   };
+  const run: AutomationStudioCandidateTrialPort = request => perform(request);
   // The start hook stays on the port, so the supervisor's trial gate runs it before each whole trial as a candidate build's does.
   // The inner port's environment kind stays on it too, for the trial gate to read (header, U7), and so does the offline-first check (header, D48).
   const environmentKind = trials.port.environmentKind;
   const prepareStart = trials.port.prepareStart;
   const port: AutomationStudioCandidateTrialPort = Object.assign(run, { environmentKind, offlineFirst: offlineFirst.offlineFirst }, prepareStart ? { prepareStart } : {});
+  inheritCandidateTrialAuthority(trials.port, port);
+  inheritTrialExecutionSource(trials.port, port);
+  inheritTrialExecutionObservation(trials.port, port);
+  bindCandidateTrialFrame(port);
+  bindCandidateTrialReadOnly(port, request => perform(request, true));
+  const world = environment.environment;
+  const lease = candidateTrialOfflineLease(world);
+  if (world && lease) bindCandidateTrialReadOnly(port, request => perform(request, true), { environment: world, lease });
   return { ...trials, port, spent };
 }
 

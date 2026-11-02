@@ -1,3 +1,4 @@
+import type { ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 // The fact gate on a state route's target (state-aware recovery plan, C6
 // "Safe state routing"; C2 checkpoints; C9 fact conditions).
 //
@@ -47,7 +48,7 @@ export async function automationStudioStateRouteFactGate(input: {
   nodeIds: readonly string[];
   hostRuntime: AutomationStudioHostRuntimeBoundary | undefined;
   context: AutomationStudioFactEvaluationContext;
-}): Promise<AutomationStudioStateRouteFactGate> {
+}, executionObservation?: ExecutionCallbackObservation): Promise<AutomationStudioStateRouteFactGate> {
   const plan = nodeGates(input.flow);
   const refused = new Map<string, AutomationStudioStateRouteFactRefusal>();
   const groups: AutomationStudioFactObservationGroup[] = [];
@@ -57,7 +58,7 @@ export async function automationStudioStateRouteFactGate(input: {
     if (gate.guard === "not_checkpoint") refused.set(nodeId, { guard: "not_checkpoint" });
     else groups.push({ key: nodeId, conditions: gate.conditions });
   }
-  const observation = await observeAutomationStudioFacts({ hostRuntime: input.hostRuntime, groups, context: input.context });
+  const observation = await observeAutomationStudioFacts({ hostRuntime: input.hostRuntime, groups, context: input.context }, executionObservation);
   for (const group of groups) {
     const gate = plan.get(group.key) as Exclude<NodeGate, { guard: "not_checkpoint" }>;
     const truth = holds(group.conditions, observation.results.get(group.key) ?? []);

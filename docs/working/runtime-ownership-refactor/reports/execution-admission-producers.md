@@ -1,234 +1,109 @@
-# Execution admission producers: discovery and handoff
+# Actual execution admission producers
 
-Outcome: Done, READ-ONLY DISCOVERY. Source release is pending; only this report changed.
+Outcome: Done. SOURCE FROZEN.
 
-Dispatch: [execution-admission-producers brief](../briefs/execution-admission-producers.md). Reuses the [accepted API](execution-admission-api.md) and [verified A1 authority](execution-admission-authority.md). No A1 signature amendment is needed for the producer handshake below.
+Dispatch: [execution-admission-producers brief](../briefs/execution-admission-producers.md). Builds on the accepted [API proposal](execution-admission-api.md), [A1 authority](execution-admission-authority.md), and the root-owned frozen gateway contracts.
 
-The additive cut is per-scope engine/native/output source owners, private observation companions, and explicit managed-completion registrations. Register the entire owner/delegation cohort before the first A1 reservation. No producer/issuer/reservation/entry handles enter native implementation contexts, adapter contexts, model/tool JSON, traces or metadata. Legacy optional absence retains ordinary behavior and earns no certificate.
+Worktree: `C:/Users/osrs_/FluxStuff/fxwork/t843/!FluxIQ`. No original/t842 checkout, git action, package-wide suite/build, provider, browser or user data was used. No process remains running.
 
-Paths below are relative to `packages/fluxiq/src/`. Root retains Studio composition, A2 retains SQL/command owners, and candidate/LLM/trial wrappers remain outside this implementation unit.
+## Contract and composition
 
-## 1. Per-scope registration handshake
+- One configured source cohort is created per original A1 scope before first reserve: shared callbacks, engine, native, output, gateway and the composition's actual root/trial owners. Sources implement the canonical `ConfiguredExecutionSource`; no duplicate owner DTO or ledger.
+- Native: `createNativeExecutionAdmissionSource(scope, runtime?, registrations?)`, `bindRuntime(runtime, registrations?)`, `forParent(parent, retrySeries?)`, `flush()`. Register the exact original implementation plus package/definition versions and a truthful no-direct-effects or managed completion contract. Existing effective grants and domain matchers are unchanged.
+- Output: `createOutputExecutionAdmissionSource(scope, { gateway?, gatewayTargets? })`, `forParent(parent, origin?, retrySeries?)`, `provenanceReader`, `markGatewayTarget(originalReceiver, originalCallback)`, `manage`, `flush`. `OutputGatewayTarget` is the exact receiver/callback pair, captured by the actual registration owner.
+- Engine: `createAutomationExecutionAdmissionSource(scope, { native?, output? })`, `forParent`, `forRun(parent, originalRunProof, originalReader)`, `manage`, `flush`. `createAutomationGraphOptions` accepts the optional `executionObservation`; private companions survive graph, compiled, composite, region timeout and child option copies.
+- Delegation is explicit: engine -> engine/native/output; output -> output/gateway; native -> none by default; actual root/trial owner -> engine and its real callback owners. Original authority, scope and reservation never change to get clearance.
+- Root owns ordinary exploration root issuance. `forRun` consumes only A2's original persisted-root proof/reader. Required command Context stays the identical original object. No fabricated session/run IDs or owner data from metadata/JSON.
+- The actual IO/transport backend is the gateway child's parent. Root's optional `readCompletion(originalContext, exactOriginalParent)` is captured with its original receiver. Pending/absent means no credit; settled is accepted only after A2's genuine durable child closure. Required completion remains deferred until real handling/consume, then the fixed original completion owner rechecks its retained outcome.
+- Unsent required withdrawal awaits the existing registered `ClientGatewayCommandOutcome.stop`. A legacy custom commandRun with no Outcome observer retains its old result/trace behavior. No old test expectation was changed.
 
-Each source owner is a fresh object for one original A1 assembly/scope. It owns original-origin and one-use evidence registries. The native runtime/IO registry/runtime service may be shared between concurrent scopes; never install a mutable current-scope field on those shared objects.
+## Actual execution and retry behavior
 
-Proposed source-composition shape (trusted code only):
+Neutral callback observation pins the selected receiver, callback and typed argument tuple before the persistence await, enters a durable child, and invokes that exact method. Registered completion sees both the original fulfilled value and original thrown/rejected object. Arguments, values and errors stay private; durable evidence uses bounded references/digests. Observer write failures remain open and propagate through the original call plus awaited cleanup.
 
-```ts
-interface ProducerSourceOwner {
-  readonly owner: object;
-  registration(delegatesTo: readonly object[]): ExecutionSourceRegistration;
-  connect(ports: ExecutionSourcePorts): void;
-}
+Sync callbacks stay synchronous under an already durable frame. Unsupported calls mark the frame unverified before invocation; original errors/receivers remain intact. Read-only invocation requires the exact registered no-direct-effects receiver/callback/binding and produces no admission, completion credit or history mutation. This is not a blanket read-only/offline Flow port.
+
+The generic callback source has NO function/reservation-wide repetition fence. Repeated unsupported reads remain unverified and can run during a first execution. The backend fence uses a private per-pass invocation identity, associated with the actual engine arrival and retained only for scheduled retries, with a distinct derived token for each emitted effect ordinal. A successful direct same-node self-loop gets a fresh private pass identity without resetting arrival, retry, pace or progress counters. Two authored arrivals using one adapter, or two real effect ordinals, each run once. The same invocation's unsettled backend cannot run again; truthful settled computation can use ordinary retries. Tokens are private, scope-bound, and copied/foreign tokens refuse.
+
+Actual native implementation, IO adapter and runtime transport calls are observed before invocation, including sync throw, lost acknowledgement and abort-ignoring late work. Canonical native bridges pin original methods. Unknown custom native ports receive their original four arguments; unknown capabilities callbacks receive no observer argument. Automatic callback issuers/companion readers live under the private output admission internal barrel, and are absent from the public output surface. A consumed framework request remains observed on reuse, while adapters cannot read its companion through the ordinary reader.
+
+Actual host capture, diff, expectation, route observation, route signatures/effects, fact checks, act-landed checks and runtime-repeat callbacks are observed without host cloning/proxying. Outside-graph retry dispatch enters before the caller callback and before its result reader. A page-only `not_landed`, returned `effect: unacted`, status/success flag or pure fault assessment cannot issue gateway/backend closure. Required unknown and lost-ACK work remain protected. `ExecutionUnactedCompletionReader` has no issuer/fallback in this unit.
+
+Legacy absence keeps ordinary APIs, payloads/results, output identity/confirmation timing, matching floors, host identity and runtime semantics. In observed mode, automatic orchestration contracts apply only to Core-defined original methods. Unknown/custom callbacks retain unverified/pending coverage and earn no safe-retest credit.
+
+## Changed ownership
+
+New cohesive owners: `runtime/execution-observation/**` (excluding root-owned `roots/**` and its parent barrel), `runtime/native-execution/admission/**`, `runtime/output-dispatch/admission/**` (excluding root-owned `gateway/**`), `engine/automation/execution-admission/**`, and immediate tests.
+
+Narrow integration leaves: native-node-runtime; IO registry; runtime/service; output dispatcher/preparation/confirmation forwarding; engine integration/environment/compiled/graph/node/frames/composite/outside-graph/host-state/repeat/transitions/state-routing/lifecycle fact invocation leaves; runtime automation-host route-state invocation leaves. No A1, SQL/command owner, candidate/LLM/trial wrapper, manifests/config, parent public exports or shared working document was edited.
+
+## Validation
+
+All commands below ran from the worktree above. The exact complete focused acceptance command is:
+
+```powershell
+pnpm.cmd --filter fluxiq exec vitest run src/runtime/execution-observation/tests src/runtime/native-execution/admission/tests src/runtime/native-execution/tests/native-node-runtime.test.ts src/io/tests/index.test.ts src/runtime/tests/service.test.ts src/runtime/output-dispatch/tests src/engine/automation/execution-admission/tests src/engine/automation/outside-graph/tests src/engine/automation/host-state/tests/capture.test.ts src/engine/automation/lifecycle-run/tests/fact-observation.test.ts src/engine/automation/defensive/tests/host-act-landed.test.ts src/engine/automation/tests/node-execution.test.ts src/engine/automation/composite/tests/run.test.ts src/engine/automation/compiled-plan/tests/run.test.ts
 ```
 
-`registration` returns the owner's original registration bound to its constructor's original `scope`; its readers retain original receivers. `connect` is one-use and receives exactly `assembly.registerSource(thatRegistration)`. Neither method is exposed through an execution context. A wrong source connection fails actual A1 origin/source membership rather than acquiring rights by structural shape. Source/delegation configuration is immutable after connection.
+Observed: this cohort passed 22 files / 192 tests before the final private-surface tightening. The three subsequent containment tests make its current expected total 22 files / 195 tests; that combined 195 run is deliberately left for lead independent acceptance. The affected post-tightening cohort passed 11 files / 76 tests; after correcting two new fixture type declarations, the final affected producer/source-closure rerun passed 2 files / 11 tests. Earlier graph-run file passed all 25 tests.
 
-Root assembly order:
+Final strict source + new tests:
 
-```ts
-const scope = await authority.openScope(actualPersistedContinuationProof);
-const engine = createAutomationExecutionAdmissionSource(scope);
-const native = createNativeExecutionAdmissionSource(scope, originalNativeRuntime);
-const output = createOutputExecutionAdmissionSource(scope, actualBackendBindings);
-const gateway = a2.createGatewayExecutionAdmissionSource(scope);
-
-// Root trial/hook owners are supplied by their separately owned composition.
-engine.connect(authority.registerSource(engine.registration([
-  engine.owner, native.owner, output.owner
-])));
-native.connect(authority.registerSource(native.registration([])));
-output.connect(authority.registerSource(output.registration([gateway.owner])));
-gateway.connect(authority.registerSource(gateway.registration([])));
-// Register trial/hook sources and any explicitly managed native transport child
-// before reserve; native direct work gets no implicit delegation.
+```powershell
+node packages/fluxiq/node_modules/typescript/bin/tsc --noEmit --strict --exactOptionalPropertyTypes --noUncheckedIndexedAccess --target ES2022 --module NodeNext --moduleResolution NodeNext --lib ES2022,DOM,DOM.Iterable --allowImportingTsExtensions --skipLibCheck packages/fluxiq/src/runtime/execution-observation/tests/source.test.ts packages/fluxiq/src/runtime/execution-observation/tests/backend.test.ts packages/fluxiq/src/runtime/native-execution/admission/tests/native.test.ts packages/fluxiq/src/engine/automation/execution-admission/tests/producers.test.ts packages/fluxiq/src/engine/automation/outside-graph/tests/observed.test.ts packages/fluxiq/src/engine/automation/composite/execution.ts packages/fluxiq/src/runtime/service.ts packages/fluxiq/src/runtime/output-dispatch/index.ts
 ```
 
-The actual root trial owner delegates to `engine.owner` and its own real start-hook owner. The engine owner delegates to itself for graph/attempt/effect/nested frames, to native for computation, and to output for actual IO/runtime backend invocation. Output delegates to A2's original gateway owner. Native does not receive broad gateway/IO delegation: an explicitly managed direct-native adapter would need its own authentic child path and explicit owner declaration.
+Observed: exit 0. Initial new custom-port fixture errors (missing native `logs`, invalid refresh discriminator) were fixed in the fixture; no contract was widened.
 
-All roots, compiled/composite/subflow frames and source reacquisition use the same reservation. The parent changes to the real current entry; the authority/scope/source objects and reservation never change to obtain clearance.
+Focused acceptance proves durable-before-call; private original receivers; synchronous and rejected outcomes; native timeout/late work; unknown and forged unacted results; zero second native/IO/transport/outside-graph act; page-only no-clear; four truthful compute-only outside attempts; ordinary output retries; distinct authored invocations/effect ordinals; repeated unverified reads; copied/foreign series refusal; no producer fields/arguments in implementation data; public private-issuer isolation; failed completion write retention; legacy required result/actionability and source closure.
 
-## 2. Observation types and storage of companions
+Owned scope audit: the following stdin script was run with `node --input-type=module -` (PowerShell here-string). Observed `{files:122,rules:15,failures:0}` and `{whitespace:0}`. It retains original rule budgets/targets, selects only owned source roots, and uses the complete graph for transitive reach checks. No baseline/config exemption was added.
 
-The following opaque bindings are framework-only. Membership is private to the corresponding per-scope producer owner; a matching object/brand/JSON value is insufficient.
+```javascript
 
-```ts
-declare const automationObservationBrand: unique symbol;
-declare const nativeObservationBrand: unique symbol;
-declare const outputObservationBrand: unique symbol;
+import {createContext} from './scripts/structure-audit/context.mjs';
+import {readdirSync} from 'node:fs';
+const ctx=createContext();
+const prefixes=['packages/fluxiq/src/runtime/execution-observation/','packages/fluxiq/src/runtime/native-execution/admission/','packages/fluxiq/src/runtime/output-dispatch/admission/','packages/fluxiq/src/engine/automation/execution-admission/'];
+const exact=new Set([
+'io/index.ts','runtime/service.ts','runtime/native-execution/native-node-runtime.ts',
+'runtime/output-dispatch/io.ts','runtime/output-dispatch/io-effect.ts','runtime/output-dispatch/runtime-effect.ts','runtime/output-dispatch/prepare-action.ts','runtime/output-dispatch/confirmation/await.ts',
+'engine/automation/graph-run.ts','engine/automation/node-execution/execution.ts','engine/automation/node-execution/attempt.ts','engine/automation/node-execution/recorded-effect.ts',
+'engine/automation/host-state/capture.ts','engine/automation/frames/graph-frame.ts','engine/automation/integration/input.ts','engine/automation/integration/graph-options.ts',
+'engine/automation/environment/executor-options.ts','engine/automation/compiled-plan/run.ts','engine/automation/composite/execution.ts','engine/automation/composite/boundary.ts',
+'engine/automation/defensive/host-act-landed.ts','engine/automation/repeat/guard.ts','engine/automation/transitions/comparison.ts','engine/automation/state-routing/decision.ts',
+'engine/automation/state-routing/checkpoint-facts.ts','engine/automation/state-routing/reopen.ts','engine/automation/state-routing/repeated-act.ts','engine/automation/lifecycle-run/fact-observation.ts',
+'engine/automation/lifecycle-run/dispatch/dispatch.ts','engine/automation/outside-graph/retries.ts','engine/automation/outside-graph/tests/observed.test.ts',
+'runtime/automation-host/route-state/observe.ts','runtime/automation-host/route-state/host.ts','runtime/automation-host/route-state/effect.ts'].map(p=>'packages/fluxiq/src/'+p));
+const owns=p=>!p.startsWith('packages/fluxiq/src/runtime/output-dispatch/admission/gateway/')&&!p.startsWith('packages/fluxiq/src/runtime/execution-observation/roots/')&&p!=='packages/fluxiq/src/runtime/execution-observation/index.ts'&&(exact.has(p)||prefixes.some(a=>p.startsWith(a)));
+const files=ctx.files.filter(owns);
+const scoped={...ctx,files,sourceFiles:ctx.sourceFiles.filter(owns),scriptFiles:ctx.scriptFiles.filter(owns)};
+const ids=['imports','import-cycles','module-reach','exported-values','as-never','naming','directory-files','file-lines','class-methods','statement-packing','test-placement','web-vocabulary','swallowed-failure','failure-as-empty','restricted-references'];
+let failures=0;
+for(const name of readdirSync('./scripts/structure-audit/rules').filter(n=>n.endsWith('.mjs'))){
+const rule=await import('./scripts/structure-audit/rules/'+name);if(!ids.includes(rule.id))continue;
+let selected=scoped;
+if(rule.id==='module-reach'){
+  const boundaries=ctx.CONFIG.reachBoundaries.map(b=>({...b,from:ctx.scriptFiles.filter(p=>owns(p)&&!ctx.isTestFile(p)&&b.from.some(prefix=>prefix.endsWith('/')?p.startsWith(prefix):p===prefix))})).filter(b=>b.from.length);
+  selected={...ctx,CONFIG:{...ctx.CONFIG,reachBoundaries:boundaries}};
+}
+const found=rule.run(selected);const bad=found.filter(f=>f.severity==='fail');for(const f of bad) console.log(JSON.stringify({rule:rule.id,...f}));failures+=bad.length;
+}
+console.log(JSON.stringify({files:scoped.sourceFiles.length,rules:ids.length,failures}));
+process.exitCode=failures?1:0;
 
-interface AutomationExecutionObservation {
-  readonly [automationObservationBrand]: never;
-}
-interface NativeExecutionObservation {
-  readonly [nativeObservationBrand]: never;
-}
-interface OutputExecutionObservation {
-  readonly [outputObservationBrand]: never;
-}
-
-interface AutomationObservationFactory {
-  forParent(parent: ExecutionObservationContext): AutomationExecutionObservation;
-}
-interface NativeObservationFactory {
-  forParent(parent: ExecutionObservationContext): NativeExecutionObservation;
-}
-interface OutputObservationFactory {
-  forParent(parent: ExecutionObservationContext): OutputExecutionObservation;
-}
+let whitespace=0;
+for(const file of scoped.sourceFiles){const value=ctx.read(file);const lines=value.replaceAll('\r','').split('\n');for(let i=0;i<lines.length;i++){if(/[ \t]+$/.test(lines[i])){console.log(JSON.stringify({path:file,line:i+1,issue:'trailing whitespace'}));whitespace++;}}if(/\n\n$/.test(value.replaceAll('\r',''))){console.log(JSON.stringify({path:file,issue:'extra EOF blank line'}));whitespace++;}}
+console.log(JSON.stringify({whitespace}));
+if(whitespace)process.exitCode=1;
 ```
 
-The corresponding source factory returns its `ProducerSourceOwner` and observation factory together. `forParent` stores the original parent/reservation in a private binding, validates the configured scope at first actual A1 entry, and exposes no issuer/evidence-minting methods to the caller of an implementation.
+## Not verified
 
-Exact additive framework signatures:
+- Lead-owned combined package checks/build, normal library/downstream integration, actual composed A2 SQL/gateway plus candidate path, browser/provider behavior. A2's independent real-SQL results are not claimed as this worker's validation.
+- Unsupported/custom first-run callbacks earn no new certificate. Whole offline/custom Flow execution needs its own original replay/no-direct-effects authority; the pure callback read-only helper does not certify a Flow from environment/matcher flags.
+- Arbitrary trusted-local native code remains outside containment; unadapted ambient/direct work stays unverified/pending. No page-only reconciliation or candidate bypass was wired.
 
-```ts
-// engine/automation/integration/input.ts:
-type AutomationGraphOptionsInput = ExistingAutomationGraphOptionsInput & {
-  executionObservation?: AutomationExecutionObservation;
-};
+Lead independently accepted the complete 22-file / 195-test command in 21.39s. After that acceptance, read-only review found that a direct successful self-loop keeps the same arrival object. Lead released only graph-run's private series seam plus its immediate producer test. The new self-loop oracle failed before the change and passed after it; scheduled-retry counter cases stayed strict. The affected run passed 2 files / 14 tests, strict NodeNext checking of graph-run plus producer tests exited 0, and the same 15-rule/whitespace scope over those 2 files reported zero findings. The complete acceptance command now has one additional test (expected 196).
 
-// No enumerable observer property is required on GraphExecutionOptions.
-function bindAutomationExecutionObservation(
-  options: AutomationStudioGraphExecutionOptions,
-  observation: AutomationExecutionObservation
-): void;
-
-// Internal engine copy sites preserve the binding explicitly.
-function inheritAutomationExecutionObservation(
-  source: AutomationStudioGraphExecutionOptions,
-  target: AutomationStudioGraphExecutionOptions,
-  parent?: ExecutionObservationContext
-): void;
-
-// Existing first four native arguments remain identical.
-execute(node, inputs, signal?, hostContext?, observation?: NativeExecutionObservation);
-
-// Framework call boundaries only; the observation is not forwarded to adapters.
-IoRegistry.dispatchOutput(request, observation?: OutputExecutionObservation);
-RuntimeService.dispatch(command, context = {}, observation?: OutputExecutionObservation);
-dispatchRegisteredOutput(io, domainId, action, signal?, commandContext?, targetPreparer?,
-  observation?: OutputExecutionObservation);
-```
-
-`createAutomationGraphOptions` consumes its optional input into a private options companion. Native `AutomationNativeExecutionPort` remains a structural Pick of the actual runtime method, inheriting the optional argument. `AutomationStudioNativeNodeImplementation`, its SDK context/result, IO request JSON, and runtime adapter/transport contexts remain unchanged.
-
-Use private WeakMaps for graph options and per-effect context companions. `effectDispatcher` retains its existing two arguments. Bind its observation only after constructing the final context object, including the current required-context spread; binding an earlier object and then spreading it loses identity. Core output dispatchers read the companion and pass the separate framework-only observation argument to IO/runtime. A custom dispatcher receives its original context and receiver with no observer field. If it does not participate in a managed boundary, its real invocation is unverified.
-
-Native/adapter implementations never receive the framework observation argument. IO `dispatchOutput` strips nothing because the argument is separate; it invokes the original adapter with the original request. Runtime `dispatch` keeps the observation outside its existing `dispatchContext` projection, so `dispatchToTarget` cannot spread it into an adapter/transport context. Preserve `target.adapter.execute(...)`, registered required handler binding, and transport method receivers exactly.
-
-## 3. A2 gateway parent and sole-context bridge
-
-For both required and ordinary gateway paths, A2's actual parent is the **output/backend invocation entry**, not the engine's preliminary effect entry.
-
-1. Engine creates/enters its effect frame and privately binds the resulting observation to the final effect-dispatch context. Required mode may already have issued the original existing `ClientGatewayCommandContext` at this point.
-2. Core output dispatch chooses the original actual IO adapter or runtime target and persists the output/backend invocation entry before calling that handler. Its source delegates to A2's original gateway owner.
-3. Before invoking a known gateway-capable handler, bind the exact existing required Context, or ask A2 to issue an ordinary observed Context, to `{ reservation, parent: backendEntry }`. Bind privately and once; never clone/replace an existing required Context or rebind it to a new parent.
-4. When the real gateway dispatch resolves that Context, A2 enters its gateway child under that exact backend parent before claim. A2's claim transaction re-reads the original gateway entry through the accepted private bridge and validates SQL fence/row/actual command provenance.
-
-Proposed B/A2 interop shape (implemented/owned by A2):
-
-```ts
-interface ObservedGatewayBinding {
-  bindRequired(input: {
-    readonly parent: ExecutionObservationContext;
-    readonly context: ClientGatewayCommandContext;
-    readonly provenance: object;
-  }): void;
-  issueOrdinary(input: {
-    readonly parent: ExecutionObservationContext;
-    readonly provenance: object;
-  }): Promise<ClientGatewayCommandContext>;
-}
-```
-
-`provenance` is the original engine/output-owned invocation witness, read by the configured actual owner; it is not a caller-supplied claim DTO. A2's bridge validates original owner/context membership and exact run/invocation/attempt/effect ordinal. Bind-before-handler is not a second command claim. A2 remains the sole gateway observer and command owner; B records no duplicate receipt ledger.
-
-Only explicitly registered gateway-backed handlers use this bridge. Current IO/runtime code treats a present command Context as a requirement for a registered durable handler. Do not attach one to a generic legacy callback and accidentally turn its ordinary first run into unsupported-required-handler refusal. A normal observed gateway Context uses that genuine durable transport capability while leaving the graph's global required-command mode absent. Required mode retains its stricter original controller/consumption and historical unknown latches.
-
-B cannot authenticate resource identity from `metadata.clientId`, `sessionId`, a target shape, or a capability string. Root must supply A1's original persisted continuation plus actual host/environment/resource-lease ownership. B preserves that original binding; a changed lease/session label does not clear earlier uncertainty.
-
-## 4. Managed completion is an explicit code contract
-
-Native registration is installed by trusted composition against the original runtime, implementation reference, canonical package/definition versions and effective grant/binding digest. It is not SDK/manifest metadata and is never inferred from returned success, empty effects, an observe label, or an authored declaration.
-
-```ts
-interface NativeManagedCompletionRegistration {
-  readonly owner: object;
-  readonly implementation: AutomationStudioNativeNodeImplementation;
-  readonly packageId: string;
-  readonly packageVersion: string;
-  readonly definitionId: string;
-  readonly definitionVersion: string;
-  readonly contract: "no_direct_effects" | "managed_direct_effects";
-  consumeCompletion(input: {
-    readonly invocation: object;
-    readonly originalResult: AutomationNodeExecutionResult;
-  }): {
-    readonly completionDigest: string;
-    readonly evidenceDigest: string;
-  } | null;
-}
-```
-
-The native runtime validates/captures the actual binding and grants itself, retaining a private binding token; an external digest string is not proof. The per-scope source owns only scope/invocation authority. Changing the implementation/version/grants invalidates its matching completion contract without replacing shared runtime identity. Pin the original matcher/domain registry; do not remap or lower calibrated action-effect/target floors.
-
-- `no_direct_effects` certifies this exact trusted function only computes and returns effects; after its actual promise returns/validates, native computation may close. The engine attempt stays open while returned output effects execute and are assessed.
-- `managed_direct_effects` requires authentic completion for every direct effect and invocation quiescence from the actual effect owner. No generic adapter can certify arbitrary ambient/fire-and-forget JavaScript. Unsupported direct work stays unverified/pending.
-- No registration preserves the existing callback/result behavior on its ordinary first invocation, records returned-unverified coverage, and earns no safe-retest certificate.
-
-Use an equivalent original-subject/handler completion registration for direct IO/runtime adapters. A2 gateway completion comes from its actual authenticated observer/required handling, not `result.ok`/`status`. Caller-created success or unacted fields cannot mint a source witness.
-
-Begin before evaluating the synchronous `binding.implementation(...)`, adapter callback, or outside-graph `dispatch`. Keep the original promise identity. Throw/rejection/timeout records interruption before the existing error/result conversion. Abort-ignoring/late work does not close terminal uncertainty. Before-call denial/version/unbound paths remain genuinely unacted.
-
-Managed-completion disposition is carried in a private companion keyed by the original returned invocation/result object, never by a new JSON result field. Engine reads only the actual source's original companion. Copied/serialized results and unsupported callback returns are unverified; they do not cause parent closure or failure/result rewriting.
-
-## 5. Actual semantic witnesses and propagation
-
-Keep `automationStudioAssessAttemptFault` pure: it accepts trace data and must not become an authority issuer. Mint semantic witnesses only at the actual step-loop/outside-graph call sites, bound to original run-state, actual attempt/invocation, callback completion, host effect-check call and original trusted floor.
-
-For normal failures, record interruption while assessment is pending. A supported actual no-effect witness may close it and preserve existing automatic retry/source reacquisition. Terminal `run.outcome_uncertain` or required unknown records the stronger block and cannot be cleared by a page/reset/result field. Required consumption remains A2's original handling owner.
-
-A neutral reader collaborator can cross runtime/engine without inversion:
-
-```ts
-interface InvocationSemanticOwner {
-  consume(input: {
-    readonly invocation: object;
-    readonly proof: object;
-  }): {
-    readonly disposition: "unacted" | "settled" | "unknown";
-    readonly assessmentDigest: string;
-  } | null;
-}
-```
-
-Engine implements the reader using its private actual-execution registries; runtime native/output owners consume it as an injected collaborator. Runtime imports no engine. An arbitrary call to the pure assessment function or a structurally matching attempt/effect-check object cannot supply that proof.
-
-Do not place handles in attempt traces or use attempt ID alone as authority. Store invocation state in private companions keyed by original run-state/frame objects; keep actual attempt association when the step loop replaces a trace with a spread. Backend/direct native closure waits for genuine semantic/handling proof. If any supported child remains unverified, the original ordinary result still returns; the parent records unverified instead of attempting a false completion seal.
-
-Exact copy/entry points needing explicit companion inheritance:
-
-- `engine/automation/integration/{input,graph-options,native-runtime}.ts`; `environment/executor-options.ts` (returns a new options object).
-- `graph-run.ts`; `frames/{graph-frame,call-subflow}.ts`; `node-execution/attempt.ts` (`callFlowChildOptions`, actual native/custom/effect paths, final effect context); `composite/{execution,boundary,child-bounds}.ts`; `compiled-plan/run.ts`.
-- `outside-graph/retries.ts`; actual `step-loop/{failed-attempt,uncertain-stop}.ts` and success/lifecycle settlement call sites discovered when implementing the same actual attempt owner. The pure assessment function stays an evidence calculation.
-
-Canonical child option copies explicitly inherit the same observation and replace only the parent with the real current entry. Custom composite callbacks retain their existing options object with no enumerable handles. Unknown custom execution remains unverified, and no child trace summary can close a parent by itself.
-
-## 6. Exact ownership/readiness
-
-Ready after explicit source release. Additional narrow owner requested: `runtime/output-dispatch/admission/**` for output-context companions, per-scope backend source and managed completion. This keeps IO authority out of native ownership and avoids changing frozen A1. No edits to `runtime/contracts.ts` or IO request/SDK contexts are necessary when the private argument/companion design is used.
-
-| Owner | Planned paths |
-| --- | --- |
-| B native | New `runtime/native-execution/admission/{source,observation,registration,invocation,completion,index}.ts`; narrow native runtime binding/execute plus immediate tests. |
-| B output/backend | New requested `runtime/output-dispatch/admission/{source,observation,context,registration,invocation,completion,index}.ts`; actual `io/index.ts` dispatch, `runtime/service.ts` dispatch, `runtime/output-dispatch/{io,io-effect,runtime-effect,ports/io,ports/runtime}.ts` forwarding plus immediate tests. |
-| B engine | New `engine/automation/execution-admission/{source,observation,options,origin,semantic,completion,index}.ts`; exact invocation/copy leaves above and immediate tests. Split the already large attempt owner only by its real invocation/effect responsibilities if budgets require it. |
-| A2 | Gateway source/context mapping, SQL inventory/link/fence transaction, sole observer and original required handling. No B edits there. |
-| Root | Public/parent exports; actual project/Flow/resource proof; complete source registration cohort; `_shared/runtime.ts` resolver; Studio build/trial/hook composition and downstream explicit completion registration. |
-
-Implementation acceptance is callback-based: synchronous increment+throw; ignore-abort late increment; genuine managed no-direct-effects with returned observed effects; IO/runtime fallback invoking exactly one backend; unverified ordinary first result unchanged; required Context identity preserved; actual child unknown blocks new invocation; original private-field receivers; forged/copy/no-JSON completion rejected. A2-backed zero-second-send/reopen and production hooks/candidate remain shared integration acceptance after both sides are stable.
-
-Validation: read-only inspection of the dispatched brief, accepted contracts and named actual invocation/copy signatures with `Get-Content`, `rg`, and `rg --files`. No sources, tests, configurations, manifests, shared documents, git, checks/builds/providers/browser/panel or user-data operations changed or ran.
-
-Not verified: proposed producer implementations/types, real durable command bridge, managed native/adapter deployment contracts, full child-option propagation, actual candidate safety and downstream registration. Source remains untouched and frozen pending the lead's explicit release.
+SOURCE FROZEN again after this exact fix. No native binder or IO registry source was edited after their release to R5. No process remains running.

@@ -151,7 +151,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     : { ...storageOptions, ...(modelProvidersEnabled ? { resultCheckProviderResolver } : {}), ...(prepareCandidateStart ? { prepareCandidateStart } : {}) });
   const trustedClientTtlMs = positiveNumber(process.env.FLUXIQ_CLIENT_GATEWAY_TRUST_TTL_MS);
   const clientGateway = new ClientGatewayService({
-    resolveCommandLedger: context => automationStudio.commandExecution.owns(context) ? automationStudio.commandExecution.resolve(context) : automationStudio.commandContexts.resolve(context),
+    resolveCommandLedger: context => automationStudio.commandExecution.owns(context) ? automationStudio.commandExecution.resolve(context) : automationStudio.executionAdmission.owns(context) ? automationStudio.executionAdmission.resolve(context) : automationStudio.commandContexts.resolve(context),
     // The run a command is sent from, so a result that comes after Core stopped waiting is put on that run (C8).
     commandOwner: automationStudioActivityRunScope,
     // The host lease a command is sent under, stamped on it; a stale or foreign one is refused unsent (automation-project-agents-plan).
@@ -245,8 +245,9 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   automationStudio.conversations.bindUnlockedSessionResolver((userId) => secretKeys.unlockedSessionFor(userId));
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
-  runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway: clientGateway }));
-  automationStudio.bindRuntimeService(runtime);
+  const gatewayTransport = new ClientGatewayRuntimeTransport({ gateway: clientGateway });
+  runtime.registerTransport(gatewayTransport);
+  automationStudio.bindRuntimeService(runtime, gatewayTransport);
 
   if (paths) {
     databaseManager

@@ -1,0 +1,66 @@
+import type { ResultItemMark } from "./item-mark.ts";
+import type { ResultLeftOutObservation } from "./left-out-observation.ts";
+
+/** One condition of a read's account, in authored order (`./contracts/read-account.ts`, `conditions`). */
+
+export type ResultReadCondition = {
+  /**
+   * The condition's place in the step's authored `where`, counting from 1:
+   * the one index every line that names it says, as `condition N (wording)`
+   * (`./read-account/condition-name.ts`, t574). Absent only on an account
+   * built by hand, which is named by its position the same way.
+   */
+  number?: number;
+  condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[]; leftOutObservations?: Array<ResultLeftOutObservation | null>; testedLabel?: true;
+  /**
+   * Each row of `leftOutOnlyByThis`, in its order, by every column the read
+   * declares, screened (`./left-out-cells/`, t771): the row's
+   * own cells, an empty one where the read found nothing. What a no calling
+   * such a row missing is held to (`./located-defects/`). Absent where the
+   * read sent the rows by label only.
+   */
+  leftOutCells?: Array<Record<string, string>>;
+  /**
+   * Each row of `leftOutOnlyByThis`, in its order, by the marks the client
+   * read on that item (`AutomationStudioResultItemMark`, t810), `null` where it
+   * read none. What a no calling such a row missing is refuted by
+   * (`./refuted-no/`). Absent where the read sent no marks.
+   */
+  leftOutMarks?: Array<ResultItemMark[] | null>;
+  /**
+   * How Core read the tested value on a few rows the condition kept and left
+   * out (`./value-readings/`, t511): the number a bound compared, or the part
+   * of the text a text test matched. Absent where no such row is known.
+   */
+  valuesRead?: string[];
+  /**
+   * For a condition that keeps a row only when its read finds a value (a
+   * presence test), Core's sentence for both sides: its read found one on
+   * every row it kept, with one such value where the read reported it, and
+   * none on each row it alone left out (`./read-account/presence.ts`, t574).
+   * Each of those rows is then said `label — column: (no value)`.
+   */
+  presence?: string;
+  /**
+   * The rows of `leftOutOnlyByThis`, as given there, whose tested value Core
+   * read as a number that fails this condition's own numeric bound, or, for a
+   * presence test, whose witness found the value absent (or present) as the
+   * condition leaves out, or, for a text test, whose witness found a value
+   * that fails it (`./value-readings/settled-rows.ts`, t574, t599, t624), and
+   * `settled`, Core's sentence saying so and what a yes must still show: a
+   * quote of the request's words stating that bound or asking for that value,
+   * once. No yes is asked to quote the request beside each such row.
+   */
+  leftOutSettled?: string[];
+  settled?: string;
+  /** What kind of condition settled those rows (`./value-readings/settled-rows.ts`): carried so no later line re-parses its wording to tell. */
+  settledKind?: "bound" | "presence" | "text";
+  /**
+   * On the judge's copy only (`./request-rows/summary-with-also-in-result.ts`,
+   * t624): the rows of `leftOutOnlyByThis`, as given there, whose label is also
+   * a row of the result -- another copy of the same item was kept -- and
+   * `alsoInResult`, Core's sentence saying so.
+   */
+  leftOutAlsoInResult?: string[];
+  alsoInResult?: string;
+};

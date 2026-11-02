@@ -2,18 +2,13 @@ import type { LearnedTaskModel } from "../../../learning/index.ts";
 import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../../../mining/index.ts";
 import type { PolicyProposalArtifact } from "../../policy-model.ts";
 import type { RecordingFlowProposalArtifact } from "../../recording-flow-proposal.ts";
-import type { NormalizedTimeline } from "../../../normalization/index.ts";
+import type { RecordingNormalizationReviewContent } from "../../../../../runtime/recording/mapping/index.ts";
 
 // The review a normalization pass leaves beside a recording: how each raw
 // entry survived into the normalized timeline, and the waits between them.
-export type NormalizationReviewArtifact = {
+export type NormalizationReviewArtifact = RecordingNormalizationReviewContent & {
   schemaVersion: "0.1";
   reviewId: string;
-  recordingId: string;
-  normalizedTimelineId: string;
-  mappings: Array<{ rawEntryId: string; normalizedEntryIds: string[]; status: "preserved" | "derived" | "dropped"; reason?: string }>;
-  waitClips: Array<{ beforeEntryId: string; afterEntryId: string; waitMs: number }>;
-  issues: NormalizedTimeline["issues"];
   generatedAt: number;
 };
 

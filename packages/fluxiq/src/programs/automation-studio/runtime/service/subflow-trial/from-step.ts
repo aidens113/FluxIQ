@@ -1,3 +1,4 @@
+import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
 // A from-step run of a subflow builder's proposal (t804; the rule "a failed
 // test is repaired live on the failing step and checked by running from that
 // step on the page as it stands"). The validator side of
@@ -46,6 +47,8 @@ import { automationStudioCandidateFrameEvidence, automationStudioCandidateTrialF
 import { automationStudioSubflowFromStepOrder, automationStudioSubflowFromStepUnbound } from "./from-step-binding.ts";
 import { automationStudioSubflowTrialOwnAttempts, automationStudioSubflowTrialPassedKeys, automationStudioSubflowTrialStoppedAtKey } from "./stopped-at.ts";
 import type { AutomationStudioSubflowTrialPorts } from "./types.ts";
+import { bindTrialExecutorParent, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation } from "../../candidate-trials/index.ts";
+import { bindPartialTrialFrame, observePartialTrialCallback } from "../../candidate-trials/partial/index.ts";
 
 /** The executor's code for a frame that ended with nodes it never visited. */
 const UNVISITED = "executor.graph.unvisited_nodes";
@@ -93,7 +96,15 @@ async function fromStepIn(request: AutomationStudioSubflowFromStepRequest, ports
   const receipt: AutomationStudioCandidateStartReceipt = { receiptId: `${runId}.start`, conditionsDigest: `subflow-trial.${START}`, preparedAt: startedAt, pageGeneration: 0, subjectStates: [] };
   let executed: AutomationStudioDetachedSubflowResult;
   try {
-    executed = await (ports.executeFrom ?? runAutomationStudioDetachedSubflowFrom)({
+    const graphOptions = ports.graphOptions({ runId, signal });
+    const referencedOptions = copyAutomationExecutionOptions(graphOptions, { referenceNow: startedAt }, null);
+    inheritCandidateTrialExecutorObservation(request, graphOptions, referencedOptions);
+    const execute = ports.executeFrom ?? runAutomationStudioDetachedSubflowFrom;
+    if (!ports.executeFrom) bindPartialTrialFrame(execute, true);
+    const observedOptions = automationStudioTrialExecutorOptions(referencedOptions, ports.environment);
+    const executionOptions = copyAutomationExecutionOptions(observedOptions, {}, null);
+    if (!candidateTrialObservationContext(request)) bindTrialExecutorParent(observedOptions, executionOptions);
+    const execution = {
       identity,
       target: { subflowKey: proposal.scope.subflowKey, revision: proposal.revision, digest: proposal.digest, subflows: structuredClone(proposal.subflows) as AutomationStudioDetachedSubflowProposal["subflows"] },
       fromKey,
@@ -107,8 +118,9 @@ async function fromStepIn(request: AutomationStudioSubflowFromStepRequest, ports
       runId,
       start: receipt,
       // The signal rides on the options alone, as a trial's does: the runner refuses two different signals.
-      options: automationStudioTrialExecutorOptions({ ...ports.graphOptions({ runId, signal }), referenceNow: startedAt }, ports.environment)
-    });
+      options: executionOptions
+    };
+    executed = await observePartialTrialCallback(request, { receiver: undefined, callback: execute, args: [execution] }, signal, undefined, parent => bindTrialExecutorParent(observedOptions, executionOptions, parent));
   } catch (error) {
     await ports.writeSession({ ...opened, status: signal.aborted ? "cancelled" : "failed", startedAt, finishedAt: now() });
     throw error;

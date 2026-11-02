@@ -1,249 +1,18 @@
-// The subflow trial gate: a builder may finish its brief only once Core has
-// tried that exact proposal of its subflow and the judge said yes for it
-// (automation-project-agents-plan.md, `Subflow trial`).
+// A partial receipt belongs to its exact brief, proposal revision and digest.
+// A yes can finish that brief; it never promotes the whole Flow.
 //
-// It asks an injected `AutomationStudioSubflowTrialPort` (the validator's
-// partial entry, t538): prepare the brief's entry, run the proposal's subflow
-// with its interface inputs, judge the brief's parts and the subflow's success
-// check. Its verdicts are partial and kept here, apart from the whole-candidate
-// gate (`../candidate/trial-gate.ts`), by type and by owner: a partial yes is
-// never a whole candidate's trial, so it can never satisfy that gate's
-// completion, which the supervisor's judged whole run alone does.
+// Validation and repair checks precede admission. The original gate invocation
+// is then observed on the continuation's configured trial series before reset,
+// start, or execution. An existing admitted parent is forwarded as a child.
+// Unknown collaborators preserve the first result without closing coverage.
 //
-// The rules the whole gate learned hold here too, with this gate's own codes:
-// the answer is bound to the revision and digest that ran; a no closes that
-// exact proposal; a transient verdict may be tried again up to
-// `AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION` trials in all, and says
-// `retry_allowed` so the loop's repeat guard leaves the bound to this gate. A
-// trial whose entry was not prepared (a predecessor did not run to its end)
-// says so: its verdict is about the predecessors, not this subflow.
+// A genuine pinned diagnosis runs only its retained-evidence owner. Offline
+// labels and live-or-cache callbacks do not grant read-only authority. Such
+// diagnosis runs no start or reset and earns no whole-run promotion credit.
 //
-// **A trial is judged by its change, as the whole gate judges it** (t578; t775, user 2026-10-27). Given a reset
-// (`../site-reset/`, the brief's own ledger and start check), a live trial runs with this build's acts on the site, said
-// under `startedWith`, and its witnesses read just before it and again after its end view (`../trial-change/`, the
-// request's `siteChange`), with the brief's parts and their typed effects (`scope.parts[].effect`); the one refusal left
-// names just an act of this build that already shows a step's asked end state (`candidate.trial_starts_in_end_state`), as
-// the whole-candidate gate does (`../candidate/trial-gate.ts`): a refusal is not a trial and answers `retry_allowed`. A
-// lasting step with no witness never keeps a trial from running: the reset's admission notes it, said under `unwitnessed`
-// (t791 fix 4). A yes its own readings contradict is a no before any row check sees it (t787,
-// `../trial-change/contradicted.ts`). When the port can run the deployment's start hook ahead of
-// the check (`prepareStart`, `../../service/subflow-trial/port.ts`), it runs
-// first and the reset is told the site was just put back, so every act counts
-// undone and the model is asked for nothing (t475, t479); what the hook took
-// back is answered as `absorbedByStartReset`, and the acts on the site after
-// the trial as `leftOnSite`. The hook then runs before the predecessor check,
-// so even a trial whose entry cannot be prepared leaves the site put back.
-// Without a reset a trial runs on the site as it stands, as before. The check
-// is written to the step log as an `NNNN-reset` step (t737), as the hook is in
-// `../../service/candidate-trial/run.ts`, so the Lab can take both out of the
-// trial's window.
-//
-// With no port the tool says `subflow.trial_unavailable` and completion needs
-// only the latest valid proposal, which then stands untried.
-//
-// **A yes Core could not confirm is said as one (t601).** On A8 launch 8
-// (everything-store) every judge answered yes on twelve trials whose rows were
-// exactly right, Core held each yes for the exclusion evidence it lacked, and
-// the trial came back `not_judged` with "change and resubmit it if the
-// feedback names a cause": the builder read the hold as a cause and rewrote a
-// correct subflow seven times. A `not_judged` whose reason is that hold now
-// says the judges answered yes and Core could not confirm it, and not to
-// rewrite a subflow whose rows they accepted: test it again, or end the brief
-// partial once the retests run out. Any other `not_judged` is said as before.
-//
-// **The hold is read as a fact, not as words (t611).** The gate matched
-// "exclusion evidence" in the feedback's `why`, so a reworded reason would
-// have lost the instruction, and a held yes beside a call that could not tell
-// was said as if every judge had answered yes. Core's result verification now
-// says the fact (`yesUnconfirmed`, `../../result-verification/contracts/verification.ts`),
-// set only where every judge call answered yes, and the trial's feedback
-// carries it (`../../service/candidate-trial/feedback.ts`); the gate reads that
-// field and never the words.
-//
-// **An unsure says a re-test is allowed, and when it is the better move
-// (t632).** A8 wave 8 `run-mv9gbsm5-2957581c` (0051-0054): a revision whose
-// rows were exactly right came back unsure, one call yes and one no, and the
-// builder followed the no's advice, rebuilding a revision already judged no,
-// when the trial's own `readings` already said to test the same revision again
-// where the evidence supports the yes. The unsure instruction said "test this
-// revision again if the feedback says nothing about the subflow itself", which
-// a no-reading always seems to. It now says, while retests are left, that
-// testing the same revision again is allowed, and that it is the better move
-// when one call said yes, when Core's record contradicts the other call, or
-// when that call's advice would take back what answered an earlier no; with
-// none left, it says to change the subflow for a defect the trial shows.
-//
-// **An exclusion a standing no upheld holds across the brief's trials
-// (t633).** The same run then swung between two revisions: one kept a row its
-// judges rightly called not the asked kind and was judged no; the other left
-// that row out by several conditions together and stored exactly the rows
-// asked for, and its judges said no, asking to remove those very conditions.
-// Each no was weighed as if fresh. A trial judged no now hands the gate Core's
-// own record of it (`standingNo`, beside the feedback, never shown to a model;
-// `../../result-verification/standing-no/`). The gate keeps the records that
-// upheld rows of a kind, and a later no whose remedy would take back exactly
-// those rows -- this revision stores none of them, and the no asks only to
-// remove conditions this revision added since, which would take its read back
-// to the conditions that kept them -- is contradicted by the build's own
-// record: not taken, so the trial is unsure, its revision is not closed, and
-// the builder is told why in Core's words (`contradictedByBuild`) and to test
-// the same revision again rather than make that change. Never a yes: a yes
-// still needs a trial its judges answer yes.
-//
-// **...and across the briefs of its subflow, and the gate's verdict is the
-// one told (t634).** A8 wave 8 towels: brief 1's upheld exclusion never
-// reached repair brief 2, a builder loop with a gate of its own, and the
-// receipts and the build's proposals read each trial before this gate weighed
-// it, so a receipt said `no` where the gate said `unsure`. The port may now
-// carry two hooks (`AutomationStudioSubflowTrialPreparingPort`), both Core's,
-// neither shown to a model: `standingNos`, the standing nos earlier briefs of
-// this subflow kept in this build, which seed this gate's memory as it is
-// made (at revisions below 1, so no revision of this brief is mistaken for
-// one of theirs, and the builder is told the revision was an earlier brief's);
-// and `weighed`, told each trial's answer as this gate keeps it, with Core's
-// record of a no it kept standing, so the dispatcher lists and remembers the
-// gate's verdict (`../../project-agents/dispatch/trial-port.ts`).
-//
-// **A re-test is advised on Core's findings, and the conditions Core's record
-// kept are remembered (t641).** As the whole gate does
-// (`../candidate/trial-gate.ts`; A8 wave 14 candidate towels
-// `run-mv9ul5dy-e9a1b1c1`): an unsure says a re-test is the better move only
-// where Core's record contradicts what kept the trial from a yes -- the no's
-// reading wholly, or the unsure call's doubt -- and says so as a field
-// (`retestAdvised`), never because one judge call said yes; and the conditions
-// Core's record of a trial judged no showed keep out only rows the request does
-// not ask for are kept as the proposal that ran wrote them, on the result kept
-// for each trial (`keptConditions`), for the brief's submission controller to
-// refuse once a proposal that drops one (`./scoped-submission.ts`). Earlier
-// briefs' kept conditions do not reach this gate: only its own trials'.
-//
-// **And never that nothing contradicts a no Core refutes in part (t652).** As
-// the whole gate says it (`../candidate/trial-gate.ts`): where the no's reading
-// carries `recordContradicts: "part"`, the unsure's words say Core's record
-// contradicts part of it and to change the subflow only for what the rest
-// names; `retestAdvised` stays false. A trial judged unsure now hands this gate
-// Core's record too (`standingNo`), so its kept conditions come from any judged
-// trial, not only a no.
-//
-// **A split is said as a split (t725).** Social r4 `run-mvfq957o-40103539`
-// (0083): an exact revision's judges split, the words said a re-test was
-// "likely to be judged the same way", and the builder changed the right answer
-// for the no. As the whole gate now says it (`../candidate/trial-gate.ts`): an
-// unsure whose feedback carries the yes's reading (`answeredReading`, only on a
-// split) says the two calls disagreed, where each one's reading is, and to
-// change the subflow only for a row, column or value the no names that the
-// trial shows.
-//
-// **A trial on a page this brief's exploration changed, and no step does, says
-// so (t647; A8 bigbox debug `run-mv9zn5ob-d929084d`, fix 6).** A builder
-// pressed a control while exploring that changed what the site offers, built
-// on the page that act left, and every trial's start hook took the act back;
-// no step of its subflow, nor of one before it, does it, so each trial met a
-// page the builder never explored and failed, and the evidence only listed the
-// act as taken back. Where a trial that is not a yes, its entry prepared,
-// started after the start hook took back an act this brief's own exploration
-// made on a named control, and no step of this proposal nor any act the trial
-// landed (the predecessors' among them) names that control, its feedback
-// carries Core's finding under `coreFindings`, code
-// `trial.explored_on_absorbed_act` first, naming the act as the act log
-// records it (`../site-reset/explored-on-absorbed.ts`). An unprepared entry
-// says nothing: the predecessors' steps did not all run, so what they do was
-// not measured.
-//
-// **A control on the page but not shown, and a trial the purse cannot judge
-// (t661).** As the whole candidate's gate does (`../candidate/trial-gate.ts`):
-// a trial that stopped at a step whose feedback says `targetNotShown` is told
-// to change the steps that lead to it, never to test the same revision; and a
-// trial the port did not start because the purse cannot hold its two judge
-// calls (`subflow.trial_unaffordable`) is no trial -- nothing is counted or
-// kept, and the refusal carries no retry reason.
-//
-// **A trial the port did not run is said as the port says it (t679).** A port
-// may answer a trial it did not start with `notRun` beside its result
-// (`AutomationStudioSubflowTrialNotRun`): its code, what the builder is to do,
-// what it is shown, and whether the same test may reach the gate again. As for
-// a trial the purse cannot judge, nothing is counted, kept, weighed or reset,
-// and no verdict is given: the answer is the port's refusal itself. A
-// single-subflow plan's whole test answers that way when the whole Flow could
-// not be joined or its gate would not run it
-// (`../../project-agents/single-subflow/single-subflow-trial.ts`).
-//
-// **A single-subflow plan's test is the judged whole run (t679).** Given
-// `whole`, the gate's tool says that a test runs the whole Flow from its start
-// as the build's judged run and that a yes completes the brief, and a yes says
-// the same, never that it is a partial trial for this brief only.
-//
-// **And the conditions the whole gate kept reach this gate (t689).** That
-// test's answer carries no record of its own (`standingNo` stays with the
-// whole gate, which weighs a later no against it), so nothing reached this
-// gate's memory and its controller let a proposal drop a condition Core's
-// record had kept. The port's result may now carry kept conditions another
-// gate already found (`keptConditions`, Core-only, never shown to a model):
-// that gate's latest list, on this brief's numbering
-// (`../../project-agents/single-subflow/single-subflow-trial.ts`). A trial
-// whose entry was prepared replaces the list carried before with it, conditions
-// it no longer holds included, and the conditions this gate keeps for each
-// trial are its own memory's with the carried ones beside them.
-//
-// **A yes over a read that kept every item it saw, after an act repeated over a
-// narrower read of the same list, stands only on the converse check (t692).** A8
-// cost round 2 `run-mvbr0w7e-6a01c05b`: a single-subflow test acted on the 4
-// rows of 8 a condition kept, then read the same list with no condition and
-// stored all 8; both judge calls said the table holds all 8 rows and yes, and
-// the Flow was promoted on it. Core's read accounts now flag such a read
-// (`keptEveryRow`, `../../result-verification/read-account/kept-every-row.ts`),
-// which the judge is shown, and the port carries the flagged reads beside its
-// result (`keptEveryRow`, Core-only). The check that holds each row such a read
-// stored to the request's words is the judge's own confirming call: since
-// t691 it asks the converse question, each stored row against the request's
-// words that ask for it in the answer
-// (`../../result-verification/agreement/ask-again.ts`), and a yes both calls
-// gave, the second the converse, is `firstAskConfirmed`. So on a yes whose
-// entry was prepared and that carries a flagged read, the gate asks the port's
-// `checkRows` whether that yes was so confirmed; no second copy of the per-row
-// question is asked. A confirmed yes stands, and its feedback says why. One
-// that was not -- a yes reached through re-asks, or on a repeat of the first
-// question -- a check that fails, or a port with no `checkRows` is not taken:
-// the trial is unsure (`subflow.trial_rows_unaccounted`), its revision is not
-// closed, and the builder is told why in Core's words with the flag's sentence
-// for each read; a test of the same revision asks the judge again.
-//
-// **An execution-failed trial says what stopped it, and the same stop twice
-// closes the revision (lane 3, `run-mvcvzwk1-c1d869e4`).** Two whole tests of
-// one revision came back with `candidate.trial_port_failed` and nothing else,
-// the instruction sent the builder to a failed step no feedback named, and it
-// tested the same revision again, blind. Every `execution_failed` answer now
-// carries `stoppedBy` in its feedback (`../candidate/trial-stop.ts`), the
-// instruction names it -- a trial runner that failed is never said to be a
-// subflow before this one that did -- and two trials of one revision that
-// stopped the same way close it, as the whole gate's t368 rule does: the answer
-// carries no re-test and a later test is refused `subflow.trial_same_failure`.
-//
-// **An offline trial is evidence, never the yes that completes (traces and
-// offline trials, Decisions 3 and 6)**, as in the whole gate: a port whose
-// `environmentKind` is set and not `live` gets no start hook, no site reset and
-// nothing recorded as left on the site, and its yes is answered but never kept.
-//
-// **Each later trial's judge is told what earlier judged trials advised (t752)**, as in the whole gate:
-// the gate keeps each judged trial's advice (`../candidate/earlier-advice-memory.ts`), tells its port each
-// one it kept (`weighed`, `advised`), is seeded from earlier briefs of its subflow (`earlierTrials`), and
-// each request carries Core's finding of whether that revision changed what the advice named.
-//
-// **A failure the recording already shows costs no site trial (trace plan P6, t769; D40-D46).** A port's
-// `offlineFirst` is asked once per revision and digest (its first test only, so every retest is live), after
-// the same-failure and retest checks and before admission, the start hook and the reset
-// (`./subflow-trial-offline-first.ts`). A no or execution_failed the recording of this build's last live test
-// demonstrates is kept as this trial and weighed as any trial is, its stop counting toward the same-failure rule
-// (D43), with nothing done on the site and its instruction said as checked against the recording; anything else
-// runs live in this same call, its evidence carrying the check's note (`offlineCheck`). An offline yes is never kept.
-// A port's own answer from the recording (`checkedAgainst` on its result: the single-subflow whole test the whole gate
-// kept, D48) is said and kept the same way, nothing recorded as left on the site; the hook and reset before it still ran.
-//
-// **A failed test is repaired on its failing step and checked from there (t804; Core's rule "build the whole Flow
-// first; test it whole only when it should work").** Where the port can run from a step (`fromStep`), a call with
-// `from` runs the latest proposal from that step on the page as it stands, never the part's test
-// (`./from-step-run.ts`); and a live whole test that failed leaves a repair standing (`./pending-repair.ts`), which
-// refuses the next whole test, and completion, `subflow.trial_from_step_first` until a run from that step passes it.
+// Each revision keeps its bounded retests, repeated execution failures and
+// standing-no/kept-condition evidence. From-step runs only check repairs.
+
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioLlmStepLogReset } from "../../llm/step-log/index.ts";
@@ -280,6 +49,8 @@ import { AUTOMATION_STUDIO_SUBFLOW_REPAIR_WORDS as REPAIR_WORDS } from "./repair
 import { automationStudioSubflowTrialOfflineFirstCheck } from "./subflow-trial-offline-first.ts";
 import { automationStudioSubflowTrialResultRead } from "./subflow-trial-result.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_INPUT as TEST_INPUT } from "./test-input.ts";
+import { PartialTrialAdmission, inheritPartialTrialContext, invokePartialTrialPort, isPartialTrialReadOnly, observePartialTrialCallback } from "../../candidate-trials/partial/index.ts";
+import { finishAutomationStudioSiteResetSession, observeAutomationStudioTrialPolicy, observeAutomationStudioTrialResultPolicy } from "../reset-observation/index.ts";
 
 /**
  * A partial trial port that can run the deployment's start hook ahead of the
@@ -290,14 +61,14 @@ import { AUTOMATION_STUDIO_SUBFLOW_TEST_INPUT as TEST_INPUT } from "./test-input
  */
 export type AutomationStudioSubflowTrialPreparingPort = AutomationStudioSubflowTrialPort & {
   /** Core's predecessors that the trial runs before its own proposal; checked before preparing the site. */
-  admissionPredecessors?: ((scope: AutomationStudioSubflowScope) => readonly { nodes: readonly AutomationStudioFlowBootstrapNode[] }[]) | undefined;
+  admissionPredecessors?: ((scope: AutomationStudioSubflowScope) => readonly { nodes: readonly AutomationStudioFlowBootstrapNode[] }[] | Promise<readonly { nodes: readonly AutomationStudioFlowBootstrapNode[] }[]>) | undefined;
   prepareStart?: ((input: { scope: AutomationStudioSubflowScope; revision: number; digest: string; signal: AbortSignal }) => Promise<AutomationStudioCandidateTrialPrepared>) | undefined;
   /** The standing nos earlier briefs of this subflow kept in this build, oldest first, read once as the gate is made (header, t634). Core-only. */
   standingNos?: readonly unknown[] | undefined;
   /** The judged trials' advice earlier briefs of this subflow kept in this build, oldest first, read once as the gate is made (header, t752). Core-only. */
   earlierTrials?: readonly unknown[] | undefined;
   /** Told each trial the gate asked, as the gate weighed it (header, t634). */
-  weighed?: ((trial: AutomationStudioSubflowTrialWeighed) => void) | undefined;
+  weighed?: ((trial: AutomationStudioSubflowTrialWeighed) => unknown) | undefined;
   /**
    * Whether the trial's yes over flagged reads was confirmed by the converse
    * question (header, t692): an `AutomationStudioSubflowTrialRowCheck`.
@@ -464,6 +235,7 @@ export class AutomationStudioSubflowTrialGate {
   /** Each judged trial's advice, earlier briefs' first, for the judge of a later revision's trial (header, t752). */
   private readonly earlierAdvice: AutomationStudioCandidateEarlierAdviceMemory;
   private readonly fallbackSignal = new AbortController().signal;
+  private readonly execution: PartialTrialAdmission | undefined;
 
   constructor(private readonly input: {
     scope: AutomationStudioSubflowScope;
@@ -483,6 +255,7 @@ export class AutomationStudioSubflowTrialGate {
     this.tool = { toolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, effect: "mutate", description: `${input.whole ? WHOLE_DESCRIPTION : SUBFLOW_DESCRIPTION}${fromStep ? ` ${REPAIR_WORDS.description}` : ""}`, inputSchema: TEST_INPUT.schema(fromStep) };
     this.repair = input.pendingRepair ?? new AutomationStudioSubflowPendingRepair();
     if (input.port !== undefined && typeof input.port !== "function") throw new Error("subflow.trial_port_invalid");
+    this.execution = input.port ? new PartialTrialAdmission(this, input.port) : undefined;
     // Earlier briefs' standing nos, at revisions below 1, oldest first (header, t634).
     const earlier = Array.isArray(input.port?.standingNos) ? input.port.standingNos : [];
     earlier.forEach((standingNo, index) => this.standingNos.weigh({ revision: index - earlier.length, verdict: "no", standingNo }));
@@ -512,7 +285,10 @@ export class AutomationStudioSubflowTrialGate {
       return refused("subflow.trial_stale_revision", `${earlier}Only the latest proposal can be tested. Test the revision and digest given here.`, { latestRevision: latest.revision, latestDigest: latest.digest, ...(earlier ? { earlierRevision: revision } : {}) });
     }
     // A run from a step checks a repair, on the page as it stands; it is never the part's test (header, t804).
-    if (read.call.from !== undefined && port.fromStep) return automationStudioSubflowFromStepRun({ from: read.call.from, latest, scope: this.input.scope, fromStep: port.fromStep, signal: callSignal ?? this.input.signal ?? this.fallbackSignal, reset: this.input.reset, offline: automationStudioCandidateTrialOffline(port), repair: this.repair });
+    if (read.call.from !== undefined && port.fromStep) {
+      const request = this.request(latest, callSignal ?? this.input.signal ?? this.fallbackSignal, []);
+      return await this.execution!.run(request, { receiver: this, callback: this.performFromStep, args: [request, read.call.from] }, true);
+    }
     const closed = this.closedDigests.get(latest.digest);
     if (closed) return refused("subflow.trial_unchanged_after_no", "This exact proposal was already tried and judged no. Change it to address that feedback, submit it, then test the new revision.", { previousFeedback: closed });
     const repeated = this.repeatedFailures.get(key(latest));
@@ -525,31 +301,43 @@ export class AutomationStudioSubflowTrialGate {
     const pending = port.fromStep ? this.repair.refuses(latest, read.call.fromStepImpossible) : undefined;
     if (pending) return refused(FROM_STEP_FIRST, REPAIR_WORDS.refused(pending.step, latest), pending.step ? { repairStep: pending.step.key } : {});
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
+    const request = this.request(latest, signal, []);
+    return await this.execution!.run(request, { receiver: this, callback: this.performTrial, args: [request, cannotUndo, tried] });
+  }
+
+  private async performTrial(request: AutomationStudioSubflowTrialRequest, cannotUndo: unknown, tried: number): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
+    const { proposal: latest, signal } = request;
+    const port = this.input.port!;
+    const readOnly = isPartialTrialReadOnly(request);
     signal.throwIfAborted();
     // A revision's first test asks whether the recording already shows it failing, before anything is done on the site; once,
     // even where a refusal before the trial left it uncounted (header, P6).
-    const askOffline = tried === 0 && port.offlineFirst !== undefined && !this.offlineAsked.has(key(latest));
+    const askOffline = !readOnly && tried === 0 && port.offlineFirst !== undefined && !this.offlineAsked.has(key(latest));
     if (askOffline) this.offlineAsked.add(key(latest));
-    const first = askOffline && port.offlineFirst ? await automationStudioSubflowTrialOfflineFirstCheck({ offlineFirst: port.offlineFirst, request: this.request(latest, signal, [], this.adviceFor(latest)), identity: this.identity(), trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID }) : undefined;
+    const first = askOffline && port.offlineFirst ? await automationStudioSubflowTrialOfflineFirstCheck({ offlineFirst: input => observePartialTrialCallback(request, { receiver: port, callback: port.offlineFirst!, args: [input] }, signal, input), request: this.request(latest, signal, [], this.adviceFor(latest), request.scope), identity: this.identity(request.scope), trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID }) : undefined;
     signal.throwIfAborted();
     const kept = first?.kind === "keep" ? first : undefined;
     // An offline trial, or a failure the recording showed, has no live effects: no start hook, no reset, nothing left on the site (header, Decision 6).
     const offline = automationStudioCandidateTrialOffline(port);
-    const siteless = offline || kept !== undefined;
-    const admission = kept ? undefined : this.input.reset?.admit?.(automationStudioSiteResetTrialSteps([...(port.admissionPredecessors?.(this.input.scope) ?? []), ...latest.subflows]));
+    const siteless = offline || kept !== undefined || readOnly;
+    const resetOwner = this.input.reset;
+    const admit = resetOwner?.admit;
+    const policySteps = siteless || !admit ? [] : automationStudioSiteResetTrialSteps([...await this.predecessors(request, port), ...latest.subflows]);
+    const admission = siteless || !resetOwner || !admit ? undefined : await observeAutomationStudioTrialPolicy(request, "reset", { receiver: resetOwner, callback: admit, args: [policySteps] }, policySteps);
     if (admission?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: admission.evidence, effectApplied: false, targetsUnchanged: true, resultCode: admission.evidence.code, resultReason: RETEST_REASON };
     const unwitnessed = !siteless && admission?.kind === "admit" ? admission.unwitnessed : undefined;
     // The deployment's start hook first, so the check after it finds the site put back (header).
-    const prepared = !siteless && this.input.reset && port.prepareStart ? await port.prepareStart({ scope: structuredClone(this.input.scope), revision: latest.revision, digest: latest.digest, signal }) : "none";
+    const startRequest = { scope: structuredClone(request.scope), revision: latest.revision, digest: latest.digest, signal };
+    const prepared = !siteless && resetOwner && port.prepareStart ? await observePartialTrialCallback(request, { receiver: port, callback: port.prepareStart, args: [startRequest] }, signal, startRequest) : "none";
     signal.throwIfAborted();
     // The check is timed as its own reset step, so a trial's window no longer hides it (header, t737).
     const siteReset = siteless ? undefined : this.input.reset;
     // The trial's steps and the brief's parts, for its readings and the one targeted refusal (header, t775): the entry's steps serve no part.
-    const own = this.input.scope.parts.map((part) => part.partId);
-    const steps = [...automationStudioTrialChangeSteps(port.admissionPredecessors?.(this.input.scope) ?? []), ...automationStudioTrialChangeSteps(latest.subflows, () => own)].map((step, index) => ({ ...step, step: index + 1 }));
-    const change = { steps, parts: this.input.scope.parts.map((part) => ({ id: part.partId, ...(part.effect ? { effect: structuredClone(part.effect) } : {}) })) };
+    const own = request.scope.parts.map((part) => part.partId);
+    const steps = readOnly ? [] : [...automationStudioTrialChangeSteps(await this.predecessors(request, port)), ...automationStudioTrialChangeSteps(latest.subflows, () => own)].map((step, index) => ({ ...step, step: index + 1 }));
+    const change = { steps, parts: request.scope.parts.map((part) => ({ id: part.partId, ...(part.effect ? { effect: structuredClone(part.effect) } : {}) })) };
     const reset = siteReset && await automationStudioLlmStepLogReset({ stage: "site_check", trialToolId: AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID },
-      () => automationStudioTrialDefaultsBeforeTrial(siteReset, signal, cannotUndo, { ...(prepared === "reset" ? { startReset: true } : {}), change }), (decision) => decision.kind);
+      () => automationStudioTrialDefaultsBeforeTrial(siteReset, signal, cannotUndo, { ...(prepared === "reset" ? { startReset: true } : {}), change }, request), (decision) => decision.kind);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
@@ -557,7 +345,7 @@ export class AutomationStudioSubflowTrialGate {
     const absorbedActs = reset?.kind === "admit" ? reset.absorbedByStartReset ?? [] : [];
     const absorbed = absorbedActs.map(namedAct);
     this.trials.set(key(latest), tried + 1);
-    const asked = kept?.asked ?? await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : [], this.adviceFor(latest), reset?.kind === "admit" ? reset.change : undefined);
+    const asked = kept?.asked ?? await this.ask(port, latest, signal, reset?.kind === "admit" ? automationStudioCandidateStartedWithSaid(reset.startedWith) : [], this.adviceFor(latest), reset?.kind === "admit" ? reset.change : undefined, request);
     // Not a trial: the port did not run it, and says why in the builder's terms (header, t679).
     if (asked.notRun) {
       this.trials.set(key(latest), tried);
@@ -570,10 +358,10 @@ export class AutomationStudioSubflowTrialGate {
       return refused(UNAFFORDABLE_CODE, UNAFFORDABLE_INSTRUCTION, { notRun: asked.answer.feedback });
     }
     // The port's answer came from the recording: said and kept as this gate's own kept answer (header, P6 D48).
-    const recorded = !kept && asked.answer.checkedAgainst === "recorded_run";
+    const recorded = readOnly || (!kept && asked.answer.checkedAgainst === "recorded_run");
     // A yes over a read that kept every item it saw after an act over a narrower read is asked again with a row check (header, t692).
-    if (asked.answer.verdict === "yes" && asked.answer.entryPrepared && asked.keptEveryRow?.length) {
-      asked.answer = await this.checkRows(port, asked.answer, asked.keptEveryRow, signal);
+    if (!readOnly && asked.answer.verdict === "yes" && asked.answer.entryPrepared && asked.keptEveryRow?.length) {
+      asked.answer = await this.checkRows(port, asked.answer, asked.keptEveryRow, signal, request);
       signal.throwIfAborted();
     }
     // A no whose remedy would take back what an earlier standing no of this subflow upheld is not taken (header, t633, t634).
@@ -581,16 +369,17 @@ export class AutomationStudioSubflowTrialGate {
     const weighedAnswer = contradiction ? automationStudioSubflowContradictedNo(asked.answer, contradiction) : asked.answer;
     // The page this brief explored was changed by an act the start took back and no step does (header, t647).
     const explored = weighedAnswer.verdict !== "yes" && weighedAnswer.entryPrepared
-      ? automationStudioSiteResetExploredOnAbsorbed({ absorbed: absorbedActs, owner: this.input.scope.briefId, steps: (latest.subflows ?? []).flatMap((subflow) => subflow.nodes ?? []), ran: weighedAnswer.acts, whose: "subflow" })
+      ? automationStudioSiteResetExploredOnAbsorbed({ absorbed: absorbedActs, owner: request.scope.briefId, steps: (latest.subflows ?? []).flatMap((subflow) => subflow.nodes ?? []), ran: weighedAnswer.acts, whose: "subflow" })
       : [];
     // An execution-failed trial says what stopped it, in its own feedback (header, lane 3).
     const answer = Stop.told(explored.length ? withCoreFindings(weighedAnswer, explored) : weighedAnswer);
     // The port is told the gate's verdict, even of a trial a stop then cuts short (header, t634).
     const stood = answer.verdict === "no" && answer.entryPrepared && asked.standingNo !== undefined;
     const advised = answer.entryPrepared ? this.earlierAdvice.remember({ revision: answer.revision, verdict: answer.verdict, feedback: answer.feedback, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined }) : undefined;
-    port.weighed?.({ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}), ...(advised ? { advised } : {}) });
+    if (!readOnly && port.weighed) await observeAutomationStudioTrialResultPolicy(request, { receiver: port, callback: port.weighed, args: [{ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}), ...(advised ? { advised } : {}) }] });
     signal.throwIfAborted();
-    const leftOnSite = siteless || recorded ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
+    const landed = answer.acts ?? [];
+    const leftOnSite = siteless || recorded || !resetOwner ? undefined : await observeAutomationStudioTrialResultPolicy(request, { receiver: resetOwner, callback: resetOwner.trialRan, args: [landed, answer.trialRunId] }, landed);
     // What Core's record of this trial shows its conditions kept out, as the proposal that ran wrote them (header, t641).
     if (answer.entryPrepared) this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined });
     // What another gate found, carried by the port, replaces what it carried before (header, t689).
@@ -603,7 +392,7 @@ export class AutomationStudioSubflowTrialGate {
     if (answer.verdict === "no" && answer.entryPrepared) this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
     // A failed whole test leaves its repair standing, and its instruction says where (header, t804).
-    const repairSet = (port.fromStep || this.repair.standing) && !offline ? this.repair.afterWholeTest(answer, latest) : undefined;
+    const repairSet = (port.fromStep || this.repair.standing) && !offline && !readOnly ? this.repair.afterWholeTest(answer, latest) : undefined;
     const retestsLeft = !repeatedStep && (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || offlineYes) ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes" && !offlineYes, partial: true, verdict: answer.verdict, subflowKey: answer.identity.subflowKey, revision: answer.revision, digest: answer.digest,
@@ -622,9 +411,23 @@ export class AutomationStudioSubflowTrialGate {
     if (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || repeatedStep || offlineYes) evidence.retestsLeft = retestsLeft;
     // Whether Core's record contradicts what kept an unsure from a yes: the fact its instruction rests on (header, t641).
     if (answer.verdict === "unsure" && answer.entryPrepared && retestsLeft > 0 && typeof answer.feedback.contradictedByBuild !== "string") evidence.retestAdvised = automationStudioCandidateRetestAdvised(answer);
-    const answered: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: offlineYes ? "subflow.trial_offline_yes" : `subflow.trial_${answer.verdict}` };
+    const answered: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence, effectApplied: !readOnly, targetsUnchanged: readOnly, resultCode: offlineYes ? "subflow.trial_offline_yes" : `subflow.trial_${answer.verdict}` };
     if (retestsLeft > 0) answered.resultReason = RETEST_REASON;
     return answered;
+  }
+
+  private async performFromStep(request: AutomationStudioSubflowTrialRequest, from: string): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
+    const port = this.input.port!;
+    const fromStep = port.fromStep!;
+    const resetOwner = this.input.reset;
+    const reset = resetOwner ? { trialRan: (acts: Parameters<AutomationStudioSiteResetTrialReset["trialRan"]>[0], runId?: string) => observeAutomationStudioTrialPolicy(request, "reset", { receiver: resetOwner, callback: resetOwner.trialRan, args: [acts, runId] }, acts) } : undefined;
+    return await automationStudioSubflowFromStepRun({ from, latest: request.proposal, scope: request.scope,
+      fromStep: input => observePartialTrialCallback(request, { receiver: undefined, callback: fromStep, args: [input] }, request.signal, input),
+      signal: request.signal, reset, offline: automationStudioCandidateTrialOffline(port), repair: this.repair });
+  }
+
+  private async predecessors(request: AutomationStudioSubflowTrialRequest, port: AutomationStudioSubflowTrialPreparingPort) {
+    return port.admissionPredecessors ? await observeAutomationStudioTrialPolicy(request, "prepare", { receiver: port, callback: port.admissionPredecessors, args: [request.scope] }, request.scope) : [];
   }
 
   /** The builder's completion rule, asked once the receipt names the latest proposal. Never the whole candidate's. */
@@ -680,10 +483,11 @@ export class AutomationStudioSubflowTrialGate {
    * A yes over flagged reads, as the row check leaves it (header, t692): the
    * yes where the port says the converse question confirmed it; else unsure.
    */
-  private async checkRows(port: AutomationStudioSubflowTrialPreparingPort, yes: AutomationStudioSubflowTrialResult, reads: AutomationStudioSubflowTrialKeptEveryRowRead[], signal: AbortSignal): Promise<AutomationStudioSubflowTrialResult> {
+  private async checkRows(port: AutomationStudioSubflowTrialPreparingPort, yes: AutomationStudioSubflowTrialResult, reads: AutomationStudioSubflowTrialKeptEveryRowRead[], signal: AbortSignal, invocation: AutomationStudioSubflowTrialRequest): Promise<AutomationStudioSubflowTrialResult> {
     let raw: unknown;
     try {
-      raw = port.checkRows ? await port.checkRows({ scope: structuredClone(this.input.scope), revision: yes.revision, digest: yes.digest, ...(yes.trialRunId ? { trialRunId: yes.trialRunId } : {}), reads: structuredClone(reads), signal }) : undefined;
+      const request = { scope: structuredClone(invocation.scope), revision: yes.revision, digest: yes.digest, ...(yes.trialRunId ? { trialRunId: yes.trialRunId } : {}), reads: structuredClone(reads), signal };
+      raw = port.checkRows ? await observePartialTrialCallback(invocation, { receiver: port, callback: port.checkRows, args: [request] }, signal) : undefined;
     } catch (error) {
       if (signal.aborted) throw error;
       // A check that failed confirms nothing; its error text is never shown.
@@ -696,13 +500,14 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
-  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = [], change?: AutomationStudioTrialChangeSession): Promise<ReturnType<typeof automationStudioSubflowTrialResultRead>> {
-    const identity = this.identity();
+  private async ask(port: AutomationStudioSubflowTrialPort, latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"], change: AutomationStudioTrialChangeSession | undefined, invocation: AutomationStudioSubflowTrialRequest): Promise<ReturnType<typeof automationStudioSubflowTrialResultRead>> {
+    const identity = this.identity(invocation.scope);
     let raw: unknown, finished: AutomationStudioTrialChangeOutcome | undefined; // What its readings finished with (header, t787).
     try {
-      raw = await port({ ...this.request(latest, signal, startedWith, earlierAdvice), ...(change ? { siteChange: async (acts, actsSignal) => (finished = await change.finish(acts, actsSignal)) } : {}) });
+      const request: AutomationStudioSubflowTrialRequest = { ...this.request(latest, signal, startedWith, earlierAdvice, invocation.scope), ...(change ? { siteChange: async (acts, actsSignal) => (finished = await finishAutomationStudioSiteResetSession(request, change, acts, actsSignal)) } : {}) };
+      raw = await invokePartialTrialPort(invocation, port, request);
     } catch (error) {
-      if (signal.aborted) throw error;
+      if (signal.aborted || isPartialTrialReadOnly(invocation)) throw error;
       // The port's own error text may carry page or account detail, so the model is told only its kind (header, lane 3).
       return { answer: { partial: true, scope: "subflow", identity, revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: Stop.portFailed("subflow.trial_port_failed", error), entryPrepared: false } };
     }
@@ -712,8 +517,10 @@ export class AutomationStudioSubflowTrialGate {
   }
 
   /** The request a trial of `latest` sends: the port's, and the offline-first check's before any reset (header, P6). */
-  private request(latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = []): AutomationStudioSubflowTrialRequest {
-    return { scope: structuredClone(this.input.scope), proposal: deepFreeze(structuredClone(latest)), signal, ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}) };
+  private request(latest: AutomationStudioSubflowProposal, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioSubflowTrialRequest["earlierAdvice"] = [], scope = this.input.scope): AutomationStudioSubflowTrialRequest {
+    const request = { scope: structuredClone(scope), proposal: deepFreeze(structuredClone(latest)), signal, ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}) };
+    inheritPartialTrialContext(this, request);
+    return request;
   }
 
   /** What earlier judged trials advised, for the judge of a trial of `latest` (header, t752). */
@@ -721,8 +528,8 @@ export class AutomationStudioSubflowTrialGate {
     return this.earlierAdvice.advice(latest.revision, latest.subflows ? { subflows: latest.subflows } : undefined);
   }
 
-  private identity(): AutomationStudioSubflowScopeIdentity {
-    const { buildId, briefId, planDigest, subflowKey } = this.input.scope;
+  private identity(scope = this.input.scope): AutomationStudioSubflowScopeIdentity {
+    const { buildId, briefId, planDigest, subflowKey } = scope;
     return { buildId, briefId, planDigest, subflowKey };
   }
 }

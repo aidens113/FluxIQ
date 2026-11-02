@@ -138,6 +138,8 @@ export async function annotateRepair(options: { handles: Record<string, string>;
 
 type Options = {
   executed: string[];
+  graphOptions?: Parameters<typeof annotateAutomationStudioRunDetailWithRuntimeLlm>[0]["graphOptions"];
+  onProvider?: (request: AutomationStudioLlmTaskRequest) => void;
   /** What is left of a larger repair's purse, when the recovery is one part of one. */
   costLeftUsd?: number;
   /** The call count the resolver declares; `undeclared` leaves it to Core's backstop. */
@@ -186,6 +188,7 @@ export async function annotate(options: Options): Promise<AutomationStudioFlowRu
     detail: runDetail(),
     context: context(options, policy),
     failedTraceAttempt: failedAttempt(),
+    ...(options.graphOptions ? { graphOptions: options.graphOptions } : {}),
     ...(options.costLeftUsd === undefined ? {} : { costLeftUsd: options.costLeftUsd }),
     ...(options.resultSummary ? { resultSummary: options.resultSummary } : {})
   });
@@ -226,6 +229,7 @@ function provider(options: Options): AutomationStudioLlmProvider {
   return {
     metadata: { provider: "mock", model: "debug-model" },
     runTask: async (request: AutomationStudioLlmTaskRequest) => {
+      options.onProvider?.(request);
       options.taskKinds?.push(request.taskKind);
       options.requests?.push(request);
       if (request.expectedOutput === "diagnosis") {

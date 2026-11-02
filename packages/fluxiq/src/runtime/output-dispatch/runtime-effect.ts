@@ -11,6 +11,7 @@ import { prepareOutputAction } from "./prepare-action.ts";
 import { registeredOutputActionFromPayload } from "./effect-action.ts";
 import { dispatchRegisteredOutput } from "./io.ts";
 import { dispatchedRoute, dispatchFailure, confirmationFailureMessage, missingOutputIdResult, unregisteredOutputResult, elementTargetRejectionResult, failedDispatchResult, targetResolutionField, clearedWaitField, actionabilityField } from "./results/index.ts";
+import { OutputObservationBindings, OutputOrchestrationCallbacks, invokeObservedOutputMethod, invokeObservedOutputSync, type OutputExecutionObservation } from "./admission/internal/index.ts";
 export function createRuntimeOutputEffectDispatcher(io: OutputDispatchIo, domainId: string | null | undefined, runtime: OutputDispatchRuntime, targetPreparer?: OutputTargetPreparer) {
   return async (effect: {
     type: string;
@@ -24,32 +25,34 @@ export function createRuntimeOutputEffectDispatcher(io: OutputDispatchIo, domain
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload))
       return undefined;
     const payload = effect.payload as JsonObject;
+    const observation = OutputObservationBindings.take(context);
     let action = registeredOutputActionFromPayload(payload);
     const outputId = action.outputId?.trim();
     if (!outputId)
       return missingOutputIdResult("runtime");
-    if (!io.hasOutput(domainId, outputId))
+    if (!invokeObservedOutputSync(observation, { receiver: io, callback: io.hasOutput, args: [domainId, outputId] }))
       return unregisteredOutputResult(outputId);
-    const output = io.getOutput(domainId, outputId);
+    const output = invokeObservedOutputSync(observation, { receiver: io, callback: io.getOutput, args: [domainId, outputId] });
     if (!output)
       return unregisteredOutputResult(outputId);
-    const prepared = prepareOutputAction(action, domainId ?? null, output.definition, targetPreparer);
+    const prepared = prepareOutputAction(action, domainId ?? null, output.definition, targetPreparer, observation);
     if (!prepared.ok)
       return elementTargetRejectionResult(outputId, prepared);
     action = prepared.action;
-    if (!await runtimeCanDispatchOutput(runtime, domainId, outputId))
-      return dispatchRegisteredOutput(io, domainId, action, context?.signal, context?.commandContext, targetPreparer);
-    const confirmation = awaitConfirmation(io, domainId, action, context?.signal);
+    if (!await runtimeCanDispatchOutput(runtime, domainId, outputId, observation))
+      return dispatchRegisteredOutput(io, domainId, action, context?.signal, context?.commandContext, targetPreparer, observation);
+    const confirmation = awaitConfirmation(io, domainId, action, context?.signal, observation);
     const referenceNow = automationStudioReferenceNow(context?.referenceNow);
-    const result = await runtime.dispatch({
-      kind: "execute_action",
+    const command = {
+      kind: "execute_action" as const,
       domainId: domainId ?? null,
       outputId,
       actionType: outputId,
       parameters: action.parameters as JsonObject,
       ...(typeof payload.timeoutMs === "number" ? { timeoutMs: payload.timeoutMs } : {}),
       metadata: compactJsonObject({ ...(action.metadata ?? {}), ...(prepared.diagnostics ? { elementTargetResolution: prepared.diagnostics } : {}) })
-    }, {
+    };
+    const dispatchContext = {
       ...(context?.commandContext ? { commandContext: context.commandContext } : {}),
       ...(context?.signal ? { signal: context.signal } : {}),
       ...(referenceNow !== undefined ? { referenceNow } : {}),
@@ -61,7 +64,8 @@ export function createRuntimeOutputEffectDispatcher(io: OutputDispatchIo, domain
       ...(payload.recordOutput !== undefined && payload.recordOutput !== null ? { withheldResultPayload: true } : {}),
       ...(typeof action.metadata?.clientId === "string" ? { preferredClientId: action.metadata.clientId } : {}),
       ...(typeof action.metadata?.sessionId === "string" ? { preferredSessionId: action.metadata.sessionId } : {})
-    });
+    };
+    const result = await invokeObservedOutputMethod(observation, { receiver: runtime, callback: runtime.dispatch, args: [command, dispatchContext] }, context?.signal, dispatchContext);
     const confirmationResult = result.status === "succeeded" && confirmation ? await confirmation : null;
     const outputs: Record<string, JsonValue> = {
       outputId,
@@ -85,8 +89,10 @@ export function createRuntimeOutputEffectDispatcher(io: OutputDispatchIo, domain
     };
   };
 }
-async function runtimeCanDispatchOutput(runtime: OutputDispatchRuntime, domainId: string | null | undefined, outputId: string): Promise<boolean> {
-  const capabilities = await runtime.capabilities();
+async function runtimeCanDispatchOutput(runtime: OutputDispatchRuntime, domainId: string | null | undefined, outputId: string, observation?: OutputExecutionObservation): Promise<boolean> {
+  const callback = runtime.capabilities;
+  const args: [OutputExecutionObservation?] = observation && OutputOrchestrationCallbacks.has(runtime, callback) ? [observation] : [];
+  const capabilities = await invokeObservedOutputMethod(observation, { receiver: runtime, callback, args });
   return capabilities.some((capability) => {
     if (capability.domainId !== undefined && capability.domainId !== (domainId ?? null))
       return false;

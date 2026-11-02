@@ -269,6 +269,39 @@ describe("runAutomationStudioRuntimeExploration", () => {
     }
   });
 
+  it("retains the primary exploration failure when timer cleanup also fails", async () => {
+    const primary = new Error("clock failed after completion");
+    const cleanup = new Error("cancel failed");
+    let completed = false;
+    let thrown: unknown;
+    try {
+      await explore({
+        decisions: [],
+        now: () => {
+          if (completed) throw primary;
+          return 1_000;
+        },
+        decide: async () => {
+          completed = true;
+          return complete({});
+        },
+        startTimer: () => ({ cancel: () => { throw cleanup; } })
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(AggregateError);
+    expect(thrown).toHaveProperty("errors", [primary, cleanup]);
+  });
+
+  it("surfaces timer cleanup failure after an otherwise completed exploration", async () => {
+    const cleanup = new Error("cancel failed");
+    await expect(explore({
+      decisions: [complete({})],
+      startTimer: () => ({ cancel: () => { throw cleanup; } })
+    })).rejects.toBe(cleanup);
+  });
+
   // A recovery ran its loop with a thrown tool ending the exploration outright,
   // so one flaky step threw away everything the recovery had learned. It now
   // runs as a build does (`toolFailures: "observe"`): the failure is recorded
@@ -382,6 +415,8 @@ type Scenario = {
   classifyRefusal?: (resultCode: string) => AutomationStudioExplorationStopReason | undefined;
   recoveryDeadline?: ReturnType<typeof startAutomationStudioRecoveryDeadline>;
   startedAtMs?: number;
+  now?: Parameters<typeof runAutomationStudioRuntimeExploration>[0]["now"];
+  startTimer?: Parameters<typeof runAutomationStudioRuntimeExploration>[0]["startTimer"];
   signal?: AbortSignal;
   onDecide?: () => void;
   advanceClockAfterAction?: number;
@@ -496,7 +531,8 @@ async function explore(scenario: Scenario): Promise<AutomationStudioRuntimeExplo
     },
     budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000, ...scenario.budget }),
     classifyRefusal: scenario.classifyRefusal ?? classifyTestRefusal,
-    now: () => nowMs,
+    now: scenario.now ?? (() => nowMs),
+    ...(scenario.startTimer ? { startTimer: scenario.startTimer } : {}),
     ...(scenario.recoveryDeadline ? { recoveryDeadline: scenario.recoveryDeadline } : {}),
     ...(scenario.signal ? { signal: scenario.signal } : {})
   });

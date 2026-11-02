@@ -22,6 +22,10 @@ import type { AutomationStudioProjectBuildEnding, AutomationStudioProjectBuildLa
 import { automationStudioProjectBuildRecordParser as parser } from "./build-record-parser.ts";
 import { AutomationStudioProjectBuildDocuments } from "./documents.ts";
 import { AutomationStudioProjectRecordRefusal } from "./refusal.ts";
+import { AutomationStudioSiteResetCallbackPolicies } from "../../flow-bootstrap/reset-observation/index.ts";
+import { AutomationStudioProjectWriteCompletion, invokeAutomationStudioProjectWriteCallback } from "../record-completion/index.ts";
+
+const defaultNow = Date.now;
 
 // The build record store: writes the record as the build proceeds, never at
 // the end, and reads it back after a restart.
@@ -39,10 +43,17 @@ const MAIN = "build";
 export class AutomationStudioProjectBuildRecordStore {
   private readonly documents: AutomationStudioProjectBuildDocuments;
   private readonly now: () => number;
+  private readonly readCompletion: AutomationStudioProjectWriteCompletion;
+  private readonly actCompletion: AutomationStudioProjectWriteCompletion;
+  private readonly toggleCompletion: AutomationStudioProjectWriteCompletion;
 
   constructor(projects: AutomationStudioProjectPaths, flows: AutomationStudioFlowPaths, options: { now?: () => number } = {}) {
     this.documents = new AutomationStudioProjectBuildDocuments(projects, flows);
-    this.now = options.now ?? Date.now;
+    this.now = options.now ?? defaultNow;
+    if (this.now === defaultNow) AutomationStudioSiteResetCallbackPolicies.rememberLexical(defaultNow, "pure");
+    this.readCompletion = AutomationStudioProjectWriteCompletion.for(this, recordRead);
+    this.actCompletion = AutomationStudioProjectWriteCompletion.for(this, recordAct);
+    this.toggleCompletion = AutomationStudioProjectWriteCompletion.for(this, recordToggle);
   }
 
   async create(input: AutomationStudioProjectBuildRef & { instructionDigest: string; sourceIds: string[] }): Promise<AutomationStudioProjectBuildRecord> {
@@ -75,17 +86,31 @@ export class AutomationStudioProjectBuildRecordStore {
   }
 
   /** The record and every return written so far, or undefined when there is none. Refuses an edited file. */
-  async read(input: AutomationStudioProjectBuildRef): Promise<AutomationStudioProjectBuildRecordView | undefined> {
-    const ref = refOf(input);
-    const stored = await this.documents.read(ref, MAIN);
-    if (stored === undefined) return undefined;
-    const record = take(parser.main(stored, ref));
-    const returns: AutomationStudioProjectBuildReturnRecord[] = [];
-    for (const { brief } of record.briefs) {
-      const file = await this.documents.read(ref, returnName(brief.briefId));
-      if (file !== undefined) returns.push(take(parser.returned(file, ref, brief)));
-    }
-    return { record, returns };
+  read(input: AutomationStudioProjectBuildRef, invocation?: object): Promise<AutomationStudioProjectBuildRecordView | undefined> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
+    const work = async (): Promise<AutomationStudioProjectBuildRecordView | undefined> => {
+      const ref = refOf(input);
+      const documents = this.documents;
+      const callback = documents.read;
+      const read = async (name: string) => {
+        const child = Object.freeze({});
+        return await invokeAutomationStudioProjectWriteCallback(frame, { receiver: documents, callback, args: [ref, name, child] }, child);
+      };
+      const stored = await read(MAIN);
+      if (stored === undefined) return undefined;
+      const record = take(parser.main(stored, ref));
+      const returns: AutomationStudioProjectBuildReturnRecord[] = [];
+      for (const { brief } of record.briefs) {
+        const file = await read(returnName(brief.briefId));
+        if (file !== undefined) returns.push(take(parser.returned(file, ref, brief)));
+      }
+      return { record, returns };
+    };
+    const returned = work().then(value => {
+      this.readCompletion.completed(returned, frame, { disposition: "settled", completionDigest: "project.record.read_completed", assessmentDigest: "project.record.original_documents" });
+      return value;
+    });
+    return returned;
   }
 
   async summary(input: AutomationStudioProjectBuildRef): Promise<AutomationStudioProjectBuildSummary | undefined> {
@@ -193,13 +218,19 @@ export class AutomationStudioProjectBuildRecordStore {
    * the supervisor's whole trials, or by a recorded brief, whatever permitted
    * it -- the brief, or the person's own instruction. Each act id once.
    */
-  async recordLastingAct(input: AutomationStudioProjectBuildRef, entry: Omit<AutomationStudioProjectBuildLastingAct, "recordedAt">): Promise<void> {
-    await this.change(input, (record, at) => {
+  recordLastingAct(input: AutomationStudioProjectBuildRef, entry: Omit<AutomationStudioProjectBuildLastingAct, "recordedAt">, invocation?: object): Promise<void> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
+    const apply = (record: AutomationStudioProjectBuildRecord, at: number) => {
       if (entry.owner.role !== "supervisor") knownBrief(record, entry.owner.briefId);
       if (record.lastingActs.some((recorded) => recorded.act === entry.act)) throw new AutomationStudioProjectRecordRefusal("project.duplicate", "lastingAct.act");
       // The whole record is validated as it is written (`change`), this entry with it.
       record.lastingActs.push({ recordedAt: at, act: entry.act, owner: structuredClone(entry.owner), consequences: [...entry.consequences], description: entry.description, undoable: entry.undoable });
+    };
+    AutomationStudioSiteResetCallbackPolicies.rememberLexical(apply, "pure");
+    const returned = this.change(input, apply, invocation).then(() => {
+      this.actCompletion.completed(returned, frame, { disposition: "settled", completionDigest: "project.record.act_acknowledged", assessmentDigest: "project.record.original_documents" });
     });
+    return returned;
   }
 
   /**
@@ -207,10 +238,16 @@ export class AutomationStudioProjectBuildRecordStore {
    * holds it (t792), so a debug sees what each later step was held to. The
    * whole record is validated as it is written, this entry with it.
    */
-  async recordToggle(input: AutomationStudioProjectBuildRef, entry: Omit<AutomationStudioProjectBuildToggle, "recordedAt">): Promise<void> {
-    await this.change(input, (record, at) => {
+  recordToggle(input: AutomationStudioProjectBuildRef, entry: Omit<AutomationStudioProjectBuildToggle, "recordedAt">, invocation?: object): Promise<void> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
+    const apply = (record: AutomationStudioProjectBuildRecord, at: number) => {
       (record.toggles ??= []).push({ ...structuredClone(entry), recordedAt: at });
+    };
+    AutomationStudioSiteResetCallbackPolicies.rememberLexical(apply, "pure");
+    const returned = this.change(input, apply, invocation).then(() => {
+      this.toggleCompletion.completed(returned, frame, { disposition: "settled", completionDigest: "project.record.toggle_acknowledged", assessmentDigest: "project.record.original_documents" });
     });
+    return returned;
   }
 
   async recordDecision(input: AutomationStudioProjectBuildRef, value: unknown): Promise<AutomationStudioProjectDecisionLogEntry> {
@@ -235,21 +272,33 @@ export class AutomationStudioProjectBuildRecordStore {
   }
 
   /** Reads the main file, lets `apply` change it, validates the result whole and writes it. */
-  private async change<T>(input: AutomationStudioProjectBuildRef, apply: (record: AutomationStudioProjectBuildRecord, at: number) => T): Promise<T> {
+  private async change<T>(input: AutomationStudioProjectBuildRef, apply: (record: AutomationStudioProjectBuildRecord, at: number) => T, invocation?: object): Promise<T> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
     const ref = refOf(input);
+    const documents = this.documents;
+    const callback = documents.update;
+    const now = this.now;
     let result: T | undefined;
-    await this.documents.update(ref, MAIN, (current) => {
+    const change = async (current: JsonObject | undefined) => {
+      const changing = AutomationStudioProjectWriteCompletion.capture(current);
       if (current === undefined) throw new AutomationStudioProjectRecordRefusal("project.record_missing", "record.buildId");
       const record = take(parser.main(current, ref));
       if (record.ending) throw new AutomationStudioProjectRecordRefusal("project.record_ended", "record.ending");
-      const at = this.now();
-      result = apply(record, at);
+      const at = await invokeAutomationStudioProjectWriteCallback(changing, { receiver: this, callback: now, args: [] });
+      result = await invokeAutomationStudioProjectWriteCallback(changing, { receiver: undefined, callback: apply, args: [record, at] });
       record.updatedAt = at;
       return take(parser.main(record, ref)) as unknown as JsonObject;
-    });
+    };
+    AutomationStudioSiteResetCallbackPolicies.rememberLexical(change, "frame");
+    const child = Object.freeze({});
+    await invokeAutomationStudioProjectWriteCallback(frame, { receiver: documents, callback, args: [ref, MAIN, change, child] }, child);
     return result as T;
   }
 }
+
+const recordRead = AutomationStudioProjectBuildRecordStore.prototype.read;
+const recordAct = AutomationStudioProjectBuildRecordStore.prototype.recordLastingAct;
+const recordToggle = AutomationStudioProjectBuildRecordStore.prototype.recordToggle;
 
 function refOf(input: AutomationStudioProjectBuildRef): AutomationStudioProjectBuildRef {
   return take(shape.parse(() => ({ projectId: shape.id(input.projectId, "ref.projectId"), flowId: shape.id(input.flowId, "ref.flowId"), buildId: shape.storageId(input.buildId, "ref.buildId") })));

@@ -12,6 +12,8 @@ import { automationStudioResolveTargetRefresh } from "../../components/automatio
 import type { AutomationStudioTargetRefreshResolution } from "../automation-host/contracts/index.ts";
 import type { AutomationStudioNativeRuntimeGrants } from "./grants.ts";
 import type { AutomationStudioNativeExecution } from "./execution.ts";
+import { executeObservedNative, bindObservedNativeResult, type NativeExecutionObservation } from "./admission/index.ts";
+import type { AutomationStudioRecordingCandidateParameterNormalizer, AutomationStudioRecordingMapperBinding } from "../../components/automation/importer/recording-mapper/index.ts";
 /**
  * Explicit trusted-local implementation binder. This is an authorization and
  * tracing boundary, not a security sandbox or containment mechanism.
@@ -23,6 +25,7 @@ export class AutomationStudioNativeNodeRuntime {
     implementation: AutomationStudioNativeNodeImplementation;
   }>();
   private readonly recordingMappers = new Map<string, AutomationStudioRecordingMapperImplementation>();
+  private readonly recordingParameterNormalizers = new Map<string, { original: AutomationStudioRecordingCandidateParameterNormalizer; receiver: AutomationStudioImporterImplementationBundle; bound: AutomationStudioRecordingCandidateParameterNormalizer }>();
   private readonly targetResolvers = new Map<string, AutomationStudioTargetResolverImplementation>();
   private readonly comparators = new Map<string, AutomationStudioComparatorImplementation>();
   private readonly grants: Required<AutomationStudioNativeRuntimeGrants>;
@@ -56,9 +59,20 @@ export class AutomationStudioNativeNodeRuntime {
     const registeredMatcher = this.elementMatchers.get(manifest.domainId);
     if (bundle.elementMatcher && registeredMatcher && registeredMatcher !== bundle.elementMatcher)
       throw new Error(`A different element matcher is already registered for domain ${manifest.domainId}.`);
+    const parameterNormalizer = bundle.recordingCandidateParameterNormalizer;
+    if (parameterNormalizer !== undefined && typeof parameterNormalizer !== "function")
+      throw new Error(`Recording candidate parameter normalizer for domain ${manifest.domainId} must be a function.`);
+    const registeredNormalizer = this.recordingParameterNormalizers.get(manifest.domainId);
+    if (parameterNormalizer && registeredNormalizer && registeredNormalizer.original !== parameterNormalizer)
+      throw new Error(`A different recording candidate parameter normalizer is already registered for domain ${manifest.domainId}.`);
     this.sdk.register(manifest);
     if (bundle.elementMatcher)
       this.elementMatchers.set(manifest.domainId, bundle.elementMatcher);
+    if (parameterNormalizer && !registeredNormalizer) {
+      const original = parameterNormalizer;
+      const receiver = bundle;
+      this.recordingParameterNormalizers.set(manifest.domainId, { original, receiver, bound: (domainId, parameters, context) => original.call(receiver, domainId, parameters, context) });
+    }
     // Bound on the registry that validation of a generated plan reads, never on the definition, which stays plain data.
     for (const [nodeId, contract] of Object.entries(bundle.parameterContracts ?? {}))
       this.sdk.nodes.bindParameterContract(nodeId, contract);
@@ -124,15 +138,14 @@ export class AutomationStudioNativeNodeRuntime {
   getRecordingMapper(domainId: string, id: string): AutomationStudioRecordingMapperImplementation | undefined {
     return this.recordingMappers.get(`${domainId}:${id}`);
   }
-  listRecordingMappers(domainId: string): Array<{
-    definition: NonNullable<AutomationStudioImporterSdkManifest["recordingMappers"]>[number];
-    packageId: string;
-    packageVersion: string;
-    implementation: AutomationStudioRecordingMapperImplementation;
-  }> {
+  getRecordingCandidateParameterNormalizer(domainId: string): AutomationStudioRecordingCandidateParameterNormalizer | undefined {
+    return this.recordingParameterNormalizers.get(domainId)?.bound;
+  }
+  listRecordingMappers(domainId: string): AutomationStudioRecordingMapperBinding[] {
     return this.sdk.list().filter((manifest) => manifest.domainId === domainId).flatMap((manifest) => (manifest.recordingMappers ?? []).flatMap((definition) => {
       const implementation = this.getRecordingMapper(domainId, definition.id);
-      return implementation ? [{ definition, packageId: manifest.packageId, packageVersion: manifest.packageVersion, implementation }] : [];
+      const normalizeParameters = this.getRecordingCandidateParameterNormalizer(domainId);
+      return implementation ? [{ definition, packageId: manifest.packageId, packageVersion: manifest.packageVersion, implementation, ...(normalizeParameters ? { normalizeParameters } : {}) }] : [];
     }));
   }
   getTargetResolver(domainId: string, id: string): AutomationStudioTargetResolverImplementation | undefined {
@@ -141,7 +154,7 @@ export class AutomationStudioNativeNodeRuntime {
   getComparator(domainId: string, id: string): AutomationStudioComparatorImplementation | undefined {
     return this.comparators.get(`${domainId}:${id}`);
   }
-  async execute(node: AutomationStudioFlowNode, inputs: Record<string, JsonValue>, signal?: AbortSignal, hostContext?: AutomationStudioNativeNodeContext["host"]): Promise<AutomationStudioNativeExecution | undefined> {
+  async execute(node: AutomationStudioFlowNode, inputs: Record<string, JsonValue>, signal?: AbortSignal, hostContext?: AutomationStudioNativeNodeContext["host"], observation?: NativeExecutionObservation): Promise<AutomationStudioNativeExecution | undefined> {
     const definition = this.getDefinition(node.definitionId);
     if (!definition || (definition.source.kind !== "importer" && definition.source.kind !== "code"))
       return undefined;
@@ -162,6 +175,7 @@ export class AutomationStudioNativeNodeRuntime {
     const logs: AutomationStudioNativeLogEntry[] = [];
     const timeoutMs = readPositiveNumber(node.metadata?.timeoutMs) ?? 30000;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let execution: Promise<AutomationNodeExecutionResult> | undefined;
     try {
       const isolatedInputs = Object.fromEntries(definition.inputs.flatMap((port) => inputs[port.id] === undefined ? [] : [[port.id, inputs[port.id]]])) as Record<string, JsonValue>;
       const host = hostContext || actionEffect ? { ...hostContext, capabilityIds: [...(hostContext?.capabilityIds ?? [])], sideEffectClass: hostContext?.sideEffectClass ?? "none" } : undefined;
@@ -175,7 +189,10 @@ export class AutomationStudioNativeNodeRuntime {
           host.referenceNow = referenceNow;
         Object.freeze(host);
       }
-      const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), ...(host ? { host } : {}), elementMatcher: this.domainElementMatcher(binding.manifest.domainId), resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) }));
+      const context: AutomationStudioNativeNodeContext = { inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), ...(host ? { host } : {}), elementMatcher: this.domainElementMatcher(binding.manifest.domainId), resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) };
+      execution = observation
+        ? executeObservedNative(observation, { runtime: this, receiver: binding, implementation: binding.implementation, packageId: binding.manifest.packageId, packageVersion: binding.manifest.packageVersion, definitionId: definition.id, definitionVersion: definition.version }, context, controller.signal)
+        : Promise.resolve(binding.implementation(context));
       const result = await Promise.race([execution, new Promise<AutomationNodeExecutionResult>((resolve) => {
         timer = setTimeout(() => {
           resolve({ status: "failed", route: "failed", outputs: { error: `Native node exceeded ${timeoutMs}ms timeout.` } });
@@ -184,11 +201,13 @@ export class AutomationStudioNativeNodeRuntime {
       })]);
       const boundaryError = validateResultBoundary(definition, result);
       if (boundaryError)
-        return { ...failed(boundaryError), logs };
-      return { result: projectRuntimeTargetActionability(result), logs, declaredOutputs: definition.outputs };
+        return observation ? bindObservedNativeResult(execution, { ...failed(boundaryError), logs }) : { ...failed(boundaryError), logs };
+      const returned = { result: projectRuntimeTargetActionability(result), logs, declaredOutputs: definition.outputs };
+      return observation ? bindObservedNativeResult(execution, returned) : returned;
     }
     catch (error) {
-      return { ...failed(error instanceof Error ? error.message : "Native node execution failed."), logs };
+      const returned = { ...failed(error instanceof Error ? error.message : "Native node execution failed."), logs };
+      return observation && execution ? bindObservedNativeResult(execution, returned) : returned;
     }
     finally {
       if (timer)

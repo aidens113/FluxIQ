@@ -148,6 +148,10 @@ import { AutomationStudioExploredInterruptions } from "./explored-interruptions.
 import { automationStudioExploredToggleTie } from "./script-statements/index.ts";
 import { automationStudioToggleStateChoice } from "../toggle-state/index.ts";
 import { automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetWitness, type AutomationStudioSiteResetWitnessStamp } from "./reset-admission/index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolAuxiliary, invokeAutomationStudioBuildToolDelegate, observeAutomationStudioBuildToolParkingPort, withAutomationStudioBuildToolCallbackScope } from "../build-execution/tools/index.ts";
+import { AuthoringExecutionScope, invokeAuthoringExecutionCallback, withAuthoringExecutionScope } from "../../../../runtime/flow-authoring/execution/observation/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../runtime/execution-observation/policies/index.ts";
+import { observeExecutionParkingPort } from "../../../../runtime/parking/execution/index.ts";
 
 /**
  * How long a build waits for an answer, for a caller that waits at all.
@@ -169,7 +173,7 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
    * is told the reset witness stamp of each reversible lasting declaration the domain puts to it (t751, R3 door 2;
    * `stepWitness`), or `undefined` where the build's site reset found none or has no step admission.
    */
-  planStep: ((step: { definitionId: string; ref: string; witnessed?: ((stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void) | undefined }) => AutomationStudioActionPermissionCheck) & AutomationStudioPlanStepGaps;
+  planStep: ((step: { definitionId: string; ref: string; originalInvocation?: object | undefined; witnessed?: ((stamp: AutomationStudioSiteResetWitnessStamp | undefined) => void) | undefined }) => AutomationStudioActionPermissionCheck) & AutomationStudioPlanStepGaps;
   /**
    * Aborted when a *plan* step is refused, which is the refusal the loop cannot
    * see. The evidence loop runs under it. An exploration refusal leaves it
@@ -298,7 +302,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
   now?: () => number;
   newRequestId?: () => string;
 }): AutomationStudioFlowBootstrapActionPermissions {
-  const gate = new AutomationStudioActionPermissionGate({
+  const gateInput: ConstructorParameters<typeof AutomationStudioActionPermissionGate>[0] = {
     permittedConsequences: input.permittedConsequences,
     stage: "authoring",
     instructionIds: input.instructionIds,
@@ -307,7 +311,10 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     endsOnRequest: false,
     now: input.now,
     newRequestId: input.newRequestId
-  });
+  };
+  const deriveInstructed = gateInput.deriveInstructed;
+  if (deriveInstructed) gateInput.deriveInstructed = () => invokeAuthoringExecutionCallback(input, { receiver: gateInput, callback: deriveInstructed, args: [] });
+  const gate = new AutomationStudioActionPermissionGate(gateInput);
   // The gate's own signal is not what the loop runs under. The gate aborts it
   // on any refusal, which is right for the gate -- it has answered its one
   // request -- and wrong for the build, which can carry on exploring. This one
@@ -320,7 +327,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
   // with a new id, and that one is asked (t195-w18).
   const asked = new Set<string>();
   /** The gate's check, with the refusal it would return put to a person first. */
-  const asking = (action: AutomationStudioActionPermissionAction): AutomationStudioActionPermissionCheck => {
+  const asking = (action: AutomationStudioActionPermissionAction, originalCall?: object): AutomationStudioActionPermissionCheck => {
     const check = gate.checkFor(action);
     return async (declaration) => {
       const decision = await check(declaration);
@@ -328,7 +335,9 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       if (decision.permitted || decision.declined || !input.ask || !request || request.requestId !== decision.requestId || asked.has(request.requestId)) return decision;
       asked.add(request.requestId);
       // The wait and its answer are said where the port settles them (`../activity/ask/port.ts`).
-      const outcome = await automationStudioPermissionAskOutcome({ ...input.ask, port: automationStudioActivityAskPort(input.ask.port, "building") }, request);
+      const current = AuthoringExecutionScope.of(originalCall);
+      const port = current && !current.context.toolObserver ? observeExecutionParkingPort(current.context.callbacks, current.context.parent, input.ask.port) : originalCall ? observeAutomationStudioBuildToolParkingPort(originalCall, input.ask.port) : input.ask.port;
+      const outcome = await automationStudioPermissionAskOutcome({ ...input.ask, port: automationStudioActivityAskPort(port, "building") }, request);
       if (outcome === "unanswered") {
         gate.settle("unanswered");
         return decision;
@@ -357,13 +366,13 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     }
     return entries;
   };
-  return {
-    executeTool: async (call) => {
+  const executeTool: AutomationStudioFlowBootstrapActionPermissions["executeTool"] = async (call) => withAutomationStudioBuildToolCallbackScope(call, async () => {
+      const delegate = input.executeTool;
       const siteReset = input.siteReset;
       if (!siteReset) {
         // Before the domain has the call, not from inside its permission check (see the header).
         if (automationStudioFlowDraftDeclaresLasting(call.value.consequences)) await read();
-        const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
+        const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId }, call);
         let unproved = false;
         const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
           if (input.authoringMode === "project" && reversibleLasting(permissionDeclaration(declaration))) {
@@ -376,7 +385,10 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         const toggled = heldToToggle(call.toolId, call.value, exploredToggles);
         if ("refusal" in toggled) return toggled.refusal;
         const held = { ...call, value: toggled.value };
-        const execution = await input.executeTool({ ...held, permission });
+        inheritAutomationStudioBuildToolRequest(call, held);
+        const placed = { ...held, permission };
+        inheritAutomationStudioBuildToolRequest(held, placed);
+        const execution = await invokeAutomationStudioBuildToolDelegate(placed, { receiver: input, callback: delegate, args: [placed] }, placed.signal);
         gate.observe(execution);
         exploredToggles.explored(held, execution);
         exploredInterruptions.explored(held, execution);
@@ -388,7 +400,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       }
       // A candidate build's call, which may name an act of this build it
       // undoes (t462). Only the ledger reads the claim; the domain never sees it.
-      const { value: claimedValue, claim } = claimed(siteReset, call.value);
+      const { value: claimedValue, claim } = await claimed(siteReset, call.value, call);
       if (claim.kind === "refused") {
         const code = claim.evidence.code;
         return { kind: "llm_evidence_tool_execution", evidence: claim.evidence, effectApplied: false, targetsUnchanged: true, ...(typeof code === "string" ? { resultCode: code } : {}) };
@@ -399,7 +411,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       if ("refusal" in toggled) return toggled.refusal;
       const value = toggled.value;
       if (automationStudioFlowDraftDeclaresLasting(value.consequences)) await read();
-      const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
+      const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId }, call);
       // The last action the domain put to the gate for this call, as the gate read it.
       let declared: AutomationStudioSiteResetDeclared | undefined;
       // For an undo, where the control the domain is about to act on sits, read before it acts (t475).
@@ -409,9 +421,10 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         if (!undo) {
           const action = permissionDeclaration(declaration);
           const needsBaseline = action.effect === "mutate" && action.consequences.length === 1 && action.consequences[0] === "create_new" && (action.controlSubject !== null || (action.controlItem === null && action.controlPage !== null));
-          let baseline: ReturnType<NonNullable<AutomationStudioSiteResetCalls["createBaseline"]>> | undefined;
+          let baseline: Awaited<ReturnType<NonNullable<AutomationStudioSiteResetCalls["createBaseline"]>>> | undefined;
           if (input.authoringMode === "project" || (input.requireCreateBaseline === true && call.toolId === "core.run_node" && typeof value.node === "string")) {
-            if (siteReset.createBaseline) baseline = siteReset.createBaseline({ effect: action.effect, consequences: action.effect === "observe" ? [] : action.consequences, control: { name: null, kind: null, ...placeOf(action) } }, call.value.resetDestination);
+            const createBaseline = siteReset.createBaseline;
+            if (createBaseline) baseline = await invokeAutomationStudioBuildToolAuxiliary(call, { receiver: siteReset, callback: createBaseline, args: [{ effect: action.effect, consequences: action.effect === "observe" ? [] : action.consequences, control: { name: null, kind: null, ...placeOf(action) } }, call.value.resetDestination] }, call.signal);
             else if (needsBaseline || (input.authoringMode === "project" && reversibleLasting(action))) baseline = { kind: "refused", evidence: { ok: false, code: "candidate.create_baseline_unavailable", instruction: "This lasting action was not run because the build's original-state preflight is unavailable. Looking and navigating remain safe; report the unavailable precondition instead of making an unproved effect. No new permission is required." } };
           }
           if (baseline?.kind === "refused") {
@@ -424,18 +437,20 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         }
         // Read as the gate reads it, so a declaration it would refuse to read is refused here the same way.
         const action = permissionDeclaration(declaration);
-        target = siteReset.target(undo.act, {
+        target = await invokeAutomationStudioBuildToolAuxiliary(call, { receiver: siteReset, callback: siteReset.target, args: [undo.act, {
           effect: action.effect,
           consequences: action.effect === "observe" ? [] : action.consequences,
           control: placeOf(action)
-        });
+        }] }, call.signal);
         // Another item's control: never acted on, and nobody is asked about it.
         if (target.kind === "refused") return { permitted: false, missing: [], requestId: null };
-        const verdict = await asking({ kind: "exploration_step", id: call.toolId, ref: call.callId, undoes: { act: undo.act, allowed: target.allowed } })(declaration);
+        const verdict = await asking({ kind: "exploration_step", id: call.toolId, ref: call.callId, undoes: { act: undo.act, allowed: target.allowed } }, call)(declaration);
         declared = declaredAs(gate, declaration, verdict.permitted);
         return verdict;
       };
-      const execution = await input.executeTool({ ...call, value, permission });
+      const placed = { ...call, value, permission };
+      inheritAutomationStudioBuildToolRequest(call, placed);
+      const execution = await invokeAutomationStudioBuildToolDelegate(placed, { receiver: input, callback: delegate, args: [placed] }, placed.signal);
       gate.observe(execution);
       // An undo puts a control back: its toggle answer is the reverse of the state a step asks for, so it never ties a step (t775).
       if (!undo) exploredToggles.explored({ ...call, value }, execution);
@@ -453,7 +468,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         ...(typeof call.value.resetDestination === "string" ? { resetDestination: call.value.resetDestination } : {}),
         landed: landed(execution)
       };
-      siteReset.explored(exploredCall);
+      await invokeAutomationStudioBuildToolAuxiliary(call, { receiver: siteReset, callback: siteReset.explored, args: [exploredCall] }, call.signal);
       if (target?.kind === "refused") {
         return { kind: "llm_evidence_tool_execution", evidence: target.evidence, effectApplied: false, targetsUnchanged: true, resultCode: target.evidence.code };
       }
@@ -465,29 +480,43 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       // A press that named a ref showing nothing of its change: the ledger's note beside the answer (t791 fix 3, `./site-reset/press-notes.ts`).
       if (exploredCall.note && isExecutionResult(execution)) return { ...execution, evidence: isRecord(execution.evidence) ? { ...execution.evidence, resetDestinationUnreached: exploredCall.note } : { resetDestinationUnreached: exploredCall.note, evidence: execution.evidence } };
       return execution;
-    },
-    planStep: Object.assign((step: Parameters<AutomationStudioFlowBootstrapActionPermissions["planStep"]>[0]): AutomationStudioActionPermissionCheck => {
-      const check = asking({ kind: "flow_step", id: step.definitionId, ref: step.ref });
-      return async (declaration) => {
+    }, input);
+  AutomationStudioBuildToolFactories.remember(executeTool, "frame");
+  const planStep = Object.assign((step: Parameters<AutomationStudioFlowBootstrapActionPermissions["planStep"]>[0]): AutomationStudioActionPermissionCheck => {
+    const witnessed = step.witnessed;
+    const observed = AuthoringExecutionScope.of(step.originalInvocation);
+    const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
+      const current = AuthoringExecutionScope.of(declaration) ?? AuthoringExecutionScope.of(step.originalInvocation);
+      if (((observed || (step.originalInvocation && AutomationStudioProjectBuildToolObservers.of(step.originalInvocation))) && !current) || (observed && current && (current.context.callbacks !== observed.context.callbacks || current.context.parent.reservation !== observed.context.parent.reservation))) throw new Error("execution_observation.plan_scope_required");
+      const originalCall = current?.context.toolRequest ?? (current ? declaration : undefined);
+      return await withAuthoringExecutionScope(current, [input, ...(originalCall ? [originalCall] : [])], async () => {
+        const check = asking({ kind: "flow_step", id: step.definitionId, ref: step.ref }, originalCall);
         const decision = await check(declaration);
         // The completion check is opaque to the loop, so a refusal inside it
         // has to stop the loop from here or it is asked again unanswerably.
         if (!decision.permitted) planRefused.abort();
         // The step's witness, from the one admission, for the resolver to stamp; never a refusal (t751, R3 door 2).
-        else if (step.witnessed) {
+        else if (witnessed) {
           const read = permissionDeclaration(declaration);
           if (reversibleLasting(read)) {
             const ask: AutomationStudioSiteResetStepAsk = { ref: step.ref };
-            const stamp = stepWitness(input.siteReset, { effect: read.effect, consequences: read.consequences, control: { name: null, kind: null, ...placeOf(read) } }, step.definitionId, ask);
-            step.witnessed(stamp);
+            const stamp = await stepWitness(originalCall, input.siteReset, { effect: read.effect, consequences: read.consequences, control: { name: null, kind: null, ...placeOf(read) } }, step.definitionId, ask);
+            await invokeAuthoringExecutionCallback(originalCall, { receiver: step, callback: witnessed, args: [stamp] });
             // A step with no stamp is noted for its submission; one stamped, or asked again, is not (header of `stepGaps`).
             if (stamp === undefined && ask.gap) stepGaps.set(step.ref, ask.gap);
             else stepGaps.delete(step.ref);
           }
         }
         return decision;
-      };
-    }, { gaps: (): ReadonlyMap<string, AutomationStudioSiteResetStepGap> => stepGaps }),
+      });
+    };
+    ExecutionCallbackPolicies.rememberLexical(permission, "frame");
+    return permission;
+  }, { gaps: (): ReadonlyMap<string, AutomationStudioSiteResetStepGap> => stepGaps });
+  ExecutionCallbackPolicies.rememberLexical(planStep, "pure");
+  return {
+    executeTool,
+    planStep,
     signal: planRefused.signal,
     instructed: () => gate.instructed,
     instructedLastingActs: async (acts) => {
@@ -535,10 +564,10 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
  * reading of that key. Only an own key counts; a call without one is never
  * asked about and goes to the domain as it came.
  */
-function claimed(siteReset: AutomationStudioSiteResetCalls, value: JsonObject): { value: JsonObject; claim: AutomationStudioSiteResetClaim } {
+async function claimed(siteReset: AutomationStudioSiteResetCalls, value: JsonObject, call: object): Promise<{ value: JsonObject; claim: AutomationStudioSiteResetClaim }> {
   const { resetDestination, [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: undoes, ...rest } = value;
   // The ref the same call names goes with the claim, so one no receipt printed is refused before the call runs (rerun round 2).
-  return { value: rest, claim: undoes === undefined ? { kind: "none" } : siteReset.claim(undoes, resetDestination) };
+  return { value: rest, claim: undoes === undefined ? { kind: "none" } : await invokeAutomationStudioBuildToolAuxiliary(call, { receiver: siteReset, callback: siteReset.claim, args: [undoes, resetDestination] }) };
 }
 
 /**
@@ -596,18 +625,11 @@ function reversibleLasting(read: AutomationStudioReadActionDeclaration): boolean
   return read.effect === "mutate" && read.consequences.length > 0 && read.consequences.every((consequence) => REVERSIBLE.has(consequence));
 }
 
-/**
- * The site reset's step admission, as this gate calls it (t751, R3 door 2): structural, so a ledger without it compiles
- * and answers nothing. Its answer is read whichever form it takes -- a stamp, or the admission's verdict -- and only a
- * valid stamp comes back.
- */
-type StepAdmitting = { admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string, ask?: AutomationStudioSiteResetStepAsk): unknown };
-
-/** The stamp the build's site reset admits a plan step's declaration with, or `undefined` (`StepAdmitting`). */
-function stepWitness(siteReset: AutomationStudioSiteResetCalls | undefined, declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string, ask?: AutomationStudioSiteResetStepAsk): AutomationStudioSiteResetWitnessStamp | undefined {
-  const admit = (siteReset as (AutomationStudioSiteResetCalls & StepAdmitting) | undefined)?.admitStep;
+/** Await the original admission and retain the legacy stamp/verdict interpretation. */
+async function stepWitness(originalInvocation: object | undefined, siteReset: AutomationStudioSiteResetCalls | undefined, declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string, ask?: AutomationStudioSiteResetStepAsk): Promise<AutomationStudioSiteResetWitnessStamp | undefined> {
+  const admit = siteReset?.admitStep;
   if (typeof admit !== "function") return undefined;
-  const answer: unknown = admit.call(siteReset, declared, definitionId, ask);
+  const answer: unknown = await invokeAuthoringExecutionCallback(originalInvocation, { receiver: siteReset, callback: admit, args: [declared, definitionId, ask] });
   if (automationStudioSiteResetWitnessStampValid(answer)) return answer;
   const witness = answer !== null && typeof answer === "object" && (answer as { kind?: unknown }).kind === "admit" ? (answer as { witness?: AutomationStudioSiteResetWitness }).witness : undefined;
   const stamp = witness === undefined ? undefined : witness.via === "destination" ? { via: witness.via, ref: witness.ref } : witness.via === "repeats" ? { via: witness.via, act: witness.act } : { via: witness.via };

@@ -3,6 +3,7 @@ import { runAutomationStudioCompiledPlan as runExecutablePlan } from "../../../e
 import type { AutomationStudioFlowDocument } from "../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../engine/automation/index.ts";
 import { automationStudioClassifyLegacyStepAct } from "./executor/compatibility/index.ts";
+import { copyAutomationExecutionOptions } from "../../../engine/automation/execution-admission/index.ts";
 
 export { AUTOMATION_STUDIO_COMPILED_PLAN_SCHEMA_VERSION, AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION, compileAutomationStudioPlan, assertAutomationStudioCompiledPlan } from "../../../flows/executable/compiled-plan/index.ts";
 export type { AutomationStudioCompiledPlanInstruction, AutomationStudioCompiledPlanNode, AutomationStudioCompiledPlanEdge, AutomationStudioCompiledPlan, CompileAutomationStudioPlanInput } from "../../../flows/executable/compiled-plan/index.ts";
@@ -15,5 +16,5 @@ export function compiledPlanToFlowDocument(plan: AutomationStudioCompiledPlan): 
 
 /** Supplies the interpretation used by pre-contract Studio documents. */
 export function runAutomationStudioCompiledPlan(plan: AutomationStudioCompiledPlan, options: AutomationStudioGraphExecutionOptions = {}): Promise<AutomationStudioGraphExecutionTrace> {
-  return runExecutablePlan(plan, { ...options, classifyLegacyStepAct: options.classifyLegacyStepAct ?? automationStudioClassifyLegacyStepAct });
+  return runExecutablePlan(plan, copyAutomationExecutionOptions(copyAutomationExecutionOptions(options), { classifyLegacyStepAct: options.classifyLegacyStepAct ?? automationStudioClassifyLegacyStepAct }));
 }

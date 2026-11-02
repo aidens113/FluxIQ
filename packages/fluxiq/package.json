@@ -148,6 +148,14 @@
       "types": "./dist/framework/index.d.ts",
       "import": "./dist/framework/index.js"
     },
+    "./framework/persistence": {
+      "types": "./dist/framework/persistence/index.d.ts",
+      "import": "./dist/framework/persistence/index.js"
+    },
+    "./framework/observability/performance": {
+      "types": "./dist/framework/observability/performance/index.d.ts",
+      "import": "./dist/framework/observability/performance/index.js"
+    },
     "./identity-access": {
       "types": "./dist/programs/identity-access/index.d.ts",
       "import": "./dist/programs/identity-access/index.js"
@@ -252,9 +260,61 @@
       "types": "./dist/runtime/flow-authoring/index.d.ts",
       "import": "./dist/runtime/flow-authoring/index.js"
     },
+    "./runtime/flow-authoring/execution": {
+      "types": "./dist/runtime/flow-authoring/execution/index.d.ts",
+      "import": "./dist/runtime/flow-authoring/execution/index.js"
+    },
     "./runtime/execution-admission": {
       "types": "./dist/runtime/execution-admission/index.d.ts",
       "import": "./dist/runtime/execution-admission/index.js"
+    },
+    "./runtime/execution-observation": {
+      "types": "./dist/runtime/execution-observation/index.d.ts",
+      "import": "./dist/runtime/execution-observation/index.js"
+    },
+    "./runtime/action-permissions": {
+      "types": "./dist/runtime/action-permissions/index.d.ts",
+      "import": "./dist/runtime/action-permissions/index.js"
+    },
+    "./runtime/action-permissions/client": {
+      "types": "./dist/runtime/action-permissions/client/index.d.ts",
+      "import": "./dist/runtime/action-permissions/client/index.js"
+    },
+    "./flows/executable/permissions": {
+      "types": "./dist/flows/executable/permissions/index.d.ts",
+      "import": "./dist/flows/executable/permissions/index.js"
+    },
+    "./flows/executable/recording": {
+      "types": "./dist/flows/executable/recording/index.d.ts",
+      "import": "./dist/flows/executable/recording/index.js"
+    },
+    "./flows/executable/verification": {
+      "types": "./dist/flows/executable/verification/index.d.ts",
+      "import": "./dist/flows/executable/verification/index.js"
+    },
+    "./runtime/recording/mapping": {
+      "types": "./dist/runtime/recording/mapping/index.d.ts",
+      "import": "./dist/runtime/recording/mapping/index.js"
+    },
+    "./runtime/recording/io": {
+      "types": "./dist/runtime/recording/io/index.d.ts",
+      "import": "./dist/runtime/recording/io/index.js"
+    },
+    "./runtime/result-verification": {
+      "types": "./dist/runtime/result-verification/index.d.ts",
+      "import": "./dist/runtime/result-verification/index.js"
+    },
+    "./runtime/adaptation": {
+      "types": "./dist/runtime/adaptation/index.d.ts",
+      "import": "./dist/runtime/adaptation/index.js"
+    },
+    "./components/automation/recording": {
+      "types": "./dist/components/automation/recording/index.d.ts",
+      "import": "./dist/components/automation/recording/index.js"
+    },
+    "./client-gateway/recording": {
+      "types": "./dist/client-gateway/recording/index.d.ts",
+      "import": "./dist/client-gateway/recording/index.js"
     }
   },
   "files": [

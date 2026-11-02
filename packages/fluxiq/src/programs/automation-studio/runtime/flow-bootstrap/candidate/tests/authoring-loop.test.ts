@@ -10,6 +10,9 @@ import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { runAutomationStudioFlowCandidateAuthoringLoop, AutomationStudioFlowCandidateSubmissionController } from "../index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/index.ts";
+import { bindAutomationStudioObservedBuildTools } from "../../../build-execution/index.ts";
+import { buildToolFixture } from "../../../build-execution/tools/tests/fixture.ts";
 
 const definition: AutomationStudioNodeDefinition = {
   schemaVersion: "0.1", id: "domain.demo.inspect", version: "1.0.0", label: "Inspect", description: "Inspect one value", category: "action",
@@ -26,6 +29,41 @@ function result(text = "reusable criterion"): JsonObject {
   ], edges: [{ key: "next", source: { nodeKey: "first", portId: "success" }, target: { nodeKey: "second", portId: "in" } }] }] } };
 }
 const submission = { projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base" };
+
+it.each(["unmapped", "foreign"] as const)("refuses an actual candidate submit wrapper's %s replacement before any decision or Host call", async mode => {
+  const f = await buildToolFixture();
+  let decisions = 0;
+  let writes = 0;
+  const loop: AutomationStudioLlmEvidenceLoopInput = {
+    tools: [],
+    executeTool: async () => {
+      writes += 1;
+      return {};
+    },
+    decide: async () => {
+      decisions += 1;
+      return { kind: "complete", result: {} };
+    }
+  };
+  bindAutomationStudioObservedBuildTools(loop, f.observer);
+  if (mode === "unmapped") loop.executeTool = async () => {
+    writes += 1;
+    return {};
+  };
+  else {
+    const foreign = await buildToolFixture();
+    const replacement = { executeTool: async () => {
+      writes += 1;
+      return {};
+    } };
+    bindAutomationStudioObservedBuildTools(replacement, foreign.observer);
+    loop.executeTool = replacement.executeTool;
+  }
+  await expect(runAutomationStudioFlowCandidateAuthoringLoop({ submission, loop })).rejects.toThrow("execution_observation.tool_binding_changed");
+  expect(decisions).toBe(0);
+  expect(writes).toBe(0);
+  expect(f.issued).toEqual([]);
+});
 
 describe("explicit candidate authoring", () => {
   it("tests an accepted receipt with one cost-counted decision left before completing", async () => {

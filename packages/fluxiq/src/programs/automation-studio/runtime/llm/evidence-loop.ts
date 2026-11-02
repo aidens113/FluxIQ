@@ -1,4 +1,6 @@
 import { runAgentIterations, type AgentIterationResult } from "../../../../runtime/agents/iteration/index.ts";
+import { candidateTrialReentry } from "../candidate-trials/reentry/index.ts";
+import { createAutomationStudioStallRecoveryEntry } from "./stall-recovery/index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
@@ -15,8 +17,7 @@ import {
   automationStudioLlmDecisionContextSignature,
   automationStudioLlmDecisionContextSupersede
 } from "./decision-context/index.ts";
-// What the loop does with each kind of answer it gives the model -- a completion, an amendment, a failed call, a request
-// answered from what it holds -- each handed the loop's state as one context object (`decision-handlers/`).
+// Decision handlers share the loop's original settlement context.
 import {
   automationStudioLlmEvidenceAnswerCheck,
   automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
@@ -69,7 +70,6 @@ import {
 } from "./evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceLookWasRefused, automationStudioLlmEvidenceNothingHappened, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
 import { automationStudioLlmEvidenceRefusedActionRetest } from "./refused-action-retest.ts";
-// Configuration stays re-exported below for existing callers.
 import { automationStudioLlmEvidenceLoopSeedSteps, resolveLimits, type AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
 import { automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, automationStudioLlmEvidenceLoopWrapUp, type AutomationStudioLlmEvidenceLoopBudget, type AutomationStudioLlmEvidenceLoopRemaining } from "./loop-budget.ts";
 import {
@@ -150,6 +150,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     return scope ? { ...scope, loop } : undefined;
   };
   const provenance = createAutomationStudioLlmRerunProvenance({ currentScope });
+  const reentry = candidateTrialReentry(untraced);
   const input = { ...traced, tools: Array.isArray(traced.tools) ? traced.tools.filter((tool) => tool?.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID) : traced.tools, executeTool: ((request) => provenance.capture(request, traced.executeTool)) as AutomationStudioLlmEvidenceLoopInput["executeTool"] };
   const limits = resolveLimits(input);
   try {
@@ -377,10 +378,12 @@ export async function runAutomationStudioLlmEvidenceLoop(
   };
   const batchHandling = automationStudioLlmPriorNodesSettlementContext(handling);
   const eligibleNow = () => looks.offer(tools.filter((tool) => runFlow.offered(tool) && (!automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools) || observationEpochs.get(tool.toolId) !== counters.attemptEpoch)), counters.attemptEpoch);
-  const admission = (decision: { toolId: string; input: JsonObject }, context: { eligibleToolIds: ReadonlySet<string>; offered: readonly AutomationStudioLlmEvidenceTool[]; withholds(toolId: string, value: JsonObject): boolean }, options: { rerunning?: boolean; priorSuccessful?: boolean } = {}) => automationStudioLlmEvidenceToolAdmission({
+  let recoveryContext: { eligibleToolIds: ReadonlySet<string>; offered: readonly AutomationStudioLlmEvidenceTool[]; withholds(toolId: string, value: JsonObject): boolean } | undefined;
+  const admission = (decision: { toolId: string; input: JsonObject }, context: { eligibleToolIds: ReadonlySet<string>; offered: readonly AutomationStudioLlmEvidenceTool[]; withholds(toolId: string, value: JsonObject): boolean }, options: { rerunning?: boolean; priorSuccessful?: boolean; candidateReentry?: boolean } = {}) => automationStudioLlmEvidenceToolAdmission({
     toolId: decision.toolId, value: decision.input, toolsById, ...context, looks, repeats: handling.repeats, answeredRequests, latestObservations,
     attemptEpoch: counters.attemptEpoch, mutationEpoch: counters.mutationEpoch, draftKey: draftOf(decision.toolId), discoveryOnly: input.discoveryOnly === true,
-    finalDecision, remaining: lastRemaining, deadlineExpired: input.budget?.maxDurationMs !== undefined && clock() - startedAtMs >= input.budget.maxDurationMs, ...options
+    finalDecision, remaining: lastRemaining, deadlineExpired: input.budget?.maxDurationMs !== undefined && clock() - startedAtMs >= input.budget.maxDurationMs,
+    ...options, reentry: options.candidateReentry && !input.signal?.aborted ? reentry : undefined
   });
   const priorNodes = automationStudioLlmPriorNodesLoop({ context: handling, toolIds, toolsById, provenance, currentScope, eligible: eligibleNow, admission, remaining: () => lastRemaining, purse, clock, startedAtMs, callIds, runCall: (...args) => runCall(...args) });
   // Ordinary calls and batch members share settlement; batch members never author or recover.
@@ -531,8 +534,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (searching) { if (input.propagateDecisionErrors) throw searching.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
     return undefined;
   };
-  // The move a stall is recovered with, run as the loop's own call (`decision-handlers/stall-recovery.ts`, t477).
-  const recover = (iteration: number, call: ToolCall): Promise<AutomationStudioLlmEvidenceLoopResult | undefined> => runCall(iteration, call.callId, call, toolsById.get(call.toolId)!, automationStudioLlmEvidenceRequestSignature({ tool: toolsById.get(call.toolId)!, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: call.input }));
+  const recover = createAutomationStudioStallRecoveryEntry({ signal: input.signal, canRun: () => accounting.toolCalls < limits.maxToolCalls,
+    admit: call => recoveryContext ? admission(call, recoveryContext, { candidateReentry: true }) : undefined,
+    run: (iteration, call, tool, signature) => runCall(iteration, call.callId, call, tool, signature),
+    exhausted: () => exhausted("tool_calls"), refused: () => failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting), recovered: () => handling.repeats.stallRecovered()
+  });
   const initialTool = input.tools.find((tool) => tool.initialObservation);
   // A draft already holding the Flow (a repair's, a re-author's) opens with the look where the test left the page, never the arrival (run 38 C3), and
   // the look carries the Flow's calls as written under `held`, so the domain keeps where the build arrived and the addresses it held (C8).
@@ -648,6 +654,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining, canComplete, candidate: input.discoveryOnly === true, tools: eligibleTools, finishing: input.finishingTools }); const { wrappingUp } = wrapUp;
     const batchOffer = priorNodes.offer(wrapUp.offered, wrapUp.withholds);
     const offered = batchOffer.tools;
+    recoveryContext = { eligibleToolIds, offered, withholds: wrapUp.withholds };
     const offers = (): AutomationStudioLlmUnusableDecisionOffers => ({ tools: offered.length > 0, complete: canComplete, amend: canAmend });
     // A reply read and still not a decision this iteration offered (`./evidence-loop/decision-refusal.ts`).
     let refusal: ReturnType<typeof automationStudioLlmEvidenceDecisionRefusal> = undefined;
@@ -732,18 +739,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (ended) return { kind: "complete", result: ended };
       return { kind: "continue" };
     }
-    // A look withdrawn after an ignored redirect, asked for anyway: refused as
-    // an unusable decision -- never run, and never answered from memory, which
-    // is the move being taken away (`decision-handlers/look-withdrawal.ts`).
-    const admitted = admission(decision, { eligibleToolIds, offered, withholds: wrapUp.withholds }, { rerunning });
+    // Withdrawn looks remain unusable and are never run or answered from memory.
+    const admitted = admission(decision, { eligibleToolIds, offered, withholds: wrapUp.withholds }, { rerunning, candidateReentry: true });
     if (admitted.withdrawn) {
       const ended = automationStudioLlmEvidenceToolWithdrawal({ context: handling, iteration, decision, refuse: (codes) => refuseDecision(iteration, codes, offers(), decision.usage) });
       if (ended) return { kind: "complete", result: ended };
       return { kind: "continue" };
     }
     counters.unusableInARow = 0;
-    // A candidate's offered finishing tool may use the final slot; ordinary
-    // tool/cash gates still apply. An expired deadline cannot start a new tool.
+    // Offered candidate finishing tools retain their final slot; deadlines and cash still bind.
     if (admitted.deadline) {
       lastRemaining = { ...lastRemaining, decisionsLeft: 0, limitedBy: "duration", secondsLeft: 0 };
       recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds, "llm_evidence_loop.duration_limit"));
@@ -751,8 +755,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     }
     if (admitted.final) { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return { kind: "complete", result: exhausted("budget") }; }
     if (!admitted.tool) return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting) };
-    // A repeat is answered from what the loop already holds. Checked before the
-    // call id, so a request repeated word for word is a repeat, not a clash.
+    // Repeat checks precede call-id conflict handling.
     const tool = admitted.tool;
     const toolRequestSignature = admitted.signature!;
     // `tool-admission.ts` shares the offering/repeat facts with each batch member.
@@ -779,15 +782,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
       }
       verifying = check;
     }
-    // A call id the model already used names a different request here, so the
-    // loop gives it one of its own rather than ending: the ids are the model's
-    // bookkeeping, and the evidence only needs them to be distinct.
+    // Distinct requests receive distinct evidence ids, even when the model reuses one.
     const callId = automationStudioLlmEvidenceUnusedCallId(callIds, decision.callId);
-    // Turns left, but no allowance to run anything with them. This reported
-    // `iteration_limit` with nothing to say which of the two ceilings it was --
-    // the same borrowing, one file down, that made an exhausted loop read as a
-    // refused one. Same code, because both are an allowance running out; the
-    // record now names which.
+    // Name the tool-call allowance when it runs out before the decision allowance.
     if (accounting.toolCalls >= limits.maxToolCalls) return { kind: "complete", result: exhausted("tool_calls") };
     const ended = await runCall(iteration, callId, decision, tool, toolRequestSignature, { replaces: rerunReplaces, held: rerunHeld, verifying });
     if (ended) return { kind: "complete", result: ended };
@@ -796,5 +793,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     },
     exhausted: () => exhausted("iterations")
   });
-  } finally { provenance.dispose(); }
+  } finally {
+    reentry?.dispose();
+    provenance.dispose();
+  }
 }

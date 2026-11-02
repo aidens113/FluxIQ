@@ -62,6 +62,7 @@ import {
 import { automationStudioInstructedActs } from "../flow-bootstrap/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type runAutomationStudioLlmHarness } from "../llm/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
+import { createActionInstructionAuthority } from "../../../../runtime/action-permissions/instruction/once/index.ts";
 
 type HarnessInput = Parameters<typeof runAutomationStudioLlmHarness>[0];
 type HarnessResult = Awaited<ReturnType<typeof runAutomationStudioLlmHarness>>;
@@ -89,10 +90,6 @@ const READ_DECISION = "This call reads the person's instructions alone: there is
 /** The build's route, from the same one read as its consequences (`../action-permissions/instruction-route/accessor.ts`). */
 export type AutomationStudioInstructionAuthorityRoute = AutomationStudioInstructionRouteAccessor;
 
-/** The one read's outcome, held whatever it was so nothing reads again: its answer, or what it threw. */
-type Outcome = { answer: AutomationStudioInstructionReading } | { failed: unknown };
-
-const TRANSPORT: AutomationStudioInstructionRouteReading = Object.freeze({ state: "unavailable", reason: "transport" });
 const NON_COMPLETE: AutomationStudioInstructionRouteReading = Object.freeze({ state: "unavailable", reason: "non_complete" });
 
 export function automationStudioFlowBootstrapInstructionAuthority(input: {
@@ -140,24 +137,5 @@ export function automationStudioFlowBootstrapInstructionAuthority(input: {
     if (decision?.kind !== "complete") return { instructed: automationStudioInstructedReadUnanswered(acts), route: NON_COMPLETE };
     return readAutomationStudioInstructionReading({ result: decision.result, instructions: input.active, acts });
   };
-  // Set before anything awaits it, so callers at once share the one call.
-  let reading: Promise<Outcome> | undefined;
-  let known: AutomationStudioInstructionRouteReading = { state: "unread" };
-  const read = (): Promise<Outcome> => reading ??= ask().then(
-    (answer): Outcome => { known = answer.route; return { answer }; },
-    (failed: unknown): Outcome => { known = TRANSPORT; return { failed }; }
-  );
-  const derive = async (): Promise<AutomationStudioInstructedRead> => {
-    const outcome = await read();
-    if ("failed" in outcome) throw outcome.failed;
-    return outcome.answer.instructed;
-  };
-  const route: AutomationStudioInstructionAuthorityRoute = {
-    read: async () => {
-      const outcome = await read();
-      return "failed" in outcome ? TRANSPORT : outcome.answer.route;
-    },
-    peek: () => known
-  };
-  return { derive, route, usage };
+  return { ...createActionInstructionAuthority({ read: ask }), usage };
 }

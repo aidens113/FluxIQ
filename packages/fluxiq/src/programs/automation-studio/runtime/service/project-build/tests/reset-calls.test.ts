@@ -1,5 +1,18 @@
+// @fluxiq-test-group real-sql
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { AutomationStudioSiteResetProjectLedger } from "../../../flow-bootstrap/site-reset/index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import { AuthoringExecutionScope, invokeAuthoringExecutionCallback } from "../../../../../../runtime/flow-authoring/execution/observation/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../../runtime/execution-observation/policies/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../storage/project/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../storage/project/execution-admission/index.ts";
+import { sqlAdmissionAuthority, sqlAdmissionFixture } from "../../../../storage/project/execution-admission/tests/fixture.ts";
+import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetProjectSnapshot } from "../../../flow-bootstrap/site-reset/index.ts";
+import { AutomationStudioProjectBuildDocuments } from "../../../project-agents/record/index.ts";
+import { AutomationStudioProjectWriteCompletion, invokeAutomationStudioProjectWriteCallback } from "../../../project-agents/record-completion/index.ts";
+import { queuedWriterFixture } from "../../../project-agents/record-completion/tests/fixture.ts";
+import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import { automationStudioProjectBuildResetCalls } from "../reset-calls.ts";
 
 const read = (subjects: string[]) => ({ state: {}, differs: [], scope: "p:destination", location: "destination", subjects, collections: [{ scope: "p:destination", group: "g:page", subjects, states: Object.fromEntries(subjects.map((subject) => [subject, `v:${subject}`])) }] });
@@ -119,7 +132,7 @@ describe("a refused claim lists the whole build's open acts", () => {
     for (const act of open) expect(act.settle).toContain("resetDestination");
   });
 
-  it("answers a repeat of a settled act's undo with the other brief's open act, not an empty list", () => {
+  it("answers a repeat of a settled act's undo with the other brief's open act, not an empty list", async () => {
     const { first, reset } = twoBriefs();
     // A look naming act-1 under undoes with the list's ref, then that list read complete and unchanged: act-1 is left.
     expect(reset.claim("act-1", "destination-1")).toMatchObject({ kind: "undo" });
@@ -127,21 +140,21 @@ describe("a refused claim lists the whole build's open acts", () => {
     reset.observed(recipes(["s:soup", "s:stew"]));
     expect(reset.standing("act-1")).toBe("unchanged");
     expect(first.inPlace()).toEqual([]);
-    const repeat = reset.claim("act-1", "destination-1");
+    const repeat = await reset.claim("act-1", "destination-1");
     expect(repeat).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept" } });
     const acts = repeat.kind === "refused" ? repeat.evidence.actsToUndo as Array<{ act: string; settle?: string }> : [];
     expect(acts.map((act) => act.act)).toEqual(["act-2"]);
     expect(acts[0]!.settle).toContain("resetDestination");
   });
 
-  it("answers an unknown act, claimed or targeted, with every open act and words that say some are listed", () => {
+  it("answers an unknown act, claimed or targeted, with every open act and words that say some are listed", async () => {
     const { reset } = twoBriefs();
-    const unknown = reset.claim("act-9");
+    const unknown = await reset.claim("act-9");
     expect(unknown).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act" } });
     const evidence = unknown.kind === "refused" ? unknown.evidence : {};
     expect((evidence.actsToUndo as Array<{ act: string }>).map((act) => act.act)).toEqual(["act-1", "act-2"]);
     expect(String(evidence.instruction)).toContain("Name one of the acts listed here");
-    const targeted = reset.target("act-9", { effect: "mutate", consequences: ["modify_existing"], control: { subject: "s:pie" } });
+    const targeted = await reset.target("act-9", { effect: "mutate", consequences: ["modify_existing"], control: { subject: "s:pie" } });
     const listed = targeted.kind === "refused" ? targeted.evidence.actsToUndo as Array<{ act: string }> : [];
     expect(listed.map((act) => act.act)).toEqual(["act-1", "act-2"]);
   });
@@ -158,3 +171,139 @@ describe("a refused claim lists the whole build's open acts", () => {
     expect(reset.openActs()).toEqual([]);
   });
 });
+
+describe("the observed project reset facade", () => {
+  it("awaits its actual owner sink and held SQL commit before acknowledging exploration", async () => sqlAdmissionFixture(async sql => {
+    const held = await heldProject(sql.root);
+    const own = held.project.forBrief("builder.actual");
+    const calls = automationStudioProjectBuildResetCalls(held.project, own);
+    expect(calls.observed(read([]))).toBeUndefined();
+    const f = await queuedWriterFixture(sql.store, "owned.reset-facade:" + sql.root);
+    let completed = false;
+    const work = f.run({ receiver: calls, callback: calls.explored, args: [add] }, calls).then(value => {
+      completed = true;
+      return value;
+    });
+    try {
+      await Promise.race([held.entered, work.then(() => { throw new Error("The facade returned before its original persist callback entered."); })]);
+      expect(completed).toBe(false);
+      expect(held.commits()).toBe(0);
+      held.release();
+      await expect(work).resolves.toBeUndefined();
+    } finally {
+      held.release();
+      await Promise.allSettled([work]);
+    }
+    expect(held.commits()).toBe(1);
+    expect(f.released()).toBe(true);
+    expect((await f.assembly.consumer.inspect(f.scope)).state).toBe("clear");
+    expect(await held.documents.read(held.ref, "ledger")).toEqual(held.project.snapshot());
+    expect(AuthoringExecutionScope.of(calls)).toBeUndefined();
+    expect(AuthoringExecutionScope.of(own)).toBeUndefined();
+  }));
+
+  it("preserves an unsupported owner's first fulfilled result and durably blocks its second write", async () => sqlAdmissionFixture(async sql => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const own = project.forBrief("builder.actual");
+    let writes = 0;
+    let actualReceiver: unknown;
+    let actualArgument: unknown;
+    own.explored = function (this: AutomationStudioSiteResetLedger, call) {
+      actualReceiver = this;
+      actualArgument = call;
+      writes++;
+      return Promise.resolve();
+    };
+    const calls = automationStudioProjectBuildResetCalls(project, own);
+    const resource = "owned.reset-unsupported:" + sql.root;
+    const f = await queuedWriterFixture(sql.store, resource);
+    await expect(f.run({ receiver: calls, callback: calls.explored, args: [add] }, calls)).resolves.toBeUndefined();
+    expect(actualReceiver).toBe(own);
+    expect(actualArgument).toBe(add);
+    expect(writes).toBe(1);
+    expect((await f.assembly.consumer.inspect(f.scope)).state).toBe("pending");
+    await reopenedRefusal(sql.root, resource);
+    expect(writes).toBe(1);
+  }));
+
+  it("observes the actual project snapshot override instead of trusting a data-shaped result", async () => sqlAdmissionFixture(async sql => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const own = project.forBrief("builder.actual");
+    const original = project.snapshot();
+    let writes = 0;
+    project.snapshot = function (this: AutomationStudioSiteResetProjectLedger) {
+      expect(this).toBe(project);
+      writes++;
+      return original;
+    };
+    const calls = automationStudioProjectBuildResetCalls(project, own);
+    const resource = "owned.reset-data-override:" + sql.root;
+    const f = await queuedWriterFixture(sql.store, resource);
+    await expect(f.run({ receiver: calls, callback: calls.openActs, args: [] }, calls)).resolves.toEqual([]);
+    expect(writes).toBe(1);
+    expect((await f.assembly.consumer.inspect(f.scope)).state).toBe("pending");
+    await reopenedRefusal(sql.root, resource);
+    expect(writes).toBe(1);
+  }));
+
+  it("retains current scope on real claims, targets and complete build-wide refusal projection", async () => sqlAdmissionFixture(async sql => {
+    const project = new AutomationStudioSiteResetProjectLedger();
+    const own = project.forBrief("builder.actual");
+    own.explored({ ...add, declared: { ...add.declared, consequences: ["modify_existing"] } });
+    const calls = automationStudioProjectBuildResetCalls(project, project.forBrief("reset.actual"));
+    const original = Object.freeze({});
+    const frame = {
+      async run() {
+        const claim = await invokeAuthoringExecutionCallback(original, { receiver: calls, callback: calls.claim, args: ["act.missing", undefined] });
+        const target = await invokeAuthoringExecutionCallback(original, { receiver: calls, callback: calls.target, args: ["act.missing", deletion] });
+        return { claim, target };
+      }
+    };
+    ExecutionCallbackPolicies.remember(frame, frame.run, "frame");
+    const f = await queuedWriterFixture(sql.store, "owned.reset-refusal:" + sql.root);
+    const result = await f.run({ receiver: frame, callback: frame.run, args: [] }, original);
+    expect(result.claim).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act", actsToUndo: [], actsUnsettleable: [{ act: "act-1" }] } });
+    expect(result.target).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_unknown_act", actsToUndo: [], actsUnsettleable: [{ act: "act-1" }] } });
+    expect((await f.assembly.consumer.inspect(f.scope)).state).toBe("clear");
+  }));
+});
+
+async function heldProject(root: string) {
+  await writeFile(path.join(root, "config.json"), JSON.stringify({ layoutVersion: 2 }));
+  const projects = new AutomationStudioProjectPaths(path.join(root, "programs", "automation-studio", "projects"));
+  const documents = new AutomationStudioProjectBuildDocuments(projects, new AutomationStudioFlowPaths(projects));
+  const ref = { projectId: "project.isolated", flowId: "flow.actual", buildId: "build.actual" };
+  let release!: () => void;
+  let announce!: () => void;
+  let commits = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const entered = new Promise<void>(resolve => { announce = resolve; });
+  const persist = function (this: undefined, snapshot: AutomationStudioSiteResetProjectSnapshot): Promise<void> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(snapshot);
+    const change = (): JsonObject => JSON.parse(JSON.stringify(snapshot));
+    ExecutionCallbackPolicies.rememberLexical(change, "pure");
+    const child = Object.freeze({});
+    const args: Parameters<typeof documents.update> = [ref, "ledger", change, child];
+    const call = { receiver: documents, callback: documents.update, args };
+    announce();
+    const returned = gate.then(() => invokeAutomationStudioProjectWriteCallback(frame, call, child)).then(() => {
+      commits++;
+      completion.completed(returned, frame, { disposition: "settled", completionDigest: "fixture.actual-held-document-commit", assessmentDigest: "fixture.original-owner-completed" });
+    });
+    return returned;
+  };
+  const completion = AutomationStudioProjectWriteCompletion.for(undefined, persist);
+  return { project: new AutomationStudioSiteResetProjectLedger({ persist }), documents, ref, entered, release, commits: () => commits };
+}
+
+async function reopenedRefusal(root: string, resource: string): Promise<void> {
+  const pool = new AutomationStudioProjectDatabasePool({ rootDir: root });
+  const store = await AutomationStudioProjectExecutionAdmissionStore.open({ pool, projectId: "project.isolated" });
+  try {
+    const next = await sqlAdmissionAuthority(store, { resources: [resource], series: true, epoch: "epoch.reopened", runId: "run.reopened" });
+    await expect(next.assembly.consumer.reserve(next.scope, next.grant)).rejects.toThrow("execution_blocked");
+  } finally {
+    await store.close();
+    await pool.closeAll();
+  }
+}

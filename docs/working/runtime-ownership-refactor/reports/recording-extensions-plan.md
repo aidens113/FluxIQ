@@ -3,6 +3,12 @@
 Outcome: Done — report-only dispatch plan against frozen t843 foundations.
 Changed: This report only. No source, tests, builds, configuration or git actions.
 
+## Lead-accepted implementation amendments
+
+The SDK normalized candidate/evidence/bound-mapper authorities and trusted parameter-normalizer type now exist. The implementation-bundle member is `recordingCandidateParameterNormalizer`; the bound mapper exposes `normalizeParameters`. Original function and original bundle receiver are pinned, and same-function re-registration retains that receiver. Canonical absence shallow-copies parameters; no browser fallback is supplied.
+
+After reading the actual old gateway implementation, the lead accepted a narrow scope correction: when a context provider is configured, its approved project is authoritative, replacing the old request-over-provider override. The provider sees the request and may approve its requested project explicitly. Without a provider, existing explicit-request behavior and missing-project refusal remain unchanged; direct host calls retain request-over-session precedence. Matching subsequent entries and Stop use the stored approved address, while old recording IDs retain their own remembered address. This is an engineering correction, not a newly attributed user instruction.
+
 ## First dispatchable unit
 
 Dispatch indexing first. Its actual sort/link/lookup/build closure can move

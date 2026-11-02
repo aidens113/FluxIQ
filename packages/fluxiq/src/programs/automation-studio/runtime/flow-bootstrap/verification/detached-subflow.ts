@@ -51,6 +51,7 @@
 // The step is the one every phase of a project build arrives by, the
 // assembled Flow's first step included (`./arrival-node.ts`, t593).
 
+import { inheritAutomationExecutionObservation } from "../../../../../engine/automation/execution-admission/index.ts";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../model/index.ts";
@@ -160,8 +161,10 @@ export async function runAutomationStudioDetachedSubflow(input: AutomationStudio
   const now = input.options?.now ?? Date.now;
   const startedAt = now();
   const { referenceNow: suppliedReferenceNow, ...baseOptions } = input.options ?? {};
+  if (input.options) inheritAutomationExecutionObservation(input.options, baseOptions);
   const referenceNow = automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
   const options = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
+  inheritAutomationExecutionObservation(baseOptions, options);
   const candidateIdentity = automationStudioDetachedSubflowCandidateIdentity(identity);
   const refused = (code: string, extra: Pick<AutomationStudioDetachedSubflowResult, "planIssues"> = {}): AutomationStudioDetachedSubflowResult => ({
     partial: true,
@@ -234,6 +237,7 @@ export async function runAutomationStudioDetachedSubflow(input: AutomationStudio
   // The target started from its prepared entry once its own root frame began.
   return answered(before ? joined(before, after) : after, { prepared: after.trace !== undefined });
 }
+
 
 type Ran = Awaited<ReturnType<typeof runAutomationStudioDetachedCandidate>>;
 

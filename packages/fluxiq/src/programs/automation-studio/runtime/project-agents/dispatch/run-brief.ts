@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies } from "../../flow-bootstrap/reset-observation/index.ts";
 import { AutomationStudioSubflowPendingRepair, AutomationStudioSubflowRepeatedAdvice, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../executor/index.ts";
 import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
@@ -384,7 +385,11 @@ async function run(input: {
   STANDING.set(dispatcher, standingNos);
   const advised = ADVISED.get(dispatcher) ?? new Map<string, unknown[]>();
   ADVISED.set(dispatcher, advised);
-  const trialPort = (port: NonNullable<typeof ports.trial>) => automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, advised, remember: (ref, trial) => remember(dispatcher, ref, trial) });
+  const trialPort = (port: NonNullable<typeof ports.trial>) => {
+    const keepTrial = (ref: AutomationStudioProjectReceiptRef, trial: AutomationStudioSubflowTrialResult) => remember(dispatcher, ref, trial);
+    AutomationStudioSiteResetCallbackPolicies.rememberLexical(keepTrial, "pure");
+    return automationStudioProjectDispatchTrialPort({ port, scope: mapped.scope, receipts, spend, standingNos, advised, remember: keepTrial });
+  };
   // A single-subflow plan's brief tests the judged whole run instead, through the same wrapper (header, t679).
   const whole = input.wholeTrial ? new AutomationStudioProjectWholeTestPort(input.wholeTrial, ports.trial, trialPort, dispatcher.trialled) : undefined;
   if (whole) spend.wholeTest = true;

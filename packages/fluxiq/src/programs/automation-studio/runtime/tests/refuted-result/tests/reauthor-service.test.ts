@@ -15,7 +15,7 @@ import {
   AutomationStudioService,
   type AutomationStudioLlmProviderResolverInput,
 } from "../../../service.ts";
-import { automationStudioReplayingBinding, type AutomationStudioReplayingBindingCalls } from "../../replaying-binding.ts";
+import { automationStudioReplayingBinding, type AutomationStudioReplayingBindingCalls } from "../../replaying-binding/index.ts";
 import {
   adaptiveTrainingMetadata,
 } from "../../service-fixtures.ts";
@@ -28,7 +28,7 @@ import {
 // test runs that Flow whole and the judge's yes about it is what lets the
 // adaptation be approved and applied. That is one more decision per re-author
 // than before. The stand-in domain says how to run its steps again through
-// `automationStudioReplayingBinding` (`../../replaying-binding.ts`).
+// `automationStudioReplayingBinding` (`../../replaying-binding/index.ts`).
 
 const ACTOR = {
   actorUserId: "user-t240",

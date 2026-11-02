@@ -53,7 +53,7 @@ import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioL
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { automationStudioReplayingBinding } from "../../../tests/replaying-binding.ts";
+import { automationStudioReplayingBinding } from "../../../tests/replaying-binding/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_EXPLORE, automationStudioConversationCommandWork } from "../index.ts";
 
 const OPEN_ID = "domain.example.open";

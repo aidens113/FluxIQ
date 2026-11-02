@@ -11,5 +11,8 @@ export * from "./recovery/index.ts";
 export * from "./regions/compilation/index.ts";
 export type { ExecutableDefinitionStatus } from "./definition-status.ts";
 export * from "./routing/index.ts";
+export * from "./permissions/index.ts";
+export * from "./recording/index.ts";
 export * from "./compiled-plan/index.ts";
 export * from "./change/index.ts";
+export * from "./verification/index.ts";

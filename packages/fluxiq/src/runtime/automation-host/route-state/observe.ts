@@ -2,6 +2,7 @@
 // such state passes before a route or a model is shown it.
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../index.ts";
+import { invokeObservedExecutionCallback, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
 
 export type AutomationStudioRouteStateObservation =
   | { ok: true; state: JsonObject }
@@ -13,17 +14,17 @@ export async function observeAutomationStudioRouteState(input: {
   projectId: string;
   flowId: string;
   signal?: AbortSignal;
-}): Promise<AutomationStudioRouteStateObservation> {
+}, observation?: ExecutionCallbackObservation): Promise<AutomationStudioRouteStateObservation> {
   if (!input.projectId) return { ok: false, reason: "The execution supplied no host project scope to observe." };
   const observe = input.hostRuntime?.observeRouteState;
   if (!observe) return { ok: false, reason: "The host observes no state here, so only inputs.* can be tested." };
   let state: unknown;
   try {
-    state = await Promise.resolve(observe.call(input.hostRuntime, {
+    state = await invokeObservedExecutionCallback(observation, { receiver: input.hostRuntime, callback: observe, args: [{
       projectId: input.projectId,
       flowId: input.flowId,
       ...(input.signal ? { signal: input.signal } : {})
-    }));
+    }] }, input.signal);
   } catch {
     return { ok: false, reason: "The host could not observe the state just now." };
   }

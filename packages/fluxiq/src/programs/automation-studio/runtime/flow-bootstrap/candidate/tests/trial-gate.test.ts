@@ -4,6 +4,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID } from "../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "../../plan/index.ts";
 import { automationStudioCandidateRetestAdvised as gateRetestAdvised } from "../trial-gate.ts";
+import { observeCandidateTrialFixture } from "../../../candidate-trials/authority/tests/observed-port.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID,
@@ -43,14 +44,17 @@ const receipt = (evidence: readonly Entry[]) => { const value = latestOf("core.s
 const submit = (text?: string): Step => () => ({ kind: "tool_call", toolId: "core.submit_candidate", callId: `submit.${text ?? "same"}.${Math.random().toString(36).slice(2, 8)}`, input: plan(text) });
 const test: Step = (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId: `test.${Math.random().toString(36).slice(2, 8)}`, input: receipt(evidence) });
 const complete: Step = (evidence) => ({ kind: "complete", result: receipt(evidence) });
+const noDispatchPorts = new WeakSet<object>();
 
 /** Runs the loop over the scripted steps; what each decision saw is kept, and the loop stops when the script runs out. */
 async function run(steps: Step[], port?: (request: AutomationStudioCandidateTrialRequest) => Promise<AutomationStudioCandidateTrialResult>, explored: JsonObject = { looked: true }, stateDigests?: { before: string; after: string }) {
   const seen: Entry[][] = [];
   let index = 0;
+  const trial = port ? { candidateId: "candidate.under-test", port } : undefined;
+  const observed = trial && noDispatchPorts.has(trial.port) ? await observeCandidateTrialFixture(trial) : undefined;
   const outcome = await runAutomationStudioFlowCandidateAuthoringLoop({
     submission,
-    ...(port ? { trial: { candidateId: "candidate.under-test", port } } : {}),
+    ...(trial ? { trial } : {}),
     loop: {
       tools: [{ toolId: "demo.explore", effect: "mutate", description: "Explore", inputSchema: { type: "object" } }], maxIterations: steps.length, maxToolCalls: steps.length,
       unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
@@ -63,12 +67,16 @@ async function run(steps: Step[], port?: (request: AutomationStudioCandidateTria
       }
     }
   }).catch((error: unknown) => ({ error }));
-  return { outcome, seen };
+  return { outcome, seen, observed, inspection: observed ? await observed.assembly.consumer.inspect(observed.scope) : undefined };
 }
-const verdictPort = (verdicts: AutomationStudioCandidateTrialVerdict[], asked: AutomationStudioCandidateTrialRequest[] = []) => async (request: AutomationStudioCandidateTrialRequest): Promise<AutomationStudioCandidateTrialResult> => {
+const verdictPort = (verdicts: AutomationStudioCandidateTrialVerdict[], asked: AutomationStudioCandidateTrialRequest[] = []) => {
+  const port = async (request: AutomationStudioCandidateTrialRequest): Promise<AutomationStudioCandidateTrialResult> => {
   asked.push(request);
   const verdict = verdicts.shift() ?? "no";
   return { revision: request.revision, digest: request.digest, verdict, feedback: { said: `judge said ${verdict}` }, trialRunId: `run.${asked.length}` };
+  };
+  noDispatchPorts.add(port);
+  return port;
 };
 const completionFeedback = (evidence: readonly Entry[]) => latestOf(AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, evidence);
 function loopOf(outcome: Awaited<ReturnType<typeof run>>["outcome"]) {
@@ -168,13 +176,15 @@ describe("candidate trial gate", () => {
   it.each(["execution_failed", "not_judged", "unsure"] as const)("re-tests the same revision after %s even when exploration reported the page it was on", async (verdict) => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
     const explore: Step = () => ({ kind: "tool_call", toolId: "demo.explore", callId: `look.${Math.random().toString(36).slice(2, 8)}`, input: { look: true } });
-    const { outcome, seen } = await run([explore, submit(), test, test, complete], verdictPort([verdict, "yes"], asked), { looked: true }, { before: "page.one", after: "page.one" });
+    const { outcome, seen, inspection, observed } = await run([explore, submit(), test, test, complete], verdictPort([verdict, "yes"], asked), { looked: true }, { before: "page.one", after: "page.one" });
     const result = loopOf(outcome);
     expect(JSON.stringify(seen[4])).not.toContain("llm_evidence_loop.repeat_refused");
     expect(asked.map((request) => request.revision)).toEqual([1, 1]);
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ verdict, retestsLeft: 2 });
     expect(result.loop.ok).toBe(true);
     expect(result.trial).toMatchObject({ verdict: "yes", revision: 1 });
+    expect(inspection?.state).toBe("clear");
+    expect(observed?.store.events.filter(event => event === "enter")).toHaveLength(4);
   });
 
   it("bounds re-tests of one revision: past the bound the gate refuses by name and says to change the Flow", async () => {

@@ -1,0 +1,1 @@
+export const CLOSED_RECORDING_MEMORY = 32;

@@ -1,6 +1,7 @@
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioProjectProposalRef } from "../../project-agents/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies } from "../../flow-bootstrap/reset-observation/index.ts";
 
 // The subflow proposals a project build's builders had tried (unit A5c), read
 // off the subflow trial port as each trial ran. A done return names its
@@ -16,6 +17,10 @@ export class AutomationStudioProjectBuildProposals {
   private readonly tried = new Map<string, AutomationStudioSubflowProposal>();
   /** The latest proposal of each subflow whose trial answered yes, by subflow key. */
   private readonly passed = new Map<string, AutomationStudioSubflowProposal>();
+
+  constructor() {
+    for (const callback of ORIGINAL_METHODS) AutomationStudioSiteResetCallbackPolicies.remember(this, callback, "pure");
+  }
 
   /** A trial of `proposal` under `scope` answered `verdict`. */
   trialled(scope: AutomationStudioSubflowScope, proposal: Readonly<AutomationStudioSubflowProposal>, verdict: AutomationStudioCandidateTrialVerdict): void {
@@ -38,3 +43,5 @@ export class AutomationStudioProjectBuildProposals {
     });
   }
 }
+
+const ORIGINAL_METHODS = [AutomationStudioProjectBuildProposals.prototype.trialled, AutomationStudioProjectBuildProposals.prototype.byRef, AutomationStudioProjectBuildProposals.prototype.predecessors];

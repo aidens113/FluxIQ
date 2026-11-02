@@ -10,11 +10,21 @@ import { automationStudioCallAcrossBoundary } from "./boundary.ts";
 import { runAutomationStudioChildWithBounds } from "./child-bounds.ts";
 import type { AutomationStudioCompositeFlow } from "./flow.ts";
 
+import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
+import { AutomationOrchestrationCallbacks, AutomationPureCallbacks, invokeAutomationCallbackSync, registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame } from "../execution-admission/kernel/index.ts";
+
 /** Executes pinned snapshots and owns the one private callback-registration set. */
 export class AutomationStudioCanonicalExecution {
     private static readonly registered = new WeakSet<object>();
+    private static readonly observedKernel = registerAutomationExecutionKernel(this, this.runBody, "children");
     static isRegistered(callback: object): boolean { return this.registered.has(callback); }
     static async run(flow: AutomationStudioCompositeFlow, snapshots: ExecutableFlowSnapshot[], options: AutomationStudioGraphExecutionOptions = {}, deprecatedPublicationIds: Iterable<string> = [], onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void): Promise<AutomationStudioGraphExecutionTrace> {
+        const callback = this.runBody;
+        const frame = await prepareAutomationFrame(options, { receiver: this, callback }, this.observedKernel);
+        if (!frame) return await callback.call(this, flow, snapshots, options, deprecatedPublicationIds, onExecutedTrace);
+        return await invokeAutomationFrame(frame, { receiver: this, callback, args: [flow, snapshots, frame.options, deprecatedPublicationIds, onExecutedTrace] });
+    }
+    private static async runBody(flow: AutomationStudioCompositeFlow, snapshots: ExecutableFlowSnapshot[], options: AutomationStudioGraphExecutionOptions, deprecatedPublicationIds: Iterable<string>, onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void): Promise<AutomationStudioGraphExecutionTrace> {
         await options.commandRun?.checkpoint();
         const boundDomains = new Set(options.authorizedDomainIds ?? []);
         const authorizedDomainIds = (flow.executionDefaults?.authorizedDomainIds ?? []).filter((domainId) => boundDomains.has(domainId));
@@ -82,14 +92,13 @@ export class AutomationStudioCanonicalExecution {
                 return { ...crossed, compositeTarget: { flowId: snapshot.flowId, version: snapshot.version, flowDigest: snapshot.flowDigest } };
             };
             this.registered.add(compositeExecutor);
+            AutomationOrchestrationCallbacks.register(compositeExecutor);
             // Preserve the execution scope historically used by composite documents.
             const graph: ExecutableGraph = { flowId: document.flowId, ownerId: document.flowId, nodes: document.nodes, edges: document.edges };
-            return runAutomationStudioGraph(graph, {
-                ...executionOptions,
-                inputs,
-                compositeExecutor,
-                regionRuntime: compiled.plan
-            }, (executed, saved) => { executedTraces.set(saved, executed); });
+            const graphOptions = copyAutomationExecutionOptions(copyAutomationExecutionOptions(executionOptions), { inputs, compositeExecutor, regionRuntime: compiled.plan });
+            const capture = (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => { executedTraces.set(saved, executed); };
+            AutomationPureCallbacks.register(undefined, capture);
+            return runAutomationStudioGraph(graph, graphOptions, capture);
         };
         // A Subflow a Call Subflow node calls runs as the root's graphs do: its own
         // regions compiled, its own Call Flow nodes run against the same snapshots.
@@ -100,16 +109,20 @@ export class AutomationStudioCanonicalExecution {
             return saved;
         };
         this.registered.add(runSubflow);
+        AutomationOrchestrationCallbacks.register(runSubflow);
         const startedAt = options.now?.() ?? Date.now();
         const ownDeadline = flow.executionDefaults?.timeoutMs ? startedAt + flow.executionDefaults.timeoutMs : undefined;
         const deadlineAt = Math.min(options.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);
         // The run's root frame and the holder its frames share, unless a caller framed it already (C1).
         const invocation = options.invocation ?? automationStudioRootInvocation(flow, options, runSubflow);
-        const rootOptions: AutomationStudioGraphExecutionOptions = { ...options, invocation, ...(Number.isFinite(deadlineAt) ? { deadlineAt } : {}) };
-        const trace = await runAutomationStudioChildWithBounds((signal) => runDocument(flow, options.inputs ?? {}, [`${flow.flowId}@draft`], { ...rootOptions, signal }), Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, options.now, options.commandRun);
+        const rootOptions = copyAutomationExecutionOptions(copyAutomationExecutionOptions(options), { invocation, ...(Number.isFinite(deadlineAt) ? { deadlineAt } : {}) });
+        const trace = await runAutomationStudioChildWithBounds((signal) => {
+            const bounded = copyAutomationExecutionOptions(rootOptions, { signal });
+            return runDocument(flow, options.inputs ?? {}, [`${flow.flowId}@draft`], bounded);
+        }, Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, options.now, options.commandRun);
         if (trace.failure?.code !== "run.outcome_uncertain")
             await options.commandRun?.checkpoint();
-        onExecutedTrace?.(executedTrace(trace), trace);
+        if (onExecutedTrace) invokeAutomationCallbackSync(rootOptions, { receiver: undefined, callback: onExecutedTrace, args: [executedTrace(trace), trace] });
         return trace;
     }
 }

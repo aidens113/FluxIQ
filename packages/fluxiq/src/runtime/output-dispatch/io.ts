@@ -8,26 +8,28 @@ import { awaitConfirmation } from "./confirmation/index.ts";
 import { compactJsonObject } from "./compact.ts";
 import { prepareOutputAction } from "./prepare-action.ts";
 import { dispatchedRoute, dispatchFailure, confirmationFailureMessage, missingOutputIdResult, unregisteredOutputResult, elementTargetRejectionResult, failedDispatchResult, targetResolutionField, clearedWaitField, actionabilityField } from "./results/index.ts";
+import { invokeObservedOutputMethod, invokeObservedOutputSync, type OutputExecutionObservation } from "./admission/internal/index.ts";
 /** Dispatches an output-native policy action through an importer-registered adapter. */
-export async function dispatchRegisteredOutput(io: OutputDispatchIo, domainId: string | null | undefined, action: RegisteredOutputAction, signal?: AbortSignal, commandContext?: ClientGatewayCommandContext, targetPreparer?: OutputTargetPreparer): Promise<AutomationNodeExecutionResult> {
+export async function dispatchRegisteredOutput(io: OutputDispatchIo, domainId: string | null | undefined, action: RegisteredOutputAction, signal?: AbortSignal, commandContext?: ClientGatewayCommandContext, targetPreparer?: OutputTargetPreparer, observation?: OutputExecutionObservation): Promise<AutomationNodeExecutionResult> {
   const outputId = action.outputId?.trim();
   if (!outputId)
     return missingOutputIdResult("IO runtime");
-  const output = io.getOutput(domainId, outputId);
+  const output = invokeObservedOutputSync(observation, { receiver: io, callback: io.getOutput, args: [domainId, outputId] });
   if (!output)
     return unregisteredOutputResult(outputId);
-  const prepared = prepareOutputAction(action, domainId ?? null, output.definition, targetPreparer);
+  const prepared = prepareOutputAction(action, domainId ?? null, output.definition, targetPreparer, observation);
   if (!prepared.ok)
     return elementTargetRejectionResult(outputId, prepared);
   action = prepared.action;
-  const confirmation = awaitConfirmation(io, domainId, action, signal);
-  const result = await io.dispatchOutput({
+  const confirmation = awaitConfirmation(io, domainId, action, signal, observation);
+  const request = {
     ...(commandContext ? { commandContext, ...(signal ? { signal } : {}) } : {}),
     domainId: domainId ?? null,
     outputId,
     payload: action.parameters as JsonObject,
     metadata: compactJsonObject({ ...(action.metadata ?? {}), ...(prepared.diagnostics ? { elementTargetResolution: prepared.diagnostics } : {}) })
-  });
+  };
+  const result = await invokeObservedOutputMethod(observation, { receiver: io, callback: io.dispatchOutput, args: [request] }, signal, request);
   const confirmationResult = result.ok && confirmation ? await confirmation : null;
   const outputs: Record<string, JsonValue> = {
     outputId,

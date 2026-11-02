@@ -1,3 +1,4 @@
+import { copyAutomationExecutionOptions, inheritAutomationExecutionObservation } from "../../../../../engine/automation/execution-admission/index.ts";
 import { isDeepStrictEqual } from "node:util";
 import type { ExecutableGraph } from "../../../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../model/index.ts";
@@ -37,7 +38,8 @@ export async function runAutomationStudioDetachedCandidate(input: {
 }): Promise<{ receipt: AutomationStudioCandidateExecutionReceipt; code?: string; trace?: AutomationStudioGraphExecutionTrace; route?: AutomationStudioRouterExecutionResult; graph?: AutomationStudioFlowArtifact; candidateGraphs?: AutomationStudioFlowArtifact[] }> {
   // Clone owner-controlled artifacts before the first await; a mutable builder cannot swap graphs during routing.
   const identity = structuredClone(input.identity), candidate = structuredClone(input.candidate), parent = structuredClone(input.parentFlow), fromNodeKey = input.fromNodeKey;
-  const snapshots = structuredClone(input.snapshots), start = structuredClone(input.start), options = { ...input.options };
+  const snapshots = structuredClone(input.snapshots), start = structuredClone(input.start), options = copyAutomationExecutionOptions(input.options);
+  if (input.options) inheritAutomationExecutionObservation(input.options, options);
   if (options.inputs) options.inputs = structuredClone(options.inputs);
   const signal = input.signal ?? options.signal, now = options.now ?? Date.now, startedAt = now();
   const referenceNow = automationStudioReferenceNow(options.referenceNow) ?? automationStudioReferenceNow(startedAt);
@@ -112,18 +114,21 @@ export async function runAutomationStudioDetachedCandidate(input: {
     // declares, so each of those can be taken once and a real failure past them
     // still stops the trial; a graph that declares none keeps zero.
     const candidateSource = automationStudioCandidateGraphSource(topology, parent, fresh);
-    const executionOptions: AutomationStudioGraphExecutionOptions = { ...options, ...(signal ? { signal } : {}), currentSubflowId: selected.subflow.subflowId,
+    const executionOptions = copyAutomationExecutionOptions(copyAutomationExecutionOptions(options), { ...(signal ? { signal } : {}), currentSubflowId: selected.subflow.subflowId,
       subflowGraphs: candidateSource,
       allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [],
       recoveryBudget: candidateRecoveryBudget(graph),
       ...(from ? { startNodeId: from.nodeId } : {})
-    };
+    });
+    inheritAutomationExecutionObservation(options, executionOptions);
     // Each invoked graph gets only its own authored alternatives. A root with none must not fence off a helper's declared way on.
     executionOptions.invocation = automationStudioRootInvocation(graph, executionOptions, async (target, childOptions, onExecuted) => {
       const child = candidateSource.artifactFor(target.artifact);
       if (!child) return { status: signal?.aborted ? "cancelled" : "failed", startedAt: now(), finishedAt: now(), attempts: [], values: {}, effects: [], message: "The detached candidate child graph did not carry its produced Studio context." };
       if (!await fresh()) return { status: signal?.aborted ? "cancelled" : "failed", startedAt: now(), finishedAt: now(), attempts: [], values: {}, effects: [], message: "The detached candidate child graph was unavailable or stale." };
-      return runCanonicalAutomationStudioFlow(child, snapshots, { ...childOptions, allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], recoveryBudget: candidateRecoveryBudget(child) }, input.deprecatedPublicationIds ?? [], onExecuted);
+      const candidateOptions = copyAutomationExecutionOptions(copyAutomationExecutionOptions(childOptions), { allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], recoveryBudget: candidateRecoveryBudget(child) });
+      inheritAutomationExecutionObservation(childOptions, candidateOptions);
+      return runCanonicalAutomationStudioFlow(child, snapshots, candidateOptions, input.deprecatedPublicationIds ?? [], onExecuted);
     });
     const trace = await runCanonicalAutomationStudioFlow(graph, snapshots, executionOptions, input.deprecatedPublicationIds ?? []);
     returnedTrace = trace;
@@ -137,6 +142,7 @@ export async function runAutomationStudioDetachedCandidate(input: {
       ...(returnedTrace ? { trace: returnedTrace } : {}), ...(returnedRoute ? { route: returnedRoute } : {}), ...(returnedTrace && returnedGraph ? { graph: returnedGraph, ...(candidateGraphs ? { candidateGraphs } : {}) } : {}) };
   }
 }
+
 
 /** Bound recovery to the invoked graph's explicit failed routes, with no model or patch allowance. */
 function candidateRecoveryBudget(graph: Pick<ExecutableGraph, "nodes" | "edges">) {

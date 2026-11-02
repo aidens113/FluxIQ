@@ -1,3 +1,4 @@
+import type { LlmDiagnosisFields, LlmVerificationChecked, LlmVerificationDefect, LlmDiagnosisResponse } from "../../../../../flows/executable/verification/diagnosis/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioChangeProposalPatch } from "../../../model/index.ts";
@@ -11,18 +12,7 @@ import type { AutomationStudioFlowDraftAmendment } from "../../flow-draft/index.
 export type AutomationStudioLlmStructuredResponse =
   | { kind: "flow_bootstrap"; summary: string; plan: AutomationStudioFlowBootstrapPlan; metadata?: JsonObject }
   | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; add?: true; act?: string; place?: string } | { kind: "complete"; result: JsonObject } | { kind: "amend_draft"; amendments: AutomationStudioFlowDraftAmendment[] }; metadata?: JsonObject }
-  | {
-    kind: "diagnosis"; summary: string; confidence?: number; diagnosis?: AutomationStudioLlmDiagnosisFields; metadata?: JsonObject;
-    /**
-     * Set by a provider adapter, never by a model (t653): the reply was cut off
-     * at the provider's output ceiling after its `kind` and a closed `diagnosis`,
-     * and only what closed before the cut was read; `summary` is then the
-     * adapter's own sentence. A result verification reads this field, never the
-     * summary, to hold a yes to the fields that arrived whole
-     * (`result-verification/verify.ts`). An adapter drops a model's own claim.
-     */
-    truncatedAfterVerdict?: true;
-  }
+  | LlmDiagnosisResponse
   | { kind: "runtime_patch"; summary: string; patches: AutomationStudioRuntimePatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "no_repair"; summary: string; reason: AutomationStudioNoRepairReason; metadata?: JsonObject }
   | { kind: "change_proposal"; summary: string; patches: AutomationStudioChangeProposalPatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
@@ -73,45 +63,10 @@ export function isAutomationStudioNoRepairReason(value: unknown): value is Autom
  * the failure happened in. It is a channel, not an opening -- `metadata` is
  * still stripped, and an unrecognized key inside `diagnosis` is still refused.
  */
-export type AutomationStudioLlmDiagnosisFields = {
-  /** What the run was supposed to achieve, in the model's words. */
-  expected?: string;
-  /** What it observed instead. */
-  observed?: string;
-  /** What the model thinks changed between the two. */
-  changed?: string;
-  /** Whether the goal is still reachable. Core refuses an answer here that would talk it past a control a person must clear. */
-  stillAchievable?: "yes" | "no" | "unknown";
-  /** Whether a deterministic recovery Core already holds would serve. */
-  deterministicRecoveryPossible?: "yes" | "no" | "unknown";
-  /** Whether more evidence is needed before anything is changed. */
-  explorationNeeded?: boolean;
-  /** Whether a change to the Flow is needed at all. The one field that can stop the patch call. */
-  patchNeeded?: boolean;
-  /**
-   * Whether the result a finished run produced answers what was asked for.
-   *
-   * The one field a `loop_verification` call is made for, and the reason that
-   * call needs no response kind of its own: it is the same three words as the
-   * two verdicts above, read the same way. `yes` answers, `no` does not, and
-   * `unknown` -- like an omitted field -- is a run nobody confirmed, which the
-   * result verification fails closed on rather than letting it read as a pass.
-   */
-  answersRequest?: "yes" | "no" | "unknown";
-  /**
-   * A `loop_verification` no only (t752): each defect of the result the no
-   * rests on, so Core can find it in its own record rather than read it out of
-   * prose (`../../result-verification/agreement/`). A no that names none Core
-   * can locate is not a no. Optional for persisted legacy diagnoses and unrelated tasks. Current negative
-   * verification replies require a well-formed list, including an explicit empty one.
-   */
-  defects?: AutomationStudioLlmVerificationDefect[];
-  /** A `loop_verification` yes only (t810): the stored cells it checked, which Core finds in its own record (`../../result-verification/cited-yes/`). */
-  checked?: AutomationStudioLlmVerificationChecked[];
-};
+export type AutomationStudioLlmDiagnosisFields = LlmDiagnosisFields;
 
 /** One stored cell a `loop_verification` yes cites as checked (t810): the row by its label, a stored column and the cell's value. */
-export type AutomationStudioLlmVerificationChecked = { row: string; column: string; value: string };
+export type AutomationStudioLlmVerificationChecked = LlmVerificationChecked;
 
 /**
  * One defect a `loop_verification` no names (t752): `kept_not_asked`, a row the
@@ -127,16 +82,7 @@ export type AutomationStudioLlmVerificationChecked = { row: string; column: stri
  * evidence does (Core's row id or its label); `requestWords` quotes the
  * request's words the row or act fails.
  */
-export type AutomationStudioLlmVerificationDefect = {
-  kind: "kept_not_asked" | "asked_missing" | "wrong_value" | "act_missing" | "act_wrong" | "other";
-  row: string;
-  column?: string;
-  /** The value the judge claims this stored cell holds, checked against Core's own stored cell. */
-  value?: string;
-  /** The step an `act_wrong` names, as the evidence names it: its node id, its label, or a build test's step number (t766). */
-  step?: string;
-  requestWords: string;
-};
+export type AutomationStudioLlmVerificationDefect = LlmVerificationDefect;
 
 /**
  * The bound on each description the model may supply.

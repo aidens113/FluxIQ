@@ -21,7 +21,7 @@ import {
 import { automationStudioResultJudgedBuildTrialOfSavedFlow } from "../../../result-verification/build-yes-hold/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
-import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
+import { automationStudioTestSettledBuilds } from "./settled-builds/index.ts";
 
 // A hang guard only, as the facade's.
 vi.setConfig({ testTimeout: 300_000, hookTimeout: 300_000 });

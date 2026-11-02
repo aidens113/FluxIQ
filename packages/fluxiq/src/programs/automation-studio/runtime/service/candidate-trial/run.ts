@@ -90,6 +90,9 @@
 // judge reads, last (`./summary.ts`).
 
 import { createHash } from "node:crypto";
+import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
+import { bindTrialExecutorParent, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation, observeCandidateTrialCallback } from "../../candidate-trials/index.ts";
+import { bindCandidateTrialFrame } from "../../candidate-trials/authority/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
@@ -174,14 +177,23 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
   const receipt: AutomationStudioCandidateStartReceipt = { receiptId: `${runId}.start`, conditionsDigest: createHash("sha256").update(JSON.stringify({ startLocation: ports.startLocation ?? null, start: start.status })).digest("hex"), preparedAt: startedAt, pageGeneration: 0, subjectStates: [] };
   let executed: Awaited<ReturnType<typeof runAutomationStudioDetachedCandidate>>;
   try {
-    executed = await (ports.execute ?? runAutomationStudioDetachedCandidate)({
+    const graphOptions = ports.graphOptions({ runId, signal });
+    const referencedOptions = copyAutomationExecutionOptions(graphOptions, { referenceNow: startedAt }, null);
+    inheritCandidateTrialExecutorObservation(request, graphOptions, referencedOptions);
+    const execute = ports.execute ?? runAutomationStudioDetachedCandidate;
+    if (!ports.execute) bindCandidateTrialFrame(execute, true);
+    const observedOptions = automationStudioTrialExecutorOptions(referencedOptions, ports.environment);
+    const executionOptions = copyAutomationExecutionOptions(observedOptions, {}, null);
+    if (!candidateTrialObservationContext(request)) bindTrialExecutorParent(observedOptions, executionOptions);
+    const execution = {
       identity, candidate: { revision: candidate.revision, digest: candidate.digest, baseDependencyDigest: candidate.baseDependencyDigest, buildPlan: candidate.buildPlan },
       parentFlow: await ports.parentFlow(), currentIdentity: async () => ({ ...identity, baseDependencyDigest: await ports.currentBaseDigest() }),
       ...(ports.registry ? { registry: ports.registry } : {}), resolution: ports.resolution, snapshots: await ports.snapshots(), deprecatedPublicationIds: await ports.deprecatedPublicationIds(),
       sourceInstructionIds: [...ports.sourceInstructionIds], runId, start: receipt,
       // The signal rides on the options alone: the runner refuses two different signals.
-      options: automationStudioTrialExecutorOptions({ ...ports.graphOptions({ runId, signal }), referenceNow: startedAt }, ports.environment)
-    });
+      options: executionOptions
+    };
+    executed = await observeCandidateTrialCallback(request, "execute", { receiver: undefined, callback: execute, args: [execution] }, parent => bindTrialExecutorParent(observedOptions, executionOptions, parent));
   } catch (error) {
     // Not left running: a session that threw is ended failed, and the throw goes on to the trial gate.
     await ports.writeSession({ ...opened, status: signal.aborted ? "cancelled" : "failed", startedAt, finishedAt: now() });
@@ -323,7 +335,8 @@ export async function automationStudioCandidateTrialStart(request: Pick<Automati
   }
   return await automationStudioLlmStepLogReset({ stage: "start_hook" }, async (): Promise<AutomationStudioCandidateTrialStart> => {
     try {
-      const result = await hook({ projectId: ports.projectId, flowId: ports.flowId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, ...(ports.startLocation ? { startLocation: ports.startLocation } : {}), ...(lease ? { lease: structuredClone(lease) } : {}), signal: request.signal });
+      const args = { projectId: ports.projectId, flowId: ports.flowId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, ...(ports.startLocation ? { startLocation: ports.startLocation } : {}), ...(lease ? { lease: structuredClone(lease) } : {}), signal: request.signal };
+      const result = await observeCandidateTrialCallback(request, "prepare", { receiver: undefined, callback: hook, args: [args] });
       return { status: "reset", result: structuredClone(result) };
     } catch (error) {
       if (request.signal.aborted) throw error;

@@ -1,0 +1,1 @@
+export type DiscardedClientMessage = { kind: "recording event" | "recording entry" | "snapshot" | "state update" | "error"; label: string; domainId?: string | null; inputId?: string | undefined; recordingId?: string | undefined; executable?: boolean };

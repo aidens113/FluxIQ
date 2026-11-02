@@ -241,8 +241,8 @@ function generateIndex(ctx, docs) {
   const entries = docs.map((file) => indexEntry(ctx, file));
   const ext = ctx.CONFIG.workingDocsIndexKind === "ext";
   const other = ext
-    ? "Core's matching index is at [FluxIQ Core](../../../!FluxIQ/docs/working/README.md)."
-    : "The downstream web-extension index is at [FluxIQ Web Extension](../../../!FluxIQWebExtension/docs/working/README.md).";
+    ? "Core's matching index is at `../!FluxIQ/docs/working/README.md`, relative to this repository's root."
+    : "The downstream web-extension index is at `../!FluxIQWebExtension/docs/working/README.md`, relative to this repository's root.";
   const pairedHeader = ext ? "Paired in Core" : "Paired downstream";
 
   const out = [

@@ -160,6 +160,8 @@ needs verifying, so reads are the cost: route discovery through a worker or
 
 ## Repository Boundary
 
+**Automation Studio end state (user, 2026-11-02).** "the automation studio program should just be a UI panel to control the framework." Execution, authoring, verification, persistence, project/policy/recording ownership and orchestration belong to framework-owned packages. Automation Studio retains panel UI, view state/navigation and thin control/API adapters only. Existing backend code or new compatibility helpers under the program are temporary migration locations, not ownership exceptions or completed refactoring. Complete the framework migration and enforce the dependency boundary mechanically.
+
 FluxIQ is a public, domain-neutral framework. Do not add domain-specific
 automation code, private project data, generated private policies,
 recordings, or downstream domain assets. Global framework programs live under

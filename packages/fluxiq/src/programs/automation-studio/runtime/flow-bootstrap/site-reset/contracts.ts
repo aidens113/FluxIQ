@@ -116,17 +116,20 @@ export type AutomationStudioSiteResetExplored = {
   note?: JsonObject;
 };
 
+/** Observed routing awaits the original owner; an unobserved ledger may still answer synchronously. */
+type SiteResetCallResult<T> = T | Promise<T>;
+
 /** The ledger, as the build's permission wrapper sees it. */
 export type AutomationStudioSiteResetCalls = {
   /** A builder-only recoverable precondition, independent of lasting-act permission. */
-  createBaseline?(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): { kind: "admit" } | { kind: "refused"; evidence: JsonObject & { code: string } };
+  createBaseline?(declared: Pick<AutomationStudioSiteResetDeclared, "effect" | "consequences" | "control">, reference: unknown): SiteResetCallResult<{ kind: "admit" } | { kind: "refused"; evidence: JsonObject & { code: string } }>;
   /** The refs the latest read printed; `page` marks a page read whole, not a list on it (`./create-baselines.ts`, t791). */
   destinationReceipts?(): Array<{ ref: string; ordinal: number; count: number; page?: true }>;
   /** `resetDestination`: the ref the same call names, refused before it runs when no receipt printed it (rerun round 2); callers forward it. */
-  claim(undoes: unknown, resetDestination?: unknown): AutomationStudioSiteResetClaim;
+  claim(undoes: unknown, resetDestination?: unknown): SiteResetCallResult<AutomationStudioSiteResetClaim>;
   /** Asked, for an undo, of each action the domain puts to the gate, before it acts (t475). */
-  target(act: string, declared: { effect: AutomationStudioActionEffect; consequences: readonly AutomationStudioActionConsequence[]; control: AutomationStudioSiteResetSpot }): AutomationStudioSiteResetTarget;
-  explored(call: AutomationStudioSiteResetExplored): void;
+  target(act: string, declared: { effect: AutomationStudioActionEffect; consequences: readonly AutomationStudioActionConsequence[]; control: AutomationStudioSiteResetSpot }): SiteResetCallResult<AutomationStudioSiteResetTarget>;
+  explored: ((call: AutomationStudioSiteResetExplored) => void) | ((call: AutomationStudioSiteResetExplored) => Promise<void>);
   /**
    * The step door of the one admission (t751 R3, `../reset-admission/admission.ts`): asked of a lasting plan step's declaration
    * at submission (`operation`: the step's registered definition), it answers the witness stamp its node carries, or none
@@ -135,7 +138,7 @@ export type AutomationStudioSiteResetCalls = {
    * ledger fills `gap` with whether a call in the step's own tab can make a witness (t791 fix 2, `../reset-admission/step-gaps.ts`), and the
    * builder's words for it; the submission says them as a note on the accepted revision.
    */
-  admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string, ask?: AutomationStudioSiteResetStepAsk): AutomationStudioSiteResetWitnessStamp | undefined;
+  admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, operation?: string, ask?: AutomationStudioSiteResetStepAsk): SiteResetCallResult<AutomationStudioSiteResetWitnessStamp | undefined>;
 };
 
 /**
@@ -380,14 +383,14 @@ export type AutomationStudioSiteResetTrialReset = {
    */
   beforeTrial(signal?: AbortSignal, cannotUndo?: readonly string[], options?: AutomationStudioSiteResetBeforeTrialOptions): Promise<AutomationStudioSiteResetDecision>;
   /** Restarts the reset phase and answers the acts now on the site, the trial's own among them (`leftOnSite`). */
-  trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId?: string): AutomationStudioSiteResetNamedAct[];
+  trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId?: string): AutomationStudioSiteResetNamedAct[] | Promise<AutomationStudioSiteResetNamedAct[]>;
   /**
    * Asked before a trial runs its steps, before the start hook and before any baseline moves (t751 R3; t791 fix 4: it no
    * longer refuses). It always admits, and notes under `unwitnessed` each reversible lasting step whose witness stamp is missing
    * or no longer resolves, with whether a call in that step's own tab can make one: the trial runs and is judged by its end
    * view and done-when checks. A project build's reset only (`./project-reset.ts`); absent, nothing is asked.
    */
-  admit?(steps: readonly AutomationStudioSiteResetTrialStep[]): AutomationStudioSiteResetStepAdmission;
+  admit?(steps: readonly AutomationStudioSiteResetTrialStep[]): AutomationStudioSiteResetStepAdmission | Promise<AutomationStudioSiteResetStepAdmission>;
 };
 
 /**

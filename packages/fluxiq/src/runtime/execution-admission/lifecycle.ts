@@ -79,7 +79,11 @@ export class ExecutionAdmissionLifecycle {
         reserve: (scope: ExecutionScope, grant: ExecutionEntryGrant, signal?: AbortSignal) => this.reserve(scope, grant, signal),
         release: (reservation: ExecutionReservation) => this.release(reservation)
       }),
-      entryBridge: Object.freeze({ read: (entry: ExecutionEntry) => this.readEntry(entry) }),
+      entryBridge: Object.freeze({
+        read: (entry: ExecutionEntry) => this.readEntry(entry),
+        matchesReservation: (entry: ExecutionEntry, reservation: ExecutionReservation) =>
+          this.entries.has(entry) && this.reservations.has(reservation) && this.entries.get(entry)!.reservation === this.reservations.get(reservation)
+      }),
       openScope: (proof: object) => this.openScope(proof),
       registerSource: (source: ExecutionSourceRegistration) => this.registerSource(source)
     });

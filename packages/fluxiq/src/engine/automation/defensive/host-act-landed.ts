@@ -14,6 +14,7 @@
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../../../runtime/automation-host/index.ts";
 import type { AutomationStudioEffectCheckResult } from "./effect-check.ts";
+import { invokeObservedExecutionCallback, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 
 /**
  * The host's answer about the act behind a failed attempt, waiting at most
@@ -22,12 +23,13 @@ import type { AutomationStudioEffectCheckResult } from "./effect-check.ts";
  */
 export async function automationStudioHostActLanded(
   hostRuntime: AutomationStudioHostRuntimeBoundary | undefined,
-  input: { node: AutomationStudioFlowNode; attemptId: string; timeoutMs: number; signal?: AbortSignal }
+  input: { node: AutomationStudioFlowNode; attemptId: string; timeoutMs: number; signal?: AbortSignal },
+  observation?: ExecutionCallbackObservation
 ): Promise<AutomationStudioEffectCheckResult> {
   const ask = hostRuntime?.actLanded;
   if (!ask) return "unknown";
   try {
-    const answer = await ask.call(hostRuntime, input);
+    const answer = await invokeObservedExecutionCallback(observation, { receiver: hostRuntime, callback: ask, args: [input] }, input.signal);
     return answer === "landed" || answer === "not_landed" ? answer : "unknown";
   } catch {
     return "unknown";

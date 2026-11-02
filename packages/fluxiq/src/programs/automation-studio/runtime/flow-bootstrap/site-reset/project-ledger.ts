@@ -52,7 +52,9 @@ import { AutomationStudioSiteResetStepGaps, automationStudioSiteResetWitnessStam
 import type { AutomationStudioSiteResetRead, AutomationStudioSiteResetUnsettleableAct } from "./contracts.ts";
 import type { AutomationStudioSiteResetLeftover } from "../reset-ledger/index.ts";
 import { AutomationStudioSiteResetReach, automationStudioSiteResetInvalidCollectionGroups, type AutomationStudioSiteResetIssuedRef } from "../reset-settlement/index.ts";
-import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
+import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetLedgerOptions, type AutomationStudioSiteResetRecordedAct } from "./ledger.ts";
+import { AutomationStudioProjectWriteCompletion, invokeAutomationStudioProjectWriteCallback } from "../../project-agents/record-completion/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies, invokeAutomationStudioSiteResetSync } from "../reset-observation/index.ts";
 
 /** The highest act number `undoes` can name (`^act-[1-9][0-9]{0,3}$`), as a single ledger keeps it. */
 const MAX_ACT = 9999;
@@ -86,9 +88,13 @@ export class AutomationStudioSiteResetProjectLedger {
   private writing: Promise<void> = Promise.resolve();
   private failure: { error: unknown } | undefined;
   private readonly persist: AutomationStudioSiteResetProjectLedgerOptions["persist"];
+  private unobserved = false;
+  private readonly flushCompletion: AutomationStudioProjectWriteCompletion;
 
   constructor(options: AutomationStudioSiteResetProjectLedgerOptions = {}) {
     this.persist = options.persist;
+    this.flushCompletion = AutomationStudioProjectWriteCompletion.for(this, projectFlushed);
+    for (const [name, callback] of projectDataCallbacks) if (this[name] === callback) AutomationStudioSiteResetCallbackPolicies.remember(this, callback, "pure");
   }
 
   /** The brief's own ledger, made on first ask and the same one after (header). */
@@ -96,21 +102,38 @@ export class AutomationStudioSiteResetProjectLedger {
     if (typeof briefId !== "string" || !briefId) throw new TypeError("A brief's ledger needs a non-empty brief id.");
     const known = this.briefs.get(briefId);
     if (known) {
-      known.adoptOriginalCollections([...this.originals.values()]);
+      invokeAutomationStudioSiteResetSync(this, { receiver: known, callback: known.adoptOriginalCollections, args: [[...this.originals.values()]] });
       return known;
     }
-    const ledger = new AutomationStudioSiteResetLedger({
+    const options: AutomationStudioSiteResetLedgerOptions & {
+      nextActId: NonNullable<AutomationStudioSiteResetLedgerOptions["nextActId"]>;
+      buildExplored: NonNullable<AutomationStudioSiteResetLedgerOptions["buildExplored"]>;
+      sink: (recorded: AutomationStudioSiteResetRecordedAct) => void | Promise<void>;
+    } = {
       owner: briefId,
       createBaselines: this.createBaselines,
       controlWitnesses: this.controlWitnesses,
       reach: this.reach,
       nextActId: () => this.nextActId(),
-      sink: (recorded) => this.recorded(briefId, recorded),
+      sink: (recorded: AutomationStudioSiteResetRecordedAct): void | Promise<void> => {
+        const frame = AutomationStudioProjectWriteCompletion.capture(recorded);
+        this.recorded(briefId, recorded, frame);
+        if (!frame) return;
+        const returned = projectFlushed.call(this).then(() => {
+          if (!this.unobserved) completion.completed(returned, frame, { disposition: "settled", completionDigest: "project.ledger.sink_flushed", assessmentDigest: "project.ledger.actual_persist_completed" });
+        });
+        return returned;
+      },
       possible: true,
       // A trial act of any brief repeats an explored act of any brief, its destinations resolved when asked (header).
-      buildExplored: () => [...this.briefs.values()].flatMap((brief) => brief.exploredActs())
-    });
-    ledger.adoptOriginalCollections([...this.originals.values()]);
+      buildExplored: (): ReturnType<AutomationStudioSiteResetLedger["exploredActs"]> => [...this.briefs.values()].flatMap((brief) => invokeAutomationStudioSiteResetSync(options, { receiver: brief, callback: brief.exploredActs, args: [] }))
+    };
+    AutomationStudioSiteResetCallbackPolicies.remember(options, options.nextActId, "pure");
+    AutomationStudioSiteResetCallbackPolicies.remember(options, options.buildExplored, "pure");
+    const completion = AutomationStudioProjectWriteCompletion.for(options, options.sink);
+    const ledger = new AutomationStudioSiteResetLedger(options);
+    AutomationStudioSiteResetCallbackPolicies.remember(ledger, ledger.trialRanObserved, "frame");
+    invokeAutomationStudioSiteResetSync(this, { receiver: ledger, callback: ledger.adoptOriginalCollections, args: [[...this.originals.values()]] });
     this.briefs.set(briefId, ledger);
     return ledger;
   }
@@ -127,7 +150,7 @@ export class AutomationStudioSiteResetProjectLedger {
       if (invalid.has(collection.group) || this.createBaselines.closed(collection.group)) continue;
       if (!this.originals.has(collection.scope)) this.originals.set(collection.scope, structuredClone(collection));
     }
-    for (const brief of this.briefs.values()) brief.adoptOriginalCollections([...this.originals.values()]);
+    for (const brief of this.briefs.values()) invokeAutomationStudioSiteResetSync(this, { receiver: brief, callback: brief.adoptOriginalCollections, args: [[...this.originals.values()]] });
   }
 
   /**
@@ -141,7 +164,7 @@ export class AutomationStudioSiteResetProjectLedger {
     if (witness.via === "own_list") return false;
     if (witness.via === "control") return this.controlWitnesses.resolve(witness.ref) !== undefined;
     if (witness.via === "destination") return this.createBaselines.retained(witness.ref) !== undefined;
-    if (witness.via === "repeats") return [...this.briefs.values()].some((brief) => brief.exploredActs().some((act) => act.id === witness.act && act.witnessed && act.destinations.length > 0));
+    if (witness.via === "repeats") return [...this.briefs.values()].some((brief) => invokeAutomationStudioSiteResetSync(this, { receiver: brief, callback: brief.exploredActs, args: [] }).some((act) => act.id === witness.act && act.witnessed && act.destinations.length > 0));
     return true;
   }
 
@@ -158,7 +181,8 @@ export class AutomationStudioSiteResetProjectLedger {
     return {
       acts: this.acts.map((act) => {
         // Its own brief's one answer, which that brief's acts to undo and acts listed apart read too (`../reset-ledger/leftover.ts`).
-        const left = this.briefs.get(act.owner)?.leftover(act.act);
+        const brief = this.briefs.get(act.owner);
+        const left = brief ? invokeAutomationStudioSiteResetSync(this, { receiver: brief, callback: brief.leftover, args: [act.act] }) : undefined;
         return { ...structuredClone(act), inPlace: left?.standing === "in_place", left: left?.left ?? "yes", ...(left?.standing === "unsettleable" ? { failed: left.failed } : {}) };
       }),
       nextAct: this.next
@@ -167,7 +191,7 @@ export class AutomationStudioSiteResetProjectLedger {
 
   /** Every act of the build no call can settle, each with its closed condition, in brief order (header, t743). */
   unsatisfiable(): Array<AutomationStudioSiteResetUnsettleableAct & { owner: string }> {
-    return [...this.briefs].flatMap(([owner, ledger]) => ledger.unsatisfiable().map((act) => ({ ...act, owner })));
+    return [...this.briefs].flatMap(([owner, ledger]) => invokeAutomationStudioSiteResetSync(this, { receiver: ledger, callback: ledger.unsatisfiable, args: [] }).map((act) => ({ ...act, owner })));
   }
 
   /** Every destination ref the build was shown, with how many items its list held and where it was read (header, t743). */
@@ -176,9 +200,13 @@ export class AutomationStudioSiteResetProjectLedger {
   }
 
   /** Waits for every write asked so far; throws the first that failed. */
-  async flushed(): Promise<void> {
-    await this.writing;
-    if (this.failure) throw this.failure.error;
+  flushed(invocation?: object): Promise<void> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
+    const returned = this.writing.then(() => {
+      if (this.failure) throw this.failure.error;
+      if (!this.unobserved) this.flushCompletion.completed(returned, frame, { disposition: "settled", completionDigest: "project.ledger.flushed", assessmentDigest: "project.ledger.actual_persist_completed" });
+    });
+    return returned;
   }
 
   private nextActId(): string | undefined {
@@ -188,18 +216,29 @@ export class AutomationStudioSiteResetProjectLedger {
     return id;
   }
 
-  private recorded(briefId: string, recorded: AutomationStudioSiteResetRecordedAct): void {
+  private recorded(briefId: string, recorded: AutomationStudioSiteResetRecordedAct, frame: ReturnType<typeof AutomationStudioProjectWriteCompletion.capture>): void {
     this.acts.push({ act: recorded.act, did: recorded.did, ...(recorded.call !== undefined ? { call: recorded.call } : {}), owner: briefId, ref: recorded.ref, undoable: recorded.undoable, ...(recorded.possible ? { possible: true as const } : {}) });
     const persist = this.persist;
     if (!persist) return;
-    const snapshot = this.snapshot();
+    if (!frame) this.unobserved = true;
+    const snapshot = invokeAutomationStudioSiteResetSync(recorded, { receiver: this, callback: this.snapshot, args: [] });
     // Chained, so writes run one at a time in the order asked; a failure is kept for `flushed()` (header).
     this.writing = this.writing.then(async () => {
       try {
-        await persist(snapshot);
+        await invokeAutomationStudioProjectWriteCallback(frame, { receiver: undefined, callback: persist, args: [snapshot] }, snapshot);
       } catch (error) {
         this.failure ??= { error };
       }
     });
   }
 }
+
+const projectFlushed = AutomationStudioSiteResetProjectLedger.prototype.flushed;
+const projectDataCallbacks = [
+  ["snapshot", AutomationStudioSiteResetProjectLedger.prototype.snapshot],
+  ["forBrief", AutomationStudioSiteResetProjectLedger.prototype.forBrief],
+  ["stepWitnessResolves", AutomationStudioSiteResetProjectLedger.prototype.stepWitnessResolves],
+  ["stepReach", AutomationStudioSiteResetProjectLedger.prototype.stepReach],
+  ["observed", AutomationStudioSiteResetProjectLedger.prototype.observed],
+  ["unsatisfiable", AutomationStudioSiteResetProjectLedger.prototype.unsatisfiable]
+] as const;

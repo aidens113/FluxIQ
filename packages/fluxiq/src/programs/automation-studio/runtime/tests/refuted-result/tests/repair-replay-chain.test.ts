@@ -28,7 +28,7 @@
 // fix, in the Flow's order, one rerun per decision; its test then runs both from
 // the start, and only a yes about that Flow is approved and applied. The
 // stand-in domain says how to run its steps again through
-// `automationStudioReplayingBinding` (`../../replaying-binding.ts`).
+// `automationStudioReplayingBinding` (`../../replaying-binding/index.ts`).
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -41,7 +41,7 @@ import { decideAutomationStudioChangeConfidence } from "../../../flow-change/ind
 import { createAutomationStudioSessionKeyProviderResolver } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding/index.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
 const ACTOR = { actorUserId: "user-t176", actorSessionId: "session-t176" };

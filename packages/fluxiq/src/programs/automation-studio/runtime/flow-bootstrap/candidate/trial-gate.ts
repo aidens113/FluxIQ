@@ -1,3 +1,4 @@
+import { checkedCandidateTrialAnswer as checkedAnswer, candidateTrialFailedStep as stoppingStep, freezeCandidateTrialValue as deepFreeze, isCandidateTrialJsonObject as isJsonObject, type CandidateTrialAsked as Asked } from "../../candidate-trials/contracts/index.ts";
 // The trial gate: the model may finish a candidate only once Core has run that
 // exact candidate and the judge said yes for it.
 //
@@ -288,6 +289,9 @@ import { automationStudioTrialChangeContradictedNo, automationStudioTrialChangeS
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 import { automationStudioCandidateTestPair } from "../test-call-pair.ts";
 import { automationStudioCandidateRetestAdvised } from "../retest-advised/index.ts";
+import { CandidateTrialGateInvocation, observeCandidateTrialCallback, invokeCandidateTrial, type CandidateTrialGateCall } from "../../candidate-trials/index.ts";
+import { finishAutomationStudioSiteResetSession, observeAutomationStudioTrialPolicy, observeAutomationStudioTrialResultPolicy } from "../reset-observation/index.ts";
+import { CandidateTrialReentry, bindCandidateTrialReentry } from "../../candidate-trials/reentry/index.ts";
 
 export { automationStudioCandidateRetestAdvised } from "../retest-advised/index.ts";
 
@@ -409,6 +413,10 @@ export class AutomationStudioFlowCandidateTrialGate {
   /** Revisions and digests whose port's `offlineFirst` was asked: never twice, even when the reset refused the live trial after it (header, D41). */
   private readonly offlineAsked = new Set<string>();
   private readonly fallbackSignal = new AbortController().signal;
+  private readonly invocation: CandidateTrialGateInvocation | undefined;
+  readonly #reentry: CandidateTrialReentry;
+  private completedForReentry = false;
+  private completedOrdinal = 0;
 
   constructor(private readonly input: {
     latest: () => AutomationStudioFlowCandidate | undefined;
@@ -423,10 +431,15 @@ export class AutomationStudioFlowCandidateTrialGate {
     changeParts?: ((candidate: AutomationStudioFlowCandidate) => { parts: readonly AutomationStudioTrialChangePart[]; partsOf: (subflowKey: string | undefined) => readonly string[] } | undefined) | undefined;
   }) {
     if (input.trial && (typeof input.trial.candidateId !== "string" || !input.trial.candidateId || typeof input.trial.port !== "function")) throw new Error("candidate.trial_port_invalid");
+    this.invocation = input.trial ? new CandidateTrialGateInvocation(this, input.trial.port) : undefined;
+    this.invocation?.bind({ receiver: this, callback: this.performTrial });
+    this.#reentry = new CandidateTrialReentry({ gate: this, tool: this.tool, maxTrials: AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION, latest: input.latest, available: () => this.retestable(), completedOrdinal: () => this.completedOrdinal });
   }
 
   /** Whether a trial can run here; without one, completion stays the draft-only completion it was. */
   get available(): boolean { return this.input.trial !== undefined; }
+
+  bindReentry(loop: object): void { bindCandidateTrialReentry(loop, this.#reentry); }
 
   async test(value: JsonObject, callSignal?: AbortSignal): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
     const revision = value.revision, digest = value.digest;
@@ -455,27 +468,49 @@ export class AutomationStudioFlowCandidateTrialGate {
     }
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
     signal.throwIfAborted();
+    if (this.invocation?.inFlight) return refused("candidate.trial_in_flight", "The current candidate trial has not finished. Wait for its answer before requesting another trial.");
+    const context: CandidateTrialGateCall = { trial, latest, tried, value, signal };
+    this.#reentry.entered();
+    this.completedForReentry = false;
+    const answer = this.invocation ? await this.invocation.run(latest, value, signal, { receiver: this, callback: this.performTrial, args: [context] }) : await this.performTrial(context);
+    const completed = this.invocation?.takeCompletion();
+    if (this.completedForReentry) this.#reentry.completed(completed);
+    return answer;
+  }
+
+  private async performTrial(context: CandidateTrialGateCall): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
+    const { trial, latest, tried, value, signal } = context;
+    const cannotUndo = value.cannotUndo;
+    this.invocation?.bindContext(context);
+    const pinned = this.invocation?.snapshot;
     const earlierAdvice = this.earlierAdvice.advice(latest.revision, latest.buildPlan?.plan);
     // Offline first, once per revision and digest, before anything acts on the site (header, P6).
-    const first = tried === 0 && trial.port.offlineFirst && !this.offlineAsked.has(key(latest)) ? await this.offlineFirst(trial, latest, signal, earlierAdvice) : undefined;
+    const first = (!pinned || pinned.mode === "live") && tried === 0 && trial.port.offlineFirst && !this.offlineAsked.has(key(latest)) ? await this.offlineFirst(trial, latest, signal, earlierAdvice) : undefined;
     const kept = first?.kept;
     // An offline trial, or a failure kept off the recording, has no live effects: no start hook, no reset, nothing left on the site (header, Decision 6).
-    const offline = automationStudioCandidateTrialOffline(trial.port);
-    const offSite = offline || kept !== undefined;
-    const admission = kept ? undefined : this.input.reset?.admit?.(automationStudioSiteResetTrialSteps(latest.buildPlan?.plan?.subflows ?? []));
+    const offline = pinned ? pinned.environmentKind !== "live" || pinned.mode === "offline" : automationStudioCandidateTrialOffline(trial.port);
+    const offSite = offline || pinned?.mode === "cached_rejudge" || kept !== undefined;
+    const resetPolicy = this.input.reset;
+    const admit = resetPolicy?.admit;
+    const steps = automationStudioSiteResetTrialSteps(latest.buildPlan?.plan?.subflows ?? []);
+    const admission = offSite || !resetPolicy || !admit ? undefined : await observeAutomationStudioTrialPolicy(context, "reset", { receiver: resetPolicy, callback: admit, args: [steps] }, steps);
     if (admission?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: admission.evidence, effectApplied: false, targetsUnchanged: true, resultCode: admission.evidence.code, resultReason: RETEST_REASON };
     // Steps with no witness run, and are said (header, t791).
     const unwitnessed = admission?.kind === "admit" ? admission.unwitnessed : undefined;
     // The deployment's start hook first, so the check after it finds the site put back (header).
-    const prepared = !offSite && this.input.reset && trial.port.prepareStart ? await trial.port.prepareStart({ revision: latest.revision, digest: latest.digest, signal }) : "none";
+    const startRequest = { revision: latest.revision, digest: latest.digest, signal };
+    this.invocation?.attachStart(startRequest);
+    const prepareStart = trial.port.prepareStart;
+    const prepared = !offSite && this.input.reset && prepareStart ? await observeCandidateTrialCallback(startRequest, "prepare", { receiver: trial.port, callback: prepareStart, args: [startRequest] }) : "none";
     signal.throwIfAborted();
     // The check is timed as its own reset step, so a trial's window no longer hides it (header, t737).
-    const siteReset = offSite ? undefined : this.input.reset;
+    const siteReset = offSite ? undefined : resetPolicy;
     // The trial's steps and parts, for its readings and the one targeted refusal (header, t775).
-    const parted = this.input.changeParts?.(latest);
+    const changeParts = this.input.changeParts;
+    const parted = !offSite && changeParts ? this.invocation ? this.invocation.invokeSync({ receiver: this.input, callback: changeParts, args: [latest] }) : changeParts.call(this.input, latest) : undefined;
     const change = { steps: automationStudioTrialChangeSteps(latest.buildPlan?.plan?.subflows ?? [], parted?.partsOf), parts: [...(parted?.parts ?? [])] };
     const reset = siteReset && await automationStudioLlmStepLogReset({ stage: "site_check", trialToolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID },
-      () => automationStudioTrialDefaultsBeforeTrial(siteReset, signal, cannotUndo, { ...(prepared === "reset" ? { startReset: true } : {}), change }), (decision) => decision.kind);
+      () => automationStudioTrialDefaultsBeforeTrial(siteReset, signal, cannotUndo, { ...(prepared === "reset" ? { startReset: true } : {}), change }, context), (decision) => decision.kind);
     signal.throwIfAborted();
     // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
     if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
@@ -491,6 +526,7 @@ export class AutomationStudioFlowCandidateTrialGate {
       this.trials.set(key(latest), tried);
       return refused(UNAFFORDABLE_CODE, UNAFFORDABLE_INSTRUCTION, { notRun: asked.answer.feedback });
     }
+    if (asked.valid) this.completedOrdinal += 1;
     // A no whose remedy would take back what an earlier standing no of this build upheld is not taken (header, t633).
     const contradiction = this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo });
     const weighedAnswer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
@@ -504,10 +540,13 @@ export class AutomationStudioFlowCandidateTrialGate {
     this.keptConditions.remember({ revision: answer.revision, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
     const keptConditions = this.keptConditions.conditions();
     this.earlierAdvice.remember({ revision: answer.revision, verdict: answer.verdict, standingNo: asked.standingNo, plan: latest.buildPlan?.plan });
-    const leftOnSite = offSite ? undefined : this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
+    const trialRan = resetPolicy?.trialRan;
+    const landed = answer.acts ?? [];
+    const leftOnSite = offSite || !resetPolicy || !trialRan ? undefined : await observeAutomationStudioTrialResultPolicy(context, { receiver: resetPolicy, callback: trialRan, args: [landed, answer.trialRunId] }, landed);
     // An offline yes is never the verdict kept for completion, and a stale one of this revision goes (header, Decision 3).
-    const offlineYes = offline && answer.verdict === "yes";
-    if (offlineYes && this.verdicts.get(key(answer))?.verdict !== "yes") this.verdicts.delete(key(answer));
+    const cachedUnverified = answer.verdict === "yes" && pinned?.mode === "cached_rejudge" && !(await this.invocation?.canPromote());
+    const offlineYes = answer.verdict === "yes" && (offline || cachedUnverified);
+    if (cachedUnverified || offlineYes && this.verdicts.get(key(answer))?.verdict !== "yes") this.verdicts.delete(key(answer));
     if (!offlineYes) this.verdicts.set(key(answer), {
       ...answer,
       ...(this.absorbed.length > 0 ? { absorbedByStartReset: this.absorbed.map(namedAct) } : {}),
@@ -518,10 +557,11 @@ export class AutomationStudioFlowCandidateTrialGate {
     const slowDown = answer.verdict === "yes" && !offlineYes ? SlowDown.unhandled(answer.feedback, latest) : [];
     if (slowDown.length) this.slowDowns.set(key(answer), slowDown);
     const retestsLeft = (TRANSIENT.has(answer.verdict) || offlineYes) && !repeatedStep ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
+    this.completedForReentry = asked.valid && retestsLeft > 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes" && !offlineYes, verdict: answer.verdict, revision: answer.revision, digest: answer.digest,
       ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback,
-      instruction: (kept ? `${kept.said} ` : "") + (offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(answer) : slowDown.length ? SlowDown.instruction(slowDown) : standingInstruction(answer, retestsLeft > 0)),
+      instruction: (kept ? `${kept.said} ` : "") + (cachedUnverified ? "This judgment used the retained trial evidence. Core has no complete safety proof for that live execution, so this answer is diagnostic and cannot complete or promote the candidate. It does not authorize another live run, start hook or reset." : offlineYes ? AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION : repeatedStep ? repeatedInstruction(answer) : slowDown.length ? SlowDown.instruction(slowDown) : standingInstruction(answer, retestsLeft > 0)),
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(slowDown.length ? { slowDown } : {}),
       ...(TRANSIENT.has(answer.verdict) || offlineYes ? { retestsLeft } : {}),
@@ -535,7 +575,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     };
     // The trial ran on the target, so whatever it touched may have moved. A transient verdict with a re-test left says
     // so in its reason, so the identical request to test again is never refused as a repeat (header).
-    const resultCode = offlineYes ? "candidate.trial_offline_yes" : `candidate.trial_${answer.verdict}`;
+    const resultCode = cachedUnverified ? "candidate.trial_cached_unverified" : offlineYes ? "candidate.trial_offline_yes" : `candidate.trial_${answer.verdict}`;
     return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode, ...(retestsLeft > 0 ? { resultReason: RETEST_REASON } : {}) };
   }
 
@@ -612,9 +652,11 @@ export class AutomationStudioFlowCandidateTrialGate {
   private async offlineFirst(trial: { candidateId: string; port: AutomationStudioCandidateTrialPort }, latest: AutomationStudioFlowCandidate, signal: AbortSignal, earlierAdvice: AutomationStudioCandidateTrialRequest["earlierAdvice"] = []): Promise<{ kept?: { asked: Asked; said: string }; evidence?: JsonObject }> {
     const step = (raw: unknown) => automationStudioTrialOfflineFirstStep<AutomationStudioCandidateTrialResult>(raw, latest);
     const request: AutomationStudioCandidateTrialRequest = { candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(earlierAdvice?.length ? { earlierAdvice } : {}) };
+    this.invocation?.attachRun(request);
     let raw: unknown;
     try {
-      raw = await automationStudioLlmStepLogOfflineTrial({ trialToolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID }, () => trial.port.offlineFirst!(request), (answer) => step(answer).logged);
+      const offlineFirst = trial.port.offlineFirst!;
+      raw = await automationStudioLlmStepLogOfflineTrial({ trialToolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID }, () => observeCandidateTrialCallback(request, "prepare", { receiver: trial.port, callback: offlineFirst, args: [request] }), (answer) => step(answer).logged);
     } catch (error) {
       if (signal.aborted) throw error;
       // Its error text may carry page or account detail, so only its kind is kept, as a plain code; the trial runs live.
@@ -624,7 +666,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     this.offlineAsked.add(key(latest));
     const outcome = step(raw);
     // A kept result still meets the gate's own result checks; one that does not runs live.
-    const checked = outcome.kind === "keep" ? checkedAnswer({ ...outcome.result, ...(outcome.standingNo !== undefined ? { standingNo: outcome.standingNo } : {}) }, latest) : undefined;
+    const checked = outcome.kind === "keep" ? checkedAnswer({ ...outcome.result, ...(outcome.standingNo !== undefined ? { standingNo: outcome.standingNo } : {}) }, latest, AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, automationStudioCandidateTrialActs) : undefined;
     if (outcome.kind === "keep" && typeof checked === "object") return { kept: { asked: checked, said: outcome.said }, evidence: outcome.evidence };
     const live = typeof checked === "string" ? step({ kind: "live", note: { outcome: "inconclusive", why: checked } }) : outcome;
     return live.kind === "live" && live.note.outcome !== "not_tried" ? { evidence: live.evidence } : {};
@@ -632,35 +674,20 @@ export class AutomationStudioFlowCandidateTrialGate {
 
   /** The trial's answer as the gate keeps it, and Core's record of a no it carried beside it, unread (header, t633). */
   private async ask(trial: { candidateId: string; port: AutomationStudioCandidateTrialPort }, latest: AutomationStudioFlowCandidate, signal: AbortSignal, startedWith: readonly string[], earlierAdvice: AutomationStudioCandidateTrialRequest["earlierAdvice"] = [], change?: AutomationStudioTrialChangeSession): Promise<Asked> {
-    const failed = (code: string): { answer: AutomationStudioCandidateTrialResult } => ({ answer: { revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code } } });
+    const failed = (code: string): Asked => ({ valid: false, answer: { revision: latest.revision, digest: latest.digest, verdict: "execution_failed", feedback: { code } } });
     let raw: unknown, finished: AutomationStudioTrialChangeOutcome | undefined; // What its readings finished with (header, t787).
     try {
-      raw = await trial.port({ candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}), ...(change ? { siteChange: async (acts, actsSignal) => (finished = await change.finish(acts, actsSignal)) } : {}) });
+      const request: AutomationStudioCandidateTrialRequest = { candidateId: trial.candidateId, revision: latest.revision, digest: latest.digest, signal, candidate: deepFreeze(structuredClone(latest)), ...(startedWith.length ? { startedWith: [...startedWith] } : {}), ...(earlierAdvice?.length ? { earlierAdvice } : {}), ...(change ? { siteChange: async (acts, actsSignal) => (finished = await finishAutomationStudioSiteResetSession(request, change, acts, actsSignal)) } : {}) };
+      this.invocation?.attachRun(request);
+      raw = await invokeCandidateTrial(trial, request);
     } catch (error) {
       if (signal.aborted) throw error;
       // The port's own error text may carry page or account detail, so the model is told only its kind (header).
-      return { answer: { ...failed("candidate.trial_port_failed").answer, feedback: Stop.portFailed("candidate.trial_port_failed", error) } };
+      return { valid: false, answer: { ...failed("candidate.trial_port_failed").answer, feedback: Stop.portFailed("candidate.trial_port_failed", error) } };
     }
-    const checked = checkedAnswer(raw, latest);
+    const checked = checkedAnswer(raw, latest, AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, automationStudioCandidateTrialActs);
     return typeof checked === "string" ? failed(checked) : { ...checked, answer: automationStudioTrialChangeContradictedNo(checked.answer, finished) };
   }
-}
-
-/** A trial's answer as the gate keeps it, with Core's record of a no beside it (header, t633). */
-type Asked = { answer: AutomationStudioCandidateTrialResult; standingNo?: unknown };
-
-/** A port's result, or a kept offline one, read as the gate keeps it; or the code of why it is no verdict about `latest`. */
-function checkedAnswer(raw: unknown, latest: AutomationStudioFlowCandidate): Asked | string {
-  const result = raw as Partial<AutomationStudioCandidateTrialResult> | null;
-  if (!result || typeof result !== "object" || Array.isArray(result)
-    || !(AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS as readonly unknown[]).includes(result.verdict)
-    || !isJsonObject(result.feedback) || (result.trialRunId !== undefined && typeof result.trialRunId !== "string")) return "candidate.trial_result_invalid";
-  // A verdict about another revision or digest is no verdict about this one.
-  if (result.revision !== latest.revision || result.digest !== latest.digest) return "candidate.trial_result_mismatch";
-  const acts = automationStudioCandidateTrialActs(result.acts);
-  const answer: AutomationStudioCandidateTrialResult = { revision: latest.revision, digest: latest.digest, verdict: result.verdict!, feedback: structuredClone(result.feedback) as JsonObject, ...(result.trialRunId ? { trialRunId: result.trialRunId } : {}), ...(acts.length ? { acts } : {}) };
-  const standingNo = (result as { standingNo?: unknown }).standingNo;
-  return { answer, ...(standingNo !== undefined ? { standingNo } : {}) };
 }
 
 /**
@@ -688,23 +715,6 @@ function withCoreFindings(answer: AutomationStudioCandidateTrialResult, found: r
 /** A no the build's own record contradicts, kept as an unsure with Core's words beside the judge's (header, t633): its revision is not closed. */
 function notTaken(answer: AutomationStudioCandidateTrialResult, contradiction: AutomationStudioResultStandingNoContradiction): AutomationStudioCandidateTrialResult {
   return { ...answer, verdict: "unsure", feedback: { ...answer.feedback, contradictedByBuild: contradiction.said } };
-}
-
-/**
- * The step a failed trial stopped at, from its feedback: the last step listed,
- * when it failed, by its position, node and failure code, with the run's code.
- * Nothing when the feedback lists no failed last step (a start that failed, a
- * port that failed, a run that stopped between steps).
- */
-function stoppingStep(feedback: JsonObject): JsonObject | undefined {
-  const steps = feedback.steps;
-  const last = Array.isArray(steps) ? steps.at(-1) : undefined;
-  if (!isJsonObject(last) || last.status !== "failed" || typeof last.step !== "number" || !Number.isSafeInteger(last.step) || typeof last.definitionId !== "string") return undefined;
-  return {
-    step: last.step, definitionId: last.definitionId,
-    ...(typeof last.failureCode === "string" ? { failureCode: last.failureCode } : {}),
-    ...(typeof feedback.code === "string" ? { code: feedback.code } : {})
-  };
 }
 
 /** The step a failed trial stopped at when it could not find a control still on the page (`targetOnPage`, header). */
@@ -779,15 +789,5 @@ function refused(code: string, instruction: string, detail: JsonObject = {}): Au
 
 function refusal(code: string, instruction: string, detail: JsonObject = {}): AutomationStudioLlmEvidenceCompletionCheck {
   return { ok: false, issueCodes: [code], feedback: { code, instruction, ...detail } };
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  try { return JSON.stringify(value) !== undefined; } catch { return false; }
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value && typeof value === "object") { for (const entry of Object.values(value)) deepFreeze(entry); Object.freeze(value); }
-  return value;
 }
 import { automationStudioSiteResetTrialSteps } from "../reset-admission/index.ts";

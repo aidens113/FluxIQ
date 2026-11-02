@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
+import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../build-execution/tools/index.ts";
 
 /** The scope a build's work runs in: its own controller, and the Flow it is registered under. */
 type AutomationStudioBuildCancellationScope = {
@@ -72,13 +73,17 @@ export class AutomationStudioBuildCancellation {
   signal(): AbortSignal | undefined { return this.scope.getStore()?.controller.signal; }
 
   tool(execute: AutomationStudioLlmEvidenceLoopInput["executeTool"]): AutomationStudioLlmEvidenceLoopInput["executeTool"] {
-    return async (call) => {
+    const wrapped: AutomationStudioLlmEvidenceLoopInput["executeTool"] = async (call) => {
       this.checkpoint();
       const signal = this.signal();
-      const result = await execute({ ...call, ...(signal ? { signal: AbortSignal.any([signal, ...(call.signal ? [call.signal] : [])]) } : {}) });
+      const placed = { ...call, ...(signal ? { signal: AbortSignal.any([signal, ...(call.signal ? [call.signal] : [])]) } : {}) };
+      inheritAutomationStudioBuildToolRequest(call, placed);
+      const result = await invokeAutomationStudioBuildToolCallback(placed, { receiver: undefined, callback: execute, args: [placed] }, placed.signal);
       this.checkpoint();
       return result;
     };
+    AutomationStudioBuildToolFactories.remember(wrapped, "frame");
+    return wrapped;
   }
 
   checkpoint(): void {

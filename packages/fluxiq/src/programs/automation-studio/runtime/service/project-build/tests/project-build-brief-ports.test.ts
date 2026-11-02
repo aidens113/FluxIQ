@@ -42,7 +42,7 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import type { AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../parking/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
-import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
+import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution/index.ts";
 import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 vi.setConfig({ testTimeout: 300_000 });

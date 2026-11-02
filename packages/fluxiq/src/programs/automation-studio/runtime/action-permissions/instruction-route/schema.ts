@@ -1,18 +1,6 @@
-// What the one instruction read is asked about the route, as the `route` field
-// of its completion (`../instruction-reading/schema.ts`). The model answers
-// `named`, `open` or `unclear`; it never supplies ids, offsets, digests or
-// anything saying a place was visited -- Core grounds the words it copied
-// (`./read.ts`) and makes the rest.
-//
-// The user's rule is said where the answer is given: a route the person names
-// must be followed, and only when they name none may the Flow start where the
-// work begins. Naming the site, or the page the work is on, is not a route.
-
-import type { JsonObject } from "../../../../../core/index.ts";
-
-/** The most places one named route may list. More is not shortened: it is unavailable. */
-export const AUTOMATION_STUDIO_INSTRUCTION_ROUTE_MAX_WAYPOINTS = 20;
-
+import type { JsonObject } from "@fluxiq/contracts/core";
+import { AUTOMATION_STUDIO_INSTRUCTION_ROUTE_MAX_WAYPOINTS } from "../../../../../runtime/action-permissions/instruction/route/index.ts";
+export { AUTOMATION_STUDIO_INSTRUCTION_ROUTE_MAX_WAYPOINTS } from "../../../../../runtime/action-permissions/instruction/route/index.ts";
 export const AUTOMATION_STUDIO_INSTRUCTION_ROUTE_SCHEMA: JsonObject = Object.freeze({
   type: "object",
   additionalProperties: false,

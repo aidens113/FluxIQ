@@ -11,6 +11,9 @@ import { automationStudioCandidateSubmissionRefusal } from "./submission-refusal
 import { automationStudioCandidateStallRetest } from "./stall-retest.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
 import { automationStudioCandidateTrialView } from "./trial-view.ts";
+import { inheritCandidateTrialReentry } from "../../candidate-trials/reentry/index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, bindAutomationStudioObservedBuildTools } from "../../build-execution/tools/index.ts";
+import { AuthoringExecutionScope } from "../../../../../runtime/flow-authoring/execution/observation/index.ts";
 
 /** The code a completion is refused under when it does not name the latest accepted submission, or there is none. */
 const LATEST_REQUIRED = "candidate.latest_submission_required";
@@ -101,12 +104,20 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
    */
   observe?: (loop: AutomationStudioLlmEvidenceLoopInput) => AutomationStudioLlmEvidenceLoopInput;
 }) {
+  const originalExecuteTool = input.loop.executeTool;
+  const bindingObserver = AutomationStudioProjectBuildToolObservers.of(input.loop);
+  const toolObserver = AutomationStudioProjectBuildToolObservers.of(originalExecuteTool);
+  if (bindingObserver && bindingObserver !== toolObserver) throw new Error("execution_observation.tool_binding_changed");
   const signals = [input.loop.signal, input.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
   const controller = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, ...(signal ? { signal } : {}) });
   const ledger = input.trial ? input.siteReset : undefined;
   // Every read the reset decides on is settled, so content that changes by itself is not taken for an act's (t475).
-  const startCheck = ledger ? new AutomationStudioSiteResetStartCheck({ binding: input.submission.binding, projectId: input.submission.projectId, flowId: input.submission.flowId, tools: input.loop.tools, executeTool: (call) => input.loop.executeTool(call), liveCheck: { settleMs: input.siteResetSettleMs ?? AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } }) : undefined;
+  const executeOriginal: AutomationStudioLlmEvidenceLoopInput["executeTool"] = call => {
+    if (toolObserver && input.loop.executeTool !== originalExecuteTool) throw new Error("execution_observation.tool_binding_changed");
+    return originalExecuteTool.call(input.loop, call);
+  };
+  const startCheck = ledger ? new AutomationStudioSiteResetStartCheck({ binding: input.submission.binding, projectId: input.submission.projectId, flowId: input.submission.flowId, tools: input.loop.tools, executeTool: executeOriginal, liveCheck: { settleMs: input.siteResetSettleMs ?? AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } }) : undefined;
   const reset: AutomationStudioSiteResetTrialReset | undefined = ledger && startCheck ? {
     // Each act still to undo is looked for on its own page, then the start is compared (`../site-reset/ledger.ts`, t471); after a start hook, every act (t475).
     // Core looks at an open act's watched place itself, and the settled read reaches the ledger like any other (L1).
@@ -155,6 +166,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
     tools: [...input.loop.tools.filter((item) => item.toolId !== "core.run_flow" && item.toolId !== submitId && item.toolId !== testId).map((item) => reset ? automationStudioSiteResetUndoesTool(item) : item), tool, gate.tool],
     completionSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" } }, required: ["revision", "digest"], additionalProperties: false },
     executeTool: async (call) => {
+      if (toolObserver && (input.loop.executeTool !== originalExecuteTool || AuthoringExecutionScope.of(call)?.context.toolObserver !== toolObserver)) throw new Error("execution_observation.tool_binding_changed");
       // The start is read once, right after the opening call, or before the first later call when there was none (`../site-reset/start-check.ts`).
       const opening = isOpeningCall(call.callId);
       if (startCheck && !opening) await startCheck.capture(call.signal ?? signal);
@@ -164,20 +176,20 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
         const before = startCheck?.moves;
         const answer = await gate.test(call.value, call.signal);
         const targetMoved = before !== undefined && startCheck!.moves > before;
-        return automationStudioCandidateTrialView({ answer, targetMoved, tools: input.loop.tools, executeTool: (look) => input.loop.executeTool(look), callId: call.callId, signal: call.signal ?? signal });
+        return automationStudioCandidateTrialView({ answer, targetMoved, tools: input.loop.tools, executeTool: executeOriginal, callId: call.callId, signal: call.signal ?? signal });
       }
       if (call.toolId !== submitId) {
         // A call that makes or undoes an act is read around, so the reset can look for it on its own page (`../site-reset/act-places.ts`).
         const ran = ledger && startCheck && !opening
-          ? await automationStudioSiteResetPlacedCall({ call, ledger, reader: startCheck, signal: call.signal ?? signal, run: () => input.loop.executeTool(call) })
-          : await input.loop.executeTool(call);
+          ? await automationStudioSiteResetPlacedCall({ call, ledger, reader: startCheck, signal: call.signal ?? signal, run: () => executeOriginal(call) })
+          : await executeOriginal(call);
         if (startCheck && opening) await startCheck.capture(call.signal ?? signal);
         return ran;
       }
       // What the gate knows of the current revision's trial, so a Flow sent again
       // unchanged, or one the judge refuted, is refused with what failed last
       // rather than made a new revision told to "test next" (t464, `./unchanged-submission.ts`).
-      const submitted = await controller.submit(call.value, { trialOf: (candidate) => gate.standing(candidate), refuted: (digest) => gate.refuted(digest) });
+      const submitted = await controller.submit(call.value, { trialOf: (candidate) => gate.standing(candidate), refuted: (digest) => gate.refuted(digest) }, call);
       // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`),
       // and, once a revision was accepted, names the latest one as it stood when this was sent (header of `refusedLabel`, t498, t503).
       if (!submitted.ok) {
@@ -202,7 +214,16 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   // it: completing is allowed only after a passed test, which that test's card
   // already says, and the observer's completion note is the legacy round's
   // ("it still has to run cleanly").
-  const loop = await runAutomationStudioLlmEvidenceLoop({ ...(input.observe ? input.observe(discovery) : discovery), checkCompletion });
+  if (toolObserver) {
+    AutomationStudioBuildToolFactories.remember(discovery.executeTool, "frame");
+    bindAutomationStudioObservedBuildTools(discovery, toolObserver);
+  }
+  gate.bindReentry(discovery);
+  const observed = input.observe ? input.observe(discovery) : discovery;
+  inheritCandidateTrialReentry(discovery, observed);
+  const checked = { ...observed, checkCompletion };
+  inheritCandidateTrialReentry(observed, checked);
+  const loop = await runAutomationStudioLlmEvidenceLoop(checked);
   const candidate = controller.latest();
   return { loop, candidate, trial: gate.standing(candidate), promotionAllowed: false as const };
 }

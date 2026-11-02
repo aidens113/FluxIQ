@@ -3,8 +3,9 @@ import type { RegisteredOutputAction } from "./action.ts";
 import { compactJsonObject } from "./compact.ts";
 import type { PreparedOutputAction } from "./prepared-action.ts";
 import type { OutputTargetPreparer } from "./target-preparer.ts";
+import { invokeObservedOutputSync, type OutputExecutionObservation } from "./admission/internal/index.ts";
 /** Preparation changes only parameters; verified identity and confirmation stay original. */
-export function prepareOutputAction(action: RegisteredOutputAction, domainId: string | null, output: DomainOutputDefinition, preparer: OutputTargetPreparer | undefined): PreparedOutputAction {
+export function prepareOutputAction(action: RegisteredOutputAction, domainId: string | null, output: DomainOutputDefinition, preparer: OutputTargetPreparer | undefined, observation?: OutputExecutionObservation): PreparedOutputAction {
   if (!preparer)
     return { ok: true, action };
   const view = Object.freeze({
@@ -15,7 +16,7 @@ export function prepareOutputAction(action: RegisteredOutputAction, domainId: st
     ...(action.confirmationTimeoutMs !== undefined ? { confirmationTimeoutMs: action.confirmationTimeoutMs } : {}),
     ...(action.metadata !== undefined ? { metadata: action.metadata } : {})
   });
-  const prepared = preparer({ action: view, domainId, output });
+  const prepared = invokeObservedOutputSync(observation, { receiver: undefined, callback: preparer, args: [{ action: view, domainId, output }] });
   if (!prepared.ok)
     return prepared;
   return {

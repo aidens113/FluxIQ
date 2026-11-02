@@ -5,10 +5,10 @@ export {
   automationStudioActionPermissionSentence,
   parseAutomationStudioActionPermissionRequest,
   isAutomationStudioActionPermissionCarriedName
-} from "../../../../runtime/action-permissions/index.ts";
+} from "../../../../runtime/action-permissions/request/index.ts";
 export type {
   AutomationStudioActionPermissionStage,
   AutomationStudioActionPermissionActionKind,
   AutomationStudioActionPermissionAction,
   AutomationStudioActionPermissionRequest
-} from "../../../../runtime/action-permissions/index.ts";
+} from "../../../../runtime/action-permissions/request/index.ts";

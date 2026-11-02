@@ -35,29 +35,67 @@ export class AutomationStudioRecordingDeletion {
     private readonly recordingStateIndexes: RecordingStateIndexStore | undefined
   ) {}
 
-  async deleteRecordings(input: { projectId?: string | null; recordingIds?: string[] }): Promise<{ deletedRecordingIds: string[]; deletedProposalIds: string[] }> {
-    const recordingIds = uniqueStrings((input.recordingIds ?? []).map((recordingId) => String(recordingId)).filter(Boolean));
-    if (!recordingIds.length) return { deletedRecordingIds: [], deletedProposalIds: [] };
-    if (!input.projectId || !this.projectPaths.root) {
-      const results = await Promise.all(recordingIds.map((recordingId) => this.facade.deleteRecording({
-        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
-        recordingId
-      })));
-      return {
-        deletedRecordingIds: results.map((result) => result.deletedRecordingId),
-        deletedProposalIds: uniqueStrings(results.flatMap((result) => result.deletedProposalIds))
-      };
+  async deleteRecording(input: { projectId?: string | null; recordingId: string }, deletePipeline: (projectId: string, recordingId: string) => Promise<void>): Promise<{ deletedRecordingId: string; deletedProposalIds: string[] }> {
+    if (input.projectId) await this.recordings.getRawRecordingSession(input.recordingId, input.projectId);
+    await this.recordings.mirror.delete(input.recordingId, input.projectId);
+    let deletedProposalIds: string[] = [];
+    if (input.projectId) await this.recordings.normalizations.deleteForRecordings(input.projectId, new Set([input.recordingId]));
+    if (input.projectId && this.projectPaths.root) {
+      const pipelineIndex = await this.indexes.readPipelineIndex(input.projectId);
+      deletedProposalIds = uniqueStrings([
+        ...(pipelineIndex.policyProposals ?? []).filter(item => item.recordingId === input.recordingId).map(item => item.proposalId),
+        ...(pipelineIndex.recordingFlowProposals ?? []).filter(item => item.recordingId === input.recordingId).map(item => item.proposalId)
+      ]);
+      await deletePipeline(input.projectId, input.recordingId);
+      await this.indexes.writeRecordingIndex(input.projectId, index => ({
+        recordings: (index.recordings ?? []).filter(item => item.recordingId !== input.recordingId),
+        normalizedTimelines: (index.normalizedTimelines ?? []).filter(item => item.recordingId !== input.recordingId)
+      }));
+      if (this.objectStore) {
+        const live = await this.collectLiveProjectObjectReferences(input.projectId);
+        await this.objectStore.deleteRecordingObjects(input.projectId, input.recordingId, live);
+        await ProgramJsonStore.deletePath(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
+      }
+      await removePathWithRetry(this.recordingPaths.recordingSessionDirectory(input.projectId, input.recordingId));
+      if (this.objectStore) await this.pruneUnreferencedProjectObjects(input.projectId);
+      await this.recordings.deleteOrphanedPhysicalRecordingSessionDirectories(input.projectId);
     }
+    return { deletedRecordingId: input.recordingId, deletedProposalIds };
+  }
 
+  async deleteRecordings(input: { projectId?: string | null; recordingIds?: string[] }, lock: <T>(projectId: string, recordingId: string, operation: () => Promise<T>) => Promise<T>): Promise<{ deletedRecordingIds: string[]; deletedProposalIds: string[] }> {
+    const recordingIds = uniqueStrings((input.recordingIds ?? []).map(recordingId => String(recordingId)).filter(Boolean));
+    if (!recordingIds.length) return { deletedRecordingIds: [], deletedProposalIds: [] };
+    const projectId = input.projectId;
+    if (!projectId) {
+      const results = await Promise.all(recordingIds.map(recordingId => this.facade.deleteRecording({ ...(projectId !== undefined ? { projectId } : {}), recordingId })));
+      return { deletedRecordingIds: results.map(result => result.deletedRecordingId), deletedProposalIds: uniqueStrings(results.flatMap(result => result.deletedProposalIds)) };
+    }
+    let operation = async () => {
+      // Validate every addressed document before a mirror or durable deletion.
+      await Promise.all(recordingIds.map(recordingId => this.recordings.getRawRecordingSession(recordingId, projectId)));
+      if (this.projectPaths.root) return await this.deleteProjectRecordings(projectId, recordingIds);
+      await Promise.all(recordingIds.map(recordingId => this.recordings.mirror.delete(recordingId, projectId)));
+      await this.recordings.normalizations.deleteForRecordings(projectId, new Set(recordingIds));
+      return { deletedRecordingIds: recordingIds, deletedProposalIds: [] };
+    };
+    for (const recordingId of [...recordingIds].sort().reverse()) {
+      const next = operation;
+      operation = () => lock(projectId, recordingId, next);
+    }
+    return await operation();
+  }
+
+  private async deleteProjectRecordings(projectId: string, recordingIds: string[]): Promise<{ deletedRecordingIds: string[]; deletedProposalIds: string[] }> {
     const recordingIdSet = new Set(recordingIds);
-    const pipelineIndex = await this.indexes.readPipelineIndex(input.projectId).catch(() => emptyPipelineIndex());
+    const pipelineIndex = await this.indexes.readPipelineIndex(projectId);
     const artifactIds = emptyPipelineArtifactIdSets();
     await Promise.all(recordingIds.map(async (recordingId) => {
       const pipeline = await new ProgramJsonStore<RecordingPipelineDocument>(
-        this.recordingPaths.recordingPipelineFile(input.projectId!, recordingId),
+        this.recordingPaths.recordingPipelineFile(projectId, recordingId),
         () => createRecordingPipelineDocument({ recordingId, startedAt: Date.now() })
       ).read();
-      mergePipelineArtifactIdSets(artifactIds, await this.recordings.collectRecordingPipelineArtifactIds(input.projectId!, recordingId, pipeline, pipelineIndex));
+      mergePipelineArtifactIdSets(artifactIds, await this.recordings.collectRecordingPipelineArtifactIds(projectId, recordingId, pipeline, pipelineIndex));
     }));
     const deletedProposalIds = uniqueStrings([
       ...(pipelineIndex.policyProposals ?? []).filter((item) => item.recordingId && recordingIdSet.has(item.recordingId)).map((item) => item.proposalId),
@@ -66,11 +104,8 @@ export class AutomationStudioRecordingDeletion {
       ...artifactIds.recordingFlowProposals
     ]);
 
-    await Promise.all(recordingIds.map((recordingId) => this.repositories.recordingSessions.delete(recordingId)));
-    const timelines = await this.repositories.normalizedTimelines.list();
-    await Promise.all(timelines
-      .filter((timeline) => recordingIdSet.has(timeline.recordingId) || timeline.metadata?.projectId === input.projectId && recordingIdSet.has(timeline.recordingId))
-      .map((timeline) => this.repositories.normalizedTimelines.delete(timeline.normalizedTimelineId)));
+    await Promise.all(recordingIds.map(recordingId => this.recordings.mirror.delete(recordingId, projectId)));
+    await this.recordings.normalizations.deleteForRecordings(projectId, recordingIdSet);
 
     const artifactDeletes: Array<{ recordingId: string; kind: PipelineArtifactKind; id: string }> = [];
     for (const recordingId of recordingIds) {
@@ -79,13 +114,13 @@ export class AutomationStudioRecordingDeletion {
       }
     }
     await mapWithConcurrency(artifactDeletes, PIPELINE_ARTIFACT_IO_CONCURRENCY, async ({ recordingId, kind, id }) => {
-      await this.objectDocuments.deletePipelineArtifactDocuments(input.projectId!, recordingId, kind, id);
+      await this.objectDocuments.deletePipelineArtifactDocuments(projectId, recordingId, kind, id);
     });
-    await this.recordings.deletePhysicalSharedPipelineArtifactsForRecordings(input.projectId, recordingIdSet);
+    await this.recordings.deletePhysicalSharedPipelineArtifactsForRecordings(projectId, recordingIdSet);
     await Promise.all(recordingIds.map(async (recordingId) => {
-      const proposalRoot = this.projectPaths.projectFile(input.projectId!, "proposals", safeSegment(recordingId));
-      const derivedDir = this.recordingPaths.recordingDerivedDirectory(input.projectId!, recordingId);
-      const sessionDir = this.recordingPaths.recordingSessionDirectory(input.projectId!, recordingId);
+      const proposalRoot = this.projectPaths.projectFile(projectId, "proposals", safeSegment(recordingId));
+      const derivedDir = this.recordingPaths.recordingDerivedDirectory(projectId, recordingId);
+      const sessionDir = this.recordingPaths.recordingSessionDirectory(projectId, recordingId);
       if (this.objectStore) {
         await Promise.all([
           ProgramJsonStore.deletePath(proposalRoot),
@@ -100,17 +135,17 @@ export class AutomationStudioRecordingDeletion {
       ]);
     }));
 
-    await this.indexes.writeRecordingIndex(input.projectId, (index) => ({
+    await this.indexes.writeRecordingIndex(projectId, (index) => ({
       recordings: (index.recordings ?? []).filter((item) => !recordingIdSet.has(item.recordingId)),
       normalizedTimelines: (index.normalizedTimelines ?? []).filter((item) => !recordingIdSet.has(item.recordingId))
     }));
-    await this.recordings.writePipelineIndexWithoutRecordings(input.projectId, recordingIdSet, artifactIds);
+    await this.recordings.writePipelineIndexWithoutRecordings(projectId, recordingIdSet, artifactIds);
     if (this.objectStore) {
-      const live = await this.collectLiveProjectObjectReferences(input.projectId);
-      await this.objectStore.deleteRecordingsObjects(input.projectId, recordingIds, live);
-      await this.pruneUnreferencedProjectObjects(input.projectId);
+      const live = await this.collectLiveProjectObjectReferences(projectId);
+      await this.objectStore.deleteRecordingsObjects(projectId, recordingIds, live);
+      await this.pruneUnreferencedProjectObjects(projectId);
     }
-    await this.recordings.deleteOrphanedPhysicalRecordingSessionDirectories(input.projectId);
+    await this.recordings.deleteOrphanedPhysicalRecordingSessionDirectories(projectId);
     return { deletedRecordingIds: recordingIds, deletedProposalIds };
   }
 

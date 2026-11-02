@@ -1,3 +1,4 @@
+import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
 // The runtime recovery path: a failed run, worked on, and what it cost.
 //
 // This was a private method on `AutomationStudioService`, and being there had
@@ -163,7 +164,14 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
   // exploration's clock, which is the distinction `recovery-deadline.ts` exists
   // to keep: "this exploration needs longer" and "the recovery as a whole needs
   // longer" are different pieces of advice.
-  const recoveryDeadline = startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() });
+  const graphOptions = input.graphOptions;
+  const clock = graphOptions?.clock;
+  const clockNow = clock?.now;
+  const legacyNow = graphOptions?.now;
+  const recoveryNow = clockNow ? clockNow.bind(clock) : legacyNow ? legacyNow.bind(graphOptions) : () => Date.now();
+  const clockStartTimer = clock?.startTimer;
+  const recoveryStartTimer = clockStartTimer?.bind(clock);
+  const recoveryDeadline = startAutomationStudioRecoveryDeadline({ startedAtMs: recoveryNow() });
   const invocation = decideAutomationStudioRuntimeLlmInvocation({ projectId: input.context.projectId, flowId: input.context.flowId, runId: input.detail.summary.runId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), settings: input.context.settings, policy: input.context.policy, runsCompleted: input.context.runsCompleted, stabilityScore: input.context.metrics.stabilityScore, budgetState: input.context.budgetState, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), adaptations: input.context.recentAdaptations });
   // Deterministic-first: a known recovery or a reroute must run before the model is asked, and the provider is not even resolved when one is available.
   if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, code: `llm.gate.${invocation.requiredPriorAction}`, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy }) as unknown as JsonObject } };
@@ -479,6 +487,8 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
         ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
         maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
         recoveryDeadline,
+        now: recoveryNow,
+        ...(recoveryStartTimer ? { startTimer: recoveryStartTimer } : {}),
         ...(patchReserve?.explorationBudget ? { budget: patchReserve.explorationBudget } : {}),
         ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {})
       }) : undefined;
@@ -668,7 +678,7 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
       ...(permissions ? { permissionGate: permissions.gate } : {}),
       // Numbered after the run's own attempts: a trial that runs the Flow to its
       // end is adopted as the run's resumed pass, and the store drops a repeated id.
-      ...(input.graphOptions ? { graphOptions: { ...input.graphOptions, priorAttemptCount: Math.max(input.graphOptions.priorAttemptCount ?? 0, input.detail.actionAttempts?.length ?? 0) } } : {})
+      ...(input.graphOptions ? { graphOptions: copyAutomationExecutionOptions(copyAutomationExecutionOptions(input.graphOptions), { priorAttemptCount: Math.max(input.graphOptions.priorAttemptCount ?? 0, input.detail.actionAttempts?.length ?? 0) }) } : {})
     })
     : { attempts: [], adaptationIds: [], changeProposalIds: [] };
   // Read again after the patches: a repair that needed a permission nobody gave

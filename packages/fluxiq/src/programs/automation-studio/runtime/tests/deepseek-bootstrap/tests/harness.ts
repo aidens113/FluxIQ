@@ -24,7 +24,7 @@ import {
 import { AutomationStudioLlmProviderError, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioSessionKeyPorts } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding/index.ts";
 import { draftObservation, issueCodesForEvidence, type DecisionObservation } from "./observation.ts";
 import { LOOK_TOOL_ID, type JudgeReply, type Reply } from "./replies.ts";
 
@@ -136,7 +136,7 @@ export async function create(options: {
       maxTotalEstimatedCostUsd: 2
     };
   });
-  // Able to run its steps again, so the build's test of the whole Flow can run (`../../replaying-binding.ts`).
+  // Able to run its steps again, so the build's test of the whole Flow can run (`../../replaying-binding/index.ts`).
   service.bindLlmEvidenceRuntime(automationStudioReplayingBinding(lookBinding(options.webRegistry ? "web-automation" : "demo", options.webRegistry === true || options.looksAreSteps === true)));
   try {
     const project = await service.createProject({ name: "Bootstrap exploration", ...(options.webRegistry ? { domainId: "web-automation" } : {}) });

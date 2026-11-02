@@ -15,6 +15,12 @@ import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-togg
 import { AutomationStudioExploredInterruptions, AutomationStudioLearnedPaces } from "../../flow-bootstrap/index.ts";
 import { automationStudioProjectBuildTrialReads } from "./trial-reads.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trials.ts";
+import { bindPartialTrialFrame, inheritPartialTrialContext } from "../../candidate-trials/partial/index.ts";
+import { observeCandidateTrialChoice } from "../../candidate-trials/authority/index.ts";
+import { candidateTrialSuppressesWrites } from "../../candidate-trials/index.ts";
+import { trialExecutionSource } from "../../candidate-trials/observation/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../../flow-bootstrap/reset-observation/index.ts";
+import { withAutomationStudioBuildToolCallbackScope } from "../../build-execution/tools/index.ts";
 
 // A project build's partial trials (unit A5c over A4b's runner): one port for
 // the build, shared by every brief, made from the same trial environment the
@@ -108,6 +114,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
       })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope, entry, possiblyLasting) });
     }
   };
+  inheritPartialTrialContext(environment, ports);
   const trials = automationStudioSubflowTrialPort(ref.buildId, ports);
   // The offline-first factory beside the live port, over the same ports (header, P6); it reads the live records.
   const offline = automationStudioOfflineFirstSubflow({ buildId: ref.buildId, ports, installation: AutomationStudioOfflineTrialInstallation.current(), phase: input.phase ?? "test", liveRecords: () => trials.records() });
@@ -120,12 +127,16 @@ export function automationStudioProjectBuildSubflowTrials(input: {
     while (answered.size > MAX_ANSWERED) answered.delete(answered.keys().next().value!);
   };
   const run = async (request: AutomationStudioSubflowTrialRequest): Promise<AutomationStudioSubflowTrialResult> => {
+    const suppressWrites = candidateTrialSuppressesWrites(request);
     let result: Awaited<ReturnType<typeof trials.port>>;
     try {
       result = await trials.port(request);
     } finally {
       // What its presses told the build's record of toggles, written into the build record (t792).
-      togglesWritten.sync();
+      if (!suppressWrites) {
+        const invocation = {};
+        await invokeAutomationStudioSiteResetCallback(request, { receiver: togglesWritten, callback: togglesWritten.syncAndFlushed, args: [invocation] }, request.signal, invocation);
+      }
     }
     answer(request);
     // How its start was made, as every phase is told (header).
@@ -136,27 +147,36 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   // The inner port's environment kind, written as the port is made, for the gate to read (header, U7).
   const environmentKind = trials.port.environmentKind;
   // A failure the gate keeps from the recording is a trial this build answered too: the proposals learn its verdict (header, P6).
-  const offlineFirst: AutomationStudioSubflowTrialPreparingPort["offlineFirst"] = async (request) => {
-    const offered = await offline.offlineFirst(request);
-    togglesWritten.sync();
+  const chooseOffline: NonNullable<AutomationStudioSubflowTrialPreparingPort["offlineFirst"]> = request => withAutomationStudioBuildToolCallbackScope(request, async () => {
+    const offered = await invokeAutomationStudioSiteResetCallback(request, { receiver: offline, callback: offline.offlineFirst, args: [request] }, request.signal, request);
+    // The choice records no live actions; actual tool/trial owners flush their writes.
     if (offered.kind === "kept") answer(request);
     return offered;
-  };
+  });
+  AutomationStudioSiteResetCallbackPolicies.rememberLexical(chooseOffline, "frame");
+  const offlineFirst: AutomationStudioSubflowTrialPreparingPort["offlineFirst"] = request => observeCandidateTrialChoice(trialExecutionSource(ports), request,
+    JSON.stringify(["partial.offline_choice", request.scope, request.proposal.revision, request.proposal.digest]), { receiver: undefined, callback: chooseOffline, args: [request] }, request.signal);
   // A run from the failing step is also the inner port's (`../subflow-trial/from-step.ts`, t804): without it the gate
   // cannot offer a repair its from-step check, and keeps refusing nothing.
   const fromStep = trials.port.fromStep ? { fromStep: trials.port.fromStep } : {};
   const port: AutomationStudioSubflowTrialPreparingPort = Object.assign(run, { environmentKind, offlineFirst, ...fromStep });
+  inheritPartialTrialContext(trials.port, port);
+  bindPartialTrialFrame(run, true);
   // The start hook, ahead of the gate's reset check, is the inner port's (`../subflow-trial/port.ts`).
   if (trials.port.prepareStart) port.prepareStart = trials.port.prepareStart;
-  port.admissionPredecessors = (scope) => input.proposals.predecessors(scope).flatMap((proposal) => proposal.subflows);
+  port.admissionPredecessors = function (this: AutomationStudioSubflowTrialPreparingPort, scope) {
+    return invokeAutomationStudioSiteResetSync(this, { receiver: input.proposals, callback: input.proposals.predecessors, args: [scope] }).flatMap(proposal => proposal.subflows);
+  };
+  AutomationStudioSiteResetCallbackPolicies.remember(port, port.admissionPredecessors, "frame");
   // The gate's verdict of a trial this port answered is the one the proposals keep (header, t634).
-  port.weighed = ({ answer }) => {
+  port.weighed = function (this: AutomationStudioSubflowTrialPreparingPort, { answer }) {
     const at = trialKey(answer.identity.briefId, answer.revision, answer.digest);
     const asked = answered.get(at);
     if (!asked) return;
     answered.delete(at);
-    input.proposals.trialled(asked.scope, asked.proposal, answer.verdict);
+    invokeAutomationStudioSiteResetSync(this, { receiver: input.proposals, callback: input.proposals.trialled, args: [asked.scope, asked.proposal, answer.verdict] });
   };
+  AutomationStudioSiteResetCallbackPolicies.remember(port, port.weighed, "frame");
   // The offline judge's spend counts with the live trials' (header, P6); `records` stays the live port's.
   const spent = (): ReturnType<typeof trials.spent> => sumSpend(trials.spent(), offline.spent());
   return { ...trials, port, spent };

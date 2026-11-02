@@ -29,8 +29,8 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourceHolder, AutomationStudioHostResourcePort } from "../../../project-agents/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
-import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
-import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
+import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution/index.ts";
+import { automationStudioTestSettledBuilds } from "./settled-builds/index.ts";
 import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 // The reset's settled read, its two reads back to back (header).

@@ -166,6 +166,7 @@
 // unchanged. A computed pass is never a yes: the judge is still asked, and
 // only its yes passes.
 
+import { RESULT_VERIFICATION_ASKS_PER_CHECK as AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK } from "../../../../runtime/result-verification/control/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowInstruction, AutomationStudioFlowIntervention, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import {
   automationStudioLlmProviderFailureSpendsCall,
@@ -282,7 +283,7 @@ const VERIFICATION_SOURCE = "verifyAutomationStudioRunResult";
  * temporary reason: the first ask, and once more (header). A verification
  * makes at most twice this many calls.
  */
-export const AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK = 2;
+export { AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK };
 
 export async function verifyAutomationStudioRunResult(request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> {
   const core = automationStudioResultCoreObservation(request.summary);

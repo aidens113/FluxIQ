@@ -1,3 +1,4 @@
+import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
 // A lasting step whose act answered success is done only if what it did
 // appeared (t476).
 //
@@ -83,8 +84,8 @@ export async function automationStudioAttemptWithRecordedEffect(
   const windowMs = automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs);
   let waitedMs = 0;
   for (;;) {
-    const observation = await observeAutomationStudioRouteState({ hostRuntime, projectId, flowId: flow.flowId, ...(options.signal ? { signal: options.signal } : {}) });
-    if (!observation.ok || automationStudioRouteEffectSeen(hostRuntime, effect, observation.state) !== "not_seen") return attempt;
+    const observation = await observeAutomationStudioRouteState({ hostRuntime, projectId, flowId: flow.flowId, ...(options.signal ? { signal: options.signal } : {}) }, automationCallbackObservation(options));
+    if (!observation.ok || automationStudioRouteEffectSeen(hostRuntime, effect, observation.state, automationCallbackObservation(options)) !== "not_seen") return attempt;
     if (waitedMs >= windowMs || options.signal?.aborted === true) break;
     const waitMs = Math.min(EFFECT_POLL_MS, windowMs - waitedMs);
     await automationStudioRunWait(options, waitMs);

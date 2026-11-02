@@ -89,6 +89,8 @@ import type {
   AutomationStudioSiteResetSpot,
   AutomationStudioSiteResetTrialAct
 } from "../site-reset/index.ts";
+import type { AutomationStudioSiteResetLedgerOptions, AutomationStudioSiteResetRecordedAct } from "../site-reset/index.ts";
+import { AutomationStudioSiteResetObservation, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../reset-observation/index.ts";
 import type { AutomationStudioSiteResetLedgerAct as Act } from "./act.ts";
 import type { AutomationStudioSiteResetLedgerAnswers } from "./answers.ts";
 import type { AutomationStudioSiteResetLedgerClaims } from "./claims.ts";
@@ -104,15 +106,23 @@ const MAX_ACT = 9999;
 const LEFT_BY_TRIAL: ReadonlySet<AutomationStudioSiteResetLeftover["standing"]> = new Set(["in_place", "unsettleable", "kept"]);
 /** What a possibly lasting act's words end with (header, t593). */
 const POSSIBLY_LASTING = "declared no lasting act, but had an effect: possibly lasting";
+type RecordArguments = [did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string | undefined, spot?: AutomationStudioSiteResetSpot | undefined, possible?: boolean | undefined, created?: readonly string[] | undefined, control?: string | undefined, operation?: string | undefined];
+type TrialRecordCommand = { kind: "explored"; accept(value: readonly AutomationStudioSiteResetExploredAct[]): void } | { kind: "record"; args: RecordArguments; accept(value: Act | undefined): void };
+type OriginalCallbacks = { readonly receiver: AutomationStudioSiteResetLedgerOptions; readonly nextActId: AutomationStudioSiteResetLedgerOptions["nextActId"]; readonly sink: AutomationStudioSiteResetLedgerOptions["sink"]; readonly buildExplored: AutomationStudioSiteResetLedgerOptions["buildExplored"] };
+type SinkOutcome = { readonly kind: "fulfilled" } | { readonly kind: "rejected"; readonly error: unknown };
 
 /** The ledger's recording of the calls and trials that reach it, over its shared state (header). */
 export class AutomationStudioSiteResetLedgerRecording {
+  private readonly pending = new Set<Promise<SinkOutcome>>();
+  private failure: { error: unknown } | undefined;
   constructor(
     private readonly state: AutomationStudioSiteResetLedgerState,
     private readonly answers: AutomationStudioSiteResetLedgerAnswers,
     private readonly claims: AutomationStudioSiteResetLedgerClaims,
     /** The ledger's own public answers, asked through the ledger (`../site-reset/ledger.ts`). */
-    private readonly ports: { exploredActs: () => AutomationStudioSiteResetExploredAct[] }
+    private readonly ports: { exploredActs: () => AutomationStudioSiteResetExploredAct[] },
+    private readonly originals?: OriginalCallbacks,
+    private readonly owner?: object
   ) {}
 
   explored(call: AutomationStudioSiteResetExplored): void {
@@ -227,17 +237,50 @@ export class AutomationStudioSiteResetLedgerRecording {
 
   /** A trial ran: a new phase starts with what was still in place and the trial's own acts, which are answered as left on the site. */
   trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId?: string): AutomationStudioSiteResetNamedAct[] {
+    const work = this.trialRecords(acts, trialRunId);
+    let next = work.next();
+    while (!next.done) {
+      const command = next.value;
+      if (command.kind === "explored") command.accept(this.buildExplored());
+      else command.accept(this.record(...command.args));
+      next = work.next();
+    }
+    return next.value;
+  }
+
+  /** The same recording transitions, awaiting each original supplied callback before advancing. */
+  async trialRanObserved(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId: string | undefined, invocation: object): Promise<AutomationStudioSiteResetNamedAct[]> {
+    const originals = this.originalCallbacks();
+    const work = this.trialRecords(acts, trialRunId);
+    let next = work.next();
+    while (!next.done) {
+      const command = next.value;
+      if (command.kind === "explored") {
+        const callback = originals.buildExplored;
+        command.accept(callback
+          ? await invokeAutomationStudioSiteResetCallback(invocation, { receiver: originals.receiver, callback, args: [] })
+          : await invokeAutomationStudioSiteResetCallback(invocation, { receiver: this.ports, callback: this.ports.exploredActs, args: [] }));
+      } else command.accept(await this.recordObserved(invocation, command.args, originals));
+      next = work.next();
+    }
+    return next.value;
+  }
+
+  private *trialRecords(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId: string | undefined): Generator<TrialRecordCommand, AutomationStudioSiteResetNamedAct[], void> {
     this.state.recordedInPhase = 0;
     for (const act of this.state.acts) act.chain = undefined;
     // A trial changed the site: every read before it is stale (`./answers.ts`, L1).
     this.state.clock += 1;
-    const explored = this.buildExplored();
+    const explored: { value: readonly AutomationStudioSiteResetExploredAct[] } = { value: [] };
+    yield { kind: "explored", accept: value => { explored.value = value; } };
     for (const act of acts) {
       const label = act.label ? JSON.stringify(act.label) : act.definitionId;
       // A looped step's pass is named, so its passes' acts read apart (header, t748).
       const did = `trial step ${act.step}${passWords(act.pass)} ${label}${act.control ? ` on ${JSON.stringify(act.control)}` : ""}`;
       // Where its step's control sat and what it made, as exploration records an act (header, t598).
-      const recorded = this.record(did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, spotOf(act.spot), this.state.options.possible === true && act.possible === true, act.created, act.control, act.definitionId);
+      const slot: { value: Act | undefined } = { value: undefined };
+      yield { kind: "record", args: [did, `${trialRunId ?? "trial"}#step-${act.step}`, act.consequences, undefined, spotOf(act.spot), this.state.options.possible === true && act.possible === true, act.created, act.control, act.definitionId], accept: value => { slot.value = value; } };
+      const recorded = slot.value;
       const place = act.spot?.place;
       // Whether the build pressed this step's own item (its page) at that place before: then its diff's before is no original (t751 R1).
       const itemPressed = place !== undefined && act.controls !== undefined && this.state.tracker.pressedAt(act.controls.page, place);
@@ -251,7 +294,7 @@ export class AutomationStudioSiteResetLedgerRecording {
       witnessTransfer(recorded, act.collections, this.state.seen, this.state.acts.indexOf(recorded) + 1);
       if (press && onlyModifies(act.consequences)) recorded.press = press;
       // The explored acts it repeats lend it their destinations, named whenever (`./answers.ts`, L1).
-      if (recorded.strictReset) recorded.repeats = explored.filter((other) => repeats({ consequences: act.consequences, definitionId: act.definitionId, spot: act.spot }, { consequences: other.consequences, operation: other.operation, spot: other.spot })).map((other) => other.id);
+      if (recorded.strictReset) recorded.repeats = explored.value.filter((other) => repeats({ consequences: act.consequences, definitionId: act.definitionId, spot: act.spot }, { consequences: other.consequences, operation: other.operation, spot: other.spot })).map((other) => other.id);
       takeStamp(recorded, act.witness, { createBaselines: this.state.createBaselines, controlWitnesses: this.state.controlWitnesses }, act.controls, itemPressed);
       // Its step's diff's replaced values witness it where nothing else does; an unread place starts at its from (header, t772).
       if (act.values && onlyModifies(act.consequences)) this.state.judge.valued(recorded, act.values, "diff");
@@ -292,7 +335,32 @@ export class AutomationStudioSiteResetLedgerRecording {
 
   /** The build's explored acts, every brief's in a project build (`./answers.ts`, L1). */
   buildExplored(): readonly AutomationStudioSiteResetExploredAct[] {
+    if (AutomationStudioSiteResetObservation.of(this.owner)) {
+      const originals = this.originalCallbacks();
+      return originals.buildExplored ? invokeAutomationStudioSiteResetSync(this.owner, { receiver: originals.receiver, callback: originals.buildExplored, args: [] }) : invokeAutomationStudioSiteResetSync(this.owner, { receiver: this.ports, callback: this.ports.exploredActs, args: [] });
+    }
     return this.state.options.buildExplored ? this.state.options.buildExplored() : this.ports.exploredActs();
+  }
+
+  async flushedObserved(): Promise<void> {
+    while (this.pending.size) await Promise.all([...this.pending]);
+    if (this.failure) throw this.failure.error;
+  }
+
+  private originalCallbacks(): OriginalCallbacks {
+    return this.originals ?? { receiver: this.state.options, nextActId: this.state.options.nextActId, sink: this.state.options.sink, buildExplored: this.state.options.buildExplored };
+  }
+
+  private retain(pending: Promise<void>): void {
+    const tracked = pending.then(
+      (): SinkOutcome => ({ kind: "fulfilled" }),
+      (error): SinkOutcome => {
+        this.failure ??= { error };
+        return { kind: "rejected", error };
+      }
+    );
+    this.pending.add(tracked);
+    void tracked.then(() => this.pending.delete(tracked));
   }
 
   /**
@@ -315,10 +383,42 @@ export class AutomationStudioSiteResetLedgerRecording {
     return true;
   }
 
-  private record(did: string, ref: string, consequences: readonly AutomationStudioActionConsequence[], call?: string, spot?: AutomationStudioSiteResetSpot, possible = false, created: readonly string[] = [], control?: string, operation?: string): Act | undefined {
+  private record(...args: RecordArguments): Act | undefined {
+    const [, , consequences, , , possible = false] = args;
     const lasting = consequences.some((consequence) => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
     if (!lasting && !possible) return;
-    const id = this.state.options.nextActId ? this.state.options.nextActId() : this.state.next <= MAX_ACT ? `act-${this.state.next}` : undefined;
+    const observed = AutomationStudioSiteResetObservation.of(this.owner);
+    const originals = observed ? this.originalCallbacks() : undefined;
+    const nextActId = originals?.nextActId;
+    const id = observed && originals && nextActId ? invokeAutomationStudioSiteResetSync(this.owner, { receiver: originals.receiver, callback: nextActId, args: [] }) : this.state.options.nextActId ? this.state.options.nextActId() : this.state.next <= MAX_ACT ? `act-${this.state.next}` : undefined;
+    const act = this.createRecord(id, args);
+    if (act && observed && originals?.sink) {
+      const recorded = this.recorded(act);
+      this.retain(invokeAutomationStudioSiteResetCallback(this.owner, { receiver: originals.receiver, callback: originals.sink, args: [recorded] }, undefined, recorded));
+    } else if (act) this.state.options.sink?.(this.recorded(act));
+    return act;
+  }
+
+  private async recordObserved(invocation: object, args: RecordArguments, originals: OriginalCallbacks): Promise<Act | undefined> {
+    const [, , consequences, , , possible = false] = args;
+    if (!consequences.some(consequence => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence)) && !possible) return;
+    const nextActId = originals.nextActId;
+    const id = nextActId ? await invokeAutomationStudioSiteResetCallback(invocation, { receiver: originals.receiver, callback: nextActId, args: [] }) : this.state.next <= MAX_ACT ? `act-${this.state.next}` : undefined;
+    const act = this.createRecord(id, args);
+    const sink = originals.sink;
+    if (act && sink) {
+      const recorded = this.recorded(act);
+      await invokeAutomationStudioSiteResetCallback(invocation, { receiver: originals.receiver, callback: sink, args: [recorded] }, undefined, recorded);
+    }
+    return act;
+  }
+
+  private recorded(act: Act): AutomationStudioSiteResetRecordedAct {
+    return { ...namedAct(act), ...(this.state.options.owner !== undefined ? { owner: this.state.options.owner } : {}), ref: act.ref, undoable: act.undoable };
+  }
+
+  private createRecord(id: string | undefined, [did, ref, consequences, call, spot, possible = false, created = [], control, operation]: RecordArguments): Act | undefined {
+    const lasting = consequences.some(consequence => UNDOABLE.has(consequence) || IRREVERSIBLE.has(consequence));
     if (id === undefined) return;
     const undoable = !consequences.some((consequence) => IRREVERSIBLE.has(consequence));
     // Said as possibly lasting wherever it is named, since some answers carry only what an act did (header).
@@ -328,7 +428,6 @@ export class AutomationStudioSiteResetLedgerRecording {
     this.state.next += 1;
     // A possibly lasting act never makes a comparison due (header).
     if (lasting) this.state.recordedInPhase += 1;
-    this.state.options.sink?.({ ...namedAct(act), ...(this.state.options.owner !== undefined ? { owner: this.state.options.owner } : {}), ref, undoable });
     return act;
   }
 }

@@ -128,6 +128,13 @@ import { AutomationStudioSiteResetTrialChange } from "./trial-change-port.ts";
 import type { AutomationStudioSiteResetUndoDeclared } from "../reset-undo/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "./words.ts";
 import { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
+import {
+  AutomationStudioSiteResetCallbackPolicies,
+  AutomationStudioSiteResetObservation,
+  AutomationStudioSiteResetSessions,
+  invokeAutomationStudioSiteResetCallback,
+  invokeAutomationStudioSiteResetSync
+} from "../reset-observation/index.ts";
 
 /** Reset attempts before an act with a subject undo is kept unresolved; being strict, it still refuses ordinary trials. */
 const ASKED_BEFORE_KEPT = 2;
@@ -209,9 +216,10 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     };
     this.answers = new AutomationStudioSiteResetLedgerAnswers(this.state);
     // This ledger's own public answers reach a collaborator through the ledger, so an override of them is honoured (header).
-    this.claims = new AutomationStudioSiteResetLedgerClaims(this.state, this.answers, { inPlace: () => this.inPlace(), unsatisfiable: () => this.unsatisfiable(), locate: (act) => this.recording.locate(act), pressed: (place) => this.recording.pressedUnder(place) });
-    this.recording = new AutomationStudioSiteResetLedgerRecording(this.state, this.answers, this.claims, { exploredActs: () => this.exploredActs() });
+    this.claims = new AutomationStudioSiteResetLedgerClaims(this.state, this.answers, { inPlace: () => invokeAutomationStudioSiteResetSync(this, { receiver: this, callback: this.inPlace, args: [] }), unsatisfiable: () => invokeAutomationStudioSiteResetSync(this, { receiver: this, callback: this.unsatisfiable, args: [] }), locate: (act) => this.recording.locate(act), pressed: (place) => this.recording.pressedUnder(place) });
+    this.recording = new AutomationStudioSiteResetLedgerRecording(this.state, this.answers, this.claims, this, { receiver: options, nextActId: this.options.nextActId, sink: this.options.sink, buildExplored: this.options.buildExplored }, this);
     this.change = new AutomationStudioSiteResetTrialChange({ acts: () => acts, clock: () => this.state.clock, createBaselines, controlWitnesses: this.state.controlWitnesses, explored: () => this.recording.buildExplored(), standing: (act) => this.answers.leftOf(act).standing, groups: (act) => this.recording.witnessGroups(act), controlStart: (place) => tracker.start(place) });
+    for (const [name, callback, contract] of LEDGER_CALLBACKS) if (this[name] === callback) AutomationStudioSiteResetCallbackPolicies.remember(this, callback, contract);
   }
 
   /** The exploration door of the one admission (header, t751 R3), with the build's explored acts an action may repeat. */
@@ -287,6 +295,12 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     this.change.readLog.observed(read, this.state.clock);
   }
 
+  /** Observed callers await every sink already queued by this ledger. */
+  async observedAndFlushed(given: AutomationStudioSiteResetRead, baseline: boolean, invocation: object): Promise<void> {
+    await invokeAutomationStudioSiteResetCallback(invocation, { receiver: this, callback: this.observed, args: [given, baseline] });
+    await this.recording.flushedObserved();
+  }
+
   /** How a call's `undoes` value reads (`../reset-ledger/claims.ts`). */
   claim(undoes: unknown, resetDestination?: unknown): AutomationStudioSiteResetClaim {
     return this.claims.claim(undoes, resetDestination);
@@ -298,8 +312,18 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   }
 
   /** An exploration call ran (`../reset-ledger/recording.ts`). */
-  explored(call: AutomationStudioSiteResetExplored): void {
+  explored(call: AutomationStudioSiteResetExplored): void | Promise<void> {
     this.recording.explored(call);
+    if (AutomationStudioSiteResetObservation.of(this)) return this.recording.flushedObserved();
+  }
+
+  /** Records the same exploration transition and awaits its original sink. */
+  async exploredObserved(call: AutomationStudioSiteResetExplored, invocation: object): Promise<void> {
+    const scope = this.observedOwner(invocation);
+    try {
+      this.recording.explored(call);
+      await this.recording.flushedObserved();
+    } finally { scope?.close(); }
   }
 
   /** The act the exploration call `callId` made, if it made one (`../reset-ledger/recording.ts`). */
@@ -336,7 +360,14 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
    */
   async beforeTrial(checks: AutomationStudioSiteResetChecks | AutomationStudioSiteResetChecks["compare"], cannotUndo?: readonly string[], options: AutomationStudioSiteResetBeforeTrialOptions = {}): Promise<AutomationStudioSiteResetDecision> {
     const { acts } = this.state;
-    const asked: AutomationStudioSiteResetChecks = typeof checks === "function" ? { compare: checks } : checks;
+    const supplied: AutomationStudioSiteResetChecks = typeof checks === "function" ? { compare: checks } : checks;
+    const invocation = AutomationStudioSiteResetObservation.of(options) ? options : this;
+    const compare = supplied.compare, compareAt = supplied.compareAt, lookAt = supplied.lookAt;
+    const asked: AutomationStudioSiteResetChecks = !AutomationStudioSiteResetObservation.of(invocation) ? supplied : {
+      compare: () => invokeAutomationStudioSiteResetCallback(invocation, { receiver: supplied, callback: compare, args: [] }),
+      ...(compareAt ? { compareAt: (place) => invokeAutomationStudioSiteResetCallback(invocation, { receiver: supplied, callback: compareAt, args: [place] }) } : {}),
+      ...(lookAt ? { lookAt: (location, start) => invokeAutomationStudioSiteResetCallback(invocation, { receiver: supplied, callback: lookAt, args: [location, start] }) } : {})
+    };
     for (const act of acts) act.chain = undefined;
     for (const id of cannotUndo ?? []) {
       const act = acts.find((entry) => entry.id === id);
@@ -359,6 +390,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
       }
       this.state.recordedInPhase = 0;
       const change = await this.change.begin(options.change, asked);
+      if (change) AutomationStudioSiteResetSessions.bind(change, invocation);
       return { kind: "admit", ...(absorbed.length > 0 ? { absorbedByStartReset: absorbed } : {}), ...(change ? { change } : {}) };
     }
     // The one refusal left (header, t775): just the acts that already show an asked end state another step made.
@@ -383,6 +415,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     }
     // The trial's before readings (header, t775), then back to the start once anything was recorded or is on the site.
     const change = await this.change.begin(options.change, asked);
+    if (change) AutomationStudioSiteResetSessions.bind(change, invocation);
     const due = this.state.recordedInPhase > 0 || acts.some((act) => this.answers.claimable(act)) || change !== undefined;
     const comparison = due ? await asked.compare() : undefined;
     // Kept: a legacy act the site cannot undo, a strict act settled with no change seen, or one settled with a list Core could not read again (`../reset-ledger/answers.ts`, L1, t743).
@@ -395,12 +428,15 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
 
   /** This ledger as a trial's readings read it (header, t775; `./trial-change-port.ts`). */
   trialChange(): AutomationStudioTrialChangeLedgerPort {
-    return this.change.port();
+    const port = this.change.port();
+    AutomationStudioSiteResetObservation.own(port, this);
+    for (const callback of [port.places, port.latest, port.seq, port.leftFromEarlier, port.carried, port.start]) if (callback) AutomationStudioSiteResetCallbackPolicies.remember(port, callback, "pure");
+    return port;
   }
 
   /** The in-place acts already showing an asked end state another step made, as the model is shown them (header, t775). */
   endStateClash(ask: AutomationStudioTrialChangeAsk, carried?: (step: AutomationStudioTrialChangeAsk["steps"][number]) => boolean): AutomationStudioSiteResetNamedAct[] {
-    return this.change.endStateClash(ask, carried).map((act) => this.answers.named(act));
+    return this.change.endStateClash(ask, carried ? step => invokeAutomationStudioSiteResetSync(this, { receiver: undefined, callback: carried, args: [step] }) : undefined).map((act) => this.answers.named(act));
   }
 
   /** The targeted refusal (header, t775): only the acts named, each asked for once more. */
@@ -412,6 +448,12 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   /** A trial ran; its own acts are recorded and what is left is answered (`../reset-ledger/recording.ts`). */
   trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId?: string): AutomationStudioSiteResetNamedAct[] {
     return this.recording.trialRan(acts, trialRunId);
+  }
+
+  async trialRanObserved(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId: string | undefined, invocation: object): Promise<AutomationStudioSiteResetNamedAct[]> {
+    const scope = this.observedOwner(invocation);
+    try { return await this.recording.trialRanObserved(acts, trialRunId, invocation); }
+    finally { scope?.close(); }
   }
 
   /** This build's acts still to undo (`../reset-ledger/answers.ts`). */
@@ -436,7 +478,7 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
    * control takes back; undefined for an id this ledger never gave. Read off `leftover` (`../reset-ledger/answers.ts`, t772 w7).
    */
   standing(actId: string): AutomationStudioSiteResetLeftover["standing"] | undefined {
-    return this.leftover(actId)?.standing;
+    return invokeAutomationStudioSiteResetSync(this, { receiver: this, callback: this.leftover, args: [actId] })?.standing;
   }
 
   /** Whether one act is left on the site (`../reset-ledger/answers.ts`). */
@@ -453,7 +495,41 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
   changeSeen(actId: string): boolean | undefined {
     return this.answers.changeSeen(actId);
   }
+
+  private observedOwner(invocation: object): AutomationStudioSiteResetObservation | undefined {
+    const scope = AutomationStudioSiteResetObservation.of(invocation);
+    return scope ? new AutomationStudioSiteResetObservation(this, scope.context, scope.options, AutomationStudioSiteResetObservation.of(this)) : undefined;
+  }
 }
+
+/** Original Code methods only; overrides do not inherit a completion declaration. */
+const LEDGER_CALLBACKS = [
+  ["createBaseline", AutomationStudioSiteResetLedger.prototype.createBaseline, "frame"],
+  ["admitStep", AutomationStudioSiteResetLedger.prototype.admitStep, "frame"],
+  ["claim", AutomationStudioSiteResetLedger.prototype.claim, "frame"],
+  ["target", AutomationStudioSiteResetLedger.prototype.target, "frame"],
+  ["explored", AutomationStudioSiteResetLedger.prototype.explored, "frame"],
+  ["beforeTrial", AutomationStudioSiteResetLedger.prototype.beforeTrial, "frame"],
+  ["observed", AutomationStudioSiteResetLedger.prototype.observed, "frame"],
+  ["observedAndFlushed", AutomationStudioSiteResetLedger.prototype.observedAndFlushed, "frame"],
+  ["exploredObserved", AutomationStudioSiteResetLedger.prototype.exploredObserved, "frame"],
+  ["trialRanObserved", AutomationStudioSiteResetLedger.prototype.trialRanObserved, "frame"],
+  ["endStateClash", AutomationStudioSiteResetLedger.prototype.endStateClash, "frame"],
+  ["trialChange", AutomationStudioSiteResetLedger.prototype.trialChange, "pure"],
+  ["destinationReceipts", AutomationStudioSiteResetLedger.prototype.destinationReceipts, "pure"],
+  ["actOf", AutomationStudioSiteResetLedger.prototype.actOf, "pure"],
+  ["placed", AutomationStudioSiteResetLedger.prototype.placed, "pure"],
+  ["undoSeen", AutomationStudioSiteResetLedger.prototype.undoSeen, "pure"],
+  ["noEffect", AutomationStudioSiteResetLedger.prototype.noEffect, "pure"],
+  ["standing", AutomationStudioSiteResetLedger.prototype.standing, "pure"],
+  ["unreadOf", AutomationStudioSiteResetLedger.prototype.unreadOf, "pure"],
+  ["exploredActs", AutomationStudioSiteResetLedger.prototype.exploredActs, "pure"],
+  ["leftover", AutomationStudioSiteResetLedger.prototype.leftover, "pure"],
+  ["inPlace", AutomationStudioSiteResetLedger.prototype.inPlace, "pure"],
+  ["unsatisfiable", AutomationStudioSiteResetLedger.prototype.unsatisfiable, "pure"],
+  ["adoptOriginalCollections", AutomationStudioSiteResetLedger.prototype.adoptOriginalCollections, "pure"],
+  ["startsInEndState", AutomationStudioSiteResetLedger.prototype.startsInEndState, "pure"]
+] as const;
 
 /**
  * What `act` changed on its page that is still there now. With the domain's

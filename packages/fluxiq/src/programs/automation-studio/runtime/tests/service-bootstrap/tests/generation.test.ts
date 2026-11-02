@@ -11,7 +11,7 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../flow-bootstrap/index.ts";
 import { estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../storage/index.ts";
-import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding/index.ts";
 import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, isJudgeRequest, judgeReply, JUDGE_USAGE, type DataDirSeed } from "./fixtures.ts";
 
 let tempRoot: string;

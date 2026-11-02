@@ -16,9 +16,46 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../ll
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS } from "../../../llm/evidence-loop.ts";
 import { OPEN, SIBLINGS, callPart, part, script, testScope, testSubmission } from "./subflow-fixture.ts";
+import { bindAutomationStudioObservedBuildTools } from "../../../build-execution/index.ts";
+import { buildToolFixture } from "../../../build-execution/tools/tests/fixture.ts";
 
 const look: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a node", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "web.inspect" } } };
 const offeredAlso = ["core.submit_candidate", "core.test_candidate", "core.run_flow", "project.dispatch"].map((toolId): AutomationStudioLlmEvidenceTool => ({ toolId, description: toolId, effect: "observe", inputSchema: { type: "object" } }));
+
+it.each(["unmapped", "foreign"] as const)("refuses an actual subflow submit wrapper's %s replacement before any decision or Host call", async mode => {
+  const f = await buildToolFixture();
+  let decisions = 0;
+  let writes = 0;
+  const loop: AutomationStudioLlmEvidenceLoopInput = {
+    tools: [],
+    executeTool: async () => {
+      writes += 1;
+      return {};
+    },
+    decide: async () => {
+      decisions += 1;
+      return { kind: "complete", result: {} };
+    }
+  };
+  bindAutomationStudioObservedBuildTools(loop, f.observer);
+  if (mode === "unmapped") loop.executeTool = async () => {
+    writes += 1;
+    return {};
+  };
+  else {
+    const foreign = await buildToolFixture();
+    const replacement = { executeTool: async () => {
+      writes += 1;
+      return {};
+    } };
+    bindAutomationStudioObservedBuildTools(replacement, foreign.observer);
+    loop.executeTool = replacement.executeTool;
+  }
+  await expect(runAutomationStudioSubflowBuilderLoop({ scope: testScope(), siblings: [...SIBLINGS], submission: testSubmission(), loop })).rejects.toThrow("execution_observation.tool_binding_changed");
+  expect(decisions).toBe(0);
+  expect(writes).toBe(0);
+  expect(f.issued).toEqual([]);
+});
 
 type Entry = { callId: string; toolId: string; value: unknown };
 

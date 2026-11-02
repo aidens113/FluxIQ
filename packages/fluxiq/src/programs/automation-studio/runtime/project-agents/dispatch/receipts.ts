@@ -1,5 +1,6 @@
 import type { AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialResult } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioProjectDigest, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies } from "../../flow-bootstrap/reset-observation/index.ts";
 
 // The partial trials one brief ran, as receipt references for its return
 // (`contracts/receipt-ref.ts`). The receipt itself stays with the subflow
@@ -44,7 +45,9 @@ export class AutomationStudioProjectDispatchReceipts {
   /** The trial the port last answered, until its gate's answer is told (header, t634). */
   private pending: { at: number; result: AutomationStudioSubflowTrialResult } | undefined;
 
-  constructor(private readonly briefId: string) {}
+  constructor(private readonly briefId: string) {
+    for (const callback of ORIGINAL_READERS) AutomationStudioSiteResetCallbackPolicies.remember(this, callback, "pure");
+  }
 
   /** `port`, telling this record of every trial it answers. */
   wrap(port: AutomationStudioSubflowTrialPort): AutomationStudioSubflowTrialPort {
@@ -93,6 +96,8 @@ export class AutomationStudioProjectDispatchReceipts {
     this.refs.push(refOf(result.trialRunId ?? `${this.briefId}.trial-${this.refs.length + 1}`, result));
   }
 }
+
+const ORIGINAL_READERS = [AutomationStudioProjectDispatchReceipts.prototype.weighed, AutomationStudioProjectDispatchReceipts.prototype.kept, AutomationStudioProjectDispatchReceipts.prototype.list];
 
 /** The reference of trial `receiptId`, which answered `result`: its digest made from the same fields as always, its verdict and rows beside it. */
 function refOf(receiptId: string, result: AutomationStudioSubflowTrialResult): AutomationStudioProjectTrialRef {

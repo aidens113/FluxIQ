@@ -4,6 +4,7 @@ import type { AutomationStudioAskAnswer, AutomationStudioParkedRun, AutomationSt
 import { automationStudioAskSettlement } from "../../runtime/parking/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { resumeAutomationStudioGraphRun, type AutomationStudioGraphRunSeed } from "./graph-run.ts";
+import { copyAutomationExecutionOptions } from "./execution-admission/index.ts";
 
 /** How a parked run is being settled: somebody answered, or nobody did. */
 export type AutomationStudioRunResumption =
@@ -65,7 +66,7 @@ export async function resumeAutomationStudioGraph(
   emitAutomationStudioActivityAskResolved(parked.ask, automationStudioActivityAskResolution(parked.ask, settlement.outcome === "answered" ? settlement.answer : undefined), "running");
   const trace = await resumeAutomationStudioGraphRun(
     request.flow,
-    { ...options, startNodeId: parked.nodeId, ...(parked.carried.callFlowAttemptPath ? { callFlowAttemptPath: parked.carried.callFlowAttemptPath } : {}) },
+    copyAutomationExecutionOptions(copyAutomationExecutionOptions(options), { startNodeId: parked.nodeId, ...(parked.carried.callFlowAttemptPath ? { callFlowAttemptPath: parked.carried.callFlowAttemptPath } : {}) }),
     {
       startedAt: request.trace.startedAt,
       referenceNow: request.trace.referenceNow ?? request.trace.startedAt,

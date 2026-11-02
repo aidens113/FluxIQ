@@ -1,5 +1,6 @@
 import type { AutomationStudioGraphExecutionOptions } from "../contracts/index.ts";
 import type { AutomationStudioRunEnvironment } from "../../../runtime/environment/index.ts";
+import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
 
 /**
  * A run's executor options with its clock, waits and randomness taken from
@@ -21,7 +22,7 @@ import type { AutomationStudioRunEnvironment } from "../../../runtime/environmen
  * timeout stays the executor's real timer.
  */
 export function automationStudioEnvironmentExecutorOptions(options: AutomationStudioGraphExecutionOptions, environment: AutomationStudioRunEnvironment): AutomationStudioGraphExecutionOptions {
-  const placed: AutomationStudioGraphExecutionOptions = { ...options, now: environment.now, delay: environment.delay };
+  const placed = copyAutomationExecutionOptions(copyAutomationExecutionOptions(options), { now: environment.now, delay: environment.delay, clock: environment });
   if (environment.kind === "live") return placed;
   placed.random = environment.random;
   if (environment.startTimer) placed.startTimer = environment.startTimer;

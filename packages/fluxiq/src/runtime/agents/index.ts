@@ -5,3 +5,4 @@ export * from "./tools/index.ts";
 export * from "./progress/index.ts";
 export * from "./iteration/index.ts";
 export * from "./ledger/index.ts";
+export * from "./loop/index.ts";

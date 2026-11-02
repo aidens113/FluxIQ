@@ -123,3 +123,18 @@ describe("execution admission private authority", () => {
     await f.ports.producer.finish(reserved.root, f.source.complete(f.origin));
   });
 });
+
+it("authenticates original entry/reservation association without granting copied or foreign handles", async () => {
+  const first = await admissionFixture();
+  const second = await admissionFixture();
+  const own = await first.assembly.consumer.reserve(first.scope, first.grant);
+  const foreign = await second.assembly.consumer.reserve(second.scope, second.grant);
+  const bridge = first.assembly.entryBridge;
+  expect(bridge.matchesReservation(own.root, own.reservation)).toBe(true);
+  expect(bridge.matchesReservation(own.root, foreign.reservation)).toBe(false);
+  expect(bridge.matchesReservation(foreign.root, own.reservation)).toBe(false);
+  expect(bridge.matchesReservation(foreign.root, foreign.reservation)).toBe(false);
+  expect(bridge.matchesReservation(Object.create(own.root), own.reservation)).toBe(false);
+  expect(bridge.matchesReservation(own.root, Object.create(own.reservation))).toBe(false);
+  expect(bridge.matchesReservation(JSON.parse(JSON.stringify(own.root)), JSON.parse(JSON.stringify(own.reservation)))).toBe(false);
+});

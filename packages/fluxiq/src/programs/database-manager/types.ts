@@ -1,40 +1,5 @@
-import type { JsonObject } from "../../core/index.ts";
-
-export type RepositoryScope = {
-  domainId?: string | null;
-};
-
-export type RecordEnvelope<T extends JsonObject = JsonObject> = {
-  id: string;
-  scope: RepositoryScope;
-  kind: string;
-  data: T;
-  createdAtMs: number;
-  updatedAtMs: number;
-};
-
-export type RepositoryListPageOptions = {
-  limit?: number;
-  offset?: number;
-  search?: string;
-  orderBy?: "id" | "updated_at_ms" | "created_at_ms";
-  direction?: "asc" | "desc";
-};
-
-export type RepositoryListPage<T extends JsonObject = JsonObject> = {
-  records: Array<RecordEnvelope<T>>;
-  total: number;
-  limit: number;
-  offset: number;
-};
-
-export type Repository<T extends JsonObject = JsonObject> = {
-  list(scope?: RepositoryScope): Promise<Array<RecordEnvelope<T>>>;
-  listPage?(scope?: RepositoryScope, options?: RepositoryListPageOptions): Promise<RepositoryListPage<T>>;
-  get(id: string, scope?: RepositoryScope): Promise<RecordEnvelope<T> | null>;
-  put(record: RecordEnvelope<T>): Promise<RecordEnvelope<T>>;
-  delete(id: string, scope?: RepositoryScope): Promise<boolean>;
-};
+import type { RepositoryScope } from "../../framework/persistence/contracts/index.ts";
+export type { RepositoryScope, RecordEnvelope, RepositoryListPageOptions, RepositoryListPage, Repository } from "../../framework/persistence/contracts/index.ts";
 
 export type Migration = {
   id: string;

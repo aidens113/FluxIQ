@@ -5,6 +5,16 @@
 export const CONFIG = {
   repository: "core",
 
+  // Private execution companions do not survive object spread. Type-based,
+  // source-only enforcement keeps every production copy on the same helper.
+  executionOptionsCopy: {
+    from: ["packages/fluxiq/src/"],
+    tsconfig: "packages/fluxiq/tsconfig.json",
+    declaration: "packages/fluxiq/src/engine/automation/contracts/graph-execution-options.ts",
+    typeName: "AutomationStudioGraphExecutionOptions",
+    copy: "packages/fluxiq/src/engine/automation/execution-admission/copy.ts"
+  },
+
   // Directories whose basename marks a test root. Test files must live
   // directly inside one of these. "e2e" is a runner-owned root, not
   // co-location.
@@ -64,6 +74,16 @@ export const CONFIG = {
   // `import "..."` for effect, or a dynamic `import()`.
   importBoundaries: [
     {
+      from: "packages/fluxiq/src/framework/persistence",
+      to: "packages/fluxiq/src/programs",
+      reason: "Framework persistence owns the original storage implementations; programs consume them through public contracts and compatibility aliases."
+    },
+    {
+      from: "packages/fluxiq/src/framework/observability/performance",
+      to: "packages/fluxiq/src/programs",
+      reason: "Shared performance instrumentation is a framework capability and must not depend on program implementation or DTO ownership."
+    },
+    {
       from: "packages/fluxiq/src/components/automation",
       to: "packages/fluxiq/src/programs/automation-studio",
       reason: "Automation nodes are framework capabilities; Studio composes the node pack and must not own any dependency of it."
@@ -109,6 +129,9 @@ export const CONFIG = {
       "packages/fluxiq/src/components/automation/index.ts",
       "packages/fluxiq/src/components/automation/action-effect/index.ts",
       "packages/fluxiq/src/runtime/target-matching/index.ts",
+      "packages/fluxiq/src/runtime/result-verification/index.ts",
+      "packages/fluxiq/src/flows/executable/verification/index.ts",
+      "packages/fluxiq/src/flows/executable/validation/index.ts",
       "packages/fluxiq/src/programs/automation-studio/nodes/index.ts",
       "packages/fluxiq/src/programs/automation-studio/nodes/action-effect/index.ts",
       "packages/fluxiq/src/programs/automation-studio/runtime/actionability/index.ts",
@@ -227,6 +250,7 @@ export const CONFIG = {
         "packages/fluxiq/src/runtime/models/",
         "packages/fluxiq/src/runtime/agents/",
         "packages/fluxiq/src/runtime/adapters/",
+        "packages/fluxiq/src/runtime/adaptation/",
         "packages/fluxiq/src/runtime/native-execution/",
         "packages/fluxiq/src/runtime/environment/",
         "packages/fluxiq/src/runtime/run-control/",
@@ -234,6 +258,8 @@ export const CONFIG = {
         "packages/fluxiq/src/runtime/output-dispatch/",
         "packages/fluxiq/src/runtime/state/",
         "packages/fluxiq/src/runtime/recording/",
+        "packages/fluxiq/src/runtime/result-verification/",
+        "packages/fluxiq/src/client-gateway/recording/",
         "packages/fluxiq/src/runtime/action-permissions/",
         "packages/fluxiq/src/runtime/interaction/",
         "packages/fluxiq/src/runtime/parking/",
@@ -242,6 +268,7 @@ export const CONFIG = {
         "packages/fluxiq/src/runtime/activity/",
         "packages/fluxiq/src/runtime/flow-authoring/",
         "packages/fluxiq/src/runtime/execution-admission/",
+        "packages/fluxiq/src/runtime/execution-observation/",
         "packages/fluxiq/src/runtime/target-matching/"
       ],
       to: ["packages/fluxiq/src/programs/automation-studio/"],

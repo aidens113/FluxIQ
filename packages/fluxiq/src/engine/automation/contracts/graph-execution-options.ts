@@ -9,6 +9,7 @@ import type { AutomationStudioParkingPort } from "../../../runtime/parking/index
 import type { AutomationStudioRunControlGate } from "../../../runtime/automation-host/index.ts";
 import type { AutomationStudioRecoveryBudget, AutomationStudioGraphExecutionTrace, AutomationStudioRecordBatch } from "../index.ts";
 import type { AutomationStudioTargetRefreshResolution } from "../../../runtime/automation-host/contracts/index.ts";
+import type { AutomationStudioRunEnvironment } from "../../../runtime/environment/index.ts";
 
 export type AutomationStudioGraphExecutionOptions = {
   commandRun?: import("../command-scope/index.ts").AutomationStudioExecutorCommandRun;
@@ -36,6 +37,8 @@ export type AutomationStudioGraphExecutionOptions = {
   maxSteps?: number;
   random?: () => number;
   now?: () => number;
+  /** Original environment clock owner for general deadlines; startTimer below remains region-only. */
+  clock?: Pick<AutomationStudioRunEnvironment, "now" | "startTimer">;
   /** Fixed epoch milliseconds for relative task dates; live timing still uses now(). */
   referenceNow?: number;
   /** Trusted client floor from the canonical registry; raw unresolved parameter slots must not be dropped. */

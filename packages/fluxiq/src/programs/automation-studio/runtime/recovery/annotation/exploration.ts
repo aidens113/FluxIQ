@@ -50,6 +50,7 @@
 // labelled so a handle taken from it can say which packet it came from.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioRunEnvironment } from "../../../../../runtime/environment/index.ts";
 import type {
   AutomationStudioAdaptationPolicy,
   AutomationStudioFlowInstruction,
@@ -161,7 +162,8 @@ export type AutomationStudioRecoveryExplorationInput = {
   recoveryDeadline: AutomationStudioRecoveryDeadline;
   budget?: AutomationStudioExplorationBudget;
   signal?: AbortSignal;
-  now?: () => number;
+  now?: AutomationStudioRunEnvironment["now"];
+  startTimer?: AutomationStudioRunEnvironment["startTimer"];
 };
 
 /** One packet an exploration returned, labelled for the runtime patch request. */
@@ -264,7 +266,8 @@ export async function runAutomationStudioRecoveryExploration(
     // record of the exploration rather than the runner's and the caller's.
     ...(stateDigest ? { captureStateDigest: stateDigest } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
-    ...(input.now ? { now: input.now } : {})
+    ...(input.now ? { now: input.now } : {}),
+    ...(input.startTimer ? { startTimer: input.startTimer } : {})
   });
   // `failed` is the loop saying it could not be driven, which is what a refused
   // decision looks like from inside it. Here the reason is known and it is a

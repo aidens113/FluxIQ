@@ -15,6 +15,8 @@ import type { AutomationStudioFactCondition, AutomationStudioFactConditionResult
 import { parseAutomationStudioFactConditions } from "../lifecycle/index.ts";
 import { automationStudioHostFactConditionResult } from "./host-fact-result.ts";
 
+import { invokeObservedExecutionCallback, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
+
 /** The conditions one reader of the observation asks, under a key it reads its answers back by. */
 export type AutomationStudioFactObservationGroup = {
   key: string;
@@ -49,7 +51,7 @@ export async function observeAutomationStudioFacts(input: {
   groups: readonly AutomationStudioFactObservationGroup[];
   context: AutomationStudioFactEvaluationContext;
   now?: () => number;
-}): Promise<AutomationStudioFactObservation> {
+}, executionObservation?: ExecutionCallbackObservation): Promise<AutomationStudioFactObservation> {
   const now = input.now ?? Date.now;
   const answers = input.groups.map((group) => group.conditions.map(() => undefined as AutomationStudioFactConditionResult | undefined));
   const sent: Array<{ group: number; index: number; condition: AutomationStudioFactCondition }> = [];
@@ -60,7 +62,7 @@ export async function observeAutomationStudioFacts(input: {
       else sent.push({ group: groupIndex, index, condition });
     });
   });
-  const asked = sent.length ? await askHost(input, sent.map((entry) => entry.condition), now) : { calls: 0 as const, answers: [] };
+  const asked = sent.length ? await askHost(input, sent.map((entry) => entry.condition), now, executionObservation) : { calls: 0 as const, answers: [] };
   sent.forEach((entry, position) => {
     answers[entry.group]![entry.index] = "reference" in asked ? unknown(asked.reference, now()) : asked.answers[position];
   });
@@ -77,13 +79,14 @@ export async function observeAutomationStudioFacts(input: {
 async function askHost(
   input: { hostRuntime: AutomationStudioHostRuntimeBoundary | undefined; context: AutomationStudioFactEvaluationContext },
   conditions: AutomationStudioFactCondition[],
-  now: () => number
+  now: () => number,
+  executionObservation?: ExecutionCallbackObservation
 ): Promise<{ calls: 0 | 1; answers: AutomationStudioFactConditionResult[] } | { calls: 0 | 1; reference: string; problem?: string }> {
   if (input.context.signal?.aborted) return { calls: 0, reference: "core:cancelled" };
   const evaluate = input.hostRuntime?.factEvaluator;
   if (!evaluate) return { calls: 0, reference: "core:no_fact_evaluation" };
   try {
-    const returned: unknown = await evaluate.call(input.hostRuntime, conditions, input.context);
+    const returned: unknown = await invokeObservedExecutionCallback(executionObservation, { receiver: input.hostRuntime, callback: evaluate, args: [conditions, input.context] }, input.context.signal);
     if (!Array.isArray(returned) || returned.length !== conditions.length) {
       const answered = Array.isArray(returned) ? String(returned.length) : "no list of";
       return { calls: 1, reference: "core:host_batch_length", problem: `The host answered ${answered} fact results for ${conditions.length} conditions, so none of them is read.` };

@@ -32,6 +32,8 @@ import { automationStudioRuntimeRepeatGuard } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatStoppedTrace } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatTraceProvenance } from "./repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "./repeat/index.ts";
+import { copyAutomationExecutionOptions, inheritAutomationExecutionObservation } from "./execution-admission/index.ts";
+import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync, AutomationRetrySeries, hasAutomationExecutionObservation } from "./execution-admission/kernel/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -48,6 +50,7 @@ const withheldBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, Fl
  * objects, so the parent replaces them with markers as well.
  */
 const capturedBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, AutomationStudioCapturedRecords>();
+const observedGraphKernel = registerAutomationExecutionKernel(undefined, runGraphFromSeed, "graph");
 
 /**
  * The one place a run trace is produced, and therefore the one place values a
@@ -74,7 +77,9 @@ export async function runAutomationStudioGraph(
   options: AutomationStudioGraphExecutionOptions = {},
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
-  return await runGraphFromSeed(flow, options, undefined, onExecutedTrace);
+  const frame = await prepareAutomationFrame(options, { receiver: undefined, callback: runGraphFromSeed }, observedGraphKernel);
+  if (!frame) return await runGraphFromSeed(flow, options, undefined, onExecutedTrace);
+  return await invokeAutomationFrame(frame, { receiver: undefined, callback: runGraphFromSeed, args: [flow, frame.options, undefined, onExecutedTrace] });
 }
 
 /**
@@ -111,7 +116,9 @@ export async function resumeAutomationStudioGraphRun(
   seed: AutomationStudioGraphRunSeed,
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
-  return await runGraphFromSeed(flow, options, seed, onExecutedTrace);
+  const frame = await prepareAutomationFrame(options, { receiver: undefined, callback: runGraphFromSeed }, observedGraphKernel);
+  if (!frame) return await runGraphFromSeed(flow, options, seed, onExecutedTrace);
+  return await invokeAutomationFrame(frame, { receiver: undefined, callback: runGraphFromSeed, args: [flow, frame.options, seed, onExecutedTrace] });
 }
 
 /**
@@ -134,7 +141,8 @@ async function runGraphFromSeed(
   const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
   const { referenceNow: suppliedReferenceNow, ...baseOptions } = options;
   const referenceNow = automationStudioReferenceNow(seed?.referenceNow) ?? automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
-  const executionOptions = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
+  const executionOptions = copyAutomationExecutionOptions(baseOptions, { ...(referenceNow !== undefined ? { referenceNow } : {}) });
+  inheritAutomationExecutionObservation(options, executionOptions);
   try {
     await options.commandRun?.checkpoint();
     // The run executes as its frame, pushed for exactly as long as it runs (`frames/graph-frame.ts`).
@@ -203,7 +211,7 @@ async function runGraphToTrace(
   capturedBySavedTrace.set(saved, runState.records.captured());
   // A step's page address the saved trace withheld, read back by a trial act alone (`./executed-locations/`, t738).
   automationStudioExecutedLocations.remember(defended, saved);
-  onExecutedTrace?.(defended, saved);
+  if (onExecutedTrace) invokeAutomationCallbackSync(options, { receiver: undefined, callback: onExecutedTrace, args: [defended, saved] });
   return saved;
 }
 
@@ -338,6 +346,7 @@ async function executeAutomationStudioGraph(
     arrival: { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>(), ordinal: 1 },
     pendingRetry: undefined
   };
+  let admissionPass: { arrival: object; identity: object } | undefined;
   lifecycle.arrivals.set(currentNode.id, 1);
   // The frame's graph joins the run's handler registry as the frame starts (C4).
   automationStudioStepLifecycleRegister(ctx, currentNode.id);
@@ -424,10 +433,18 @@ async function executeAutomationStudioGraph(
       // A timeout belongs to this logical pass, even if its timer fires before
       // the attempt reaches its first checkpoint.
       runState.dispatchedActions.delete(node.id);
+      const attemptOptions = hasAutomationExecutionObservation(options) ? copyAutomationExecutionOptions(options) : options;
+      if (attemptOptions !== options) {
+        if (!ctx.pendingRetry || admissionPass?.arrival !== ctx.arrival) admissionPass = { arrival: ctx.arrival, identity: Object.freeze({}) };
+        AutomationRetrySeries.bind(attemptOptions, admissionPass.identity);
+      }
       const executed = gone ?? (notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
-        ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample)
+        ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, attemptOptions, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample)
         : await executeWithRegionTimeout(
-          (signal) => executeAutomationStudioNode(ctx.flow, node, nodeValues, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample),
+          (signal) => {
+            const bounded = copyAutomationExecutionOptions(attemptOptions, { signal });
+            return executeAutomationStudioNode(ctx.flow, node, nodeValues, bounded, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample);
+          },
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.

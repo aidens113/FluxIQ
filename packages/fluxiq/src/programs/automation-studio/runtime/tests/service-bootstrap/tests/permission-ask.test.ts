@@ -19,7 +19,7 @@ import type { AutomationStudioActionConsequence } from "../../../action-permissi
 import { automationStudioActivityHub } from "../../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding/index.ts";
 import { blankFixture, caller, isJudgeRequest, judgeReply, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const REFUND: AutomationStudioActionConsequence[] = ["move_money", "modify_existing"];

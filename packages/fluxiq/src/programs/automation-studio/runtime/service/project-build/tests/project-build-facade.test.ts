@@ -15,7 +15,7 @@
 // each provider call's deadline against a provider that answers at once) are
 // never reached here, so the watchdog is a hang guard only, and cleanup stops
 // any build still running and waits for it before removing its directory
-// (`./settled-builds.ts`).
+// (`./settled-builds/index.ts`).
 //
 // **A one-part plan's builder test is the judged whole run (t679).** Its
 // supervisor writes the plan, dispatches and completes on the yes the
@@ -35,7 +35,7 @@ import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourceHolder, AutomationStudioHostResourcePort } from "../../../project-agents/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
-import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
+import { automationStudioTestSettledBuilds } from "./settled-builds/index.ts";
 import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 // A hang guard only (header).

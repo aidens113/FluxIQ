@@ -1,0 +1,1 @@
+export type ClosedClientRecording = { recordingId?: string; projectId?: string | null; domainId?: string | null; finalizedAt?: number; discardedEvents: number; discardedActions: number; reported: boolean };

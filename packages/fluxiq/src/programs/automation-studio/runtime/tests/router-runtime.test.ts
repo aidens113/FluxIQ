@@ -3,10 +3,33 @@ import { createAutomationStudioFlowExpansionFixture } from "../../model/index.ts
 import {
   compileAutomationStudioRouterPlan,
   defaultAutomationStudioSubflowForFlow,
-  runAutomationStudioRouter
+  runAutomationStudioRouter,
+  evaluateAutomationStudioRouteCondition,
+  type AutomationStudioRouterExecutionInput,
+  type AutomationStudioRouterExecutionPlan,
+  type AutomationStudioRouterExecutionResult
 } from "../router-runtime.ts";
+import { compileExecutableRouterPlan, runExecutableRouter, evaluateExecutableRouteCondition } from "../../../../engine/automation/router/index.ts";
 
 describe("Automation Studio router runtime", () => {
+  it("keeps actual canonical callable identities under the legacy names", () => {
+    expect(compileAutomationStudioRouterPlan).toBe(compileExecutableRouterPlan);
+    expect(runAutomationStudioRouter).toBe(runExecutableRouter);
+    expect(evaluateAutomationStudioRouteCondition).toBe(evaluateExecutableRouteCondition);
+  });
+
+  it("retains the old rich input, unused adaptation-policy slot and complete target projection", () => {
+    const fixture = createAutomationStudioFlowExpansionFixture(1_000);
+    const input: AutomationStudioRouterExecutionInput = { projectId: fixture.flow.projectId, flowId: fixture.flow.flowId, router: fixture.router, subflows: fixture.subflows, adaptationPolicy: fixture.policy, now: () => 17 };
+    const plan: AutomationStudioRouterExecutionPlan = compileAutomationStudioRouterPlan(input);
+    const result: AutomationStudioRouterExecutionResult = runAutomationStudioRouter(input);
+    expect(plan.rules[0]!.rule).toBe(fixture.router.rules[0]);
+    expect(plan.rules[0]!.rule.schemaVersion).toBe("0.1");
+    expect(result.selectedSubflow?.projectId).toBe(fixture.flow.projectId);
+    expect(result.selectedSubflow).toBe(fixture.subflows.find(item => item.subflowId === result.decision.selectedSubflowId));
+    expect(runAutomationStudioRouter({ projectId: input.projectId, flowId: input.flowId, router: fixture.router, subflows: fixture.subflows, adaptationPolicy: fixture.policy, now: () => 17 })).toEqual(result);
+  });
+
   it("selects the first active matching rule in stable order", () => {
     const fixture = createAutomationStudioFlowExpansionFixture(1_000);
     const [primary, recovery] = fixture.subflows;

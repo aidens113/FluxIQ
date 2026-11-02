@@ -34,7 +34,7 @@
 // re-author is held runs the held graph as its candidate, or refuses the pass
 // where it cannot be run alone (`./held-candidate.ts`), and names the held edit it
 // ran for the run's judged end to settle (`./judged-reauthor.ts`).
-
+import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type {
   AutomationStudioFlowAdaptation,
@@ -183,7 +183,7 @@ export async function rerunAutomationStudioSessionAfterRepair(
     await input.ports.listPublishedFlowSnapshots(),
     // Numbered after the first pass's attempts: the re-run is kept under the
     // same run id, and an attempt id it repeated would be dropped by the store.
-    { ...(input.graphOptions ?? {}), ...(referenceNow !== undefined ? { referenceNow } : {}), priorAttemptCount: input.session.trace?.attempts.length ?? 0, ...(resumeNodeId ? { startNodeId: resumeNodeId } : {}) },
+    copyAutomationExecutionOptions(copyAutomationExecutionOptions(input.graphOptions ?? {}), { ...(referenceNow !== undefined ? { referenceNow } : {}), priorAttemptCount: input.session.trace?.attempts.length ?? 0, ...(resumeNodeId ? { startNodeId: resumeNodeId } : {}) }),
     await input.ports.deprecatedPublicationIds()
   );
   const retrySession: AutomationStudioRuntimeSession = {

@@ -1,8 +1,11 @@
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import type { AutomationStudioSiteResetAdmissionDeclared } from "../../flow-bootstrap/reset-admission/index.ts";
 import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetProjectLedger, AutomationStudioSiteResetTrialAct } from "../../flow-bootstrap/site-reset/index.ts";
 import { AutomationStudioProjectRecordRefusal, type AutomationStudioProjectBuildActOwner, type AutomationStudioProjectBuildRecordStore, type AutomationStudioProjectBuildRef } from "../../project-agents/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "./supervisor-ledger.ts";
+import { AutomationStudioProjectWriteCompletion, invokeAutomationStudioProjectWriteCallback } from "../../project-agents/record-completion/index.ts";
+import { AuthoringExecutionScope, invokeAuthoringExecutionCallback, invokeAuthoringExecutionSync } from "../../../../../runtime/flow-authoring/execution/observation/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/policies/index.ts";
+import type { ExecutionCallbackCall } from "../../../../../runtime/execution-observation/index.ts";
 
 // The project ledger's acts, written into the build record as they are
 // recorded (t551; plan, `Build record`: "persisted ... as the build proceeds,
@@ -31,9 +34,6 @@ const LASTING: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create
 /** What a record entry's description may hold. */
 const MAX_DESCRIPTION = 500;
 
-/** A ledger's step admission (t751, R3 door 2), read structurally so a ledger without one compiles and forwards nothing. */
-type StepAdmitting = { admitStep?(declared: AutomationStudioSiteResetAdmissionDeclared, definitionId: string): unknown };
-
 const WRITERS = new WeakMap<AutomationStudioSiteResetProjectLedger, AutomationStudioProjectBuildActsRecord>();
 
 type Records = Pick<AutomationStudioProjectBuildRecordStore, "read" | "recordLastingAct">;
@@ -41,13 +41,19 @@ type Records = Pick<AutomationStudioProjectBuildRecordStore, "read" | "recordLas
 export class AutomationStudioProjectBuildActsRecord {
   /** The classes each act's call or trial step declared, by the ref the ledger records the act under. */
   private readonly declared = new Map<string, readonly AutomationStudioActionConsequence[]>();
-  private record: { records: Records; ref: AutomationStudioProjectBuildRef } | undefined;
+  private record: { records: Records; ref: AutomationStudioProjectBuildRef; read: Records["read"]; recordLastingAct: Records["recordLastingAct"] } | undefined;
   private written = 0;
   private writing: Promise<void> = Promise.resolve();
   private failure: { error: unknown } | undefined;
   private readonly left: string[] = [];
+  private unobserved = false;
+  private readonly syncCompletion: AutomationStudioProjectWriteCompletion;
+  private readonly trialCompletion: AutomationStudioProjectWriteCompletion;
 
-  private constructor(private readonly ledger: AutomationStudioSiteResetProjectLedger) {}
+  private constructor(private readonly ledger: AutomationStudioSiteResetProjectLedger) {
+    this.syncCompletion = AutomationStudioProjectWriteCompletion.for(this, actsSyncAndFlushed);
+    this.trialCompletion = AutomationStudioProjectWriteCompletion.for(this, actsTrialAndFlushed);
+  }
 
   /** The one writer of `ledger`'s acts, made on first ask. */
   static of(ledger: AutomationStudioSiteResetProjectLedger): AutomationStudioProjectBuildActsRecord {
@@ -60,43 +66,77 @@ export class AutomationStudioProjectBuildActsRecord {
 
   /** Writes into this build's record from now on, starting with every act recorded so far. */
   bind(records: Records, ref: AutomationStudioProjectBuildRef): void {
-    this.record = { records, ref };
+    this.record = { records, ref, read: records.read, recordLastingAct: records.recordLastingAct };
     this.sync();
   }
 
   /** `calls`, with each explored call's declared classes kept and the acts it recorded written; a plan step's admission forwarded to the same ledger (t751). */
   calls(calls: AutomationStudioSiteResetCalls): AutomationStudioSiteResetCalls {
-    const admitting = calls as AutomationStudioSiteResetCalls & StepAdmitting;
-    return {
-      ...(calls.createBaseline ? { createBaseline: (declared, reference) => calls.createBaseline!(declared, reference) } satisfies Pick<AutomationStudioSiteResetCalls, "createBaseline"> : {}),
-      ...(typeof admitting.admitStep === "function" ? { admitStep: admitting.admitStep.bind(calls) } : {}),
-      ...(calls.destinationReceipts ? { destinationReceipts: () => calls.destinationReceipts!() } : {}),
-      claim: (undoes, reference) => calls.claim(undoes, reference),
-      target: (act, declared) => calls.target(act, declared),
+    const createBaseline = calls.createBaseline;
+    const admitStep = calls.admitStep;
+    const destinationReceipts = calls.destinationReceipts;
+    const port: AutomationStudioSiteResetCalls = {
+      ...(createBaseline ? { createBaseline: (declared, reference) => forwardResetCall(port, { receiver: calls, callback: createBaseline, args: [declared, reference] }) } satisfies Pick<AutomationStudioSiteResetCalls, "createBaseline"> : {}),
+      ...(typeof admitStep === "function" ? { admitStep: (...args: Parameters<typeof admitStep>) => forwardResetCall(port, { receiver: calls, callback: admitStep, args }) } : {}),
+      ...(destinationReceipts ? { destinationReceipts: () => invokeAuthoringExecutionSync(port, { receiver: calls, callback: destinationReceipts, args: [] }) } : {}),
+      claim: (undoes, reference) => forwardResetCall(port, { receiver: calls, callback: calls.claim, args: [undoes, reference] }),
+      target: (act, declared) => forwardResetCall(port, { receiver: calls, callback: calls.target, args: [act, declared] }),
       explored: (call) => {
         if (call.declared) this.declared.set(call.callId, [...call.declared.consequences]);
+        if (AuthoringExecutionScope.of(port)) {
+          const flushed = {};
+          return invokeAuthoringExecutionCallback(port, { receiver: calls, callback: calls.explored, args: [call] }).then(() =>
+            invokeAuthoringExecutionCallback(port, { receiver: this, callback: this.syncAndFlushed, args: [flushed] }, undefined, flushed));
+        }
         calls.explored(call);
-        this.sync();
+        this.sync(call);
       }
     };
+    AuthoringExecutionScope.own(port, this);
+    for (const callback of [port.createBaseline, port.admitStep, port.claim, port.target, port.explored]) if (callback) ExecutionCallbackPolicies.remember(port, callback, "frame");
+    if (port.destinationReceipts) ExecutionCallbackPolicies.remember(port, port.destinationReceipts, "pure");
+    return port;
   }
 
   /** A trial's steps were recorded as acts (`trialRan`): keeps each step's classes and writes the acts. */
-  trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId: string | undefined): void {
+  trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId: string | undefined, invocation?: object): void {
     for (const act of acts) this.declared.set(`${trialRunId ?? "trial"}#step-${act.step}`, [...act.consequences]);
-    this.sync();
+    actsSync.call(this, invocation);
+  }
+
+  /** The observed trial hook returns this original Promise after all queued writes. */
+  trialRanAndFlushed(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId: string | undefined, invocation?: object): Promise<void> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
+    actsTrial.call(this, acts, trialRunId, invocation);
+    const returned = actsFlush.call(this).then(() => {
+      if (!this.unobserved) this.trialCompletion.completed(returned, frame, { disposition: "settled", completionDigest: "project.acts.trial_flushed", assessmentDigest: "project.acts.actual_callbacks_completed" });
+    });
+    return returned;
+  }
+
+  /** Drains this actual sync's work, never an unrelated fulfilled flush Promise. */
+  syncAndFlushed(invocation?: object): Promise<void> {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
+    actsSync.call(this, invocation);
+    const returned = actsFlush.call(this).then(() => {
+      if (!this.unobserved) this.syncCompletion.completed(returned, frame, { disposition: "settled", completionDigest: "project.acts.sync_flushed", assessmentDigest: "project.acts.actual_callbacks_completed" });
+    });
+    return returned;
   }
 
   /** Writes every act recorded since the last write, in order, one write at a time; nothing before the record is bound. */
-  sync(): void {
+  sync(invocation?: object): void {
+    const frame = AutomationStudioProjectWriteCompletion.capture(invocation);
     const record = this.record;
     if (!record) return;
-    const acts = this.ledger.snapshot().acts.slice(this.written);
+    const acts = invokeAuthoringExecutionSync(invocation, { receiver: this.ledger, callback: this.ledger.snapshot, args: [] }).acts.slice(this.written);
     this.written += acts.length;
     for (const act of acts) {
+      if (!frame) this.unobserved = true;
       const consequences = (this.declared.get(act.ref) ?? []).filter((consequence) => LASTING.has(consequence));
       const entry = { act: act.act, owner: act.owner, did: act.did, consequences, undoable: act.undoable };
-      this.writing = this.writing.then(() => this.write(record, entry));
+      const write = this.write;
+      this.writing = this.writing.then(() => write.call(this, record, entry, frame));
     }
   }
 
@@ -111,14 +151,16 @@ export class AutomationStudioProjectBuildActsRecord {
     return [...this.left];
   }
 
-  private async write(record: { records: Records; ref: AutomationStudioProjectBuildRef }, entry: { act: string; owner: string; did: string; consequences: AutomationStudioActionConsequence[]; undoable: boolean }): Promise<void> {
+  private async write(record: NonNullable<AutomationStudioProjectBuildActsRecord["record"]>, entry: { act: string; owner: string; did: string; consequences: AutomationStudioActionConsequence[]; undoable: boolean }, frame: ReturnType<typeof AutomationStudioProjectWriteCompletion.capture>): Promise<void> {
     try {
-      const owner = await this.ownerOf(record, entry.owner);
+      const owner = await this.ownerOf(record, entry.owner, frame);
       const words = `${entry.act}: ${entry.did}`;
-      await record.records.recordLastingAct(record.ref, {
+      const value = {
         act: entry.act, owner, consequences: [...new Set(entry.consequences)], undoable: entry.undoable,
         description: words.length > MAX_DESCRIPTION ? `${words.slice(0, MAX_DESCRIPTION - 3)}...` : words
-      });
+      };
+      const child = Object.freeze({});
+      await invokeAutomationStudioProjectWriteCallback(frame, { receiver: record.records, callback: record.recordLastingAct, args: [record.ref, value, child] }, child);
     } catch (error) {
       if (error instanceof AutomationStudioProjectRecordRefusal) {
         this.left.push(`${entry.act} (${error.code})`);
@@ -129,10 +171,22 @@ export class AutomationStudioProjectBuildActsRecord {
   }
 
   /** The supervisor, or the brief that owns the act under the role it ran as (`project-agents/dispatch/run-brief.ts`). */
-  private async ownerOf(record: { records: Records; ref: AutomationStudioProjectBuildRef }, owner: string): Promise<AutomationStudioProjectBuildActOwner> {
+  private async ownerOf(record: NonNullable<AutomationStudioProjectBuildActsRecord["record"]>, owner: string, frame: ReturnType<typeof AutomationStudioProjectWriteCompletion.capture>): Promise<AutomationStudioProjectBuildActOwner> {
     if (owner === AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER) return { role: "supervisor" };
-    const view = await record.records.read(record.ref);
+    const child = Object.freeze({});
+    const view = await invokeAutomationStudioProjectWriteCallback(frame, { receiver: record.records, callback: record.read, args: [record.ref, child] }, child);
     const brief = view?.record.briefs.find((entry) => entry.brief.briefId === owner)?.brief;
     return { role: brief?.kind === "repair" ? "repair" : "builder", briefId: owner };
   }
+}
+
+const actsSync = AutomationStudioProjectBuildActsRecord.prototype.sync;
+const actsTrial = AutomationStudioProjectBuildActsRecord.prototype.trialRan;
+const actsFlush = AutomationStudioProjectBuildActsRecord.prototype.flushed;
+const actsSyncAndFlushed = AutomationStudioProjectBuildActsRecord.prototype.syncAndFlushed;
+const actsTrialAndFlushed = AutomationStudioProjectBuildActsRecord.prototype.trialRanAndFlushed;
+
+/** Private observed ownership is carried through this actual facade, never inferred from its DTO. */
+function forwardResetCall<TReceiver, TArguments extends unknown[], TResult>(port: object, call: ExecutionCallbackCall<TReceiver, TArguments, TResult>): TResult | Promise<Awaited<TResult>> {
+  return AuthoringExecutionScope.of(port) ? invokeAuthoringExecutionCallback(port, call) : call.callback.apply(call.receiver, call.args);
 }

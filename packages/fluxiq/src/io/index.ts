@@ -3,6 +3,7 @@ import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../cli
 import type { JsonObject } from "../core/index.ts";
 import type { DomainInputDefinition, DomainManifest, DomainOutputDefinition } from "../domains/index.ts";
 import type { FluxIQRuntimeCommandStatus } from "../runtime/index.ts";
+import { OutputObservationBindings, OutputOrchestrationCallbacks, OutputPureCallbacks, prepareOutputBackend, bindOutputGateway, invokeOutputInvocation } from "../runtime/output-dispatch/admission/internal/index.ts";
 
 export type IoMode = "stream" | "request" | "stream_and_request";
 
@@ -180,6 +181,13 @@ export class IoRegistry {
   private readonly inputs = new Map<string, InputAdapter<any>>();
   private readonly outputs = new Map<string, OutputAdapter<any, any>>();
   private readonly requiredOutputs = new WeakMap<OutputAdapter<any, any>, NonNullable<OutputAdapter["dispatchWithCommandContext"]>>();
+  private readonly outputDispatchers = new WeakMap<OutputAdapter<any, any>, OutputAdapter["dispatch"]>();
+
+  constructor() {
+    OutputOrchestrationCallbacks.register(this, IoRegistry.prototype.dispatchOutput);
+    OutputPureCallbacks.register(this, IoRegistry.prototype.getOutput);
+    OutputPureCallbacks.register(this, IoRegistry.prototype.hasOutput);
+  }
 
   register(registration: IoRegistration): void {
     for (const input of registration.inputs ?? []) {
@@ -206,7 +214,8 @@ export class IoRegistry {
       throw new Error(`Duplicate output adapter: ${key}`);
     }
     this.outputs.set(key, adapter);
-    if (typeof adapter.dispatchWithCommandContext === "function") this.requiredOutputs.set(adapter, adapter.dispatchWithCommandContext.bind(adapter));
+    this.outputDispatchers.set(adapter, adapter.dispatch);
+    if (typeof adapter.dispatchWithCommandContext === "function") this.requiredOutputs.set(adapter, adapter.dispatchWithCommandContext);
   }
 
   async readInput<TPayload = unknown>(request: InputReadRequest): Promise<IoEnvelope<TPayload>> {
@@ -251,7 +260,10 @@ export class IoRegistry {
       const abort = () => settle(() => reject(new Error("Input confirmation cancelled.")));
       const timeout = setTimeout(() => settle(() => reject(new Error(`Timed out waiting for input confirmation: ${ioKey(params.domainId, params.inputId)}`))), timeoutMs);
       try {
-        if (params.signal?.aborted) { abort(); return; }
+        if (params.signal?.aborted) {
+          abort();
+          return;
+        }
         params.signal?.addEventListener("abort", abort, { once: true });
         unsubscribe = this.subscribeInput<TPayload>(params.domainId, params.inputId, (event) => {
           if (params.predicate && !params.predicate(event)) return;
@@ -267,7 +279,11 @@ export class IoRegistry {
   async dispatchOutput<TPayload = unknown, TResult = unknown>(
     request: OutputDispatchRequest<TPayload>
   ): Promise<OutputDispatchResult<TResult>> {
-    if (Object.hasOwn(request, "commandContext")) { ClientGatewayCommandContext.owner(request.commandContext!); if (!ClientGatewayCommandOutcome.observer(request.commandContext!)) throw new Error("io.required_context_missing"); }
+    const observation = OutputObservationBindings.take(request);
+    if (Object.hasOwn(request, "commandContext")) {
+      ClientGatewayCommandContext.owner(request.commandContext!);
+      if (!ClientGatewayCommandOutcome.observer(request.commandContext!)) throw new Error("io.required_context_missing");
+    }
     const adapter = this.outputs.get(ioKey(request.domainId, request.outputId));
     if (!adapter) {
       if (Object.hasOwn(request, "commandContext")) await ClientGatewayCommandOutcome.stop(request.commandContext!, "io.missing_output");
@@ -275,10 +291,27 @@ export class IoRegistry {
     }
     if (Object.hasOwn(request, "commandContext")) {
       const handler = this.requiredOutputs.get(adapter);
-      if (!handler) { await ClientGatewayCommandOutcome.stop(request.commandContext!, "io.unsupported_required_handler"); throw new Error("io.unsupported_required_handler"); }
-      try { return await handler(request) as OutputDispatchResult<TResult>; } catch (error) { await ClientGatewayCommandOutcome.stop(request.commandContext!, "io.required_dispatch_failed"); throw error; }
+      if (!handler) {
+        await ClientGatewayCommandOutcome.stop(request.commandContext!, "io.unsupported_required_handler");
+        throw new Error("io.unsupported_required_handler");
+      }
+      try {
+        return await this.invokeOutputAdapter(adapter, handler, request, observation) as OutputDispatchResult<TResult>;
+      } catch (error) {
+        await ClientGatewayCommandOutcome.stop(request.commandContext!, "io.required_dispatch_failed");
+        throw error;
+      }
     }
-    return adapter.dispatch(request) as Promise<OutputDispatchResult<TResult>>;
+    const callback = observation ? this.outputDispatchers.get(adapter)! : adapter.dispatch;
+    return await this.invokeOutputAdapter(adapter, callback, request, observation) as OutputDispatchResult<TResult>;
+  }
+
+  private async invokeOutputAdapter(adapter: OutputAdapter, callback: OutputAdapter["dispatch"], request: OutputDispatchRequest, observation?: import("../runtime/output-dispatch/admission/index.ts").OutputExecutionObservation): Promise<OutputDispatchResult> {
+    if (!observation) return await callback.call(adapter, request);
+    const invocation = await prepareOutputBackend(observation, { receiver: adapter, callback }, request.signal, request.commandContext);
+    const commandContext = await bindOutputGateway(invocation, request.commandContext);
+    const placed = commandContext && commandContext !== request.commandContext ? { ...request, commandContext } : request;
+    return await invokeOutputInvocation(invocation, { receiver: adapter, callback, args: [placed] });
   }
 
   subscribeOutput<TResult = unknown>(
@@ -317,25 +350,30 @@ export class IoRegistry {
     return this.outputs.get(ioKey(domainId, outputId));
   }
 
+  /** Admission only: it never invokes the payload projector or an output. */
+  getRegisteredInputOutputBinding<TPayload = unknown>(domainId: string | null | undefined, inputId: string): { inputDefinition: DomainInputDefinition; binding: InputOutputBinding<TPayload>; outputId: string } | null {
+    const input = this.getInput(domainId, inputId);
+    if (!input || (input.definition.role ?? "state") !== "action") return null;
+    const binding = input.outputBinding;
+    if (!binding || !binding.outputId) return null;
+    if (!this.hasOutput(domainId, binding.outputId)) throw new Error(`Input '${input.definition.id}' maps to an unregistered output: ${ioKey(domainId, binding.outputId)}`);
+    return { inputDefinition: input.definition, binding, outputId: normalizeIoId(binding.outputId) };
+  }
+
   resolveInputOutputBinding<TPayload = unknown>(
     domainId: string | null | undefined,
     inputId: string,
     event: IoEnvelope<TPayload>
   ): { outputId: string; payload: JsonObject; confirmationInputId?: string; confirmationTimeoutMs?: number; recordInputPayload?: boolean; metadata?: JsonObject } | null {
-    const input = this.getInput(domainId, inputId) as InputAdapter<TPayload> | undefined;
-    if (!input) throw new Error(`Input adapter not found: ${ioKey(domainId, inputId)}`);
-    if ((input.definition.role ?? "state") !== "action") return null;
-    const binding = input.outputBinding;
-    const outputId = binding?.outputId ?? input.definition.outputId;
-    if (!binding || !outputId) return null;
-    if (!this.hasOutput(domainId, outputId)) {
-      throw new Error(`Input '${input.definition.id}' maps to an unregistered output: ${ioKey(domainId, outputId)}`);
-    }
+    if (!this.hasInput(domainId, inputId)) throw new Error(`Input adapter not found: ${ioKey(domainId, inputId)}`);
+    const registered = this.getRegisteredInputOutputBinding<TPayload>(domainId, inputId);
+    if (!registered) return null;
+    const { inputDefinition, binding, outputId } = registered;
     const confirmation = binding.confirmation;
     return {
-      outputId: normalizeIoId(outputId),
+      outputId,
       payload: binding.toPayload(event),
-      ...(confirmation !== false ? { confirmationInputId: normalizeIoId(input.definition.id), confirmationTimeoutMs: confirmation?.timeoutMs ?? 5_000 } : {}),
+      ...(confirmation !== false ? { confirmationInputId: normalizeIoId(inputDefinition.id), confirmationTimeoutMs: confirmation?.timeoutMs ?? 5_000 } : {}),
       ...(binding.recordInputPayload ? { recordInputPayload: true } : {}),
       ...(binding.metadata ? { metadata: binding.metadata } : {})
     };

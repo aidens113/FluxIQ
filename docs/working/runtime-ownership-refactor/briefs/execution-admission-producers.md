@@ -5,6 +5,7 @@ Goal: wire actual native/IO/runtime/engine invocation producers to frozen A1, wi
 Read reports/execution-admission-api.md accepted amendments, reports/execution-admission-authority.md and actual A1 contracts.
 Wait for explicit lead source release after the current checkpoint; read-only discovery may be dispatched earlier.
 Own new runtime/native-execution/admission/** and engine/automation/execution-admission/**, plus immediate tests.
+Own new neutral runtime/execution-observation/** for shared callback invocation/completion mechanics and contracts; reuse A1 and ConfiguredExecutionSource, no second ledger or engine/Studio imports.
 Own narrow native runtime execute/binding, io registry dispatch, runtime/service dispatch, runtime/output-dispatch context forwarding edits and immediate tests.
 Own engine automation actual attempt/effects, outside-graph/retries, graph/composite/compiled child propagation, uncertainty/semantic witness and execution-option integration leaves named in API section6.
 Include actual engine host capture/observe/effect-check callback invocation leaves; native/IO coverage alone cannot certify a callback invoked before those producers.
@@ -17,6 +18,9 @@ Legacy optional absence preserves ordinary first-run API/result behavior and ear
 Register exact original implementation/version/grants for trusted managed-effects/compute-only completion; no inference from manifest labels, empty effects or returned success.
 Unsupported ambient/direct native work stays unverified/pending; late callback completion never clears terminal uncertainty.
 Unsupported custom host callbacks also stay unverified; trusted completion registration binds original host/method identities without proxying or cloning the host. Propose any neutral host-contract extension before changing shared ports.
+Async callbacks enter durable children before actual invocation. Sync callbacks keep synchronous API semantics under an already durable frame; unsupported coverage is marked synchronously before calling and prevents certification.
+Completion contracts cover both fulfilled and rejected original outcomes; invoke the pinned original callback with its original receiver and typed argument/result relation, not an arbitrary thunk that merely names a callback.
+Persist bounded reference/digest facts only; callback arguments, results, errors and host/page data stay private. Reader consumption is synchronous before any persistence await.
 Semantic completion comes only from actual canonical assessment/effect-check/handling witnesses; required unknown remains stricter.
 Carry identical reservation/parent through nested/partial/compiled/composite execution and IO fallback; one real backend invocation/command, not duplicate dispatch.
 Original host, method receiver, cached output definition, target preparation, domain matcher, confirmation and permission floors stay intact.

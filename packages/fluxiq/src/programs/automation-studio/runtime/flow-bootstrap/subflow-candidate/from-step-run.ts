@@ -67,7 +67,7 @@ export async function automationStudioSubflowFromStepRun(input: {
     return refused(code, WORDS.notRun(code), { fromStep: true, notRun: structuredClone(result.feedback) });
   }
   // Its acts count as the build's, as a trial's do, so the next whole test starts from them (header).
-  const leftOnSite = input.offline ? undefined : input.reset?.trialRan(result.acts ?? [], result.trialRunId);
+  const leftOnSite = input.offline ? undefined : await input.reset?.trialRan(result.acts ?? [], result.trialRunId);
   const checked = input.repair.afterFromStep(result, latest, from);
   const evidence: JsonObject = {
     ok: true, fromStep: true, passed: result.status === "ended", subflowKey, revision: latest.revision, digest: latest.digest, from,

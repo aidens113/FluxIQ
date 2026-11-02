@@ -1,3 +1,4 @@
+import { automationCallbackObservation, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowEdge } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
@@ -103,11 +104,14 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
   if (declared) {
     // Synthetic readiness skips have no resolved dispatch pass. Resolve current
     // raw slots conservatively, never a previous loop pass's node-id cache.
-    const actionEffect = input.options.resolveActionEffect?.(input.node, input.node.parameterValues ?? {});
+    const resolver = input.options.resolveActionEffect;
+    const actionEffect = resolver ? invokeAutomationCallbackSync(input.options, { receiver: input.options, callback: resolver, args: [input.node, input.node.parameterValues ?? {}] }) : undefined;
     const classifyLegacyStepAct = (node: Parameters<NonNullable<AutomationStudioGraphExecutionOptions["classifyLegacyStepAct"]>>[0]) => {
       const host = input.options.hostRuntime;
       const classifier = host?.classifyLegacyStepAct;
-      return classifier?.call(host, node) ?? input.options.classifyLegacyStepAct?.(node);
+      const classified = classifier ? invokeAutomationCallbackSync(input.options, { receiver: host, callback: classifier, args: [node] }) : undefined;
+      const fallback = input.options.classifyLegacyStepAct;
+      return classified ?? (fallback ? invokeAutomationCallbackSync(input.options, { receiver: input.options, callback: fallback, args: [node] }) : undefined);
     };
     return automationStudioSkippedStepDoesAct(input.node, actionEffect, classifyLegacyStepAct) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
   }
@@ -117,10 +121,10 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
     .filter((candidate) => candidate.signatures.before !== undefined);
   const own = ownEffect(input.flow, input.node);
   // The step that showed a control this one found on the page but not shown (`./reopen.ts`, t661).
-  const opener = automationStudioStateReopenOpener({ flow: input.flow, node: input.node, attempt: input.attempt, attempts: input.attempts, hostRuntime: input.options.hostRuntime, resolveActionEffect: input.options.resolveActionEffect });
+  const opener = automationStudioStateReopenOpener({ flow: input.flow, node: input.node, attempt: input.attempt, attempts: input.attempts, hostRuntime: input.options.hostRuntime, resolveActionEffect: input.options.resolveActionEffect }, automationCallbackObservation(input.options));
   if (!candidates.length && !own && !opener) return none("no_pre_states", 0);
   const hostRuntime = input.options.hostRuntime;
-  const observation = await observeAutomationStudioRouteState({ hostRuntime, ...flowScope(input.flow), ...(input.options.signal ? { signal: input.options.signal } : {}) });
+  const observation = await observeAutomationStudioRouteState({ hostRuntime, ...flowScope(input.flow), ...(input.options.signal ? { signal: input.options.signal } : {}) }, automationCallbackObservation(input.options));
   if (!observation.ok) return none("unobserved", candidates.length, observation.reason);
   const refused: AutomationStudioStateRouteRefusal[] = [];
   const held = own ? effectHolds(input, own, observation.state, candidates.length, refused) : undefined;
@@ -130,23 +134,23 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
   const ownReason = held?.kind === "none" && held.record.reason ? `${held.record.reason} ` : "";
   if (!candidates.length && !own) return none("no_pre_states", 0, undefined, refused);
   if (!candidates.length) return none("no_match", 0, `${ownReason}No other step recorded an expected starting page.`, refused, held?.kind === "none" ? held.record.noMatchCause : undefined);
-  const signed = automationStudioSignRouteState(hostRuntime, observation.state);
+  const signed = automationStudioSignRouteState(hostRuntime, observation.state, automationCallbackObservation(input.options));
   if (!signed.ok) return none("unobserved", candidates.length, `${signed.reason} So the page could not be compared with any step's.`, refused);
   const observed = signed.signature;
   const acted = actedNodeIds(input.attempts);
   const matches: AutomationStudioStateRouteMatch[] = [];
   let effectStands = 0;
   for (const { node, signatures } of candidates) {
-    const before = automationStudioCompareRouteSignatures(hostRuntime, signatures.before!, observed);
+    const before = automationStudioCompareRouteSignatures(hostRuntime, signatures.before!, observed, automationCallbackObservation(input.options));
     if (!before.matches) continue;
-    if (acted.has(node.id) && (!signatures.after || automationStudioCompareRouteSignatures(hostRuntime, signatures.after, observed).matches)) {
+    if (acted.has(node.id) && (!signatures.after || automationStudioCompareRouteSignatures(hostRuntime, signatures.after, observed, automationCallbackObservation(input.options)).matches)) {
       effectStands += 1;
       continue;
     }
     matches.push({ node, closeness: before.closeness });
   }
   const ranked = automationStudioRankStateRoutes(input.flow, input.node.id, matches);
-  const facts = await automationStudioStateRouteFactGate({ flow: input.flow, nodeIds: ranked.map((route) => route.node.id), hostRuntime, context: factContext(input) });
+  const facts = await automationStudioStateRouteFactGate({ flow: input.flow, nodeIds: ranked.map((route) => route.node.id), hostRuntime, context: factContext(input) }, automationCallbackObservation(input.options));
   const chosen = firstAllowed(input, ranked, observation.state, facts.refused);
   refused.push(...chosen.refused.map((entry) => entry.refusal));
   const best = chosen.route;
@@ -173,7 +177,7 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
 async function declaredAct(input: AutomationStudioStateRouteInput, edge: AutomationStudioFlowEdge): Promise<AutomationStudioStateRouteDecision> {
   const own = ownEffect(input.flow, input.node);
   if (own) {
-    const observation = await observeAutomationStudioRouteState({ hostRuntime: input.options.hostRuntime, ...flowScope(input.flow), ...(input.options.signal ? { signal: input.options.signal } : {}) });
+    const observation = await observeAutomationStudioRouteState({ hostRuntime: input.options.hostRuntime, ...flowScope(input.flow), ...(input.options.signal ? { signal: input.options.signal } : {}) }, automationCallbackObservation(input.options));
     const held = observation.ok ? effectHolds(input, own, observation.state, 0, []) : undefined;
     if (held && held.kind !== "none") return held;
   }
@@ -206,7 +210,7 @@ function effectHolds(
   candidates: number,
   refused: AutomationStudioStateRouteRefusal[]
 ): AutomationStudioStateRouteDecision {
-  const reading = automationStudioRouteEffectHolds(input.options.hostRuntime, own.effect, observed);
+  const reading = automationStudioRouteEffectHolds(input.options.hostRuntime, own.effect, observed, automationCallbackObservation(input.options));
   if (!reading.holds) return none("no_match", candidates, reading.reason, [], "effect_not_on_page");
   const unbound = unboundRefusal(input, own.target.id);
   if (unbound) {
@@ -300,7 +304,7 @@ function unboundRefusal(input: AutomationStudioStateRouteInput, toNodeId: string
 
 /** The second guard, for a backward route into `toNodeId`. */
 function repeatRefusal(input: AutomationStudioStateRouteInput, toNodeId: string, observed: JsonObject): Refused | undefined {
-  const act = automationStudioRepeatedLastingAct({ flow: input.flow, fromNodeId: input.node.id, toNodeId, attempts: input.attempts, hostRuntime: input.options.hostRuntime, observed, resolveActionEffect: input.options.resolveActionEffect });
+  const act = automationStudioRepeatedLastingAct({ flow: input.flow, fromNodeId: input.node.id, toNodeId, attempts: input.attempts, hostRuntime: input.options.hostRuntime, observed, resolveActionEffect: input.options.resolveActionEffect }, automationCallbackObservation(input.options));
   if (!act) return undefined;
   const evidence = act.effect === "on_page" ? "the page shows its effect" : "nothing shows it did not take effect";
   return {

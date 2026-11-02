@@ -1,3 +1,4 @@
+import { invokeObservedExecutionCallbackSync, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 // Back to the step that showed a control a later step found hidden (t661).
 //
 // A8 bigbox cart (`run-mvac0ddx-f52ba929`): step 4 opened a store picker, an
@@ -48,14 +49,14 @@ export function automationStudioStateReopenOpener(input: {
   attempts: readonly AutomationStudioNodeAttemptTrace[];
   hostRuntime: AutomationStudioGraphExecutionOptions["hostRuntime"];
   resolveActionEffect?: AutomationStudioGraphExecutionOptions["resolveActionEffect"];
-}): AutomationStudioFlowNode | undefined {
+}, executionObservation?: ExecutionCallbackObservation): AutomationStudioFlowNode | undefined {
   if (!automationStudioTargetMeasuredNotShown(input.attempt)) return undefined;
   const shownOn = automationStudioNodeRouteSignatures(input.node).before;
   if (!shownOn) return undefined;
   const opener = nearestRecordedActor(input.flow, input.node.id, input.attempts);
-  if (!opener || automationStudioNodeActLasts(opener, input.resolveActionEffect?.(opener))) return undefined;
+  if (!opener || automationStudioNodeActLasts(opener, (input.resolveActionEffect ? invokeObservedExecutionCallbackSync(executionObservation, { receiver: input, callback: input.resolveActionEffect, args: [opener] }) : undefined))) return undefined;
   const left = automationStudioNodeRouteSignatures(opener).after!;
-  return automationStudioCompareRouteSignatures(input.hostRuntime, left, shownOn).matches ? opener : undefined;
+  return automationStudioCompareRouteSignatures(input.hostRuntime, left, shownOn, executionObservation).matches ? opener : undefined;
 }
 
 /** The nearest earlier node of the run, other than `failingId`, that acted and recorded an after-state. */

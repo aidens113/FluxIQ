@@ -193,7 +193,7 @@ export class AutomationStudioProjectBuildPhaseStart {
   }
 
   /** (b) The build's one reset over every brief's ledger, `own` first, under `checks` (header). */
-  reset(own: AutomationStudioSiteResetLedger | undefined, checks: (signal: AbortSignal | undefined) => AutomationStudioSiteResetChecks): AutomationStudioSiteResetTrialReset {
+  reset(own: AutomationStudioSiteResetLedger | undefined, checks: (signal: AbortSignal | undefined, invocation?: object) => AutomationStudioSiteResetChecks): AutomationStudioSiteResetTrialReset {
     return automationStudioSiteResetProjectReset({ project: this.input.ledger, ...(own ? { own } : {}), checks });
   }
 
@@ -226,7 +226,7 @@ export class AutomationStudioProjectBuildPhaseStart {
     const { phase, scope, own, signal } = request;
     const { environment, ledger, proposals } = this.input;
     signal.throwIfAborted();
-    const admission = phase === "reset" ? undefined : this.reset(own, () => UNLOOKED).admit?.(automationStudioSiteResetTrialSteps(proposals.predecessors(scope).flatMap((proposal) => proposal.subflows)));
+    const admission = phase === "reset" ? undefined : await this.reset(own, () => UNLOOKED).admit?.(automationStudioSiteResetTrialSteps(proposals.predecessors(scope).flatMap((proposal) => proposal.subflows)));
     if (admission?.kind === "refuse") {
       const record: AutomationStudioProjectBuildPhaseStartRecord = { phase, hook: "none", arrival: "not_run", predecessors: { keys: [...scope.predecessors], prepared: false, code: admission.evidence.code } };
       return { record, entry: { kind: "unprepared", predecessors: [...scope.predecessors], code: admission.evidence.code, acts: [] }, told: { ...automationStudioProjectBuildPhaseStartTold(record), admission: admission.evidence } };

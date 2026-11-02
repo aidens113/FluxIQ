@@ -1,3 +1,4 @@
+import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
 // One partial trial of a subflow builder's proposal (automation-project-agents
 // plan, `Subflow trial`; unit A4b). The validator side of `core.test_subflow`.
 //
@@ -123,6 +124,8 @@ import { automationStudioSubflowTrialPredecessorGap } from "./predecessor-gap.ts
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import { automationStudioSubflowTrialStoppedAtKey } from "./stopped-at.ts";
 import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
+import { bindTrialExecutorParent, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation } from "../../candidate-trials/index.ts";
+import { bindPartialTrialFrame, inheritPartialTrialContext, observePartialTrialCallback } from "../../candidate-trials/partial/index.ts";
 
 const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
 
@@ -172,7 +175,9 @@ async function trialIn(environment: AutomationStudioRunEnvironment, request: Aut
   const unaffordable = automationStudioTrialJudgingShortfall({ code: UNAFFORDABLE, judgeInputTokens });
   if (unaffordable) return answer("not_judged", { ...unaffordable, partial: true, entryPrepared: false }, { ...notRun, code: UNAFFORDABLE });
 
-  const start = preparedStart ?? await automationStudioSubflowTrialStart({ scope, revision: proposal.revision, digest: proposal.digest, signal }, ports);
+  const startRequest = { scope, revision: proposal.revision, digest: proposal.digest, signal };
+  inheritPartialTrialContext(request, startRequest);
+  const start = preparedStart ?? await automationStudioSubflowTrialStart(startRequest, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status, partial: true, entryPrepared: false }, { ...notRun, start, code: start.code });
   // The trial's episode opens only now, around its own run: the start above stays in the build's trace (header, P3).
   const context = (runId: string) => ({ schema: AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT.subflowTrial, value: { kind: "subflow_trial", runId, buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, revision: proposal.revision, digest: proposal.digest, start: start.status } });
@@ -198,7 +203,15 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
   const receipt: AutomationStudioCandidateStartReceipt = { receiptId: `${runId}.start`, conditionsDigest: `subflow-trial.${start.status}`, preparedAt: startedAt, pageGeneration: 0, subjectStates: [] };
   let executed: Awaited<ReturnType<typeof runAutomationStudioDetachedSubflow>>;
   try {
-    executed = await (ports.execute ?? runAutomationStudioDetachedSubflow)({
+    const graphOptions = ports.graphOptions({ runId, signal });
+    const referencedOptions = copyAutomationExecutionOptions(graphOptions, { referenceNow: startedAt }, null);
+    inheritCandidateTrialExecutorObservation(request, graphOptions, referencedOptions);
+    const execute = ports.execute ?? runAutomationStudioDetachedSubflow;
+    if (!ports.execute) bindPartialTrialFrame(execute, true);
+    const observedOptions = automationStudioTrialExecutorOptions(referencedOptions, ports.environment);
+    const executionOptions = copyAutomationExecutionOptions(observedOptions, {}, null);
+    if (!candidateTrialObservationContext(request)) bindTrialExecutorParent(observedOptions, executionOptions);
+    const execution = {
       identity,
       target: detachedProposal(proposal),
       predecessors: predecessors.map(detachedProposal),
@@ -214,8 +227,9 @@ async function runIn(environment: AutomationStudioRunEnvironment, request: Autom
       // The start page loaded first, after the hook (header, t578).
       ...(ports.arrival && ports.startLocation ? { arrival: { ...ports.arrival, location: ports.startLocation } } : {}),
       // The signal rides on the options alone: the runner refuses two different signals.
-      options: automationStudioTrialExecutorOptions({ ...ports.graphOptions({ runId, signal }), referenceNow: startedAt }, ports.environment)
-    });
+      options: executionOptions
+    };
+    executed = await observePartialTrialCallback(request, { receiver: undefined, callback: execute, args: [execution] }, signal, undefined, parent => bindTrialExecutorParent(observedOptions, executionOptions, parent));
   } catch (error) {
     // Not left running: a session that threw is ended failed, and the throw goes on to the builder's gate.
     await ports.writeSession({ ...opened, status: signal.aborted ? "cancelled" : "failed", startedAt, finishedAt: now() });

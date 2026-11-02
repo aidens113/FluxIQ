@@ -9,6 +9,9 @@ import type { AutomationStudioSubflowFromStepPort, AutomationStudioSubflowTrialP
 import { AutomationStudioProjectDispatchReceipts } from "../receipts.ts";
 import { AutomationStudioProjectDispatchStandingNos } from "../standing-nos.ts";
 import { automationStudioProjectDispatchTrialPort } from "../trial-port.ts";
+import { partialAdmissionFixture } from "../../../candidate-trials/partial/tests/fixture.ts";
+import { partialTrialContext } from "../../../candidate-trials/partial/index.ts";
+import { bindTrialExecutionObservation, trialExecutionObservation, trialExecutionSource } from "../../../candidate-trials/observation/index.ts";
 
 function wrapped(port: AutomationStudioSubflowTrialPreparingPort) {
   return automationStudioProjectDispatchTrialPort({
@@ -32,6 +35,22 @@ describe("the dispatcher's partial-trial port", () => {
 
   it("offers none where the brief's port has none", () => {
     expect(wrapped(async () => { throw new Error("not asked"); }).checkRows).toBeUndefined();
+  });
+
+  it("forwards the original configured source and admitted parent through the actual dispatch wrapper", async () => {
+    const f = await partialAdmissionFixture({ engine: true, port: async () => { throw new Error("no live callback is part of wrapping a port"); } });
+    const automation = f.automation;
+    if (!automation) throw new Error("The original engine owner is required.");
+    const { origin } = f.configured.original("actual.wrapper.construction");
+    const reserved = await f.configured.reserve(origin, new AbortController().signal);
+    const observation = { parent: { reservation: reserved.reservation, parent: reserved.root }, callbacks: f.callbacks, automation };
+    bindTrialExecutionObservation(f.port, observation);
+    const port = wrapped(f.port);
+    expect(trialExecutionSource(port)).toBe(f.configured);
+    expect(trialExecutionObservation(port)).toBe(observation);
+    expect(partialTrialContext(port)).toBe(observation);
+    await f.configured.finish(reserved.root, origin, "actual.wrapper.constructed_without_dispatch");
+    await f.assembly.consumer.release(reserved.reservation);
   });
 });
 

@@ -12,6 +12,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import { chooseAutomationStudioStartNode } from "../graph-navigation/index.ts";
 import type { AutomationStudioInvocationOptions, AutomationStudioSubflowGraphRunner } from "./invocation-options.ts";
 import { automationStudioRunFrames } from "./run-holder.ts";
+import { copyAutomationExecutionOptions, inheritAutomationExecutionObservation } from "../execution-admission/index.ts";
 
 /** The graph a frame runs, as far as framing it needs. */
 type FramedGraph = Pick<AutomationStudioFlowDocument, "flowId" | "nodes" | "edges" | "metadata">;
@@ -69,7 +70,8 @@ export async function runAutomationStudioGraphInFrame<T>(
   const pushed = !stack.includes(invocation.frame);
   if (pushed) stack.push(invocation.frame);
   try {
-    return await run(options.invocation === invocation ? options : { ...options, invocation });
+    const framed = options.invocation === invocation ? options : copyAutomationExecutionOptions(options, { invocation });
+    return await run(framed);
   } finally {
     const at = pushed ? stack.lastIndexOf(invocation.frame) : -1;
     if (at >= 0) stack.splice(at, 1);
@@ -81,6 +83,7 @@ export async function runAutomationStudioGraphInFrame<T>(
 function bareSubflowRunner(runGraph: GraphRun): AutomationStudioSubflowGraphRunner {
   return (target, options, onExecutedTrace) => {
     const { regionRuntime: _parentRegions, nodeRegionIds: _parentRegionIds, ...childOptions } = options;
+    inheritAutomationExecutionObservation(options, childOptions);
     return runGraph(target.graph, childOptions, onExecutedTrace);
   };
 }

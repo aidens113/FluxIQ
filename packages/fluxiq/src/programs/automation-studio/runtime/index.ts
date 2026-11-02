@@ -5,6 +5,7 @@ export * from "./adapters.ts";
 export * from "./candidate-start-hook/index.ts";
 export * from "./adaptive-orchestrator.ts";
 export * from "./contracts.ts";
+export type { AutomationStudioFlowExecutionBinding } from "./service/flow-binding/index.ts";
 export * from "./conversations/index.ts";
 export * from "./domain-build-state/index.ts";
 export * from "./durable-behavior/index.ts";

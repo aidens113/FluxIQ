@@ -203,8 +203,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * (`../layer-handlers/explored.ts`). The model writes nothing; a composed Flow
    * keeps the handlers its parts' submissions gave it.
    */
-  async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
-    return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" }), true);
+  async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}, originalInvocation?: object): Promise<AutomationStudioFlowCandidateSubmission> {
+    return this.submitChecked(result, history, () => checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history", originalInvocation }), true);
   }
 
   /**

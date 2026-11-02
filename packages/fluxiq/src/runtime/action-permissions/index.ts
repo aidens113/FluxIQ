@@ -1,3 +1,10 @@
 export * from "./consequences.ts";
 export * from "./request.ts";
 export * from "./destructive/index.ts";
+export * from "./declaration/index.ts";
+export * from "./record/index.ts";
+export * from "./gate/index.ts";
+export * from "./assessment/index.ts";
+export * from "./plan/index.ts";
+export * from "./instruction/index.ts";
+export type * from "../../flows/executable/permissions/index.ts";

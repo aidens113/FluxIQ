@@ -260,6 +260,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: Automa
 
 /** What a model's completed result is checked with (`checkAutomationStudioFlowBootstrapCompletion`). */
 export type AutomationStudioFlowBootstrapCompletionInput = {
+  /** Actual current Core invocation only; never model data or a creation-time scope. */
+  originalInvocation?: object | undefined;
   result: JsonObject;
   projectId: string;
   flowId: string;
@@ -443,6 +445,7 @@ async function checkPlan(
         binding: input.binding,
         handlesIssued: true,
         permissionFor: input.permissionFor,
+        originalInvocation: input.originalInvocation,
         inheritedNodeRefs: drafted?.inheritedNodeRefs,
         // A plan from the reply is the model's writing; a draft's steps ran with what the domain resolved (t432).
         writtenByModel: drafted === undefined,

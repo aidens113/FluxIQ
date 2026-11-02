@@ -3,6 +3,7 @@ import type { AutomationStudioGraphExecutionTrace } from "../index.ts";
 import { automationStudioFactConditionsHold, automationStudioSubflowContract } from "../lifecycle/index.ts";
 import { automationStudioConditionEvidence, observeAutomationStudioFacts } from "../lifecycle-run/index.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
+import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
 
 /** A condition no host can answer, standing in for a success check that could not be read: it always answers `unknown`. */
 const UNREADABLE_CHECK = { fact: "core:unreadable_success_check", op: "exists", target: { handle: "core:unreadable" } } as const;
@@ -38,7 +39,7 @@ export async function automationStudioStepFrameSucceeded(ctx: AutomationStudioSt
     groups: [{ key: "success", conditions }],
     context: { inputs: invocation?.frame.inputs ?? ctx.options.inputs ?? {}, values: ctx.values, nodeId, ...(ctx.options.signal ? { signal: ctx.options.signal } : {}) },
     now: ctx.now
-  });
+  }, automationCallbackObservation(ctx.options));
   if (observation.problem && invocation && !invocation.run.lifecycle.problems.includes(observation.problem)) invocation.run.lifecycle.problems.push(observation.problem);
   const answers = observation.results.get("success") ?? [];
   const truth = automationStudioFactConditionsHold(conditions, answers);

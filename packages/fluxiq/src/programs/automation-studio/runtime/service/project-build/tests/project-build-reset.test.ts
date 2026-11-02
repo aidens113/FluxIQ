@@ -40,7 +40,7 @@
 // asserts depends on time passing between them. The build's own bounds are
 // never reached, so the watchdog is a hang guard only, and cleanup stops any
 // build still running and waits for it before removing its directory
-// (`./settled-builds.ts`).
+// (`./settled-builds/index.ts`).
 
 // **On a plan of two subflows (t679).** A plan of one subflow the router runs
 // tests its builder's proposal as the judged whole run, with no reset brief
@@ -73,8 +73,8 @@ import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/s
 import * as trialPorts from "../../candidate-trial/index.ts";
 import { automationStudioProjectBuildWholeTrials } from "../whole-trials.ts";
 import { automationStudioProjectBuildResetCalls } from "../reset-calls.ts";
-import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";
-import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
+import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution/index.ts";
+import { automationStudioTestSettledBuilds } from "./settled-builds/index.ts";
 import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
 
 // The reset's settled read, its two reads back to back (header).
@@ -780,8 +780,8 @@ it("whole-trial collection authority comes from original builder routing, never 
       expect([...supervisor.inPlace(), ...supervisor.unsatisfiable()].map((act) => act.act)).toContain(acts[0]!.act);
       const addControl = { scope: moved[0]!.scope, subject: "s:new" };
       const moveControl = { scope: moved[1]!.scope, subject: "s:existing" };
-      const deletion = reset.target(acts[0]!.act, { effect: "mutate", consequences: ["delete"], control: addControl });
-      const inverse = reset.target(acts[1]!.act, { effect: "mutate", consequences: ["modify_existing"], control: moveControl });
+      const deletion = await reset.target(acts[0]!.act, { effect: "mutate", consequences: ["delete"], control: addControl });
+      const inverse = await reset.target(acts[1]!.act, { effect: "mutate", consequences: ["modify_existing"], control: moveControl });
       expect(deletion.kind).toBe(kind === "original" || kind === "malformed" ? "admit" : "refused");
       expect(inverse.kind).toBe(kind === "original" ? "admit" : "refused");
       if (kind !== "original") continue;

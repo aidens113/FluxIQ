@@ -3,6 +3,7 @@ import type { AutomationStudioCandidateTrialPorts } from "../candidate-trial/ind
 import type { AutomationStudioProjectBuildTrialEnvironment } from "../project-build/index.ts";
 // From its owner, not the project-build barrel, whose whole trials import this module back (a module cycle).
 import { automationStudioProjectBuildTrialReads } from "../project-build/trial-reads.ts";
+import { inheritTrialExecutionSource, inheritTrialExecutionObservation } from "../../candidate-trials/observation/index.ts";
 
 /** What the whole candidate's trial ports are made of: a build's trial environment, its bound domain, and the judge. */
 export type AutomationStudioWholeTrialPortsInput = {
@@ -20,5 +21,8 @@ export type AutomationStudioWholeTrialPortsInput = {
  */
 export function automationStudioWholeTrialPorts(input: AutomationStudioWholeTrialPortsInput): AutomationStudioCandidateTrialPorts {
   const { environment, binding } = input;
-  return { ...environment, ...automationStudioProjectBuildTrialReads(binding, environment.projectId, environment.flowId), judge: input.judge };
+  const ports = { ...environment, ...automationStudioProjectBuildTrialReads(binding, environment.projectId, environment.flowId), judge: input.judge };
+  inheritTrialExecutionSource(environment, ports);
+  inheritTrialExecutionObservation(environment, ports);
+  return ports;
 }

@@ -1,4 +1,5 @@
 import type { AutomationStudioSubflowScope } from "../../flow-bootstrap/subflow-candidate/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies } from "../../flow-bootstrap/reset-observation/index.ts";
 
 // The standing nos one build's subflow trials kept, carried across the briefs
 // of a subflow (t634). A8 wave 8 `project` towels: brief 1's trials upheld a
@@ -28,6 +29,10 @@ const key = (scope: Scope): string => JSON.stringify([scope.subflowKey, scope.pl
 export class AutomationStudioProjectDispatchStandingNos {
   private readonly kept = new Map<string, unknown[]>();
 
+  constructor() {
+    for (const callback of ORIGINAL_READERS) AutomationStudioSiteResetCallbackPolicies.remember(this, callback, "pure");
+  }
+
   /** The standing nos the briefs of `scope`'s subflow kept under its plan so far, oldest first, as copies. */
   earlier(scope: Scope): unknown[] {
     return structuredClone(this.kept.get(key(scope)) ?? []);
@@ -43,6 +48,8 @@ export class AutomationStudioProjectDispatchStandingNos {
     this.kept.set(at, records);
   }
 }
+
+const ORIGINAL_READERS = [AutomationStudioProjectDispatchStandingNos.prototype.earlier, AutomationStudioProjectDispatchStandingNos.prototype.stood];
 
 function upheldRows(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;

@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
+import { copyAutomationExecutionOptions } from "../../../engine/automation/execution-admission/index.ts";
 import {
   parseAutomationStudioFlowChangeOrigin,
   type AutomationStudioAdaptationPolicy,
@@ -373,10 +374,10 @@ export function prepareAutomationStudioInRunRepair(input: AutomationStudioRuntim
  * resuming on it could aim at a same-named node of the parent Flow.
  */
 function trialOptions(input: AutomationStudioRuntimePatchExecutionInput): AutomationStudioGraphExecutionOptions | undefined {
-  const options = { ...(input.options ?? {}), ...(input.subflowId ? { currentSubflowId: input.subflowId } : {}) };
+  const options = copyAutomationExecutionOptions(copyAutomationExecutionOptions(input.options ?? {}), { ...(input.subflowId ? { currentSubflowId: input.subflowId } : {}) });
   if (input.remainingSteps === undefined) return options;
   const remaining = Math.floor(input.remainingSteps);
-  return Number.isFinite(remaining) && remaining >= 1 ? { ...options, maxSteps: remaining } : undefined;
+  return Number.isFinite(remaining) && remaining >= 1 ? copyAutomationExecutionOptions(options, { maxSteps: remaining }) : undefined;
 }
 
 /**

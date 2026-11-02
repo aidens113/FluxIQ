@@ -1,6 +1,6 @@
 # Durable execution admission API proposal
 
-Outcome: Done, REPORT ONLY. Source remains frozen.
+Outcome: Historical API proposal with lead-accepted amendments. Actual A1/A2/producer implementation and its separate acceptance reports supersede the proposed blocks below.
 
 Dispatch context: [execution-admission-api brief](../briefs/execution-admission-api.md). Inputs: [execution-admission review](execution-admission-review.md) and [candidate retest protocol](candidate-retest-protocol.md).
 
@@ -18,6 +18,16 @@ The lead accepted these A1 amendments before implementation; the actual contract
 - `ExecutionAdmissionAssembly.entryBridge.read(originalEntry)` privately validates original membership and returns a frozen snapshot of row/fence, original source owner/origin, lifecycle and reservation activity. A2 re-reads that original entry inside the actual claim transaction and validates the SQL row/fence/provenance. The returned snapshot is information, never a replacement entry capability.
 - `coverage_complete` no longer includes `childFrontierDigest`. Persistence derives and CAS-validates the actual child frontier during `finish`; A1 synchronously locks a finishing parent against new children.
 - One factory owns one configured continuation/scope. Registration closes globally at its first reservation, including failed/aborted attempts. A later configured scope uses a new factory against the same durable owner; registry closure is never silently reset.
+
+Additional lead-accepted integration amendments (2026-11-02):
+
+- `ConfiguredExecutionSource` is the single source/cohort interface. Configure one complete source cohort before exploration; the original per-flow candidate source binds later canonical ports privately without registering another source or reopening A1 registration.
+- `entryBridge.matchesReservation(originalEntry, originalReservation)` verifies both original WeakMap memberships and their exact private association. Forged/prototype/JSON copies and two unknown objects never match.
+- Ordinary output provenance consumes an opaque proof issued for the genuine persisted original execution root. Its persisted entry ID is that execution run owner, not a fabricated RuntimeSession or metadata fallback. The alternative original RuntimeSession owner route is pinned at bind and never substituted after a proof expires.
+- Gateway targets are exact original receiver/method pairs captured at actual transport registration. Names, method presence, generic IO objects, results and model fields cannot designate a gateway-backed invocation.
+- The optional trusted gateway `readCompletion(originalContext, exactOriginalBackendParent)` reports settled/pending/unknown from private original membership and original bridge lifecycle/fence association. Missing readers earn no completion. Settled requires the authentic A2 child to be closed; a required child stays pending until original handling/consumption. The reader grants no rights; subsequent A1 finish still CAS-validates persisted SQL ownership and the actual child frontier.
+- Preserve a fulfilled unsupported callback result as unverified instead of attempting to close its unsettled frontier. Original thrown failures and cleanup failures remain available; release never silently replaces the primary failure.
+- Cached rejudge/diagnosis uses a pinned original no-dispatch callback and retained-evidence lease. It makes no committing reservation and cannot fall back to live/start/reset after eviction or mode mismatch. Inspection alone never clears coverage or grants promotion.
 
 Contract files were introduced by the A1 unit; actual mechanism/SQL/producer acceptance is reported separately in [execution-admission-authority.md](execution-admission-authority.md).
 

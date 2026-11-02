@@ -4,3 +4,7 @@ export type { AutomationStudioRecordingMapperCandidate } from "./candidate.ts";
 export type { AutomationStudioRecordingMapperResult } from "./result.ts";
 export type { AutomationStudioRecordingMapperContext } from "./context.ts";
 export type { AutomationStudioRecordingMapperImplementation } from "./implementation.ts";
+export type { AutomationStudioRecordingCandidateParameterNormalizer } from "./parameter-normalizer.ts";
+export type { AutomationStudioRecordingMapperBinding } from "./binding.ts";
+export type { RecordingFlowActionCandidate } from "./normalized-candidate.ts";
+export type { RecordingProposalEvidenceReference } from "./evidence-reference.ts";

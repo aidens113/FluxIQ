@@ -262,7 +262,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
     return !this.input.submission.signal?.aborted && this.current?.revision === receipt.revision && this.current.digest === receipt.digest;
   }
 
-  async submit(result: JsonObject, history: AutomationStudioSubflowSubmissionHistory = {}): Promise<AutomationStudioSubflowScopedSubmission> {
+  async submit(result: JsonObject, history: AutomationStudioSubflowSubmissionHistory = {}, originalInvocation?: object): Promise<AutomationStudioSubflowScopedSubmission> {
     this.input.submission.signal?.throwIfAborted();
     const read = this.read(result);
     if (read.issues.length) {
@@ -272,7 +272,7 @@ export class AutomationStudioSubflowScopedSubmissionController {
       return { ok: false, revision: last ? this.numbering.revision(last.revision) : 0, check: scopeRefusal(read.issues) };
     }
     this.written = read.written ?? new Map();
-    const submitted = await this.inner.submit(read.probe, this.candidateHistory(history));
+    const submitted = await this.inner.submit(read.probe, this.candidateHistory(history), originalInvocation);
     this.input.submission.signal?.throwIfAborted();
     if (submitted.ok && read.proposedCheck) this.proposedChecks.set(submitted.candidate.digest, read.proposedCheck);
     if (submitted.ok && read.unneeded) this.unneeded.set(submitted.candidate.digest, read.unneeded);

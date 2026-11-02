@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact } from "../../../recording-flow-proposal.ts";
 import { materializeRecordingNode, recordingCandidateDefinition, recordingCandidateParameters } from "../candidate-definitions.ts";
+import * as canonicalRecording from "../../../../../../components/automation/recording/index.ts";
 
 // `candidate-definitions.ts`, called directly: the definition a reviewed
 // recording candidate describes, and a Flow node naming one materialized as the
@@ -11,6 +12,12 @@ import { materializeRecordingNode, recordingCandidateDefinition, recordingCandid
 // and its refusal is pinned in `instruction-led/tests/service.test.ts`.
 
 // One field kept, and one the schema excludes.
+it("forwards the original public callables to their single canonical owners", () => {
+  expect(materializeRecordingNode).toBe(canonicalRecording.materializeRecordingNode);
+  expect(recordingCandidateDefinition).toBe(canonicalRecording.recordingCandidateDefinition);
+  expect(recordingCandidateParameters).toBe(canonicalRecording.recordingCandidateParameters);
+});
+
 function productSchema(): AutomationStudioRecordOutput["schema"] {
   return { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string", required: true }, { id: "email", label: "Email", valueType: "string", handling: "exclude" }] };
 }

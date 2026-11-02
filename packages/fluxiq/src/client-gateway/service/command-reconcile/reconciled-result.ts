@@ -1,4 +1,4 @@
-import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/runtime";
 import type { ClientGatewayActionResult, ClientGatewayReconcileAnswer } from "@fluxiq/contracts/client-gateway";
 import { readClientGatewayActionResult } from "../action-result-reading.ts";
 

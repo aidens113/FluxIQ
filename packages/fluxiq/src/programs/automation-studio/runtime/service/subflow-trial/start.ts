@@ -9,6 +9,7 @@
 import type { AutomationStudioSubflowScope } from "../../flow-bootstrap/subflow-candidate/index.ts";
 import { automationStudioCandidateTrialStart, type AutomationStudioCandidateTrialPorts, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
 import type { AutomationStudioSubflowTrialPorts } from "./types.ts";
+import { inheritPartialTrialContext } from "../../candidate-trials/partial/index.ts";
 
 /** Runs the deployment's start hook for one partial trial of `scope`'s proposal at `revision` and `digest`; `not_reset` without one. */
 export async function automationStudioSubflowTrialStart(input: { scope: Pick<AutomationStudioSubflowScope, "buildId" | "briefId">; revision: number; digest: string; signal: AbortSignal }, ports: AutomationStudioSubflowTrialPorts): Promise<AutomationStudioCandidateTrialStart> {
@@ -16,5 +17,8 @@ export async function automationStudioSubflowTrialStart(input: { scope: Pick<Aut
   // scoped judge and partial runner, which that function never calls.
   const { judge: _judge, execute: _execute, ...shared } = ports;
   const startPorts: AutomationStudioCandidateTrialPorts = { ...shared, judge: async () => { throw new Error("A trial's start is never judged."); } };
-  return await automationStudioCandidateTrialStart({ candidateId: `subflow.${input.scope.buildId}.${input.scope.briefId}`, revision: input.revision, digest: input.digest, signal: input.signal }, startPorts);
+  inheritPartialTrialContext(ports, startPorts);
+  const request = { candidateId: `subflow.${input.scope.buildId}.${input.scope.briefId}`, revision: input.revision, digest: input.digest, signal: input.signal };
+  inheritPartialTrialContext(input, request);
+  return await automationStudioCandidateTrialStart(request, startPorts);
 }

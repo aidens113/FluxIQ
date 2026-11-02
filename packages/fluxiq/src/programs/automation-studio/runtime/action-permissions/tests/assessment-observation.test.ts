@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioActionPermissionGate, automationStudioActionPermissionDenied, type AutomationStudioActionDeclaration } from "../index.ts";
 import { runWithAutomationStudioActionAssessments, type AutomationStudioActionAssessmentEvent } from "../assessment-observation/index.ts";
+import { runWithAutomationStudioActionAssessments as canonicalRun, automationStudioActionAssessmentScopes, beginAutomationStudioActionAssessment } from "../../../../../runtime/action-permissions/assessment/index.ts";
 
 const SOURCE = { kind: "exploration_step" as const, id: "core.run_node", ref: "actual-call" };
 const READ: AutomationStudioActionDeclaration = {
@@ -13,6 +14,18 @@ function gate() {
 }
 
 describe("private actual action-assessment observation", () => {
+  it("forwards to the same canonical assessment function and original active scope", () => {
+    const events: AutomationStudioActionAssessmentEvent[] = [];
+    const scope = { observe: (event: AutomationStudioActionAssessmentEvent) => events.push(event) };
+    expect(runWithAutomationStudioActionAssessments).toBe(canonicalRun);
+    runWithAutomationStudioActionAssessments(scope, () => {
+      expect(automationStudioActionAssessmentScopes()).toEqual([scope]);
+      expect(automationStudioActionAssessmentScopes()[0]).toBe(scope);
+      beginAutomationStudioActionAssessment(SOURCE);
+    });
+    expect(events.map(event => event.kind)).toEqual(["started"]);
+  });
+
   it.each([
     { changes: {}, expected: { effectClass: "observe", permissionConsequences: [] } },
     { changes: { effect: "mutate", actionEffect: undefined }, expected: { effectClass: "state", permissionConsequences: [] } },

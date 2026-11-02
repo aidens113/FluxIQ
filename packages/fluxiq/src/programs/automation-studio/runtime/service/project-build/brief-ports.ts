@@ -1,4 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
+import { bindAutomationStudioObservedBuildTools } from "../../build-execution/index.ts";
+import { AutomationStudioProjectBuildToolObservers, AutomationStudioBuildToolFactories, invokeAutomationStudioBuildToolCallback, withAutomationStudioBuildToolCallbackScope } from "../../build-execution/tools/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies, AutomationStudioSiteResetObservation, invokeAutomationStudioSiteResetCallback } from "../../flow-bootstrap/reset-observation/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
@@ -22,6 +25,7 @@ import type { AutomationStudioProjectBuildProposals } from "./proposals.ts";
 import { automationStudioProjectBuildResetCalls } from "./reset-calls.ts";
 import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-toggles/index.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
+import { automationStudioProjectBuildReadExecution, automationStudioProjectBuildStartChecks } from "../../project-agents/start-check/index.ts";
 
 // Each brief's surroundings (unit A5c; the dispatcher's port factory,
 // `project-agents/dispatch/types.ts`), made once its lease is held. What the
@@ -246,6 +250,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
   const { project, draft } = input;
   const { projectId, flowId, resolution, startLocation } = draft.submission;
   const { binding } = project;
+  const toolObserver = AutomationStudioProjectBuildToolObservers.of(project) ?? AutomationStudioProjectBuildToolObservers.of(project.trialEnvironment);
   // A stall for no progress carries the brief's last refused submission as codes, which its return reads back (t630, `project-agents/dispatch/ending.ts`).
   const unusable = (maxIterations: number, submissions: ReturnType<typeof automationStudioCandidateSubmissionRefusals>) => automationStudioFlowBootstrapUnusableDecisions({
     maxConsecutiveUnusableDecisions: draft.maxConsecutiveUnusableDecisions, maxIterations, callerEnding: () => undefined,
@@ -274,6 +279,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const registry = draft.submission.registry ?? new AutomationStudioNodeRegistry();
     const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution });
     const harness = automationStudioHarnessOptionRegistry({ binding, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation, nodeDescriptions }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
+    if (toolObserver) bindAutomationStudioObservedBuildTools(harness, toolObserver);
     const routing = await startAutomationStudioBuildRouting({ hostRuntime: project.hostRuntime, projectId, flowId, flowInputs: project.flowInputs, start: "first_look", pageless: [AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID] });
     const permittedActs: readonly string[] = request.brief.permittedActs;
     const permittedConsequences = (project.permissions.permittedConsequences ?? []).filter((consequence) => permittedActs.includes(consequence)) as AutomationStudioActionConsequence[];
@@ -304,6 +310,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       return scope && !personNeeded.signal.aborted ? { ...scope, generation: permissions, authority: permissions } : undefined;
     } } : undefined;
     const loop = { ...limits, rerunAuthority, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: delegate };
+    if (toolObserver) bindAutomationStudioObservedBuildTools(loop, toolObserver);
     const setCompletionSchema = (schema: JsonObject | undefined) => { configuredDecide = decide(schema); };
     return { loop, permissions, decide, setCompletionSchema, submissions, ended: briefEnding(permissions, personNeeded) };
   };
@@ -318,19 +325,39 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const { instructionText: _instructionText, originalSource: _originalSource, signal: _signal, ...submission } = draft.submission;
       // The build's port as it is, `prepareStart` with it; the trial's acts are recorded once, by the gate's reset below (header).
       const trial = input.subflowTrial;
-      const reader = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
+      const reader = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: automationStudioProjectBuildReadExecution(built.loop), toolObserver, liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
       // Whether the start this builder's reader captures at its opening is the build's: nothing of the build on the site by then (header).
       let startIsBuilds = false;
-      const buildReset = phaseStart.reset(request.ledger, (signal) => ({ compare: startIsBuilds ? () => reader.compare(signal) : async () => ({ moved: false }), compareAt: (place) => reader.compareAt(place, signal), lookAt: looking(reader, calls, signal) }));
+      const checks = (signal: AbortSignal | undefined) => automationStudioProjectBuildStartChecks(reader, calls, startIsBuilds, signal);
+      AutomationStudioSiteResetCallbackPolicies.rememberLexical(checks, "pure");
+      const buildReset = phaseStart.reset(request.ledger, checks);
       const reset: AutomationStudioSiteResetTrialReset = {
-        ...(buildReset.admit ? { admit: buildReset.admit } : {}),
-        beforeTrial: (signal, cannotUndo, options) => buildReset.beforeTrial(signal, cannotUndo, options),
-        trialRan: (acts, trialRunId) => {
-          const left = buildReset.trialRan(acts, trialRunId);
-          if (acts.length) input.acts.trialRan(acts, trialRunId);
-          return left;
+        ...(buildReset.admit ? { admit: function (this: AutomationStudioSiteResetTrialReset, steps: Parameters<NonNullable<AutomationStudioSiteResetTrialReset["admit"]>>[0]) {
+          const admit = buildReset.admit!;
+          return AutomationStudioSiteResetObservation.of(this)
+            ? invokeAutomationStudioSiteResetCallback(this, { receiver: buildReset, callback: admit, args: [steps] }, undefined, steps)
+            : admit.call(buildReset, steps);
+        } } : {}),
+        beforeTrial: (signal, cannotUndo, options) => invokeAutomationStudioSiteResetCallback(options, { receiver: buildReset, callback: buildReset.beforeTrial, args: [signal, cannotUndo, options] }, signal, options),
+        trialRan(acts, trialRunId) {
+          if (!AutomationStudioSiteResetObservation.of(this)) {
+            const left = buildReset.trialRan(acts, trialRunId);
+            if (acts.length) input.acts.trialRan(acts, trialRunId);
+            return left;
+          }
+          return (async () => {
+            const left = await invokeAutomationStudioSiteResetCallback(this, { receiver: buildReset, callback: buildReset.trialRan, args: [acts, trialRunId] }, undefined, acts);
+            if (acts.length) {
+              const invocation = {};
+              await invokeAutomationStudioSiteResetCallback(this, { receiver: input.acts, callback: input.acts.trialRanAndFlushed, args: [acts, trialRunId, invocation] }, undefined, invocation);
+            }
+            return left;
+          })();
         }
       };
+      AutomationStudioSiteResetCallbackPolicies.remember(reset, reset.beforeTrial, "frame");
+      AutomationStudioSiteResetCallbackPolicies.remember(reset, reset.trialRan, "frame");
+      if (reset.admit) AutomationStudioSiteResetCallbackPolicies.remember(reset, reset.admit, "frame");
       // Before the first look (header): the build's one start -- the hook, the acts it took back, the predecessors run to the entry.
       const opensArriving = built.loop.tools.some((tool) => tool.initialObservation?.arrival !== undefined);
       const started = await phaseStart.explore({ phase: request.brief.kind === "repair" ? "repair" : "builder", scope: request.scope, own: request.ledger, signal: request.signal, openingArrives: opensArriving });
@@ -348,6 +375,10 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const unsettleable = new Set(project.ledger.unsatisfiable().map((act) => act.act));
       const landed: AutomationStudioSubflowEntryLeftAct[] = entry.kind === "prepared" ? project.ledger.snapshot().acts.filter((act) => (act.inPlace || unsettleable.has(act.act)) && act.ref.startsWith(`${entry.runId}#`)).map(({ act, did, possible }) => ({ act, did, ...(possible ? { possibly: true as const } : {}) })) : [];
       const loop = told({ ...placed, tools }, { start: started.told, entry: automationStudioProjectBuildEntryNote(request.scope, entry, absorbedActs, landed), permittedActs: request.brief.permittedActs, arrived });
+      if (toolObserver) {
+        AutomationStudioProjectBuildToolObservers.bind(loop, toolObserver);
+        AutomationStudioProjectBuildToolObservers.bind(loop.executeTool, toolObserver);
+      }
       // The domain's denied keys, which the dispatcher withholds from a repair's `yourSubflow` (`project-agents/dispatch/run-brief.ts`, t625).
       // `moves`: the reader's count of the times its looks moved the target, so a test refused after one says where it stands (t738).
       // `issuedRefs`: every ref the build issued, with where it was read, which the dispatcher puts on the opening call as `places` (header, t743).
@@ -361,12 +392,15 @@ export function automationStudioProjectBuildBriefPorts(input: {
     reset: async (request) => {
       // An undo aimed at another item is refused in a reset's words (header).
       const owned = automationStudioProjectBuildResetCalls(project.ledger, request.ledger);
-      const calls: typeof owned = { ...owned, target: (act, declared) => resetWorded(owned.target(act, declared)) };
+      const originalTarget = owned.target;
+      const calls: typeof owned = owned;
+      calls.target = async (act, declared) => resetWorded(await invokeAutomationStudioSiteResetCallback(calls, { receiver: owned, callback: originalTarget, args: [act, declared] }));
+      AutomationStudioSiteResetCallbackPolicies.remember(calls, calls.target, "frame");
       // Its task, in place of the person's instruction, with the acts as the ledger holds them at each decision (header).
       const built = await environment(request, calls, () => [resetTask({ projectId, flowId }, calls, pages)]);
       // Before its first look, the build's one start (header): after the hook there is usually nothing left to undo.
       const started = await phaseStart.explore({ phase: "reset", scope: request.scope, own: request.ledger, signal: request.signal, openingArrives: built.loop.tools.some((tool) => tool.initialObservation?.arrival !== undefined) });
-      const check = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: (call) => built.loop.executeTool(call), liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
+      const check = new AutomationStudioSiteResetStartCheck({ binding, projectId, flowId, tools: built.loop.tools, executeTool: automationStudioProjectBuildReadExecution(built.loop), toolObserver, liveCheck: { settleMs: AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } });
       // Its start is not the build's: a reset never captures one, and decides on each act's own page.
       const placed = placing(built.loop, placedAt(calls, pages), check, { capture: false, signal: request.signal, issued });
       // Its run-node calls offer `undoes` and no `write`; a lasting press of its own is told as outside it (header).
@@ -563,12 +597,24 @@ function briefEnding(permissions: AutomationStudioFlowBootstrapActionPermissions
 }
 
 /** `execute`, with the build's toggles written into its record after every call it answers, whether or not the call succeeded (t792). */
-function written<T extends (...args: never[]) => Promise<unknown>>(execute: T, toggles: Pick<AutomationStudioProjectBuildTogglesRecord, "sync">): T {
-  return (async (...args: Parameters<T>) => {
+function written(execute: Execute, toggles: Pick<AutomationStudioProjectBuildTogglesRecord, "syncAndFlushed" | "flushed">): Execute {
+  const callback: Execute = call => withAutomationStudioBuildToolCallbackScope(call, async () => {
+    let primary: { error: unknown } | undefined;
     try {
-      return await execute(...args);
+      return await invokeAutomationStudioBuildToolCallback(call, { receiver: undefined, callback: execute, args: [call] }, call.signal);
+    } catch (error) {
+      primary = { error };
+      throw error;
     } finally {
-      toggles.sync();
+      if (primary) {
+        try { await toggles.flushed(); }
+        catch (cleanup) { throw new AggregateError([primary.error, cleanup], "Project tool and toggle flush failed."); }
+      } else {
+        const invocation = {};
+        await invokeAutomationStudioSiteResetCallback(call, { receiver: toggles, callback: toggles.syncAndFlushed, args: [invocation] }, call.signal, invocation);
+      }
     }
-  }) as T;
+  });
+  AutomationStudioBuildToolFactories.remember(callback, "frame");
+  return callback;
 }

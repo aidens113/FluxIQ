@@ -1,3 +1,4 @@
+import { invokeObservedExecutionCallbackSync, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../index.ts";
 import { automationStudioReadRouteSignature, type AutomationStudioRouteSignatureReading } from "./value.ts";
@@ -10,12 +11,12 @@ export type AutomationStudioRouteSignatureComparison = { matches: boolean; close
  * signs no states, it threw, or it returned something that is not a small
  * JSON object.
  */
-export function automationStudioSignRouteState(hostRuntime: AutomationStudioHostRuntimeBoundary | undefined, state: JsonObject): AutomationStudioRouteSignatureReading {
+export function automationStudioSignRouteState(hostRuntime: AutomationStudioHostRuntimeBoundary | undefined, state: JsonObject, executionObservation?: ExecutionCallbackObservation): AutomationStudioRouteSignatureReading {
   const sign = hostRuntime?.signRouteState;
   if (!sign) return { ok: false, reason: "The host signs no route states." };
   let signature: unknown;
   try {
-    signature = sign.call(hostRuntime, state);
+    signature = invokeObservedExecutionCallbackSync(executionObservation, { receiver: hostRuntime, callback: sign, args: [state] });
   } catch {
     return { ok: false, reason: "The host could not sign the route state." };
   }
@@ -31,7 +32,8 @@ export function automationStudioSignRouteState(hostRuntime: AutomationStudioHost
 export function automationStudioCompareRouteSignatures(
   hostRuntime: AutomationStudioHostRuntimeBoundary | undefined,
   recorded: JsonObject,
-  observed: JsonObject
+  observed: JsonObject,
+  executionObservation?: ExecutionCallbackObservation
 ): AutomationStudioRouteSignatureComparison {
   const compare = hostRuntime?.compareRouteSignatures;
   if (!compare) {
@@ -40,7 +42,7 @@ export function automationStudioCompareRouteSignatures(
   }
   let answer: unknown;
   try {
-    answer = compare.call(hostRuntime, recorded, observed);
+    answer = invokeObservedExecutionCallbackSync(executionObservation, { receiver: hostRuntime, callback: compare, args: [recorded, observed] });
   } catch {
     return { matches: false, closeness: 0 };
   }

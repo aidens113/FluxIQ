@@ -41,6 +41,8 @@ import { AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironmen
 import { AutomationStudioGatewayTraceReplaySources } from "../../gateway-trace/index.ts";
 import type { AutomationStudioOfflineTrialNormalization, AutomationStudioOfflineTrialRan, AutomationStudioOfflineTrialRefusal, AutomationStudioOfflineTrialRunOutcome, AutomationStudioOfflineTrialSessionInput } from "./contracts.ts";
 import { AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS } from "./reader-contracts.ts";
+import { bindCandidateTrialOfflineEnvironment, releaseCandidateTrialOfflineEnvironment } from "../../candidate-trials/mode/index.ts";
+import { trialOfflineInvocation } from "../../candidate-trials/observation/index.ts";
 
 /** Why the matcher's session is closed when the trial is over. */
 const DETACHED = "offline_trial.ended";
@@ -82,12 +84,15 @@ export async function automationStudioOfflineTrialMatcherSession<Trial extends A
   const view = matcher.sessionView(input.sessionView);
   if (view === null) return refused("incomplete_capture", "the source trace recorded no session view (no session.claimed event) and the caller supplied none: there is no client for the trial's commands to reach");
   const session = matcher.attach(environment.scopeId, input.sessionView);
+  const lease = bindCandidateTrialOfflineEnvironment(environment, matcher, session);
   let trial: Trial;
   try {
+    trialOfflineInvocation(input)?.attach(environment, matcher, session, lease);
     await matcher.deliverOpening();
     trial = await AutomationStudioGatewayTraceReplaySources.run([source.traceId], () => run(environment));
     await matcher.settled();
   } finally {
+    releaseCandidateTrialOfflineEnvironment(environment, lease);
     gateway.disconnect(session.sessionId, DETACHED);
   }
   const report = matcher.report();

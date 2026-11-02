@@ -30,9 +30,12 @@
 // site and opens no episode.
 
 import type { AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
+import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt } from "./judging-fits.ts";
 import { automationStudioCandidateTrialStart, rejudgeAutomationStudioCandidateTrial, runAutomationStudioCandidateTrial } from "./run.ts";
+import { AutomationStudioCandidateTrialModeOwner, bindCandidateTrialReadOnly } from "../../candidate-trials/mode/index.ts";
+import { inheritCandidateTrialInvocation, bindCandidateTrialFrame } from "../../candidate-trials/authority/index.ts";
+import { inheritTrialExecutionSource, trialExecutionSource, inheritTrialExecutionObservation, recordTrialOfflineSource } from "../../candidate-trials/observation/index.ts";
 
 /** The port, the trials it ran, and what their judges spent. */
 export function automationStudioCandidateTrialPort(candidateId: string, ports: AutomationStudioCandidateTrialPorts): {
@@ -43,40 +46,52 @@ export function automationStudioCandidateTrialPort(candidateId: string, ports: A
   const records: AutomationStudioCandidateTrialRecord[] = [];
   /** The evidence of the last trial of each revision and digest its judge did not judge (header). */
   const unjudged = new Map<string, AutomationStudioCandidateTrialUnjudged>();
-  /** The start the hook made ahead of the reset check, for the next trial of that revision and digest only (header). */
-  let ready: { key: string; start: AutomationStudioCandidateTrialStart } | undefined;
-  const run = async (request: Parameters<AutomationStudioCandidateTrialPort>[0]): Promise<AutomationStudioCandidateTrialResult> => {
+  const perform = async (request: Parameters<AutomationStudioCandidateTrialPort>[0], only?: "cached"): Promise<AutomationStudioCandidateTrialResult> => {
     // A request for another candidate, or whose frozen bytes are not the revision and digest it names, runs nothing.
     if (request.candidateId !== candidateId || request.candidate.revision !== request.revision || request.candidate.digest !== request.digest) {
       const refused: AutomationStudioCandidateTrialResult = { revision: request.revision, digest: request.digest, verdict: "execution_failed", feedback: { code: "candidate.trial_identity_mismatch" } };
       return refused;
     }
-    const key = `${request.revision}:${request.digest}`, kept = unjudged.get(key);
-    unjudged.delete(key);
-    const start = ready?.key === key ? ready.start : undefined;
-    ready = undefined;
-    // The judge calls are held at the largest prompt an earlier trial's judge was sent (`./judging-fits.ts`, t661).
-    const prompt = automationStudioTrialLargestJudgePrompt(records);
-    const trial = kept ? await rejudgeAutomationStudioCandidateTrial(request, kept, ports, prompt) : await runAutomationStudioCandidateTrial(request, ports, start, prompt);
-    if (trial.unjudged) unjudged.set(key, trial.unjudged);
-    records.push(structuredClone(trial.record));
-    return trial.result;
+    const { state, automatic } = modeOwner.run(request);
+    try {
+      if (only === "cached" && (state.snapshot.mode !== "cached_rejudge" || !state.retained)) throw new Error("candidate.trial_cached_checkout_lost");
+      const prompt = automationStudioTrialLargestJudgePrompt(records);
+      const trial = state.retained ? await rejudgeAutomationStudioCandidateTrial(request, state.retained, ports, prompt)
+        : await runAutomationStudioCandidateTrial(request, ports, state.prepared, prompt);
+      if (trial.unjudged) modeOwner.keep(state.checkout, trial.unjudged);
+      records.push(structuredClone(trial.record));
+      recordTrialOfflineSource(ports, trial.record);
+      return trial.result;
+    } finally { if (automatic) modeOwner.release(state.checkout); }
   };
+  const run: AutomationStudioCandidateTrialPort = request => perform(request);
   const environmentKind = ports.environment?.kind ?? "live";
   const port: AutomationStudioCandidateTrialPort = Object.assign(run, { environmentKind });
+  bindCandidateTrialFrame(port);
+  const modeOwner = new AutomationStudioCandidateTrialModeOwner({ port, candidateId, environment: ports.environment, environmentNow: () => ports.environment, offlineTarget: ports, unjudged });
+  trialExecutionSource(ports)?.bind(modeOwner);
+  inheritTrialExecutionSource(ports, port);
+  inheritTrialExecutionObservation(ports, port);
+  bindCandidateTrialReadOnly(port, request => perform(request, "cached"));
   // An offline trial runs no start hook, so only a live port offers one (header, Decision 6).
   if (ports.prepareStart && environmentKind === "live") {
-    port.prepareStart = async ({ revision, digest, signal }) => {
+    port.prepareStart = async (input) => {
+      const { revision, digest, signal } = input;
       const key = `${revision}:${digest}`;
-      ready = undefined;
+      modeOwner.clearLegacyReady();
+      const checkout = modeOwner.start(input);
       // A re-judgement runs nothing, so nothing is put back for it.
-      if (unjudged.has(key)) return "none";
+      if (checkout ? checkout.snapshot.mode !== "live" : unjudged.has(key)) return "none";
       // A trial the purse cannot judge does not start, so the site is not put back for it (`./judging-fits.ts`, t661).
       if (automationStudioTrialJudgingShortfall({ code: "candidate.trial_unaffordable", judgeInputTokens: automationStudioTrialLargestJudgePrompt(records) })) return "none";
-      const start = await automationStudioCandidateTrialStart({ candidateId, revision, digest, signal }, ports);
-      ready = { key, start };
+      const request = { candidateId, revision, digest, signal };
+      inheritCandidateTrialInvocation(input, request);
+      const start = await automationStudioCandidateTrialStart(request, ports);
+      if (checkout) checkout.prepared = start;
+      else modeOwner.setLegacyReady(key, start);
       return start.status === "reset" ? "reset" : start.status === "failed" ? "failed" : "none";
     };
+    bindCandidateTrialFrame(port.prepareStart);
   }
   return {
     port,

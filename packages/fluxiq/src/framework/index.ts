@@ -21,6 +21,8 @@ export * from "./storage-layout.ts";
 export * from "./layout-v3/index.ts";
 export * from "./storage-migration.ts";
 export * from "./uncommitted-v2-adoption.ts";
+export * from "./persistence/index.ts";
+export * from "./observability/index.ts";
 
 export type FluxIQHostPaths = {
   root: string;

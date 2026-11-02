@@ -1,3 +1,4 @@
+import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../build-execution/tools/index.ts";
 // The registry of harness options: what the exploration loop is allowed to do,
 // and who is allowed to add to it.
 //
@@ -216,7 +217,9 @@ export class AutomationStudioHarnessOptionRegistry {
     if (!implementation) throw new Error(`Automation Studio harness option "${input.optionId}" has no implementation.`);
     // An option always has a check to call. One driven with no run behind it
     // has nobody to ask, so its check permits nothing lasting.
-    return implementation({ ...input, permission: input.permission ?? automationStudioActionPermissionDenied });
+    const placed = { ...input, permission: input.permission ?? automationStudioActionPermissionDenied };
+    inheritAutomationStudioBuildToolRequest(input, placed);
+    return invokeAutomationStudioBuildToolCallback(placed, { receiver: undefined, callback: implementation, args: [placed] }, input.signal);
   }
 
   /**
@@ -240,21 +243,29 @@ export class AutomationStudioHarnessOptionRegistry {
     const scopeOf = evidenceBuildScopes(context);
     // A held view (`holder.member`) is replaced in what a decision is shown, so
     // the binding offers `core.recall_result` to give it back (`../evidence-recall/`).
-    return automationStudioLlmEvidenceRecallBinding<AutomationStudioHarnessOptionLoopBinding>({
-      tools,
-      ...(observedStateKeys.length ? { observedStateKeys } : {}),
-      executeTool: ({ callId, toolId, value, signal, permission, referenceNow }) => runWithAutomationStudioEvidenceBuildScope(scopeOf({ callId, toolId, value }), () => this.execute({
-        projectId: context.projectId,
-        flowId: context.flowId,
-        ...(context.runId !== undefined ? { runId: context.runId } : {}),
-        callId,
-        optionId: toolId,
-        value,
-        ...(signal !== undefined ? { signal } : {}),
-        ...(referenceNow !== undefined ? { referenceNow } : {}),
-        ...(permission !== undefined ? { permission } : {})
-      }, resolution))
-    });
+    const executeTool: AutomationStudioHarnessOptionLoopBinding["executeTool"] = input => {
+      const { callId, toolId, value, signal, permission, referenceNow } = input;
+      return runWithAutomationStudioEvidenceBuildScope(scopeOf({ callId, toolId, value }), () => {
+        const placed = {
+          projectId: context.projectId,
+          flowId: context.flowId,
+          ...(context.runId !== undefined ? { runId: context.runId } : {}),
+          callId,
+          optionId: toolId,
+          value,
+          ...(signal !== undefined ? { signal } : {}),
+          ...(referenceNow !== undefined ? { referenceNow } : {}),
+          ...(permission !== undefined ? { permission } : {})
+        };
+        inheritAutomationStudioBuildToolRequest(input, placed);
+        return this.execute(placed, resolution);
+      });
+    };
+    AutomationStudioBuildToolFactories.remember(executeTool, "frame");
+    const loop = { tools, ...(observedStateKeys.length ? { observedStateKeys } : {}), executeTool };
+    const recalled = automationStudioLlmEvidenceRecallBinding<AutomationStudioHarnessOptionLoopBinding>(loop);
+    if (recalled.executeTool !== executeTool) AutomationStudioBuildToolFactories.remember(recalled.executeTool, "recall");
+    return recalled;
   }
 }
 

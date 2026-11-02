@@ -1,3 +1,4 @@
+import { invokeObservedExecutionCallbackSync, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioRouteEffectSighting } from "../index.ts";
 import { automationStudioReadRouteSignature, type AutomationStudioRouteSignatureReading } from "./value.ts";
@@ -14,13 +15,14 @@ export type AutomationStudioRouteEffectReading = { holds: true } | { holds: fals
 export function automationStudioSignRouteEffect(
   hostRuntime: AutomationStudioHostRuntimeBoundary | undefined,
   before: JsonObject,
-  after: JsonObject
+  after: JsonObject,
+  executionObservation?: ExecutionCallbackObservation
 ): AutomationStudioRouteSignatureReading {
   const sign = hostRuntime?.signRouteEffect;
   if (!sign) return { ok: false, reason: "The host records no step effects." };
   let effect: unknown;
   try {
-    effect = sign.call(hostRuntime, before, after);
+    effect = invokeObservedExecutionCallbackSync(executionObservation, { receiver: hostRuntime, callback: sign, args: [before, after] });
   } catch {
     return { ok: false, reason: "The host could not record the step's effect." };
   }
@@ -37,13 +39,14 @@ export function automationStudioSignRouteEffect(
 export function automationStudioRouteEffectHolds(
   hostRuntime: AutomationStudioHostRuntimeBoundary | undefined,
   effect: JsonObject,
-  observed: JsonObject
+  observed: JsonObject,
+  executionObservation?: ExecutionCallbackObservation
 ): AutomationStudioRouteEffectReading {
   const holds = hostRuntime?.routeEffectHolds;
   if (!holds) return { holds: false, reason: "The host cannot tell whether a step's effect is on the page." };
   let answer: unknown;
   try {
-    answer = holds.call(hostRuntime, effect, observed);
+    answer = invokeObservedExecutionCallbackSync(executionObservation, { receiver: hostRuntime, callback: holds, args: [effect, observed] });
   } catch {
     return { holds: false, reason: "The host could not test the step's effect against the page." };
   }
@@ -60,13 +63,14 @@ export function automationStudioRouteEffectHolds(
 export function automationStudioRouteEffectSeen(
   hostRuntime: AutomationStudioHostRuntimeBoundary | undefined,
   effect: JsonObject,
-  observed: JsonObject
+  observed: JsonObject,
+  executionObservation?: ExecutionCallbackObservation
 ): AutomationStudioRouteEffectSighting {
   const seen = hostRuntime?.routeEffectSeen;
   if (!seen) return "unknown";
   let answer: unknown;
   try {
-    answer = seen.call(hostRuntime, effect, observed);
+    answer = invokeObservedExecutionCallbackSync(executionObservation, { receiver: hostRuntime, callback: seen, args: [effect, observed] });
   } catch {
     return "unknown";
   }

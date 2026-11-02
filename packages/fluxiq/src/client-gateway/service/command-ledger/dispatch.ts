@@ -1,4 +1,4 @@
-import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/runtime";
 import type { ClientGatewayActionCommand, ClientGatewayActionResult, ClientGatewayReconcileAnswer } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "../config.ts";
 import type { ClientGatewayTimer, ClientGatewayTimerSource } from "../types.ts";

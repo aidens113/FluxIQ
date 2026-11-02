@@ -5,7 +5,7 @@ export {
   parseAutomationStudioPermittedConsequences,
   AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES,
   AUTOMATION_STUDIO_ACTION_CONSEQUENCES
-} from "../../../../runtime/action-permissions/index.ts";
+} from "../../../../components/automation/action-effect/consequences/index.ts";
 export type {
   AutomationStudioActionConsequence
-} from "../../../../runtime/action-permissions/index.ts";
+} from "../../../../components/automation/action-effect/consequences/index.ts";

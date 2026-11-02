@@ -5,6 +5,7 @@ import type { AutomationStudioProjectBuildTrialEnvironment } from "../project-bu
 import { automationStudioRunGraphOptions } from "../runtime-session/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../summaries/index.ts";
 import type { AutomationStudioServiceTrialCollaborators } from "./collaborators.ts";
+import { inheritTrialExecutionSource, inheritTrialExecutionObservation } from "../../candidate-trials/observation/index.ts";
 
 // What every trial of a build is run with, from the service's own
 // collaborators (t340; trace plan P5): the parent Flow and its base digest,
@@ -32,7 +33,7 @@ export type AutomationStudioServiceTrialEnvironmentInput = {
 /** The trial environment a build of `input`'s Flow runs every trial with, over `collaborators` (header). */
 export function automationStudioServiceTrialEnvironment(collaborators: AutomationStudioServiceTrialCollaborators, input: AutomationStudioServiceTrialEnvironmentInput): AutomationStudioProjectBuildTrialEnvironment {
   const { projectId, flowId } = input;
-  return {
+  const environment: AutomationStudioProjectBuildTrialEnvironment = {
     projectId, flowId, sourceInstructionIds: input.sourceInstructionIds, startLocation: input.startLocation, registry: input.registry, resolution: input.resolution,
     parentFlow: () => collaborators.getFlow(projectId, flowId),
     currentBaseDigest: () => collaborators.dependencyDigest(projectId, flowId),
@@ -58,4 +59,7 @@ export function automationStudioServiceTrialEnvironment(collaborators: Automatio
     observedStateKeys: input.observedStateKeys,
     prepareStart: input.prepareStart
   };
+  inheritTrialExecutionSource(collaborators, environment);
+  inheritTrialExecutionObservation(collaborators, environment);
+  return environment;
 }

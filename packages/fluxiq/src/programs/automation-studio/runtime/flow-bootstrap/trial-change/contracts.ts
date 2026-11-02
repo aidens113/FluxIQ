@@ -1,3 +1,4 @@
+import type { TrialReading, TrialCollection, TrialWitness, TrialPartEffect, TrialActOutcome, TrialDelta, TrialProof, TrialNotRun, TrialPartProof, TrialChangeFinding, TrialLeftAct, TrialSiteSide, TrialSiteLines, TrialSiteWitnessChange, TrialSiteChange } from "../../../../../flows/executable/verification/trial/index.ts";
 // The shapes a trial is judged by its change in (t775): the site's state read
 // just before a trial and just after it at each place a lasting step's change
 // shows (a witness), what each act of the trial did, what each task part's
@@ -20,13 +21,7 @@ import type { AutomationStudioSiteResetCollection } from "../reset-settlement/in
  * controls (place -> state token -> count), and, on an after reading, the
  * domain's readable differences from the before reading.
  */
-export type AutomationStudioTrialReading = {
-  source: "latest_read" | "core_look" | "end_view" | "step_diff";
-  location?: string;
-  collections?: AutomationStudioTrialCollection[];
-  controls?: Record<string, Record<string, number>>;
-  lines?: { gone: string[]; added: string[] };
-};
+export type AutomationStudioTrialReading = TrialReading;
 
 /**
  * One complete list group's collection as a trial reads it. A page read whole (t791,
@@ -34,34 +29,19 @@ export type AutomationStudioTrialReading = {
  * empty page reads as holding nothing) also carries `values`, an opaque digest of every value that page shows (t772), so
  * a quantity the page shows changing is a change of that page (`./delta.ts`). A list the domain read carries none.
  */
-export type AutomationStudioTrialCollection = AutomationStudioSiteResetCollection & { values?: string };
+export type AutomationStudioTrialCollection = TrialCollection;
 
 /** Where a part's or a step's change shows: a list group, matched across every scope it was read in, or one control place. `steps` are the trial steps attributed to it (`[]` for a list watched only to stay unchanged). */
-export type AutomationStudioTrialWitness = (
-  | { id: string; kind: "list"; group: string }
-  | { id: string; kind: "control"; place: string }
-) & { where?: string; steps: number[]; parts: string[] };
+export type AutomationStudioTrialWitness = TrialWitness;
 
 /** A task part's typed effect: structurally Core's `AutomationStudioProjectTaskEffect` (project-agents), written here so this directory imports nothing from it. */
-export type AutomationStudioTrialPartEffect =
-  | { kind: "change"; direction: "adds" | "removes"; count: number | "each_match"; what: string }
-  | { kind: "end_state"; state: string };
+export type AutomationStudioTrialPartEffect = TrialPartEffect;
 
 /** What one act of the trial did: the step, the repeat pass and readable row it acted on, whether it changed something, found its target already in the asked state, or showed no change; the witness it shows at and the parts it serves. */
-export type AutomationStudioTrialActOutcome = {
-  step: number;
-  pass?: { number: number; of: number };
-  row?: string;
-  outcome: "changed" | "already_in_state" | "no_change_seen";
-  witness?: string;
-  parts: string[];
-};
+export type AutomationStudioTrialActOutcome = TrialActOutcome;
 
 /** One witness's delta from before to after. `unread` when either side carried no reading of it. List subjects and control state tokens stay opaque here; the packet reduces them to counts. A changed control is `returned` where every state it changed ended at the build's recorded start for its place (`./delta.ts`, t787). */
-export type AutomationStudioTrialDelta =
-  | { witness: string; kind: "list" | "control"; status: "unread" }
-  | { witness: string; kind: "list"; status: "changed" | "unchanged"; added: string[]; removed: string[]; changed: string[]; unchanged: string[] }
-  | { witness: string; kind: "control"; status: "changed" | "unchanged"; before: Record<string, number>; after: Record<string, number>; returned?: true };
+export type AutomationStudioTrialDelta = TrialDelta;
 
 /**
  * What the trial proves of one part: `none` (the part has no typed effect), `shown`, `no_change`, `already_in_end_state`,
@@ -70,7 +50,7 @@ export type AutomationStudioTrialDelta =
  * never a yes, or `not_run` (t796: every step that does the part's lasting act never ran on any pass, a guard routed past
  * it or no pass reached it, so the act was not done whatever the places read; its `notRun` names those steps and why).
  */
-export type AutomationStudioTrialProof = "none" | "shown" | "no_change" | "already_in_end_state" | "carried" | "unproven" | "contradicted" | "not_run";
+export type AutomationStudioTrialProof = TrialProof;
 
 /**
  * One step of a trial not run on some passes, as a part's proof names it (t796, the trial's act ledger,
@@ -78,41 +58,28 @@ export type AutomationStudioTrialProof = "none" | "shown" | "no_change" | "alrea
  * optional step it runs only after, `after` by its label, was skipped; `unreached`: the pass never got to it), the passes
  * it was not run on, and `of`, its repeat's passes (absent outside a repeat, where `passes` is `[1]`).
  */
-export type AutomationStudioTrialNotRun = { nodeId: string; label: string; reason: "guarded" | "unreached"; after?: string; passes: number[]; of?: number };
+export type AutomationStudioTrialNotRun = TrialNotRun;
 
 /** One part's proof, with its effect, the trial steps whose acts serve it, and (t796) the part's acting steps not run on some passes. */
-export type AutomationStudioTrialPartProof = { part: string; effect?: AutomationStudioTrialPartEffect; proof: AutomationStudioTrialProof; steps: number[]; notRun?: AutomationStudioTrialNotRun[] };
+export type AutomationStudioTrialPartProof = TrialPartProof;
 
 /** Core's closed mechanical findings over a trial's change. */
-export type AutomationStudioTrialChangeFinding =
-  | { code: "result.change_not_seen"; part: string }
-  | { code: "result.unasked_change"; witness: string; where?: string }
-  | { code: "result.change_contradicted"; part: string; witness: string };
+export type AutomationStudioTrialChangeFinding = TrialChangeFinding;
 
 /** An act of this build in place at the trial's start, in the words of what it did. */
-export type AutomationStudioTrialLeftAct = { did: string; where?: string };
+export type AutomationStudioTrialLeftAct = TrialLeftAct;
 
 /** A witness's reading as the judge sees it: counts only, never a token. */
-export type AutomationStudioTrialSiteSide = "unread" | { source: AutomationStudioTrialReading["source"]; rows: number } | { source: AutomationStudioTrialReading["source"]; state: Record<string, number> };
+export type AutomationStudioTrialSiteSide = TrialSiteSide;
 
 /** Bounded readable lines, with how many were left out on each side. */
-export type AutomationStudioTrialSiteLines = { gone: string[]; added: string[]; cut?: { gone: number; added: number } };
+export type AutomationStudioTrialSiteLines = TrialSiteLines;
 
 /** A witness's change as the judge sees it. */
-export type AutomationStudioTrialSiteWitnessChange =
-  | "unread"
-  | "none"
-  | { added: number; removed: number; changed: number; unchanged: number; lines?: AutomationStudioTrialSiteLines }
-  | { from: Record<string, number>; to: Record<string, number>; lines?: AutomationStudioTrialSiteLines };
+export type AutomationStudioTrialSiteWitnessChange = TrialSiteWitnessChange;
 
 /** The bounded `siteChange` packet the judge sees (design section 2). No group, scope, place, subject or state token appears in it. */
-export type AutomationStudioTrialSiteChange = {
-  witnesses: Array<{ id: string; kind: "list" | "control"; where?: string; steps: number[]; parts: string[]; before: AutomationStudioTrialSiteSide; after: AutomationStudioTrialSiteSide; change: AutomationStudioTrialSiteWitnessChange }>;
-  acts: Array<{ step: number; pass?: { number: number; of: number }; row?: string; outcome: AutomationStudioTrialActOutcome["outcome"]; witness?: string; parts: string[] }>;
-  leftFromEarlier: AutomationStudioTrialLeftAct[];
-  proofs: Array<{ part: string; effect: AutomationStudioTrialPartEffect; proof: Exclude<AutomationStudioTrialProof, "none">; steps: number[]; notRun?: AutomationStudioTrialNotRun[] }>;
-  omitted?: { witnesses?: number; acts?: number; leftFromEarlier?: number };
-};
+export type AutomationStudioTrialSiteChange = TrialSiteChange;
 
 // ---- Readings around a live trial (t775 phase D1) ----
 

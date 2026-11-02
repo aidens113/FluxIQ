@@ -2,7 +2,10 @@ import type { OutputDispatchIo, OutputDispatchRuntime, OutputTargetPreparer } fr
 import type { AutomationStudioRunEnvironment } from "../../../runtime/environment/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../contracts/index.ts";
 import type { AutomationNativeExecutionPort } from "./native-runtime.ts";
+import type { AutomationExecutionObservation } from "../execution-admission/index.ts";
 export type AutomationGraphOptionsInput = {
+  /** Trusted per-scope companion; never copied into graph/model/implementation data. */
+  executionObservation?: AutomationExecutionObservation | undefined;
   inputs?: Record<string, any> | undefined;
   /** The enclosing session's persisted start, separate from its live clock. */
   referenceNow?: number;

@@ -98,7 +98,8 @@ describe("what the gate keeps of a declaration", () => {
     let derived = 0;
     const run = new AutomationStudioActionPermissionGate({
       stage: "authoring",
-      deriveInstructed: async () => { derived += 1; return []; }
+      deriveInstructed: async () => { derived += 1;
+      return []; }
     });
 
     await run.checkFor(PRESS)(NOTHING_LASTING);
@@ -150,7 +151,8 @@ describe("an action that only reads", () => {
 
   it("never reads the instruction, and is not held against it afterwards", async () => {
     let derived = 0;
-    const run = new AutomationStudioActionPermissionGate({ stage: "authoring", deriveInstructed: async () => { derived += 1; return [SCHEDULE]; } });
+    const run = new AutomationStudioActionPermissionGate({ stage: "authoring", deriveInstructed: async () => { derived += 1;
+    return [SCHEDULE]; } });
 
     await run.checkFor(PRESS)(READS);
     expect(derived).toBe(0);

@@ -3,12 +3,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES, parseAutomationStudioActionPermissionRequest } from "../index.ts";
+import * as canonicalClient from "../../../../../../runtime/action-permissions/client/index.ts";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(testsDir, "..", "..", "..", "..", "..", "..", "..");
 const subpath = "./automation-studio/action-permissions";
 
 describe("the browser-safe action-permissions subpath", () => {
+  it("forwards the three exact values from the generic browser client owner", () => {
+    expect(Object.keys(canonicalClient).sort()).toEqual(["AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES", "AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES", "parseAutomationStudioActionPermissionRequest"].sort());
+    expect(AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES).toBe(canonicalClient.AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES);
+    expect(AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES).toBe(canonicalClient.AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES);
+    expect(parseAutomationStudioActionPermissionRequest).toBe(canonicalClient.parseAutomationStudioActionPermissionRequest);
+  });
+
   it("is published from the package manifest", async () => {
     const manifest = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8")) as {
       exports: Record<string, { types: string; import: string }>;

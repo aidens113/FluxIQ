@@ -11,3 +11,5 @@ export * from "./timeline.ts";
 export * from "./types.ts";
 export * from "./entry-removal-command.ts";
 export * from "./load-timeline.ts";
+export * from "./mirror.ts";
+export * from "./normalizations.ts";

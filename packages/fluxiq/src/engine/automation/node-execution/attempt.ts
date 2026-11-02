@@ -1,6 +1,6 @@
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/records";
 import { randomUUID } from "node:crypto";
-import { ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandContext } from "../../../client-gateway/service/command-ledger/index.ts";
+import { ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome, type ClientGatewayCommandContext } from "../../../client-gateway/service/command-ledger/index.ts";
 import { AUTOMATION_STUDIO_REQUIRED_COMMAND_NOT_SENT, AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN, type AutomationStudioExecutorCommandRun, type AutomationStudioExecutorNodeEntry } from "../command-scope/index.ts";
 import type { JsonValue } from "../../../core/index.ts";
 import { projectRuntimeTargetActionability, readRuntimeTargetActionability } from "../../../runtime/result-control/index.ts";
@@ -8,7 +8,7 @@ import type { AutomationStudioFlowDocument } from "../../../flows/executable/gra
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator, AutomationNodePort } from "../../../components/automation/index.ts";
 import { combineAutomationStudioResolvedActionEffects, getAutomationNodeDefinition } from "../../../components/automation/index.ts";
-import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../../../runtime/automation-host/index.ts";
+import { hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../../../runtime/automation-host/index.ts";
 import { AUTOMATION_STUDIO_ASK_EFFECT } from "../../../runtime/parking/index.ts";
 import { nodeAttemptFromResult } from "../trace/index.ts";
 import type { AutomationStudioClearedLayer, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioObstruction, AutomationStudioRecordBatch } from "../index.ts";
@@ -40,6 +40,8 @@ import { automationStudioApplyParameterRefresh } from "../parameter-refresh/inde
 import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refresh/index.ts";
 import { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP, automationStudioRuntimeRepeatExecutionKind } from "../../../runtime/repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "../repeat/index.ts";
+import { inheritAutomationExecutionObservation } from "../execution-admission/index.ts";
+import { invokeAutomationNative, invokeAutomationEffect, invokeAutomationCallback, invokeAutomationCallbackSync, AutomationPureCallbacks } from "../execution-admission/kernel/index.ts";
 
 // `cleared` collects the layers each dispatch of the attempt says the client
 // closed over the page (`./cleared-layers.ts`), in dispatch order;
@@ -175,7 +177,7 @@ export class AutomationStudioNodeAttemptExecution {
     }
     if (!definition?.execute) {
       if (!options.commandRun && options.nativeNodeExecutor) runState.dispatchedActions.add(node.id);
-      const native = await (!options.commandRun ? options.nativeNodeExecutor?.({
+      const native = await (!options.commandRun ? invokeAutomationNative(options, {
         node: executionNode,
         // The run's own Flow inputs, then what an edge brings: a declared port is
         // never filled from a bare key another node left behind (`node-inputs.ts`).
@@ -203,7 +205,8 @@ export class AutomationStudioNodeAttemptExecution {
         throw new Error("executor.unsupported_native_or_composite");
       }
       if (options.compositeExecutor) runState.dispatchedActions.add(node.id);
-      const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options: this.callFlowChildOptions(options, attemptId) });
+      const compositeExecutor = options.compositeExecutor;
+      const composite = compositeExecutor ? await invokeAutomationCallback(options, { receiver: options, callback: compositeExecutor, args: [{ node: executionNode, inputs, options: this.callFlowChildOptions(options, attemptId) }] }) : undefined;
       if (composite) {
         return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
@@ -224,9 +227,9 @@ export class AutomationStudioNodeAttemptExecution {
     }
     // The node asks the host whether expected state holds; Core names which node
     // and attempt asked, and which snapshot the question is about.
-    const boundEvaluator = hostExpectationEvaluator(options.hostRuntime);
+    const boundEvaluator = options.hostRuntime?.expectationEvaluator;
     const expectationEvaluator: AutomationNodeExpectationEvaluator | undefined = boundEvaluator
-      ? (conditions, mode, timeoutMs, evaluationContext) => boundEvaluator(conditions, mode, timeoutMs, { ...evaluationContext, nodeId: node.id, attemptId, ...(beforeAction ? { stateRef: beforeAction.stateRef } : {}) })
+      ? (conditions, mode, timeoutMs, evaluationContext) => invokeAutomationCallback(options, { receiver: options.hostRuntime, callback: boundEvaluator, args: [conditions, mode, timeoutMs, { ...evaluationContext, nodeId: node.id, attemptId, ...(beforeAction ? { stateRef: beforeAction.stateRef } : {}) }] })
       : undefined;
     try {
       const context = {
@@ -242,7 +245,9 @@ export class AutomationStudioNodeAttemptExecution {
         ...(expectationEvaluator ? { expectationEvaluator } : {})
       };
       if (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== definition.execute) runState.dispatchedActions.add(node.id);
-      let result = await definition.execute(context);
+      const execute = definition.execute;
+      if (this.trustedDefinitions.get(definition) === execute) AutomationPureCallbacks.register(definition, execute);
+      let result = await invokeAutomationCallback(options, { receiver: definition, callback: execute, args: [context] });
       const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, definition.outputs);
       return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target) }, options, beforeAction, hostCapabilities, runState);
@@ -319,13 +324,14 @@ export class AutomationStudioNodeAttemptExecution {
         // only now. Raise the same execution-only entry before dispatch throws.
         if (effect.type === "policy.output.dispatch" && effect.payload && typeof effect.payload === "object" && !Array.isArray(effect.payload)) {
           const outputNode: AutomationStudioFlowNode = { id: target.nodeId, definitionId: "builtin.policy.action", parameterValues: effect.payload };
-          const outputFloor = options.resolveActionEffect?.(outputNode, effect.payload);
+          const resolve = options.resolveActionEffect;
+          const outputFloor = resolve ? invokeAutomationCallbackSync(options, { receiver: options, callback: resolve, args: [outputNode, effect.payload] }) : undefined;
           const combined = combineAutomationStudioResolvedActionEffects([target.runState.actionEffects.get(target.nodeId), outputFloor]);
           if (combined) target.runState.actionEffects.set(target.nodeId, combined);
         }
         const dispatchContext = this.effectDispatchContext(options, withholding);
         target.runState.dispatchedActions.add(target.nodeId);
-        const reported = await options.effectDispatcher(effect, issued ? { ...dispatchContext, commandContext: issued.context } : dispatchContext);
+        const reported = await invokeAutomationEffect(options, effect, issued ? { ...dispatchContext, commandContext: issued.context } : dispatchContext, target.attemptId, index);
         if (!reported) { if (issued) throw new Error("executor.required_result_missing");
           continue; }
         const answer = projectRuntimeTargetActionability(reported);
@@ -350,6 +356,7 @@ export class AutomationStudioNodeAttemptExecution {
         // the attempt fails with that fact, and the step loop stops there
         // (`../step-loop/uncertain-stop.ts`).
         if (issued && !options.commandRun!.receipted(issued.context)) {
+          if (ClientGatewayCommandOutcome.observer(issued.context)) await ClientGatewayCommandOutcome.stop(issued.context, "executor.required_not_receipted");
           result = options.commandRun!.withdraw(issued.context) ? this.notSentResult(result, dispatched) : this.outcomeUnknownResult(result, dispatched);
           break;
         }
@@ -493,7 +500,8 @@ export class AutomationStudioNodeAttemptExecution {
     if (!batch) return result;
     let stored: AutomationStudioRunDatasetSummary | undefined;
     try {
-      stored = await options.onRecordBatch?.(batch);
+      const persist = options.onRecordBatch;
+      stored = persist ? await invokeAutomationCallback(options, { receiver: options, callback: persist, args: [batch] }) : undefined;
     } catch {
       target.runState.records.record(batch);
       return { ...result, status: "failed", route: "failed", message: persistFailedMessage, failure: { category: "action_failed", code: "record_output.persist_failed", retryable: false } };
@@ -521,7 +529,9 @@ export class AutomationStudioNodeAttemptExecution {
   /** A child Flow numbers its own attempts from one: the parent's prior count describes the parent's run, not the child's. */
   private static callFlowChildOptions(options: AutomationStudioGraphExecutionOptions, attemptId: string): AutomationStudioGraphExecutionOptions {
     const { priorAttemptCount: _parentPriorAttemptCount, ...childBase } = options;
-    return { ...childBase, callFlowAttemptPath: [...(options.callFlowAttemptPath ?? []), attemptId] };
+    const child = { ...childBase, callFlowAttemptPath: [...(options.callFlowAttemptPath ?? []), attemptId] };
+    inheritAutomationExecutionObservation(options, child);
+    return child;
   }
 
 

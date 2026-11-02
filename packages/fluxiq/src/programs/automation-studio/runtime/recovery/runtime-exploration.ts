@@ -81,6 +81,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import type { AutomationStudioRunEnvironment } from "../../../../runtime/environment/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../activity/index.ts";
@@ -197,7 +198,8 @@ export type AutomationStudioRuntimeExplorationInput = {
    * a name only the failure packet held is withheld from the request.
    */
   shownEvidence?: readonly JsonValue[];
-  now?: () => number;
+  now?: AutomationStudioRunEnvironment["now"];
+  startTimer?: AutomationStudioRunEnvironment["startTimer"];
   /** Cancellation from outside. Its own outcome: neither a limit nor a fault. */
   signal?: AbortSignal;
 };
@@ -261,6 +263,7 @@ export async function runAutomationStudioRuntimeExploration(
     budget: input.budget,
     startedAtMs,
     now,
+    ...(input.startTimer ? { startTimer: input.startTimer } : {}),
     ...(input.recoveryDeadline ? { recoveryDeadline: input.recoveryDeadline } : {}),
     ...(input.signal ? { externalSignal: input.signal } : {})
   });
@@ -313,6 +316,7 @@ export async function runAutomationStudioRuntimeExploration(
   // failures observed rather than ending the loop, each has to stop it by
   // signal as the ledger already does.
   const stopSignal = AbortSignal.any([ledger.signal, gate.signal, permissionRefused.signal, personNeeded.signal]);
+  let primaryFailure: { error: unknown } | undefined;
   try {
     const loopResult = ledger.stopReason
       // Out of time before the first provider call. Refusing here rather than
@@ -388,8 +392,16 @@ export async function runAutomationStudioRuntimeExploration(
         signal: stopSignal
       }));
     return classify({ loopResult, ledger, recorder, permissionRequest: gate.request, personNeeded: { asks: personNeeded.asks(), ended: personNeeded.ended() }, unusableDecisions, externallyCancelled: input.signal?.aborted === true, durationMs: Math.max(0, now() - startedAtMs) });
+  } catch (error) {
+    primaryFailure = { error };
+    throw error;
   } finally {
-    ledger.close();
+    try {
+      ledger.close();
+    } catch (cleanupError) {
+      if (primaryFailure) throw new AggregateError([primaryFailure.error, cleanupError], "Exploration and timer cleanup failed.");
+      throw cleanupError;
+    }
   }
 }
 

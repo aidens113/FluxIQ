@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioFlowCandidate } from "../../candidate/index.ts";
+import { candidateAdmissionFixture } from "../../../candidate-trials/authority/tests/fixture.ts";
+import type { AutomationStudioSiteResetDecision } from "../../site-reset/index.ts";
 
 const candidate = { revision: 5, digest: "a1b2c3d4" } as unknown as AutomationStudioFlowCandidate;
 const receipt: JsonObject = { revision: 5, digest: "a1b2c3d4" };
@@ -26,6 +28,37 @@ function listing() {
 }
 
 describe("a trial's cannotUndo", () => {
+  it("observes the original reset methods with their private receiver while retaining cannotUndo memory", async () => {
+    class Reset implements AutomationStudioSiteResetTrialReset {
+      #calls = 0;
+      readonly asked: Array<readonly string[] | undefined> = [];
+      get calls() { return this.#calls; }
+      admit() {
+        this.#calls += 1;
+        return { kind: "admit" as const };
+      }
+      async beforeTrial(_signal?: AbortSignal, cannotUndo?: readonly string[]): Promise<AutomationStudioSiteResetDecision> {
+        this.#calls += 1;
+        this.asked.push(cannotUndo);
+        return { kind: "admit", startedWith: { acts: [{ act: "act-1", did: "controlled act", reason: "gate_unsatisfiable", failed: "no_admissible_undo" }], instruction: "controlled fixture" } };
+      }
+      trialRan() {
+        this.#calls += 1;
+        return [];
+      }
+    }
+    const reset = new Reset();
+    const actual = await candidateAdmissionFixture({ reset, noDispatch: true, port: async request => ({ revision: request.revision, digest: request.digest, verdict: "unsure", feedback: {} }) });
+    actual.callbacks.manage({ receiver: reset, callback: reset.admit, contract: "no_direct_effects" });
+    actual.callbacks.manage({ receiver: reset, callback: reset.beforeTrial, contract: "no_direct_effects" });
+    actual.callbacks.manage({ receiver: reset, callback: reset.trialRan, contract: "no_direct_effects" });
+    await actual.gate.test({});
+    await actual.gate.test({ cannotUndo: ["act-1", "act-unlisted"] });
+    expect(reset.asked).toEqual([undefined, ["act-1"]]);
+    expect(reset.calls).toBe(6);
+    expect((await actual.assembly.consumer.inspect(actual.scope)).state).toBe("clear");
+  });
+
   it("is defaulted to the acts the reset closed as unsettleable when the call omits it, never to one still to undo", async () => {
     const { gate, asked } = listing();
     await gate.test(receipt);

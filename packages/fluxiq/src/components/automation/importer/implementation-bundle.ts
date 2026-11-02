@@ -1,7 +1,7 @@
 import type { ElementMatcher } from "../../../runtime/target-matching/index.ts";
 import type { AutomationStudioNodeParameterContract } from "../definitions.ts";
 import type { AutomationStudioNativeNodeImplementation } from "./native-node/index.ts";
-import type { AutomationStudioRecordingMapperImplementation } from "./recording-mapper/index.ts";
+import type { AutomationStudioRecordingMapperImplementation, AutomationStudioRecordingCandidateParameterNormalizer } from "./recording-mapper/index.ts";
 import type { AutomationStudioTargetResolverImplementation } from "./target-resolver/index.ts";
 import type { AutomationStudioComparatorImplementation } from "./comparator/index.ts";
 export type AutomationStudioImporterImplementationBundle = {
@@ -11,6 +11,7 @@ export type AutomationStudioImporterImplementationBundle = {
   /** Explicit matcher for this manifest domain. Missing adapters cannot score targets. */
   elementMatcher?: ElementMatcher;
   recordingMappers?: Record<string, AutomationStudioRecordingMapperImplementation>;
+  recordingCandidateParameterNormalizer?: AutomationStudioRecordingCandidateParameterNormalizer;
   targetResolvers?: Record<string, AutomationStudioTargetResolverImplementation>;
   comparators?: Record<string, AutomationStudioComparatorImplementation>;
   /**

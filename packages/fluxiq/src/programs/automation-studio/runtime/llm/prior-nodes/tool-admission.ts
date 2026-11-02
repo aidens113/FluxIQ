@@ -3,6 +3,7 @@ import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "../decis
 import type { AutomationStudioLlmEvidenceLoopRemaining } from "../loop-budget.ts";
 import { automationStudioLlmEvidenceRequestSignature } from "../repeat-policy.ts";
 import type { AutomationStudioLlmEvidenceAnsweredRequestCode, AutomationStudioLlmEvidenceTool } from "../evidence-loop/index.ts";
+import type { CandidateTrialReentry } from "../../candidate-trials/reentry/index.ts";
 
 /** The same offering/repeat gate serves ordinary calls and private prior-call members. */
 export function automationStudioLlmEvidenceToolAdmission(input: {
@@ -26,6 +27,7 @@ export function automationStudioLlmEvidenceToolAdmission(input: {
   rerunning?: boolean;
   /** Only a selected, sealed successful original may bypass its successful answer once. */
   priorSuccessful?: boolean;
+  reentry?: CandidateTrialReentry | undefined;
 }) {
   const tool = input.toolsById.get(input.toolId);
   const withdrawn = !input.rerunning && tool !== undefined && input.looks.refuses(tool, input.value, input.attemptEpoch);
@@ -37,16 +39,19 @@ export function automationStudioLlmEvidenceToolAdmission(input: {
   const answeredBy = input.answeredRequests.get(signature);
   const reobservation = !input.eligibleToolIds.has(input.toolId), withheld = input.withholds(input.toolId, input.value);
   const blocked = withheld || input.rerunning ? undefined : input.repeats.blocks(input.toolId, input.value);
-  // A list's explicit repeat intent bypasses only the successful original's cache.
-  // Failed, uncertain and no-progress outcomes stay binding, including same_answer.
-  const triedHere = !input.priorSuccessful && blocked?.outcome === "same_answer" && (answeredBy !== undefined || reobservation) ? undefined : blocked;
-  const answered = !input.rerunning && (withheld || reobservation || (!input.priorSuccessful && answeredBy !== undefined));
-  const code: AutomationStudioLlmEvidenceAnsweredRequestCode = withheld ? "llm_evidence_loop.not_offered" : answeredBy !== undefined ? "llm_evidence_loop.already_answered" : "llm_evidence_loop.already_observed";
-  const by = withheld ? input.latestObservations.get(input.toolId) ?? "" : answeredBy ?? input.latestObservations.get(input.toolId)!;
-  const offered = input.offered.find((candidate) => candidate.toolId === input.toolId);
+  const offered = input.offered.find(candidate => candidate.toolId === input.toolId);
   const properties = offered?.inputSchema.properties;
   const node = properties && typeof properties === "object" && !Array.isArray(properties) ? properties.node : undefined;
-  return { tool, withdrawn, deadline, final, signature, triedHere, answered, code, by, withheld, reobservation, nodeOffered: acceptsNode(node, input.value.node) };
+  const nodeOffered = acceptsNode(node, input.value.node);
+  const reentered = !withdrawn && !deadline && !final && !withheld && !reobservation
+    && offered !== undefined && nodeOffered && input.reentry?.claim(tool, input.value) === true;
+  // A list's explicit repeat intent bypasses only the successful original's cache.
+  // Failed, uncertain and no-progress outcomes stay binding, including same_answer.
+  const triedHere = reentered ? undefined : !input.priorSuccessful && blocked?.outcome === "same_answer" && (answeredBy !== undefined || reobservation) ? undefined : blocked;
+  const answered = !reentered && !input.rerunning && (withheld || reobservation || (!input.priorSuccessful && answeredBy !== undefined));
+  const code: AutomationStudioLlmEvidenceAnsweredRequestCode = withheld ? "llm_evidence_loop.not_offered" : answeredBy !== undefined ? "llm_evidence_loop.already_answered" : "llm_evidence_loop.already_observed";
+  const by = withheld ? input.latestObservations.get(input.toolId) ?? "" : answeredBy ?? input.latestObservations.get(input.toolId)!;
+  return { tool, withdrawn, deadline, final, signature, triedHere, answered, code, by, withheld, reobservation, nodeOffered };
 }
 
 /** Only the offered node selector is inspected; all parameter/permission validation remains with the runner. */

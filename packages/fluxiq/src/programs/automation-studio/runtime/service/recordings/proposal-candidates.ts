@@ -1,102 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { parseAutomationStudioRecordOutput, type AutomationStudioRecordOutput } from "@fluxiq/contracts/automation-studio";
-import type { JsonObject } from "../../../../../core/index.ts";
 import type { IoRegistry } from "../../../../../io/index.ts";
 import { safeSegment } from "../../../../_shared/storage.ts";
-import { normalizeAutomationStudioElementTarget, type AutomationStudioFlowArtifact, type RecordingSession } from "../../../model/index.ts";
-import type { AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperObservation } from "../../../nodes/index.ts";
+import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact } from "../../recording-flow-proposal.ts";
 import { uniqueStrings } from "../collections.ts";
-import { compactJsonObject } from "../compact-json.ts";
+import { recordingFlowActionCandidate as normalizeCandidate, type RecordingCandidateInput } from "../../../../../runtime/recording/mapping/index.ts";
+import { recordingCandidateNodeRecipe, recordingCandidateEdgeRecipe } from "../../../../../flows/executable/recording/index.ts";
 
-// A recording's way to a Flow: the calls a recording mapper receives, the
-// proposal candidate each thing it proposes becomes, and the recorded action
-// node an approved candidate becomes.
+export { recordingMapperCalls, recordingCandidateGapTracker } from "../../../../../runtime/recording/mapping/index.ts";
+export { recordingCandidateRecordedGapMetadata, recordingCandidateStateLinkMetadata } from "../../../../../flows/executable/recording/index.ts";
 
-// How many of the entries after an observation a mapper is shown: enough to read
-// what an action led to without handing every call the rest of the recording.
-const FOLLOWING_OBSERVATION_LIMIT = 32;
-
-type RecordingMapperCall = { observation: AutomationStudioRecordingMapperObservation; following: AutomationStudioRecordingMapperObservation[] };
-
-/**
- * One call for each mapper-visible entry: its observation, and the observations
- * of the entries after it in timeline order, at most 32. Build it once for each
- * mapper, so one mapper's changes to what it was handed never reach another.
- * Within one mapper's calls, an observation in `following` is the same object
- * that mapper is later handed for that entry.
- */
-export function recordingMapperCalls(timeline: RecordingSession["timeline"], recordingId: string, domainId: string): RecordingMapperCall[] {
-  const observations = timeline.map((entry): AutomationStudioRecordingMapperObservation => ({
-    observationId: entry.id,
-    recordingId,
-    domainId,
-    type: entry.type,
-    timestamp: entry.timestamp,
-    payload: recordingEntryPayload(entry),
-    metadata: { ...(entry.metadata ?? {}) }
-  }));
-  return observations.map((observation, index) => ({ observation, following: observations.slice(index + 1, index + 1 + FOLLOWING_OBSERVATION_LIMIT) }));
+/** The legacy entry retains Studio's candidate-ID allocator. */
+export function recordingFlowActionCandidate(io: IoRegistry, input: Omit<RecordingCandidateInput, "nextCandidateId">): RecordingFlowActionCandidate {
+  return normalizeCandidate(io, { ...input, nextCandidateId: (actionEntryId) => `candidate.${safeSegment(actionEntryId)}.${randomUUID()}` });
 }
 
-/**
- * Checks one mapper candidate against the bound IO registry and gives it the
- * shape a proposal stores. Its `expectedState` is kept, as a clone, only when it
- * is a plain object with at least one key; anything else is dropped and the
- * action is still proposed. Its `recordOutput` and `timeoutMs` are kept when
- * valid and reject the candidate, by throwing, when present and invalid.
- */
-export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; recordedGapMs?: number; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
-  const outputId = input.candidate.outputId?.trim();
-  if (!outputId) throw new Error("Recording mapper candidates must declare an outputId.");
-  if (input.mapperOutputIds?.length && !input.mapperOutputIds.includes(outputId)) throw new Error(`Recording mapper emitted undeclared output ${outputId}.`);
-  if (!io.hasOutput(input.domainId, outputId)) throw new Error(`Recording mapper emitted unregistered output ${outputId}.`);
-  const sourceInputIds = uniqueStrings(input.candidate.sourceInputIds ?? []);
-  for (const inputId of sourceInputIds) {
-    const adapter = io.getInput(input.domainId, inputId);
-    if (!adapter) throw new Error(`Recording mapper referenced unregistered input ${inputId}.`);
-    if ((adapter.definition.role ?? "state") !== "action") throw new Error(`Recording mapper source input ${inputId} is state-eligible and cannot be reclassified as an action.`);
-  }
-  const confirmation = input.candidate.expectedConfirmation;
-  if (confirmation) {
-    const adapter = io.getInput(input.domainId, confirmation.inputId);
-    if (!adapter) throw new Error(`Recording mapper referenced unregistered confirmation input ${confirmation.inputId}.`);
-    if ((adapter.definition.role ?? "state") !== "action") throw new Error(`Confirmation input ${confirmation.inputId} must be an action-role observation.`);
-  }
-  const sourceObservationIds = uniqueStrings([input.sourceEntryId, input.actionEntryId, ...(input.candidate.sourceObservationIds ?? [])]);
-  const parameters = normalizeRecordingCandidateElementTargetParameters(input.candidate.parameters ?? {});
-  const expectedState = liftedExpectedState(input.candidate.expectedState);
-  const recordOutput = liftedRecordOutput(io, input.domainId, outputId, input.candidate.recordOutput);
-  const timeoutMs = liftedTimeoutMs(outputId, input.candidate.timeoutMs);
-  const recordedGapMs = liftedRecordedGapMs(input.recordedGapMs);
-  return {
-    candidateId: `candidate.${safeSegment(input.actionEntryId)}.${randomUUID()}`,
-    actionEntryId: input.actionEntryId,
-    sourceObservationIds,
-    sourceInputIds,
-    outputId,
-    parameters,
-    ...(confirmation ? { expectedConfirmation: { ...confirmation } } : {}),
-    ...(expectedState ? { expectedState } : {}),
-    ...(recordOutput ? { recordOutput } : {}),
-    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    confidence: clampConfidence(input.candidate.confidence),
-    evidence: input.candidate.evidence?.length ? structuredClone(input.candidate.evidence) : sourceObservationIds.map((entryId) => ({ layer: "recording" as const, artifactId: input.recordingId, entryId })),
-    ...(input.stateLink ? { stateLink: input.stateLink } : {}),
-    ...(recordedGapMs !== undefined ? { recordedGapMs } : {}),
-    policyStateEligible: false,
-    ...(input.candidate.label ? { label: input.candidate.label } : {}),
-    ...(input.candidate.description ? { description: input.candidate.description } : {})
-  };
-}
-
-/**
- * Appends an approved proposal's candidates to a Flow as recorded action nodes
- * joined by success edges. A candidate's `expectedState` becomes the node's
- * `parameterValues.expectedState`, where the transition comparison reads it;
- * its `recordOutput` and `timeoutMs` become `parameterValues.recordOutput` and
- * `parameterValues.timeoutMs`, which the policy action reads.
- */
+/** Artifact identity, collision handling and editor placement stay with Studio. */
 export function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact, proposal: RecordingFlowProposalArtifact): AutomationStudioFlowArtifact {
   const nodeIds = new Set(flow.nodes.map((node) => node.id));
   const nodes = proposal.candidates.map((candidate, index) => {
@@ -104,174 +23,12 @@ export function appendRecordingProposalToFlow(flow: AutomationStudioFlowArtifact
     let suffix = 2;
     while (nodeIds.has(id)) id = `recorded.${safeSegment(candidate.candidateId)}.${suffix++}`;
     nodeIds.add(id);
-    return {
-      id,
-      definitionId: "builtin.policy.action",
-      label: candidate.label ?? candidate.outputId,
-      ...(candidate.description ? { description: candidate.description } : {}),
-      parameterValues: compactJsonObject({
-        outputId: candidate.outputId,
-        parameters: structuredClone(candidate.parameters),
-        ...(candidate.expectedConfirmation ? { confirmationInputId: candidate.expectedConfirmation.inputId, confirmationTimeoutMs: candidate.expectedConfirmation.timeoutMs ?? 5_000 } : {}),
-        expectedState: candidate.expectedState ? structuredClone(candidate.expectedState) : undefined,
-        recordOutput: candidate.recordOutput ? structuredClone(candidate.recordOutput) : undefined,
-        timeoutMs: candidate.timeoutMs
-      }),
-      position: { x: 120 + index * 340, y: 240 },
-      metadata: {
-        recordingProposalId: proposal.proposalId,
-        recordingCandidateId: candidate.candidateId,
-        mapperId: proposal.mapper.id,
-        mapperVersion: proposal.mapper.version,
-        actionEntryId: candidate.actionEntryId,
-        timelineEntryId: candidate.actionEntryId,
-        ...recordingCandidateStateLinkMetadata(candidate),
-        ...recordingCandidateRecordedGapMetadata(candidate),
-        sourceObservationIds: candidate.sourceObservationIds,
-        evidence: candidate.evidence,
-        rawEvidenceImmutable: true,
-        manualProvenance: []
-      }
-    };
+    const { metadata, ...recipe } = recordingCandidateNodeRecipe(proposal, candidate);
+    return { id, ...recipe, position: { x: 120 + index * 340, y: 240 }, metadata };
   });
   const edges = nodes.slice(1).map((node, index) => ({
     id: `recorded-edge.${safeSegment(proposal.proposalId)}.${index + 1}`,
-    sourceNodeId: nodes[index]!.id,
-    targetNodeId: node.id,
-    sourcePortId: "success",
-    targetPortId: "ready",
-    metadata: { recordingProposalId: proposal.proposalId }
+    ...recordingCandidateEdgeRecipe(proposal.proposalId, nodes[index]!.id, node.id)
   }));
   return { ...flow, nodes: [...flow.nodes, ...nodes], edges: [...flow.edges, ...edges], metadata: { ...(flow.metadata ?? {}), recordingProposalIds: uniqueStrings([...(Array.isArray(flow.metadata?.recordingProposalIds) ? flow.metadata.recordingProposalIds.map(String) : []), proposal.proposalId]) } };
-}
-
-/**
- * The recorded inter-step gap, as the metadata field a recorded node or
- * definition stores. Kept apart from the state link because it is the wait
- * ceiling rather than a pointer to a snapshot, and because the first candidate
- * of a proposal has no gap at all.
- */
-export function recordingCandidateRecordedGapMetadata(candidate: RecordingFlowActionCandidate): JsonObject {
-  return candidate.recordedGapMs === undefined ? {} : { recordedGapMs: candidate.recordedGapMs };
-}
-
-/**
- * How long the recording waited before each candidate, from the monotonic
- * offsets of the entries the candidates were mapped from.
- *
- * It is the gap between *candidates*, not between timeline entries. A Flow node
- * follows the previous node, so what the run may wait for is everything that
- * happened since the previous action -- the observations in between are part of
- * that wait, and measuring to the entry immediately before would report a few
- * milliseconds for a pause of seconds and leave every ceiling on its floor.
- *
- * The first candidate has nothing before it and gets no gap; two candidates
- * mapped from one entry are the same recorded moment, so the second gets zero.
- * A clock that went backwards is not a wait, so it is dropped rather than
- * clamped.
- */
-export function recordingCandidateGapTracker(): (entry: { monotonicOffsetMs: number }) => number | undefined {
-  let previous: number | undefined;
-  return (entry) => {
-    const offset = entry.monotonicOffsetMs;
-    if (!Number.isFinite(offset)) return undefined;
-    const gap = previous === undefined ? undefined : offset - previous;
-    previous = offset;
-    return gap !== undefined && gap >= 0 ? gap : undefined;
-  };
-}
-
-/** The state link a candidate carries, as the metadata fields a recorded node or definition stores. */
-export function recordingCandidateStateLinkMetadata(candidate: RecordingFlowActionCandidate): JsonObject {
-  return candidate.stateLink ? compactJsonObject({
-    stateLink: candidate.stateLink as unknown as JsonObject,
-    stateSnapshotId: candidate.stateLink.stateSnapshotId,
-    stateRef: candidate.stateLink.stateRef,
-    screenshotRef: candidate.stateLink.screenshotRef
-  }) : {};
-}
-
-// The gap is Core's own measurement rather than a mapper's claim, but it still
-// arrives as a number from a caller, so it is held to the same rule as any
-// other stored duration: a finite, non-negative millisecond count or nothing.
-function liftedRecordedGapMs(value: number | undefined): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
-}
-
-// A mapper runs in-process and can hand Core anything. Only a plain object is an
-// expected state. It is cloned, so the proposal holds nothing the mapper can
-// still change, and one that cannot be cloned is dropped like any other value.
-// A clone with no keys names nothing for the host to check, so it counts as none;
-// the keys are counted on the clone, because the clone is what would be stored.
-function liftedExpectedState(value: unknown): JsonObject | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const prototype: unknown = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return undefined;
-  let lifted: JsonObject;
-  try {
-    lifted = structuredClone(value) as JsonObject;
-  } catch {
-    return undefined;
-  }
-  return Object.keys(lifted).length > 0 ? lifted : undefined;
-}
-
-// A record output decides which fields a run keeps. So, unlike an expected
-// state, one that is present and wrong rejects the candidate instead of being
-// dropped: dropped, the action would still run, and hand every field to the
-// node's outputs. `null` means none, the policy action's rule. The value is
-// cloned first, so the parser reads a value the mapper can no longer change, and
-// the parser returns fresh objects. Encrypted fields are refused, because
-// nothing can seal a record field yet.
-function liftedRecordOutput(io: IoRegistry, domainId: string, outputId: string, value: unknown): AutomationStudioRecordOutput | undefined {
-  if (value === undefined || value === null) return undefined;
-  let declared: unknown;
-  try {
-    declared = structuredClone(value);
-  } catch {
-    throw invalidRecordOutput(outputId, ["record_output.invalid"]);
-  }
-  const parsed = parseAutomationStudioRecordOutput(withOutputRecordsPath(io, domainId, outputId, declared));
-  if (!parsed.ok) throw invalidRecordOutput(outputId, parsed.issues);
-  return parsed.output;
-}
-
-// A candidate may leave `recordsPath` out when its output declares one in
-// `metadata.recordsPath`; Core never assumes a path of its own. Only a plain
-// object naming no path takes the output's, so any other value still fails as
-// what it is.
-function withOutputRecordsPath(io: IoRegistry, domainId: string, outputId: string, declared: unknown): unknown {
-  if (!declared || typeof declared !== "object" || Object.getPrototypeOf(declared) !== Object.prototype) return declared;
-  const record = declared as Record<string, unknown>;
-  if (record.recordsPath !== undefined) return declared;
-  const outputRecordsPath = io.getOutput(domainId, outputId)?.definition.metadata?.recordsPath;
-  return typeof outputRecordsPath === "string" ? { ...record, recordsPath: outputRecordsPath } : declared;
-}
-
-function invalidRecordOutput(outputId: string, issues: readonly string[]): Error {
-  return new Error(`Recording mapper candidate for ${outputId} has an invalid recordOutput: ${issues.join(", ")}`);
-}
-
-// A timeout is a whole number of milliseconds above zero. Any other value rejects
-// the candidate: dropped, the recorded action would quietly keep the policy
-// action's 5,000 ms default the mapper asked to replace.
-function liftedTimeoutMs(outputId: string, value: unknown): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new Error(`Recording mapper candidate for ${outputId} has an invalid timeoutMs: it must be a whole number of milliseconds above zero.`);
-  return value;
-}
-
-function normalizeRecordingCandidateElementTargetParameters(parameters: JsonObject): JsonObject {
-  const target = normalizeAutomationStudioElementTarget(parameters.element ? parameters : parameters.target, { source: "mapper" }) ?? normalizeAutomationStudioElementTarget(parameters, { source: "mapper" });
-  if (!target) return { ...parameters };
-  return compactJsonObject({ ...parameters, target });
-}
-
-function recordingEntryPayload(entry: RecordingSession["timeline"][number]): JsonObject {
-  const { id: _id, recordingId: _recordingId, timestamp: _timestamp, monotonicOffsetMs: _offset, sequence: _sequence, sourceId: _sourceId, metadata: _metadata, ...payload } = entry;
-  return structuredClone(payload) as unknown as JsonObject;
-}
-
-function clampConfidence(value: number | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0.5;
 }

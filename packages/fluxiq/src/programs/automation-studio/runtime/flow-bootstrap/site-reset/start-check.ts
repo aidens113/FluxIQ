@@ -67,8 +67,13 @@ import { automationStudioActionPermissionDenied } from "../../action-permissions
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, runAsAutomationStudioCoreMove, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 import { automationStudioSiteResetValuesOf as valuesOf } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetLines, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
+import type { AutomationStudioBuildToolObserver } from "../../build-execution/tools/index.ts";
+import { automationStudioLlmBindingFieldOrigin } from "../../llm/binding-origin/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetProducer } from "../reset-observation/index.ts";
 
 type Execute = (call: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }) => Promise<unknown>;
+type StartState = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["startState"]>;
+type StartStateInput = Parameters<StartState>[0];
 
 /** A settled read: the page read twice this far apart, and what differed between the two taken as live content (header). */
 export type AutomationStudioSiteResetLiveCheck = { settleMs: number; sleep?: ((ms: number, signal?: AbortSignal) => Promise<void>) | undefined };
@@ -88,6 +93,7 @@ export class AutomationStudioSiteResetStartCheck {
   private readonly seen = new Set<string>();
   /** Arrivals this check ran that applied an effect (header, t738). */
   private moved = 0;
+  private readonly toolObserver: AutomationStudioBuildToolObserver | undefined;
 
   constructor(private readonly input: {
     binding: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState" | "runsNodes"> | undefined;
@@ -95,9 +101,13 @@ export class AutomationStudioSiteResetStartCheck {
     flowId: string;
     tools: readonly AutomationStudioLlmEvidenceTool[];
     executeTool: Execute;
+    toolObserver?: AutomationStudioBuildToolObserver | undefined;
     /** Absent: every read is taken once, as it comes. */
     liveCheck?: AutomationStudioSiteResetLiveCheck | undefined;
-  }) {}
+  }) {
+    this.toolObserver = input.toolObserver;
+    for (const callback of CORE_METHODS) AutomationStudioSiteResetCallbackPolicies.remember(this, callback, "frame");
+  }
 
   /** Whether the start was read. */
   get taken(): boolean { return this.start !== undefined; }
@@ -114,13 +124,14 @@ export class AutomationStudioSiteResetStartCheck {
   }
 
   /** Reads the start, the first time only. */
-  async capture(signal?: AbortSignal): Promise<void> {
+  async capture(signal?: AbortSignal, invocation?: object): Promise<void> {
     if (this.attempted) return;
     this.attempted = true;
-    const startState = this.input.binding?.startState;
-    if (!startState) return;
+    const binding = this.input.binding;
+    const startState = binding?.startState;
+    if (!binding || !startState) return;
     try {
-      const read = await startState.call(this.input.binding, { projectId: this.input.projectId, flowId: this.input.flowId, callId: "site-reset.start", permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) });
+      const read = await this.readStartState(binding, startState, { projectId: this.input.projectId, flowId: this.input.flowId, callId: "site-reset.start", permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) }, invocation, signal);
       if (stateAnswer(read)) {
         this.start = structuredClone(read.state);
         for (const item of stringsOf(read.items) ?? []) this.seen.add(item);
@@ -132,12 +143,13 @@ export class AutomationStudioSiteResetStartCheck {
   }
 
   /** Reads the target where it stands, against `start` when given, or says why it could not. Never moves it. */
-  async read(start?: JsonObject, signal?: AbortSignal): Promise<AutomationStudioSiteResetReadAnswer> {
-    const startState = this.input.binding?.startState;
-    if (!startState) return { unread: "no_reader" };
+  async read(start?: JsonObject, signal?: AbortSignal, invocation?: object): Promise<AutomationStudioSiteResetReadAnswer> {
+    const binding = this.input.binding;
+    const startState = binding?.startState;
+    if (!binding || !startState) return { unread: "no_reader" };
     this.reads += 1;
     try {
-      const read = await startState.call(this.input.binding, { projectId: this.input.projectId, flowId: this.input.flowId, callId: `site-reset.read.${this.reads}`, ...(start ? { start: structuredClone(start) } : {}), permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) });
+      const read = await this.readStartState(binding, startState, { projectId: this.input.projectId, flowId: this.input.flowId, callId: `site-reset.read.${this.reads}`, ...(start ? { start: structuredClone(start) } : {}), permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) }, invocation, signal);
       if (!stateAnswer(read)) return { unread: "no_answer" };
       const lines = linesOf(read.lines);
       const items = stringsOf(read.items);
@@ -156,12 +168,12 @@ export class AutomationStudioSiteResetStartCheck {
    * nothing done between, what differed between the two remembered as live,
    * and the second read answered without it. Without it, one read.
    */
-  async settled(start?: JsonObject, signal?: AbortSignal): Promise<AutomationStudioSiteResetReadAnswer> {
-    const first = await this.read(start, signal);
+  async settled(start?: JsonObject, signal?: AbortSignal, invocation?: object): Promise<AutomationStudioSiteResetReadAnswer> {
+    const first = await this.read(start, signal, invocation);
     const live = this.input.liveCheck;
     if (!live || "unread" in first) return first;
-    await (live.sleep ?? pause)(live.settleMs, signal);
-    const again = await this.read(start, signal);
+    await this.wait(live, signal, invocation);
+    const again = await this.read(start, signal, invocation);
     if ("unread" in again) return first;
     // The same page only when both reads named it: two unknown locations are not one page (t479).
     if (first.location !== undefined && first.location === again.location) {
@@ -172,7 +184,7 @@ export class AutomationStudioSiteResetStartCheck {
   }
 
   /** Takes the target to the page an act was made on and says what differs from it before the act; `differs` is absent when that cannot be said. */
-  async compareAt(place: AutomationStudioSiteResetPlace, signal?: AbortSignal): Promise<AutomationStudioSiteResetComparison> {
+  async compareAt(place: AutomationStudioSiteResetPlace, signal?: AbortSignal, invocation?: object): Promise<AutomationStudioSiteResetComparison> {
     const tool = this.input.tools.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID);
     const to = this.input.binding?.runsNodes?.arrival;
     if (!this.input.binding?.startState || !tool || !to || !to.parameter || !place.location) return { moved: false };
@@ -181,10 +193,10 @@ export class AutomationStudioSiteResetStartCheck {
     let moved = false;
     try {
       // The arrival's own node, as `../../llm/node-tools/run-node.ts` writes the build's start into it: nothing lasting.
-      const ran = await this.arrive({ callId: `site-reset.place.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: place.location }, consequences: [] }, ...(signal ? { signal } : {}) });
+      const ran = await this.arrive({ callId: `site-reset.place.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: place.location }, consequences: [] }, ...(signal ? { signal } : {}) }, invocation);
       moved = this.arrived(ran);
       if (!landed(ran)) return { moved };
-      const read = await this.settled(place.state, signal);
+      const read = await this.settled(place.state, signal, invocation);
       return "unread" in read ? { moved } : { moved, differs: read.differs, ...(read.lines ? { lines: read.lines } : {}) };
     } catch (error) {
       if (signal?.aborted) throw error;
@@ -200,7 +212,7 @@ export class AutomationStudioSiteResetStartCheck {
    * `start` (t775): the before state of a trial's witness there, so the read's
    * lines say what changed from it.
    */
-  async lookAt(location: string, signal?: AbortSignal, start?: JsonObject): Promise<AutomationStudioSiteResetReadAnswer> {
+  async lookAt(location: string, signal?: AbortSignal, start?: JsonObject, invocation?: object): Promise<AutomationStudioSiteResetReadAnswer> {
     const tool = this.input.tools.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID);
     const to = this.input.binding?.runsNodes?.arrival;
     if (!this.input.binding?.startState) return { unread: "no_reader" };
@@ -209,10 +221,10 @@ export class AutomationStudioSiteResetStartCheck {
     const n = this.places;
     try {
       // The arrival's own node, as `compareAt` goes to an act's page: nothing lasting.
-      const ran = await this.arrive({ callId: `site-reset.look.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: location }, consequences: [] }, ...(signal ? { signal } : {}) });
+      const ran = await this.arrive({ callId: `site-reset.look.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: location }, consequences: [] }, ...(signal ? { signal } : {}) }, invocation);
       this.arrived(ran);
       if (!landed(ran)) return { unread: "no_answer" };
-      return await this.settled(start, signal);
+      return await this.settled(start, signal, invocation);
     } catch (error) {
       if (signal?.aborted) throw error;
       this.lastFailure = error;
@@ -221,21 +233,22 @@ export class AutomationStudioSiteResetStartCheck {
   }
 
   /** Takes the target back to the start and says what still differs; `differs` is absent when that cannot be said. */
-  async compare(signal?: AbortSignal): Promise<AutomationStudioSiteResetComparison> {
-    const startState = this.input.binding?.startState;
+  async compare(signal?: AbortSignal, invocation?: object): Promise<AutomationStudioSiteResetComparison> {
+    const binding = this.input.binding;
+    const startState = binding?.startState;
     const tool = this.input.tools.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID);
     const arrival = tool?.initialObservation?.arrival;
     const start = this.start;
-    if (!startState || !start || !tool || !arrival) return { moved: false };
+    if (!binding || !startState || !start || !tool || !arrival) return { moved: false };
     this.checks += 1;
     const n = this.checks;
     let moved = false;
     try {
-      const ran = await this.arrive({ callId: `site-reset.${n}.arrival`, toolId: tool.toolId, value: structuredClone(arrival), ...(signal ? { signal } : {}) });
+      const ran = await this.arrive({ callId: `site-reset.${n}.arrival`, toolId: tool.toolId, value: structuredClone(arrival), ...(signal ? { signal } : {}) }, invocation);
       moved = this.arrived(ran);
       if (!landed(ran)) return { moved };
       const ask = async (callId: string): Promise<string[] | undefined> => {
-        const read = await startState.call(this.input.binding, { projectId: this.input.projectId, flowId: this.input.flowId, callId, start: structuredClone(start), permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) });
+        const read = await this.readStartState(binding, startState, { projectId: this.input.projectId, flowId: this.input.flowId, callId, start: structuredClone(start), permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) }, invocation, signal);
         if (!stateAnswer(read)) return undefined;
         for (const item of stringsOf(read.items) ?? []) this.seen.add(item);
         return [...read.differs];
@@ -245,7 +258,7 @@ export class AutomationStudioSiteResetStartCheck {
       const live = this.input.liveCheck;
       if (!live) return { moved, differs: this.steadyDiffers(first) };
       // Read again with nothing done between: what changed by itself is live content, not the build's (header).
-      await (live.sleep ?? pause)(live.settleMs, signal);
+      await this.wait(live, signal, invocation);
       const again = await ask(`site-reset.${n}.start.again`);
       if (again === undefined) return { moved, differs: this.steadyDiffers(first) };
       for (const entry of vanished(first, again)) this.liveDiffers.add(entry);
@@ -258,8 +271,21 @@ export class AutomationStudioSiteResetStartCheck {
   }
 
   /** Runs one of Core's own arrivals as Core's move (header, t743). */
-  private arrive(call: Parameters<Execute>[0]): Promise<unknown> {
-    return runAsAutomationStudioCoreMove(() => this.input.executeTool(call));
+  private arrive(call: Parameters<Execute>[0], invocation?: object): Promise<unknown> {
+    const execute = this.input.executeTool;
+    return runAsAutomationStudioCoreMove(() => invokeAutomationStudioSiteResetProducer(invocation, this.toolObserver, { receiver: this.input, callback: execute, args: [call] }, call, call.signal));
+  }
+
+  private async readStartState(binding: NonNullable<typeof this.input.binding>, callback: StartState, request: StartStateInput, invocation?: object, signal?: AbortSignal): Promise<Awaited<ReturnType<StartState>>> {
+    const original = automationStudioLlmBindingFieldOrigin(binding, "startState", callback);
+    return await invokeAutomationStudioSiteResetProducer(invocation, this.toolObserver, { ...original, args: [request] }, request, signal);
+  }
+
+  private async wait(live: AutomationStudioSiteResetLiveCheck, signal?: AbortSignal, invocation?: object): Promise<void> {
+    const sleep = live.sleep;
+    if (!sleep) return await invokeAutomationStudioSiteResetCallback(invocation, { receiver: undefined, callback: pause, args: [live.settleMs, signal] }, signal);
+    const request = { milliseconds: live.settleMs };
+    await invokeAutomationStudioSiteResetProducer(invocation, this.toolObserver, { receiver: live, callback: sleep, args: [live.settleMs, signal] }, request, signal);
   }
 
   /** Whether an arrival applied an effect, counted when it did (header, t738). */
@@ -336,6 +362,17 @@ function pause(ms: number, signal?: AbortSignal): Promise<void> {
     signal?.addEventListener("abort", stop, { once: true });
   });
 }
+
+// These original Core methods observe every host callback; the timer queues no work after it settles.
+const CORE_METHODS = Object.freeze([
+  AutomationStudioSiteResetStartCheck.prototype.capture,
+  AutomationStudioSiteResetStartCheck.prototype.read,
+  AutomationStudioSiteResetStartCheck.prototype.settled,
+  AutomationStudioSiteResetStartCheck.prototype.compareAt,
+  AutomationStudioSiteResetStartCheck.prototype.lookAt,
+  AutomationStudioSiteResetStartCheck.prototype.compare
+]);
+AutomationStudioSiteResetCallbackPolicies.rememberLexical(pause, "pure");
 
 function stateAnswer(value: unknown): value is { state: JsonObject; differs: string[]; location?: unknown; lines?: unknown; items?: unknown } {
   return isObject(value) && isObject(value.state) && Array.isArray(value.differs) && value.differs.every((entry) => typeof entry === "string");
