@@ -1,7 +1,7 @@
 # Runtime Ownership And Web Boundary Refactor
 
 Status: Active
-Status detail: t843 checkpoint accepted narrowly (Core512/downstream268 tests, package builds/checks and structures pass); paired branch backups in progress; A2/B/C and remaining audit/UI phases required.
+Status detail: t843 checkpoint accepted narrowly (Core512/downstream268 tests, package builds/checks and structures pass); paired task branches committed and pushed; A2/B/C and remaining audit/UI phases required.
 Created: 2026-11-01
 Last updated: 2026-11-02
 Owner: Senior supervisor agent
@@ -11,7 +11,7 @@ Related: [architecture](../architecture/README.md)
 
 ## Current State
 
-Current source batch is frozen. R5 indexing, R7 draft mechanisms and A1 private admission authority are implemented; workers only finalize reports or perform read-only A2/producer discovery. Root owns shared integration and current package acceptance. No candidate retry exemption is enabled before durable SQL, real producers and no-second-send acceptance complete.
+Current source batch is active: A2 SQL durability/sole command observer, B real engine/native/output producers, and C candidate/cache admission are being implemented by disjoint Core workers. R5 indexing, R7 draft mechanisms and A1 private admission authority are accepted at the preceding checkpoint. Root owns shared contracts, service composition, integration and independent acceptance. No candidate retry exemption is enabled before durable SQL, real producers and no-second-send acceptance complete.
 Latest source-local acceptance: lead independently passed59files/512distinct tests across draft/destructive, indexing/compatibility/realSQL, change/origin and A1 authority. R5 opaque-ID/prototype defects were reproduced5/6 before own-key fixes; all six cases now pass, normal JSON bytes/prototypes preserved. R7 mechanisms are204cohesive production modules with163single-authority leaves and explicit typed presentation; exact legacy bytes remain tested. A1 actual lifecycle is implemented, isolated strict NodeNextcheck0; SQL/producer/candidate integration remains required.
 
 The user authorized the complete Core/downstream ownership audit/refactor with Core workers, then a reusable standardized chat-stream UI/component package usable by any client (tentatively @fluxiq/ui-components). The UI package must follow completion of both full audits/refactors; it has not started.
@@ -27,6 +27,10 @@ Downstream 25 failures repaired with truthful structured failure, real resolver/
 A real preexisting candidate-retest protocol mismatch requires production repair: strict ordinary retry correctly refuses potentially acted calls; candidate gate's string retry advice no longer authorizes bounded re-entry. Existing reset admission and landed-only act lists cannot attest that an unknown lasting act is settled. REPORT-ONLY design is in reports/candidate-retest-protocol.md; implementation must combine scoped one-use re-entry authority with execution-derived pending-act admission, not fabricate unacted metadata or exempt tool names.
 No paid runs, live providers, panel management, or user browser data operations started. All tests are provider-free. Do not promote main with known failures.
 Next: finish source-stable package/structure gate, build Core and run current downstream/fixture acceptance; implement the safe retest protocol; continue R5 index/gateway/mapper, R6 router/gates, R7 authoring/verification, R8 remaining web semantics, final R9 checks/integration, then required R10 shared UI package. These remain required work, not deferred recommendations.
+
+Checkpoint backup: Core6a871e62 and downstreamed155444 are committed and pushed on task/t843-runtime-foundations in the paired t843 worktrees. Both repositories share the original checkout Git histories. This checkpoint did not move dev or main.
+The service integration now installs one execution-admission controller; required command ownership retains resolution priority over ordinary observed contexts and legacy contexts. Private root/reservation identity verification and one canonical configured-source interface are added. Current scoped lead validation: A1 identity tests29/29 passed; extracted flow-binding authority tests3/3 passed. Complete integrated producer/SQL acceptance remains pending.
+Pinned cached diagnosis/rejudge must remain available while live effects are pending, through an authentic read-only lease with no reset, execution or coverage/promotion credit. Missing/evicted/foreign leases refuse without falling back to live execution.
 
 ## Phases
 
@@ -62,6 +66,17 @@ The public package must expose the widget, message/stream contracts, styles and 
 Migrate the extension to the package and exercise a second real client integration to prove reuse. Preserve streaming, activity/results, user interactions, accessibility and existing visual behavior; keep extension-specific approvals/routing/browser bindings in its adapter. Document standalone client setup and verify the browser bundle boundary.
 
 ## Work Ledger
+
+### 2026-11-02 - Paired checkpoint pushed; durable integration active
+- Agent: senior supervisor
+- Changed: paired task backups, private entry/reservation identity verification, shared source/gateway contracts, service controller/resolver composition and focused flow-binding module. A2/B/C workers own disjoint implementation paths.
+- Validation: `git push -u origin task/t843-runtime-foundations` ->succeeded in both repositories, Core6a871e62/downstreamed155444. No dev/main promotion or package publication.
+- Validation: lead A1 focused authority run ->29passed; `pnpm.cmd exec vitest run packages/fluxiq/src/programs/automation-studio/runtime/service/flow-binding/tests/resolve.test.ts` ->3passed after adjusting unsupported test assertion syntax.
+- Validation: Core-first working-document generator repair `node --test scripts/structure-audit/rules/tests/working-docs.test.mjs` ->15passed; downstream `node scripts/check/core-mirror.mjs` ->72files match. Scoped flow-binding15-rule review ->0failures/0warnings.
+- Validation: `pnpm.cmd exec tsc -p .fluxiq/refactor/tsconfig-flow-binding.json` ->four TS18048 errors in actively edited candidate-trials/mode/owner.ts110; reported to owning worker, not repaired outside ownership. This imports the actual storage dependency closure; integrated typecheck remains pending.
+- Outcome: Partial; current integration not yet package-validated.
+- Follow-up: connect actual producers/SQL/candidate seams, independently verify counter/reopen/lost-ACK/read-only cases, continue all remaining ownership phases, then required shared chat UI package.
+
 
 ### 2026-11-02 - Accepted checkpoint before durable integration
 - Agent: senior supervisor
