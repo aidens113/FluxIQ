@@ -2,7 +2,9 @@
 // provider and model, and hold every limit inside its bound.
 
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP, assertAutomationStudioLlmModelBinding } from "../../../../framework/automation-service/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../../../../runtime/llm/flow-execution-limits/index.ts";
+import { assertAutomationStudioLlmModelBinding } from "../../../../runtime/models/catalog/index.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../../../../runtime/models/limits/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 
 // The most provider calls a Flow may pin: Core's own runaway backstop

@@ -1,4 +1,4 @@
-// Covers handlers/instruction-scope.ts and the endpoint constants it is
+// Covers ../scope.ts and the endpoint constants it is
 // registered against.
 
 import { describe, expect, it } from "vitest";

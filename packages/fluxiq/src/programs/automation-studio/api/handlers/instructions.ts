@@ -2,9 +2,8 @@
 // against them.
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type FlowChangeProposalRequest, type FlowExpansionSummaryRequest, type FlowInstructionRequest, type FlowInstructionSetRequest, type SaveFlowInstructionRequest } from "../../../../api-contracts/automation.ts";
-import type { AutomationStudioFlowInstruction, AutomationStudioInstructionTag } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
-import { flowInstructionScopeFromPayload } from "./instruction-scope.ts";
+import { saveFlowInstructionForRequest } from "../../../../framework/automation-service/service/flow-instruction-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 
@@ -78,34 +77,11 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
       const payload = request.payload && typeof request.payload === "object" ? request.payload as SaveFlowInstructionRequest & { authSessionId?: unknown; authorizationPin?: unknown } : {} as SaveFlowInstructionRequest;
       const projectId = String(payload.projectId ?? "");
       const flowId = String(payload.flowId ?? "");
-      const now = Date.now();
       const title = typeof payload.title === "string" ? payload.title.trim() : "";
       const body = typeof payload.body === "string" ? payload.body.trim() : "";
       if (!projectId || !flowId) return { ok: false, error: "Project and Flow are required." };
       if (!title || !body) return { ok: false, error: "Instruction title and body are required." };
-      const existing = typeof payload.instructionId === "string" && payload.instructionId.trim()
-        ? await service.getFlowInstruction(projectId, payload.instructionId.trim())
-        : null;
-      const instructionId = existing?.instructionId ?? payload.instructionId?.trim() ?? `instruction.${slugSegment(title)}.${now.toString(36)}`;
-      const instruction: AutomationStudioFlowInstruction = {
-        schemaVersion: "0.1",
-        instructionId,
-        title,
-        body,
-        scope: flowInstructionScopeFromPayload(projectId, flowId, payload),
-        priority: Number.isFinite(Number(payload.priority)) ? Number(payload.priority) : existing?.priority ?? 50,
-        status: payload.status === "disabled" || payload.status === "archived" ? payload.status : existing?.status ?? "active",
-        requirement: payload.requirement === "required" ? "required" : "advisory",
-        tags: Array.isArray(payload.tags) ? payload.tags.filter((tag): tag is AutomationStudioInstructionTag => typeof tag === "string" && ["generation", "runtime", "error", "router", "subflow", "review", "safety"].includes(tag)) : existing?.tags ?? [],
-        linkedRunIds: existing?.linkedRunIds ?? [],
-        linkedAdaptationIds: existing?.linkedAdaptationIds ?? [],
-        linkedRecordingIds: existing?.linkedRecordingIds ?? [],
-        linkedSubflowIds: existing?.linkedSubflowIds ?? [],
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-        metadata: { ...(existing?.metadata ?? {}), source: "explicit_instruction", inferred: false, generatedByModel: false }
-      };
-      return { ok: true, payload: { instruction: await service.saveFlowInstruction(projectId, instruction) } };
+      return { ok: true, payload: { instruction: await saveFlowInstructionForRequest(service, { projectId, flowId, title, body, payload }) } };
     }
   });
   registry.register({
@@ -138,9 +114,4 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
       return { ok: true, payload: { changeProposal: await service.getFlowChangeProposal(String(payload.projectId ?? ""), String(payload.flowId ?? ""), String(payload.proposalId ?? "")) } };
     }
   });
-}
-
-function slugSegment(value: string): string {
-  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "").slice(0, 48);
-  return slug || "instruction";
 }
