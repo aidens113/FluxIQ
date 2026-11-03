@@ -21,25 +21,18 @@
 // handing a value on, or what it read is withheld, too long or unsayable -- it
 // is named by nothing, never by the words saved before.
 
-import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
-import { automationStudioModelFacingControlText, automationStudioModelFacingControlWords } from "../../../../runtime/llm/model-facing/index.ts";
+import { automationStudioControlWordsOf, automationStudioModelFacingControlText, automationStudioModelFacingControlWords } from "../../../../runtime/llm/model-facing/index.ts";
 
 /** The longest read value said as a step's control: past it, the words are no short name for the step (header). */
 const MAX_READ_WORDS = 160;
 
 /** The words the step's control is named by in this trial, or nothing (header); `attempt` absent names a read step by nothing. */
 export function automationStudioTrialStepControl(node: AutomationStudioFlowNode | undefined, attempt: AutomationStudioNodeAttemptTrace | undefined): string | undefined {
-  if (!readsItsWords(node?.parameterValues)) return automationStudioModelFacingControlWords(node?.parameterValues);
+  if (!automationStudioControlWordsOf(node?.parameterValues)?.readsItsWords) return automationStudioModelFacingControlWords(node?.parameterValues);
   const read = attempt?.status === "succeeded" ? attempt.outputs.value : undefined;
   if (typeof read !== "string" || read.includes(AUTOMATION_STUDIO_WITHHELD_VALUE)) return undefined;
   const words = read.replace(/\s+/gu, " ").trim();
   return words.length <= MAX_READ_WORDS && automationStudioModelFacingControlText(words) ? words : undefined;
-}
-
-/** Whether the node's resolved identity says its words are the value it reads (header). */
-function readsItsWords(parameters: JsonObject | undefined): boolean {
-  const element: JsonValue | undefined = parameters?.element;
-  return typeof element === "object" && element !== null && !Array.isArray(element) && element.readsWords === true;
 }

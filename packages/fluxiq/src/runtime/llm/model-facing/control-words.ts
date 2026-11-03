@@ -14,66 +14,49 @@
 // name a control through this, so the model reads one control under one name
 // wherever it is told about it.
 //
-// **From the node's own parameters.** `element` is the identity the domain
-// resolved from the step's handle at submission; `target` is the authored
-// target, flat or as `{ kind: "element", fingerprint }`. The first word-bearing
-// field wins, in the order the model is likeliest to see it. The failure
-// record's `expected`/`actual` are never read for it: since t426 a
-// target-finding failure carries neither, and they described how the control
-// was looked for.
+// **From the node's own parameters, as the domain reads them.** Where a node
+// keeps its control's words is the domain's (`controlWordsReader`, on its
+// implementation bundle, in scope through `../../domain-readings/`). The first
+// words it lists that pass the screen win, in the order the model is likeliest to
+// see them. The failure record's `expected`/`actual` are never read for it: since
+// t426 a target-finding failure carries neither, and they described how the
+// control was looked for.
+//
+// **With no domain's reading, a control is named by nothing.** That is what the
+// model is told, and each caller already has to say what a nameless control
+// means. A caller for whom nothing is not the closed side asks
+// `automationStudioModelFacingControlWordsReadable` first.
 //
 // **Screened.** Words that carry a locator, a match score or a finding-only
 // word (`./control-text.ts`) are no words: a control is then named by nothing
 // rather than by how it was found. Ordinary page words the failure-text screen
 // drops ("address", "score": `./sayable-text.ts`) are a control's own words
 // and stay (t748).
-//
-// Domain-neutral: the field names are Core's element-target fingerprint's
-// (`../../../model/action-element-target.ts`) plus the two a target is
-// commonly authored with (`name`, `placeholder`); no domain's vocabulary.
 
-import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { JsonObject } from "../../../core/index.ts";
+import type { AutomationStudioControlWords } from "../../../framework/automation-service/nodes/index.ts";
+import { automationStudioDomainReadings } from "../../domain-readings/index.ts";
 import { automationStudioModelFacingControlText } from "./control-text.ts";
 
-/** The fields that carry a control's own words, in the order they are preferred. */
-const WORD_FIELDS = ["accessibleName", "visibleText", "label", "placeholder"] as const;
-/**
- * A flat authored target's `name` is its accessible name, and is read after the
- * fields above. On a resolved identity or a fingerprint `name` is the form
- * field's name attribute -- one of the signals a control is found by, like its
- * id or class -- and is never read (user, 2026-10-10).
- */
-const AUTHORED_FIELDS = [...WORD_FIELDS, "name"] as const;
+/** Whether this work has a domain's reading of a control's words at all (header). */
+export function automationStudioModelFacingControlWordsReadable(): boolean {
+  return automationStudioDomainReadings()?.controlWordsReader !== undefined;
+}
+
+/** What the domain reads in these parameters, unscreened: for Core's own comparisons and decisions, never to be shown as it stands. */
+export function automationStudioControlWordsOf(parameters: JsonObject | undefined): AutomationStudioControlWords | undefined {
+  return automationStudioDomainReadings()?.controlWordsReader?.(parameters);
+}
 
 /**
  * The control's own words from a node's parameters, whitespace collapsed, or
- * nothing when it carries none or only words that say how it was found.
+ * nothing when it carries none, only words that say how it was found, or no
+ * domain's reading is in scope.
  */
 export function automationStudioModelFacingControlWords(parameters: JsonObject | undefined): string | undefined {
-  for (const { identity, fields } of identities(parameters)) {
-    for (const field of fields) {
-      const value = identity[field];
-      if (typeof value !== "string") continue;
-      const words = value.replace(/\s+/gu, " ").trim();
-      if (words && automationStudioModelFacingControlText(words)) return words;
-    }
+  for (const value of automationStudioControlWordsOf(parameters)?.words ?? []) {
+    const words = value.replace(/\s+/gu, " ").trim();
+    if (words && automationStudioModelFacingControlText(words)) return words;
   }
   return undefined;
-}
-
-/** Where a node's parameters keep its control's identity: the resolved `element`, then the authored `target` (header). */
-function identities(parameters: JsonObject | undefined): Array<{ identity: JsonObject; fields: readonly string[] }> {
-  const element = record(parameters?.element);
-  const target = record(parameters?.target);
-  const fingerprint = record(target?.fingerprint);
-  const flat = target && !fingerprint ? target : undefined;
-  return [
-    ...(element ? [{ identity: element, fields: WORD_FIELDS }] : []),
-    ...(fingerprint ? [{ identity: fingerprint, fields: WORD_FIELDS }] : []),
-    ...(flat ? [{ identity: flat, fields: AUTHORED_FIELDS }] : [])
-  ];
-}
-
-function record(value: JsonValue | undefined): JsonObject | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
 }

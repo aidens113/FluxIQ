@@ -1,39 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioModelFacingControlWords } from "../control-words.ts";
+import { runWithAutomationStudioDomainReadings } from "../../../domain-readings/index.ts";
+import { automationStudioControlWordsOf, automationStudioModelFacingControlWords, automationStudioModelFacingControlWordsReadable } from "../control-words.ts";
 
-// t431: a control is named to a model by its own words, read from the node's parameters, and never by how it was found.
+// t431: a control is named to a model by its own words, as the domain reads them from the node's parameters, and never by how it was found.
+// Core's half. A real domain's reading of its own parameters is tested in that domain.
+
+const said = (words: readonly string[], parameters: Parameters<typeof automationStudioModelFacingControlWords>[0] = {}) =>
+  runWithAutomationStudioDomainReadings({ controlWordsReader: () => ({ words, readsItsWords: false }) }, () => automationStudioModelFacingControlWords(parameters));
 
 describe("automationStudioModelFacingControlWords", () => {
-  it("reads the resolved element's words first, in preference order, whitespace collapsed", () => {
-    expect(automationStudioModelFacingControlWords({ element: { visibleText: "Post", accessibleName: "  Create\n post " } })).toBe("Create post");
-    expect(automationStudioModelFacingControlWords({ element: { label: "Email" }, target: { name: "Other" } })).toBe("Email");
+  it("names nothing with no domain's reading in scope, whatever the parameters hold", () => {
+    expect(automationStudioModelFacingControlWordsReadable()).toBe(false);
+    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "Save", visibleText: "Save", label: "Save" }, target: { name: "Save" } })).toBeUndefined();
+    expect(automationStudioControlWordsOf({ element: { accessibleName: "Save" } })).toBeUndefined();
   });
 
-  it("falls back to the authored target, flat or as a fingerprint, by name or placeholder", () => {
-    expect(automationStudioModelFacingControlWords({ target: { name: "Write something...", role: "button" } })).toBe("Write something...");
-    expect(automationStudioModelFacingControlWords({ target: { kind: "element", fingerprint: { placeholder: "Search" } } })).toBe("Search");
-    // A resolved identity's `name` is the form field's name attribute, a finding signal, never the control's words.
-    expect(automationStudioModelFacingControlWords({ element: { name: "qty_input_3", tag: "input" } })).toBeUndefined();
-    expect(automationStudioModelFacingControlWords({ target: { kind: "element", fingerprint: { name: "email" } } })).toBeUndefined();
+  it("names nothing when the domain's reading says the parameters carry no control", () => {
+    expect(runWithAutomationStudioDomainReadings({ controlWordsReader: () => undefined }, () => [automationStudioModelFacingControlWordsReadable(), automationStudioModelFacingControlWords({})])).toEqual([true, undefined]);
   });
 
-  it("names nothing when the control carries no words, or only words that say how it is found", () => {
-    expect(automationStudioModelFacingControlWords(undefined)).toBeUndefined();
-    expect(automationStudioModelFacingControlWords({ target: { role: "button" }, selector: "#go" })).toBeUndefined();
-    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "#composer", visibleText: "matched by fingerprint 0.82" } })).toBeUndefined();
+  it("takes the domain's words in its order, whitespace collapsed", () => {
+    expect(said(["  Create\n post ", "Post"])).toBe("Create post");
+    expect(said(["Email", "Other"])).toBe("Email");
+    expect(said([])).toBeUndefined();
+    expect(said(["   "])).toBeUndefined();
   });
 
-  it("skips a locator-shaped field for the next field that is words", () => {
-    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "[data-testid=composer]", visibleText: "Write something..." } })).toBe("Write something...");
+  it("names nothing when the words only say how the control is found", () => {
+    expect(said(["#composer", "matched by fingerprint 0.82"])).toBeUndefined();
+  });
+
+  it("skips a locator-shaped word for the next that is words", () => {
+    expect(said(["[data-testid=composer]", "Write something..."])).toBe("Write something...");
   });
 
   // t748: a press's control vanished from trial feedback because its own words held "address", a word the failure-text
   // screen drops as finding talk. On a control those are page words; only a locator, a match score or the finding-only
   // words still make a control's words no words.
   it("names a control by its own words when they hold an ordinary page word the failure screen drops", () => {
-    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "Send renewals to this address" } })).toBe("Send renewals to this address");
-    expect(automationStudioModelFacingControlWords({ element: { visibleText: "Show my reading score" } })).toBe("Show my reading score");
-    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "matched by fingerprint", visibleText: "Selector: #renew" } })).toBeUndefined();
-    expect(automationStudioModelFacingControlWords({ element: { accessibleName: "Renew 0.82" } })).toBeUndefined();
+    expect(said(["Send renewals to this address"])).toBe("Send renewals to this address");
+    expect(said(["Show my reading score"])).toBe("Show my reading score");
+    expect(said(["matched by fingerprint", "Selector: #renew"])).toBeUndefined();
+    expect(said(["Renew 0.82"])).toBeUndefined();
   });
 });

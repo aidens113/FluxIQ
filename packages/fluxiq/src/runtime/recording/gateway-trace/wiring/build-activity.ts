@@ -10,7 +10,7 @@
 // activity scope, nothing read and nothing opened.
 
 import { randomUUID } from "node:crypto";
-import type { AutomationStudioActivityControlReader } from "../../../../framework/automation-service/nodes/index.ts";
+import type { AutomationStudioDomainReadings } from "../../../domain-readings/index.ts";
 import { withAutomationStudioBuildActivity } from "../../../automation-activity/index.ts";
 import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT } from "./context-schemas.ts";
 import { automationStudioGatewayTraceConversationContext } from "./conversation-turn.ts";
@@ -18,7 +18,7 @@ import { AutomationStudioGatewayTraceInstallation } from "../installation.ts";
 import { automationStudioGatewayTraceStoredInstructions } from "./stored-instructions.ts";
 import type { AutomationStudioGatewayTraceBuildSources } from "./types.ts";
 
-type BuildTarget = { projectId?: unknown; flowId?: unknown; authoringMode?: unknown; mode?: unknown; evidenceGuided?: unknown; startLocation?: unknown; activityControlReader?: AutomationStudioActivityControlReader | undefined };
+type BuildTarget = { projectId?: unknown; flowId?: unknown; authoringMode?: unknown; mode?: unknown; evidenceGuided?: unknown; startLocation?: unknown; domainReadings?: Readonly<AutomationStudioDomainReadings> | undefined };
 
 /** Runs one Flow build in its activity scope and, when tracing is installed, as one traced exploration episode. */
 export async function withAutomationStudioGatewayTraceBuildActivity<T>(target: BuildTarget, sources: AutomationStudioGatewayTraceBuildSources, fn: () => Promise<T>): Promise<T> {

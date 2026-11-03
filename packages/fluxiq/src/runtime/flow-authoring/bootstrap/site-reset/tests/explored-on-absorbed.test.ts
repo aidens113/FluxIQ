@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioSiteResetProjectLedger, automationStudioSiteResetExploredOnAbsorbed, type AutomationStudioSiteResetAbsorbedAct } from "../index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 // t647: what the act log says of an act a start hook took back, and the finding read off it. A library's controls.
 

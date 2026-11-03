@@ -135,6 +135,15 @@ export type AutomationStudioStateElementKindReader = (path: string, type: StateV
 export type AutomationStudioActivityControl = { names: readonly unknown[]; kinds: readonly unknown[] };
 /** Undefined: the node's parameters carry no control. Words for the chat only, never for a model. */
 export type AutomationStudioActivityControlReader = (parameters: unknown) => AutomationStudioActivityControl | undefined;
+/**
+ * A control's own words in a node's parameters, for what a model is told about
+ * it. Core collapses and screens them, and never reads them for anything but
+ * words. `readsItsWords` says the words are the value the step reads rather than
+ * a name for its control.
+ */
+export type AutomationStudioControlWords = { words: readonly string[]; readsItsWords: boolean };
+/** Every word-bearing field, most preferred first. Undefined: the parameters carry no control. */
+export type AutomationStudioControlWordsReader = (parameters: JsonObject | undefined) => AutomationStudioControlWords | undefined;
 
 export type AutomationStudioImporterImplementationBundle = {
   packageId: string;
@@ -157,6 +166,8 @@ export type AutomationStudioImporterImplementationBundle = {
   stateElementKindReader?: AutomationStudioStateElementKindReader;
   /** Names the control a node's parameters carry, for the activity stream. Absent, a step's card says its verb alone. */
   activityControlReader?: AutomationStudioActivityControlReader;
+  /** Reads a control's own words out of a node's parameters. Absent, a model is told no name for a control, and a step that may do a lasting act is read as doing one. */
+  controlWordsReader?: AutomationStudioControlWordsReader;
   /** The parameter keys that name the control a step acts on. Absent, a checked rerun treats every parameter as naming it. */
   controlParameterKeys?: ReadonlySet<string>;
   recordingMappers?: Record<string, AutomationStudioRecordingMapperImplementation>;

@@ -106,15 +106,16 @@
 // cannot split. It does not read comments, which is deliberate. Existing
 // instances are baselined per file and may only shrink.
 //
-// One of those holes is closed where it was found. Five modules read a browser's
-// fields under names no term above catches, because Core's own model owns the
-// words beside them (`accessibleName`, `visibleText`), or as plain strings in a
-// key list. Those readings moved to the domain behind hooks on its implementation
-// bundle, and nothing would have stopped them walking back. So the files listed
-// under `CONFIG.domainReadingFreePaths` are held to more: `READING_TERMS` count
-// there as names and also as a whole string, which is how a key list is written.
-// An entry's `allow` names a term that file may keep, and its comment says why. A
-// listed path that names no audited file fails, so a move cannot empty the list.
+// One of those holes is closed for good. Core once read a browser's fields under
+// names no term above catches, because Core's own model owns the words beside them
+// (`accessibleName`, `visibleText`), as plain strings in a key list, or as words
+// in a regular expression. Those readings moved to the domain behind hooks on its
+// implementation bundle, and a rule over a list of the moved files would only stop
+// those files. So every audited file is held to `READING_TERMS` and `READING_WORDS`,
+// counted as names, as a whole string and inside a regular expression. What may stay
+// is named under `CONFIG.domainReadingExceptions`, each entry with the terms it may
+// hold and the reason. An entry that holds none of its terms any more, or that names
+// no audited file, fails: the list can only shrink.
 
 export const id = "web-vocabulary";
 export const title = "Framework source stays neutral about the web domain";
@@ -133,11 +134,16 @@ const TERMS = [
 // else inside a longer one. See the header for why `selector` is here.
 const WHOLE_NAME_TERMS = ["selector"].map((term) => term.split(" "));
 
-// The fields a browser describes a control by, and the notations it addresses
-// one with. Counted only in the files `CONFIG.domainReadingFreePaths` lists.
+// The fields a browser describes a control by, and the notations it addresses one
+// with, matched anywhere inside a name.
 const READING_TERMS = [
-  "implicit role", "accessible name", "visible text", "input type", "test id", "testid", "autocomplete", "password", "selector", "xpath", "x path", "css"
+  "implicit role", "accessible name", "visible text", "input type", "inner text", "text content", "test id", "testid", "autocomplete", "xpath", "x path", "css"
 ].map((term) => term.split(" "));
+
+// The same, counted only as the whole name or the whole string, because inside a
+// longer name each means something else: `isWeakPassword`, and the `selector` the
+// header above already holds to the whole name.
+const READING_WORDS = ["selector", "password"].map((term) => term.split(" "));
 
 // The one name never counted: the platform's error type, not the document
 // object model. The header says why this is an exemption and not a baseline.
@@ -189,27 +195,49 @@ function nameOf(ts, node) {
   return ts.isStringLiteralLike(node) && isPropertyKey(ts, node) ? node.text : undefined;
 }
 
-function readingTermsIn(name, allow) {
+const label = (term) => term.join(" ");
+const contains = (words, term) => words.some((_, index) => index + term.length <= words.length && runAt(words, term, index));
+const isWhole = (words, term) => words.length === term.length && runAt(words, term, 0);
+
+// A term of `READING_TERMS` inside a name, or either kind as the whole name.
+const readingTermsIn = (name) => {
   const words = wordsOf(name);
-  return READING_TERMS.filter((term) => !allow.has(term.join(" ")) && words.some((_, index) => index + term.length <= words.length && runAt(words, term, index))).map((term) => term.join(" "));
-}
+  return [...READING_TERMS.filter((term) => contains(words, term)), ...READING_WORDS.filter((term) => isWhole(words, term))].map(label);
+};
 
 // A string that is nothing but one of the terms: an element of a key list.
-function readingTermsOfString(text, allow) {
+const readingTermsOfString = (text) => {
   const words = wordsOf(text);
-  return READING_TERMS.filter((term) => !allow.has(term.join(" ")) && words.length === term.length && runAt(words, term, 0)).map((term) => term.join(" "));
+  return [...READING_TERMS, ...READING_WORDS].filter((term) => isWhole(words, term)).map(label);
+};
+
+// A regular expression's words, its own escapes aside, so `\\bselector` reads `selector`.
+const readingTermsOfPattern = (source) => {
+  const words = wordsOf(source.replace(/\\[A-Za-z]/g, " "));
+  return [...READING_TERMS, ...READING_WORDS].filter((term) => contains(words, term)).map(label);
+};
+
+function readingTerms(ts, node) {
+  const name = nameOf(ts, node);
+  if (name) return readingTermsIn(name);
+  if (ts.isStringLiteralLike(node)) return readingTermsOfString(node.text);
+  return ts.isRegularExpressionLiteral(node) ? readingTermsOfPattern(node.text) : [];
 }
 
-function offences(ctx, file, reading) {
+// Whether `file` falls under an exception's path, which is a file or, ending in `/`, a directory.
+const covers = (exception, file) => exception.path.endsWith("/") ? file.startsWith(exception.path) : file === exception.path;
+
+function offences(ctx, file, exceptions, used) {
   const { ts } = ctx;
   const sourceFile = ctx.parse(file);
   const found = [];
   const visit = (node) => {
     const name = nameOf(ts, node);
     const terms = name ? termsIn(name) : [];
-    if (reading) {
-      if (name) terms.push(...readingTermsIn(name, reading));
-      else if (ts.isStringLiteralLike(node)) terms.push(...readingTermsOfString(node.text, reading));
+    for (const term of readingTerms(ts, node)) {
+      const exception = exceptions.find((candidate) => candidate.terms.includes(term));
+      if (exception) used.add(exception);
+      else if (!terms.includes(term)) terms.push(term);
     }
     if (terms.length > 0) found.push({ line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1, terms });
     ts.forEachChild(node, visit);
@@ -244,23 +272,10 @@ function firstLines(found) {
 export function run(ctx) {
   const findings = [];
   const audited = auditedFiles(ctx);
-  const readingFree = new Map((ctx.CONFIG.domainReadingFreePaths ?? []).map((entry) => [entry.path, new Set(entry.allow ?? [])]));
-  for (const listed of readingFree.keys()) {
-    if (audited.includes(listed)) continue;
-    findings.push({
-      rule: id,
-      key: `domainReadingFreePaths:${listed}`,
-      value: 1,
-      limit: 0,
-      path: listed,
-      line: 1,
-      message: `domainReadingFreePaths: "${listed}" names no audited file. It was renamed or removed; point the entry at where that module lives now, or delete it.`,
-      severity: "fail",
-      ratchet: false
-    });
-  }
+  const exceptions = ctx.CONFIG.domainReadingExceptions ?? [];
+  const used = new Set();
   for (const file of audited) {
-    const found = offences(ctx, file, readingFree.get(file));
+    const found = offences(ctx, file, exceptions.filter((exception) => covers(exception, file)), used);
     if (found.length === 0) continue;
 
     const subject = found.length === 1
@@ -276,6 +291,21 @@ export function run(ctx) {
       message: `${file}: ${subject}. FluxIQ Core is the framework every domain builds on, so a name out of one domain's vocabulary -- the DOM, CSS, a browser tab -- becomes a field every other domain carries. Use the neutral name Core already has: an element's identity is \`entityId\` and \`entityKind\`, its address is \`queryPath\` or \`statePath\`. What has no neutral equivalent belongs in the downstream domain repository, or inside an opaque handle Core stores and returns without reading. A comment, a test, or a string that is not a property key may say anything; it is the name Core declares or reads that this rule counts. Where Core must carry the web's own spelling, the instance is recorded in the structure baseline as a deliberate exception, and the recorded count may only fall.`,
       severity: "fail",
       ratchet: true
+    });
+  }
+  // Only over a repository that audits anything: one with no neutral paths has no exceptions to keep.
+  for (const exception of audited.length ? exceptions : []) {
+    if (used.has(exception)) continue;
+    findings.push({
+      rule: id,
+      key: `domainReadingExceptions:${exception.path}`,
+      value: 1,
+      limit: 0,
+      path: exception.path,
+      line: 1,
+      message: `domainReadingExceptions: "${exception.path}" holds none of ${exception.terms.join(", ")} any more, or names no audited file. Delete the entry; the list can only shrink.`,
+      severity: "fail",
+      ratchet: false
     });
   }
   return findings;

@@ -201,22 +201,57 @@ export const CONFIG = {
     .filter((entry) => entry.isDirectory() && entry.name !== "ui-components")
     .map((entry) => `packages/${entry.name}`),
 
-  // Modules whose browser reading moved to the domain, behind hooks on its
-  // implementation bundle (t851). The web-vocabulary rule holds them to more than
-  // the rest of Core: a browser's field names count here as names and as whole
-  // strings. `allow` names a term a file may keep. Empty entries are the point:
-  // only lower this list by moving a module, never by allowing what it reads.
-  domainReadingFreePaths: [
-    { path: "packages/fluxiq/src/framework/automation-service/service/instruction-led/recording-steps.ts" },
-    { path: "packages/fluxiq/src/runtime/automation-activity/wording/action.ts" },
-    // `selector` is a member of Core's published `StateElementKind`, which a domain's
-    // reading and declared paths answer with and which ranks and weighs here. This
-    // file never decides a path is one.
-    { path: "packages/fluxiq/src/framework/automation-service/service/evidence/state-elements.ts", allow: ["selector"] },
-    { path: "packages/fluxiq/src/runtime/llm/node-tools/rerun-check.ts" },
-    // A screen whose shapes spell their notations in regular expressions, which are
-    // data to this rule: it reads no field and declares no name of one.
-    { path: "packages/fluxiq/src/runtime/llm/screening/locator-text.ts" }
+  // What may still spell a browser's field or notation in Core's source, for the
+  // web-vocabulary rule, each with the terms it may hold and why. Everything else in
+  // the neutral paths is held to none: a new reader fails the build, and belongs in
+  // the domain behind a hook on its implementation bundle (`nodes/importer-sdk.ts`).
+  // A path ending in `/` is a directory. An entry that holds none of its terms any
+  // more fails, so this list can only shrink.
+  domainReadingExceptions: [
+    // Safety screens: Core's rule over what reaches a model, applied whether or not a
+    // domain is bound. Moving a token out could only let less be screened.
+    { path: "packages/fluxiq/src/runtime/llm/screening/locator-text.ts", terms: ["testid"],
+      reason: "Screens address notation out of text on its way to a provider. A neutral pattern would change what the model is sent; a shorter one would screen less. Lead's decision, t851." },
+    { path: "packages/fluxiq/src/runtime/adaptation/recovery/context.ts", terms: ["selector"],
+      reason: "A deny-list of keys a domain's state may not carry into a repair's context. Denies only; reads no field." },
+    { path: "packages/fluxiq/src/runtime/native-nodes/native-node-runtime.ts", terms: ["password"],
+      reason: "Redacts secret-named keys from a native node's log. Denies only." },
+    { path: "packages/fluxiq/src/runtime/llm/model-facing/control-text.ts", terms: ["selector"],
+      reason: "Screens words that only ever say how a control is found out of what a model reads. Denies only." },
+    { path: "packages/fluxiq/src/runtime/llm/harness/throw-screen.ts", terms: ["password"],
+      reason: "Screens header-shaped secrets out of a thrown message before a model reads it. Denies only." },
+    { path: "packages/fluxiq/src/framework/persistence/automation/project/reusable-llm-context-store.ts", terms: ["password"],
+      reason: "Refuses secret-named keys in a stored context. Denies only." },
+    { path: "packages/fluxiq/src/runtime/conversations/instructions/invocation.ts", terms: ["password"],
+      reason: "Withholds a secret-named argument from a conversation. Denies only." },
+    { path: "packages/fluxiq/src/runtime/conversations/instructions/respond.ts", terms: ["password"],
+      reason: "Leaves a secret-named argument out of what a reply reports. Denies only." },
+    { path: "packages/fluxiq/src/runtime/activity/text/human-label.ts", terms: ["css"],
+      reason: "Screens a generated styling class out of what a person reads as a label. Denies only." },
+    // Core's own target scoring, by decision.
+    { path: "packages/fluxiq/src/runtime/target-matching/", terms: ["visible text", "accessible name", "test id", "selector", "xpath"],
+      reason: "Scores a fingerprint against candidates by neutral default weights a domain may replace. Core's decision, t842." },
+    // The opaque address Core carries and never reads (Phase T).
+    { path: "packages/contracts/src/automation.ts", terms: ["selector"], reason: "A contract's opaque field. Carried, never read." },
+    { path: "packages/fluxiq/src/flows/authoring/model/action-element-target.ts", terms: ["visible text", "accessible name", "test id", "selector", "xpath"],
+      reason: "Passive types for a recorded target (t847). Declares the shape; holds no reading." },
+    { path: "packages/fluxiq/src/flows/authoring/model/actions.ts", terms: ["selector"], reason: "An action's opaque field. Carried, never read." },
+    // `selector` as a member of a published enum a domain answers with.
+    { path: "packages/fluxiq/src/flows/authoring/model/state.ts", terms: ["selector"], reason: "A member of the published StateElementKind, which a domain declares. Renaming it is a contract change." },
+    { path: "packages/fluxiq/src/framework/automation-service/service/evidence/state-elements.ts", terms: ["selector"], reason: "Ranks the published StateElementKind member. Never decides a path is one." },
+    { path: "packages/fluxiq/src/framework/automation-service/service/evidence/correlations.ts", terms: ["selector"], reason: "Weighs the published StateElementKind member. Never decides a path is one." },
+    { path: "packages/fluxiq/src/framework/automation-service/service/summaries/host-target-resolution.ts", terms: ["selector"],
+      reason: "A closed allow-list that admits a host's reported strategy into a run record and drops anything else. Reads no field. Moving it needs a design: its only caller is runtimeSessionToFlowRunDetail, a pure conversion that also runs when a stored run is read back, with no domain in hand." },
+    // A person's account password, and secret-named keys: credentials, not a control's field.
+    { path: "packages/contracts/src/platform/", terms: ["password"], reason: "Account credentials." },
+    { path: "packages/fluxiq/src/platform/provisioning/", terms: ["password"], reason: "Account credentials." },
+    { path: "packages/fluxiq/src/platform/store/types.ts", terms: ["password"], reason: "Account credentials." },
+    { path: "packages/fluxiq/src/programs/_shared/password-kdf/", terms: ["password"], reason: "Account credentials." },
+    { path: "packages/fluxiq/src/programs/database-manager/api/", terms: ["password"], reason: "A database connection's credentials." },
+    { path: "packages/fluxiq/src/programs/identity-access/", terms: ["password"], reason: "Account credentials." },
+    { path: "packages/fluxiq/src/programs/secret-keys/", terms: ["password"], reason: "Account credentials." },
+    { path: "packages/fluxiq/src/runtime/flow-authoring/candidate-start-hook/from-environment.ts", terms: ["password"], reason: "A deployment's start-hook credential, from its environment." },
+    { path: "packages/fluxiq/src/runtime/loop-limits/secret-named-key.ts", terms: ["password"], reason: "Recognises secret-named keys so a value under one is withheld. Denies only." }
   ],
 
   // Path prefixes exempt from the depth limit because a framework dictates

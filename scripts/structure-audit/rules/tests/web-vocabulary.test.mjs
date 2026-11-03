@@ -41,7 +41,7 @@ function makeCtx(files, config = {}) {
 
 const findingsFor = (source) => run(makeCtx({ "packages/fluxiq/src/model.ts": source }));
 const READER = "packages/fluxiq/src/reader.ts";
-const readerCount = (source, allow) => run(makeCtx({ [READER]: source }, { domainReadingFreePaths: [{ path: READER, ...(allow ? { allow } : {}) }] })).reduce((total, finding) => total + finding.value, 0);
+const withExceptions = (source, domainReadingExceptions) => run(makeCtx({ [READER]: source }, { domainReadingExceptions })).filter((finding) => finding.ratchet).reduce((total, finding) => total + finding.value, 0);
 const count = (source) => findingsFor(source).reduce((total, finding) => total + finding.value, 0);
 const named = (name) => count(`export const ${name} = 1;`);
 
@@ -172,8 +172,8 @@ test("a string that is not a property key is data, not a name Core learned", () 
     "export const message = \"the selector did not match; check the xpath\";",
     "export const code = \"element_target.invalid_selector\";",
     "export const prompt = `Return the tagName and the innerHTML of the iframe`;",
-    "export const sensitive = /cookie|browser|selector/i;",
-    "export const promoted = new Set([\"selector\", \"xpath\", \"tagName\", \"classNames\"]);",
+    "export const sensitive = /cookie|browser/i;",
+    "export const promoted = new Set([\"tagName\", \"classNames\"]);",
     "export const passthrough = [\"click\", \"scroll\", \"hover\"] as const;",
     "export const kind = value === \"click\" ? 1 : 0;"
   ]) {
@@ -211,9 +211,9 @@ test("the message says what to use instead and what the baseline means", () => {
   assert.match(message, /the recorded count may only fall/);
 });
 
-// --- A module whose browser reading moved to the domain, held to more. ---
+// --- A browser's fields, in every audited file. ---
 
-test("a browser field read under a name the ordinary terms leave alone is a finding in a listed file", () => {
+test("a browser field read under a name the ordinary terms leave alone is a finding", () => {
   for (const source of [
     "export const name = control.accessibleName;",
     "export const name = control.visibleText;",
@@ -221,37 +221,56 @@ test("a browser field read under a name the ordinary terms leave alone is a find
     "export const kind = control.inputType;",
     "export const id = control.testId;",
     "export const token = attributes.autocomplete;",
-    "export const type = control[\"inputType\"];"
+    "export const type = control[\"inputType\"];",
+    "export const words = control.innerText;"
   ]) {
-    assert.ok(readerCount(source) >= 1, source);
-    assert.equal(count(source), 0, `not counted outside the list: ${source}`);
+    assert.ok(count(source) >= 1, source);
   }
 });
 
-test("a browser field written as a key list's string is a finding in a listed file", () => {
-  assert.equal(readerCount('export const KEYS = new Set(["target", "selector", "element"]);'), 1);
-  assert.equal(readerCount('export const secret = attributes.type === "password";'), 1);
-  assert.equal(readerCount('export const KEYS = ["testid", "test_id"];'), 2);
-  assert.equal(count('export const KEYS = new Set(["target", "selector", "element"]);'), 0);
+test("a browser field written as a key list's string is a finding", () => {
+  assert.equal(count('export const KEYS = new Set(["target", "selector", "element"]);'), 1);
+  assert.equal(count('export const secret = attributes.type === "password";'), 1);
+  assert.equal(count('export const KEYS = ["testid", "test_id"];'), 2);
+  assert.equal(count('export const FIELDS = ["accessibleName", "visibleText", "label"];'), 2);
 });
 
-test("a sentence that uses the word, and a regular expression, stay data in a listed file", () => {
-  assert.equal(readerCount('export const said = "enter your password here";'), 0);
-  assert.equal(readerCount("export const shape = /password|selector|\\.css/;"), 0);
+test("a browser field in a regular expression is a finding", () => {
+  assert.equal(count("export const kind = /selector/;"), 1);
+  assert.equal(count("export const kind = /\\bselector\\b/;"), 1);
+  assert.equal(count("export const kind = /testid|test_id/;"), 1);
+  assert.equal(count("export const secret = /secret|password/i;"), 1);
 });
 
-test("an entry's allow keeps the one term that file may hold", () => {
-  assert.equal(readerCount('export const stable = kind === "selector";', ["selector"]), 0);
-  assert.equal(readerCount('export const stable = kind === "selector" || kind === "password";', ["selector"]), 1);
+test("a sentence that uses the word stays data, and a longer name that only contains a whole-word term is left alone", () => {
+  assert.equal(count('export const said = "enter your password here";'), 0);
+  assert.equal(count('export const said = "the selector did not match";'), 0);
+  assert.equal(count("export const isWeakPassword = true;"), 0);
+  assert.equal(count("export const freshEvidenceSelector = () => true;"), 0);
 });
 
-test("a listed path that names no audited file fails, and never as a ratchet", () => {
-  const findings = run(makeCtx({ [READER]: "export const a = 1;" }, { domainReadingFreePaths: [{ path: "packages/fluxiq/src/moved.ts" }] }));
-  assert.equal(findings.length, 1);
-  assert.equal(findings[0].ratchet, false);
-  assert.match(findings[0].message, /names no audited file/);
+test("an exception holds only the terms it names, only where it applies", () => {
+  const stable = 'export const stable = kind === "selector";';
+  assert.equal(withExceptions(stable, [{ path: READER, terms: ["selector"], reason: "r" }]), 0);
+  assert.equal(withExceptions(stable, [{ path: "packages/fluxiq/src/", terms: ["selector"], reason: "r" }]), 0);
+  assert.equal(withExceptions('export const both = kind === "selector" || kind === "password";', [{ path: READER, terms: ["selector"], reason: "r" }]), 1);
+  assert.equal(withExceptions(stable + '\nexport const other = "password";', [{ path: "packages/other/", terms: ["selector"], reason: "r" }]), 2);
 });
 
-test("a repository that lists nothing is unchanged", () => {
-  assert.deepEqual(run(makeCtx({ [READER]: "export const name = control.accessibleName;" })), []);
+test("an exception that holds nothing any more fails, and never as a ratchet", () => {
+  for (const exception of [{ path: READER, terms: ["selector"], reason: "r" }, { path: "packages/fluxiq/src/moved.ts", terms: ["selector"], reason: "r" }]) {
+    const findings = run(makeCtx({ [READER]: "export const a = 1;" }, { domainReadingExceptions: [exception] }));
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].ratchet, false);
+    assert.match(findings[0].message, /the list can only shrink/);
+  }
+});
+
+test("a term that is also an ordinary term counts once, and an exception does not excuse an ordinary one", () => {
+  assert.equal(count("export const selector = 1;"), 1);
+  assert.equal(withExceptions("export const selector = 1;", [{ path: READER, terms: ["selector"], reason: "r" }]), 1);
+});
+
+test("a repository that audits nothing keeps no exceptions", () => {
+  assert.deepEqual(run(makeCtx({ "apps/x.ts": "export const a = 1;" }, { domainReadingExceptions: [{ path: "packages/a.ts", terms: ["selector"], reason: "r" }] })), []);
 });
