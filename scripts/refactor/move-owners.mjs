@@ -55,7 +55,7 @@ export function compileMoves(sourceRoot, moves) {
   return { rules, apply };
 }
 
-function repositoryFiles(root) {
+export function repositoryFiles(root) {
   const listed = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   return listed.split("\0").filter((file) => file && !SKIPPED_PATH.test(file) && fs.existsSync(path.join(root, file)));
 }
@@ -67,13 +67,13 @@ function scriptKind(file) {
   return ts.ScriptKind.TS;
 }
 
-function parse(file, text) {
+export function parse(file, text) {
   return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKind(file));
 }
 
 // Every string literal whose value is a module path, including the test
 // runner's mock calls and a `new URL("..", import.meta.url)` read of a sibling.
-function specifierLiterals(sourceFile) {
+export function specifierLiterals(sourceFile) {
   const found = [];
   const add = (node) => {
     if (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) found.push(node);
@@ -148,7 +148,7 @@ function pathEdits(text, range, pattern, moves, sourceRoot) {
   return edits;
 }
 
-function applyEdits(text, edits) {
+export function applyEdits(text, edits) {
   const ordered = [...edits].sort((a, b) => b.start - a.start);
   let out = text;
   for (let index = 0; index < ordered.length; index += 1) {

@@ -78,6 +78,11 @@ export const CONFIG = {
       to: "packages/fluxiq/src/programs/automation-studio",
       reason: "The automation executor is framework-owned; program composition and persistence cannot be dependencies of the engine."
     },
+    ...["api-contracts", "client-gateway", "core", "domains", "flows", "framework", "io", "platform", "runtime", "ui"].map((area) => ({
+      from: `packages/fluxiq/src/${area}`,
+      to: "packages/fluxiq/src/programs/automation-studio",
+      reason: "Automation Studio is a controller of the framework (user, 2026-11-02), so the framework never depends on it. Only the program catalog composes it."
+    })),
     {
       from: "packages/fluxiq/src/runtime/automation-host",
       to: "packages/fluxiq/src/engine/automation",
@@ -88,6 +93,17 @@ export const CONFIG = {
       to: "packages/fluxiq/src/runtime/adaptation/recovery",
       valueOnly: true,
       reason: "runtime/llm must not import a value out of runtime/recovery: recovery drives the evidence loop out of runtime/llm, so the return edge closes a module cycle and a constant read at module-evaluation time arrives undefined with a clean type check. Import the type if that is what you need, call the value from the coordinator that already owns both sides, or move the shared value into runtime/loop-limits/, which neither directory owns."
+    }
+  ],
+
+  // Programs that only control the framework, for the program-controllers rule:
+  // what each may hold, and the line budget past which a function has logic in it.
+  controllerPrograms: [
+    {
+      path: "packages/fluxiq/src/programs/automation-studio",
+      allowed: ["api", "ui", "index.ts", "metadata.ts"],
+      maxFunctionLines: 20,
+      reason: "Automation Studio is a controller of the framework (user, 2026-11-02)."
     }
   ],
 
