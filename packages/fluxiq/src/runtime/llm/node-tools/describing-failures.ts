@@ -56,7 +56,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence
 import type { AutomationStudioHarnessOptionImplementation } from "../harness-options/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY } from "./described-nodes-key.ts";
 import type { AutomationStudioLlmNodeDescriptions } from "./node-descriptions.ts";
-import { AUTOMATION_STUDIO_NODE_REPLAY_KEY } from "./replay.ts";
+import { AUTOMATION_STUDIO_NODE_REPLAY_KEY } from "./replay/replay.ts";
 
 /** `implementation` (the library's), describing the node of each call it makes and explaining each call that fails. */
 export function automationStudioLlmRunNodeDescribingFailures(

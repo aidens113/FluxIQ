@@ -18,7 +18,7 @@
 // says why nothing was left (`candidate.stall_*`).
 
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/evidence-loop.ts";
-import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, type AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, type AutomationStudioFlowCandidateTrialGate } from "./trial/index.ts";
 
 /** The code a stall ends under when its retest was already run at this revision and trial count. */
 export const AUTOMATION_STUDIO_CANDIDATE_STALL_RETESTED_CODE = "candidate.stall_retest_already_run";

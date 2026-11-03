@@ -11,12 +11,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../../flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../binding.ts";
-import { automationStudioPlanNodeHandleSites } from "../plan-node-handles.ts";
+import { automationStudioPlanNodeHandleSites } from "../plan/index.ts";
 import {
   AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES,
   assertAutomationStudioFlowBootstrapPlanHandlesResolved,
   resolveAutomationStudioFlowBootstrapPlanParameters
-} from "../plan-parameter-resolution.ts";
+} from "../plan/index.ts";
 
 type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]>;
 

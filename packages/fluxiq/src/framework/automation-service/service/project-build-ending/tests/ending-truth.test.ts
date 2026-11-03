@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActivityTimeLimitTried } from "../../../../../runtime/automation-activity/index.ts";
-import { automationStudioProjectBuildReasonChecked } from "../reason-checked.ts";
+import { automationStudioProjectBuildReasonChecked } from "../reason/index.ts";
 import { automationStudioProjectBuildRecordTold } from "../record-told.ts";
 
 // t738, everything-store `run-mvgf04kw-310fc169`: the ending said "the part that reaches checkout never passed its

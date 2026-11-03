@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftDryRunGate, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioFlowDraftReplayNode } from "../replay-span.ts";
+import type { AutomationStudioFlowDraftReplayNode } from "../replay/index.ts";
 
 const REPLAYED = "core.replay.replayed";
 

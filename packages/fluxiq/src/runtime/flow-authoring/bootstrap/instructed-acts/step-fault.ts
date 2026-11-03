@@ -12,7 +12,7 @@
 // loop applies both after this one.
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
 import { automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed } from "../../draft/index.ts";
-import { automationStudioDraftStepDeclaresConsequence } from "./act-consequence.ts";
+import { automationStudioDraftStepDeclaresConsequence } from "./act/index.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActMissing } from "./contracts.ts";
 import { automationStudioInstructedActRepeatSpans, automationStudioInstructedActSpanStopsShort } from "./span.ts";
 

@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../../../../flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleView } from "../../../binding.ts";
-import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID } from "../../../plan-fact-targets.ts";
-import { resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../plan-parameter-resolution.ts";
+import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID } from "../../../plan/index.ts";
+import { resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../plan/index.ts";
 
 type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]>;
 

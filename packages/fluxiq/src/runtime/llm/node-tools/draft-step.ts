@@ -4,7 +4,7 @@
 // called, and Core could say nothing about any of it: an opaque name and an
 // opaque argument. That is still true of a domain tool. It stopped being true
 // of the thing this module is for, because the library-as-one-verb
-// (`runtime/llm/node-tools/run-node.ts`) is Core's own shape: the call names a
+// (`runtime/llm/node-tools/run/node.ts`) is Core's own shape: the call names a
 // node of the registry and carries that node's own parameters, so a step taken
 // through it is already a step of a Flow and needs no domain to translate it.
 //
@@ -24,7 +24,7 @@
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run-node.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run/node.ts";
 // A type only, so nothing is imported back out of the directory this one is read by.
 import type { AutomationStudioFlowDraftWrittenStep } from "../../flow-authoring/bootstrap/index.ts";
 

@@ -143,7 +143,7 @@ const REFUSAL_REASONS: readonly Reason[] = [
 
 /**
  * Why a step a test of the Flow ran did not hold, by its replay code
- * (`runtime/llm/node-tools/replay.ts`). It read "it
+ * (`runtime/llm/node-tools/replay/replay.ts`). It read "it
  * didn't work the same way again" for all of them, so a card said "Didn't
  * work: it didn't work the same way again" -- the result twice and no reason
  * (t174-w111 D21, `run-musq0b1m-0472cfa0`).

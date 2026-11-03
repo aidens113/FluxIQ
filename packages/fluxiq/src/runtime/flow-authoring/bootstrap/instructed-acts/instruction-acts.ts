@@ -67,7 +67,7 @@
 // realistic sites (`apps/scenario-lab/src/scenarios/*/live-tasks.ts` in the web
 // repository): each consequential task yields its acts, and no extraction task
 // yields any. The tests pin both directions.
-import { automationStudioInstructedActImpliedConsequence } from "./act-consequence.ts";
+import { automationStudioInstructedActImpliedConsequence } from "./act/index.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActKind } from "./contracts.ts";
 import { automationStudioInstructedChoices } from "./instruction-choices.ts";
 

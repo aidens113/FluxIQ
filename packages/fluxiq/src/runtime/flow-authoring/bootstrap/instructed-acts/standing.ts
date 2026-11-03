@@ -80,7 +80,7 @@ import {
   automationStudioInstructedActIsEvidenceFault,
   automationStudioInstructedActStepDidInstead,
   automationStudioInstructedActStepThatNamesIt
-} from "./act-evidence.ts";
+} from "./act/index.ts";
 import { automationStudioInstructedChoiceSetBy } from "./choice-evidence.ts";
 import { automationStudioInstructedActClaimDoubt } from "./claim-doubt.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActMissingReason } from "./contracts.ts";

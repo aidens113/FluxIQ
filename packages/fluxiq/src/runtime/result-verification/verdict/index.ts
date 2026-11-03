@@ -110,7 +110,7 @@
 export { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./codes.ts";
 export { automationStudioResultScreenedDefects } from "./defects.ts";
 export { automationStudioResultVerdictFromDiagnosis } from "./from-diagnosis.ts";
-export { automationStudioResultKeptRowsFlagged } from "./kept-rows-flagged.ts";
+export { automationStudioResultKeptRowsFlagged } from "./kept/index.ts";
 export { automationStudioResultObservation } from "./observation.ts";
 export { automationStudioResultVerdict } from "./result-verdict.ts";
 export type { AutomationStudioResultVerdictInput } from "./types.ts";

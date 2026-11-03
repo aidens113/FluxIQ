@@ -21,7 +21,7 @@ import {
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
-import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressSaid } from "./not/done.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The ending of a build whose model provider stopped answering. */

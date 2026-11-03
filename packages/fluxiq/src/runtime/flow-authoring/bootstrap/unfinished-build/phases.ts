@@ -217,13 +217,13 @@ import {
   type AutomationStudioFlowBootstrapUnfinishedTest
 } from "./judgement.ts";
 import { automationStudioFlowBootstrapFinishingVerdict, type AutomationStudioFlowBootstrapFinishingVerdict } from "./finishing-verdict.ts";
-import { automationStudioFlowBootstrapNotDoable } from "./not-doable.ts";
-import { automationStudioFlowBootstrapNotFinished } from "./not-finished.ts";
+import { automationStudioFlowBootstrapNotDoable } from "./not/doable.ts";
+import { automationStudioFlowBootstrapNotFinished } from "./not/finished.ts";
 import { automationStudioFlowBootstrapJudgementProgress, automationStudioFlowBootstrapJudgementUnmeasured } from "./progress.ts";
 import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unreadable.ts";
 import { automationStudioFlowBootstrapJudgeAtReserve } from "./reserve-judging.ts";
 import { automationStudioFlowBootstrapProviderUnavailable } from "./provider-unavailable.ts";
-import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopAnnouncementSaid, automationStudioFlowBootstrapStopSaid, automationStudioFlowBootstrapTestReachSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopAnnouncementSaid, automationStudioFlowBootstrapStopSaid, automationStudioFlowBootstrapTestReachSaid } from "./not/done.ts";
 import { automationStudioFlowBootstrapRoundEnding } from "./round-ending.ts";
 import { automationStudioFlowBootstrapRoundFunding } from "./round-funding.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";

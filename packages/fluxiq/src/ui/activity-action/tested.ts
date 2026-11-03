@@ -1,9 +1,9 @@
 import type { ActivityActionKind } from "./types.ts";
 
-/** A replay's result codes (`runtime/llm/node-tools/replay.ts`). */
+/** A replay's result codes (`runtime/llm/node-tools/replay/replay.ts`). */
 const VERIFIED = "core.replay.verified";
 const ALREADY_DONE: ReadonlySet<string> = new Set(["core.replay.present", "core.replay.remembered"]);
-/** A step written into the Flow without being run (`runtime/llm/node-tools/replay.ts`, `write: true`). */
+/** A step written into the Flow without being run (`runtime/llm/node-tools/replay/replay.ts`, `write: true`). */
 const WRITTEN = "core.run_node.written";
 
 /**

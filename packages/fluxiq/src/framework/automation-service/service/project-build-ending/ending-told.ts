@@ -28,10 +28,10 @@
 import { automationStudioActivityEndedReason } from "../../../../runtime/automation-activity/index.ts";
 import type { AutomationStudioProjectBuildReading } from "./reading.ts";
 import { automationStudioProjectBuildReadingsTold } from "./readings-told.ts";
-import { automationStudioProjectBuildReasonNothingChanged } from "./reason-nothing-changed.ts";
-import { automationStudioProjectBuildReasonContradicted } from "./reason-contradicted.ts";
-import { automationStudioProjectBuildReasonChecked } from "./reason-checked.ts";
-import { automationStudioProjectBuildReasonUnrepeated } from "./reason-unrepeated.ts";
+import { automationStudioProjectBuildReasonNothingChanged } from "./reason/index.ts";
+import { automationStudioProjectBuildReasonContradicted } from "./reason/index.ts";
+import { automationStudioProjectBuildReasonChecked } from "./reason/index.ts";
+import { automationStudioProjectBuildReasonUnrepeated } from "./reason/index.ts";
 
 /** The most of the supervisor's reason the row says (t649). */
 const MAX_ENDED_REASON = 240;

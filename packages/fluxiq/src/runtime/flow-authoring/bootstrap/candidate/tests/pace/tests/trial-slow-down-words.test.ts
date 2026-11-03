@@ -5,7 +5,7 @@
 // answers it, stays (`../../trial-gate-slow-down.test.ts`).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
-import { automationStudioCandidateTrialSlowDown } from "../../../trial-slow-down.ts";
+import { automationStudioCandidateTrialSlowDown } from "../../../trial/index.ts";
 import type { AutomationStudioFlowCandidate } from "../../../index.ts";
 
 const CLICK = "web.output.dom-click";

@@ -95,7 +95,7 @@ describe("candidate facade uses the actual service", () => {
 
 // Real helper pipeline with deterministic provider-free harness, not facade wiring.
 import { generateAutomationStudioFlowCandidateDraft } from "../candidate-generation.ts";
-import { automationStudioFlowBootstrapGenerationContext } from "../generation-context.ts";
+import { automationStudioFlowBootstrapGenerationContext } from "../generation/index.ts";
 import { candidateSourceFixture as sourceFixture } from "../../candidate-drafts/tests/fixtures.ts";
 import { AutomationStudioCandidateSource } from "../../candidate-drafts/index.ts";
 import { AutomationStudioProjectPaths, AutomationStudioFlowPaths } from "../../paths/index.ts";

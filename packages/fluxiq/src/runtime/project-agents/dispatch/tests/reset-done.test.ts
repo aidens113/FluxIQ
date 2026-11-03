@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetRead } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
-import { automationStudioProjectDispatchResetDone } from "../reset-done.ts";
+import { automationStudioProjectDispatchResetDone } from "../reset/index.ts";
 
 // t684, t679 open question 3: a reset came back done saying "Every lasting act
 // this build made is undone" while its undo of one was refused and the act

@@ -37,7 +37,7 @@ import {
   automationStudioInstructedActIsEvidenceFault,
   automationStudioInstructedActStepDidInstead,
   automationStudioInstructedActStepThatNamesIt
-} from "./act-evidence.ts";
+} from "./act/index.ts";
 import { automationStudioInstructedActsChecklist } from "./checklist.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
 

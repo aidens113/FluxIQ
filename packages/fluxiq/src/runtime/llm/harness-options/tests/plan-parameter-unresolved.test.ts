@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowBootstrapPlan } from "../../../flow-authoring/bootstrap/index.ts";
-import { AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES, resolveAutomationStudioFlowBootstrapPlanParameters } from "../plan-parameter-resolution.ts";
+import { AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES, resolveAutomationStudioFlowBootstrapPlanParameters } from "../plan/index.ts";
 
 function plan(): AutomationStudioFlowBootstrapPlan {
   return {

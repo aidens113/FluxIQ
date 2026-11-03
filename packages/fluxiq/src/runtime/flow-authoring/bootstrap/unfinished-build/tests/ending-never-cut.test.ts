@@ -13,9 +13,9 @@ import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBoot
 import { automationStudioFlowBootstrapEndingFitted } from "../ending-fit.ts";
 import { automationStudioFlowBootstrapJudgeWordsSaid } from "../judge-words.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "../kept-said.ts";
-import { automationStudioFlowBootstrapNotDoable } from "../not-doable.ts";
-import { automationStudioFlowBootstrapProgressAndTestSaid, automationStudioFlowBootstrapRepairingJudgedSaid } from "../not-done.ts";
-import { automationStudioFlowBootstrapNotFinished } from "../not-finished.ts";
+import { automationStudioFlowBootstrapNotDoable } from "../not/index.ts";
+import { automationStudioFlowBootstrapProgressAndTestSaid, automationStudioFlowBootstrapRepairingJudgedSaid } from "../not/index.ts";
+import { automationStudioFlowBootstrapNotFinished } from "../not/index.ts";
 import { automationStudioFlowBootstrapRepliesUnreadable } from "../replies-unreadable.ts";
 
 const MAX = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE;

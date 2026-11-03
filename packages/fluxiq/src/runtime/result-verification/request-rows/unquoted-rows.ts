@@ -155,8 +155,8 @@
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestWording } from "./request-wording.ts";
-import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRead, automationStudioRequestTextNamesRow, type AutomationStudioRequestRowNaming } from "./row-naming.ts";
-import { automationStudioRequestRowsReads, automationStudioRequestRowsStoredOf } from "./summary-reads.ts";
+import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRead, automationStudioRequestTextNamesRow, type AutomationStudioRequestRowNaming } from "./row/index.ts";
+import { automationStudioRequestRowsReads, automationStudioRequestRowsStoredOf } from "./summary/index.ts";
 import { automationStudioRequestConditionWords } from "../asked-words/index.ts";
 import type {
   AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsKept, AutomationStudioRequestRowsRead, AutomationStudioRequestRowsSettledMember, AutomationStudioRequestRowsTest, AutomationStudioRequestRowsUnquoted

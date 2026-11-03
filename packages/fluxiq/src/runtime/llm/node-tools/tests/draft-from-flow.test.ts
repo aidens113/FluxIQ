@@ -14,7 +14,7 @@ import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstr
 import { automationStudioFlowDraftReplayable, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../draft-step.ts";
 import { automationStudioFlowDraftPlanNodeIds, automationStudioFlowDraftSeedFromFlow } from "../draft-from-flow.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run-node.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run/index.ts";
 
 function node(id: string, definitionId: string, parameterValues?: Record<string, string>): AutomationStudioFlowNode {
   return { id, definitionId, ...(parameterValues ? { parameterValues } : {}) };

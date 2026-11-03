@@ -37,7 +37,7 @@ import type { AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/i
 import { automationStudioFlowDraftStepId } from "../../flow-authoring/draft/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-authoring/bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../node-tools/index.ts";
-import { AUTOMATION_STUDIO_PLAN_STEP_CONSEQUENCES_KEY } from "./plan-step-consequences.ts";
+import { AUTOMATION_STUDIO_PLAN_STEP_CONSEQUENCES_KEY } from "./plan/index.ts";
 
 /**
  * The refs, `<subflow key>.<node key>`, of the plan's nodes that are steps the

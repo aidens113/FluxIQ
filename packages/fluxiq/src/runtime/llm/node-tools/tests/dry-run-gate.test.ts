@@ -37,7 +37,7 @@ import {
   type AutomationStudioFlowDraftStep
 } from "../../../flow-authoring/draft/index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES } from "../replay.ts";
+import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES } from "../replay/index.ts";
 
 const UNREPRODUCIBLE = "core.replay.unreproducible";
 const REPLAYED = "core.replay.replayed";

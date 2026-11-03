@@ -29,7 +29,7 @@
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestPhrases } from "./request-phrases.ts";
-import { automationStudioRequestRowsReads } from "./summary-reads.ts";
+import { automationStudioRequestRowsReads } from "./summary/index.ts";
 import type { AutomationStudioRequestRowsKept } from "./types.ts";
 import { automationStudioRequestRowWords } from "./words.ts";
 

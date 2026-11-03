@@ -9,7 +9,7 @@
 // settled member is held: under each member where all are settled, row by row
 // where one is not. A library catalog (`./settled-together-fixture.ts`).
 import { describe, expect, it } from "vitest";
-import { automationStudioRequestRowsReads } from "../../../summary-reads.ts";
+import { automationStudioRequestRowsReads } from "../../../summary/index.ts";
 import { automationStudioResultLeftOutRowsUnquoted } from "../../../unquoted-rows.ts";
 import {
   SETTLED_TOGETHER_CONDITIONS, SETTLED_TOGETHER_FORMAT_ROW, SETTLED_TOGETHER_NAMES, SETTLED_TOGETHER_ROW, settledTogetherRunSummary, settledTogetherWording

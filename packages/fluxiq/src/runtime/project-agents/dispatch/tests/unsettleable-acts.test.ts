@@ -13,7 +13,7 @@ import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop
 import { automationStudioProjectBuilderReturn } from "../../contracts/index.ts";
 import { automationStudioProjectDispatchEnding as ending } from "../ending.ts";
 import type { AutomationStudioProjectResetPorts } from "../index.ts";
-import { automationStudioProjectDispatchResetDone } from "../reset-done.ts";
+import { automationStudioProjectDispatchResetDone } from "../reset/index.ts";
 import { gardenBrief, gardenBuild } from "./dispatch-fixture.ts";
 
 const LOOK: AutomationStudioLlmEvidenceTool = { toolId: "web.page.read", description: "Read the page", effect: "observe", inputSchema: { type: "object" }, initialObservation: { input: {} } };

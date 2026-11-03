@@ -1,7 +1,7 @@
 // What a build request must carry: the caller it is made for, and nothing that
 // authorizes the model calls themselves.
 import { describe, expect, it } from "vitest";
-import { readAutomationStudioFlowBootstrapGenerationRequest } from "../generation-request.ts";
+import { readAutomationStudioFlowBootstrapGenerationRequest } from "../generation/index.ts";
 
 const CALLER = { actorUserId: "user.1", actorSessionId: "session.1" };
 

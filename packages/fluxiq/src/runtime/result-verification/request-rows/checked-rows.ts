@@ -78,10 +78,10 @@
 // direction's is; the condition that left it out is still said as before.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { AutomationStudioRequestRowId } from "./row-id.ts";
-import { automationStudioRequestRowNaming } from "./row-naming.ts";
-import { automationStudioRequestRowValuesAgree } from "./row-values.ts";
-import { automationStudioRequestRowsReads } from "./summary-reads.ts";
+import { AutomationStudioRequestRowId } from "./row/index.ts";
+import { automationStudioRequestRowNaming } from "./row/index.ts";
+import { automationStudioRequestRowValuesAgree } from "./row/index.ts";
+import { automationStudioRequestRowsReads } from "./summary/index.ts";
 import type { AutomationStudioRequestRowsRead, AutomationStudioRequestRowsStored } from "./types.ts";
 import { automationStudioRequestRowIds, automationStudioRequestRowWords } from "./words.ts";
 

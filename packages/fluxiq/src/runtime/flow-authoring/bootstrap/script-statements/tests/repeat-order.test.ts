@@ -10,7 +10,7 @@ import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRoutin
 import type { AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowDraftWrittenStep } from "../../authoring/index.ts";
-import { automationStudioFlowPlanRepeatOrder } from "../repeat-order.ts";
+import { automationStudioFlowPlanRepeatOrder } from "../repeat/index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
 const READ = "web.output.dom-extract_list";

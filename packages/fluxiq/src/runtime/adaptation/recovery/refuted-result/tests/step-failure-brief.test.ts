@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY } from "../../../../../framework/automation-service/route-state/signatures/index.ts";
-import { automationStudioStepFailureReauthorBrief } from "../step-failure-brief.ts";
+import { automationStudioStepFailureReauthorBrief } from "../step/index.ts";
 
 const effect: JsonObject = { v: "effect.test", added: ["a1", "a2"] };
 

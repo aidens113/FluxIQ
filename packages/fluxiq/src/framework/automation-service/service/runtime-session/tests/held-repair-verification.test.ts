@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioRunResultCheck } from "../../runtime-adaptation/index.ts";
 import { automationStudioHeldRepairVerification } from "../held-repair-verification.ts";
-import { AutomationStudioInRunRepairLedger } from "../in-run-repair-ledger.ts";
+import { AutomationStudioInRunRepairLedger } from "../in/index.ts";
 
 const ROOT = ["frame.root"];
 const CHILD = ["frame.root", "frame.child"];

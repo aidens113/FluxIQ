@@ -26,7 +26,7 @@ import { automationStudioRunDetailAttemptsInRunOrder, type AutomationStudioRunDe
 import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
 import { automationStudioRunDetailRecoveryTrace } from "./recovery-trace.ts";
 import { automationStudioRunDetailReacquire } from "./reacquire.ts";
-import { automationStudioRunStop } from "./run-stop.ts";
+import { automationStudioRunStop } from "./run/stop.ts";
 import { automationStudioRunDetailSkipped } from "./skipped.ts";
 import { automationStudioRunDetailStateRouting } from "./state-routing.ts";
 import { automationStudioRunDetailStepCount } from "./step-count.ts";

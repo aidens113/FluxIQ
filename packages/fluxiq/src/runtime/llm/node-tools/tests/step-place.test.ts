@@ -14,8 +14,8 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftSeedFromFlow } from "../draft-from-flow.ts";
-import { automationStudioRunNodeStartPages } from "../run-start-pages.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run-node.ts";
+import { automationStudioRunNodeStartPages } from "../run/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run/index.ts";
 import { automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted, type AutomationStudioNodeRerunPlace } from "../step-place.ts";
 
 const CHEAP_PER_PAGE = [4, 3, 3, 3, 0];

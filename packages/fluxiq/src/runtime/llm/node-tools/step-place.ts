@@ -110,9 +110,9 @@ import {
 import { automationStudioFlowDraftStepCarriedJoin } from "../../flow-authoring/draft/carried-step/index.ts";
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
-import { automationStudioFlowDraftReplaySteps } from "./replay-draft.ts";
-import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayNodeOf } from "./replay-span.ts";
-import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES, automationStudioNodeReplayResetCall, automationStudioNodeReplayToolId } from "./replay.ts";
+import { automationStudioFlowDraftReplaySteps } from "./replay/draft.ts";
+import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayNodeOf } from "./replay/index.ts";
+import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES, automationStudioNodeReplayResetCall, automationStudioNodeReplayToolId } from "./replay/replay.ts";
 
 /** The result code of a rerun that ran nothing, because its step's place could not be put back. */
 export const AUTOMATION_STUDIO_NODE_RERUN_PLACE_UNREACHABLE_CODE = "llm_evidence_loop.rerun_place_unreachable";

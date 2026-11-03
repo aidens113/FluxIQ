@@ -119,7 +119,7 @@ import type {
   AutomationStudioInstructedActsVerdict,
   AutomationStudioInstructedChoice
 } from "./contracts.ts";
-import { automationStudioInstructedActEvidenceSaid, automationStudioInstructedActIsEvidenceFault } from "./act-evidence.ts";
+import { automationStudioInstructedActEvidenceSaid, automationStudioInstructedActIsEvidenceFault } from "./act/index.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
 import { automationStudioInstructedChoiceValueSaid } from "./instruction-choices.ts";
 import { AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS } from "./kind-words.ts";

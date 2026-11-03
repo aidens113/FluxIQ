@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { automationStudioLlmStepLogTool, replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioFlowDraftReplayNode } from "../replay-span.ts";
+import type { AutomationStudioFlowDraftReplayNode } from "../replay/index.ts";
 
 const NODES: Record<string, AutomationStudioFlowDraftReplayNode> = {
   "node.list": { inputs: [], outputs: [{ id: "records", type: "array" }] },

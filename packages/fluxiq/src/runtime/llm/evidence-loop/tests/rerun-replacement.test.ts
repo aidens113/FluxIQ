@@ -13,7 +13,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
-import { automationStudioLlmEvidenceRerunReplaced } from "../rerun-replacement.ts";
+import { automationStudioLlmEvidenceRerunReplaced } from "../rerun/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 
 const go = { toolId: "go", description: "Go somewhere.", inputSchema: { type: "object" }, effect: "mutate" as const };

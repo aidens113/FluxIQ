@@ -152,10 +152,10 @@ import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvi
 import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach } from "./binding.ts";
 import type { AutomationStudioResolvedControlIntent } from "../resolved-control-intent/index.ts";
-import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
+import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan/index.ts";
 import { automationStudioAmendedPlanParameters } from "./amended-plan-parameters.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
-import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView, type AutomationStudioFlowBootstrapPlanParameterResolution } from "./plan-parameter-resolution.ts";
+import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView, type AutomationStudioFlowBootstrapPlanParameterResolution } from "./plan/index.ts";
 import { automationStudioFlowPlanListingOrderInRepeatIssues, automationStudioFlowPlanRecordReplaceInRepeatIssues } from "../../flow-authoring/bootstrap/script-statements/index.ts";
 import { automationStudioFlowPlanRepeatWhereInProcessIssues } from "../../flow-authoring/bootstrap/repeat-where/index.ts";
 import { automationStudioFlowBootstrapCompletionIssueFeedback } from "./completion-issue-feedback.ts";

@@ -38,7 +38,7 @@ import { mapWithConcurrency, uniqueStrings } from "../collections.ts";
 import type { FlowAdaptationIndex, FlowInstructionIndex, FlowRunIndex, FlowSubflowIndex, RuntimeIndex } from "../indexes/index.ts";
 import { subflowSummaryFromSubflow } from "../flows/index.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
-import { AutomationStudioRunDetailWriter } from "./run-detail-writer.ts";
+import { AutomationStudioRunDetailWriter } from "./run/index.ts";
 
 // The summary indexes every list view reads, their SQL-backed repositories and
 // paging, and the JSONL stream store that run details are appended to. The four

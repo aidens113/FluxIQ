@@ -19,7 +19,7 @@ import {
   automationStudioFlowBootstrapStopSaid,
   automationStudioFlowBootstrapTestSaid,
   automationStudioFlowBootstrapUnsettledForBuild
-} from "../not-done.ts";
+} from "../not/index.ts";
 
 const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is.";
 

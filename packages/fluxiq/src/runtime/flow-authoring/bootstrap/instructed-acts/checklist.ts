@@ -83,7 +83,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
 import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposed } from "../../draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
-import { automationStudioInstructedActChangeShows, automationStudioInstructedActEvidenceSaid, automationStudioInstructedActIsEvidenceFault } from "./act-evidence.ts";
+import { automationStudioInstructedActChangeShows, automationStudioInstructedActEvidenceSaid, automationStudioInstructedActIsEvidenceFault } from "./act/index.ts";
 import { automationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
 import { automationStudioInstructedActClaimDoubt } from "./claim-doubt.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedChoice } from "./contracts.ts";

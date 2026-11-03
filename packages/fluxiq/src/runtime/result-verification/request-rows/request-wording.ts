@@ -32,7 +32,7 @@ import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/m
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestAppliedExclusions } from "./applied-exclusions.ts";
 import { automationStudioRequestPhrases, type AutomationStudioRequestPhrases } from "./request-phrases.ts";
-import { automationStudioRequestRowsReads } from "./summary-reads.ts";
+import { automationStudioRequestRowsReads } from "./summary/index.ts";
 import { automationStudioRequestRowWordCarries, automationStudioRequestRowWords } from "./words.ts";
 
 /** The request, read for what a judge's words say of it. */

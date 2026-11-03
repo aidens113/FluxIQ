@@ -10,7 +10,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import { automationStudioLlmEvidenceHeldAmendments } from "../held-amendments.ts";
-import { automationStudioLlmEvidenceRerunReplaced } from "../rerun-replacement.ts";
+import { automationStudioLlmEvidenceRerunReplaced } from "../rerun/index.ts";
 
 const go = { toolId: "go", description: "Go or press.", inputSchema: { type: "object" }, effect: "mutate" as const };
 const stalled = () => new Error("stalled");

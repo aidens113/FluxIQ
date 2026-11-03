@@ -29,9 +29,9 @@ export * from "./final-decision-row.ts";
 export * from "./held-amendments.ts";
 // What counts as progress, and the build trace read off it, live beside this directory (`../evidence-progress/`), published here as before.
 export * from "../evidence-progress/index.ts";
-export * from "./rerun-replacement.ts";
-export * from "./rerun-input.ts";
-export * from "./rerun-request.ts";
+export * from "./rerun/replacement.ts";
+export * from "./rerun/input.ts";
+export * from "./rerun/request.ts";
 export * from "./resume.ts";
 export * from "./result.ts";
 export * from "./tool.ts";

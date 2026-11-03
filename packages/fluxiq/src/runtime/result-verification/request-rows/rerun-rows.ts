@@ -22,8 +22,8 @@
 // that left them out, and -- when every one is kept -- to complete, so the Flow
 // is tested from its start and judged again.
 
-import { automationStudioRequestRowNaming } from "./row-naming.ts";
-import { automationStudioRequestRowLabel } from "./summary-reads.ts";
+import { automationStudioRequestRowNaming } from "./row/index.ts";
+import { automationStudioRequestRowLabel } from "./summary/index.ts";
 import type { AutomationStudioRequestRowsAfterRerun, AutomationStudioRequestRowsNamed } from "./types.ts";
 import { automationStudioRequestRowIds, automationStudioRequestRowWords } from "./words.ts";
 

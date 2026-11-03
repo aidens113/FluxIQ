@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioResultReadCondition } from "../../read-condition.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
-import { automationStudioResultSummaryWithAlsoInResult } from "../summary-with-also-in-result.ts";
+import { automationStudioResultSummaryWithAlsoInResult } from "../summary/index.ts";
 import type { AutomationStudioRequestRowsStoredMark } from "../types.ts";
 import { RENEWALS_LEFT_OUT, RENEWALS_REQUEST_EVERY_LOAN, RENEWALS_YES, RENEWALS_YES_EXPLAINED, renewalsRunSummary, renewalsWording } from "./renewals-fixture.ts";
 

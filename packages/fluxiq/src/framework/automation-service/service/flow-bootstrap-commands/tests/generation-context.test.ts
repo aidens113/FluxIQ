@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../../flows/authoring/model/index.ts";
 import { candidateSourceFixture as fixture } from "../../candidate-drafts/tests/fixtures.ts";
-import { automationStudioFlowBootstrapGenerationContext as context } from "../generation-context.ts";
+import { automationStudioFlowBootstrapGenerationContext as context } from "../generation/index.ts";
 
 function input() {
   return { projectId: "project.1", flowId: "flow.1", instructions: [fixture.instruction()],

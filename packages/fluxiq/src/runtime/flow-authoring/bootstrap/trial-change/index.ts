@@ -25,7 +25,5 @@ export * from "./read-log.ts";
 export * from "./readings.ts";
 export * from "./session.ts";
 export * from "./steps.ts";
-export * from "./unwitnessed-outcome.ts";
-export * from "./unwitnessed-session.ts";
-export * from "./unwitnessed-steps.ts";
+export * from "./unwitnessed/index.ts";
 export * from "./witnesses.ts";

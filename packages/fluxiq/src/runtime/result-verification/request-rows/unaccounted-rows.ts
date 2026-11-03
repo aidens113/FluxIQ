@@ -11,8 +11,8 @@
 // row is the least a reading of it leaves behind.
 
 import type { AutomationStudioResultLeftOutNamingTheItem, AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRow } from "./row-naming.ts";
-import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary-reads.ts";
+import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRow } from "./row/index.ts";
+import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary/index.ts";
 
 /** Each flagged condition with the rows the reply did not name; none when it named them all, or nothing was flagged. */
 export function automationStudioResultLeftOutRowsUnaccounted(summary: AutomationStudioRunResultSummary, reply: string): AutomationStudioResultLeftOutNamingTheItem[] {

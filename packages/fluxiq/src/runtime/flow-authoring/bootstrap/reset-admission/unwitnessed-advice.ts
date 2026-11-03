@@ -4,7 +4,7 @@
 // the trial: each such step, by label, with how to give it a place or that no call in its own tab can. Advice, never a
 // refusal. Pure over what the permission check noted.
 
-import type { AutomationStudioPlanStepGaps } from "./step-gaps.ts";
+import type { AutomationStudioPlanStepGaps } from "./step/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 
 /** The most steps named, and the most of a label quoted. */

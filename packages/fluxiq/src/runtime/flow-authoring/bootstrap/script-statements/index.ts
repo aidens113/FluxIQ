@@ -45,20 +45,16 @@ export * from "./loop-body.ts";
 // t796: a lowering on a built plan, the assembler's -- each For Each over a page-order listing is given
 // the listing's own sort as its order. `./listing-repeat-sort.ts`, which it shares with the check above,
 // is left out like `./loop-body.ts`.
-export * from "./repeat-order.ts";
+export * from "./repeat/index.ts";
 // t785: advice, never a refusal, for a condition that lists literal values the request never says (`./listed-values-advice.ts`), given beside an accepted submission.
 export * from "./listed-values-advice.ts";
 export * from "./part-port-name.ts";
 export * from "./record-replace-in-repeat.ts";
-export * from "./repeat-bound.ts";
-export * from "./repeat-pace.ts";
 export * from "./script-spans.ts";
 export * from "./step-done-when.ts";
 // t775: a check on a submitted plan, once the domain resolved each step -- a step that flips a
 // control explored as a toggle grounds an explicit observed `ensureState`, or refuses with answerable choices.
-export * from "./toggle-idempotent.ts";
+export * from "./toggle/index.ts";
 // Every observation tied to a step or exploration call; matching never chooses intent.
-export * from "./toggle-tie.ts";
 // t792: whether two writings of a step name one control in its two states, by the words its toggle signature recorded.
-export * from "./toggle-state-words.ts";
 export * from "./way-out-steps.ts";

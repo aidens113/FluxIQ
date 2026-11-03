@@ -27,8 +27,8 @@ import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowBootstr
 import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstrap/plan/tests/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../binding.ts";
-import { AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES, resolveAutomationStudioFlowBootstrapPlanParameters } from "../plan-parameter-resolution.ts";
-import { AUTOMATION_STUDIO_PLAN_STEP_CONSEQUENCES_KEY, automationStudioPlanStepConsequences } from "../plan-step-consequences.ts";
+import { AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES, resolveAutomationStudioFlowBootstrapPlanParameters } from "../plan/index.ts";
+import { AUTOMATION_STUDIO_PLAN_STEP_CONSEQUENCES_KEY, automationStudioPlanStepConsequences } from "../plan/index.ts";
 
 type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]>;
 

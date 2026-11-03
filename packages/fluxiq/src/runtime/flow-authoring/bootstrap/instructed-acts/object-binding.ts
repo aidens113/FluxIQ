@@ -38,7 +38,7 @@
 // Nothing here calls a provider or reads a page; it is the draft and the words.
 
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import { automationStudioInstructedActObject, automationStudioInstructedObjectWords } from "./act-object.ts";
+import { automationStudioInstructedActObject, automationStudioInstructedObjectWords } from "./act/object.ts";
 import type { AutomationStudioInstructedAct } from "./contracts.ts";
 
 type Step = AutomationStudioFlowDraftStep;

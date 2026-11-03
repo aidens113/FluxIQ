@@ -82,7 +82,7 @@ import type {
   AutomationStudioFlowBootstrapTestVerdict,
   AutomationStudioFlowBootstrapUnfinishedStop
 } from "./contracts.ts";
-import { automationStudioFlowBootstrapStepsNotRunInThisBuild } from "./not-run.ts";
+import { automationStudioFlowBootstrapStepsNotRunInThisBuild } from "./not/run.ts";
 
 /**
  * What the caller's test answers: the loop's dry-run gate, over the steps it is

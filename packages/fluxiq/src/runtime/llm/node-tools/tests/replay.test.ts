@@ -9,7 +9,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draf
 import { assembleAutomationStudioFlowDraftPlan } from "../../../flow-authoring/bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstrap/plan/tests/index.ts";
 import { authoringScopePartOf } from "../../../flow-authoring/bootstrap/record-defaults/index.ts";
-import { automationStudioFlowDraftReplayPassCall } from "../replay-span.ts";
+import { automationStudioFlowDraftReplayPassCall } from "../replay/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep } from "../draft-step.ts";
 import {
   AUTOMATION_STUDIO_NODE_OUTPUTS_KEY,
@@ -19,7 +19,7 @@ import {
   automationStudioNodeReplayStatus,
   automationStudioNodeReplayStepCall,
   automationStudioNodeReplayVerifyCall
-} from "../replay.ts";
+} from "../replay/index.ts";
 
 const ranWith = { node: "web.output.dom-click", parameters: { target: { handle: "t12" }, label: { $state: { path: "item.name" } } }, consequences: [] };
 const step: AutomationStudioFlowDraftStep = {

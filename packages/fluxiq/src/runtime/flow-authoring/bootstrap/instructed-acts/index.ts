@@ -36,7 +36,7 @@
 // and the checklist are information beside the test and its judge.
 // `optional-act-steps.ts` holds a candidate script to the same optional rule,
 // since a candidate has no draft for the other two to read (r4b F4).
-export * from "./act-evidence.ts";
+export * from "./act/index.ts";
 export * from "./check.ts";
 export * from "./checklist.ts";
 export * from "./claim-verdict.ts";

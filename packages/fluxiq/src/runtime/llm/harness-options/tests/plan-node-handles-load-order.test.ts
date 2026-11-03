@@ -20,20 +20,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const HANDLE_MAX_LENGTH = 64;
 const MAX_HANDLES = 16;
 
-type HandleCheck = typeof import("../plan-node-handles.ts");
+type HandleCheck = typeof import("../plan/node-handles.ts");
 
 const LOAD_ORDERS: Array<{ name: string; load: () => Promise<HandleCheck> }> = [
   {
     name: "bootstrap-completion loads first (the order that failed)",
     load: async () => {
       await import("../bootstrap-completion.ts");
-      return import("../plan-node-handles.ts");
+      return import("../plan/node-handles.ts");
     }
   },
   {
     name: "the handle check loads first",
     load: async () => {
-      const check = await import("../plan-node-handles.ts");
+      const check = await import("../plan/node-handles.ts");
       await import("../bootstrap-completion.ts");
       return check;
     }

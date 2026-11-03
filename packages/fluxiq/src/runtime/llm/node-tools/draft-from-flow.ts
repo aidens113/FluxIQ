@@ -102,7 +102,7 @@ import { automationStudioFlowDraftScheduleCandidate } from "../../flow-authoring
 import { automationStudioAuthoredPaceMs } from "../../../engine/automation/pacing/index.ts";
 // A type only, so nothing is imported back out of the directory this one is read by.
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-authoring/bootstrap/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run-node.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run/node.ts";
 import { automationStudioFlowDraftSeededLoops } from "./seeded-loops.ts";
 
 /**

@@ -1,0 +1,349 @@
+{
+  "sourceRoot": "packages/fluxiq/src",
+  "moves": [
+    {
+      "from": "framework/automation-service/service/flow-bootstrap-commands/generation-context.ts",
+      "to": "framework/automation-service/service/flow-bootstrap-commands/generation/context.ts"
+    },
+    {
+      "from": "framework/automation-service/service/flow-bootstrap-commands/generation-readiness.ts",
+      "to": "framework/automation-service/service/flow-bootstrap-commands/generation/readiness.ts"
+    },
+    {
+      "from": "framework/automation-service/service/flow-bootstrap-commands/generation-request.ts",
+      "to": "framework/automation-service/service/flow-bootstrap-commands/generation/request.ts"
+    },
+    {
+      "from": "framework/automation-service/service/project-build-ending/reason-checked.ts",
+      "to": "framework/automation-service/service/project-build-ending/reason/checked.ts"
+    },
+    {
+      "from": "framework/automation-service/service/project-build-ending/reason-contradicted.ts",
+      "to": "framework/automation-service/service/project-build-ending/reason/contradicted.ts"
+    },
+    {
+      "from": "framework/automation-service/service/project-build-ending/reason-nothing-changed.ts",
+      "to": "framework/automation-service/service/project-build-ending/reason/nothing-changed.ts"
+    },
+    {
+      "from": "framework/automation-service/service/project-build-ending/reason-unrepeated.ts",
+      "to": "framework/automation-service/service/project-build-ending/reason/unrepeated.ts"
+    },
+    {
+      "from": "framework/automation-service/service/runtime-session/in-run-repair-fix-record.ts",
+      "to": "framework/automation-service/service/runtime-session/in/run-repair-fix-record.ts"
+    },
+    {
+      "from": "framework/automation-service/service/runtime-session/in-run-repair-ledger.ts",
+      "to": "framework/automation-service/service/runtime-session/in/run-repair-ledger.ts"
+    },
+    {
+      "from": "framework/automation-service/service/runtime-session/in-run-repair-unit.ts",
+      "to": "framework/automation-service/service/runtime-session/in/run-repair-unit.ts"
+    },
+    {
+      "from": "framework/automation-service/service/runtime-session/in-run-repair.ts",
+      "to": "framework/automation-service/service/runtime-session/in/run-repair.ts"
+    },
+    {
+      "from": "framework/automation-service/service/summaries/run-audit.ts",
+      "to": "framework/automation-service/service/summaries/run/audit.ts"
+    },
+    {
+      "from": "framework/automation-service/service/summaries/run-detail-lock.ts",
+      "to": "framework/automation-service/service/summaries/run/detail-lock.ts"
+    },
+    {
+      "from": "framework/automation-service/service/summaries/run-detail-merge.ts",
+      "to": "framework/automation-service/service/summaries/run/detail-merge.ts"
+    },
+    {
+      "from": "framework/automation-service/service/summaries/run-detail-writer.ts",
+      "to": "framework/automation-service/service/summaries/run/detail-writer.ts"
+    },
+    {
+      "from": "framework/automation-service/service/summaries/run-stop.ts",
+      "to": "framework/automation-service/service/summaries/run/stop.ts"
+    },
+    {
+      "from": "runtime/adaptation/recovery/refuted-result/step-failure-brief.ts",
+      "to": "runtime/adaptation/recovery/refuted-result/step/failure-brief.ts"
+    },
+    {
+      "from": "runtime/adaptation/recovery/refuted-result/step-failure-decision.ts",
+      "to": "runtime/adaptation/recovery/refuted-result/step/failure-decision.ts"
+    },
+    {
+      "from": "runtime/adaptation/recovery/refuted-result/step-failure-target.ts",
+      "to": "runtime/adaptation/recovery/refuted-result/step/failure-target.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/kept-condition-dropped-code.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/kept/condition-dropped-code.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/kept-condition-refusal.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/kept/condition-refusal.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/kept-step-hint.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/kept/step-hint.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/submission-refusal.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/submission/refusal.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/submission-text.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/submission/text.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/submission.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/submission/submission.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/trial-acts.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/trial/acts.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/trial-gate.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/trial/gate.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/trial-slow-down.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/trial/slow-down.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/trial-stop.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/trial/stop.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/candidate/trial-view.ts",
+      "to": "runtime/flow-authoring/bootstrap/candidate/trial/view.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/instructed-acts/act-consequence.ts",
+      "to": "runtime/flow-authoring/bootstrap/instructed-acts/act/consequence.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/instructed-acts/act-evidence.ts",
+      "to": "runtime/flow-authoring/bootstrap/instructed-acts/act/evidence.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/instructed-acts/act-object.ts",
+      "to": "runtime/flow-authoring/bootstrap/instructed-acts/act/object.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/reset-admission/step-gaps.ts",
+      "to": "runtime/flow-authoring/bootstrap/reset-admission/step/gaps.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/reset-admission/step-reach.ts",
+      "to": "runtime/flow-authoring/bootstrap/reset-admission/step/reach.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/reset-admission/step-resources.ts",
+      "to": "runtime/flow-authoring/bootstrap/reset-admission/step/resources.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/script-statements/repeat-bound.ts",
+      "to": "runtime/flow-authoring/bootstrap/script-statements/repeat/bound.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/script-statements/repeat-order.ts",
+      "to": "runtime/flow-authoring/bootstrap/script-statements/repeat/order.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/script-statements/repeat-pace.ts",
+      "to": "runtime/flow-authoring/bootstrap/script-statements/repeat/pace.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/script-statements/toggle-idempotent.ts",
+      "to": "runtime/flow-authoring/bootstrap/script-statements/toggle/idempotent.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/script-statements/toggle-state-words.ts",
+      "to": "runtime/flow-authoring/bootstrap/script-statements/toggle/state-words.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/script-statements/toggle-tie.ts",
+      "to": "runtime/flow-authoring/bootstrap/script-statements/toggle/tie.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/subflow-candidate/subflow-digest.ts",
+      "to": "runtime/flow-authoring/bootstrap/subflow-candidate/subflow/digest.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/subflow-candidate/subflow-trial-gate.ts",
+      "to": "runtime/flow-authoring/bootstrap/subflow-candidate/subflow/trial-gate.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/subflow-candidate/subflow-trial-offline-first.ts",
+      "to": "runtime/flow-authoring/bootstrap/subflow-candidate/subflow/trial-offline-first.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/subflow-candidate/subflow-trial-result.ts",
+      "to": "runtime/flow-authoring/bootstrap/subflow-candidate/subflow/trial-result.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/trial-change/unwitnessed-outcome.ts",
+      "to": "runtime/flow-authoring/bootstrap/trial-change/unwitnessed/outcome.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/trial-change/unwitnessed-session.ts",
+      "to": "runtime/flow-authoring/bootstrap/trial-change/unwitnessed/session.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/trial-change/unwitnessed-steps.ts",
+      "to": "runtime/flow-authoring/bootstrap/trial-change/unwitnessed/steps.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/unfinished-build/not-doable.ts",
+      "to": "runtime/flow-authoring/bootstrap/unfinished-build/not/doable.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/unfinished-build/not-done.ts",
+      "to": "runtime/flow-authoring/bootstrap/unfinished-build/not/done.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/unfinished-build/not-finished.ts",
+      "to": "runtime/flow-authoring/bootstrap/unfinished-build/not/finished.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/unfinished-build/not-run.ts",
+      "to": "runtime/flow-authoring/bootstrap/unfinished-build/not/run.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/verification/detached-execution.ts",
+      "to": "runtime/flow-authoring/bootstrap/verification/detached/execution.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/verification/detached-subflow-from.ts",
+      "to": "runtime/flow-authoring/bootstrap/verification/detached/subflow-from.ts"
+    },
+    {
+      "from": "runtime/flow-authoring/bootstrap/verification/detached-subflow.ts",
+      "to": "runtime/flow-authoring/bootstrap/verification/detached/subflow.ts"
+    },
+    {
+      "from": "runtime/llm/evidence-loop/rerun-input.ts",
+      "to": "runtime/llm/evidence-loop/rerun/input.ts"
+    },
+    {
+      "from": "runtime/llm/evidence-loop/rerun-replacement.ts",
+      "to": "runtime/llm/evidence-loop/rerun/replacement.ts"
+    },
+    {
+      "from": "runtime/llm/evidence-loop/rerun-request.ts",
+      "to": "runtime/llm/evidence-loop/rerun/request.ts"
+    },
+    {
+      "from": "runtime/llm/harness-options/plan-fact-targets.ts",
+      "to": "runtime/llm/harness-options/plan/fact-targets.ts"
+    },
+    {
+      "from": "runtime/llm/harness-options/plan-node-handles.ts",
+      "to": "runtime/llm/harness-options/plan/node-handles.ts"
+    },
+    {
+      "from": "runtime/llm/harness-options/plan-parameter-resolution.ts",
+      "to": "runtime/llm/harness-options/plan/parameter-resolution.ts"
+    },
+    {
+      "from": "runtime/llm/harness-options/plan-step-consequences.ts",
+      "to": "runtime/llm/harness-options/plan/step-consequences.ts"
+    },
+    {
+      "from": "runtime/llm/node-tools/replay-draft.ts",
+      "to": "runtime/llm/node-tools/replay/draft.ts"
+    },
+    {
+      "from": "runtime/llm/node-tools/replay-span.ts",
+      "to": "runtime/llm/node-tools/replay/span.ts"
+    },
+    {
+      "from": "runtime/llm/node-tools/replay.ts",
+      "to": "runtime/llm/node-tools/replay/replay.ts"
+    },
+    {
+      "from": "runtime/llm/node-tools/run-flow-part.ts",
+      "to": "runtime/llm/node-tools/run/flow-part.ts"
+    },
+    {
+      "from": "runtime/llm/node-tools/run-flow.ts",
+      "to": "runtime/llm/node-tools/run/flow.ts"
+    },
+    {
+      "from": "runtime/llm/node-tools/run-node.ts",
+      "to": "runtime/llm/node-tools/run/node.ts"
+    },
+    {
+      "from": "runtime/llm/node-tools/run-start-pages.ts",
+      "to": "runtime/llm/node-tools/run/start-pages.ts"
+    },
+    {
+      "from": "runtime/project-agents/dispatch/reset-completion.ts",
+      "to": "runtime/project-agents/dispatch/reset/completion.ts"
+    },
+    {
+      "from": "runtime/project-agents/dispatch/reset-done.ts",
+      "to": "runtime/project-agents/dispatch/reset/done.ts"
+    },
+    {
+      "from": "runtime/project-agents/dispatch/reset-loop.ts",
+      "to": "runtime/project-agents/dispatch/reset/loop.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/row-id.ts",
+      "to": "runtime/result-verification/request-rows/row/id.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/row-naming.ts",
+      "to": "runtime/result-verification/request-rows/row/naming.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/row-values.ts",
+      "to": "runtime/result-verification/request-rows/row/values.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/summary-reads.ts",
+      "to": "runtime/result-verification/request-rows/summary/reads.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/summary-with-also-in-result.ts",
+      "to": "runtime/result-verification/request-rows/summary/with-also-in-result.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/summary-with-left-out-naming-the-item.ts",
+      "to": "runtime/result-verification/request-rows/summary/with-left-out-naming-the-item.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/summary-with-row-ids.ts",
+      "to": "runtime/result-verification/request-rows/summary/with-row-ids.ts"
+    },
+    {
+      "from": "runtime/result-verification/standing-no/kept-condition-drop.ts",
+      "to": "runtime/result-verification/standing-no/kept/condition-drop.ts"
+    },
+    {
+      "from": "runtime/result-verification/standing-no/kept-conditions.ts",
+      "to": "runtime/result-verification/standing-no/kept/conditions.ts"
+    },
+    {
+      "from": "runtime/result-verification/standing-no/kept-steps.ts",
+      "to": "runtime/result-verification/standing-no/kept/steps.ts"
+    },
+    {
+      "from": "runtime/result-verification/verdict/kept-line.ts",
+      "to": "runtime/result-verification/verdict/kept/line.ts"
+    },
+    {
+      "from": "runtime/result-verification/verdict/kept-number-line.ts",
+      "to": "runtime/result-verification/verdict/kept/number-line.ts"
+    },
+    {
+      "from": "runtime/result-verification/verdict/kept-rows-flagged.ts",
+      "to": "runtime/result-verification/verdict/kept/rows-flagged.ts"
+    }
+  ]
+}

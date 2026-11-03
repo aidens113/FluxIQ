@@ -38,7 +38,7 @@ import { readAutomationStudioRecordNumber } from "@fluxiq/contracts/automation";
 import type { AutomationStudioResultLeftOutObservation, AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 // The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory, so a value through the barrel would close a module cycle.
 import { automationStudioResultConditionName } from "../read-account/condition-name.ts";
-import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary-reads.ts";
+import { automationStudioRequestRowLabel, automationStudioRequestRowsReads } from "./summary/index.ts";
 import type { AutomationStudioRequestRowsKeptNumberLeftOut } from "./types.ts";
 
 /** A relation a condition's wording says (`../read-account/condition.ts`), each after a space and before its value. */

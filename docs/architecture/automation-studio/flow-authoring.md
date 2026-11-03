@@ -111,11 +111,11 @@ node.
 - **Recorded.** `core.run_node` runs the node live; the step is evidence
   (`taken`) until the model adds it (`add: true`, or `amend_draft add`).
 - **Written.** `core.run_node` with `write: true`
-  (`runtime/llm/node-tools/run-node.ts`). The host checks the call as it would
+  (`runtime/llm/node-tools/run/node.ts`). The host checks the call as it would
   a live one -- node, parameters, the target resolved into its frozen identity,
   the `consequences` a mutating node owes -- and stops before acting. It answers
   `resultCode: "core.run_node.written"` (`AUTOMATION_STUDIO_NODE_WRITTEN_CODE`,
-  `runtime/llm/node-tools/replay.ts`), `effectApplied: false`, and a draft
+  `runtime/llm/node-tools/replay/replay.ts`), `effectApplied: false`, and a draft
   statement with `ranWith`, `replay` and `written: true`. No permission is asked
   at write time, because nothing is done; the build's test and the plan-time
   `flow_step` gate gate the step with the declaration it carries.
@@ -270,7 +270,7 @@ after a tool call put into the Flow with `act` that moved it
 `runtime/llm/decision-handlers/amendment.ts`, called from
 `runtime/llm/evidence-loop.ts`).
 
-**A rerun keeps a step's kind** (`runtime/llm/evidence-loop/rerun-request.ts`).
+**A rerun keeps a step's kind** (`runtime/llm/evidence-loop/rerun/request.ts`).
 A rerun of a written step is sent with `write: true`, its forms translated as a
 written call's are (an untranslatable one is refused `bind_malformed`). A rerun
 of a recorded step whose merged argument still holds a binding is refused
@@ -378,8 +378,8 @@ to the page.
 ## The Build's Test
 
 The test is the replay walker, not a graph run
-(`automationStudioFlowDraftReplaySteps`, `runtime/llm/node-tools/replay-draft.ts`,
-with the span logic in `runtime/llm/node-tools/replay-span.ts`). Running the
+(`automationStudioFlowDraftReplaySteps`, `runtime/llm/node-tools/replay/draft.ts`,
+with the span logic in `runtime/llm/node-tools/replay/span.ts`). Running the
 graph would lose reanchoring, site memory (`remembered`), sometimes-present
 steps, withheld excusal and per-step verdicts; the walker sends the same calls.
 
@@ -472,7 +472,7 @@ the Flow signature through `ranWith`.
 
 ### Part Runs
 
-`core.run_flow` (`runtime/llm/node-tools/run-flow-part.ts`) runs the same
+`core.run_flow` (`runtime/llm/node-tools/run/flow-part.ts`) runs the same
 walker with no reset and no reanchor. A span expands only when its list step is
 inside the range; otherwise it runs once on the explored row. A pass that does
 not pass stops the run there, as a step does.

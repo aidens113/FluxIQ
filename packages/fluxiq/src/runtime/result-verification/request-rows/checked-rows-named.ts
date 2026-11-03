@@ -22,7 +22,7 @@
 // lines themselves are left exactly as they are.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioRequestRowsReads } from "./summary-reads.ts";
+import { automationStudioRequestRowsReads } from "./summary/index.ts";
 import type { AutomationStudioRequestRowsNamed, AutomationStudioRequestRowsRead } from "./types.ts";
 import { automationStudioRequestRowIds } from "./words.ts";
 

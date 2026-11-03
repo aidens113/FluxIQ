@@ -29,7 +29,7 @@ import { authoringQuotedValue } from "./quoted-value.ts";
 /**
  * The key a handle reference is written under.
  *
- * `runtime/llm/harness-options/plan-node-handles.ts` owns the reference shape
+ * `runtime/llm/harness-options/plan/node-handles.ts` owns the reference shape
  * and resolves it, and that directory imports this one, so reading the constant
  * back out of it would close a module cycle -- exactly the fault this
  * repository's structure audit exists to prevent, and one that arrives as an

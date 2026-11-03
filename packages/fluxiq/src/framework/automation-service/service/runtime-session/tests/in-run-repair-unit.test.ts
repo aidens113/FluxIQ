@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRepairUnit } from "../../../../../engine/automation/lifecycle-run/index.ts";
 import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../../../../runtime/llm/index.ts";
-import { automationStudioInRunRepairUnitRefusal } from "../in-run-repair-unit.ts";
+import { automationStudioInRunRepairUnitRefusal } from "../in/index.ts";
 
 type HandlerPatch = Extract<AutomationStudioRuntimePatch, { kind: "add_handler" }>;
 

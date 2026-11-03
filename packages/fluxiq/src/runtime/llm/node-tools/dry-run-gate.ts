@@ -95,8 +95,8 @@ import {
 import { automationStudioFlowDraftStepCarried, automationStudioFlowDraftStepCarriedJoin, automationStudioFlowDraftStepCarriedPassedOver, automationStudioFlowDraftStepNotRunInThisBuild } from "../../flow-authoring/draft/carried-step/index.ts";
 import { automationStudioFlowBootstrapDraftStepIsWritable } from "./draft-step.ts";
 import { automationStudioLlmBuildTrace } from "../evidence-progress/index.ts";
-import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
-import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayObservation } from "./replay-span.ts";
+import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay/draft.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayObservation } from "./replay/span.ts";
 
 /**
  * What a gate answers.

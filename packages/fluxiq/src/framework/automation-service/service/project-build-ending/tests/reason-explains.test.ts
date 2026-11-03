@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioProjectBuildReasonChecked } from "../reason-checked.ts";
+import { automationStudioProjectBuildReasonChecked } from "../reason/index.ts";
 
 // t748 (t738's open point): the check left out every sentence naming a part with a failure word, so "the save step
 // failed because ..." lost the one sentence saying why. Core's record says how each part's tests came out, in counts

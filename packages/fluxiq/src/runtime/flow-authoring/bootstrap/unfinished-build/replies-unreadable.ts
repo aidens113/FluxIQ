@@ -22,7 +22,7 @@ import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../../../llm/ind
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 import { automationStudioFlowBootstrapEndingFitted } from "./ending-fit.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
-import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressAndTestSaid, automationStudioFlowBootstrapWorkedLiveSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressAndTestSaid, automationStudioFlowBootstrapWorkedLiveSaid } from "./not/done.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The ending of a build whose model replies could not be read. */

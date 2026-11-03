@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyAutomationStudioFlowDraftAmendments, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { automationStudioInstructedActObject } from "../act-object.ts";
+import { automationStudioInstructedActObject } from "../act/index.ts";
 import { checkAutomationStudioInstructedActs } from "../check.ts";
 import { automationStudioInstructedActsChecklist } from "../checklist.ts";
 import { automationStudioInstructedActs } from "../instruction-acts.ts";

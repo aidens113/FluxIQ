@@ -8,7 +8,7 @@
 // that says so, so a host that ignored `write` and acted is an ordinary call.
 
 import type { JsonObject } from "../../../core/index.ts";
-import { AUTOMATION_STUDIO_NODE_WRITE_KEY, AUTOMATION_STUDIO_NODE_WRITTEN_CODE } from "../node-tools/replay.ts";
+import { AUTOMATION_STUDIO_NODE_WRITE_KEY, AUTOMATION_STUDIO_NODE_WRITTEN_CODE } from "../node-tools/replay/replay.ts";
 
 /** Whether `call` asked to write its step and the host answered that it was written, not refused. */
 export function automationStudioLlmEvidenceCallWritten(call: { input: JsonObject; refused: boolean; resultCode?: string | undefined }): boolean {

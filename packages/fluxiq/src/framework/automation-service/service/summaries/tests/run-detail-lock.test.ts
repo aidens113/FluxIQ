@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AutomationStudioRunDetailLock } from "../run-detail-lock.ts";
+import { AutomationStudioRunDetailLock } from "../run/index.ts";
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;

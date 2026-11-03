@@ -12,7 +12,7 @@ import type { AutomationStudioNodeAttemptTrace } from "../../../executor/index.t
 import type { AutomationStudioInterruptionLearningRequest } from "../../../../../engine/automation/lifecycle-run/index.ts";
 import type { AutomationStudioTrainingModeBehavior } from "../../../../../runtime/adaptation/training-modes.ts";
 import { runtimeRunDetailWithAdaptationContext, settleAutomationStudioJudgedPromotions } from "../../runtime-adaptation/index.ts";
-import { bindAutomationStudioInRunRepair } from "../in-run-repair.ts";
+import { bindAutomationStudioInRunRepair } from "../in/index.ts";
 import { IN_RUN_REPAIR_FLOW_ID, IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_RUN_ID, IN_RUN_REPAIR_SUBFLOW_ID, inRunRepairGraph, inRunRepairWorld, type InRunRepairWorld } from "./in-run-repair-fixture.ts";
 
 const LAYER = { kind: "other" as const, control: "Maybe later", name: "Join the reading club", controlName: "Maybe later, thanks", wayOut: "way-out.0a1b", wayOutDefinitionId: "test.output.press" };

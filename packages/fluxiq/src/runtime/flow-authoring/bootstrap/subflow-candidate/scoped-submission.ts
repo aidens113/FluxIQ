@@ -166,10 +166,10 @@ import { automationStudioSubflowCallableProbe } from "./callable-target.ts";
 import { automationStudioSubflowRouteOutputs } from "./route-outputs.ts";
 import { automationStudioSubflowPartKey, automationStudioSubflowRekeyedParts } from "./part-keys.ts";
 import type { AutomationStudioSubflowScopeIssue } from "./scope-issue.ts";
-import { automationStudioSubflowProposalDigest } from "./subflow-digest.ts";
+import { automationStudioSubflowProposalDigest } from "./subflow/index.ts";
 import { automationStudioSubflowRenumberedRefusal } from "./submission-numbering.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID } from "./subflow-trial-gate.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID } from "./subflow/index.ts";
 
 type CandidateControllerInput = ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0];
 

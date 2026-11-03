@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowRunActionAttemptRecord } from "../../../../flows/authoring/model/index.ts";
-import { automationStudioRunNodeStartPages } from "../run-start-pages.ts";
+import { automationStudioRunNodeStartPages } from "../run/index.ts";
 
 function attempt(order: number, nodeId: string, from?: unknown, extra: Partial<AutomationStudioFlowRunActionAttemptRecord> = {}): AutomationStudioFlowRunActionAttemptRecord {
   return {

@@ -33,9 +33,9 @@ import { prepareAutomationStudioInRunRepair } from "../../../../runtime/adaptati
 import type { AutomationStudioFlowBootstrapPlan } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioRuntimeAddHandlerPatch } from "../../../../runtime/llm/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
-import type { AutomationStudioInRunRepairBinding } from "./in-run-repair.ts";
-import { recordAutomationStudioInRunFix } from "./in-run-repair-fix-record.ts";
-import type { AutomationStudioInRunRepairLedger } from "./in-run-repair-ledger.ts";
+import type { AutomationStudioInRunRepairBinding } from "./in/index.ts";
+import { recordAutomationStudioInRunFix } from "./in/run-repair-fix-record.ts";
+import type { AutomationStudioInRunRepairLedger } from "./in/index.ts";
 import { automationStudioInterruptionHandlerPatch } from "./interruption-handler.ts";
 
 /** What every record of a learned layer says it came from. */

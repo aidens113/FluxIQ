@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioInstructedActChecklistItem } from "../../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "../contracts.ts";
-import { automationStudioFlowBootstrapNotDoable } from "../not-doable.ts";
+import { automationStudioFlowBootstrapNotDoable } from "../not/index.ts";
 
 const judgement = (over: Partial<AutomationStudioFlowBootstrapJudgement> = {}): AutomationStudioFlowBootstrapJudgement => ({
   round: 0, stopped: "judged_wrong", tested: "replayed_clean", testIssueCodes: [], failedSteps: [],

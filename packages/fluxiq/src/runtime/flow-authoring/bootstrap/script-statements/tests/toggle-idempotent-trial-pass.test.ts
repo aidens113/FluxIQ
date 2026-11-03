@@ -21,7 +21,7 @@ import type { AutomationStudioPlanControlState } from "../../../../llm/harness-o
 import { AutomationStudioExploredToggles } from "../../explored-toggles.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import { automationStudioFlowPlanLoopBody } from "../loop-body.ts";
-import { automationStudioFlowPlanToggleSteps, type AutomationStudioExploredToggle } from "../toggle-idempotent.ts";
+import { automationStudioFlowPlanToggleSteps, type AutomationStudioExploredToggle } from "../toggle/index.ts";
 
 const PRESS = "domain.demo.press";
 const READ = { state: "opaque.read" };

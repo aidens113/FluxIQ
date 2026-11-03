@@ -83,7 +83,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialResult, AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
 import { automationStudioCandidateFixPoint, automationStudioCandidatePlanDiff } from "../unchanged-fix-point/index.ts";
-import { automationStudioCandidateRecordContradictsPart, automationStudioCandidateRetestAdvised } from "./trial-gate.ts";
+import { automationStudioCandidateRecordContradictsPart, automationStudioCandidateRetestAdvised } from "./trial/index.ts";
 
 /** The parameter a step keeps its rows by, and its one display-only word; its `datasetId` decides where rows go (header). */
 const RECORD_OUTPUT = "recordOutput";

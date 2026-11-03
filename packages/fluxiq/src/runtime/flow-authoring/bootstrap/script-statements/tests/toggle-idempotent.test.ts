@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
-import { automationStudioFlowPlanToggleSteps, type AutomationStudioExploredToggle } from "../toggle-idempotent.ts";
+import { automationStudioFlowPlanToggleSteps, type AutomationStudioExploredToggle } from "../toggle/index.ts";
 
 // t775: a resolved plan's steps on controls explored as a toggle.
 

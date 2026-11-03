@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioInstructedActChecklistItem } from "../../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement } from "../contracts.ts";
-import { automationStudioFlowBootstrapNotFinished } from "../not-finished.ts";
+import { automationStudioFlowBootstrapNotFinished } from "../not/index.ts";
 
 const judgement = (over: Partial<AutomationStudioFlowBootstrapJudgement> = {}): AutomationStudioFlowBootstrapJudgement => ({
   round: 1, stopped: "unusable_decisions", tested: "replay_failed", testIssueCodes: ["core.replay.failed"], failedSteps: [7],

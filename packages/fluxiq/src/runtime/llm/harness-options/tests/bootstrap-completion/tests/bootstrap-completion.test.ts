@@ -6,7 +6,7 @@ import { automationStudioInstructedActsChecklist } from "../../../../../flow-aut
 import type { AutomationStudioFlowDraftStep } from "../../../../../flow-authoring/draft/index.ts";
 import { automationStudioLlmEvidenceParseCompletionCheck } from "../../../../evidence-loop-decision.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../../../bootstrap-completion.ts";
-import { automationStudioPlanNodeHandleSites } from "../../../plan-node-handles.ts";
+import { automationStudioPlanNodeHandleSites } from "../../../plan/index.ts";
 
 // What a model is told when the plan it completed is refused, and what is no
 // longer refused at all. Live Flow creations were refused three times in a row

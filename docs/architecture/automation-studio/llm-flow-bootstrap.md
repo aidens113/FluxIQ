@@ -1705,7 +1705,7 @@ Wherever a real value belongs, such as a target or an extraction item, a
 parameter value may be `{ "handle": "<token copied from the evidence>" }`. When
 the model explored more than one place, the value may also name the place the
 evidence reported, as `{ "handle": "<token>", "location": "<location>" }`
-(`runtime/llm/harness-options/plan-node-handles.ts`). The shape is reserved.
+(`runtime/llm/harness-options/plan/node-handles.ts`). The shape is reserved.
 An object whose keys are `handle` and, optionally, `location` is always a
 reference, in any node's parameters. An object with `handle` beside any other
 key is not a reference. A reference is malformed when its token is outside the
@@ -1716,7 +1716,7 @@ characters. It is also malformed when its location is not a string of 1 to
 
 After parsing and before registry validation, Core asks the bound domain about
 every node, once each (`resolveAutomationStudioFlowBootstrapPlanParameters` in
-`runtime/llm/harness-options/plan-parameter-resolution.ts`). The domain answers
+`runtime/llm/harness-options/plan/parameter-resolution.ts`). The domain answers
 through `resolvePlanNodeParameters` on its evidence binding
 (`runtime/llm/harness-options/binding.ts`). It receives the project ID, Flow ID,
 node definition ID, and a copy of the node's parameters as the model wrote
@@ -2307,10 +2307,10 @@ only_if, on_failed and optional edit the authored Flow as before. A rerun's
 `input` is a JSON merge patch over the argument the step ran with -- only the
 keys that change; a list replaces whole and `null` removes a key -- because the
 long free-form whole arguments it used to carry were the replies that came back
-unreadable (`runtime/llm/evidence-loop/rerun-input.ts`). A rerun that
+unreadable (`runtime/llm/evidence-loop/rerun/input.ts`). A rerun that
 worked takes the replaced step's place: its position, its membership, its acts
 and its routing, and every routing statement naming the old step is rewritten
-to it (`runtime/llm/evidence-loop/rerun-replacement.ts`). No other step's
+to it (`runtime/llm/evidence-loop/rerun/replacement.ts`). No other step's
 number changes: the replaced attempt stays listed as the receipt of what was
 replaced, at the end of the draft, carrying `replacedBy` (the rerun's id); the
 draft entry shows it as `replacedBy: <step number>` without the argument it ran
@@ -2426,14 +2426,14 @@ refuses the node as `bootstrap.parameter_resolution_invalid`. Core accepts it
 on any resolved answer, candidate or draft, and writes it onto the plan node as
 `routeSignatures.effect` where the build signed no effect of its own: an effect
 signed from the step's own pages stands. A fact's answer keeps none
-(`runtime/llm/harness-options/plan-parameter-resolution.ts`). From there it
+(`runtime/llm/harness-options/plan/parameter-resolution.ts`). From there it
 rides validation and `adaptation.ts` to the Flow node exactly as a signed one
 does. An effect only ever skips a step: state routing goes on along the step's
 own success edge when the page shows it (`effect_holds`), and the repeated-act
 guard never sends a run back to a completed lasting act because of one. A
 build test's check of a step carried from a Flow node sends that node's
 recorded effect with it (`effect` on the `replay: "verify"` call,
-`runtime/llm/node-tools/replay.ts`), and a host that finds it on the page
+`runtime/llm/node-tools/replay/replay.ts`), and a host that finds it on the page
 answers `present` whatever the control now reads.
 
 **The instructed acts are the model's checklist from the first decision**
@@ -2700,7 +2700,7 @@ stands and that part of the advice is not followed (t194-w78,
 `runtime/recovery/refuted-result/brief.ts`): live run `run-musp39u8-9ac026ab`
 raised its page bound six times per try and reread the same rows. That
 wording, the brief's "a pagination setting", and the rerun-input example of a
-stored `maxPages` (`runtime/llm/evidence-loop/rerun-input.ts`) still assume a
+stored `maxPages` (`runtime/llm/evidence-loop/rerun/input.ts`) still assume a
 read that follows pages itself; under the read-list redesign a read reads one
 page and the Flow pages with a do-while `repeat`
 ([a list that continues](flow-authoring.md#a-list-that-continues)), and stage
@@ -3198,7 +3198,7 @@ and so is the repeat policy's request signature for it. The same part run on
 the same draft and page that changed nothing is refused unrun as `same_draft`,
 and the model is told to change the draft first; after any amendment that
 changes the Flow it runs again. A part run counts as applied only when one of
-its changing steps acted (`runtime/llm/node-tools/run-flow-part.ts`), never
+its changing steps acted (`runtime/llm/node-tools/run/flow-part.ts`), never
 because a read it replayed answered. A completion refused again over the same
 draft counts in the same run of refusals, so a round that alternates the two
 stalls at the bound above. Live run `run-musr9pv3-f4bf6256` sent one passing
@@ -3316,7 +3316,7 @@ proposal's apply (`build-trace.ts`, t174-w116).
 The user's rule (2026-10-02): the build and repair loops can run the Flow from
 a chosen step to test part of it, but the Flow must also run whole and be
 judged a success at least once. The first half is `core.run_flow`
-(`runtime/llm/node-tools/run-flow.ts`, `run-flow-part.ts`). Its input is
+(`runtime/llm/node-tools/run/flow.ts`, `run-flow-part.ts`). Its input is
 `{from, to?}`, step numbers as the draft shows them; it runs the proposed steps
 from `from` to `to` (the last proposed step when `to` is absent), in order, **on
 the target as it stands**: nothing is reset first, which is the point -- a
@@ -3407,7 +3407,7 @@ and an optional carried step the test cannot run, are passed through; any other
 must be rerun live before the Flow can be tested whole (t274 C-4).
 The rerun is a new step; it records `standsFor`, the id of the step whose place
 it took (`runtime/flow-draft/step.ts`,
-`runtime/llm/evidence-loop/rerun-replacement.ts`), so the written Flow keeps
+`runtime/llm/evidence-loop/rerun/replacement.ts`), so the written Flow keeps
 that node's id. The re-seed carries a node's `metadata.routeSignatures` onto
 its step as `routeSignatures`, and a rerun that recorded none of its own takes
 them, so a re-authored Flow keeps state routing for a node whose fresh
@@ -3511,7 +3511,7 @@ same tool that takes the target to the start location. A binding declares it as
 parameter the location is written into â€” and the registry puts the build's
 `startLocation` there, without reading it, when the build has one and the node
 is offered (`runtime/llm/harness-options/binding.ts`,
-`runtime/llm/node-tools/run-node.ts`). The loop then runs the arrival instead of
+`runtime/llm/node-tools/run/node.ts`). The loop then runs the arrival instead of
 the look, under the same `initial.<toolId>` call id the domain keys its
 per-build memory on, before the first provider decision, and records it exactly
 as a model's call added to the Flow at iteration 0 would be: a kept step when it

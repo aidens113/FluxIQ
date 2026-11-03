@@ -192,7 +192,7 @@ import { AUTOMATION_STUDIO_SUBFLOW_REPAIR_WORDS as REPAIR_WORDS } from "./repair
 import { automationStudioSubflowBuilderTools } from "./role-tools.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-submission.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowTrialPreparingPort } from "./subflow-trial-gate.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowTrialPreparingPort } from "./subflow/index.ts";
 
 /**
  * Calls a builder's budget keeps back from its count of decisions left: the

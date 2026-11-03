@@ -14,7 +14,7 @@ import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } fro
 import type { AutomationStudioFlowBootstrapPlan } from "../../../flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../binding.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../bootstrap-completion.ts";
-import { AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES, resolveAutomationStudioFlowBootstrapPlanParameters } from "../plan-parameter-resolution.ts";
+import { AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES, resolveAutomationStudioFlowBootstrapPlanParameters } from "../plan/index.ts";
 
 type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]>;
 type Asked = Parameters<Resolver>[0];

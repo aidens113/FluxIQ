@@ -6,12 +6,12 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapFactCondition, AutomationStudioFlowBootstrapPlan } from "../../../flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../binding.ts";
-import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID } from "../plan-fact-targets.ts";
+import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID } from "../plan/index.ts";
 import {
   AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES as CODES,
   assertAutomationStudioFlowBootstrapPlanHandlesResolved,
   resolveAutomationStudioFlowBootstrapPlanParameters
-} from "../plan-parameter-resolution.ts";
+} from "../plan/index.ts";
 
 type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]>;
 type Asked = Parameters<Resolver>[0];

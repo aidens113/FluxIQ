@@ -33,7 +33,7 @@
 
 import type { AutomationStudioResultLeftOutNamingTheItem, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestPhrases, type AutomationStudioRequestPhrases } from "./request-phrases.ts";
-import { automationStudioRequestRowsReads } from "./summary-reads.ts";
+import { automationStudioRequestRowsReads } from "./summary/reads.ts";
 import type { AutomationStudioRequestRowsRead } from "./types.ts";
 
 /** Each condition's left-out rows that name the item first and another request phrase after it, per read; none when there are none. */

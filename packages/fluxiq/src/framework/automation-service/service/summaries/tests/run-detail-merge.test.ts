@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowIntervention, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
-import { runDetailPreservingStored } from "../run-detail-merge.ts";
+import { runDetailPreservingStored } from "../run/index.ts";
 
 function intervention(interventionId: string, extra: Partial<AutomationStudioFlowIntervention> = {}): AutomationStudioFlowIntervention {
   return { interventionId, kind: "diagnosis", reason: "failed", ...extra } as unknown as AutomationStudioFlowIntervention;

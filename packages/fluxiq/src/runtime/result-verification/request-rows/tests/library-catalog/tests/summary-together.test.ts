@@ -5,7 +5,7 @@
 // test's replayed read alike, for the readers that ask for them. A library catalog (`./wall-calendar-fixture.ts`).
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRunResultSummary } from "../../../../contracts/index.ts";
-import { automationStudioRequestRowsReads } from "../../../summary-reads.ts";
+import { automationStudioRequestRowsReads } from "../../../summary/index.ts";
 import { automationStudioResultLeftOutRowsUnquoted } from "../../../unquoted-rows.ts";
 import { WALL_CALENDAR_CONDITIONS, WALL_CALENDAR_KEPT, WALL_CALENDAR_ROW, WALL_CALENDAR_TOGETHER, wallCalendarRunSummary, wallCalendarWording } from "./wall-calendar-fixture.ts";
 

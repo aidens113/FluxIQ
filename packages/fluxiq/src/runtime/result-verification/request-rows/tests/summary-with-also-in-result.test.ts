@@ -5,9 +5,9 @@
 import { describe, expect, it } from "vitest";
 import { PLANTS_LEFT_OUT, PLANTS_PROMOTED_COPIES, plantsRunSummary } from "./promoted-copies-fixture.ts";
 import { AUDIOBOOKS_NOT_ON_SHELF, AUDIOBOOKS_PROMOTED, audiobooksRunSummary } from "../../value-readings/tests/audiobooks-fixture.ts";
-import { AutomationStudioRequestRowId } from "../row-id.ts";
-import { automationStudioResultSummaryWithAlsoInResult } from "../summary-with-also-in-result.ts";
-import { automationStudioResultSummaryWithRowIds } from "../summary-with-row-ids.ts";
+import { AutomationStudioRequestRowId } from "../row/index.ts";
+import { automationStudioResultSummaryWithAlsoInResult } from "../summary/index.ts";
+import { automationStudioResultSummaryWithRowIds } from "../summary/index.ts";
 
 /** The audiobooks read with its presence test's copies left unsettled, as a read that found no value to settle them on. */
 function unsettledCopies(): ReturnType<typeof audiobooksRunSummary> {

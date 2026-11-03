@@ -12,7 +12,7 @@ import type { AutomationStudioFactCondition } from "../../../../../engine/automa
 import type { AutomationStudioIncidentRepair } from "../../../../../engine/automation/lifecycle-run/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../../../../../runtime/adaptation/recovery/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
-import { bindAutomationStudioInRunRepair } from "../in-run-repair.ts";
+import { bindAutomationStudioInRunRepair } from "../in/index.ts";
 import { AutomationStudioLlmRunPurse, AutomationStudioLlmRunBudgetLedger, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioRuntimePatch } from "../../../../../runtime/llm/index.ts";
 import {
   IN_RUN_REPAIR_FLOW_ID,

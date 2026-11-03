@@ -17,11 +17,11 @@ import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts"
 import type { AutomationStudioResultReadCondition } from "../../read-condition.ts";
 import { automationStudioResultKeptWithoutAskedColumn } from "../kept-without-asked-column.ts";
 import { automationStudioRequestWording } from "../request-wording.ts";
-import { automationStudioRequestTextNamesRead } from "../row-naming.ts";
+import { automationStudioRequestTextNamesRead } from "../row/index.ts";
 import { AUTOMATION_STUDIO_REQUEST_ROWS_STORED_LINE_OPENING, automationStudioRequestRowsStoredLine } from "../stored-line.ts";
-import { automationStudioRequestRowsReads, automationStudioRequestRowsStoredBy } from "../summary-reads.ts";
-import { automationStudioResultSummaryWithAlsoInResult } from "../summary-with-also-in-result.ts";
-import { automationStudioResultSummaryWithRowIds } from "../summary-with-row-ids.ts";
+import { automationStudioRequestRowsReads, automationStudioRequestRowsStoredBy } from "../summary/index.ts";
+import { automationStudioResultSummaryWithAlsoInResult } from "../summary/index.ts";
+import { automationStudioResultSummaryWithRowIds } from "../summary/index.ts";
 import type { AutomationStudioRequestRowsStoredMark } from "../types.ts";
 import { automationStudioResultLeftOutRowsUnquoted } from "../unquoted-rows.ts";
 import {

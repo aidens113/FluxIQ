@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
-import { automationStudioExploredToggleTie } from "../toggle-tie.ts";
-import type { AutomationStudioExploredToggle } from "../toggle-idempotent.ts";
+import { automationStudioExploredToggleTie } from "../toggle/index.ts";
+import type { AutomationStudioExploredToggle } from "../toggle/index.ts";
 
 // t792: a toggle a trial pass learned is tied to the step written as the
 // trial's node was -- its parameters, compared whole -- never to whichever step

@@ -49,28 +49,28 @@ export {
   automationStudioPlanNodeHandleSites,
   automationStudioPlanNodeParametersNameHandle,
   type AutomationStudioPlanNodeHandleSite
-} from "./plan-node-handles.ts";
+} from "./plan/index.ts";
 // What a step says its own action would lastingly do, which is the only thing
 // the permission gate cannot work out for itself.
 export {
   AUTOMATION_STUDIO_PLAN_STEP_CONSEQUENCES_KEY,
   automationStudioPlanStepConsequences,
   type AutomationStudioPlanStepConsequences
-} from "./plan-step-consequences.ts";
+} from "./plan/index.ts";
 // The page facts a plan states whose targets name a handle, which resolution reaches too.
 export {
   AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID,
   automationStudioPlanFactTargetSites,
   automationStudioPlanMetadataFactHandlePaths,
   type AutomationStudioPlanFactTargetSite
-} from "./plan-fact-targets.ts";
+} from "./plan/index.ts";
 export {
   AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES,
   assertAutomationStudioFlowBootstrapPlanHandlesResolved,
   resolveAutomationStudioFlowBootstrapPlanParameters,
   type AutomationStudioFlowBootstrapPlanHandleView,
   type AutomationStudioFlowBootstrapPlanParameterResolution
-} from "./plan-parameter-resolution.ts";
+} from "./plan/index.ts";
 export {
   checkAutomationStudioFlowBootstrapCompletion,
   checkAutomationStudioFlowBootstrapPlanCompletion,

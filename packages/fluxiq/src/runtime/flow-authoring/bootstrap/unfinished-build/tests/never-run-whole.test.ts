@@ -14,7 +14,7 @@
 // while money and rounds allow, and an ending that comes then says the Flow as
 // it stands was never run whole.
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioFlowBootstrapRepairingNotRunSaid } from "../not-done.ts";
+import { automationStudioFlowBootstrapRepairingNotRunSaid } from "../not/index.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
 import { automationStudioFlowDraftStepCarried, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../../instructed-acts/index.ts";

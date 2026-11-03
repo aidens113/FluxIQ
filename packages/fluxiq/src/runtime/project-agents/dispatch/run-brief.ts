@@ -17,8 +17,8 @@ import { AutomationStudioProjectDispatchOutputRefusals } from "./output-refusals
 import type { AutomationStudioProjectDispatchWholeTrial } from "./port.ts";
 import { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import { automationStudioProjectRenamedOutputs } from "./renamed-outputs.ts";
-import { automationStudioProjectDispatchResetDone } from "./reset-done.ts";
-import { runAutomationStudioProjectResetLoop } from "./reset-loop.ts";
+import { automationStudioProjectDispatchResetDone } from "./reset/index.ts";
+import { runAutomationStudioProjectResetLoop } from "./reset/index.ts";
 import type { AutomationStudioProjectDispatchScope } from "./scope.ts";
 import { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.ts";
 import { automationStudioProjectDispatchStartAllowance } from "./start-allowance.ts";

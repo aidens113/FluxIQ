@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../../../../flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../binding.ts";
-import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID } from "../../../plan-fact-targets.ts";
-import { resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../plan-parameter-resolution.ts";
+import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID } from "../../../plan/index.ts";
+import { resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../plan/index.ts";
 
 type Resolver = NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]>;
 const VERSION = "1.0.0";

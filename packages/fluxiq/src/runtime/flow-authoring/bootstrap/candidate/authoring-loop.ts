@@ -5,12 +5,12 @@ import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { renderAutomationStudioFlowScriptFormat } from "../script-examples/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
-import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
+import { AutomationStudioFlowCandidateSubmissionController } from "./submission/index.ts";
 import { automationStudioCandidateTestRequestKey } from "../test-request/index.ts";
-import { automationStudioCandidateSubmissionRefusal } from "./submission-refusal.ts";
+import { automationStudioCandidateSubmissionRefusal } from "./submission/index.ts";
 import { automationStudioCandidateStallRetest } from "./stall-retest.ts";
-import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
-import { automationStudioCandidateTrialView } from "./trial-view.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial/index.ts";
+import { automationStudioCandidateTrialView } from "./trial/index.ts";
 
 /** The code a completion is refused under when it does not name the latest accepted submission, or there is none. */
 const LATEST_REQUIRED = "candidate.latest_submission_required";

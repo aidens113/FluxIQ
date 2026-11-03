@@ -59,7 +59,7 @@ import { automationStudioSiteResetTrialRepeats as repeats } from "../reset-settl
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../site-reset/words.ts";
 import type { AutomationStudioSiteResetAdmissionInput, AutomationStudioSiteResetAdmissionKnown, AutomationStudioSiteResetAdmissionVerdict } from "./contracts.ts";
 import { automationStudioSiteResetIdentifiedCreate as identifiedCreate } from "./identified-create.ts";
-import { automationStudioSiteResetStepReach as stepReach } from "./step-reach.ts";
+import { automationStudioSiteResetStepReach as stepReach } from "./step/index.ts";
 
 /** The classes the site's own controls can reverse. */
 const REVERSIBLE: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create_new", "modify_existing", "delete"]);

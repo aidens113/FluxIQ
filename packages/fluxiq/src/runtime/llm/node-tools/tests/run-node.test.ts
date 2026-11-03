@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceValidTools } from "../../evidence-loop-decision.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permission-requests/index.ts";
-import { automationStudioLlmRunNodeTool } from "../run-node.ts";
+import { automationStudioLlmRunNodeTool } from "../run/index.ts";
 
 /** The description is the same whatever the library holds, so one is enough. */
 const tool = () => automationStudioLlmRunNodeTool({ nodeIds: ["web.output.dom-click", "builtin.logic.and"] });

@@ -6,7 +6,7 @@
 // whether it exists, what it is, whether any mutation is reachable at all --
 // is a question about that one fixed set.
 import { automationStudioLlmEvidenceValidTools } from "../evidence-loop-decision.ts";
-import { automationStudioLlmRunFlowBinding } from "./run-flow.ts";
+import { automationStudioLlmRunFlowBinding } from "./run/flow.ts";
 
 type RunFlowBinding = ReturnType<typeof automationStudioLlmRunFlowBinding>;
 
