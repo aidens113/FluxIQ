@@ -3,7 +3,7 @@ import {
   AUTOMATION_STUDIO_WITHHELD_LOCATOR,
   automationStudioLocatorShapedText,
   automationStudioWithoutLocators
-} from "../../screening/index.ts";
+} from "../index.ts";
 
 // Two halves of one guarantee. The screen names the shapes; the redaction can
 // never emit something the screen would refuse. Everything else in this file is

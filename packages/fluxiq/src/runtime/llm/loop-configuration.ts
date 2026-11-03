@@ -297,6 +297,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * reads it. Absent, the chat says the call's verb alone.
    */
   describeCall?(call: { toolId: string; value: JsonObject }): AutomationStudioLlmEvidenceCallWords | undefined;
+  /** The parameter keys that name the control a step acts on, from the bound domain's bundle (`./node-tools/rerun-check.ts`). Absent, a checked rerun reads every parameter as naming it. */
+  controlParameterKeys?: ReadonlySet<string> | undefined;
   /**
    * `false` keeps every look on offer after an ignored redirect
    * (`decision-handlers/look-withdrawal.ts`). For replaying a build recorded

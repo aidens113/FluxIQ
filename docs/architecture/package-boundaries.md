@@ -279,6 +279,8 @@ this entry if you write element targets or read their fingerprints.
 
 **Unchanged.** Every other undeclared fingerprint key is still dropped.
 
+**New hooks (t851).** The implementation bundle gains `recordedStepReader`, `controlWordsReader`, `controlParameterKeys`, `activityControlReader` and `stateElementKindReader`. A domain that supplies none keeps working, on the closed side: its recorded steps are withheld, a model is told no name for a control, a checked rerun takes no new value, and a card says its verb alone ([what each does with none](./runtime-ownership.md#hooks-on-the-implementation-bundle)). `fluxiq/automation` also exports `runWithAutomationStudioDomainReadings`, for a host seam that runs outside a build.
+
 **Moved.** Core no longer exports `isAutomationStudioElementTarget`, `normalizeAutomationStudioElementTarget` or `validateAutomationStudioElementTarget`, and `model/action-element-target` holds passive types only. The web domain owns target normalization and registers `outputTargetPreparer` and its sibling hooks; Core carries a target unread ([hooks](runtime-ownership.md#hooks-on-the-implementation-bundle)).
 
 ### Next minor (unreleased): a retried step is judged by its retry, and a kept re-author is a durable change (`fluxiq`)

@@ -72,6 +72,8 @@ export type AutomationStudioRuntimeRecoveryPorts = {
   resolveUnattendedRepairAuthority?: (() => Promise<AutomationStudioUnattendedRepairAuthority>) | undefined;
   /** The domain bound to this host: its evidence keys, its options, its refusals. */
   llmEvidenceRuntime?: AutomationStudioLlmEvidenceRuntimeBinding | undefined;
+  /** The parameter keys that name the control a step acts on, from the bound domain's bundle, for the exploration's own reruns. */
+  controlParameterKeys?: ReadonlySet<string> | undefined;
   /** The domain's page reader for the step log's `page.txt` in the exploration loop (`llm/step-log/page-reader.ts`); absent, no `page.txt`. */
   stepLogPageText?: AutomationStudioLlmStepLogPageReader | undefined;
   reusableLlmContextEnabled: boolean;

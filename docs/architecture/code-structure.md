@@ -342,6 +342,14 @@ The detailed procedure for each, with the current offenders, is in the
   `pnpm check` fails when its bundle enters Core through a module missing
   from those entries, so the list follows the real bundle.
 
+- **Reading a domain's fields in Core.** `control.accessibleName`, `attributes.type === "password"`
+  or a key list holding `"selector"` type-check and run, and turn one domain's
+  vocabulary into Core's. The `web-vocabulary` rule fails them in all non-test
+  source under `domainNeutralPaths`, as names, whole strings and inside regular
+  expressions, past what `domainReadingExceptions` names with a reason. An
+  exception that no longer holds its terms fails too. The remedy is a hook on the
+  domain's implementation bundle
+  ([runtime ownership](./runtime-ownership.md#hooks-on-the-implementation-bundle)).
 - **Naming a capability outside the files allowed to hold it.** Some
   references are a capability, not a style: a model provider's host, its SDK,
   the environment variable holding its key. Written anywhere, they type-check

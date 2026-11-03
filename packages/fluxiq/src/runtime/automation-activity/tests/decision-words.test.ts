@@ -6,7 +6,7 @@
 // the draft Flow — Repair the unreproducible steps…" headings, two identical,
 // none saying what came of it (D18); and "— didn't work the same way again" as
 // a test step's status (D21).
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
@@ -15,6 +15,11 @@ import { automationStudioActivityDecisionReason } from "../index.ts";
 import { automationStudioActivityHub } from "../index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../index.ts";
 import { runWithAutomationStudioActivity } from "../index.ts";
+
+vi.mock("../wording/control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../wording/tests/example-control.ts")).exampleActivityControlReader
+}));
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

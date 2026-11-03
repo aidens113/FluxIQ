@@ -120,6 +120,8 @@ export const AUTOMATION_STUDIO_RECOVERY_EXPLORATION_COMPLETION_SCHEMA: JsonObjec
 export type AutomationStudioRecoveryExplorationInput = {
   /** The bound domain, whose options and refusal vocabulary the exploration uses. */
   binding: AutomationStudioLlmEvidenceRuntimeBinding;
+  /** The parameter keys that name the control a step acts on, from the bound domain's bundle. */
+  controlParameterKeys?: ReadonlySet<string> | undefined;
   /** The domain's page reader for the step log's `page.txt` (`llm/step-log/page-reader.ts`). */
   stepLogPageText?: AutomationStudioLlmStepLogPageReader | undefined;
   /** Where the Flow is authored. Decides which options the registry will offer. */
@@ -253,6 +255,7 @@ export async function runAutomationStudioRecoveryExploration(
   });
   const exploration = await runAutomationStudioRuntimeExploration({
     loop,
+    controlParameterKeys: input.controlParameterKeys,
     ...(input.stepLogPageText ? { stepLogPageText: input.stepLogPageText } : {}),
     decide: (decision) => explorationDecision(input, decision, (code) => { runBudgetRefusal ??= code; }),
     budget: input.budget ?? resolveAutomationStudioExplorationBudget(),

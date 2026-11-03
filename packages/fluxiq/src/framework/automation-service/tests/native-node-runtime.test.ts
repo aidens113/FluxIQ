@@ -40,6 +40,17 @@ describe("a domain's target readings in its implementation bundle", () => {
     expect(new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({})).getTargetHooks("example")).toEqual({});
   });
 
+  it("hold the readings that keep Core free of a domain's fields, per domain", () => {
+    const recordedStepReader = () => null;
+    const stateElementKindReader = () => undefined;
+    const activityControlReader = () => undefined;
+    const controlParameterKeys = new Set(["target"]);
+    const runtime = new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ recordedStepReader, stateElementKindReader, activityControlReader, controlParameterKeys }));
+    expect(runtime.getTargetHooks("example")).toEqual({ recordedStepReader, stateElementKindReader, activityControlReader, controlParameterKeys });
+    expect(runtime.getTargetHooks("other")).toBeUndefined();
+    expect(() => runtime.register(manifest([]), { ...bundleOf({ controlParameterKeys: new Set(["other"]) }), packageId: "example.package" })).toThrow();
+  });
+
   it("refuse a second, different reading for one domain, and leave the first in place", () => {
     const first = () => ({ ok: true as const });
     const runtime = new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ outputTargetPreparer: first }));

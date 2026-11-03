@@ -137,6 +137,8 @@ export type AutomationStudioExplorationRefusalClassifier = (resultCode: string) 
 export type AutomationStudioRuntimeExplorationInput = {
   /** The tools and the dispatch, from the harness-option registry. */
   loop: AutomationStudioHarnessOptionLoopBinding;
+  /** The parameter keys that name the control a step acts on, for a rerun of a step this exploration already did (`../../llm/node-tools/rerun-check.ts`). */
+  controlParameterKeys?: ReadonlySet<string> | undefined;
   /** The domain's page reader for the step log's `page.txt` (`../../llm/step-log/page-reader.ts`). */
   stepLogPageText?: AutomationStudioLlmStepLogPageReader | undefined;
   /**
@@ -323,7 +325,7 @@ export async function runAutomationStudioRuntimeExploration(
       ? undefined
       : await runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop({
         ...(input.stepLogPageText ? { stepLogPageText: input.stepLogPageText } : {}),
-        tools: input.loop.tools, observedStateKeys: input.loop.observedStateKeys,
+        tools: input.loop.tools, observedStateKeys: input.loop.observedStateKeys, controlParameterKeys: input.controlParameterKeys,
         // An answer that could not be used is asked for again, each attempt
         // admitted and charged like any other call. It is a step that did not
         // advance, so the progress guard -- not the call backstop -- is what

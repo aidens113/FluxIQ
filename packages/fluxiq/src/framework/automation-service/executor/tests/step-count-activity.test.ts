@@ -5,7 +5,7 @@
 // check or any other node stays counted.
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../../../engine/automation/tests/fixture-contracts.ts";
 import type { AutomationStudioFlowNode } from "../../../../flows/executable/graph/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../../components/automation/index.ts";
@@ -13,6 +13,11 @@ import { automationStudioActivityHub, runWithAutomationStudioActivity } from "..
 import { AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION } from "../../../../runtime/parking/index.ts";
 import { resumeAutomationStudioGraph, runAutomationStudioGraph } from "../index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../../engine/automation/index.ts";
+
+vi.mock("../../../../runtime/automation-activity/wording/control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../../../../runtime/automation-activity/wording/tests/example-control.ts")).exampleActivityControlReader
+}));
 
 const NOW = 1_000;
 

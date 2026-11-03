@@ -1,5 +1,6 @@
 import { activityActionControlNoun, activityActionVerb, type ActivityActionVerb } from "../../../ui/index.ts";
 import { automationStudioActivityHumanLabel } from "../../activity/text/index.ts";
+import { automationStudioActivityControlOf } from "./control-reader.ts";
 import { automationStudioActivityListName } from "./list-name.ts";
 import { automationStudioActivityPageName } from "./page-name.ts";
 
@@ -13,7 +14,7 @@ type Phrase = {
   said?: (text: string, name: string | undefined) => string;
   /**
    * A second sentence for a word later in the id. `byWords` names it only from
-   * the domain's own words for the call, never from an element it carries: a
+   * the domain's own words for the call, never from a control it carries: a
    * list read's subject is what it reads, not a control.
    */
   also?: { word: RegExp; plain: string; named?: (name: string) => string; byWords?: true; listed?: (list: string) => string };
@@ -26,7 +27,7 @@ type Phrase = {
  * (`../call-context.ts`, R2-U-9), never off the call. `role` is what the page
  * view printed the control as, kept only where it tells a box from an option
  * ("checkbox", "radio", ...; "" for neither, `../call-context.ts`): a call that
- * carries a handle and no element is read by it. `kind` is the word the view
+ * carries a handle and no control is read by it. `kind` is the word the view
  * printed for what the control is ("button", "link"), which names a control
  * it printed no words for (`ui/activity-action/control-nouns.ts`, t753).
  */
@@ -105,31 +106,25 @@ const PHRASES: readonly Phrase[] = [
 ];
 
 /**
- * The name of the element a step acts on, when the step already carries it:
- * the element identity a resolved node keeps (`element`), which is part of the
- * Flow the person owns -- the field's own label, else its accessible name,
- * else the words it shows. Many controls a page draws as plain elements have
- * no accessible name: a dry run's "+" and "12 Double Rolls" read "Test run"
- * with no target (t193), and on `run-muqiho5c-e830ce01` the playback of
+ * The name of the control a step acts on, when the step already carries one:
+ * the first of the names the domain reads off the step's parameters
+ * (`automationStudioActivityControlOf`) that a person can read. Many controls
+ * have no one obvious name: a dry run's "+" and "12 Double Rolls" read "Test
+ * run" with no target (t193), and on `run-muqiho5c-e830ce01` the playback of
  * "Accept all", "7-in-1", "Spain", "Get coupons" and "Not now" each read
- * "Click · the page" (F36). A field's label comes first: the quantity field
- * carried only `label: "Quantity"` and its card read "Type · Done", and a
- * search box's accessible name was its placeholder (t174-w108 D5). Never a
- * value typed, read or observed.
+ * "Click · the page" (F36). Never a value typed, read or observed.
  */
-function elementName(parameters: unknown): string | undefined {
-  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return undefined;
-  const element = (parameters as { element?: unknown }).element;
-  if (!element || typeof element !== "object" || Array.isArray(element)) return undefined;
-  const identity = element as { label?: unknown; accessibleName?: unknown; visibleText?: unknown };
-  return automationStudioActivityHumanLabel(identity.label, 60)
-    ?? automationStudioActivityHumanLabel(identity.accessibleName, 60)
-    ?? automationStudioActivityHumanLabel(identity.visibleText, 60);
+function controlName(parameters: unknown): string | undefined {
+  for (const name of automationStudioActivityControlOf(parameters)?.names ?? []) {
+    const said = automationStudioActivityHumanLabel(name, 60);
+    if (said !== undefined) return said;
+  }
+  return undefined;
 }
 
-/** Roles and input types of a box a person ticks; anything else a "check" sets is an option chosen. */
+/** Plain widget words for a box a person ticks; anything else a "check" sets is an option chosen. */
 const BOX_ROLES = new Set(["checkbox", "switch", "menuitemcheckbox"]);
-/** Roles and input types of one option of several, chosen rather than ticked. */
+/** Plain widget words for one option of several, chosen rather than ticked. */
 const CHOICE_ROLES = new Set(["radio", "option", "menuitemradio", "tab"]);
 /** A choice said as one: "Choosing “Space Grey”", which a card reads back as "Choose". */
 const CHOICE: Phrase = { verb: "select", plain: "Choosing an option", named: (name) => `Choosing ${quoted(name)}`, kinded: (noun) => `Choosing ${noun}` };
@@ -165,26 +160,22 @@ function unchecked(parameters: unknown): boolean {
 /**
  * True when a step that sets something "checked" acts on an option chosen
  * from several -- a colour swatch, a size chip, a radio button -- rather than
- * a box ticked: its element is a radio or an option by role or input type, or
- * says neither, as a swatch the page draws as a plain element does. A swatch's
- * step read "Tick · Space Grey" and "Ticking “7-in-1”" (R4a,
- * `run-mv2nlh9l-52e476da`, moment 04). A box says so by its role or input
- * type. A model's exploration call carries a handle and no element, so its
- * role is the one the page view printed for that handle (`words.role`,
- * `../call-context.ts`), read by the same rule: its swatches read "Ticking
- * “Spain”" while the same steps in a test read "Choose" (R4a attempt 2,
- * `run-mv2pgqkj-f3552c70`, moment 04). A step that carries neither is a box.
+ * a box ticked: the domain's words for the control say one, or say nothing at
+ * all, as a swatch drawn as a plain control does. A swatch's step read "Tick ·
+ * Space Grey" and "Ticking “7-in-1”" (R4a, `run-mv2nlh9l-52e476da`, moment 04).
+ * A model's exploration call carries a handle and no control, so its word is
+ * the one the view printed for that handle (`words.role`, `../call-context.ts`),
+ * read by the same rule: its swatches read "Ticking “Spain”" while the same
+ * steps in a test read "Choose" (R4a attempt 2, `run-mv2pgqkj-f3552c70`, moment
+ * 04). A step that carries neither is a box.
  */
 function chosen(parameters: unknown, words: AutomationStudioActivityCallWords | undefined): boolean {
-  const element = parameters && typeof parameters === "object" && !Array.isArray(parameters) ? (parameters as { element?: unknown }).element : undefined;
-  const carried = element && typeof element === "object" && !Array.isArray(element) ? element : undefined;
+  const carried = automationStudioActivityControlOf(parameters);
   if (!carried && typeof words?.role !== "string") return false;
-  const identity = (carried ?? { role: words?.role }) as { role?: unknown; inputType?: unknown };
   const lower = (value: unknown): string => typeof value === "string" ? value.trim().toLowerCase() : "";
-  const role = lower(identity.role);
-  const type = lower(identity.inputType);
-  if (BOX_ROLES.has(role) || BOX_ROLES.has(type)) return false;
-  return CHOICE_ROLES.has(role) || CHOICE_ROLES.has(type) || (role === "" && type === "");
+  const kinds = (carried?.kinds ?? [words?.role]).map(lower);
+  if (kinds.some((kind) => BOX_ROLES.has(kind))) return false;
+  return kinds.some((kind) => CHOICE_ROLES.has(kind)) || kinds.every((kind) => kind === "");
 }
 
 /** The pages `./page-name.ts` names in words of its own, said unquoted. */
@@ -205,7 +196,7 @@ function saidText(text: string | undefined): string | undefined {
  * popup or banner simply was not there this time.
  */
 function notShownSentence(input: { parameters?: unknown; label?: string | undefined; words?: AutomationStudioActivityCallWords | undefined }): string {
-  const name = automationStudioActivityHumanLabel(input.words?.target, 60) ?? elementName(input.parameters);
+  const name = automationStudioActivityHumanLabel(input.words?.target, 60) ?? controlName(input.parameters);
   if (name) return `Skipped ${quoted(name)}: it was not shown`;
   const label = automationStudioActivityHumanLabel(input.label, 120);
   return `Skipped ${label ? quoted(label) : "a step"}: what it acts on was not shown`;
@@ -213,7 +204,7 @@ function notShownSentence(input: { parameters?: unknown; label?: string | undefi
 
 /**
  * What a step does, in a person's words: its authored label when it has one
- * ("Open search"), else the verb its id names with the element's name when the
+ * ("Open search"), else the verb its id names with the control's name when the
  * step carries one ("Clicking “Get a free quote”"), or for a navigate the
  * page's site ("Opening “amazon.com”", "Opening the start page"), else the verb alone
  * ("Opening a page"). Nothing when the id names no known verb, so the caller
@@ -236,9 +227,9 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
     const verb = named === "check" && chosen(input.parameters, input.words) ? CHOICE : named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
     if (!verb) continue;
     // The domain's own reading of the call first (the control a handle names,
-    // the words it types), then the element a resolved node carries.
+    // the words it types), then the control a resolved node carries.
     const name = automationStudioActivityHumanLabel(input.words?.target, 60)
-      ?? (verb.verb === "navigate" ? automationStudioActivityPageName(input.parameters, input.start) : verb.named || (verb.also?.named && !verb.also.byWords) ? elementName(input.parameters) : undefined);
+      ?? (verb.verb === "navigate" ? automationStudioActivityPageName(input.parameters, input.start) : verb.named || (verb.also?.named && !verb.also.byWords) ? controlName(input.parameters) : undefined);
     if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) {
       const list = verb.also.listed ? automationStudioActivityHumanLabel(input.words?.list, 60) : undefined;
       if (list && verb.also.listed) return verb.also.listed(list);

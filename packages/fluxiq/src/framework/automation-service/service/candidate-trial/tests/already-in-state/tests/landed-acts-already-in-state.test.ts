@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowArtifact } from "../../../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../../../../executor/index.ts";
 import { automationStudioCandidateTrialAlreadyInState, automationStudioCandidateTrialLandedActs } from "../../../index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../../../../runtime/domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../../../../runtime/domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 // t775: a step the domain found already in its asked state pressed nothing. It is
 // never a lasting act the trial left, and it is listed apart, with its pass and row.

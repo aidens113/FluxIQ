@@ -56,6 +56,7 @@ export function automationStudioServiceTrialEnvironment(collaborators: Automatio
     },
     actionAttempts: (session) => runtimeSessionToFlowRunDetail(session, projectId).actionAttempts,
     observedStateKeys: input.observedStateKeys,
+    domainReadings: collaborators.executor().nativeNodeRuntime?.getTargetHooks(collaborators.executor().io?.domainId) ?? {},
     prepareStart: input.prepareStart
   };
 }

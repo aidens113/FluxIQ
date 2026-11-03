@@ -47,7 +47,9 @@ redact credential-like keys before entering execution traces.
 and Code Nodes, recording mappers, target resolvers, comparators, custom
 schemas, and editor metadata. `AutomationStudioImporterImplementationBundle`
 binds implementation functions separately. Manifests are safe for compiler and
-editor surfaces; implementation functions remain host-only.
+editor surfaces; implementation functions remain host-only. The bundle also
+carries the domain's readings of its own fields: [runtime ownership](./runtime-ownership.md#hooks-on-the-implementation-bundle)
+lists each hook, who calls it and what happens with none.
 
 Definitions are filtered to the active project scope before reaching the node
 palette. Domain nodes cannot appear globally or in another domain. Code-owned

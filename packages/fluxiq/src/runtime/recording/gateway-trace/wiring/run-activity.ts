@@ -14,7 +14,7 @@ type RunSettled = { status: string; metadata?: unknown; trace?: unknown };
 
 /** Runs one Flow run in its activity scope and, when tracing is installed, in a pending traced frame the run names at admission. */
 export async function withAutomationStudioGatewayTraceRunActivity<T extends RunSettled>(
-  target: { projectId?: string | null | undefined; flowId?: string | undefined },
+  target: Parameters<typeof withAutomationStudioRunActivity<T>>[0],
   fn: () => Promise<T>,
   options?: Parameters<typeof withAutomationStudioRunActivity<T>>[2]
 ): Promise<T> {

@@ -16,9 +16,9 @@ import { automationStudioCandidateTrialView } from "./trial/index.ts";
 const LATEST_REQUIRED = "candidate.latest_submission_required";
 
 /** What a completion is told when no Flow has been submitted yet. */
-function automationStudioCandidateNothingSubmitted(submitId: string, testId: string | undefined): string {
+function automationStudioCandidateNothingSubmitted(submitId: string, testToolId: string | undefined): string {
   return `No Flow has been submitted yet, so there is no revision or digest to complete with: never invent them. Write the whole Flow and submit it with ${submitId}; `
-    + `${testId ? `test the revision it returns with ${testId}; then ` : "then "}complete with that revision and digest exactly as ${submitId} returned them.`;
+    + `${testToolId ? `test the revision it returns with ${testToolId}; then ` : "then "}complete with that revision and digest exactly as ${submitId} returned them.`;
 }
 
 /**
@@ -122,13 +122,13 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
     trialRan: (acts, trialRunId) => ledger.trialRan(acts, trialRunId)
   } : undefined;
   const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: input.trial, signal, ...(reset ? { reset } : {}) });
-  const submitId = "core.submit_candidate", testId = AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID;
+  const submitId = "core.submit_candidate", testToolId = AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID;
   /** The call each accepted revision was submitted in, so a refusal can name where the latest accepted script is (t498). */
   const acceptedIn = new Map<number, string>();
   const scriptFormat = renderAutomationStudioFlowScriptFormat(input.submission.binding?.flowScriptExamples, input.submission.binding?.flowScriptGuidance);
   const tool: AutomationStudioLlmEvidenceTool = {
     toolId: submitId, effect: "observe",
-    description: `Submit a complete Flow, written as a Flow script under "flow" (its description gives the format and examples), or an existing canonical JSON plan under "plan". Discovery calls are evidence only and never enter the Flow. Static validity returns a draft revision/digest, never semantic acceptance. Correct all diagnostics and resubmit the entire candidate. Then test that exact revision with ${testId}, and complete with the latest revision and digest only after its trial answers yes.`,
+    description: `Submit a complete Flow, written as a Flow script under "flow" (its description gives the format and examples), or an existing canonical JSON plan under "plan". Discovery calls are evidence only and never enter the Flow. Static validity returns a draft revision/digest, never semantic acceptance. Correct all diagnostics and resubmit the entire candidate. Then test that exact revision with ${testToolId}, and complete with the latest revision and digest only after its trial answers yes.`,
     // The format rides on the input schema, as the legacy completion schema carries it: a tool description is bounded at 2,000 characters.
     inputSchema: { type: "object", properties: { flow: { type: "string", description: `The whole Flow as a script. ${scriptFormat.format}\n${scriptFormat.act}\n${scriptFormat.loop}\n${scriptFormat.state}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
@@ -140,19 +140,19 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   // the build's ending reads (`../../conversations/commands/progress.ts`).
   const checkCompletion: NonNullable<AutomationStudioLlmEvidenceLoopInput["checkCompletion"]> = async (result) => {
     const candidate = controller.latest();
-    if (!candidate) return { ok: false, issueCodes: [LATEST_REQUIRED], feedback: { code: LATEST_REQUIRED, submitted: false, instruction: automationStudioCandidateNothingSubmitted(submitId, gate.available ? testId : undefined) } };
+    if (!candidate) return { ok: false, issueCodes: [LATEST_REQUIRED], feedback: { code: LATEST_REQUIRED, submitted: false, instruction: automationStudioCandidateNothingSubmitted(submitId, gate.available ? testToolId : undefined) } };
     if (!(typeof result.revision === "number" && typeof result.digest === "string" && controller.matches({ revision: result.revision, digest: result.digest, baseDependencyDigest: candidate.baseDependencyDigest }) && Object.keys(result).every((key) => key === "revision" || key === "digest"))) {
       return { ok: false, issueCodes: [LATEST_REQUIRED], feedback: { code: LATEST_REQUIRED, submitted: true, revision: candidate.revision, digest: candidate.digest,
-        instruction: `This is not the latest Flow you submitted. Complete with exactly {"revision": ${candidate.revision}, "digest": "${candidate.digest}"} and nothing else${gate.available ? `, after ${testId} has answered yes for that revision` : ""}; or, if the Flow still needs changes, submit the whole Flow again with ${submitId} and complete with the revision and digest it returns.` } };
+        instruction: `This is not the latest Flow you submitted. Complete with exactly {"revision": ${candidate.revision}, "digest": "${candidate.digest}"} and nothing else${gate.available ? `, after ${testToolId} has answered yes for that revision` : ""}; or, if the Flow still needs changes, submit the whole Flow again with ${submitId} and complete with the revision and digest it returns.` } };
     }
     return gate.completion({ revision: candidate.revision, digest: candidate.digest });
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, ...(signal ? { signal } : {}), draft: false, dryRun: false, discoveryOnly: true,
-    requestContextKey: (toolId) => toolId === testId ? automationStudioCandidateTestRequestKey(controller.latest()) : input.loop.requestContextKey?.(toolId),
+    requestContextKey: (toolId) => toolId === testToolId ? automationStudioCandidateTestRequestKey(controller.latest()) : input.loop.requestContextKey?.(toolId),
     // A stall tests the latest revision instead of ending the build, while it can still be tested (`./stall-retest.ts`, t477).
     recoverStall: automationStudioCandidateStallRetest(gate),
-    tools: [...input.loop.tools.filter((item) => item.toolId !== "core.run_flow" && item.toolId !== submitId && item.toolId !== testId).map((item) => reset ? automationStudioSiteResetUndoesTool(item) : item), tool, gate.tool],
+    tools: [...input.loop.tools.filter((item) => item.toolId !== "core.run_flow" && item.toolId !== submitId && item.toolId !== testToolId).map((item) => reset ? automationStudioSiteResetUndoesTool(item) : item), tool, gate.tool],
     completionSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" } }, required: ["revision", "digest"], additionalProperties: false },
     executeTool: async (call) => {
       // The start is read once, right after the opening call, or before the first later call when there was none (`../site-reset/start-check.ts`).
@@ -160,7 +160,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       if (startCheck && !opening) await startCheck.capture(call.signal ?? signal);
       // A trial leaves the target where the model has not looked: its answer carries the page it left (`./trial-view.ts`, t477).
       // One the reset's own looks moved, though no trial ran, carries that page too (`../site-reset/start-check.ts` `moves`, t738).
-      if (call.toolId === testId) {
+      if (call.toolId === testToolId) {
         const before = startCheck?.moves;
         const answer = await gate.test(call.value, call.signal);
         const targetMoved = before !== undefined && startCheck!.moves > before;
@@ -192,7 +192,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
         ...(submitted.advice?.length ? { advice: submitted.advice } : {}),
         // The whole Flow this revision is, as it was sent, labelled by its revision (t498, t503).
         ...acceptedScript(call.value, submitted.candidate),
-        next: gate.available ? `Test next with ${testId} using exactly {"revision": ${submitted.candidate.revision}, "digest": "${submitted.candidate.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.` : "No trial runner is available here; completing leaves an unverified draft." };
+        next: gate.available ? `Test next with ${testToolId} using exactly {"revision": ${submitted.candidate.revision}, "digest": "${submitted.candidate.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.` : "No trial runner is available here; completing leaves an unverified draft." };
       return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };
     }
   };
