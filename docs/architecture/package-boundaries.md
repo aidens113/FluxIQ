@@ -1,14 +1,15 @@
 # Package Boundaries And Distribution
 
-FluxIQ has three public ESM packages. They are compiled before use; consumers
+FluxIQ has four public ESM packages. They are compiled before use; consumers
 must not depend on repository TypeScript sources, workspace aliases, or a
 TypeScript runtime loader.
 
 | Package | Owns | Environment | Runtime dependencies |
 | --- | --- | --- | --- |
-| `@fluxiq/contracts` | JSON primitives, program API schemas, client-gateway protocol, and external Automation Studio recording contracts | Browser and Node.js | `zod` |
+| `@fluxiq/contracts` | JSON primitives, program API schemas, client-gateway protocol, and the shared automation contract (`@fluxiq/contracts/automation`: failure records, actionability, record sets, recording capture) | Browser and Node.js | `zod` |
 | `fluxiq` | Domain-neutral framework runtime, global programs, storage, migrations, and host integration | Node.js 22 or newer | contracts, QR generation, and native SQLite |
 | `@fluxiq/client-gateway-websocket` | The client half of the client gateway: WebSocket transport, reconnecting connection, offline outbox, in-flight command reconciliation, host-lease fencing, storage-area port, and the session-picking rule | Browser and Node.js 22 or newer | contracts only |
+| `@fluxiq/ui-components` | FluxIQ's chat UI as plain TypeScript DOM and CSS with no UI framework. A client mounts `createChatWidget` and supplies the ports (`ChatTransport` for conversation, live activity, run controls, recordings and model keys; `ChatWidgetOptions` for what only the host can do). Entries `.`, `./dom`, `./icons`, `./testing` and the stylesheets `./styles/tokens.css` and `./styles/chat.css` | Browser; no Node built-in and no browser-extension API | `fluxiq` |
 
 The contracts package is the dependency seam between browser clients and the
 framework. It must not import the runtime. The WebSocket client must not pull
@@ -29,8 +30,23 @@ naming and branding.
 
 The neutral browser-safe contract entry points `@fluxiq/contracts/runtime`,
 `@fluxiq/contracts/records` and `@fluxiq/contracts/recording-capture` own
-result control, record processing/datasets and capture policy. The legacy
-Automation Studio contract entry point reexports the same authorities for compatibility.
+result control, record processing/datasets and capture policy.
+`@fluxiq/contracts/automation` is the shared automation contract and
+reexports the same authorities.
+
+### Automation entries of `fluxiq`
+
+| Entry | Is |
+| --- | --- |
+| `fluxiq/automation` | The automation runtime (`framework/automation-service/public`). Node-only |
+| `fluxiq/automation/nodes`, `/action-effect`, `/actionability`, `/fingerprinting`, `/action-permissions`, `/panel-capabilities`, `/llm-models` | Browser-safe subpaths of the runtime for node definitions, action effects, actionability, target matching, permission display, panel capabilities and the model catalog |
+| `fluxiq/automation/testing`, `/candidate-authoring`, `/evidence-build-scope` | Node-side subpaths for test support, candidate authoring results and build-scope evidence |
+| `fluxiq/automation-studio` | Only the controller: Automation Studio's endpoint registration, view state and metadata |
+| `fluxiq/automation-studio/dsl`, `/dsl/generator` | The Flow source language. The name is fixed because saved Flow source contains that exact import |
+| `fluxiq/runtime/output-dispatch/preparation` | Browser-safe contracts a domain implements to prepare an output action's target (see [runtime ownership](runtime-ownership.md#hooks-on-the-implementation-bundle)) |
+
+A browser bundle reaches Core only through entries the structure audit lists in
+`browserBundles.entries`. `@fluxiq/ui-components` is checked by the same rule.
 
 All packages are ESM-only and expose conditional `types` and `import` entries
 from `dist/`. Relative source imports use TypeScript extensions during local
@@ -64,10 +80,10 @@ The web domain owns its calibrated comparisons and snapshot projection under `do
 
 The legacy `fluxiq/automation/fingerprinting` subpath remains a browser-safe compatibility surface for its names and serialized shapes. Its zero-argument factory now performs neutral state matching; callers requiring web comparisons must provide/register the downstream web matcher. Core never imports a downstream implementation. See [runtime ownership](runtime-ownership.md) for the migration map.
 
-`fluxiq/components/automation` is the browser-safe node seam (the legacy `fluxiq/automation/nodes` export remains compatible) for contract
+`fluxiq/components/automation` is the browser-safe node seam (`fluxiq/automation/nodes` publishes the full pack) for contract
 logic a browser host must not restate. Since t728 it re-exports by name, from
 `@fluxiq/contracts/automation`, record processing
-(`nodes/record-process.ts`): the condition, sort and presence vocabularies,
+(`components/automation/record-process.ts`): the condition, sort and presence vocabularies,
 `automationStudioRecordConditionHolds` (which takes an
 `AutomationStudioRecordConditionTest`, every key optional, `field` included, and
 reads a blank or whitespace-only string as absent), `automationStudioRecordConditionPattern`,
@@ -77,7 +93,7 @@ reads a blank or whitespace-only string as absent), `automationStudioRecordCondi
 `countAutomationStudioRecordUnsortableRows` (a row counts once when any key's
 value is missing, blank or not of the key's kind) and the shared
 `AUTOMATION_STUDIO_RECORD_VALUE_READING_CASES` parity table; and the
-recording-capture policy and its clamp (`nodes/recording-capture.ts`,
+recording-capture policy and its clamp (`components/automation/recording-capture.ts`,
 [client gateway](automation-studio/client-gateway.md)). Both re-export files
 import only `@fluxiq/contracts/automation`, and
 `contracts/src/record-sets/process/` imports only relative paths; the tests
@@ -103,8 +119,8 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.7.0`;
-`@fluxiq/client-gateway-websocket` is at `0.1.0`. Before 1.0, compatible
+`@fluxiq/contracts` is at version `0.6.0`, `fluxiq` at `0.26.0`;
+`@fluxiq/client-gateway-websocket` and `@fluxiq/ui-components` are at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes).
 "Compatible" is judged on what a consumer observes, not on the type surface: a
@@ -234,6 +250,8 @@ this entry if you write element targets or read their fingerprints.
 
 **Unchanged.** Every other undeclared fingerprint key is still dropped.
 
+**Moved.** Core no longer exports `isAutomationStudioElementTarget`, `normalizeAutomationStudioElementTarget` or `validateAutomationStudioElementTarget`, and `model/action-element-target` holds passive types only. The web domain owns target normalization and registers `outputTargetPreparer` and its sibling hooks; Core carries a target unread ([hooks](runtime-ownership.md#hooks-on-the-implementation-bundle)).
+
 ### Next minor (unreleased): a retried step is judged by its retry, and a kept re-author is a durable change (`fluxiq`)
 
 Every node gets a first attempt and up to three automatic retries, and the
@@ -298,7 +316,7 @@ dry-run gate directly.
 - A repair judgement's `judge` carries `testStepIsDraftStep` where the judged
   test numbered the round's steps otherwise than the repair seed; Core's own
   step numbers in it (`checked`, `fix`, `checkedRows`, `untestedCarried`) are
-  the seed's (`flow-bootstrap/unfinished-build/test-step-numbers.ts`).
+  the seed's (`runtime/flow-authoring/bootstrap/unfinished-build/test-step-numbers.ts`).
 - `automationStudioObservedTestTool`: the phases' test of a stopped round's
   Flow is said in the chat as the loop's own test is.
 
@@ -355,8 +373,8 @@ draft routing, or registers a node that should end a loop.
 - Assembly gives every extraction node a `recordOutput` (id
   `<slug>-<stepId>`), not only one whose instruction names columns.
 - A dispatched action's success may take a route its node declares with role
-  `branch`, named as `route` in its result payload (`runtime/io-policy.ts`,
-  `runtime/executor/node-execution.ts`); any other `route` is ignored.
+  `branch`, named as `route` in its result payload (`framework/automation-service/io-policy.ts`,
+  `engine/automation/node-execution/`); any other `route` is ignored.
 - `AutomationStudioFlowDraftStepRouting`'s repeat kind is a union: code that
   read `routing.over` as always present must narrow with
   `automationStudioFlowDraftRepeatIsWhile` first.
@@ -546,7 +564,7 @@ test pins a limit below.
   (`AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY`). A stored Flow
   without that key that holds exactly 12,000 has it cleared where it is read
   and where its settings resolve
-  (`runtime/service/flow-settings/tokens-per-run-default-migration.ts`);
+  (`framework/automation-service/service/flow-settings/tokens-per-run-default-migration.ts`);
   any other value stays. The web settings form saves a blank box as no cap
   and writes the key on every save, so a 12,000 a person types stays.
 - The caps on what a judgement, a repair and a build decision are told about
@@ -1079,10 +1097,10 @@ records each cascaded edge deletion as its own operation, and its
   it keeps the input event's payload on the recorded action entry, under
   `metadata.inputPayload`. Other bindings are unchanged.
 - 182 names are newly exported from the root, `fluxiq/automation` and
-  `fluxiq/programs`, most of them from `runtime/recovery/` and `runtime/llm/`.
+  `fluxiq/programs`, most of them from `runtime/adaptation/recovery/` and `runtime/llm/`.
 
 **For Core contributors.** The structure audit now fails a value import from
-`runtime/llm/` into `runtime/recovery/` (`importBoundaries` in
+`runtime/llm/` into `runtime/adaptation/recovery/` (`importBoundaries` in
 `scripts/structure-audit/config.mjs`). Type-only imports stay allowed, and a
 value both sides need lives in `runtime/loop-limits/`. No host is affected.
 

@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const fingerprintingDir = path.resolve(testsDir, "..");
 const packageRoot = path.resolve(testsDir, "..", "..", "..", "..", "..");
-const subpath = "./automation-studio/fingerprinting";
+const subpath = "./automation/fingerprinting";
 
 /** One `import`/`export ... from` statement, and whether TypeScript erases it. */
 type ModuleReference = {

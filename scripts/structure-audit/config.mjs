@@ -16,22 +16,22 @@ export const CONFIG = {
   forbiddenImports: [
     {
       from: "packages/fluxiq/src/runtime",
-      pattern: /(?:@fluxiq\/contracts\/automation-studio|programs\/automation-studio|^fluxiq\/automation-studio(?:\/|$))/,
+      pattern: /(?:programs\/automation-studio|^fluxiq\/automation(?:-studio)?(?:\/|$))/,
       reason: "The framework runtime owns generic execution contracts. Import @fluxiq/contracts/runtime; Automation Studio adapts to the framework runtime, never the reverse."
     },
     {
       from: "packages/fluxiq/src/components/automation",
-      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation-studio(?:\/|$)/,
+      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation(?:-studio)?(?:\/|$)/,
       reason: "Framework nodes use neutral runtime, records and recording-capture contracts, without a Studio dependency."
     },
     {
       from: "packages/fluxiq/src/engine/automation",
-      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation-studio(?:\/|$)/,
+      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation(?:-studio)?(?:\/|$)/,
       reason: "Graph execution uses neutral runtime and record contracts, without a Studio dependency."
     },
     {
       from: "packages/fluxiq/src/flows/executable",
-      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation-studio(?:\/|$)/,
+      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation(?:-studio)?(?:\/|$)/,
       reason: "Executable graph contracts and compilation must be usable without Studio."
     },
     {

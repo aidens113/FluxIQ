@@ -10,7 +10,7 @@ import { automationStudioPanelCapabilityVocabulary, parseAutomationStudioPanelCa
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(testsDir, "..", "..", "..", "..", "..", "..");
-const subpath = "./automation-studio/panel-capabilities";
+const subpath = "./automation/panel-capabilities";
 
 describe("the browser-safe panel-capabilities subpath", () => {
   it("is published from the package manifest", async () => {

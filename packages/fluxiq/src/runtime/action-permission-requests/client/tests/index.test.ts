@@ -6,7 +6,7 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, AUTOMATION_STUDIO_DESTRUC
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(testsDir, "..", "..", "..", "..", "..");
-const subpath = "./automation-studio/action-permissions";
+const subpath = "./automation/action-permissions";
 
 describe("the browser-safe action-permissions subpath", () => {
   it("is published from the package manifest", async () => {

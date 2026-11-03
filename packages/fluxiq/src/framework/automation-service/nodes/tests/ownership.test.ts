@@ -3,7 +3,7 @@ import * as nodes from "../../../../components/automation/index.ts";
 import * as studioNodes from "../index.ts";
 import * as studioMath from "../../../../components/automation/math/index.ts";
 
-describe("Studio node compatibility facades", () => {
+describe("the automation node entry", () => {
   it("exposes the canonical singleton values and the retained Studio SDK", () => {
     for (const key of Object.keys(nodes) as Array<keyof typeof nodes>) {
       expect(studioNodes[key], key).toBe(nodes[key]);
@@ -17,8 +17,7 @@ describe("Studio node compatibility facades", () => {
     expect(Object.keys(nodes)).not.toContain("AutomationStudioImporterSdkRegistry");
   });
 
-  it("keeps legacy feature-barrel exports narrow", () => {
-    expect(Object.keys(studioMath)).toEqual(["mathNodes"]);
+  it("resolves a feature's nodes to the registered definitions", () => {
     expect(studioMath.mathNodes.every((node) => studioNodes.getAutomationNodeDefinition(node.id) === node)).toBe(true);
   });
 });

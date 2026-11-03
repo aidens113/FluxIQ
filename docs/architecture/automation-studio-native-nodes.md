@@ -215,7 +215,7 @@ this runtime.
 
 A dispatched output's answer is kept whole at `outputs.result`, which no port
 declares, so a later node cannot read it there. A data output port may declare
-`resultPath` (`AutomationNodePort.resultPath`, `nodes/contracts.ts`): the dotted
+`resultPath` (`AutomationNodePort.resultPath`, `components/automation/contracts.ts`): the dotted
 path, in the records-path grammar, inside that answer where the port's value
 lies. The importer that defines the node sets it on its own port definition;
 for example, a web-automation domain's single-value read declares
@@ -227,8 +227,8 @@ output whose role is not `data`, and on a path that does not parse
 
 The executor copies the value only after a **successful** dispatch, in the
 same merge where a dispatched route is taken
-(`runtime/executor/node-execution/attempt.ts`, through
-`node-execution/result-path-outputs.ts`): for each declared data port with a
+(`engine/automation/node-execution/attempt.ts`, through
+`engine/automation/node-execution/result-path-outputs.ts`): for each declared data port with a
 `resultPath`, the value found at that path is written to `outputs.<port id>`,
 where the run keeps it as `<node id>.<port id>`, so a later step reads it as
 `$step.<label>.<port id>` (the plan's `$node.<key>.<port id>`). A failed
@@ -358,7 +358,7 @@ Unsupported processing keys remain validation errors.
 
 Read-list redesign, stage S1. By default, a node that carries a `recordOutput` stores the
 rows its output returns as a batch of a run dataset
-(`storage/project/run-dataset-store.ts`, `appendBatch`). With `writeMode:
+(`framework/persistence/automation/project/run-dataset-store.ts`, `appendBatch`). With `writeMode:
 "append"`, the default assembly writes, each batch continues after the last
 stored row, so every pass of a repeated read -- a new attempt -- adds its rows
 to the same dataset in capture order: pass order, then the page's own order.
@@ -368,7 +368,7 @@ schema and one `process` declaration for the whole run: a batch carrying a
 different schema or declaration is refused at capture. A model-built Flow's
 reads each write a dataset of their own: assembly always gives an extraction
 node a `recordOutput`, its id the slug of the step's words then the step's
-stable id (`runtime/flow-bootstrap/authoring/assembled-record-output.ts`,
+stable id (`runtime/flow-authoring/bootstrap/authoring/assembled-record-output.ts`,
 `record-output.ts`). A Flow that reaches a domain with no `recordOutput`
 (recorded or hand-built) keeps whatever dataset the domain derives.
 
@@ -394,7 +394,7 @@ must be deployed together.
 **The answer.** When the graph run ends -- succeeded, failed, cancelled, or
 thrown -- and before its result is verified, Core processes every dataset
 the run wrote (`runDatasets.processEndedRunDatasets`,
-`runtime/service/datasets/run-datasets.ts`, called from `runtime/service.ts`),
+`framework/automation-service/service/datasets/run-datasets.ts`, called from `runtime/service.ts`),
 declared or not. Processing is the one pure function
 `processAutomationStudioRecordRows` (`@fluxiq/contracts`,
 `packages/contracts/src/record-sets/process/`). It applies, in order:

@@ -809,6 +809,24 @@ operator starts it for inspection and certification with:
 pnpm --filter @fluxiq/web dev
 ```
 
+## The Chat UI
+
+The chat a person types into is `@fluxiq/ui-components` (`packages/ui-components`), plain TypeScript DOM and CSS with no UI framework, not code in the workspace or in a client. A client mounts `createChatWidget(transport, options)` and calls `render` and `setActive`; chat rendering, stream models and styles change in that package and reach every client together.
+
+The widget reaches the world only through ports the client supplies (`src/chat/ports/`):
+
+- `ChatTransport`: FluxIQ's conversation, live activity, run controls, and optional recordings and model keys.
+- `ChatWidgetOptions`: what only the host can do, such as opening the Studio.
+
+It imports no Node built-in and no browser-extension API, and the structure audit's browser-import rule walks its entries. `styles/tokens.css` sets the default theme on `:root`; a host with its own tokens defines the same names on an ancestor instead.
+
+Two clients mount it today:
+
+- **Core's panel** (`apps/web/src/features/chat-widget/`): a thin React host that builds a `ChatTransport` over the real Automation Studio endpoints (`createProgramChatTransport`) and an activity port, and renders at `/programs/automation-studio/chat?projectId=`. The panel's own conversation UI is separate and unchanged.
+- **The web extension** (`panel/chat` in the downstream repository): an adapter that supplies the extension's transport and host bindings. The downstream repository's extension-client document describes that adapter.
+
+The widget is not part of `fluxiq`, and `fluxiq` does not import it.
+
 ## Change Checklist
 
 Before accepting an Automation Studio web architecture change:

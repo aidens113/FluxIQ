@@ -2,7 +2,7 @@
 
 Automation Studio owns a domain-neutral, instruction-first authoring boundary for
 building a new executable Flow without a recording. The boundary is implemented
-in `runtime/flow-bootstrap/plan.ts` and integrated with the existing LLM harness as
+in `runtime/flow-authoring/bootstrap/plan/` and integrated with the existing LLM harness as
 the `flow_bootstrap` task. It does not execute a provider request, persist a
 proposal, or mutate a Flow by itself.
 
@@ -32,7 +32,7 @@ the same evidence without importing domain contracts, evaluating a domain predic
 adding an executable binding or granting a positive judgement.
 
 How the product's own creation and improvement builds are authored is one runtime
-setting with one owner, `model/authoring-mode/`: `FLUXIQ_AUTHORING_MODE` in the
+setting with one owner, `flows/authoring/model/authoring-mode/`: `FLUXIQ_AUTHORING_MODE` in the
 Core process environment, `project` (the default since 2026-10-16), `candidate`
 or `legacy`. Any other value refuses instead of falling back. Nothing else holds a
 mode literal of its own.
@@ -74,9 +74,9 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
 - **Where it runs.** The candidate branch of `generateFlowBootstrapAdaptationInternal`
   builds what it always built -- binding, instruction authority, provider, loop
   limits, creation purse, the build-level permission gate and person-needed, the
-  whole candidate's trial runner and judge (`service/project-build/whole-trials.ts`,
+  whole candidate's trial runner and judge (`framework/automation-service/service/project-build/whole-trials.ts`,
   shared with `candidate`) -- and hands it, with the project's own ports, to
-  `runAutomationStudioProjectBuild` (`service/project-build/`) instead of the
+  `runAutomationStudioProjectBuild` (`framework/automation-service/service/project-build/`) instead of the
   candidate draft generator. Builders are never started through the generation
   entry: its generation lock is not re-entrant.
 - **Per brief.** Each brief gets its own harness options and node descriptions,
@@ -117,26 +117,26 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
 - **A brief's own ending stops its loop (t551).** A plan step the person did
   not permit -- refused inside the submission's completion check, which the
   loop cannot see -- or a check only a person could pass that was not passed
-  aborts the brief's `ended` signal (`service/project-build/brief-ports.ts`). The
+  aborts the brief's `ended` signal (`framework/automation-service/service/project-build/brief-ports.ts`). The
   dispatcher joins it to the loop's and the submission's signals
-  (`project-agents/dispatch/run-brief.ts`), so the loop stops at its next turn
+  (`runtime/project-agents/dispatch/run-brief.ts`), so the loop stops at its next turn
   instead of asking the model again, and the brief comes back `blocked` with the
   reason (the missing classes, the control and the request; or the check's
   code), naming any proposal it had. A reset whose ending fired but that left
   nothing of the build in place comes back `done`. A build stop is still a stop.
 - **A return says when nothing more can be done (t743).** A builder return
   that is not `done` may carry `terminalReason`, one of a closed set
-  (`project-agents/contracts/builder-return.ts`): `allowance_spent`, `stopped`,
+  (`runtime/project-agents/contracts/builder-return.ts`): `allowance_spent`, `stopped`,
   `person_ended` or `gate_unsatisfiable`; a `done` return carrying one is
   refused `project.return_terminal_reason`. Core sets it from its own signals,
-  never from the words of the reason (`project-agents/dispatch/ending.ts`): the
+  never from the words of the reason (`runtime/project-agents/dispatch/ending.ts`): the
   allowance's refusal, the brief's or build's stop, the person-refusal and
   person-only-check ending above (`ending.personEnded`), and, once per return in
-  `dispatch/run-brief.ts`, an act no call can settle still on the site
+  `runtime/project-agents/dispatch/run-brief.ts`, an act no call can settle still on the site
   (`ending.gateUnsatisfiable`). A reason already set is kept. The supervisor sees
-  it on the dispatch answer (`supervisor/dispatch-tool.ts`).
+  it on the dispatch answer (`runtime/project-agents/supervisor/dispatch-tool.ts`).
 - **Permissions at promotion (t551).** Every brief's gate is registered with the
-  build (`service/project-build/permissions.ts`), and the proposal's permission
+  build (`framework/automation-service/service/project-build/permissions.ts`), and the proposal's permission
   outcome reads the build's gate with every brief gate's answers in it: every
   declaration (the briefs' in the order their gates were made, then the build's
   own), the latest standing request of any gate, the instruction's one read,
@@ -144,7 +144,7 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   builder's step is seen at promotion as a candidate build's own is.
 - **The supervisor's reserve (t551).** The purse keeps back the judged whole run
   and one repair round -- the repaired Flow judged again -- at the judge's own
-  reserve pricing: four judge calls (`service/project-build/reserve.ts`). No
+  reserve pricing: four judge calls (`framework/automation-service/service/project-build/reserve.ts`). No
   brief's allowance can be carved from it; a repair brief's decisions and its
   own subflow trial are its allowance's.
 - **Host resources.** One scheduler per host-resource port: the domain's
@@ -163,26 +163,26 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   runs on it (see "How an act settles" below). An act no call can settle any
   more (`gate_unsatisfiable`, below) is never in the reset's list of acts to
   undo, but everything that says what is on the site names it as left and not
-  undoable: the reset's words (`project-agents/dispatch/reset-done.ts`), the
-  person's left-on-target note (`supervisor/left-on-target.ts`, with
+  undoable: the reset's words (`runtime/project-agents/dispatch/reset/done.ts`), the
+  person's left-on-target note (`runtime/project-agents/supervisor/left-on-target.ts`, with
   `unsettleable: true`), a phase start's `actsUnsettleable`
-  (`service/project-build/phase-start.ts`), a build-wide reset refusal
-  (`service/project-build/reset-calls.ts`), a repeated whole-trial refusal, and
+  (`framework/automation-service/service/project-build/phase-start.ts`), a build-wide reset refusal
+  (`framework/automation-service/service/project-build/reset-calls.ts`), a repeated whole-trial refusal, and
   the supervisor's `lastingActsUnsettleable` count. A reset whose only remaining
   acts are of that kind is not asked to undo them: it comes back `blocked`, never
   `done`, since a `done` reset would send the supervisor to a test the gate
   refuses.
 - **Each builder act is placed (t551),** as a candidate build's is: a builder's
   call that makes a lasting act is read just before and just after it, in
-  place, through the brief's own start check (`flow-bootstrap/site-reset/act-places.ts`),
+  place, through the brief's own start check (`runtime/flow-authoring/bootstrap/site-reset/act-places.ts`),
   so the act keeps its page, what it changed there and the items it created. A
   reset can then remove what an act created even when its control sat in no
   item -- an Add to cart that adds a line to the cart drawer -- and never the
   line that was there before the build. A reset's undo is read around the same
-  way, and what it did is told to the act's owner (`service/project-build/reset-calls.ts`).
+  way, and what it did is told to the act's owner (`framework/automation-service/service/project-build/reset-calls.ts`).
 - **Acts in the build record (t551).** Every act the project ledger records is
   written into the build record's `lastingActs` as it is recorded
-  (`service/project-build/acts-record.ts`), one writer per ledger: its id, what
+  (`framework/automation-service/service/project-build/acts-record.ts`), one writer per ledger: its id, what
   it did, its owner -- the supervisor (whole trials), or the brief under the
   role it ran as -- every lasting class it declared, whether or not its brief
   was permitted it, and whether the site can undo it. So the record names every
@@ -191,7 +191,7 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   refusal fails the build.
 - **Toggles in the build record (t792).** Every toggle the build learned, from
   an exploration press or a trial pass's press, is written into the build
-  record's `toggles` (`service/project-build-toggles/toggles-record.ts`): where
+  record's `toggles` (`framework/automation-service/service/project-build-toggles/toggles-record.ts`): where
   it came from, its node and call, the handles and resolved target it is tied
   by, the trial nodes that pressed it and the parameters they ran with
   (`trialParameters`), its signature and `idempotentWith`. It is written after
@@ -201,11 +201,11 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   step exactly as before.
 - **Repair before ending (t743).** While money is left, the supervisor's
   `ended` completion is refused `project.completion_repair_first`
-  (`project-agents/supervisor/completion.ts`), with `unrepaired:
+  (`runtime/project-agents/supervisor/completion.ts`), with `unrepaired:
   [{subflowKey, failingBrief}]`, while a subflow of the plan in force has a
   latest build or repair return that is blocked or partial, carries no
   `terminalReason`, and has had no changed brief after it
-  (`supervisor/state.ts` `unrepaired()`). A changed brief is a repair, or a
+  (`runtime/project-agents/supervisor/state.ts` `unrepaired()`). A changed brief is a repair, or a
   brief sent under another plan digest (after `project.amend_plan`); a brief
   whose `sentAs` key equals the one before it is a resend and does not count.
   The rule is checked after `ended_too_soon` and before the reset rule, and only
@@ -214,11 +214,11 @@ selectable with `FLUXIQ_AUTHORING_MODE=candidate`.
   `automationStudioProjectSupervisorBriefSizing` check the dispatch makes; no
   purse means it can pay), when fewer than `REPAIR_TURNS = 3` of the
   supervisor's turns are left (`turnsLeft`, threaded from the loop through
-  `llm/evidence-loop/completion-attempt.ts` and
-  `llm/decision-handlers/completion.ts`), or while an act no call can settle is
+  `runtime/llm/evidence-loop/completion-attempt.ts` and
+  `runtime/llm/decision-handlers/completion.ts`), or while an act no call can settle is
   on the site, since no changed brief could be tested. Each subflow is named in
   at most one such refusal, so the rule can never hold a build to its ceiling.
-  The guidance's step 7 (`supervisor/guidance.ts`) says the same in generic
+  The guidance's step 7 (`runtime/project-agents/supervisor/guidance.ts`) says the same in generic
   words: each subflow that came back blocked or partial gets one changed brief
   first, a resend does not count, and a subflow whose return says nothing more
   can be done is skipped.
@@ -240,7 +240,7 @@ before-state cannot make a trial meaningful, and it undoes exactly this build's
 own lasting acts. This section is the current design; the section after it
 describes the earlier rule and holds only where this one says so. The wiring of
 the trial gates to this design is pending (phase D); the parts below it that are
-already built are the typed effect, the `trial-change/` module, the idempotent
+already built are the typed effect, the `runtime/flow-authoring/bootstrap/trial-change/` module, the idempotent
 toggle and the skip record.
 
 - **Before and after per witness.** Every lasting step names where its change
@@ -250,13 +250,13 @@ toggle and the skip record.
   the trial, from the end view when the run ended on that page, otherwise by a
   second look. A lasting step that ran in several passes of a loop gets one
   control witness per pass, at that pass's own place and location, read from the
-  pass's own diff (`trial-change/pass-witnesses.ts`, t787), so a pass at the
+  pass's own diff (`runtime/flow-authoring/bootstrap/trial-change/pass-witnesses.ts`, t787), so a pass at the
   second item is never attributed to the first. The judge's packet gains `siteChange`: per witness the before and
   after side and the change (added, removed, changed, or none), the acts of the
   trial with their outcome (`changed`, `already_in_state`, `no_change_seen`),
   the earlier acts of this build left in place at the start, and one proof per
   task part. Rows are shown as counts plus bounded readable lines; no opaque
-  token is emitted (`flow-bootstrap/trial-change/`).
+  token is emitted (`runtime/flow-authoring/bootstrap/trial-change/`).
 - **A typed effect per part.** The plan's task part says what it must do to the
   site, never parsed from words: `effect: { kind: "change", direction, count,
   what }` (adds or removes N, or each match) or `{ kind: "end_state", state }`,
@@ -279,7 +279,7 @@ toggle and the skip record.
   `no_change`, `unproven` or `already_in_end_state` is not taken; the verdict is
   `unknown` with the reason named. A judge yes on `contradicted` becomes a no at
   both trial gates, with Core's words as `changeContradicted`
-  (`trial-change/contradicted.ts`), so such a trial never passes. A pass that skipped a row as `already_in_state`
+  (`runtime/flow-authoring/bootstrap/trial-change/contradicted.ts`), so such a trial never passes. A pass that skipped a row as `already_in_state`
   is still listed with its row, so a Flow that targets a row it must not touch is
   seen even when nothing changed.
 - **Targeted resets only.** A reset is asked for when an `end_state` part's state
@@ -304,7 +304,7 @@ toggle and the skip record.
   observations. Deduplication includes the pre-state, so legacy after-only
   records cannot hide richer evidence. Build records persist and restore the
   additive field; old records stay readable without a fabricated inverse.
-  `script-statements/toggle-tie.ts` collects every tied observation. Handles,
+  `runtime/flow-authoring/bootstrap/script-statements/toggle/tie.ts` collects every tied observation. Handles,
   whole resolved targets, and a trial step's written node/parameters establish
   the tie; `ensureState` is excluded from identity. A renumbered step still
   matches, duplicate steps use the existing key disambiguation, and a toggle's
@@ -317,7 +317,7 @@ toggle and the skip record.
   with unknown fields are dropped whole. Only the step's own views contribute,
   never a page fact's. A stateful control with no readable signature refuses
   as unresolved rather than assigning a press direction.
-  `runtime/toggle-state/` grounds the explicit choice in the collected states.
+  `framework/automation-service/toggle-state/` grounds the explicit choice in the collected states.
   Complete pairs must agree irrespective of direction or frequency; incompatible
   pairs, more than two states, and legacy singleton evidence outside a known
   pair refuse as `candidate.toggle_state_unresolved`. An after-only legacy
@@ -348,10 +348,10 @@ toggle and the skip record.
 - **Layers cleared while exploring become handlers.** A press while exploring
   that cleared a covering layer (the domain's `evidence.layerCleared`: the
   layer's signature and the control pressed) is recorded by
-  `flow-bootstrap/explored-interruptions.ts`. Unless a step of the Flow already
+  `runtime/flow-authoring/bootstrap/explored-interruptions.ts`. Unless a step of the Flow already
   makes that press, the submission adds to every non-recovery part a handler of
   the same shape in-run interruption learning builds
-  (`flow-bootstrap/layer-handlers/patch.ts`): when the control shows, press it,
+  (`runtime/flow-authoring/bootstrap/layer-handlers/patch.ts`): when the control shows, press it,
   check it gone, resume, with no lasting consequence, scoped to that part
   (`inherit: false`). Core writes it; the model writes nothing (t787). A Flow
   therefore does not depend on a layer the build dismissed once and the site
@@ -367,7 +367,7 @@ toggle and the skip record.
   the layer's fact is visible by name (`obstruction` if the layer had an `id`,
   else `dialog`), presses `wayOutDefinitionId` run with `controlRef` as its parameters (the parameters the domain resolved for the press; web: `{ selector, element }`),
   declares no consequence and carries `learnedFrom: "trial_close"` and
-  `layerId` in its metadata (`layer-handlers/trial.ts`). The cleared-layer
+  `layerId` in its metadata (`runtime/flow-authoring/bootstrap/layer-handlers/trial.ts`). The cleared-layer
   parser keeps `wayOutDefinitionId` and `controlRef` without a `wayOut` token
   (the definition beside a token or a `controlRef`; a `controlRef` only beside
   the definition).
@@ -405,14 +405,14 @@ or an earlier trial left behind measures nothing (user, 2026-10-12, t462).
 Before every trial the model returns the site to the state the build started
 from, through the site's own controls, undoing exactly the lasting acts this
 build made and nothing that was there before it began
-(`runtime/flow-bootstrap/site-reset/`, with its siblings
-`flow-bootstrap/reset-settlement/`, which judges whether an act is settled,
-`flow-bootstrap/reset-answers/`, which builds every refusal,
-`flow-bootstrap/reset-undo/`, which admits and reaches undos,
-`flow-bootstrap/reset-ledger/`, the ledger's collaborators, and
-`flow-bootstrap/trial-defaults/`, which fills in what a trial request leaves
+(`runtime/flow-authoring/bootstrap/site-reset/`, with its siblings
+`runtime/flow-authoring/bootstrap/reset-settlement/`, which judges whether an act is settled,
+`runtime/flow-authoring/bootstrap/reset-answers/`, which builds every refusal,
+`runtime/flow-authoring/bootstrap/reset-undo/`, which admits and reaches undos,
+`runtime/flow-authoring/bootstrap/reset-ledger/`, the ledger's collaborators, and
+`runtime/flow-authoring/bootstrap/trial-defaults/`, which fills in what a trial request leaves
 out; the dependency runs one way, from site-reset to each sibling, and
-site-reset's barrel re-exports reset-settlement's). `site-reset/ledger.ts` is
+site-reset's barrel re-exports reset-settlement's). `runtime/flow-authoring/bootstrap/site-reset/ledger.ts` is
 the facade callers use; the siblings sit beside site-reset, not under it,
 because the structure audit's depth limit leaves no room below it:
 
@@ -422,13 +422,13 @@ because the structure audit's depth limit leaves no room below it:
   `modify_existing` or `delete` becomes an act `act-N`, shown with the gate's
   verb and control words and the call id the model gave it. Each trial's own
   lasting steps that landed (`AutomationStudioCandidateTrialAct`, read off the
-  trial's trace by `service/candidate-trial/landed-acts.ts`) become acts too.
+  trial's trace by `framework/automation-service/service/candidate-trial/landed-acts.ts`) become acts too.
   An act that moved money or sent something cannot be undone and is never asked
   for.
 - **Page destinations (t791).** A complete read of a page in one tab that
   carries no list the client reports as a collection, an empty state included,
   still becomes a page original when the client reports the page's scope and
-  item subjects (`site-reset/page-collection.ts`), and its receipt is printed
+  item subjects (`runtime/flow-authoring/bootstrap/site-reset/page-collection.ts`), and its receipt is printed
   with `page: true`. It witnesses only an identified creation naming that ref in
   the same tab, with the creation's subject absent from the page; after a trial
   the page is read again, and a subject that appeared, or a change in the page's
@@ -436,7 +436,7 @@ because the structure audit's depth limit leaves no room below it:
   is never offered for a step and never witnesses a press, and a successful
   exploration press naming one carries `resetDestinationUnreached` saying the
   press has no witness.
-- **One witness admission (t751).** `flow-bootstrap/reset-admission/` serves
+- **One witness admission (t751).** `runtime/flow-authoring/bootstrap/reset-admission/` serves
   exploration and plan submission. A reversible press needs an issued original
   destination, its own complete list, its control's state, or a witnessed
   explored act it repeats. The `resetDestination` envelope key stays build-only;
@@ -504,7 +504,7 @@ because the structure audit's depth limit leaves no room below it:
   act: the allowance is spent only by a landed undo of that act that declared
   `delete`, never by a navigation or a look under the claim (t471, lane B round
   9). A landed `modify_existing` undo admitted on the act's subject spends it
-  too (`site-reset/ledger.ts` `explored()`). Naming an act whose allowance is
+  too (`runtime/flow-authoring/bootstrap/site-reset/ledger.ts` `explored()`). Naming an act whose allowance is
   spent is refused unrun as
   `candidate.undo_already_done`, naming the call that spent it. Any other undo
   is gated as any call is, so an act on something that pre-existed still asks.
@@ -514,7 +514,7 @@ because the structure audit's depth limit leaves no room below it:
 - **An undo counts only when the act's effect is gone** (t471, lane D round 9).
   A call naming an act never marks it undone. The candidate loop reads the
   target in place just before and just after each exploration call that
-  declares a lasting class (`site-reset/act-places.ts`), and keeps with the act
+  declares a lasting class (`runtime/flow-authoring/bootstrap/site-reset/act-places.ts`), and keeps with the act
   its page's state before it, that page's `location`, and what it changed
   there, worded and as lines. Before a trial the reset takes the target back to
   each act's page through the arrival's node with that location
@@ -535,13 +535,13 @@ because the structure audit's depth limit leaves no room below it:
   named (`candidate.undo_act_kept`). `cannotUndo` is optional: when the request
   leaves it out, Core fills in the acts a reset listed apart as unsettleable
   (reason `gate_unsatisfiable`, below), remembered per reset by
-  `flow-bootstrap/trial-defaults/before-trial.ts`, which both trial gates call.
+  `runtime/flow-authoring/bootstrap/trial-defaults/before-trial.ts`, which both trial gates call.
   A list the model does supply only narrows that default to acts Core listed;
   an id Core never listed is dropped, and `[]` stays empty. For legacy acts without identified
   resource-scoped ownership, later trials run with it in
   place under `startedWith.cannotUndo`, with words telling the model to make
   the Flow pass over an item already done. The trial request carries
-  `startedWith` lines (`candidate/started-with.ts`), and the judge reads them as
+  `startedWith` lines (`runtime/flow-authoring/bootstrap/candidate/started-with.ts`), and the judge reads them as
   `resultSummary.startedWith`: already done, neither the run's doing nor its
   failure.
   Strict (identified, reversible) acts instead settle only by their witnesses;
@@ -555,7 +555,7 @@ because the structure audit's depth limit leaves no room below it:
   with that state, and reads its `differs`. `startState` also answers the
   `location` it read and the same differences as `lines` (gone, added), which
   Core compares only for equality.
-- **The gate** (`candidate/trial-gate.ts`, `site-reset/trial-policy.ts`). A
+- **The gate** (`runtime/flow-authoring/bootstrap/candidate/trial/gate.ts`, `runtime/flow-authoring/bootstrap/site-reset/trial-policy.ts`). A
   trial is due when an act was recorded since the build began or since the
   last trial, or one is still to undo. A clean start page never vouches for an
   act: lane D's start page showed nothing of the requests its trial had
@@ -583,7 +583,7 @@ because the structure audit's depth limit leaves no room below it:
   consumers route it unchanged; the supervisor's whole trial answers a gate
   refusal listing only such acts `project.trial_unsettleable`, with no
   `retry_allowed`, and tells the supervisor to end honestly
-  (`supervisor/whole-trial.ts`).
+  (`runtime/project-agents/supervisor/whole-trial.ts`).
 
   The refusal reports `retry_allowed` diagnostically and whether arrival moved
   the page; precondition lifting admits a retest. That matters in the
@@ -597,32 +597,36 @@ because the structure audit's depth limit leaves no room below it:
 - **A refused trial is retested after any call.** A refused action (an
   action tool that applied nothing and answered `ok: false`) stays answered
   from the loop's memory only until the next call runs, a look included
-  (`llm/refused-action-retest.ts`); with no call between, the identical
+  (`runtime/llm/refused-action-retest.ts`); with no call between, the identical
   request is still answered `llm_evidence_loop.already_answered`. The repeat
   guard treats `trial_reset_required`, `trial_reset_unproved` and
   `trial_start_differs` (`candidate.` or `project.`) as a precondition
-  (`llm/repeat-guard/outcomes.ts`, `PRECONDITIONS`): any later call that ran and
+  (`runtime/llm/repeat-guard/outcomes.ts`, `PRECONDITIONS`): any later call that ran and
   was not refused lifts it on every page, so the retest after a settling look
   reaches the ledger even when the look left the page digest unchanged; the
   call that lifts it is still recorded as changing nothing when it did. This
   uses typed temporary [failure control](failure-control.md), never the gate's
   `retry_allowed` reason. Refuse, look, refuse stays bounded by
-  `llm_evidence_loop.repeat_without_progress`.
+  `llm_evidence_loop.repeat_without_progress`. A trial that ran with a re-test
+  left says so with a typed field, `ownRetestBound: true`, and its gate (the
+  candidate gate and the subflow gate) bounds the re-tests; the guard records no
+  failure for that call, so the re-test is not refused as a repeat of the
+  trial it follows.
 - **Every refusal says what can meet it (t743).** Every site-reset refusal is
   built by one constructor, `automationStudioSiteResetRefusal(code, answer)`
-  (`flow-bootstrap/reset-answers/refusal.ts`). It takes a `candidate.*` code and
-  requires a `failed` condition from a closed set (`reset-answers/failed.ts`:
+  (`runtime/flow-authoring/bootstrap/reset-answers/refusal.ts`). It takes a `candidate.*` code and
+  requires a `failed` condition from a closed set (`runtime/flow-authoring/bootstrap/reset-answers/failed.ts`:
   `undo_spent`, `subject_differs`, `destination_not_read_now`,
   `subject_there_before`, `acts_in_place`, `start_differs`,
   `witness_unreachable`, `nothing_to_name`, `acts_unsettleable` and the rest),
   `canMeet` (`this_page`, `another_page` or `no_call`;
-  `reset-answers/can-meet.ts`) and a non-empty `instruction`, and it throws on
+  `runtime/flow-authoring/bootstrap/reset-answers/can-meet.ts`) and a non-empty `instruction`, and it throws on
   anything outside those sets. The answer carries `condition`, one generic
   sentence for the condition plus one for `canMeet`
-  (`reset-answers/condition-words.ts`, which `site-reset/words.ts` `condition`
+  (`runtime/flow-authoring/bootstrap/reset-answers/condition-words.ts`, which `runtime/flow-authoring/bootstrap/site-reset/words.ts` `condition`
   delegates to); `no_call` says not to make that call, or a variation of it,
   again. So the words survive where a caller later rewrites `instruction`
-  (`service/project-build/brief-ports.ts`, `service/project-build/reset-calls.ts`).
+  (`framework/automation-service/service/project-build/brief-ports.ts`, `framework/automation-service/service/project-build/reset-calls.ts`).
   Each admission path names the first condition it fails, in order; for
   example an undo on a different item than the act's is `subject_differs`, an
   original row on a list the act named is `subject_there_before` with `no_call`.
@@ -640,7 +644,7 @@ because the structure audit's depth limit leaves no room below it:
   item is refused `no_exact_inverse` (`no_call`), never with a subject
   deletion's condition. Settle words follow the witness kind: a value act is
   told to set the value back where it shows, then look. A
-  source scan (`site-reset/tests/refusal-sites.test.ts`, over site-reset and
+  source scan (`runtime/flow-authoring/bootstrap/site-reset/tests/refusal-sites.test.ts`, over site-reset and
   reset-settlement) fails the build on a refusal built by hand: a `code:
   "candidate.` literal, an `ok: false` value, or any other `candidate.*`
   literal that is neither the constructor's first argument nor a comparison.
@@ -655,21 +659,21 @@ because the structure audit's depth limit leaves no room below it:
 
 The site-reset ledger settles every strict act by one rule over observed state
 (L1 reset settlement replaced three narrow proofs, 2026-10-19). Sources:
-`site-reset/ledger.ts`, a facade over its collaborators in
-`flow-bootstrap/reset-ledger/` (what it records in `recording.ts`, its
+`runtime/flow-authoring/bootstrap/site-reset/ledger.ts`, a facade over its collaborators in
+`runtime/flow-authoring/bootstrap/reset-ledger/` (what it records in `recording.ts`, its
 settlement answers in `answers.ts`, its answers under `undoes` in `claims.ts`,
-the act record in `act.ts`; t797), the undo side in `flow-bootstrap/reset-undo/`
+the act record in `act.ts`; t797), the undo side in `runtime/flow-authoring/bootstrap/reset-undo/`
 (`claims.ts`, `admission.ts`, `reach.ts`), the settlement modules in
-`flow-bootstrap/reset-settlement/` (the judgement in `judge.ts`,
-`AutomationStudioSiteResetSettlementJudge`), `site-reset/words.ts`,
-`site-reset/contracts.ts`. The settlement modules import nothing from
-site-reset; they read structural local types (`reset-settlement/spot.ts`,
-the collection type in `reset-settlement/collection-groups.ts`).
+`runtime/flow-authoring/bootstrap/reset-settlement/` (the judgement in `judge.ts`,
+`AutomationStudioSiteResetSettlementJudge`), `runtime/flow-authoring/bootstrap/site-reset/words.ts`,
+`runtime/flow-authoring/bootstrap/site-reset/contracts.ts`. The settlement modules import nothing from
+site-reset; they read structural local types (`runtime/flow-authoring/bootstrap/reset-settlement/spot.ts`,
+the collection type in `runtime/flow-authoring/bootstrap/reset-settlement/collection-groups.ts`).
 
 - **Witnesses.** Each lasting act of the build, explored or trial, carries the
   before-state of what it could change:
-  - **Group witnesses** (`reset-settlement/act-groups.ts`,
-    `reset-settlement/group-witness.ts`). The complete list groups its named scopes
+  - **Group witnesses** (`runtime/flow-authoring/bootstrap/reset-settlement/act-groups.ts`,
+    `runtime/flow-authoring/bootstrap/reset-settlement/group-witness.ts`). The complete list groups its named scopes
     fall in: its own list (the complete original its control sat in, read
     before it), every destination named for it (`resetDestination` on its own
     call, or on a later look that names it under `undoes`, resolved from an
@@ -700,14 +704,14 @@ the collection type in `reset-settlement/collection-groups.ts`).
     transition authorizes its inverse. No unrelated list becomes a witness. A legacy act with no
     witness can name only a list read before that act; otherwise its condition
     is unmet, independent of a global refs-closed flag.
-  - **Toggle witness** (`reset-settlement/toggle-witness.ts`,
-    `reset-settlement/control-tracker.ts`). Only for an act declaring exactly
+  - **Toggle witness** (`runtime/flow-authoring/bootstrap/reset-settlement/toggle-witness.ts`,
+    `runtime/flow-authoring/bootstrap/reset-settlement/control-tracker.ts`). Only for an act declaring exactly
     `modify_existing` whose control has a `place` and `state`
     (`control.place`/`control.state` on the declaration; `Spot.place`/`state`).
     For an explored act it comes from the `controls` of the reads just before
     and after the press; for a trial act from the step diff's
     `controls: { page, before, after }` (`TrialActPlace.controls`). A looped
-    step's diff is scoped to its own pass: `executor/host-state.ts` passes the
+    step's diff is scoped to its own pass: `engine/automation/host-state/` passes the
     attempt's `inputs` to the host's `inspectStateDiff` (an optional `inputs`
     field in `host-runtime.ts`, the same inputs the captures receive), so a
     domain can place each pass's control in the row that pass ran on, and each
@@ -718,8 +722,8 @@ the collection type in `reset-settlement/collection-groups.ts`).
     site reverted the control itself. No return press is required. A place's
     start is never seeded after this build pressed it; an unproven start is
     `no_baseline`. A page not read again keeps its act open.
-  - **Value witness** (t772; `reset-settlement/value-witness.ts`,
-    `reset-settlement/value-tracker.ts`, `reset-settlement/values-of.ts`). For
+  - **Value witness** (t772; `runtime/flow-authoring/bootstrap/reset-settlement/value-witness.ts`,
+    `runtime/flow-authoring/bootstrap/reset-settlement/value-tracker.ts`, `runtime/flow-authoring/bootstrap/reset-settlement/values-of.ts`). For
     an act declaring exactly `modify_existing` that no group, toggle, control
     original, transfer or subject undo witnesses -- a choice confirmed by a
     press that reloads its page to the same address, a form's Save -- the
@@ -727,7 +731,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
     to value token, `AutomationStudioSiteResetRead.values`, at most 2,000, all
     opaque; anything malformed drops the whole map). For an explored act the
     replacements come from the reads just before and after it on one page
-    (`site-reset/act-places.ts`, `Place.values`); for a trial act from the step
+    (`runtime/flow-authoring/bootstrap/site-reset/act-places.ts`, `Place.values`); for a trial act from the step
     diff's `values: { page, location, replaced: [{ place, from, to,
     newValue? }] }` (`TrialActPlace.values`, at most 256). A place is replaced
     when its value changed and the old value is gone from the page; one
@@ -751,7 +755,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
   it was taken after the act and at the current clock. Partial reads (the
   domain did not positively establish completeness), malformed groups and
   stale reads never settle an act.
-- **Lists Core cannot read again** (`reset-settlement/reach.ts`). One store of
+- **Lists Core cannot read again** (`runtime/flow-authoring/bootstrap/reset-settlement/reach.ts`). One store of
   lost groups is shared by every brief's ledger of a build (the project
   ledger's `reach` option). While each `lookAt` runs, the judge counts the
   reads that reach its ledger: when the look landed and a group witness at
@@ -783,7 +787,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
   reads them build-wide, `unsatisfiable()` with each act's `owner`.
 - **No undo can put it back: `no_admissible_undo` (t748).** An open act is
   also `gate_unsatisfiable` when no undo under `undoes` could ever settle it,
-  decided from Core's own reads (`reset-undo/reach.ts`). The only undo
+  decided from Core's own reads (`runtime/flow-authoring/bootstrap/reset-undo/reach.ts`). The only undo
   paths that act on a list a read can describe are removals of a subject new
   on that list: the subject deletion for an act that created it, or the
   removal on a destination the act named or can name, at most one per act
@@ -796,11 +800,11 @@ the collection type in `reset-settlement/collection-groups.ts`).
   its last open condition, answers a state that is neither the build's nor the
   act's (`control_state_differs`); a press back admitted later clears it. A
   differing list the reads could not name a group for is never judged. Nothing
-  is newly admitted. `reset-undo/reach.ts` mirrors the admission paths of
-  `reset-undo/admission.ts` by copy, so `site-reset/tests/settlement-unmeetable.test.ts`
+  is newly admitted. `runtime/flow-authoring/bootstrap/reset-undo/reach.ts` mirrors the admission paths of
+  `runtime/flow-authoring/bootstrap/reset-undo/admission.ts` by copy, so `runtime/flow-authoring/bootstrap/site-reset/tests/settlement-unmeetable.test.ts`
   pins the admitting lines: a path changed there fails the build until the
   reach rule is checked against it and the pin is updated.
-- **Settled or open** (`reset-settlement/decision.ts`). With every witness holding,
+- **Settled or open** (`runtime/flow-authoring/bootstrap/reset-settlement/decision.ts`). With every witness holding,
   an act is **settled restored** when a change was seen at some point or an
   undo of it landed, and **settled unchanged** when no read ever showed a
   change. Both are sticky, decided as soon as a fresh read settles them. A
@@ -812,8 +816,8 @@ the collection type in `reset-settlement/collection-groups.ts`).
   still differs (`undo`), its control still showing the state it set
   (`toggle`), or a value it replaced still not back (`value`). `standing(actId)` answers `in_place`, `restored`, `unchanged`,
   `kept`, `irreversible`, `unsettleable`, `possible` or nothing, and a reset's `done` words say why an act
-  stayed from it (`project-agents/dispatch/reset-done.ts`).
-- **What is left on the site** (t772, `reset-ledger/leftover.ts`). One function
+  stayed from it (`runtime/project-agents/dispatch/reset/done.ts`).
+- **What is left on the site** (t772, `runtime/flow-authoring/bootstrap/reset-ledger/leftover.ts`). One function
   decides, from an act's settlement, whether it is left: **no** once settled
   restored or unchanged; **yes** while open or of a class no site control
   undoes; **possibly** when closed `gate_unsatisfiable` (carrying its `failed`
@@ -826,16 +830,16 @@ the collection type in `reset-settlement/collection-groups.ts`).
 - **One answer, never two.** The ledger's verdict is the answer. A refusal
   never says a call can still meet it while the ledger lists the same act
   apart as `gate_unsatisfiable`: where a refusal's own act is listed apart,
-  `reset-answers/agreeing.ts` re-says the refusal with `canMeet: "no_call"`,
+  `runtime/flow-authoring/bootstrap/reset-answers/agreeing.ts` re-says the refusal with `canMeet: "no_call"`,
   the generic listed-apart instruction, and the act out of `actsToUndo`. (This
   reverses the earlier direction, in which the refusal was trusted and the act
   moved to `actsToUndo`.) Every act to undo has an admissible call its `settle`
   words name, or it is listed apart as `gate_unsatisfiable` with a closed
-  `failed`; `site-reset/tests/ledger-act-to-call.test.ts` sweeps the loop and
+  `failed`; `runtime/flow-authoring/bootstrap/site-reset/tests/ledger-act-to-call.test.ts` sweeps the loop and
   value states to hold that.
 - **One place per act, one own-control answer.** An act's control has one place
   token: the original's place, else the toggle's, else the press's, else the
-  spot's (`reset-settlement/own-control.ts`). The judge, the toggle witness and
+  spot's (`runtime/flow-authoring/bootstrap/reset-settlement/own-control.ts`). The judge, the toggle witness and
   the value undo's same-control check all read it, and one shared function says
   whether the control stands set, back, or other. A control read in a third
   state, or no longer drawn at its place, is `other`, and the act closes
@@ -848,15 +852,15 @@ the collection type in `reset-settlement/collection-groups.ts`).
   page: the in-place fact counts every landed undo of the ledger, so the other
   acts on the list are not wrongly called `undo` or `no_admissible_undo`.
 - **Undo pairs by effect.** `undoes` is an optional hint. Core pairs a press
-  with the earlier open act it reverses (`reset-undo/claims.ts`): both on the
+  with the earlier open act it reverses (`runtime/flow-authoring/bootstrap/reset-undo/claims.ts`): both on the
   same resource, and either the press's changed places are exactly the act's
   reversed (after back to before) with nothing extra, or both are toggles at
   the same place with `from` and `to` swapped. Two possible matches pair
   nothing; an act declared irreversible never pairs. The domain may put an
   `effect` record on the start-state read taken just after a press
   (`AutomationStudioSiteResetRead.effect`, and the binding's `startState`
-  answer; passed through `site-reset/start-check.ts` to
-  `site-reset/act-places.ts`): `class`, per-place `before`/`after`, and an
+  answer; passed through `runtime/flow-authoring/bootstrap/site-reset/start-check.ts` to
+  `runtime/flow-authoring/bootstrap/site-reset/act-places.ts`): `class`, per-place `before`/`after`, and an
   optional `inverse` that narrows the match by action, control or resulting
   state. Every member is optional and a malformed member is dropped alone. A
   paired press is recorded like an admitted `undoes` press (attempts,
@@ -870,18 +874,18 @@ the collection type in `reset-settlement/collection-groups.ts`).
   location where an open act's witness is stale (`checks.lookAt`): the start
   check takes the target there with the arrival's node, reads it settled, and
   the caller feeds that read to every ledger (`start-check.ts`,
-  `project-reset.ts`; the candidate loop in `candidate/authoring-loop.ts`; in a
-  project build `service/project-build/brief-ports.ts`, where both the
+  `project-reset.ts`; the candidate loop in `runtime/flow-authoring/bootstrap/candidate/authoring-loop.ts`; in a
+  project build `framework/automation-service/service/project-build/brief-ports.ts`, where both the
   builder's trial reset and a reset's `remainingActs` look, each location once
   per ask). The model is asked only for what Core could not observe or what
   still differs. Where a caller passes no `lookAt`, Core never looks. Core's
   own moves are not the model's calls: the start check's `compare`,
   `compareAt` and `lookAt` arrivals run inside an async-context marker
-  (`runAsAutomationStudioCoreMove`, `llm/harness-options/core-move.ts`), and
+  (`runAsAutomationStudioCoreMove`, `runtime/llm/harness-options/core-move.ts`), and
   the registry frames such a call `move: "core"` ("A domain tool call's build
   scope and durable state" below), so a domain can exempt them from rules meant
   for the model.
-- **Per-act `settle` feedback** (`reset-settlement/words.ts`). Each open act under
+- **Per-act `settle` feedback** (`runtime/flow-authoring/bootstrap/reset-settlement/words.ts`). Each open act under
   `actsToUndo`, `actsToRestore` and in a reset brief carries `settle`
   (`AutomationStudioSiteResetNamedAct.settle`), one generic sentence built from
   its open reasons: read a named list at a location completely again; that list
@@ -894,7 +898,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
   words state the rule once (`WORDS.settleModel()`).
 - **Trial acts inherit destinations.** A trial step cannot carry a
   `resetDestination`, so a strict trial act that repeats an explored act
-  (`reset-settlement/trial-repeat.ts`: the same lasting classes, the same operation
+  (`runtime/flow-authoring/bootstrap/reset-settlement/trial-repeat.ts`: the same lasting classes, the same operation
   where both say which, the subject or page token present and equal on both,
   and no contradicting subject, page or resource) shares that act's
   destinations, lazily: one named later for the explored act covers the trial
@@ -909,7 +913,7 @@ the collection type in `reset-settlement/collection-groups.ts`).
   act's undo on a control whose `scope` is one of the act's destinations, or a
   destination lent from the explored act it repeats (`Act.lent`, gathered by
   the judge's `lent(act)` before admission), is admitted once, on `subject`,
-  without asking (`reset-undo/admission.ts`, `destinationRemoval`, after
+  without asking (`runtime/flow-authoring/bootstrap/reset-undo/admission.ts`, `destinationRemoval`, after
   every earlier admission path). It needs, in order: a subject token
   (`no_item_identity`); the allowance unspent (`undo_spent`); an original read
   of that list before the act (`no_destination_read_before`); the list read
@@ -932,8 +936,8 @@ the collection type in `reset-settlement/collection-groups.ts`).
   act: it stays listed with its `settle` until fresh reads settle it. Legacy
   unscoped acts keep their earlier paths (source-page `compareAt`, landed-undo
   fallback, keeping).
-- **A reset brief's honest ending** (`project-agents/dispatch/reset-loop.ts`,
-  `service/project-build/brief-ports.ts`). The reset port runs `remainingActs`
+- **A reset brief's honest ending** (`runtime/project-agents/dispatch/reset/loop.ts`,
+  `framework/automation-service/service/project-build/brief-ports.ts`). The reset port runs `remainingActs`
   once before its loop starts, so acts Core's looks settle never reach the
   model. Its task lists each open act with `What settles it: <settle>`, and a
   trial step's act reads `(made by step N of a trial run)`. A completion is
@@ -945,10 +949,10 @@ the collection type in `reset-settlement/collection-groups.ts`).
   trials while they are open, so no trial runs on them. Acts no call can
   settle are never in `remainingActs`; a reset left with only those completes
   at once and comes back `blocked` with `terminalReason: "gate_unsatisfiable"`,
-  its words naming them as left (`dispatch/ending.ts` `gateUnsatisfiable`).
+  its words naming them as left (`runtime/project-agents/dispatch/ending.ts` `gateUnsatisfiable`).
 
 Legacy mode is unchanged. Its dry-run test verifies lasting steps rather than
-redoing them (`flow-draft/verify-only.ts`), so it needs exploration's effects
+redoing them (`runtime/flow-authoring/draft/verify-only.ts`), so it needs exploration's effects
 in place and has no reset. The deployment's optional start hook
 (`prepareCandidateStart`, the Lab's fixture reset) still runs after the gate
 admits a trial.
@@ -1014,7 +1018,7 @@ read-only observation remains unsupported here. Source binding is historical byt
 consistency, and supplies no pinned read, complete interpretation, execution permission
 or accepted promotion. Those production joins remain required.
 
-`runtime/flow-bootstrap/candidate/` supplies an opt-in discovery-only loop and
+`runtime/flow-authoring/bootstrap/candidate/` supplies an opt-in discovery-only loop and
 `core.submit_candidate`. Discovery appends evidence without draft retention,
 automatic opener insertion or act completion. A complete submission uses the
 existing bootstrap compiler, domain parameter resolution and plan/permission
@@ -1022,7 +1026,7 @@ validation. Core assigns a revision and canonical digest; refused or superseded
 submissions invalidate the earlier candidate. Completion names the latest revision
 and digest and grants static validity only.
 
-`runtime/service/candidate-drafts/` persists unverified submissions separately
+`framework/automation-service/service/candidate-drafts/` persists unverified submissions separately
 from adaptations in Core project storage. Reading a stored draft grants neither
 execution nor promotion; it must be revalidated before runtime use. The existing
 raw API legacy authoring path remains the omitted-mode default. In candidate
@@ -1076,17 +1080,17 @@ instead?, ...}`:
   the step's own `step:` line for an issue about the node, the specific line
   (a `repeat most:`, an `only after:`) for one about a line.
 - The acceptor builds a locator from what assembly actually built
-  (`flow-bootstrap/authoring/script-locator.ts`), so indexes are never
+  (`runtime/flow-authoring/bootstrap/authoring/script-locator.ts`), so indexes are never
   recounted. A node Core derived -- the join after an optional step, a loop
   head -- maps through its `cause` to the written step whose line made it.
-  `automationStudioFlowBootstrapIssuePlace` (`authoring/locate-issue.ts`)
+  `automationStudioFlowBootstrapIssuePlace` (`runtime/flow-authoring/bootstrap/authoring/locate-issue.ts`)
   resolves a path to its place. Both acceptance answers and the completion
   verdict carry the map as `locator`, so assembly, the domain's parameter
   resolution, registry validation and the binding check after it
-  (`candidate/submission.ts`) all place their issues the same way
-  (`llm/harness-options/bootstrap-completion.ts`).
+  (`runtime/flow-authoring/bootstrap/candidate/submission/submission.ts`) all place their issues the same way
+  (`runtime/llm/harness-options/bootstrap-completion.ts`).
 - A JSON-plan submission has no lines: its issues carry the node's name as
-  `step` and its key as `label` (`authoring/plan-locator.ts`).
+  `step` and its key as `label` (`runtime/flow-authoring/bootstrap/authoring/plan-locator.ts`).
 - A Flow assembled from the live draft carries `draftStep`, `draftStepId` and
   `nodeDefinition` for each node tied to an original draft step. These come
   from assembly's existing node-to-step mapping, so an optional join does not
@@ -1101,10 +1105,10 @@ instead?, ...}`:
   knows it. A step whose consequences are undeclared gets it on its first
   issue; a typing step with `submit: true` is told it sends its form, which is
   a press, so it needs `consequences: none` or its classes
-  (`plan/issue-feedback.ts`).
+  (`runtime/flow-authoring/bootstrap/plan/issue-feedback.ts`).
 - The refusal's `next` names the refused steps by line and words ("line 32,
   "search for the paper towels""), each held to 120 characters
-  (`candidate/submission-refusal.ts`).
+  (`runtime/flow-authoring/bootstrap/candidate/submission/refusal.ts`).
 
 Trusted static handler-scope refusals also retain Core's explanation through
 early completion and repeated-submission feedback. A handler targets an explicit
@@ -1113,11 +1117,11 @@ authored-statement refusal code admits this message, preserving the existing
 withholding of arbitrary provider or page messages. Invalid handlers remain refused.
 
 The contract is enforced by
-`flow-bootstrap/candidate/tests/refusal-locator-corpus.test.ts`: a corpus of
+`runtime/flow-authoring/bootstrap/candidate/tests/refusal-locator-corpus.test.ts`: a corpus of
 scripts, each refused at one stage, goes through the real submission
 controller and is read back as the model is shown it, and every issue must
 have a `line` and a `step` unless its code is in `WHOLE_FLOW`. A source scan
-of `authoring/` and `script-statements/` requires every refusal code they can
+of `authoring/` and `runtime/flow-authoring/bootstrap/script-statements/` requires every refusal code they can
 raise to be met by a case, be in `WHOLE_FLOW`, or be listed, with its reason,
 as one a written script never reaches (`NOT_FROM_A_SCRIPT`).
 
@@ -1127,16 +1131,16 @@ where an issue has no line). An identical resubmission is the same refusal;
 correcting one step makes a different one and breaks the run. The refused-in-a-
 row warning shows the category without the digest and lists the recurring
 issues ("..., the same issues each time: <code> at line <n>",
-`llm/decision-handlers/refusal-run.ts`).
+`runtime/llm/decision-handlers/refusal-run.ts`).
 
 **An identical resubmission is told so in candidate terms.** The repeat guard
 keys `core.submit_candidate` on its `flow` (or `plan`) alone, so a changed
 `summary` does not make an unchanged script a new call
-(`llm/repeat-guard/outcomes.ts`). A refused script sent again is not checked
+(`runtime/llm/repeat-guard/outcomes.ts`). A refused script sent again is not checked
 again: its note says so, carries the earlier refusal's `issues` as given, tells
 the model to change the lines they name and keep the rest, and says what one
 more unchanged send does -- the build ends with nothing tested at three repeats
-refused in a row (`llm/repeat-guard/candidate-feedback.ts`). Candidate mode is
+refused in a row (`runtime/llm/repeat-guard/candidate-feedback.ts`). Candidate mode is
 `discoveryOnly`; the note and the refusal-run warning never mention the draft,
 a rerun, marking a step optional or the Flow being tested and judged as it
 stands, which the legacy notes still say.
@@ -1144,15 +1148,15 @@ stands, which the legacy notes still say.
 ### Script statements a candidate may write
 
 These are taught in `AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT`
-(`flow-bootstrap/plan/flow-script-format.ts`) and assembled by
-`flow-bootstrap/script-statements/`:
+(`runtime/flow-authoring/bootstrap/plan/flow-script-format.ts`) and assembled by
+`runtime/flow-authoring/bootstrap/script-statements/`:
 
 - **`repeat most: <n>`** bounds a `repeat while` span and goes on the span's
   first step, beside `repeat while:`. Written under a later member of the
   span, it is moved to the first step, since nesting is refused and it can
   bound only that span. Written where no `while` span takes it, or on a span
   that already has a bound, it is refused `flow_script.repeat_most_misplaced`
-  at its own line (`repeat-bound.ts`).
+  at its own line (`runtime/flow-authoring/bootstrap/script-statements/repeat/bound.ts`).
 - **`optional: yes` inside a span.** A step inside a repeat span may be
   optional (an optional step that is the last step of a `repeat while` span,
   the check that repeats it, is still refused `flow_script.optional_misplaced`).
@@ -1172,7 +1176,7 @@ These are taught in `AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT`
   from 1 ms to 10 min. A pace under a later member moves to the first step; a
   second pace, or one no span takes, is `flow_script.repeat_pace_misplaced`,
   and one that cannot be read or is out of range
-  `flow_script.repeat_pace_invalid` (`repeat-pace.ts`). It lands on that
+  `flow_script.repeat_pace_invalid` (`runtime/flow-authoring/bootstrap/script-statements/repeat/pace.ts`). It lands on that
   step's plan node as `paceMs`.
 
 A plan node's `paceMs` is a whole number of milliseconds from 1 to 600,000
@@ -1182,17 +1186,17 @@ A plan node's `paceMs` is a whole number of milliseconds from 1 to 600,000
 [Router Runtime](../automation-studio.md#router-runtime) section).
 
 The executor skips a guarded group's optional step as it skips any optional
-step (`executor/step-skip/optional-step.ts`): besides a step whose `failed`
+step (`engine/automation/step-skip/optional-step.ts`): besides a step whose `failed`
 and `success` edges enter the same Merge, it accepts one whose `failed` edge
 enters a Merge that its success path reaches through at most 32 steps that do
 not branch, and the `failed` edge stays the way on. So on a pass where the
 site's notice is absent the group is gone past without spending retries or
-recovery (`executor/step-skip/tests/guarded-group-run.test.ts`).
+recovery (`engine/automation/step-skip/tests/guarded-group-run.test.ts`).
 
 ### What a trial says it absorbed
 
 A candidate trial's feedback lists, for each step, every refused attempt it
-got past (`absorbed`, `service/candidate-trial/absorbed.ts`): the failure
+got past (`absorbed`, `framework/automation-service/service/candidate-trial/absorbed.ts`): the failure
 code, what happened ("The site asked the run to slow down on pass 4 (Jonas),
 and to try again in 5.5 s." when the failure carried a wait hint, else Core's
 category sentence), the pass and row, the wait asked, the wait taken and the
@@ -1201,7 +1205,7 @@ most once every 5.5 s." when a pace was learned. The paces a run learned are
 also said once at the top level under `paces`. The failure's own message is
 never read. A rate limit with no wait hint also raises the pace (x1.5 from a
 1 s floor, capped at 60 s). Core writes the learned pace itself: at the next
-submission `flow-bootstrap/learned-paces.ts` sets each step's `paceMs` to the
+submission `runtime/flow-authoring/bootstrap/learned-paces.ts` sets each step's `paceMs` to the
 largest pace a trial learned for that step's identity (the definition and its
 parameters with `ensureState` off), rounded up to 100 ms, held to the plan's
 bound and never below the step's own; a resubmission of the same text counts as
@@ -1210,28 +1214,28 @@ model gets says so and asks only for the dismiss-and-wait step when a way out
 was named, not for a `repeat pace:` line. Promotion keeps a learned pace: the deciding trial's learned pace
 raises the matching plan node's `paceMs` (never lowers an authored one, held
 to the plan's bound), and the `candidateTrial` audit detail names
-`learnedPaces` and `raisedPaces` (`service/candidate-trial/promotion.ts`).
+`learnedPaces` and `raisedPaces` (`framework/automation-service/service/candidate-trial/promotion.ts`).
 
 **The feedback always names the step a run stopped at (t743).** A run of more
 than `MAX_STEPS` (40) steps lists the first 39 and then the last step the run
 attempted, under its real step number and with its full entry
-(`service/candidate-trial/feedback.ts`); `stepsLeftOut` counts the steps
+(`framework/automation-service/service/candidate-trial/feedback.ts`); `stepsLeftOut` counts the steps
 between them. When that last step failed, the stop
-(`flow-bootstrap/candidate/trial-stop.ts`) is about it, with `leftOut`, and its
+(`runtime/flow-authoring/bootstrap/candidate/trial/stop.ts`) is about it, with `leftOut`, and its
 sentence says the listing shows the first N and then that step, with the M
 between them left out; with steps left out it does not claim how often that
 step ran before. A long run whose last step did not fail ends on the graph,
 start or run sentence, and the run sentence counts the listed steps plus those
 left out. The step log names what a tool threw by the error's name
-(`llm/step-log/summary.ts`), and its `loopVerdict` is
+(`runtime/llm/step-log/summary.ts`), and its `loopVerdict` is
 `llm_evidence_loop.cancelled` for an `AbortError` or `TimeoutError`,
-otherwise `llm_evidence_loop.tool_failed` (`llm/step-log/tool-step.ts`).
+otherwise `llm_evidence_loop.tool_failed` (`runtime/llm/step-log/tool-step.ts`).
 
 **What a trial calls each step's control (t748).** One owner,
-`service/candidate-trial/step-control.ts`, gives the feedback's
+`framework/automation-service/service/candidate-trial/step-control.ts`, gives the feedback's
 `steps[n].control` and a landed act's `on "<control>"` the same words. A control
 is named by its own words as the domain resolved them
-(`llm/model-facing/control-words.ts`), screened by `control-text.ts`: no
+(`runtime/llm/model-facing/control-words.ts`), screened by `control-text.ts`: no
 locator shape, no match score, no finding-only word (selector, fingerprint).
 The failure-text screen (`sayable-text.ts`) also drops "address" and "score",
 which a failure's text uses for the finding; on a control they are page words,
@@ -1252,10 +1256,10 @@ names read steps by their saved words again.
 
 **Judge advice after a refused undisclosed read (t743).** The judge's advice
 reaches the builder through the subflow's repeated-advice memory
-(`flow-bootstrap/subflow-candidate/repeated-advice.ts`), which the dispatcher
+(`runtime/flow-authoring/bootstrap/subflow-candidate/repeated-advice.ts`), which the dispatcher
 shares across a build's briefs. That memory holds an
 `AutomationStudioSubflowDisclosureAdvice`
-(`subflow-candidate/disclosure-advice.ts`): once a tool answer of the build was
+(`runtime/flow-authoring/bootstrap/subflow-candidate/disclosure-advice.ts`): once a tool answer of the build was
 refused with `detail.reason === "incomplete_text"` (seen by `builder-loop.ts`
 on every call that is not a submit or a test), or a trial step's `actual`
 begins with that marker, a sentence of a judged no's `judge.advice`, or of
@@ -1307,7 +1311,7 @@ request over it is refused before it is sent, with its size, and is never
 trimmed (`runtime/llm/harness/run.ts`). The instruction is still read for one
 thing: a capability it asks for (to enter, choose, press, verify and so on) that
 no offered node provides is recorded in `catalogSelection.missingRequiredTerms`
-(`runtime/flow-bootstrap/plan/required-terms.ts`), and generation fails before
+(`runtime/flow-authoring/bootstrap/plan/required-terms.ts`), and generation fails before
 provider or secret resolution. Provided capabilities come from a node's id,
 label, declared tags and registered fixed/allowed output ids. Descriptions,
 parameter names, data ports, categories and trait names do not declare an
@@ -1335,7 +1339,7 @@ one decision, was resent on every decision). Its `flowBootstrap` carries:
 - `nodeCatalog`: every offered node as `{"<category>": ["<id>: <description>"]}`,
   nothing cut, descriptions whole with whitespace collapsed, categories in the
   order they first appear in the id-sorted catalog and entries by id
-  (`runtime/flow-bootstrap/plan/catalog-names.ts`);
+  (`runtime/flow-authoring/bootstrap/plan/catalog-names.ts`);
 - `nodeCatalogNote`: one constant sentence on how to read the two fields;
 - `describedNodes`: the full catalog entries (label, description, ports,
   parameter contracts with their authoring text, output-action contract) of
@@ -1359,7 +1363,7 @@ call naming only unknown ids is refused as `describe_nodes.unknown_nodes`. The
 memory is one build's (`runtime/llm/node-tools/node-descriptions.ts`): every
 round of the build shares it, and a new build starts empty. A describe call
 reads nothing on the page: build routing records nothing for it (`pageless`,
-`runtime/route-state/build-routing.ts`) and the state-digest hook skips it, so
+`framework/automation-service/route-state/build-routing.ts`) and the state-digest hook skips it, so
 it costs no page capture.
 
 Describing first is advice, never a gate: nothing is refused before a call for
@@ -1373,20 +1377,20 @@ not declare (`runtime/llm/node-tools/describing-failures.ts`). Core's own
 replays of the draft pass through untouched.
 
 **A parameter the host fills is never shown (t432).** A node parameter
-declared `shownToModel: false` (`nodes/contracts.ts`) is one the host fills
+declared `shownToModel: false` (`components/automation/contracts.ts`) is one the host fills
 from what the model names and the model never writes -- on the web, a node's
 `selector`, `element` and `visualTarget`, filled from the handle the model
 writes in `target`. It is left out of every catalog entry, so of
 `describedNodes` and `core.describe_nodes` too
-(`runtime/flow-bootstrap/plan/catalog.ts`), and out of the shape a refused
+(`runtime/flow-authoring/bootstrap/plan/catalog.ts`), and out of the shape a refused
 parameter is answered with (`accepted`) and the list an undeclared one is
-answered with (`runtime/flow-bootstrap/plan/issue-feedback.ts`). The node
+answered with (`runtime/flow-authoring/bootstrap/plan/issue-feedback.ts`). The node
 still declares it, so a Flow that holds it validates and runs. Everything a
 model reads about naming an element -- the Flow script format, the library
 verb's description, the in-run repair instruction, the advice on a refused
 candidate, Core's own refusals -- speaks of the handle the evidence printed and
 never of a selector, a locator, CSS or XPath; a guard test fails if one does
-(`runtime/tests/model-facing/tests/handle-only.test.ts`). A model told "never
+(`framework/automation-service/tests/model-facing/tests/handle-only.test.ts`). A model told "never
 write a locator" has still been taught that a locator is a thing it could
 write, so the prohibitions are worded without the word too.
 
@@ -1405,7 +1409,7 @@ build does not hold raises an
 
 **Only a high-risk real-world consequence is ever refused.**
 `AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES` is exactly `move_money`,
-`delete`, and `send_or_publish` (`action-permissions/destructive.ts`): completing
+`delete`, and `send_or_publish` (`runtime/action-permission-requests/destructive.ts`): completing
 a purchase or checkout, moving money, deleting, and sending or publishing on the
 person's behalf. `modify_existing` and `create_new` do not cause an authoring
 permission question solely from their class. **The instruction authorises none of
@@ -1421,12 +1425,12 @@ compared with the instruction. Only a gated subset no person has permitted
 produces an `automation-studio.action-permission-request.v1`.
 
 **The instruction's read: one call per build, about its acts, before any press
-needs it (t174-w107).** The read is `service/instruction-authority.ts`: one
+needs it (t174-w107).** The read is `framework/automation-service/service/instruction-authority.ts`: one
 `evidence_tool_decision` with no tools, `metadata.source: "instructionAuthority"`,
 counted with the build (step-log phase `read`). Where the instruction's acts are
-read with no model (`runtime/flow-bootstrap/instructed-acts/instruction-acts.ts`,
+read with no model (`runtime/flow-authoring/bootstrap/instructed-acts/instruction-acts.ts`,
 the same ids as the build's checklist), its completion's consequence half
-(`automationStudioInstructedConsequencesSchema`, `action-permissions/instructed.ts`)
+(`automationStudioInstructedConsequencesSchema`, `runtime/action-permission-requests/instructed.ts`)
 asks first for `acts`: one required key per act id, described by the act's own
 words, answered with the classes that act asks for or `["none"]`; then the free
 `instructed` list as before, for what no act names (a refund). The decision
@@ -1444,18 +1448,18 @@ and the Flow's thread is told once which act, in the person's words.
 rule: a route the person names must be followed; a Flow may start where the
 work begins unless the person names the route. The authority's completion is
 `automationStudioInstructionReadingSchema`
-(`action-permissions/instruction-reading/`): the consequence question above,
+(`runtime/action-permission-requests/instruction-reading/`): the consequence question above,
 unchanged, with a required `route` beside it answered `named` (the instruction's
 id, its words for the whole route, and each place in the order to visit them),
 `open`, or `unclear`. The exported consequence-only schema is unchanged. Core
 reads the two halves independently (`readAutomationStudioInstructionReading`):
 a route it cannot ground never removes a grounded consequence, and grounded
 consequences never make a missing route open. The route reading
-(`action-permissions/instruction-route/`) has four states. `named` holds only
+(`runtime/action-permission-requests/instruction-route/`) has four states. `named` holds only
 when the route's words occur exactly once in the named active instruction and
 each waypoint's words exactly once inside them, compared as the permission read
 compares quotes but mapped back to the person's own words
-(`action-permissions/instruction-quote/`) as UTF-16, half-open spans over
+(`runtime/action-permission-requests/instruction-quote/`) as UTF-16, half-open spans over
 `title + "\n" + body`; Core makes the route and waypoint ids and binds the
 reading to the active instruction set's digest. No 300-character quote bound
 applies, and a route past 20 waypoints is not shortened. `open` is only an
@@ -1477,11 +1481,11 @@ downstream).
 the loop the authority's route (`runtime/llm/harness-options/draft-route.ts`,
 through `automationStudioFlowBootstrapDraftActs`). Once the read has settled
 and still matches the active instructions, the draft shows it
-(`runtime/flow-draft/entry.ts`, `route`): the route in the person's words with
+(`runtime/flow-authoring/draft/entry.ts`, `route`): the route in the person's words with
 each place under an id, `r1` first, or `"open"` where they named none. The
 model says which steps are on each place with `place` (`"r2"`, `"r1,r2"`,
 `none`) beside `add` on a call or on an amend_draft `add` or `keep`, stored as
-`places` on the step (`runtime/flow-draft/route-places/`). Unlike an act, many
+`places` on the step (`runtime/flow-authoring/draft/route-places/`). Unlike an act, many
 steps may be on one place, and a claim replaces only that step's own. The
 completion is refused (`flow_bootstrap.route_not_followed`) while a named
 route has a place no step in the Flow is on, places reached out of order, or a
@@ -1500,8 +1504,8 @@ skipping a place on it, does not do what was asked
 saved Flow, and route-aware feedback at edit time (contract phases 3 and 5).
 
 The build's tests check, rather than do again, a step claiming an act that is
-lasting (`flow-bootstrap/action-permissions.ts`, `instructedLastingActs`;
-`flow-draft/verify-only.ts`). An act is lasting when any of three holds: (a) its
+lasting (`runtime/flow-authoring/bootstrap/action-permissions.ts`, `instructedLastingActs`;
+`runtime/flow-authoring/draft/verify-only.ts`). An act is lasting when any of three holds: (a) its
 kind does something to an item that stays done -- `add_to`, `save`, `claim`,
 `move`, `submit` -- whatever the read said (run `run-musp4h2f-72e8ed99`, whose
 two split adds the read quoted as one sentence were pressed again until the cart
@@ -1551,7 +1555,7 @@ to checkout" refused "Place order" -- the press the task needed -- unasked for
 the rest of the build. The domain tells its model `consequences_declined` for a
 declined press rather than `consequences_not_granted`, which says the request
 is still in front of the person. The repair path
-(`recovery/runtime-exploration.ts`) follows the same rules since 2026-10-01:
+(`runtime/adaptation/recovery/runtime-exploration.ts`) follows the same rules since 2026-10-01:
 each request is asked once, a decline is told to the repair's model as
 declined and its exploration goes on, a different control is asked, and only
 an unanswered request ends the exploration, with `operator_approval_required`
@@ -1676,10 +1680,10 @@ How large a Flow may be is one setting a person changes: the most nodes one
 Subflow may hold, `flowSizeSettings.maxNodesPerSubflow` in the Flow's metadata,
 shown in Flow Settings as "Maximum nodes per Subflow". It defaults to 100 and
 accepts a whole number from 1 through 1,000; a Flow saved before the setting
-existed reads the default. The model is `model/flow-size/`.
+existed reads the default. The model is `flows/authoring/model/flow-size/`.
 
 Every bound on a Flow's size is derived from it in
-`runtime/flow-bootstrap/plan/size-limits.ts`, so raising it raises all of them:
+`runtime/flow-authoring/bootstrap/plan/size-limits.ts`, so raising it raises all of them:
 two edges per node in a Subflow, eight full Subflows in total, a graph depth
 equal to the node setting (a straight chain of every node fits), two kilobytes
 of plan per node (never below 65,536 bytes), and one kilobyte per node for one
@@ -1771,14 +1775,14 @@ it, never both:
   plan from the reply -- a candidate submission, a legacy completion with no
   draft (`bootstrap-completion.ts`) -- for the one-shot `flow_bootstrap` plan of
   a build that explored nothing (`service.ts`), and for every step and fact an
-  in-run repair writes (`runtime/recovery/annotation/step-evidence-resolution.ts`).
+  in-run repair writes (`runtime/adaptation/recovery/annotation/step-evidence-resolution.ts`).
   Before asking, a repair's condition about a control named by handle takes its
   `fact` from its `op` (`exists`, `absent`, `visible`, `enabled`, `count`), or
   keeps `text`, `value`, `count` or a presence word for a comparison, because the
   domain reads a described fact as `unknown` and a `when` that answers `unknown`
   never holds; a comparison that says only in its own words what it compares is
   refused (`recovery.fact_kind_unread`), so the repair answers `none` and records
-  no adaptation (`runtime/recovery/annotation/patch-fact-kind.ts`, t787).
+  no adaptation (`runtime/adaptation/recovery/annotation/patch-fact-kind.ts`, t787).
 - `modelWrittenParameters: string[]`: for a node the host wrote -- a plan built
   from the draft, whose steps ran with what the domain resolved -- the
   top-level parameters the model wrote over it: the `settings` an
@@ -1794,7 +1798,7 @@ A fact is Core's own statement, so Core judges its target itself: with
 `writtenByModel`, or in a parameter `modelWrittenParameters` names, a fact
 target that names neither a handle nor a dialog -- the `at "<locator>"` form,
 which only a hand-authored Flow may write
-(`runtime/flow-bootstrap/script-statements/fact-locator.ts`) -- is refused as
+(`runtime/flow-authoring/bootstrap/script-statements/fact-locator.ts`) -- is refused as
 `bootstrap.target_not_a_handle` at its path, with a fixed sentence saying to
 name the element by the handle the evidence printed. An in-run repair's fact
 whose target is anything but `handles` is refused the same way before any
@@ -1834,7 +1838,7 @@ the strict Bootstrap response schema remains authoritative.
 
 A reply that stopped of its own accord (`finish_reason: stop`) but never
 closes its object, short only of closing brackets at its end, has the closers
-its open brackets need appended (`llm/deepseek/unclosed-content.ts`, since
+its open brackets need appended (`runtime/models/providers/deepseek/unclosed-content.ts`, since
 t378). The closed text must parse and is validated as any reply; content that
 does not start with `{`, ends inside a string or closes the wrong bracket is
 still refused `content_unclosed`, and a `length` reply is refused as
@@ -1842,7 +1846,7 @@ truncated before this runs. The reply as sent stays in the step log.
 
 An exhausted provider balance has its own code, `llm.provider_balance_exhausted`
 (t728), rather than `llm.provider_http_error`. The DeepSeek adapter
-(`llm/deepseek/balance-exhausted.ts`, used by `provider.ts` and
+(`runtime/llm/deepseek/balance-exhausted.ts`, used by `provider.ts` and
 `panel-command.ts`) reads it from HTTP 402, or from a screened error code, type
 or message saying the balance, quota, credit or funds are insufficient, at any
 status, and checks it before the 401/403/429 refusals. Its disposition is
@@ -1890,7 +1894,7 @@ Both of the first two parts are constant for a binding and a task kind, so the
 text sits inside the prefix a provider's cache reuses from one call to the next.
 
 **Rules Core says itself, per task kind (t728).** The sentences that hold for
-every domain are Core constants in `llm/deepseek/system-prompt.ts`, added to the
+every domain are Core constants in `runtime/llm/deepseek/system-prompt.ts`, added to the
 third part (Core's task prose), never to the first, so the format, injection and
 schema rules are unchanged. In prose order:
 
@@ -2099,14 +2103,14 @@ the judge of the build's test as `buildTest.notes`
 (`runtime/result-verification/build-test/`). A replayed list read's observation
 also carries `readRows`: the labels of the rows it returned and, per condition,
 the rows that condition alone left out, screened by the same function as the
-runtime judge's `leftOutOnlyByThis` (`build-test/read-rows.ts`), so the judge
+runtime judge's `leftOutOnlyByThis` (`runtime/result-verification/build-test/read-rows.ts`), so the judge
 can see an asked row was dropped (live run `run-muqk713g`, cause C3), and,
 where the replay sent them, the rows two or more conditions left out together
 (`leftOutTogether`, t655), each set by condition number and name. A test
 stores nothing itself, so `buildTest.stores` says what the Flow would store:
 each dataset its steps' record outputs write, in Flow order, with the write
 mode, the steps, the rows those steps' reads returned in the test, every label
-in storing order and the labels stored more than once (`build-test/stores.ts`);
+in storing order and the labels stored more than once (`runtime/result-verification/build-test/stores.ts`);
 Core's observation of the test leads with that count ("30 records would be
 stored"), which is what the check's card says, and the judge is told to judge it
 as the result (t274, live run `run-muw60j7c-bb7c9a62`, C-3: told the test
@@ -2142,7 +2146,7 @@ re-author followed that and discarded the exact answer it held). A
 changing step the test ran again carries `observed` too when its answer says
 what it changed or what the page answered (`changed`, `notice`), without the
 answer's `ok`, `said` and any code the outcome already gives; an answer with
-neither is not sent (`build-test/observation.ts`, `build-test/summary.ts`), so
+neither is not sent (`runtime/result-verification/build-test/observation.ts`, `runtime/result-verification/build-test/summary.ts`), so
 the judge reads what a replayed press did (t193 round 1003: run
 `run-musp4h2f-72e8ed99`'s judge never saw the quantity its "+" set). Its
 `changed` lines are bounded before the screen: at most three, each cut to 160
@@ -2150,7 +2154,7 @@ characters, the lines quoting the step's own words first, then a text that now
 reads otherwise (where a quantity or a total is said), then the rest, with
 `changedNotShown` counting the others and the domain's own `and N more
 changes`; a credential-shaped line is dropped as withheld
-(`build-test/change-lines.ts`, t174-w106: run `run-musp8nz1-dbd3905a`'s judges
+(`runtime/result-verification/build-test/change-lines.ts`, t174-w106: run `run-musp8nz1-dbd3905a`'s judges
 saw a press that un-chose Space Grey and the one that chose it again as two
 `replayed`). The judge is also told that the test started from a page that kept
 what exploration did, so a count, a cart item or a collected coupon may predate
@@ -2183,7 +2187,7 @@ instructed-act check that follows is information the same way, except
 get asked, and `step_is_optional` on an act or choice whose only step is marked
 optional: the Flow carries on when that step fails, so the act may never be
 done, and one passing test does not show it always is
-(`runtime/flow-bootstrap/instructed-acts/optional-only.ts`, issue
+(`runtime/flow-authoring/bootstrap/instructed-acts/optional-only.ts`, issue
 `bootstrap.instructed_act_only_optional`; run `run-musq0b1m-0472cfa0`, Cause 5,
 where the 7-in-1 press was made optional on a false premise and both judges
 passed it because it "was replayed"). A step made conditional with `only_if` is
@@ -2213,7 +2217,7 @@ table with four named columns â€” proposed four different Flows as finished
 of which navigated twice, typed three times and read nothing. Checks 1 to 5
 confirmed all four parsed, resolved and validated.
 
-`flow-bootstrap/answerability/` answers it from the plan and the active
+`runtime/flow-authoring/bootstrap/answerability/` answers it from the plan and the active
 instructions' own text, with no provider call on any path. It reads what the
 instruction asks to be given back from a short list of unambiguous words
 (`records`, `rows`, `columns`, `as a table`, `scrape`, `extract` and a few
@@ -2236,8 +2240,8 @@ interruptions and read the list; the amendments that followed reduced the draft
 to the reading alone. An extraction on its own satisfies answerability, because
 a step that returns rows is present; it simply has nowhere to do it.
 
-`flow-bootstrap/reachability/` answers it from the plan and the start location
-the build was given (`flow-bootstrap/start-location.ts`), with no provider call
+`runtime/flow-authoring/bootstrap/reachability/` answers it from the plan and the start location
+the build was given (`runtime/flow-authoring/bootstrap/start-location.ts`), with no provider call
 on any path. It notes only when all three hold: the build was given a start
 location, the plan holds at least one step that acts on the bound domain's own
 target â€” a node the domain registered, or one of Core's told to dispatch a
@@ -2277,13 +2281,13 @@ arrived and could not be read (`llm.provider_malformed_response`, a truncated
 or oversized reply, output that is not the decision object) has a count of its
 own and never moves the no-progress guard. It is asked again with the same
 context and a `core.decision_check` note saying what could not be read (the
-reply's case from `runtime/llm/reply-account.ts`, in words) and how many in a
+reply's case from `runtime/models/failures/reply-account.ts`, in words) and how many in a
 row stop the build; it is paid for and counted in the budget. Six in a row end
 the round `llm_evidence_loop.unreadable_replies`, and the build ends
 `flow_bootstrap.model_replies_unreadable` with an `ending` message saying so,
 how many tries it took, what of the request the Flow already does and whether
-the Flow so far was kept (`runtime/llm/unreadable-reply.ts`,
-`runtime/flow-bootstrap/unfinished-build/replies-unreadable.ts`). A reply that
+the Flow so far was kept (`runtime/models/failures/unreadable-reply.ts`,
+`runtime/flow-authoring/bootstrap/unfinished-build/replies-unreadable.ts`). A reply that
 was read but is no decision the iteration offered -- a shape the grammar does
 not read, finishing before finishing was offered, editing the draft when that
 was not offered -- is refused as `llm_evidence_loop.decision_shape_invalid`,
@@ -2316,14 +2320,14 @@ replaced, at the end of the draft, carrying `replacedBy` (the rerun's id); the
 draft entry shows it as `replacedBy: <step number>` without the argument it ran
 with, and an amendment or rerun naming it is refused `not_a_kept_step` with
 `replacedBy` and a `next` naming the step that replaced it
-(`runtime/flow-draft/amendment/replaced-attempt.ts`). The receipt used to sit
+(`runtime/flow-authoring/draft/amendment/replaced-attempt.ts`). The receipt used to sit
 just after the rerun, so every later step moved one on and its old argument
 read as a step still to fix: live run `run-musp474o-e0ed7432` reran such a
 stale listing three times and its round stopped short (t195-w41). The draft entry's
 guidance says so, and the Flow is assembled only from added steps. The loop
 option `draftAuthoring: "transcript"` keeps the old rule, under which every step
 that ran was `kept` unless withdrawn; it exists only to replay builds recorded
-under that rule (`runtime/llm/loop-configuration.ts`, `runtime/flow-draft/step.ts`).
+under that rule (`runtime/llm/loop-configuration.ts`, `runtime/flow-authoring/draft/step.ts`).
 A step may also be written rather than run (`core.run_node` with `write: true`),
 and its values bound to a Flow input or a loop's row (`amend_draft bind`): see
 [Flow Authoring](flow-authoring.md) (t252).
@@ -2332,7 +2336,7 @@ and its values bound to a Flow input or a loop's row (`amend_draft bind`): see
 joins the Flow -- `add` on its call, or an `add` or `keep` amendment -- every
 step since the last step in the Flow that the model took without deciding
 about (`taken`) and that changed the state joins with it, because the step ran
-on what they left (`runtime/flow-draft/opener.ts`, `runtime/flow-draft/path-to-step.ts`).
+on what they left (`runtime/flow-authoring/draft/opener.ts`, `runtime/flow-authoring/draft/path-to-step.ts`).
 The walk back passes over a look and a call that did not work (even where the
 page went on loading under it), and over a step that changed nothing or has no
 states; it ends at a step in the Flow or at one the model dropped or called
@@ -2347,7 +2351,7 @@ ran the item-page steps on the home page. For the same reason a refused dry
 run, given the draft, names the taken steps that changed the page on the way
 to its first `unreproducible` step and are not in the Flow (`notInFlow`:
 "Steps 3, 4 and 5 changed the page on the way to step 6 ... add them",
-`runtime/flow-draft/dry-run.ts`).
+`runtime/flow-authoring/draft/dry-run.ts`).
 
 **Each step names the control it acted on (t174/F33).** A step's `input` names
 a control by the token the domain minted for it, a handle on the web, and a
@@ -2362,7 +2366,7 @@ evidence boundary as a permission request's control name does: read only on
 the execution-result parse path, carried only when the call's own evidence
 showed those words, plain (no control characters or `<>`), and cut to 120
 characters; anything else is withheld, never refused
-(`runtime/flow-draft/control-words.ts`). It is never a parameter: the Flow is
+(`runtime/flow-authoring/draft/control-words.ts`). It is never a parameter: the Flow is
 written from `input`, `ranWith` and `settings` (`runtime/llm/node-tools/draft-step.ts`).
 
 **A step that answered an interruption is optional (t174, case 2 of t174-w60).**
@@ -2372,8 +2376,8 @@ wall, a covering popup -- that was gone after it. Only `true` is carried; any
 other value is withheld, never refused. The draft step keeps it, and a proposed
 step that says it, claims none of the instructed acts and has no routing of its
 own is wired as `optional` when the Flow is written
-(`runtime/flow-draft/interruption.ts`, `runtime/flow-draft/sometimes-present.ts`,
-`runtime/flow-bootstrap/authoring/draft-routing.ts`): its failure reaches the
+(`runtime/flow-authoring/draft/interruption.ts`, `runtime/flow-authoring/draft/sometimes-present.ts`,
+`runtime/flow-authoring/bootstrap/authoring/draft-routing.ts`): its failure reaches the
 join the next step runs from, so playback skips it on a visit where the site
 remembers the answer. The test from the start passes over its failure the same
 way. The stored draft is not rewritten, and a step that does an instructed act
@@ -2382,7 +2386,7 @@ is never made optional.
 **Each step records the page it started on and the page it left (t243).** A
 run that meets a step it cannot run continues at the node whose expected
 pre-state matches the page, so the build records each step's pre-state as it
-sees it. The build's routing (`runtime/route-state/build-routing.ts`) keeps,
+sees it. The build's routing (`framework/automation-service/route-state/build-routing.ts`) keeps,
 for every call that reports the digest of the page it left
 (`stateDigests.after`) and that page's route state, the host's signature of the
 state (`signRouteState`) under that digest; the free first look counts the same
@@ -2390,7 +2394,7 @@ way. A draft step's `stateBefore` and `stateAfter` digests then name its route
 signatures: `before`, its expected pre-state, and `after`. They ride the plan
 node (`routeSignatures`) through validation, which apply repeats and compares
 byte for byte, to the Flow node's metadata under `routeSignatures`
-(`runtime/flow-bootstrap/adaptation.ts`). They are keyed by digest rather than
+(`runtime/flow-authoring/bootstrap/adaptation.ts`). They are keyed by digest rather than
 by call id because call ids repeat across repair rounds -- `initial.<tool>`
 opens every round -- while a digest names the page itself, and a step's
 `stateBefore` is the previous call's `stateAfter` whenever nothing moved the
@@ -2441,7 +2445,7 @@ answers `present` whatever the control now reads.
 instruction asks for, in the person's words, with `done` naming the step of the
 Flow that does it or `todo` saying why none does yet. It is computed each
 decision by the same rule the completion check applies
-(`runtime/flow-bootstrap/instructed-acts/checklist.ts`, `check.ts`
+(`runtime/flow-authoring/bootstrap/instructed-acts/checklist.ts`, `check.ts`
 `automationStudioInstructedActStepFault`), is carried whole and never trimmed,
 and is shown even before any step has run. A step added with `act` is the
 model's claim for that act, so a completion need not name it again; a claim in
@@ -2454,7 +2458,7 @@ complete its choices. A choice made by a step positioned after the step that
 does its act stays done but carries `afterAct` and `afterActSaid` (the act ran
 before its choice), and the check's verdict lists it under `choicesAfterAct`:
 information for the model and, through `buildTest.checklist`, the judge, never
-a refusal (`runtime/flow-bootstrap/instructed-acts/choice-order.ts`). When the
+a refusal (`runtime/flow-authoring/bootstrap/instructed-acts/choice-order.ts`). When the
 two steps' recorded domain places differ, the feedback asks the model to review
 the act claim or a legitimate change after the act rather than prescribing a
 reorder ahead of the place containing the choice's target. Places are compared
@@ -2478,7 +2482,7 @@ domain to hold it there: exploration carries on from the page as it stands
 (`runtime/service.ts`, the harness registry built for a continuation).
 
 **A round that stops short is not a silent build ending (t208).** The
-coordinator in `runtime/flow-bootstrap/unfinished-build/phases.ts` tests a
+coordinator in `runtime/flow-authoring/bootstrap/unfinished-build/phases.ts` tests a
 partial non-empty Flow from its start with the same deterministic gate, judges
 it against the checklist, and seeds a live repair with that Flow and judgement.
 Where that test ran clean and the completion check accepts the Flow, the
@@ -2489,7 +2493,7 @@ test and explores again from the live page while budget remains.
 **Repairs are bounded by money and progress, not by a count (t240).** Another
 round opens only when both hold:
 
-- **The purse can fund it** (t254, `unfinished-build/round-funding.ts`). It must
+- **The purse can fund it** (t254, `runtime/flow-authoring/bootstrap/unfinished-build/round-funding.ts`). It must
   hold the judging of its Flow -- two judge calls, since a first answer is
   confirmed or asked again, each at the largest judge hold priced (or, before
   any, at a judge's standing allowance of 8,000 input and 1,250 reply tokens) --
@@ -2512,7 +2516,7 @@ round opens only when both hold:
   finishes the build on a yes about that Flow (t254 stage 2), unless that Flow
   is unchanged since a judge of the build said no to it (stage 3; see "One
   purse per Flow creation" below).
-- **The round before it measurably progressed** (`unfinished-build/progress.ts`),
+- **The round before it measurably progressed** (`runtime/flow-authoring/bootstrap/unfinished-build/progress.ts`),
   by what the test and the judge report. That means more acts or choices with a
   step, or more of them proven by the test; a test that now runs clean, or fails
   at fewer steps; with no judge, more steps that worked; a round that finished
@@ -2550,7 +2554,7 @@ round 1003 and t195-w48), and read as a chat answer, never a debug log:
   ("the Flow came out exactly the same", "3 of the 3 things you asked have a
   step, no more than before"). What was tried is "I worked on it live twice:
   first exploring the page, then fixing it once after testing what I had"
-  (`automationStudioFlowBootstrapWorkedLiveSaid`, `unfinished-build/not-done.ts`),
+  (`automationStudioFlowBootstrapWorkedLiveSaid`, `runtime/flow-authoring/bootstrap/unfinished-build/not/done.ts`),
   shared with the not-doable ending; the counts a debug needs stay in the
   ending's `tried`. The stop clauses (`STOP_WORDS`, `BLOCKED_WORDS`) name "it",
   never "the model". The budget ending says what was tried with the same
@@ -2558,7 +2562,7 @@ round 1003 and t195-w48), and read as a chat answer, never a debug log:
   ending says "the replies it got back could not be read", gives the count with
   no round, and says what was tried only when more than one live round ran. The
   kept sentence is "The steps I found so far were kept as a draft, so building
-  again carries on from them." (`unfinished-build/kept-said.ts`). A budget
+  again carries on from them." (`runtime/flow-authoring/bootstrap/unfinished-build/kept-said.ts`). A budget
   ending stopped by the call limit still names that limit "model calls".
 - **Each judge pair said as what it was** (t193 round 1003). After a `no`, a
   split with one yes is "the judge no longer agreed it was wrong, as one of its
@@ -2580,7 +2584,7 @@ round 1003 and t195-w48), and read as a chat answer, never a debug log:
   judged to do it, and the budget ending does not say a judged-wrong stop again
   as "what held it up".
 - **Never cut inside a sentence.** Each ending is fitted to the ending's limit
-  (`unfinished-build/ending-fit.ts`): the still-to-do list, its quotes and the
+  (`runtime/flow-authoring/bootstrap/unfinished-build/ending-fit.ts`): the still-to-do list, its quotes and the
   judge's words are said with less room until the message fits, and the closing
   sentences (what was tried, what was kept) are always whole.
 - **A split judge in a build's words.** Where an ending or a repair heading
@@ -2607,8 +2611,8 @@ A permission or person-needed question takes precedence over another round.
 A build that ends without a Flow records why each round stopped and, for "not
 doable" and "not finished", which case left no route, as closed words on its
 ending's `tried`
-(`stops: [{round, stopped}]`, `noRoute: {kind}`, `unfinished-build/tried.ts`);
-a re-author attempt keeps that ending (`service/runtime-adaptation/reauthor-build.ts`),
+(`stops: [{round, stopped}]`, `noRoute: {kind}`, `runtime/flow-authoring/bootstrap/unfinished-build/tried.ts`);
+a re-author attempt keeps that ending (`framework/automation-service/service/runtime-adaptation/reauthor-build.ts`),
 so a debug can tell which bound ended which round. A rerun of a draft step says
 where it ran (`rerunPlace`: put back to its start page, or in place and why,
 `runtime/llm/node-tools/step-place.ts`).
@@ -2622,8 +2626,8 @@ host may state, on each state snapshot, its own reset token for that state
 (`AutomationStudioHostStateSnapshotRef.from`, the same token as a step's
 `replay.from`; the web writes `{ location }` only when the address holds nothing
 the evidence packet withholds). The re-author build reads each node's first
-`before_action` token off the refuted run (`llm/node-tools/run-start-pages.ts`,
-called in `service/runtime-adaptation/reauthor-build.ts`); the extend seed keeps
+`before_action` token off the refuted run (`runtime/llm/node-tools/run/start-pages.ts`,
+called in `framework/automation-service/service/runtime-adaptation/reauthor-build.ts`); the extend seed keeps
 them beside its steps as `startedOnByStepId`, not in `replay.from`, so the
 dry-run gate sees the same draft; the loop receives them as `draft.seedStartedOn`.
 A rerun of a carried step, or of the step that took its place (`standsFor`), with
@@ -2642,7 +2646,7 @@ on an unchanged state, so it is refused with
 `bootstrap.flow_unchanged_since_judged_wrong`, with feedback that testing it
 again tests the same thing, to change what the judge's advice names, and that a
 round that changes nothing ends the build
-(`runtime/flow-bootstrap/unfinished-build/unchanged-complete.ts`). It never fires
+(`runtime/flow-authoring/bootstrap/unfinished-build/unchanged-complete.ts`). It never fires
 after an `unknown` or `not_judged` verdict, which refuted nothing, nor for a Flow
 built from the reply's own plan. Each refusal is an unusable decision: a model
 that keeps completing the unchanged Flow ends its round on the stall guard as
@@ -2669,7 +2673,7 @@ saved, which is excused as optional and never listed for a live rerun. A change
 to an optional saved step that the test never exercised is not saved: once the
 build is finished the step goes back to its saved version, the plan is built
 again, and the chat says "Kept the saved version of ..."
-(`runtime/flow-draft/carried-step/untested-edit.ts`; `runtime/flow-draft/carried-step/`,
+(`runtime/flow-authoring/draft/carried-step/untested-edit.ts`; `runtime/flow-authoring/draft/carried-step/`,
 t274 C-4: live run `run-muw60j7c-bb7c9a62`'s re-author was told to rerun every
 carried step live, the domain refused each rerun of the stored type step,
 which names an element and no handle, as `target_not_a_handle`, and five
@@ -2697,7 +2701,7 @@ reads, the brief's step 3 also says that where the check's advice contradicts
 "How the read went" -- Core's own account of what the read did, such as more
 pages of a read that already read every page there was -- Core's account
 stands and that part of the advice is not followed (t194-w78,
-`runtime/recovery/refuted-result/brief.ts`): live run `run-musp39u8-9ac026ab`
+`runtime/adaptation/recovery/refuted-result/brief.ts`): live run `run-musp39u8-9ac026ab`
 raised its page bound six times per try and reread the same rows. That
 wording, the brief's "a pagination setting", and the rerun-input example of a
 stored `maxPages` (`runtime/llm/evidence-loop/rerun/input.ts`) still assume a
@@ -2710,7 +2714,7 @@ never run whole and names those steps.
 
 A build's yes is asked twice (t194-w71). The build-test judge's `yes` finishes
 a build, so its verification request sets `confirmAnswer`, and a first `yes` gets
-a second call with the same evidence (`result-verification/agreement/`). Two
+a second call with the same evidence (`runtime/result-verification/agreement/`). Two
 `yes` answers are a yes. A `yes` followed by a `no` is `model_disagreed`: unsure,
 carrying the `no` call's expected, observed and advice as `unconfirmedReading`,
 which the build reads as `unknown` and repairs with. A second call that answers
@@ -2725,7 +2729,7 @@ the option, and a first `yes` there still stands on one call.
 
 The explicit endings carry `diagnostic.ending.message`, the outstanding
 acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
-`runtime/activity/build.ts` and conversation progress use that message:
+`runtime/automation-activity/build.ts` and conversation progress use that message:
 
 | Code | Trigger | Message begins |
 | --- | --- | --- |
@@ -2883,7 +2887,7 @@ explicit resolver/request limit and the existing server maximum. An isolated
 test runtime opts in with `FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`; only then
 does `FLUXIQ_LLM_RUN_COST_CEILING_USD` impose its ceiling ($0.10 when unset).
 The public service delegates fresh creation to
-`runtime/service/flows/creation.ts`, which supplies that
+`framework/automation-service/service/flows/creation.ts`, which supplies that
 isolated host's ceiling as its initial stored policy in both canonical and
 legacy creation. The chat therefore creates its Flow with the same allowance
 the host authorized before its first build. This default applies only at fresh
@@ -2898,8 +2902,8 @@ body runs inside `automationStudioLlmBuildPurseScope`, so reading the
 instruction, every decision, the test and the judge are all held against it.
 
 - **The spend outlives a build.** It is kept on a per-Flow creation record
-  (`runtime/flow-bootstrap/creation-spend/`, stored as `creation-spend.json`
-  beside the Flow by `runtime/service/creation-spend.ts`), carried into the
+  (`runtime/flow-authoring/bootstrap/creation-spend/`, stored as `creation-spend.json`
+  beside the Flow by `framework/automation-service/service/creation-spend.ts`), carried into the
   next build's purse as `carriedUsd`, and, outside the Lab, cleared when the
   creation ends. In a product run a refuted-result repair during a later
   scheduled run keeps its own run ceiling and never touches the record.
@@ -2909,10 +2913,10 @@ instruction, every decision, the test and the judge are all held against it.
   against it, in billed dollars, with no cap on output. Where the run cost
   ceiling is Lab-scoped (`FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`), a Flow's
   builds and its runs (`runRuntimeSession`, through
-  `service/runtime-adaptation/flow-spend.ts`) run under a second purse, the
+  `framework/automation-service/service/runtime-adaptation/flow-spend.ts`) run under a second purse, the
   Flow's (`runtime/llm/build-purse/flow-scope.ts`), at the run cost ceiling.
   The harness holds every call against it as well as against any build purse
-  (`build-purse/harness-hold.ts`); its spend is the Flow's record read live,
+  (`runtime/llm/build-purse/harness-hold.ts`); its spend is the Flow's record read live,
   and each settled call is added to the record as it settles, with a
   compare-and-add the store serializes, so no two additions read the same
   total. So the build and its judge, the chat's reading of the message that
@@ -2921,7 +2925,7 @@ instruction, every decision, the test and the judge are all held against it.
   once per run), its recovery after the run, its result check, its re-authors
   and their re-runs all draw on one ceiling, whether the run succeeds or
   fails. Each pass of a refuted-result repair opens its purse from the Flow's
-  record (`recovery/refuted-result/purse.ts`); a ladder already in the record
+  record (`runtime/adaptation/recovery/refuted-result/purse.ts`); a ladder already in the record
   joins only the averages. A call the Flow's purse cannot pay for is refused
   unsent and ends its part on the cost bound, as a part's own ceiling does.
   The record outlives the creation, so a later build of the same Flow -- an
@@ -2931,7 +2935,7 @@ instruction, every decision, the test and the judge are all held against it.
   leave every later run with nothing.
 - **The Flow's spend is itemised, and readable (t728).** Each call the Flow's
   purse settles is added with `calls: 1` and a phase from
-  `AUTOMATION_STUDIO_FLOW_SPEND_PHASES` (`creation-spend/phases.ts`): `build`,
+  `AUTOMATION_STUDIO_FLOW_SPEND_PHASES` (`runtime/flow-authoring/bootstrap/creation-spend/phases.ts`): `build`,
   `read`, `judge`, `runtime`, `reauthor`, `chat`.
   `automationStudioFlowSpendPhaseOf` (`phase-of.ts`) decides it in that order of
   precedence: a judge call (the purse's `onSettled` now says `{ judge }`), then
@@ -2982,7 +2986,7 @@ instruction, every decision, the test and the judge are all held against it.
   round goes to repair, and a purse that cannot fund that repair ends the build
   at its budget with the Flow kept.
 - **The judging reserve is spent judging, never left** (t254 stage 2,
-  `runtime/flow-bootstrap/unfinished-build/reserve-judging.ts`). A round the
+  `runtime/flow-authoring/bootstrap/unfinished-build/reserve-judging.ts`). A round the
   purse stopped because its next call would have eaten into the judging kept
   back (a cost refusal carrying `keptBackUsd`) does not end the build with that
   reserve unspent when the Flow is ready. Before any fallback whole test, the
@@ -3006,7 +3010,7 @@ instruction, every decision, the test and the judge are all held against it.
   judged -- a yes could finish none of them -- and ends at cost as before, as
   does a cost stop that kept nothing back.
 - **A Flow a judge said no to is not judged again unchanged** (t254 stage 3,
-  `runtime/flow-bootstrap/unfinished-build/phases.ts`). Where the round the
+  `runtime/flow-authoring/bootstrap/unfinished-build/phases.ts`). Where the round the
   reserve stopped holds the very Flow a judge of this build last said no to,
   the reserve is not spent: no test from its start and no judge call. "The very
   Flow" is the Flow signature (`automationStudioFlowDraftFlowSignature`) of the
@@ -3026,7 +3030,7 @@ instruction, every decision, the test and the judge are all held against it.
   seed round 0's judge said no to, so it ends at cost with round 0's findings
   and makes no judge call.
 - **A round that stopped short is judged too** (t195-w42,
-  `runtime/flow-bootstrap/unfinished-build/phases.ts`, `reserve-judging.ts`
+  `runtime/flow-authoring/bootstrap/unfinished-build/phases.ts`, `reserve-judging.ts`
   for a stopped-short round). A round that ended without a completion and not on
   a budget -- refused repeats, unusable decisions, a stall -- has its Flow tested
   from its start only after the current draft passes that same preflight.
@@ -3154,7 +3158,7 @@ decision, 214,853 input tokens, on course to pass a 1M-token window near the
 twenty-second call of a thirty-step build.
 
 **A call already tried on this page is not made again** (2026-10-01;
-`runtime/llm/repeat-guard/`, `decision-handlers/refused-repeat.ts`). The loop
+`runtime/llm/repeat-guard/`, `runtime/llm/decision-handlers/refused-repeat.ts`). The loop
 records every call by its tool, its whole input as canonical JSON, and the
 page it found: the domain's `stateDigests.before`, or else the last state seen.
 A call whose key matches an earlier call that failed (a refusal, or an action
@@ -3171,7 +3175,7 @@ refused for a reason of its own before the repeats (a `candidate.*` or
 reset-gate code, say), so a supervisor's brief return ("It was stopped by ...")
 and a debug see which answer stranded the builder. Recovery is still asked with
 the guard's code alone, and the person's ending says nothing for the carried
-code (`flow-bootstrap/unfinished-build/not-done.ts`): it is any site's or
+code (`runtime/flow-authoring/bootstrap/unfinished-build/not/done.ts`): it is any site's or
 domain's own code and could match a pattern there by chance.
 
 The guard is checked before the repeat policy, so every action repeat is
@@ -3227,7 +3231,7 @@ model says the Flow is ready and the completion check accepts it: the draft is
 then dry-run, which is the one full run from where the Flow starts, and a
 refused test sends the model back to live repair from where the test stopped,
 to be tested again the next time it says the Flow is ready
-(`runtime/flow-draft/dry-run.ts`, `runtime/llm/node-tools/dry-run-gate.ts`):
+(`runtime/flow-authoring/draft/dry-run.ts`, `runtime/llm/node-tools/dry-run-gate.ts`):
 the target is reset to where the first proposed step started and every
 proposed step is run again in order with the argument the Flow will use, with
 no model attached. Each step answers `replayed`, `failed`, `changed` or
@@ -3249,7 +3253,7 @@ verdict. Until 2026-09-30 an `unreproducible` step stopped blocking once it had
 been reported, and live runs 18, 21 and 33 were accepted or passed a dry run
 that way with a step that did not replay. Clean and refused verdicts are
 remembered by the draft's Flow signature
-(`runtime/flow-draft/flow-signature.ts`: per proposed step, in order, its
+(`runtime/flow-authoring/draft/flow-signature.ts`: per proposed step, in order, its
 action, the argument it runs with, its settings, its routing, whether it
 answers an interruption, and its acts), so a completion over the same unchanged
 Flow is not replayed again; its history row says `reused_clean`. A refused Flow
@@ -3274,7 +3278,7 @@ the test never ran on a row is refused `not_reached`: see
 
 A dry run never clears site data or logs the person out, never repeats a
 lasting effect, and checks a changing step rather than running it again
-(decision D1, `runtime/flow-draft/verify-only.ts`). The reset is a navigation
+(decision D1, `runtime/flow-authoring/draft/verify-only.ts`). The reset is a navigation
 and nothing more. A proposed step that changes something and declares any
 consequence but none is sent `replay: "verify"` with where it found the target
 (`replay.from`) instead of `replay: "step"`, and the host acts on nothing. It
@@ -3316,7 +3320,7 @@ proposal's apply (`build-trace.ts`, t174-w116).
 The user's rule (2026-10-02): the build and repair loops can run the Flow from
 a chosen step to test part of it, but the Flow must also run whole and be
 judged a success at least once. The first half is `core.run_flow`
-(`runtime/llm/node-tools/run/flow.ts`, `run-flow-part.ts`). Its input is
+(`runtime/llm/node-tools/run/flow.ts`, `runtime/llm/node-tools/run/flow-part.ts`). Its input is
 `{from, to?}`, step numbers as the draft shows them; it runs the proposed steps
 from `from` to `to` (the last proposed step when `to` is absent), in order, **on
 the target as it stands**: nothing is reset first, which is the point -- a
@@ -3343,7 +3347,7 @@ are not. The chat shows "Running part of the Flow" (or "the rest of the Flow",
 "one step of the Flow", "the Flow from its start": never a step number, which
 the person never sees) and each step as "Trying part of the Flow: ..." in the
 `verifying` phase
-(`runtime/activity/wording/core-tool.ts`, `tool-call.ts`).
+(`runtime/automation-activity/wording/core-tool.ts`, `tool-call.ts`).
 
 **It is never the Flow's test.** It records no draft step, writes no
 `step.replayed`, and leaves the dry-run gate's verdicts alone; its answer tells
@@ -3364,11 +3368,11 @@ stands; any edit after that run needs another. Three pieces hold it:
 
 - **A test says which Flow it ran.** The report the dry-run gate hands
   `observeTest` carries the Flow signature of the draft it ran, and the build's
-  judge (`runtime/service/flow-bootstrap-commands/build-judge.ts`) stamps that
+  judge (`framework/automation-service/service/flow-bootstrap-commands/build-judge.ts`) stamps that
   signature on its verdict as `flowSignature` -- this round's observed test,
   never an earlier round's, and none when no test was observed.
 - **Only a yes about this Flow finishes.** The phases coordinator
-  (`runtime/flow-bootstrap/unfinished-build/phases.ts`) ends a round finished
+  (`runtime/flow-authoring/bootstrap/unfinished-build/phases.ts`) ends a round finished
   only on a `yes` whose `flowSignature` equals the Flow signature of the steps
   the loop accepted. `no`, `unknown`, `not_judged`, and a `yes` about another
   version of the Flow or about no test (treated as `not_judged` in Core's
@@ -3380,11 +3384,11 @@ stands; any edit after that run needs another. Three pieces hold it:
   produces a proposal for review.
 - **A Flow the test cannot run whole is refused, not passed untested.** A
   completion is refused `llm_evidence_loop.full_run_required`
-  (`runtime/flow-draft/full-run-required.ts`, `dry-run-gate.ts`), naming each
+  (`runtime/flow-authoring/draft/full-run-required.ts`, `dry-run-gate.ts`), naming each
   step with its word, before any replay and before a judge is paid:
   `not_run_in_this_build` (carried from an earlier Flow with no scheduled
   candidate the test can run as saved, and not a carried Merge, which is passed
-  through: `runtime/flow-draft/carried-step/`);
+  through: `runtime/flow-authoring/draft/carried-step/`);
   and, where the loop sets `fullRunRequired` (the build's every round,
   `runtime/llm/loop-configuration.ts`, set by `runtime/service.ts`),
   `cannot_run_again` (its run left nothing to run it again with, or the first
@@ -3406,13 +3410,13 @@ its node need not, with its captured start where the repaired run captured one
 and an optional carried step the test cannot run, are passed through; any other
 must be rerun live before the Flow can be tested whole (t274 C-4).
 The rerun is a new step; it records `standsFor`, the id of the step whose place
-it took (`runtime/flow-draft/step.ts`,
+it took (`runtime/flow-authoring/draft/step.ts`,
 `runtime/llm/evidence-loop/rerun/replacement.ts`), so the written Flow keeps
 that node's id. The re-seed carries a node's `metadata.routeSignatures` onto
 its step as `routeSignatures`, and a rerun that recorded none of its own takes
 them, so a re-authored Flow keeps state routing for a node whose fresh
 signatures could not be taken. Because the re-author's build finishes only on a
-judged success, its approve and apply (`runtime/recovery/refuted-result/reauthor.ts`)
+judged success, its approve and apply (`runtime/adaptation/recovery/refuted-result/reauthor.ts`)
 happen only after the re-authored Flow, carried steps included, ran whole and
 was judged. Until 2026-10-02 carried steps were never run, the judge answered
 `unknown`, and the Flow was applied unverified.
@@ -3472,7 +3476,7 @@ sets `stateDigestsOnCalls` reports on every execution result the digests of the
 state the call found and left (`stateDigests`), taken from the captures the call
 already made: a look's one capture is both, an action's read before acting and
 its read after. The build then passes the loop no `captureStateDigest` hook at
-all (`runtime/service/flow-bootstrap-commands/state-digest.ts`), so no step costs
+all (`framework/automation-service/service/flow-bootstrap-commands/state-digest.ts`), so no step costs
 an extra capture on either side. A binding that does not set it keeps the hook,
 asked before and after each call as before.
 The coordinator canonicalizes each tool ID and JSON input and terminates with
@@ -3523,7 +3527,7 @@ only if that entry failed. Before this, the web domain refused the free look of
 every such build for not being at the start yet, and the model's first paid
 decision was the navigation (`run-muqc07fh-eeffbc86`, about 17k tokens).
 `input` stays the look: a fresh look after a person cleared a check still takes
-it (`runtime/parking/person-needed-tool-calls.ts`). A build told no start, a
+it (`runtime/automation-parking/person-needed-tool-calls.ts`). A build told no start, a
 binding that declares no arrival, and a continued build, which passes no start,
 open with the look as before. Every validator of the tool list accepts
 `arrival` only on a `perCallEffect` tool, and the provider projection never
@@ -3598,7 +3602,7 @@ continues to count actual tool executions, including an initial observation.
 
 A build that finished on a judged yes also records that yes on the proposal's
 `created` audit event, as `detail.buildJudged` beside those counts
-(`runtime/flow-bootstrap/unfinished-build/finishing-verdict.ts`, t174-w118,
+(`runtime/flow-authoring/bootstrap/unfinished-build/finishing-verdict.ts`, t174-w118,
 live run `run-musp8nz1-dbd3905a` cause R2, where it was provable only from log
 order): `verdict` (`yes`), `round`, `judgedAt` (`finished_round`,
 `judging_reserve` or `stopped_short`), `flowSignature` and
@@ -3681,8 +3685,8 @@ frozen `{ projectId, flowId, buildId, callScope?, opening?, move? }`, or
   repair or reset brief's, beside `repairs` when there are any -- as a list of
   the locations of the build's issued destination refs, in the order they were
   issued, read when the opening is made, so earlier briefs' refs are included
-  (`project-agents/dispatch/run-brief.ts`, from the ports' `issuedRefs()`, which
-  `service/project-build/brief-ports.ts` fills from the project ledger with
+  (`runtime/project-agents/dispatch/run-brief.ts`, from the ports' `issuedRefs()`, which
+  `framework/automation-service/service/project-build/brief-ports.ts` fills from the project ledger with
   each ref's location). Duplicates, the withheld value and empty entries are
   left out, and the key is absent when none remain. It is the same kind of key
   as `repairs`: meant to be read on an opening only, so every location Core's
@@ -3690,10 +3694,10 @@ frozen `{ projectId, flowId, buildId, callScope?, opening?, move? }`, or
   lost.
 - **`move: "core"`** (t743) marks a call that is a move Core makes itself: the
   site reset's `compare`, `compareAt` and `lookAt` arrivals
-  (`flow-bootstrap/site-reset/start-check.ts`, which runs them inside
+  (`runtime/flow-authoring/bootstrap/site-reset/start-check.ts`, which runs them inside
   `runAsAutomationStudioCoreMove`). The registry writes it when
   `automationStudioCoreMoveRunning()` is true as it frames the call
-  (`llm/harness-options/core-move.ts`, one store per process under a registered
+  (`runtime/llm/harness-options/core-move.ts`, one store per process under a registered
   symbol, so a second copy of Core in the process reads the same marker). It
   never comes from the call id: a model call whose id has the same shape as
   Core's carries no `move`. It is absent on every call the model wrote.
@@ -3719,10 +3723,10 @@ frozen `{ projectId, flowId, buildId, callScope?, opening?, move? }`, or
 
 The scope is read from an async frame because the binding, evidence loop and
 brief ports did not change. Passing it as an explicit field on the tool request
-is a follow-up once `harness-options/binding.ts` and `llm/evidence-loop.ts` are
+is a follow-up once `runtime/llm/harness-options/binding.ts` and `runtime/llm/evidence-loop.ts` are
 free to edit.
 
-**Durable domain build state** (`runtime/domain-build-state/`). A registered
+**Durable domain build state** (`runtime/flow-authoring/domain-build-state/`). A registered
 domain gets a port with `automationStudioDomainBuildState(fluxiq, domainId)`,
 once, after `registerDomain`; it refuses
 `domain_build_state.domain_unregistered` for a domain FluxIQ does not know. The
@@ -3748,7 +3752,7 @@ logs or interprets them.
 
 ## Candidate verification and detached execution
 
-`runtime/flow-bootstrap/verification` owns revision/base/requirements-bound start,
+`runtime/flow-authoring/bootstrap/verification` owns revision/base/requirements-bound start,
 execution and independent observation receipts. It refuses unknown evidence,
 incomplete enumeration, unperformed commands, cancellation and stale identities.
 An explicit create requires start absence, a performed command and attribution
@@ -3907,7 +3911,7 @@ another resource cannot prove restoration of a different scope.
 
 Before a judge is asked, Core measures what it can in its own record of the run
 or build test (`runtime/result-verification/computed-facts/`, contract in
-`contracts/computed-facts.ts`; framework plan P5, K4). A fact is never a reading
+`runtime/result-verification/contracts/computed-facts.ts`; framework plan P5, K4). A fact is never a reading
 of a model's reply, and one Core cannot compute is omitted, so the judge is
 asked as before. There are eight kinds, in the order a person reads them:
 
@@ -3939,8 +3943,8 @@ asked as before. There are eight kinds, in the order a person reads them:
   (each step's node, label, passes and reason, `guarded` or `unreached`), which
   may sit on a `shown` part whose act missed only some passes. Either fails, as
   an `act_missing` defect naming the step, the passes and why. A judge's yes
-  over such a part is a Core no too (`site-change/held.ts`, through the same
-  `computed-facts/computed-no.ts`), never a held yes, and the judge's
+  over such a part is a Core no too (`runtime/result-verification/site-change/held.ts`, through the same
+  `runtime/result-verification/computed-facts/computed-no.ts`), never a held yes, and the judge's
   instruction says what `not_run` means.
 
 **A fact that fails** is a conclusive reading only, and is a Core no with the
@@ -3950,7 +3954,7 @@ as "Settled by Core: ... Do not decide ... again", and the judge's instruction
 tells it these are true as said and not to answer no over them. A pass still
 needs a model yes: a fully computed result is not a yes.
 
-**The every-result rule** (`asked-words/every-result.ts`). A request that
+**The every-result rule** (`runtime/result-verification/asked-words/every-result.ts`). A request that
 asks for "every"/"each"/"all" of its results (a quantifier, a generic list noun
 and at most two other words, none narrowing by a judgement) asks for every row
 the search shows, less the exclusions it states. For such a request the words it
@@ -3959,10 +3963,10 @@ needs a stated exclusion (`left_out_accounted`; and the judge's yes over a row
 one condition alone, or several together, left out must quote the request's own
 words, `leftOutOnlyByThis` and `leftOutTogether`), and a no that holds a kept
 row only to the searched words is not located and does not bind
-(`located-defects/searched-words-kept.ts`). A request for a kind of thing is
+(`runtime/result-verification/located-defects/searched-words-kept.ts`). A request for a kind of thing is
 read as before.
 
-**Rows left out together** (`request-rows/summary-reads.ts`,
+**Rows left out together** (`runtime/result-verification/request-rows/summary/reads.ts`,
 `unquoted-rows.ts`). A read's `leftOutTogether` set is one left-out group, and
 a yes over its rows is held to the request's words as alone rows are. Every row
 of the group fails every member condition, so one stated exclusion accounts for
@@ -3972,7 +3976,7 @@ lending, and not by a quote whose own words name only another condition of the
 read). A yes that accounts for no settled member is held under each member
 where all are settled, and row by row where one is not.
 
-**The presence locate rule** (`located-defects/presence-settled.ts`). A no that
+**The presence locate rule** (`runtime/result-verification/located-defects/presence-settled.ts`). A no that
 names a row missing for an absence a presence condition left it out by,
 quoting the value as "(no value)", is located when that read's
 `leftOutSettled` holds the row with the condition's tested column and
@@ -4058,11 +4062,11 @@ said no, naming as missing posts of groups the person had not joined (each item 
 a control to join) and a row whose own cell said something else than the judge claimed.
 
 **A defect row Core's record of that row refutes does not stand**
-(`result-verification/located-defects/row-refuted.ts`). Core never knows the kind of set or control;
+(`runtime/result-verification/located-defects/row-refuted.ts`). Core never knows the kind of set or control;
 it knows the client's per-item mark `outside` (`AutomationStudioResultItemMark`: the item offered the
 person entry to its set, so the person is not in it; `said` quotes the control). The client reads it
 on each row a read leaves out and the read's summary carries it as `rejectedMarks`
-(`service/summaries/extraction-summary.ts`), placed as a condition's `leftOutMarks` and a
+(`framework/automation-service/service/summaries/extraction-summary.ts`), placed as a condition's `leftOutMarks` and a
 `leftOutTogether` set's `marks`, aligned with the rows, and the judge sees them beside the cells.
 Three refutations, each with Core's quote of the evidence, recorded as the outcome's `refutedRows`:
 
@@ -4074,7 +4078,7 @@ Three refutations, each with Core's quote of the evidence, recorded as the outco
 
 A refuted defect is never located. A no every defect of which is refuted is asked once more, in the
 t752 re-ask's place, with Core's evidence for each row, the rows in reverse order and the converse
-question (`refuted-no/refuted-rows-recheck.ts`), never the generic recheck. Then, if every call's
+question (`runtime/result-verification/refuted-no/refuted-rows-recheck.ts`), never the generic recheck. Then, if every call's
 latest answer is a wholly refuted no or a yes citing nothing Core refutes, the verdict is `answers`:
 the yes's own, or `core.result.no_refuted_by_record` where no yes came, so a temperature-0 flip
 between the two does not decide it. Every no Core overrides must first have received that explicit
@@ -4085,20 +4089,20 @@ agreement rule. A re-ask no naming a new defect Core finds still blocks; an unre
 turned into a Core pass. A failing computed fact stays a Core no and the requested-output hold
 stays last.
 
-**A yes cites what it checked** (`result-verification/cited-yes/`, `llm/verification-checked/`).
+**A yes cites what it checked** (`runtime/result-verification/cited-yes/`, `runtime/llm/verification-checked/`).
 The verification's diagnosis offers `checked`: each stored row the yes checked, a stored column and
 that row's own value there. Core looks each up in the stored rows (not where it holds only a sample
 of the answer); a yes citing a cell the result does not hold is `unsure`,
 `core.result.yes_citation_refuted`, and the outcome records `yesCitations {cited, refuted}`. A yes
 with no `checked` is read as before.
 
-**Earlier advice is located-only** (`result-verification/standing-no/earlier-advice-located.ts`). A
+**Earlier advice is located-only** (`runtime/result-verification/standing-no/earlier-advice-located.ts`). A
 later trial's judge is told, as `earlierAdvice`, only the defects Core located in its record of an
 earlier trial judged no (the standing-no record's `located`), never a judge's prose, to cut
 anchoring; a no Core located nothing of leaves none. **Feedback keeps its provenance**
-(`service/candidate-trial/feedback.ts`): a judged trial's feedback carries `provenance`, naming each
+(`framework/automation-service/service/candidate-trial/feedback.ts`): a judged trial's feedback carries `provenance`, naming each
 field `judge_said` (a judge's reading) or `core_found` (Core's own finding). **A Core no keeps a
-`standingNo` record** (`standing-no-record/core-record.ts`, `source: "core"`, with the failing facts'
+`standingNo` record** (`runtime/result-verification/standing-no-record/core-record.ts`, `source: "core"`, with the failing facts'
 located defects), so the trial gate keeps Core's record of it as it keeps a judge's.
 
 A read that supplies a repeat loop and is superseded by a later read of the same target is working
