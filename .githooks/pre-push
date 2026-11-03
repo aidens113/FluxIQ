@@ -3,9 +3,11 @@
 # audit before a task merges, but a commit made straight on dev -- a ledger
 # entry, a working document -- has no such step; a stale
 # docs/working/README.md was committed that way. `pnpm install` points git
-# here (`prepare`); a worktree shares its config.
-if ! node scripts/structure-audit.mjs > /dev/null 2>&1; then
-  node scripts/structure-audit.mjs 2>&1 | grep -E "FAIL|structure-audit:"
+# here (`prepare`); a worktree shares its config. The registered cache step
+# fingerprints every git-visible input and never stamps a failed audit.
+# Capture the one attempt so a failure does not run the full audit twice.
+if ! ownership_audit_output="$(node scripts/build-cache/cli.mjs structure-audit:check 2>&1)"; then
+  printf '%s\n' "$ownership_audit_output" | grep -E "FAIL|structure-audit:|build-cache"
   echo "pre-push: the structure audit failed, so nothing was pushed. Fix it (pnpm structure:baseline regenerates docs/working/README.md), commit, and push again." >&2
   exit 1
 fi
