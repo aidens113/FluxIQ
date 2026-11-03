@@ -115,7 +115,17 @@ export type AutomationStudioRecordProcessingPass = {
 };
 
 /** One row a `where` condition left out, by its label: the first stored column, in schema order, holding text (`field`), and that text. */
-export type AutomationStudioRecordProcessingLeftOutRow = { field: string; label: string };
+export type AutomationStudioRecordProcessingLeftOutRow = {
+  field: string;
+  label: string;
+  /** The tested cell as the evaluator read it; absent on older accounts. Duplicate labels with conflicting cells are unavailable. */
+  tested?: AutomationStudioRecordProcessingTestedValue;
+};
+
+/** A processing evaluator's passive cell reading, never a model's assertion that a condition is correct. */
+export type AutomationStudioRecordProcessingTestedValue =
+  | { state: "present"; value: string }
+  | { state: "absent" | "unavailable" };
 
 /**
  * One `where` condition of a processing, and the collected rows it left out
@@ -136,6 +146,8 @@ export type AutomationStudioRecordProcessingConditionAccount = {
   rejected: number;
   alone: number;
   leftOutOnlyByThis: AutomationStudioRecordProcessingLeftOutRow[];
+  /** The condition actually evaluated and its date reference, copied by the producer; absent on older accounts. */
+  evaluation?: { condition: AutomationStudioRecordCondition; now: number };
   /**
    * Of `rejected`, the rows a date bound left out because their value states no
    * date it can read, a missing value included (t790): recorded, never kept as

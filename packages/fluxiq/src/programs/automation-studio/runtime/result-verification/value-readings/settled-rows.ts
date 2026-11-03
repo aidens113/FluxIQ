@@ -98,7 +98,7 @@ import {
   type AutomationStudioRecordCondition
 } from "@fluxiq/contracts/automation-studio";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
-import type { AutomationStudioResultLeftOutObservation, AutomationStudioResultReadCondition } from "../read-condition.ts";
+import type { AutomationStudioResultReadCondition } from "../read-condition.ts";
 import type { AutomationStudioResultReadCell } from "./condition-readings.ts";
 
 /** The relations that compare a number. */
@@ -112,7 +112,11 @@ const NO_VALUE = "(no value)";
 type SettledRows = { leftOutSettled: string[]; settled: string; settledKind: NonNullable<AutomationStudioResultReadCondition["settledKind"]> };
 
 /** One left-out row as given, with its tested cell where the row says one, and its witness where the read sent one for every row. */
-type LeftOutRow = { row: string; cell: AutomationStudioResultReadCell | undefined; witness?: AutomationStudioResultLeftOutObservation | null | undefined };
+type LeftOutRow = {
+  row: string;
+  cell: AutomationStudioResultReadCell | undefined;
+  witness?: ({ state: "present"; value: string } | { state: "absent" | "unavailable" | "withheld" }) | null | undefined;
+};
 
 /**
  * The left-out rows Core settles for this condition, as given, and its

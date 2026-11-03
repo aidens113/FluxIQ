@@ -43,6 +43,7 @@ import type { AutomationStudioResultSortRead } from "../record-set-summary.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadParameters } from "../read-account/index.ts";
 import { automationStudioResultConditionReadings, type AutomationStudioResultReadCell } from "./condition-readings.ts";
 import { automationStudioResultRecordOutputs } from "./record-outputs.ts";
+import { automationStudioResultProcessingReadings } from "./processing-readings.ts";
 import { automationStudioResultSettledRows } from "./settled-rows.ts";
 import { automationStudioResultSortReadings } from "./sort-reading.ts";
 
@@ -118,12 +119,12 @@ function withAnswerReadings(summarized: AutomationStudioResultRecordSetSummary, 
   const { set, hidden } = withoutHiddenSortKeys(summarized);
   const process = nodes.flatMap((node) => automationStudioResultRecordOutputs(node.parameterValues)).find((output) => output.datasetId === set.datasetId && output.process)?.process;
   const rows = set.sampleRows ?? [];
-  if (!rows.length || (!process && !hidden.length)) return set;
+  if (!process && !hidden.length) return set;
   const keys = process ? sortKeys(process.sort) : [];
   const stored = automationStudioResultSortReadings(keys, rows, now);
   const sortRead = [
     ...stored.map((read) => ({ read, position: keys.findIndex((key) => key.field === read.field) })),
-    ...hidden.filter((key) => !stored.some((read) => read.field === key.field)).map((key) => ({ read: hiddenSortRead(key, set.processing?.kept ?? rows.length), position: key.position }))
+    ...hidden.filter((key) => rows.length > 0 && !stored.some((read) => read.field === key.field)).map((key) => ({ read: hiddenSortRead(key, set.processing?.kept ?? rows.length), position: key.position }))
   ].sort((one, other) => one.position - other.position).map((entry) => entry.read);
   const where = process && Array.isArray(process.where) ? process.where : [];
   let conditionsChanged = false;
@@ -133,9 +134,10 @@ function withAnswerReadings(summarized: AutomationStudioResultRecordSetSummary, 
     const condition = column === undefined ? undefined : asRecordCondition(authored, column);
     if (!condition || column === undefined) return entry;
     const valuesRead = automationStudioResultConditionReadings({ condition, column, kept: keptCells(set, column), leftOut: [], now });
-    if (!valuesRead.length) return entry;
+    const settled = automationStudioResultProcessingReadings(entry, condition, index + 1);
+    if (!valuesRead.length && !settled) return entry;
     conditionsChanged = true;
-    return { ...entry, valuesRead };
+    return { ...entry, ...(valuesRead.length ? { valuesRead } : {}), ...(settled ?? {}) };
   });
   if (!sortRead.length && !conditionsChanged) return set;
   return {

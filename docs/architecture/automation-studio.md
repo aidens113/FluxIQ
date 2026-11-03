@@ -553,6 +553,16 @@ candidate and cannot promote it. The exact revision/digest may reuse its
 retained trial evidence for another judgement without repeating the graph.
 Actual refutations and strict row identity rules retain their existing gates.
 
+Output-processing filters retain evidence of the values Core actually tested,
+alongside their excluded-row account. The result summary screens that evidence
+under the same denied-key and credential rules as the rows themselves. Supported
+readings can use the existing measured-exclusion path, as native read filters do:
+the judge must still connect the condition to quoted words of the request, but
+need not explain each row separately where Core has established why it failed.
+Legacy, unavailable, conflicting or withheld evidence retains the original
+row-level obligations. Processing evidence does not supply a model approval or
+change the final verdict rules.
+
 Two codes and one status are historical. `core.result.no_records` and
 `core.result.nothing_to_judge` are produced by nothing and readable on runs
 recorded before 2026-09-24, and the `no_result` value of a run's

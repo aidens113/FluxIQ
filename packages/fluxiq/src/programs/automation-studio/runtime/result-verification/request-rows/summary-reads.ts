@@ -222,7 +222,7 @@ export function automationStudioRequestRowsReads(
     reads.push(read({ nodeId: account.nodeId }, storedLabels.filter((label) => !leftOut.has(label)), storedLabels, conditions, tests));
   }
   for (const set of recordSets) {
-    const conditions = processingConditions(set.processing?.conditions);
+    const conditions = processingConditions(set.processing?.conditions, answerColumns);
     if (!conditions.length) continue;
     const nodes = (set.processing?.passes ?? []).map((pass) => pass.node);
     const collecting = reads.find((candidate) => candidate.nodeId !== undefined && nodes.includes(candidate.nodeId));
@@ -249,10 +249,18 @@ export function automationStudioRequestRowsReads(
 }
 
 /** A record set's processing conditions that left rows out alone, each named where the Flow writes it (header). */
-function processingConditions(conditions: readonly AutomationStudioResultProcessingCondition[] | undefined): AutomationStudioRequestRowsCondition[] {
-  return (conditions ?? []).flatMap((entry, index) =>
-    entry.leftOutOnlyByThis?.length ? [condition(`${PROCESSING_CONDITION} ${automationStudioResultConditionName(entry.number ?? index + 1, entry.condition)}`, entry.leftOutOnlyByThis, entry.testedLabel === true, undefined,
-      { tests: [{ number: entry.number ?? index + 1, ...(entry.condition ? { wording: entry.condition } : {}) }] })] : []);
+function processingConditions(conditions: readonly AutomationStudioResultProcessingCondition[] | undefined, answerColumns: ReadonlySet<string>): AutomationStudioRequestRowsCondition[] {
+  return (conditions ?? []).flatMap((entry, index) => {
+    if (!entry.leftOutOnlyByThis?.length) return [];
+    const number = entry.number ?? index + 1;
+    const settled = entry.leftOutSettled?.length && entry.settledKind ? {
+      labels: entry.leftOutSettled.map(automationStudioRequestRowLabel),
+      names: boundNames(number, entry.leftOutSettled, entry.condition, entry.settledKind, answerColumns), kind: entry.settledKind
+    } : undefined;
+    const witnesses = witnessesOf(entry.leftOutObservations, entry.leftOutOnlyByThis.length);
+    return [condition(`${PROCESSING_CONDITION} ${automationStudioResultConditionName(number, entry.condition)}`, entry.leftOutOnlyByThis, entry.testedLabel === true, settled,
+      { tests: [{ number, ...(entry.condition ? { wording: entry.condition } : {}) }], ...(witnesses ? { witnesses } : {}) })];
+  });
 }
 
 /** A left-out row's label: the row as given, less Core's id said before it (header) and the tested value said after it. */
