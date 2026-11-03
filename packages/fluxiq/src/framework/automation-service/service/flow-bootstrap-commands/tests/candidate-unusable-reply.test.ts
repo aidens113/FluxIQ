@@ -11,8 +11,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../../index.ts";
-import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../../runtime/agents/loop-limits/index.ts";
-import { automationStudioConversationCallCause } from "../../../../../runtime/interaction/conversations/commands/index.ts";
+import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../../runtime/llm/loop-limits/index.ts";
+import { automationStudioConversationCallCause } from "../../../../../runtime/conversations/commands/index.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 const DECISION_USD = 0.001;

@@ -1,0 +1,564 @@
+// The gate the loop asks before it accepts a result: has this draft replayed?
+//
+// The rule and the verdict are in `../../flow-draft/dry-run.ts`; the replay
+// itself is in `./replay-draft.ts`; this is the piece between them that the
+// loop holds -- what has already replayed clean, which steps the model has
+// already been told did not replay, and what a refusal does to the evidence the
+// next decision sees.
+//
+// It is a closure over the loop's own bookkeeping rather than a function the
+// loop calls with everything, because three of those things are the loop's and
+// must stay so: the evidence list, its accounting, and the epochs that
+// decide whether a request has already been answered. What it takes instead is
+// the four small doors onto them, so the loop's file keeps the loop.
+//
+// **The rule it holds (user, 2026-10-02).** A Flow is finished only after a
+// run of the whole Flow from its start was judged to do what was asked, on the
+// Flow as it finally stands; any edit to the Flow after that run needs another
+// full run. Three things here follow from it:
+//
+//   - Every verdict is keyed on the Flow signature
+//     (`../../flow-draft/flow-signature.ts`), routing and settings included,
+//     not on the replay signature, which leaves routing out. Before, a step
+//     marked optional after two refused replays passed on those replays'
+//     outcomes judged again, so a Flow that had never run as written was
+//     accepted as tested. Marking a step optional changes the Flow; the
+//     changed Flow is run.
+//   - The report a passing test hands the judge carries that signature, so a
+//     verdict says which Flow version it was about.
+//   - A Flow holding a step the test cannot run -- carried from an earlier Flow
+//     and neither runnable as saved nor rerun, or left with nothing to run it
+//     again with -- is refused `llm_evidence_loop.full_run_required`
+//     (`../../flow-draft/full-run-required.ts`). Before, such a draft was "not
+//     a draft this gate applies to": it was never tested, the judge answered
+//     `unknown` or a yes about no test, and a re-authored Flow was approved and
+//     applied before anything ran it whole. An unchanged carried step is run as
+//     its scheduled candidate, and a carried Merge is passed through, so neither
+//     is refused (t274-c4, `../../flow-draft/carried-step/`). Nor is an
+//     unchanged carried first step whose start the run being repaired never
+//     captured: it is sent where the target stands, as its Flow's playback
+//     sends it. Refusing it `cannot_run_again` made live run
+//     `run-mvblov2i-abb7d82e`'s repair rerun the saved steps one at a time,
+//     two of them as duplicates (t688, `../../flow-draft/starts-where-it-stands.ts`).
+//   - A written step the test never came to -- inside a repeat whose list had
+//     no rows in the test, so it ran zero times, or a repeat the test could not
+//     walk row by row, where it did not pass on the explored row (t252,
+//     `./replay-span.ts`) -- is refused the same way, as `not_reached`, once the
+//     replay has run: a written step never ran in the build, so nothing else
+//     shows it works.
+//
+// **A refused Flow completed again unchanged is told so.** An unchanged Flow
+// is replayed twice -- a step can fail once on a page still settling -- and
+// then refused from those replays without a third. Each refusal of a Flow
+// whose signature equals the last refused one carries one more line,
+// `unchanged`: nothing changed since the last test, whether it was run again
+// and failed the same way or was not run again, and which steps to change. In
+// live run `run-murwdp4f-35f976d2` (0071) the model answered a refusal with
+// `complete` on the unchanged draft ("the Flow replays") and was shown the
+// identical verdict with nothing saying the Flow had not changed.
+//
+// **The test's judge sees the page before it too.** A test starts on the site
+// exploration left: its reset is a navigation, and a lasting step is only
+// checked. So the gate looks once more, through the same hook, just before a
+// replay sends anything (`startView` on the report), and the judge credits
+// only what changed (run `run-mux6pndp-16feb842`: "2 · $28.96", a soap and
+// exploration's 3-Pack, read as the two towel packs). The look is taken
+// before anything says whether the replay will pass, so a refused replay has
+// one too, unused. A look that fails or times out is no start view, never a
+// failed test.
+
+import type { JsonValue } from "../../../core/index.ts";
+import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-authoring/draft/scheduled-candidate/index.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID,
+  AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
+  AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE,
+  automationStudioFlowDraftConditionalStepIds,
+  automationStudioFlowDraftDryRunFeedback,
+  automationStudioFlowDraftDryRunIssueCodes,
+  automationStudioFlowDraftDryRunVerdict,
+  automationStudioFlowDraftFlowSignature,
+  automationStudioFlowDraftFullRunRequiredFeedback,
+  automationStudioFlowDraftReplayable,
+  automationStudioFlowDraftReplayFrom,
+  automationStudioFlowDraftReplayOutcomeBlocks,
+  automationStudioFlowDraftReplayOutcomeKey,
+  automationStudioFlowDraftSometimesPresentStepIds,
+  automationStudioFlowDraftStartsWhereItStands,
+  automationStudioFlowDraftStepId,
+  automationStudioFlowDraftStepIsProposed,
+  automationStudioFlowDraftExemptStepIds,
+  type AutomationStudioFlowDraftDryRun,
+  type AutomationStudioFlowDraftStep,
+  type AutomationStudioFlowDraftUnrunnableWord
+} from "../../flow-authoring/draft/index.ts";
+import { automationStudioFlowDraftStepCarried, automationStudioFlowDraftStepCarriedJoin, automationStudioFlowDraftStepCarriedPassedOver, automationStudioFlowDraftStepNotRunInThisBuild } from "../../flow-authoring/draft/carried-step/index.ts";
+import { automationStudioFlowBootstrapDraftStepIsWritable } from "./draft-step.ts";
+import { automationStudioLlmBuildTrace } from "../evidence-progress/index.ts";
+import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayObservation } from "./replay-span.ts";
+
+/**
+ * What a gate answers.
+ *
+ * `undefined` is the only way past it: either the draft replayed clean, or it
+ * is not a draft this gate applies to. The other two each end or interrupt
+ * the completion the loop was about to accept.
+ *
+ * A refusal also carries `steps`, the positions it names, beside its codes
+ * and not among them (not enumerable), so the build trace and the chat can say
+ * which steps stood in the way (`../evidence-loop/completion-attempt.ts`) while
+ * a caller comparing refusals by their codes reads them as before. Live run
+ * `run-musp39u8-9ac026ab` (R3c) was refused `full_run_required` three times and
+ * neither core.log nor the chat said so.
+ */
+export type AutomationStudioFlowDraftDryRunRefusal = "cancelled" | { issueCodes: readonly string[]; readonly steps?: readonly number[] };
+
+/** A refusal of `issueCodes`, naming `steps` beside them (see the type). */
+function refusal(issueCodes: readonly string[], steps: readonly number[]): { issueCodes: readonly string[]; readonly steps?: readonly number[] } {
+  return Object.defineProperty({ issueCodes }, "steps", { value: Object.freeze([...new Set(steps)]), enumerable: false });
+}
+
+/** The steps a refused replay names: those that did not replay. */
+function refusedSteps(verdict: AutomationStudioFlowDraftDryRun): number[] {
+  return verdict.outcomes.filter((outcome) => outcome.status !== "replayed").map((outcome) => outcome.step);
+}
+
+/** What one step's replay answered: its evidence, as the domain gave it; a pass of a repeat says which, of how many. */
+export type AutomationStudioFlowDraftTestObservation = AutomationStudioFlowDraftReplayObservation;
+
+/**
+ * The page a passing test ended on, as the domain's view of it, and the step it
+ * was taken after. Structurally the result verification's
+ * `AutomationStudioResultEndView`, declared here so the loop does not import it.
+ */
+export type AutomationStudioFlowDraftTestEndView = { after?: number | string; view: JsonValue };
+
+/**
+ * What a passing test observed, for a judge of what the build actually did.
+ *
+ * `verdict` is the replay it passed on; `observations` what that replay's
+ * steps answered; `reused` that the answer came from an earlier replay of the
+ * same Flow rather than a new one; `signature` the Flow signature of the draft
+ * that test ran (`../../flow-draft/flow-signature.ts`) -- for a pass where the
+ * replay itself made a sometimes-present step optional, the Flow with that step
+ * optional, because the run that proved it is a run of that Flow. A verdict on
+ * the test is a verdict on that Flow version and no other.
+ */
+export type AutomationStudioFlowDraftTestReport = {
+  /** Fixed epoch-millisecond date reference of this replay, retained on cached reuse. */
+  referenceNow?: number | undefined;
+  verdict: AutomationStudioFlowDraftDryRun;
+  observations: AutomationStudioFlowDraftTestObservation[];
+  reused: boolean;
+  signature: string;
+  /**
+   * The page the test ended on, looked at right after its replay passed
+   * (`AutomationStudioFlowDraftDryRunGateInput.endView`); a reuse reports the
+   * replay's own. Absent when the caller offers no look, or it failed or saw
+   * nothing (t174-w89; run `run-murwd8le-79e735a8` Cause 7).
+   */
+  endView?: AutomationStudioFlowDraftTestEndView;
+  /**
+   * The page just before the test sent anything, looked at through the same
+   * hook with no step named: the site as exploration left it, before the test
+   * went back to where the Flow starts. A reuse reports the replay's own.
+   * Absent when the caller offers no look, or it failed or saw nothing.
+   */
+  startView?: AutomationStudioFlowDraftTestEndView;
+};
+
+export type AutomationStudioFlowDraftDryRunGateInput = {
+  /** Off for a caller that turned the dry run off, or that accrues no draft. */
+  enabled: boolean;
+  /**
+   * The caller authors a Flow that is finished only once it has run whole and
+   * been judged (a build; `AutomationStudioLlmEvidenceLoopInput.fullRunRequired`):
+   * a completion whose Flow the test cannot run whole is refused, never passed
+   * untested. Off, only steps carried from an earlier Flow are refused -- a
+   * loop that does not author a Flow (the recovery ladder's exploration) still
+   * finishes with whatever it ran.
+   */
+  requireRunnable?: boolean;
+  /**
+   * The caller offers the node library (`core.run_node`), so the Flow it
+   * authors is written from its steps only when every step went through it
+   * (`./draft-step.ts`). With `requireRunnable`, a step taken through another
+   * tool is refused `not_a_library_step`: it would send the Flow to the plan
+   * the reply wrote out, which never ran, so the test would have run one Flow
+   * and the judge's yes would be stored on another. A caller that offers no
+   * library -- a host whose actions are not nodes -- has only the reply's plan,
+   * and is not refused for it (t244; stated in the lane report's open items).
+   */
+  requireLibrarySteps?: boolean;
+  /** The loop's own list, read as it stands and written back onto. */
+  steps: AutomationStudioFlowDraftStep[];
+  executeTool: AutomationStudioFlowDraftReplayInput["executeTool"];
+  /** Count a value in the loop's accounting. A count, never a limit. */
+  accountEvidence(value: JsonValue): number;
+  /** Put an entry in the evidence the next decision is shown. */
+  showEvidence(entry: { callId: string; toolId: string; value: JsonValue }): void;
+  /**
+   * Tell the loop the target moved.
+   *
+   * A replay acts on the world, so nothing the loop is holding is still the
+   * newest look at it and no earlier request is still answered by what it has.
+   */
+  targetMoved(): void;
+  /**
+   * Tell the loop this answer passed on an earlier clean replay of the same
+   * Flow instead of replaying, so a record of the attempt can say so rather
+   * than reading as a dry run that never ran.
+   */
+  reusedClean?(): void;
+  /**
+   * What the test observed, on every pass -- a new clean replay, one that
+   * passed once a sometimes-present step was made optional, or an earlier
+   * clean replay of the same Flow reused -- and never on a refusal or a draft
+   * the gate does not apply to.
+   */
+  observed?(report: AutomationStudioFlowDraftTestReport): void;
+  /**
+   * The ids of the instruction's acts the build reads as lasting, asked for
+   * only when a replay is about to run -- the first time, the build's one
+   * instruction read -- and handed to the replay, which checks a step claiming
+   * one rather than running it again (`./replay-draft.ts`; run
+   * `run-murwd8le-79e735a8` Cause 3: Add to cart, declared `[]`, was pressed
+   * again by every test). The read is usually made before this asks -- before
+   * the first call that declared something lasting ran -- and this only reuses
+   * it. An add, save, claim, move or submit is in the set by its kind, whatever
+   * the read quoted (`run-musp4h2f-72e8ed99`), and so is an act the read gave
+   * no answer for: lasting until shown otherwise (t174-w107, run
+   * `run-musp8nz1-dbd3905a` Cause 5). A read that throws names the acts
+   * lasting by their kind alone.
+   */
+  lastingActs?: (() => Promise<ReadonlySet<string>>) | undefined;
+  /**
+   * One look at the page, taken right after a replay passes and before
+   * anything else moves it, for the judge of the test
+   * (`AutomationStudioFlowDraftTestReport.endView`), and once without `after`
+   * just before a replay starts (`startView`). Asked only where the test is
+   * `observed`. A look that fails or sees nothing leaves the report without
+   * that page; it never fails the test.
+   */
+  endView?: ((request: { callId: string; after?: number; signal?: AbortSignal }) => Promise<AutomationStudioFlowDraftTestEndView | undefined>) | undefined;
+  /** The node each step names, handed to the replay so a repeat runs once per row (`./replay-draft.ts`). */
+  nodeOf?: AutomationStudioFlowDraftReplayInput["nodeOf"];
+  /** Each step's full node definition, so a read sends the record output the stored Flow's read sends (`./replay-draft.ts`). */
+  definitionOf?: AutomationStudioFlowDraftReplayInput["definitionOf"];
+  /** Which plan part each step serves, so the replay writes the record output the saved Flow has (`./replay-draft.ts`, K5). */
+  partOf?: AutomationStudioFlowDraftReplayInput["partOf"];
+  signal?: AbortSignal;
+};
+
+/** How many times one unchanged Flow is replayed before its refusal is repeated from what those replays found. */
+const MAX_REPLAYS_OF_ONE_DRAFT = 2;
+
+/** The gate, as the loop's own `dryRun()`. */
+export function automationStudioFlowDraftDryRunGate(
+  input: AutomationStudioFlowDraftDryRunGateInput
+): () => Promise<AutomationStudioFlowDraftDryRunRefusal | undefined> {
+  let attempts = 0;
+  // How many completions were refused for steps that never ran in this build,
+  // which names each refusal's entry apart from a replay's.
+  let unrunRefusals = 0;
+  // The Flow a clean verdict was a verdict about. A Flow edited since then --
+  // its steps, their arguments, their routing or settings -- has not replayed
+  // clean, and a Flow completed twice unchanged is not replayed twice. Only
+  // ever set by a replay whose verdict had nothing blocking (every step
+  // replayed, or is one the Flow would not always run), so an unconditional
+  // step that did not replay is never carried past a later completion on it.
+  let cleanSignature: string | undefined;
+  // What the replay that made `cleanSignature` clean passed on and observed,
+  // so a reuse of it reports what that replay saw.
+  let clean: { verdict: AutomationStudioFlowDraftDryRun; observations: AutomationStudioFlowDraftTestObservation[]; referenceNow: number; endView?: AutomationStudioFlowDraftTestEndView | undefined; startView?: AutomationStudioFlowDraftTestEndView | undefined } | undefined;
+  // Steps an earlier dry run already told the model did not replay. It marks
+  // their feedback lines `again` and nothing more. It used to let an
+  // unreproducible step through the second time it was reported, and live
+  // runs 18, 21 and 33 were accepted or passed a dry run that way with a step
+  // that did not replay (`../../flow-draft/dry-run.ts`).
+  const asked = new Set<string>();
+  // What the last refused replay found, the Flow it was a replay of, and how
+  // many times that Flow has been replayed. An unchanged Flow is replayed
+  // twice -- a step can fail once on a page still settling and replay the next
+  // time -- and after that it is refused again from what those replays found
+  // rather than replayed again: lane t195's run `run-muntu7in-e3dd1972`
+  // completed one unchanged draft fourteen times and spent 401 of its 537
+  // seconds replaying it, then ran out of time. It is never *passed* from
+  // those outcomes: routing is part of the Flow signature, so a step marked
+  // optional or only_if since is a changed Flow, and a changed Flow is run
+  // (user, 2026-10-02). Insisting changes nothing: a step that did not replay
+  // blocks again (`../../flow-draft/dry-run.ts`).
+  let refused: { signature: string; verdict: AutomationStudioFlowDraftDryRun; replays: number } | undefined;
+  type Looked = AutomationStudioFlowDraftTestEndView | undefined;
+  const passed = (verdict: AutomationStudioFlowDraftDryRun, observations: AutomationStudioFlowDraftTestObservation[], reused: boolean, signature: string, endView: Looked, startView: Looked, referenceNow: number): undefined => {
+    clean = { verdict, observations, endView, startView, referenceNow };
+    input.observed?.({ verdict, observations, reused, signature, referenceNow, ...(endView ? { endView } : {}), ...(startView ? { startView } : {}) });
+    return undefined;
+  };
+  // One look at the page through the caller's hook: `start_view` with no step named, `end_view` after the replay's last.
+  const look = async (name: "start_view" | "end_view", after: number | undefined): Promise<Looked> => {
+    if (!input.endView || !input.observed) return undefined;
+    const looked = await input.endView({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.${name}`, ...(after === undefined ? {} : { after }), ...(input.signal ? { signal: input.signal } : {}) })
+      .then((view) => ({ view }), (error: unknown) => ({ unread: error }));
+    // A look that failed or timed out is no page for the judge, and the test still runs, and passes or not on its own.
+    return "view" in looked ? looked.view : undefined;
+  };
+  // The page right after a replay passed, before anything else can move it.
+  const lookedAt = (verdict: AutomationStudioFlowDraftDryRun): Promise<Looked> => look("end_view", verdict.outcomes.at(-1)?.step);
+  // The build's lasting acts, asked for once and only when a replay first needs them. An add, save,
+  // claim, move or submit lasts by its kind, and an act a read did not answer is lasting, so a read
+  // that fails still names those (`instructedLastingActs`); a provider that throws is a fault, and ends the build.
+  let lasting: Promise<ReadonlySet<string>> | undefined;
+  const lastingActs = (): Promise<ReadonlySet<string>> | undefined => input.lastingActs && (lasting ??= input.lastingActs());
+  // The steps the model is told the test cannot run, with why, as one refusal.
+  const refuseUnrunnable = (steps: readonly { position: number; actionId: string; word: AutomationStudioFlowDraftUnrunnableWord }[]): AutomationStudioFlowDraftDryRunRefusal => {
+    unrunRefusals += 1;
+    const feedback = automationStudioFlowDraftFullRunRequiredFeedback(steps);
+    input.accountEvidence(feedback);
+    input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.unrun.${unrunRefusals}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
+    return refusal([AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE], steps.map((step) => step.position));
+  };
+  return async () => {
+    if (!input.enabled) return undefined;
+    // Steps the test cannot run: one carried from an earlier Flow that never
+    // ran in this build, one whose run left nothing to run it again with, or a
+    // first step with nothing to put the target back where the Flow starts. A
+    // Flow holding one cannot be tested whole, so it cannot be finished, and
+    // the model is told which and how to make them runnable now rather than
+    // after a judge was paid to read a test that never ran
+    // (`../../flow-draft/full-run-required.ts`). Until t244 such a draft was
+    // "not a draft this gate applies to" and passed untested. Nothing is
+    // replayed, so the target has not moved and nothing was observed.
+    const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
+    // A carried routing join acts on nothing and is never sent, so it is
+    // neither refused nor needed for the test (t274-c4, `../../flow-draft/carried-step/`):
+    // live run `run-muw60j7c-bb7c9a62`'s re-author had its seeded Merge refused
+    // here and listed for a rerun no domain can make.
+    const tested = proposed.filter((step) => !automationStudioFlowDraftStepCarriedJoin(step));
+    // An unchanged carried step is run as its scheduled candidate, where its
+    // node names the output it runs; anything else needs what it ran with and
+    // where it starts. An optional carried step the test cannot run is passed
+    // over, as playback passes it when its trigger is absent, and is never
+    // demanded live (t439, `../../flow-draft/carried-step/`).
+    const cannotRun = tested.filter((step) => !automationStudioFlowDraftStepCarriedPassedOver(step)).filter((step) => step.scheduledCandidate !== undefined
+      ? !automationStudioFlowDraftScheduledCandidateCall(step) || !input.nodeOf?.(step.actionId)?.outputAction?.fixed
+      : step.ranWith === undefined || step.replay === undefined);
+    // A carried first step whose run captured no start is not one: the test sends it where the target stands, as its
+    // Flow's playback does, rather than asking the model to rerun it (`../../flow-draft/starts-where-it-stands.ts`, t688).
+    const noStart = !cannotRun.length && tested.length > 0 && automationStudioFlowDraftReplayFrom(tested) === undefined && !automationStudioFlowDraftStartsWhereItStands(tested);
+    // Only a Flow-authoring caller is refused for steps it cannot run again, or
+    // for a Flow with no step that ran in this build (one the model wrote out
+    // whole in its reply), which is refused naming no step. Carried steps are
+    // refused whoever asks: only a build carries them.
+    const offLibrary = input.requireRunnable && input.requireLibrarySteps ? proposed.filter((step) => !automationStudioFlowBootstrapDraftStepIsWritable(step)) : [];
+    const notRun = input.requireRunnable
+      ? [...new Set([...(noStart ? tested.slice(0, 1) : cannotRun), ...offLibrary])].sort((a, b) => a.position - b.position)
+      : cannotRun.filter(automationStudioFlowDraftStepCarried);
+    if (notRun.length || (input.requireRunnable && !proposed.length)) {
+      return refuseUnrunnable(notRun.map((step) => ({ position: step.position, actionId: step.actionId, word: unrunnableWord(step, offLibrary) })));
+    }
+    if (!automationStudioFlowDraftReplayable(tested)) return undefined;
+    const signature = automationStudioFlowDraftFlowSignature(input.steps);
+    if (signature === cleanSignature) {
+      input.reusedClean?.();
+      return clean ? passed(clean.verdict, clean.observations, true, signature, clean.endView, clean.startView, clean.referenceNow) : undefined;
+    }
+    if (refused?.signature === signature && refused.replays >= MAX_REPLAYS_OF_ONE_DRAFT) {
+      // The same Flow those replays refused, so the same verdict: its steps
+      // that did not replay are marked `again`, and its issues are the same.
+      // One line says nothing changed, that it was not run again, and what to
+      // change. Nothing is replayed, so the target has not moved.
+      const feedback = { ...automationStudioFlowDraftDryRunFeedback(refused.verdict, asked, input.steps), unchanged: unchangedLine(input.steps, refused.verdict, "not_replayed") };
+      input.accountEvidence(feedback);
+      input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.again`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
+      return refusal(automationStudioFlowDraftDryRunIssueCodes(refused.verdict), refusedSteps(refused.verdict));
+    }
+    attempts += 1;
+    const referenceNow = Date.now();
+    const lastingIds = await lastingActs();
+    // The page just before the test sends anything: the site as exploration left it.
+    const startView = await look("start_view", undefined);
+    let replay: Awaited<ReturnType<typeof replayAutomationStudioFlowDraft>>;
+    try {
+      // The test says when it starts and ends in the build trace: tests of live run `run-mvblov2i-abb7d82e` left none (t688).
+      replay = await automationStudioLlmBuildTrace.timed("dry-run", () => replayAutomationStudioFlowDraft({
+        steps: input.steps,
+        attempt: attempts,
+        executeTool: (call) => input.executeTool({ ...call, referenceNow }),
+        ...(lastingIds ? { lastingActs: lastingIds } : {}),
+        ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
+        ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
+        ...(input.partOf ? { partOf: input.partOf } : {}),
+        ...(input.signal ? { signal: input.signal } : {})
+      }), (ran) => `attempt=${attempts} ok=${ran.verdict.ok} steps=${ran.verdict.outcomes.length} reset=${ran.verdict.reset}`);
+    } catch {
+      // Only a cancellation or a raised permission request reaches here, and
+      // both end the run: the caller reads which it was from the signal.
+      return "cancelled";
+    }
+    // The verdict goes onto the steps it is about, so the record of the draft
+    // having been run as a Flow travels with the draft rather than living only
+    // in a refusal.
+    for (const outcome of replay.verdict.outcomes) {
+      const step = input.steps.find((candidate) => candidate.position === outcome.step);
+      if (step) step.replayed = { ...outcome };
+    }
+    input.targetMoved();
+    // A written step the test never came to has shown nothing, however the
+    // rest replayed: the Flow is not tested whole, so it is refused as such.
+    const unreached = notReached(input.steps, replay.verdict);
+    if (replay.verdict.ok) {
+      if (unreached.length) return refuseUnrunnable(unreached);
+      cleanSignature = signature;
+      return passed(replay.verdict, replay.observations, false, signature, await lookedAt(replay.verdict), startView, referenceNow);
+    }
+    // A step the replay found missing and proved the Flow did not need -- a
+    // banner the site remembers having been answered -- is made optional rather
+    // than refused, when that is all that stood in the way
+    // (`../../flow-draft/sometimes-present.ts`). The pass is keyed on the Flow
+    // with that routing written: this replay is a run of that Flow, every step
+    // it sent unchanged, and the one it made optional is the one it found absent.
+    const optional = madeOptional(input.steps, replay.verdict);
+    if (optional && unreached.length) return refuseUnrunnable(unreached);
+    if (optional) {
+      cleanSignature = automationStudioFlowDraftFlowSignature(input.steps);
+      return passed(optional, replay.observations, false, cleanSignature, await lookedAt(optional), startView, referenceNow);
+    }
+    // A Flow the last refused test was also a test of: run again unchanged.
+    const again = refused?.signature === signature;
+    const previous = again ? refused?.verdict : undefined;
+    refused = { signature, verdict: replay.verdict, replays: again && refused ? refused.replays + 1 : 1 };
+    // The target as it was when the replay broke, which is what a correction
+    // has to be made from, and then the verdict that says what to do about it.
+    if (replay.evidence) {
+      input.accountEvidence(replay.evidence.value);
+      input.showEvidence({ callId: replay.evidence.callId, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID, value: replay.evidence.value });
+    }
+    const verdictFeedback = automationStudioFlowDraftDryRunFeedback(replay.verdict, asked, input.steps);
+    const feedback = again ? { ...verdictFeedback, unchanged: unchangedLine(input.steps, replay.verdict, sameFailures(previous, replay.verdict) ? "replayed" : "replayed_differently") } : verdictFeedback;
+    for (const outcome of replay.verdict.outcomes) {
+      if (outcome.status !== "replayed") asked.add(automationStudioFlowDraftReplayOutcomeKey(outcome));
+    }
+    input.accountEvidence(feedback);
+    input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
+    return refusal(automationStudioFlowDraftDryRunIssueCodes(replay.verdict), refusedSteps(replay.verdict));
+  };
+}
+
+/**
+ * The written steps of a repeat the test never ran on a row, as `not_reached`:
+ *
+ *   - a span whose list had no rows in the test ran them zero times (`passes`
+ *     empty);
+ *   - a span the test could not walk (no node lookup, a list step that did not
+ *     replay clean, no rows given back) sent them once on the row the build
+ *     explored, with no `passes`, and excused one that did not pass there as
+ *     conditional.
+ *
+ * Either way nothing ran the step, since a written step never ran in the build.
+ * A recorded step in the same span ran live while exploring, so it answers as
+ * any conditional step does -- unless the test could not walk the span and the
+ * step's call failed `core.replay.unresolved_binding`: it is bound to the row
+ * (`$row`), so its bound form has never run on one, and excusing it would
+ * propose a loop body nothing ever tested (t252-w7b's proof without `nodeOf`).
+ * A step withheld behind a lasting act is excused for that (`withheldBy`), not
+ * refused here.
+ */
+function notReached(steps: readonly AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun): { position: number; actionId: string; word: AutomationStudioFlowDraftUnrunnableWord }[] {
+  const repeated = repeatedStepIds(steps);
+  return verdict.outcomes.flatMap((outcome) => {
+    const zeroPasses = outcome.passes?.length === 0 && outcome.status === "replayed";
+    const unwalked = outcome.passes === undefined && outcome.withheldBy === undefined && outcome.status !== "replayed";
+    if (!zeroPasses && !unwalked) return [];
+    const step = steps.find((candidate) => candidate.position === outcome.step);
+    if (!step) return [];
+    const rowNeverGiven = unwalked && outcome.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE;
+    if (!(step.written || step.checkedCandidate || rowNeverGiven) || (unwalked && !repeated.has(automationStudioFlowDraftStepId(step)))) return [];
+    return [{ position: step.position, actionId: step.actionId, word: "not_reached" as const }];
+  });
+}
+
+/**
+ * The ids of every step inside a repeat: the conditional set
+ * (`../../flow-draft/routing.ts`) of the draft with only its repeats routed, so
+ * the span rule stays the one the dry run excuses by.
+ */
+function repeatedStepIds(steps: readonly AutomationStudioFlowDraftStep[]): ReadonlySet<string> {
+  const repeatsOnly = steps.map((step): AutomationStudioFlowDraftStep => {
+    if (!step.routing || step.routing.kind === "repeat") return step;
+    const { routing: _otherRouting, ...unrouted } = step;
+    return unrouted;
+  });
+  return automationStudioFlowDraftConditionalStepIds(repeatsOnly);
+}
+
+/**
+ * The line a refusal of an unchanged refused Flow carries: nothing changed
+ * since the last test, it was run again and failed the same way or was not run
+ * again, and the steps that stood in the way -- those that did not replay and
+ * that the Flow does not pass over -- are what to change, in the refusal's own
+ * words.
+ */
+function unchangedLine(steps: readonly AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun, test: "replayed" | "replayed_differently" | "not_replayed"): string {
+  // The verdict's own exemption (`../../flow-draft/dry-run.ts`): a step of a
+  // repeat the test ran once per row (`passes`) is excused only by a withheld effect.
+  const excused = automationStudioFlowDraftExemptStepIds(steps, verdict.outcomes);
+  const passedOver = (outcome: AutomationStudioFlowDraftDryRun["outcomes"][number]): boolean => outcome.stepId !== undefined && excused.has(outcome.stepId)
+    && (outcome.passes === undefined || outcome.withheldBy !== undefined);
+  const failing = verdict.outcomes
+    .filter((outcome) => automationStudioFlowDraftReplayOutcomeBlocks(outcome) && !passedOver(outcome))
+    .map((outcome) => `step ${outcome.step} (${outcome.status})`);
+  const head = test === "replayed"
+    ? "Nothing in the Flow changed since the last test, and it failed the same way again."
+    : test === "replayed_differently"
+      ? "Nothing in the Flow changed since the last test, and it failed again."
+      : "Nothing in the Flow changed since that test, so it would fail the same way, and it was not run again.";
+  if (!failing.length) return `${head} Change the Flow before you say it is ready.`;
+  const one = failing.length === 1;
+  const named = one ? failing[0] : `${failing.slice(0, -1).join(", ")} and ${failing[failing.length - 1]}`;
+  return `${head} Change ${named} before you say the Flow is ready: rerun ${one ? "it" : "each"} with a corrected argument (amend_draft rerun), mark it optional, or drop it.`;
+}
+
+/** Whether two refused replays of one Flow failed on the same steps with the same answers. */
+function sameFailures(before: AutomationStudioFlowDraftDryRun | undefined, after: AutomationStudioFlowDraftDryRun): boolean {
+  const failures = (verdict: AutomationStudioFlowDraftDryRun) => JSON.stringify([verdict.reset, verdict.outcomes.filter(automationStudioFlowDraftReplayOutcomeBlocks).map((outcome) => [outcome.step, outcome.status])]);
+  return before !== undefined && failures(before) === failures(after);
+}
+
+/**
+ * Why the test cannot run `step`: carried and not runnable as saved, off the
+ * library, or nothing to run it again with. The first is the very test the
+ * round's judgement lists steps by (`../../flow-bootstrap/unfinished-build/not-run.ts`),
+ * so a step is told to be rerun in both places or in neither (t274-c4). A
+ * carried step whose candidate stands but whose node names no output to run is
+ * `cannot_run_again`: a rerun would not change what its node is.
+ */
+function unrunnableWord(step: AutomationStudioFlowDraftStep, offLibrary: readonly AutomationStudioFlowDraftStep[]): AutomationStudioFlowDraftUnrunnableWord {
+  if (automationStudioFlowDraftStepNotRunInThisBuild(step)) return "not_run_in_this_build";
+  return offLibrary.includes(step) ? "not_a_library_step" : "cannot_run_again";
+}
+
+/**
+ * Makes optional the steps this refused replay proved are only sometimes there,
+ * and answers the verdict that passes once they are, when that leaves nothing in
+ * the way. Changes nothing, and answers `undefined`, when it does not: a step is made optional only by a replay the Flow then passes, so a
+ * refusal the model must answer is never half-answered for it.
+ */
+function madeOptional(steps: AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun): AutomationStudioFlowDraftDryRun | undefined {
+  const sometimesPresent = automationStudioFlowDraftSometimesPresentStepIds({ steps, verdict });
+  if (!sometimesPresent.size) return undefined;
+  const judged = automationStudioFlowDraftDryRunVerdict({
+    attempt: verdict.attempt,
+    reset: verdict.reset,
+    outcomes: verdict.outcomes,
+    conditional: new Set([...automationStudioFlowDraftExemptStepIds(steps, verdict.outcomes), ...sometimesPresent])
+  });
+  if (!judged.ok) return undefined;
+  for (const step of steps) {
+    if (!sometimesPresent.has(automationStudioFlowDraftStepId(step))) continue;
+    step.routing = { kind: "optional" };
+    if (step.replayed) step.replayed = { ...step.replayed, madeOptional: true };
+  }
+  return judged;
+}

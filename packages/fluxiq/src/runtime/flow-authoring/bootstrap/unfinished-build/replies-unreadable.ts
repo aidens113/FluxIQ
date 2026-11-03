@@ -18,7 +18,7 @@
 // kept closes it, always whole.
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
-import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 import { automationStudioFlowBootstrapEndingFitted } from "./ending-fit.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";

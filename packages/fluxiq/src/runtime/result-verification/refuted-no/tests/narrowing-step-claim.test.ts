@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultNarrowedBefore } from "../../narrowed-before.ts";

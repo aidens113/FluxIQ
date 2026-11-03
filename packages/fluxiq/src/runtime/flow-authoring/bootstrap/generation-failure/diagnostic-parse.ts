@@ -6,19 +6,19 @@
 // are checked against `automationStudioFlowBootstrapFailureState` -- the same
 // function the producers write them from, so a diagnostic Core produced always
 // reads back and one claiming a state its code does not have never does.
-import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 // Refusal records are owned by a neutral runtime seam: Flow Bootstrap persists
 // them and the LLM adapter produces them, so neither feature barrel may own the
 // value without closing an initialization cycle through the other.
-import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../../agents/llm/provider-refusal/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../agents/loop-limits/index.ts";
+import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../../llm/provider-refusal/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../llm/loop-limits/index.ts";
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import { parseAutomationStudioFlowBootstrapCandidateKept } from "./candidate-kept.ts";
 import { automationStudioFlowBootstrapRefusedSteps } from "./refused-steps.ts";
 import { FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE } from "./codes.ts";
-import type { AutomationStudioLlmProviderThrow, AutomationStudioLlmProviderThrowWithheld } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProviderThrow, AutomationStudioLlmProviderThrowWithheld } from "../../../llm/index.ts";
 import { DIAGNOSTIC_ISSUE_CODE, DIAGNOSTIC_SUPERVISOR_ENDING_CODES, MAX_DIAGNOSTIC_ENDED_BECAUSE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";
 

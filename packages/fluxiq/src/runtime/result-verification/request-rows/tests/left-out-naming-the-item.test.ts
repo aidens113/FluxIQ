@@ -5,7 +5,7 @@
 // phrase first, are not.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { verifyAutomationStudioRunResult } from "../../verify.ts";
 import { automationStudioResultLeftOutNamingTheItem, automationStudioResultSummaryWithLeftOutNamingTheItem } from "../index.ts";
 import {

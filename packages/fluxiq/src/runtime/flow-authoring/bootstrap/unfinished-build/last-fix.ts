@@ -20,7 +20,7 @@
 // ends the walk: what came before it is not what blocked the last fix.
 
 import { AUTOMATION_STUDIO_REPEATED_ANSWER_REASON } from "@fluxiq/contracts/automation";
-import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../llm/index.ts";
 
 /** How one try was stopped, as the ending says it. */
 type Stopped = "list_handle" | "handle" | "unseen" | "failed" | "edit_refused" | "unchanged";

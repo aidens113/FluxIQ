@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 
 /**
  * How the supervisor's own tools answer: `refused` for a call that did

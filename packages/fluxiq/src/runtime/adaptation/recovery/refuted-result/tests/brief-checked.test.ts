@@ -6,7 +6,7 @@
 // read it: the re-author got the advice unmarked and threw away the answer.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { verifyAutomationStudioRunResult } from "../../../../result-verification/index.ts";
 import { RUN_MUW60J7C_FILTERED_READ, RUN_MUW60J7C_REQUEST, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary } from "../../../../result-verification/request-rows/tests/run-muw60j7c.ts";
 import { automationStudioReauthorBrief } from "../brief.ts";

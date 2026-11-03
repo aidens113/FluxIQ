@@ -26,7 +26,7 @@
 // the target. The record beside it keeps the same facts as ids and counts for
 // a reader that counts. Producer and reader share `parse…BuildEnding`, as every
 // other field of this diagnostic does (`./failure-state.ts` says why).
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../agents/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../llm/loop-limits/index.ts";
 import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 
 /** Which budget ran out. */

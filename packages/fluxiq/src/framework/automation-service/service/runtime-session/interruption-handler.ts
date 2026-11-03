@@ -35,7 +35,7 @@ import type { AutomationStudioFlowDocument } from "../../../../flows/authoring/m
 import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
 import type { AutomationStudioClearedLayer } from "../../executor/index.ts";
 import type { AutomationStudioFactCondition } from "../../executor/lifecycle/index.ts";
-import type { AutomationStudioRuntimeAddHandlerPatch } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioRuntimeAddHandlerPatch } from "../../../../runtime/llm/index.ts";
 import { automationStudioLayerFact, automationStudioLayerHandlerPatch } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 

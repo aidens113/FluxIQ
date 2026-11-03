@@ -4,7 +4,7 @@
 // instructions, on every call. No model is called: the provider is scripted.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { verifyAutomationStudioRunResult, type AutomationStudioResultVerificationRequest } from "../../verify.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 import { automationStudioBuildTestResultSummary } from "../summary.ts";

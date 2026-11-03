@@ -65,7 +65,7 @@
 // completion check asks it beside that one
 // (`../../llm/harness-options/bootstrap-completion.ts`).
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { isAutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import { isAutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationNodeParameter, AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../../framework/automation-service/nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioListingRepeatSort } from "./listing-repeat-sort.ts";

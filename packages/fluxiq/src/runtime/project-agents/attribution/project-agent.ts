@@ -1,6 +1,6 @@
 import type { ClientGatewayActivityAgent } from "@fluxiq/contracts/client-gateway";
-import { runWithAutomationStudioActivityAgent } from "../../activity/automation/index.ts";
-import { automationStudioLlmStepLogScope } from "../../agents/llm/step-log/index.ts";
+import { runWithAutomationStudioActivityAgent } from "../../automation-activity/index.ts";
+import { automationStudioLlmStepLogScope } from "../../llm/step-log/index.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
 

@@ -4,7 +4,7 @@
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetPage, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioFlowGraphJudgement } from "../../flow-authoring/version/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "../run-outcome.ts";
 

@@ -1,4 +1,4 @@
-import { screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
 type SiteChange = NonNullable<AutomationStudioRunResultSummary["siteChange"]>;

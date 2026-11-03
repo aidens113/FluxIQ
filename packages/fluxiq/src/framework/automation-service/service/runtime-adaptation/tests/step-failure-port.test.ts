@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
 import { flowBootstrapPhaseFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../../../runtime/agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, automationStudioStepFailureReauthorDecision } from "../../../../../runtime/adaptation/recovery/refuted-result/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
 import { automationStudioStepFailureRepairPort, type AutomationStudioStepFailureRepairPortDependencies } from "../step-failure-port.ts";

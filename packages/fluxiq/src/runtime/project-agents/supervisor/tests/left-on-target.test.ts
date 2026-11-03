@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/automation/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../automation-activity/index.ts";
 import { automationStudioProjectSupervisorLeftOnTarget } from "../left-on-target.ts";
 
 // What an ending names still on the target (t597): a press that declared no

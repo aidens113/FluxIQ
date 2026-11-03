@@ -1,4 +1,4 @@
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioFlowBootstrapNode } from "../plan/index.ts";
 import type { AutomationStudioSiteResetTrialStep } from "../site-reset/index.ts";
 

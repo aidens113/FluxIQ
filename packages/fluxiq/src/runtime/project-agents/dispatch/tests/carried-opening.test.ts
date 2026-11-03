@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { OPEN, callPart, part, script, testSubmission } from "../../../flow-authoring/bootstrap/subflow-candidate/tests/subflow-fixture.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import { automationStudioProjectCarriedScript } from "../../amendment/index.ts";
 import { automationStudioProjectSubflowBrief, type AutomationStudioProjectSubflowBrief } from "../../contracts/index.ts";
 import type { AutomationStudioProjectBuilderPorts } from "../index.ts";

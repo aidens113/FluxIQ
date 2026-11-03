@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/agents/llm/harness-options/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/harness-options/index.ts";
 // Phase 2's judge for one build, as the service wires it.
 //
 // **The rule (coordinator, 2026-10-01, under the user's three-phase build and
@@ -54,7 +54,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runt
 
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioFlowBootstrapBuildPhasesInput, AutomationStudioFlowBootstrapPlan } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioLlmBuildTrace, type AutomationStudioFlowDraftDryRunGateInput, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmProvider } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioLlmBuildTrace, type AutomationStudioFlowDraftDryRunGateInput, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmProvider } from "../../../../runtime/llm/index.ts";
 import { automationStudioBuildTestJudge, automationStudioBuildTestResultSummary, type AutomationStudioBuildTestNote } from "../../../../runtime/result-verification/index.ts";
 import { automationStudioEndViewLook, type AutomationStudioEndViewLook } from "../end-view/index.ts";
 

@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetExplored } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
 import type { AutomationStudioSubflowBuilderOutcome } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import { automationStudioProjectBuilderReturn } from "../../contracts/index.ts";
 import { automationStudioProjectDispatchEnding as ending } from "../ending.ts";
 import type { AutomationStudioProjectResetPorts } from "../index.ts";

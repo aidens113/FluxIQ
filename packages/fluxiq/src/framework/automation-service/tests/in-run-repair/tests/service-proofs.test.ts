@@ -32,7 +32,7 @@ import { IoRegistry } from "../../../../../io/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../../../host-runtime.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";

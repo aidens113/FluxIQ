@@ -23,7 +23,7 @@
 // fix's trial, so a refused patch never runs.
 
 import type { AutomationStudioRepairUnit } from "../../executor/lifecycle-run/index.ts";
-import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../../../runtime/llm/index.ts";
 
 /** Why a patch is not overlaid for the incident's unit: the code a reader matches and the sentence a person reads. */
 export type AutomationStudioInRunRepairUnitRefusal = { code: "other_unit" | "patch_refused"; reason: string };

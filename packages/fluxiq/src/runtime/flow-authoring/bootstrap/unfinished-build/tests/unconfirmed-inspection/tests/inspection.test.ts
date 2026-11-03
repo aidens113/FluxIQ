@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../../../llm/index.ts";
 import type { AutomationStudioResultVerification } from "../../../../../../result-verification/contracts/index.ts";
 import { automationStudioBuildTestJudge } from "../../../../../../result-verification/build-test/index.ts";
 import { inspectionFixture } from "../../../../../../result-verification/unconfirmed-inspection/tests/fixture.ts";

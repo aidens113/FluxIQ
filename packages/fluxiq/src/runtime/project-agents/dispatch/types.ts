@@ -1,7 +1,7 @@
 import type { AutomationStudioSiteResetLedger, AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetProjectLedger, AutomationStudioSiteResetTrialReset } from "../../flow-authoring/bootstrap/site-reset/index.ts";
 import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPreparingPort, runAutomationStudioSubflowBuilderLoop } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmBuildPurse } from "../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioHostResourceLease, AutomationStudioHostResourcePort } from "../host-resources/index.ts";
 import type { AutomationStudioProjectBuildRecordStore, AutomationStudioProjectBuildRef } from "../record/index.ts";

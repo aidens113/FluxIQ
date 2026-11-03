@@ -13,7 +13,7 @@
 // brief, plan, subflow, revision, digest or step is no run of this one, and a
 // port that threw is said by kind only, never its text.
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop.ts";
 import { automationStudioCandidateTrialStop as Stop } from "../candidate/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowFromStepPort, AutomationStudioSubflowFromStepResult, AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "./contracts.ts";

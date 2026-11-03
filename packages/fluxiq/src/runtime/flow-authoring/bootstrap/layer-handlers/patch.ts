@@ -22,7 +22,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFactCondition } from "../../../../framework/automation-service/executor/lifecycle/index.ts";
-import type { AutomationStudioRuntimeAddHandlerPatch, AutomationStudioRuntimePatchHandlerScope } from "../../../agents/llm/index.ts";
+import type { AutomationStudioRuntimeAddHandlerPatch, AutomationStudioRuntimePatchHandlerScope } from "../../../llm/index.ts";
 
 /** The handler for a layer shown by `shown` and gone by `gone`, closed by `press` (header). */
 export function automationStudioLayerHandlerPatch(input: {

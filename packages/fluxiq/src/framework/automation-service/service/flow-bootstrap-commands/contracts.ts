@@ -1,7 +1,7 @@
-import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
-import type { AutomationStudioLlmModelCaller } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
 
 // What a caller asks for when it generates a Flow Bootstrap adaptation, and
 // what it gets back.

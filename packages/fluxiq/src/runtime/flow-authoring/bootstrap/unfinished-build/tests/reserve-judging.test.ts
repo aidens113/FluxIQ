@@ -5,8 +5,8 @@
 // stop that kept nothing back ends as it always did.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurseRefusal } from "../../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurseRefusal } from "../../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import { runAutomationStudioFlowBootstrapBuildPhases, type AutomationStudioFlowBootstrapBuildPhasesInput, type AutomationStudioFlowBootstrapTestVerdict } from "../index.ts";
 

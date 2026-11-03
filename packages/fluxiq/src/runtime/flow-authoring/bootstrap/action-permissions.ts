@@ -124,12 +124,12 @@ import {
   type AutomationStudioActionPermissionRequest,
   type AutomationStudioInstructedConsequence,
   type AutomationStudioReadActionDeclaration
-} from "../../action-permissions/automation/index.ts";
+} from "../../action-permission-requests/index.ts";
 import type { AutomationStudioAuthoringMode } from "../../../flows/authoring/model/authoring-mode/index.ts";
-import { automationStudioActivityAskPort } from "../../activity/automation/index.ts";
+import { automationStudioActivityAskPort } from "../../automation-activity/index.ts";
 import { automationStudioFlowDraftDeclaresLasting } from "../draft/index.ts";
-import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/index.ts";
-import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioPermissionAskOutcome, type AutomationStudioPermissionAsk } from "../../parking/automation/index.ts";
+import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioPermissionAskOutcome, type AutomationStudioPermissionAsk } from "../../automation-parking/index.ts";
 import type { AutomationStudioInstructedActKind } from "./instructed-acts/index.ts";
 import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure/index.ts";
 import {

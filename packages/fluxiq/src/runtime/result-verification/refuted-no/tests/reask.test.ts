@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerification } from "../../contracts/index.ts";
-import type { AutomationStudioLlmDiagnosisFields } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { LAMP_CLAMP, LAMP_SHADE, LAMPS_REQUEST_TEXT, SAME_LAMP_NO, lampsRunSummary, lampsWording } from "./lamps-fixture.ts";
 

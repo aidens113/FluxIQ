@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../flows/authoring/model/index.ts";
 import { automationStudioZeroProviderGate } from "../zero-provider-run.ts";
-import { AutomationStudioLlmRunPurse } from "../../agents/llm/index.ts";
+import { AutomationStudioLlmRunPurse } from "../../llm/index.ts";
 import { ANSWER, harness, provider, runDetail, session, verify } from "./run-outcome-harness.ts";
 
 const ZERO_GATE = { invoked: false, ok: true, costAccounting: { calls: 0, explorationCalls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, budgetBreaches: 0, pendingCalls: 0 }, providerCalls: [], providerCallsOmitted: 0 };

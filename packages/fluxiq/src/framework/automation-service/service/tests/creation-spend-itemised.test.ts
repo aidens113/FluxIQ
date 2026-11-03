@@ -5,8 +5,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { automationStudioLlmBuildPurseHoldCall } from "../../../../runtime/agents/llm/build-purse/index.ts";
-import { automationStudioLlmStepLogScope } from "../../../../runtime/agents/llm/step-log/index.ts";
+import { automationStudioLlmBuildPurseHoldCall } from "../../../../runtime/llm/build-purse/index.ts";
+import { automationStudioLlmStepLogScope } from "../../../../runtime/llm/step-log/index.ts";
 import { automationStudioLabFlowPurse } from "../runtime-adaptation/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../index.ts";
 

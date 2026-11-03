@@ -37,7 +37,7 @@ import {
   automationStudioStepFailureReauthorDecision,
   type AutomationStudioFailedStepRepairPort
 } from "../../../../runtime/adaptation/recovery/refuted-result/index.ts";
-import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/agents/llm/build-purse/index.ts";
+import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/llm/build-purse/index.ts";
 import { automationStudioReauthorBuild } from "./reauthor-build.ts";
 import type { AutomationStudioRefutedResultRepairPortDependencies } from "./refuted-result-port.ts";
 

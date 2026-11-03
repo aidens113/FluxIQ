@@ -8,7 +8,7 @@
 // the made-up library account of `../../../agreement/tests/loan-fixture.ts`: no
 // task, site, item or answer of any realistic scenario. No model is called.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun } from "../../../contracts/index.ts";
 import { LOAN_FALSE_CLAIM_NO, LOAN_KEPT_NO, LOAN_METHOD_NO, LOAN_YES, loanInstruction, loanRunSummary } from "../../../agreement/tests/loan-fixture.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../../verdict/index.ts";

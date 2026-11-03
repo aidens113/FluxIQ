@@ -2,7 +2,7 @@
 // not exist, and the honesty about digests that decides which answer comes out.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraft, type AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../llm/index.ts";
 import { reduceAutomationStudioFlowBootstrapDraft } from "../draft-reduction.ts";
 
 const tools = [

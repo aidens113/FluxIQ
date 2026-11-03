@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { automationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";

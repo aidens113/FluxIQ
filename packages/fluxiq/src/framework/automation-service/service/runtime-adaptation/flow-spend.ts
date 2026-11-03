@@ -20,7 +20,7 @@
 // (`../../recovery/refuted-result/purse.ts`).
 
 import { resolveAutomationStudioLlmTestRunCostCeilingUsd } from "../../../../flows/authoring/model/index.ts";
-import { automationStudioLlmRunCostCeilingUsd } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioLlmRunCostCeilingUsd } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../index.ts";
 
 /**

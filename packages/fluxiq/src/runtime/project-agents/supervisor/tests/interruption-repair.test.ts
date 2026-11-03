@@ -9,8 +9,8 @@
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/automation/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../automation-activity/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { AutomationStudioProjectSupervisorState } from "../state.ts";

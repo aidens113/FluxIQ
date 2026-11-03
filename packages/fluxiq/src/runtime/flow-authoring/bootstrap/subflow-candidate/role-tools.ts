@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 
 /**
  * Tools a subflow builder is never offered (automation-project-agents-plan.md,

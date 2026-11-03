@@ -30,7 +30,7 @@
 // silent, and the defect is located as before. Such a no is then re-asked once
 // (`../agreement/unsupported-no.ts`).
 
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
 import type { AutomationStudioResultNoRecord } from "../refuted-no/index.ts";

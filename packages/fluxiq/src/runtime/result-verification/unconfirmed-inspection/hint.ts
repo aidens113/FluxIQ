@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 
 type Hint = NonNullable<AutomationStudioResultVerification["unconfirmedInspection"]>;

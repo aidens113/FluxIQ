@@ -9,7 +9,7 @@
 // this file does not know gets a generic sentence and never the code itself.
 // The code stays where machines read it: the loop's own result and its trace.
 
-import type { AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioLlmEvidenceLoopResult } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
 
 type FailedLoop = Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>;
 

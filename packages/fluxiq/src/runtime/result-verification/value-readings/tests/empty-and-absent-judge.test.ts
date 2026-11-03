@@ -7,7 +7,7 @@
 // Both a candidate trial and a subflow trial ask this judge
 // (`../../build-test/judge.ts`). No model is called; the provider is scripted.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskChecklist } from "../../build-test/index.ts";
 import { WAITLIST_EMPTY, WAITLIST_FEW, WAITLIST_INSTRUCTION, WAITLIST_REQUEST, WAITLIST_YES, waitlistRunSummary } from "./tool-waitlist-fixture.ts";
 

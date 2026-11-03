@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../../framework/automation-service/nodes/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../../authoring/index.ts";
-import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioResolvedControlIntent } from "../../../../agents/llm/harness-options/index.ts";
+import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioResolvedControlIntent } from "../../../../llm/harness-options/index.ts";
 import { automationStudioFlowScriptWayOutIssues } from "../index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };

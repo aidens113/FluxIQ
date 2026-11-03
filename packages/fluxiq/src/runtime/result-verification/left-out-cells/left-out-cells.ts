@@ -19,7 +19,7 @@
 // with it. Every row, every column (user rule: no caps).
 
 import type { JsonValue } from "../../../core/index.ts";
-import { automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 
 /** What a value that may not be said reads as: the stored rows' own marker. */
 const WITHHELD_VALUE = "(withheld)";

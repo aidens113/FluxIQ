@@ -4,7 +4,7 @@ import {
   AutomationStudioActionPermissionGate,
   parseAutomationStudioActionPermissionRequest,
   type AutomationStudioActionConsequence
-} from "../../../../action-permissions/automation/index.ts";
+} from "../../../../action-permission-requests/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowChangeProposal, AutomationStudioFlowDocument } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor.ts";
 import {
@@ -13,9 +13,9 @@ import {
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioRuntimePatch,
   type AutomationStudioRuntimeTargetOverrideTarget
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 import type { AutomationStudioRuntimeTargetOverrideEvidenceValidation, AutomationStudioRuntimeTargetOverrideFailedAction } from "../../../live-patch.ts";
-import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-control/check-schedule/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-verification/check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../../../framework/automation-service/service.ts";
 import { applyAutomationStudioRuntimeRecoveryPatches } from "../patches.ts";
 

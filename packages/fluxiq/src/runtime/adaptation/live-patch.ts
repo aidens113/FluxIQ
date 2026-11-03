@@ -31,7 +31,7 @@ import {
   type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   type AutomationStudioRuntimeTargetOverrideFailedAction
 } from "./live-patch/index.ts";
-import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeTargetOverrideTarget } from "../agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeTargetOverrideTarget } from "../llm/index.ts";
 
 export type AutomationStudioRuntimePatchPreflight = {
   ok: boolean;

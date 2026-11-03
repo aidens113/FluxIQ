@@ -27,13 +27,13 @@ import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../.
 import { automationStudioFlowBootstrapJudgeUnfinished, automationStudioFlowBootstrapStepsNotRunInThisBuild } from "../../../../../runtime/flow-authoring/bootstrap/unfinished-build/index.ts";
 import { automationStudioFlowDraftKeepSavedUntestedEdits, automationStudioFlowDraftReplayable, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../../../../../runtime/flow-authoring/draft/scheduled-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import {
   automationStudioFlowDraftDryRunGate,
   automationStudioFlowDraftSeedFromFlow,
   replayAutomationStudioFlowDraft,
   type AutomationStudioFlowDraftReplayInput
-} from "../../../../../runtime/agents/llm/node-tools/index.ts";
+} from "../../../../../runtime/llm/node-tools/index.ts";
 
 const CATALOGUE = "https://library.test/catalogue";
 const MERGE = "builtin.control.merge";

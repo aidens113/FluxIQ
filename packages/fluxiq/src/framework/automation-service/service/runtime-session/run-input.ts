@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioRuntimeSessionLlm } from "../../../../runtime/agents/llm/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioRuntimeSessionLlm } from "../../../../runtime/llm/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioRuntimeInterventionMode, AutomationStudioResultCheckCallerPays } from "../runtime-adaptation/index.ts";
 
 /** Existing run facade input; required mode is additive and restrictive. */

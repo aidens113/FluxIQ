@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../../../framework/automation-service/nodes/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../../llm/harness-options/index.ts";
 import type { AutomationStudioSiteResetWitnessStamp } from "../../../../reset-admission/index.ts";
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, automationStudioCandidateTrialActs, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest } from "../../../index.ts";
 import { AutomationStudioSiteResetProjectLedger, automationStudioSiteResetProjectReset } from "../../../../site-reset/index.ts";

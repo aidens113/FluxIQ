@@ -1,7 +1,7 @@
 // Whether a build continues an incomplete draft, and the draft it starts from
 // when it does.
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResume } from "../../../agents/llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResume } from "../../../llm/evidence-loop/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraft } from "./record.ts";
 
 /** What the evidence loop's `draft` is given to continue a stopped build. */

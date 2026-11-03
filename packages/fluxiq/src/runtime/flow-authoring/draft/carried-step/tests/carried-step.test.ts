@@ -1,7 +1,7 @@
 // What a step carried from an earlier Flow is, asked one way by the gate, the
 // replay and the round's judgement (t274-c4, run `run-muw60j7c-bb7c9a62`).
 import { describe, expect, it } from "vitest";
-import { automationStudioFlowDraftSeedFromFlow } from "../../../../agents/llm/node-tools/index.ts";
+import { automationStudioFlowDraftSeedFromFlow } from "../../../../llm/node-tools/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../step.ts";
 import { automationStudioFlowDraftStepCarried, automationStudioFlowDraftStepCarriedJoin, automationStudioFlowDraftStepCarriedPassedOver, automationStudioFlowDraftStepNotRunInThisBuild } from "../index.ts";
 

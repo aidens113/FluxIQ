@@ -4,7 +4,7 @@
 // no record, sends its judge nothing new. No model is called.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioSubflowScope } from "../../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioProjectBuildRecordStore, AutomationStudioProjectTaskSpec } from "../../../../../runtime/project-agents/index.ts";
 import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { trialFixture } from "../../candidate-trial/tests/fixtures.ts";

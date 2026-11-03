@@ -10,7 +10,7 @@
 // the immediate before/after evidence counts; no later read can make one.
 // Pure.
 
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetCollection } from "./collection-groups.ts";
 import type { AutomationStudioSiteResetOriginal } from "./observations.ts";
 import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";

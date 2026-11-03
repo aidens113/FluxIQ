@@ -3,7 +3,7 @@
 // a yes gave beside its verdict (`./verdict/`), which a split shows the model
 // beside the no's (`./agreement.ts`).
 
-import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../agents/llm/index.ts";
+import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 import type { AutomationStudioResultRepairDirective } from "./contracts/index.ts";
 
 /** The three words `stillAchievable` may carry; any other value is not carried. */

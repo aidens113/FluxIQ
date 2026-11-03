@@ -9,8 +9,8 @@
 // `../../../located-defects/tests/circle-board-fixture.ts`. The computed facts
 // are stubbed (`../../computed-facts-route/`). No model is called.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../../../agents/llm/build-purse/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../../../llm/build-purse/index.ts";
 import { automationStudioResultComputedFacts } from "../../../computed-facts/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultComputedFact } from "../../../contracts/index.ts";
 import { ANY_CIRCLE, CIRCLE_YES, NOT_ENTERED, OWN_CIRCLES, RECAST_NO, REFUTED_DEFECTS, REFUTED_NO, circleInstruction, circleRunSummary, citingYes } from "../../../located-defects/tests/circle-board-fixture.ts";

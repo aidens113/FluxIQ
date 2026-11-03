@@ -1,0 +1,432 @@
+// A dry run on a site that remembers what exploring did (t195-w20b).
+//
+// The dry run's reset is a navigation only (decision D1), so it runs on the
+// state exploration left. The audits of three scenarios showed the steps that
+// can then never replay, and every completion was refused for them:
+//
+//   - pickup-order (t195-w19b, #1 and #2): after the real order the cart is
+//     empty, the consent and offer are answered, the guest checkout and the
+//     slot fetch are remembered;
+//   - apply-quillmark (t195-w19d, C4): "I'm a person" and the confirmation read
+//     come after a Submit the dry run withholds, on the form's own page;
+//   - confirm-requests run 33 (t195-w19a, B1): a kept consent press.
+//
+// The host here answers the way the web binding does: a target that is there
+// replays (a check of it is verified); a target that is not there is
+// `remembered` (`present` for a check) when the replay stands on the page the
+// step acted on, and `unreproducible` anywhere else.
+import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../core/index.ts";
+import {
+  automationStudioFlowDraftDryRunIssueCodes,
+  automationStudioFlowDraftReplayOutcomeWord,
+  type AutomationStudioFlowDraftReplayOutcome,
+  type AutomationStudioFlowDraftStep
+} from "../../../flow-authoring/draft/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
+import { automationStudioFlowDraftDryRunGate, automationStudioFlowDraftSeedFromFlow, replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "../index.ts";
+
+const HOME = "https://bigbox.test/";
+const PRODUCT = "https://bigbox.test/p/towels";
+const CART = "https://bigbox.test/cart";
+const CHECKOUT = "https://bigbox.test/checkout";
+const CONFIRMATION = "https://bigbox.test/order/confirmation";
+
+function savedCandidate(options: { declarations?: string[]; missingDeclarations?: true; missingStart?: true; unresolved?: true; notRequired?: true } = {}) {
+  return automationStudioFlowDraftSeedFromFlow({
+    ...(options.notRequired ? { declarationRequired: () => false } : {}),
+    nodes: [{ id: "saved", definitionId: "fixture.open", parameterValues: { selector: "#open", text: { $state: { path: "text", ...(options.unresolved ? {} : { fallback: "authored" }) } } }, ...(options.missingDeclarations ? {} : { metadata: { declaredConsequences: options.declarations ?? [] } }) }],
+    edges: [], ...(options.missingStart ? {} : { startPages: { saved: { location: HOME } } })
+  }).steps;
+}
+
+const mappedCandidateNode: NonNullable<ReturnType<NonNullable<AutomationStudioFlowDraftReplayInput["nodeOf"]>>> = { inputs: [], outputs: [], outputAction: { required: true, fixed: "fixture.output.open" } };
+
+describe("fresh full tests of carried saved configurations", () => {
+  it("resets then dispatches unchanged saved arguments with fallback resolved, retaining no performed proof", async () => {
+    const steps = savedCandidate();
+    const calls: JsonObject[] = [];
+    const executeTool = async ({ value }: { value: JsonObject }) => { calls.push(value); return answer("core.replay.replayed", true); };
+    const result = await replayAutomationStudioFlowDraft({ steps, attempt: 1, executeTool, nodeOf: () => mappedCandidateNode });
+    expect(calls.map((call) => call.replay)).toEqual(["reset", "step"]);
+    expect(calls[1]).toMatchObject({ node: "fixture.open", parameters: { selector: "#open", text: "authored" }, consequences: [], from: { location: HOME } });
+    expect(calls[1]!.produced).toBeUndefined();
+    expect(result.verdict.ok).toBe(true);
+    expect(steps[0]!.ranWith).toBeUndefined();
+    expect(steps[0]!.replay).toBeUndefined();
+    expect(steps[0]!.effectApplied).toBeUndefined();
+  });
+
+  it.each(["unknown", "unmapped", "nonfixed"])("refuses %s registered output authority before dispatch", async (kind) => {
+    let calls = 0;
+    const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, requireLibrarySteps: true, steps: savedCandidate(),
+      nodeOf: () => kind === "unknown" ? undefined : kind === "unmapped" ? { inputs: [], outputs: [] } : { inputs: [], outputs: [], outputAction: { required: true, allowed: ["fixture.output.open"] } },
+      executeTool: async () => { calls++; return answer("core.replay.replayed", true); }, accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
+    expect(await gate()).toEqual({ issueCodes: ["llm_evidence_loop.full_run_required"] });
+    expect(calls).toBe(0);
+  });
+
+  // t439: a saved step that declared nothing is the saved Flow's, and is run as
+  // saved (`run-mv4912r9-53b05a51`); only the first step needs a start.
+  it("dispatches an unchanged saved configuration that declared nothing where its node need not, adding no declaration", async () => {
+    const calls: JsonObject[] = [];
+    const executeTool = async ({ value }: { value: JsonObject }) => {
+      calls.push(value);
+      return answer("core.replay.replayed", true);
+    };
+    const result = await replayAutomationStudioFlowDraft({ steps: savedCandidate({ missingDeclarations: true, notRequired: true }), attempt: 1, executeTool, nodeOf: () => mappedCandidateNode });
+    expect(calls.map((call) => call.replay)).toEqual(["reset", "step"]);
+    expect(Object.hasOwn(calls[1]!, "consequences")).toBe(false);
+    expect(result.verdict.ok).toBe(true);
+  });
+
+  // A saved step whose node must declare and did not is never run blind (supervisor review, t439).
+  it.each(["declaration", "copy", "edit"])("refuses missing or invalid %s before dispatch", async (kind) => {
+    let steps = savedCandidate({ ...(kind === "declaration" ? { missingDeclarations: true } : {}) });
+    if (kind === "copy") steps = steps.map((step) => ({ ...step }));
+    if (kind === "edit") steps[0]!.input.parameters = { selector: "#other" };
+    let calls = 0;
+    const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, steps, nodeOf: () => mappedCandidateNode,
+      executeTool: async () => { calls++; return answer("core.replay.replayed", true); }, accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
+    expect(await gate()).toEqual({ issueCodes: ["llm_evidence_loop.full_run_required"] });
+    expect(calls).toBe(0);
+  });
+
+  // t688, live run `run-mvblov2i-abb7d82e` (0080, 0086): the repaired run captured no start for the saved Flow's first
+  // node, the gate refused it `cannot_run_again`, and the model reran the saved steps one at a time. The saved Flow's own
+  // playback sends its first step from where the target stands; so does the test, with no reset.
+  it("sends an unchanged saved first step whose start was never captured where the target stands, with no reset", async () => {
+    const steps = savedCandidate({ missingStart: true });
+    const calls: JsonObject[] = [];
+    const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, steps, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => {
+        calls.push(value);
+        return answer("core.replay.replayed", true);
+      },
+      accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
+    expect(await gate()).toBeUndefined();
+    expect(calls.map((call) => call.replay)).toEqual(["step"]);
+    expect(calls[0]).toMatchObject({ node: "fixture.open", parameters: { selector: "#open", text: "authored" } });
+    expect(Object.hasOwn(calls[0]!, "from")).toBe(false);
+    const replayed: JsonObject[] = [];
+    const result = await replayAutomationStudioFlowDraft({ steps: savedCandidate({ missingStart: true }), attempt: 1, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => {
+        replayed.push(value);
+        return answer("core.replay.replayed", true);
+      } });
+    expect(replayed.map((call) => call.replay)).toEqual(["step"]);
+    expect(result.verdict).toMatchObject({ ok: true, reset: "ok" });
+  });
+
+  it("still needs a start for a saved first step that was changed, or for a step this build ran", async () => {
+    const changed = savedCandidate({ missingStart: true });
+    changed[0]!.input.parameters = { selector: "#other" };
+    let calls = 0;
+    const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, steps: changed, nodeOf: () => mappedCandidateNode,
+      executeTool: async () => {
+        calls++;
+        return answer("core.replay.replayed", true);
+      },
+      accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
+    expect(await gate()).toEqual({ issueCodes: ["llm_evidence_loop.full_run_required"] });
+    const ran: AutomationStudioFlowDraftStep = { position: 1, id: "d1", iteration: 1, actionId: "fixture.open", input: { node: "fixture.open", parameters: {} }, ranWith: { node: "fixture.open", parameters: {} }, effect: "mutate", effectApplied: true, disposition: "kept", proposes: true, replay: {} };
+    const result = await replayAutomationStudioFlowDraft({ steps: [ran], attempt: 1, executeTool: async () => {
+      calls++;
+      return answer("core.replay.replayed", true);
+    } });
+    expect(result.verdict).toMatchObject({ ok: false, reset: "failed" });
+    expect(calls).toBe(0);
+  });
+
+  it("refuses an unresolved saved binding without dispatching the action", async () => {
+    const calls: JsonObject[] = [];
+    const result = await replayAutomationStudioFlowDraft({ steps: savedCandidate({ unresolved: true }), attempt: 1, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => { calls.push(value); return answer("core.replay.replayed", true); } });
+    expect(calls.map((call) => call.replay)).toEqual(["reset"]);
+    expect(result.verdict.outcomes[0]?.resultCode).toBe("core.replay.unresolved_binding");
+    expect(result.verdict.ok).toBe(false);
+  });
+
+  it("retains an executor's permission refusal without claiming mutation or a clean test", async () => {
+    let mutations = 0;
+    const steps = savedCandidate();
+    const result = await replayAutomationStudioFlowDraft({ steps, attempt: 1, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => {
+        if (value.replay === "reset") return answer("core.replay.replayed", true);
+        if (value.replay === "step") return answer("action.permission.denied");
+        mutations++; return answer("core.replay.failed");
+      } });
+    expect(mutations).toBe(0);
+    expect(result.verdict.ok).toBe(false);
+    expect(result.verdict.outcomes[0]?.resultCode).toBe("action.permission.denied");
+    expect(steps[0]!.effectApplied).toBeUndefined();
+  });
+
+  it("sends lasting carried configuration only as verify, with no mutation or historical proof", async () => {
+    const steps = savedCandidate({ declarations: ["create_new"] });
+    const calls: JsonObject[] = [];
+    const result = await replayAutomationStudioFlowDraft({ steps, attempt: 1, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => { calls.push(value); return value.replay === "reset" ? answer("core.replay.replayed", true) : answer("core.replay.verified"); } });
+    expect(calls.map((call) => call.replay)).toEqual(["reset", "verify"]);
+    expect(calls[1]!.consequences).toEqual(["create_new"]);
+    expect(result.verdict.ok).toBe(true);
+    expect(steps[0]!.priorExecution).toBeUndefined();
+    expect(steps[0]!.effectApplied).toBeUndefined();
+  });
+});
+
+/** One step of a draft, and how the site answers it now. */
+type SiteStep = {
+  node: string;
+  from: string;
+  consequences?: string[];
+  effect?: "observe" | "mutate";
+  /** Whether its target is on the site now. */
+  there: boolean;
+  /** Where a press that ran leaves the page. */
+  moves?: string;
+  /** A fixed answer, for a step this site does not model. */
+  answer?: string;
+};
+
+const draft = (site: SiteStep[]): AutomationStudioFlowDraftStep[] => site.map((each, index) => {
+  const consequences = each.consequences ?? [];
+  return {
+    position: index + 1,
+    id: `d${index + 1}`,
+    iteration: index + 1,
+    actionId: each.node,
+    toolId: "core.run_node",
+    input: { node: each.node, parameters: {}, consequences },
+    ranWith: { node: each.node, parameters: { selector: `#${each.node}` }, consequences },
+    effect: each.effect ?? "mutate",
+    effectApplied: true,
+    disposition: "kept",
+    proposes: true,
+    replay: { from: { location: each.from }, ...(each.effect === "observe" ? { produced: { records: 1 } } : {}) }
+  };
+});
+
+const answer = (code: string, effectApplied = false): AutomationStudioLlmEvidenceToolExecutionResult =>
+  ({ kind: "llm_evidence_tool_execution", evidence: { said: code }, effectApplied, resultCode: code });
+
+/**
+ * The site: where the page stands, what each call asked, and the answers.
+ * `redirects` sends a reset for one location to another, the way a checkout
+ * with nothing in the cart sends a shopper back to the cart.
+ */
+function site(steps: SiteStep[], options: { redirects?: Record<string, string>; reanchorFails?: true } = {}) {
+  let at = "";
+  const calls: { callId: string; value: JsonObject }[] = [];
+  const byNode = new Map(steps.map((each) => [each.node, each]));
+  const executeTool = async ({ callId, value }: { callId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+    calls.push({ callId, value });
+    const from = (value.from as { location?: string } | undefined)?.location;
+    if (value.replay === "reset") {
+      if (options.reanchorFails && callId.endsWith(".reanchor")) return answer("core.replay.reset_failed");
+      at = options.redirects?.[from ?? ""] ?? from ?? "";
+      return answer("core.replay.replayed", true);
+    }
+    const step = byNode.get(String(value.node))!;
+    if (step.answer) return answer(step.answer, step.answer === "core.replay.replayed");
+    if (step.there) {
+      if (value.replay === "verify") return answer("core.replay.verified");
+      if (step.moves) at = step.moves;
+      return answer("core.replay.replayed", true);
+    }
+    if (from !== undefined && from === at) return answer(value.replay === "verify" ? "core.replay.present" : "core.replay.remembered");
+    return answer("core.replay.unreproducible");
+  };
+  return { calls, executeTool };
+}
+
+const replay = (steps: SiteStep[], options?: Parameters<typeof site>[1]) => {
+  const host = site(steps, options);
+  return { host, replayed: replayAutomationStudioFlowDraft({ steps: draft(steps), attempt: 1, executeTool: host.executeTool }) };
+};
+
+const lines = (outcomes: readonly AutomationStudioFlowDraftReplayOutcome[]) =>
+  outcomes.map((outcome) => [outcome.step, automationStudioFlowDraftReplayOutcomeWord(outcome), outcome.reanchored ?? false, outcome.withheldBy ?? null]);
+
+const resets = (calls: readonly { callId: string; value: JsonObject }[]) => calls.filter((each) => each.value.replay === "reset").map((each) => each.callId);
+
+/** Bigbox after the real order (t195-w19b §a): the chain a correct build keeps. */
+const PICKUP: SiteStep[] = [
+  { node: "node.go_home", from: HOME, there: true, moves: HOME },
+  { node: "node.accept_all", from: HOME, there: false },
+  { node: "node.no_thanks", from: HOME, there: false },
+  { node: "node.open_towels", from: HOME, there: true, moves: PRODUCT },
+  { node: "node.add_to_cart", from: PRODUCT, consequences: ["create_new"], there: true },
+  // Add to cart was checked, not run, so its "Added to cart" panel never opened.
+  { node: "node.view_cart", from: PRODUCT, there: false },
+  // The soap's line went with the order.
+  { node: "node.save_for_later", from: CART, consequences: ["modify_existing"], there: false },
+  // No bar on an empty cart.
+  { node: "node.continue_to_checkout", from: CART, there: false },
+  // The guest checkout and the slot fetch are remembered.
+  { node: "node.continue_as_guest", from: CHECKOUT, there: false },
+  { node: "node.retry_slots", from: CHECKOUT, there: false },
+  { node: "node.slot_2pm", from: CHECKOUT, there: true },
+  { node: "node.type_name", from: CHECKOUT, there: true },
+  { node: "node.type_phone", from: CHECKOUT, there: true },
+  { node: "node.place_order", from: CHECKOUT, consequences: ["move_money"], there: true },
+  { node: "node.read_order", from: CONFIRMATION, effect: "observe", there: false }
+];
+
+describe("a dry run on a site that remembers what exploring did", () => {
+  it("passes pickup-order's chain after the real order, keeping every step it needs on a fresh site", async () => {
+    const { host, replayed } = replay(PICKUP);
+    const { verdict } = await replayed;
+    expect(lines(verdict.outcomes)).toEqual([
+      [1, "replayed", false, null],
+      [2, "remembered", false, null],
+      [3, "remembered", false, null],
+      [4, "replayed", false, null],
+      [5, "verified", false, null],
+      [6, "remembered", false, null],
+      // Looked for on the product page first, after View cart was remembered:
+      // asked again on the cart, where its line is gone.
+      [7, "present", true, null],
+      [8, "remembered", false, null],
+      [9, "remembered", true, null],
+      [10, "remembered", false, null],
+      [11, "replayed", false, null],
+      [12, "replayed", false, null],
+      [13, "replayed", false, null],
+      [14, "verified", false, null],
+      // The order was withheld, so its confirmation is not there to read.
+      [15, "unreproducible", false, 14]
+    ]);
+    expect(verdict.ok).toBe(true);
+    // Each re-anchor is one reset to that step's own page, and no more.
+    expect(resets(host.calls)).toEqual(["dryrun.1.reset", "dryrun.1.7.reanchor", "dryrun.1.9.reanchor"]);
+    expect(host.calls.find((each) => each.callId === "dryrun.1.9.reanchor")?.value.from).toEqual({ location: CHECKOUT });
+    expect(host.calls.filter((each) => each.callId.startsWith("dryrun.1.9")).map((each) => each.callId)).toEqual(["dryrun.1.9", "dryrun.1.9.reanchor", "dryrun.1.9.again"]);
+  });
+
+  it("sends a replayed step where it found the page, so the host can tell remembered from unreproducible", async () => {
+    const { host, replayed } = replay(PICKUP.slice(0, 3));
+    expect((await replayed).verdict.ok).toBe(true);
+    expect(host.calls.find((each) => each.callId === "dryrun.1.2")?.value).toMatchObject({ replay: "step", from: { location: HOME } });
+  });
+
+  it("passes apply-quillmark's submit and both steps after it, excused by the withheld send", async () => {
+    const CAREERS = "https://quillmark.test/careers/apply";
+    const { host, replayed } = replay([
+      { node: "node.type_cv", from: CAREERS, there: true },
+      { node: "node.submit", from: CAREERS, consequences: ["send_or_publish"], there: true },
+      { node: "node.confirm_person", from: CAREERS, there: false, answer: "core.replay.failed" },
+      { node: "node.read_confirmation", from: CAREERS, effect: "observe", there: false, answer: "core.replay.unreproducible" }
+    ]);
+    const { verdict } = await replayed;
+    expect(lines(verdict.outcomes)).toEqual([
+      [1, "replayed", false, null],
+      [2, "verified", false, null],
+      [3, "failed", false, 2],
+      [4, "unreproducible", false, 2]
+    ]);
+    expect(verdict.ok).toBe(true);
+    // Excused steps are not asked again elsewhere.
+    expect(resets(host.calls)).toEqual(["dryrun.1.reset"]);
+  });
+});
+
+describe("what a dry run still refuses", () => {
+  it("blocks a step missing on another page when the step before it replayed, without re-anchoring it", async () => {
+    const { host, replayed } = replay([
+      { node: "node.go_home", from: HOME, there: true, moves: HOME },
+      { node: "node.open_towels", from: HOME, there: true, moves: PRODUCT },
+      // Its page is the cart, which no step of this draft reaches (run 18).
+      { node: "node.save_for_later", from: CART, there: false }
+    ]);
+    const { verdict } = await replayed;
+    expect(lines(verdict.outcomes)).toEqual([[1, "replayed", false, null], [2, "replayed", false, null], [3, "unreproducible", false, null]]);
+    expect(verdict.ok).toBe(false);
+    expect(resets(host.calls)).toEqual(["dryrun.1.reset"]);
+    expect(host.calls.at(-1)?.value).toMatchObject({ replay: "step", from: { location: CART } });
+  });
+
+  it("blocks a step whose re-anchor could not put the page back: it was looked for only on another page", async () => {
+    const { host, replayed } = replay([
+      { node: "node.go_home", from: HOME, there: true, moves: HOME },
+      { node: "node.accept_all", from: HOME, there: false },
+      { node: "node.continue_to_checkout", from: CART, there: false }
+    ], { reanchorFails: true });
+    const { verdict } = await replayed;
+    expect(lines(verdict.outcomes)).toEqual([[1, "replayed", false, null], [2, "remembered", false, null], [3, "unreproducible", false, null]]);
+    expect(verdict.ok).toBe(false);
+    expect(resets(host.calls)).toEqual(["dryrun.1.reset", "dryrun.1.3.reanchor"]);
+  });
+
+  it("blocks a re-anchored step that is still not on its own page, and asks only once", async () => {
+    const { host, replayed } = replay([
+      { node: "node.go_home", from: HOME, there: true, moves: HOME },
+      { node: "node.accept_all", from: HOME, there: false },
+      { node: "node.continue_as_guest", from: CHECKOUT, there: false }
+    ], { redirects: { [CHECKOUT]: CART } });
+    const { verdict } = await replayed;
+    expect(lines(verdict.outcomes)).toEqual([[1, "replayed", false, null], [2, "remembered", false, null], [3, "unreproducible", true, null]]);
+    expect(verdict.ok).toBe(false);
+    expect(resets(host.calls)).toEqual(["dryrun.1.reset", "dryrun.1.3.reanchor"]);
+    expect(automationStudioFlowDraftDryRunIssueCodes(verdict)).toContain("core.replay.reanchored");
+  });
+
+  it("excuses nothing after a verified step that declared nothing a person is asked about, and everything after one that did", async () => {
+    const FORM = "https://forms.test/profile";
+    const steps = (consequences: string[]): SiteStep[] => [
+      { node: "node.open_form", from: FORM, there: true, moves: FORM },
+      { node: "node.save_profile", from: FORM, consequences, there: true },
+      { node: "node.read_saved", from: FORM, effect: "observe", there: false, answer: "core.replay.changed" }
+    ];
+    const edited = await replay(steps(["modify_existing"])).replayed;
+    expect(edited.verdict.ok).toBe(false);
+    expect(edited.verdict.outcomes[2]?.withheldBy).toBeUndefined();
+    const sent = await replay(steps(["send_or_publish"])).replayed;
+    expect(sent.verdict.ok).toBe(true);
+    expect(sent.verdict.outcomes[2]?.withheldBy).toBe(2);
+  });
+});
+
+// What the test observed (t195-w26a): the judge of a build's actual results is
+// shown what each step's replay answered, not only the status word it earned.
+describe("what a replay observed", () => {
+  const STORE = "https://store.test/";
+  const answering = (steps: SiteStep[]) => async ({ callId, value }: { callId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+    if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { reset: callId }, effectApplied: true, resultCode: "core.replay.replayed" };
+    const node = String(value.node);
+    const read = steps.find((each) => each.node === node)?.effect === "observe";
+    const code = value.replay === "verify" ? "core.replay.verified" : "core.replay.replayed";
+    return { kind: "llm_evidence_tool_execution", evidence: read ? { rows: [{ name: "Towels", price: "9.99" }] } : { pressed: node }, effectApplied: code === "core.replay.replayed", resultCode: code };
+  };
+
+  it("reports one observation per step, a verified step included, with what each step answered and not the reset", async () => {
+    const steps: SiteStep[] = [
+      { node: "node.open_towels", from: STORE, there: true },
+      { node: "node.add_to_cart", from: STORE, consequences: ["create_new"], there: true },
+      { node: "node.read_cart", from: STORE, effect: "observe", there: true }
+    ];
+    const { verdict, observations } = await replayAutomationStudioFlowDraft({ steps: draft(steps), attempt: 1, executeTool: answering(steps) });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.outcomes[1]?.mode).toBe("verify");
+    expect(observations).toEqual([
+      { step: 1, stepId: "d1", resultCode: "core.replay.replayed", evidence: { pressed: "node.open_towels" } },
+      { step: 2, stepId: "d2", resultCode: "core.replay.verified", evidence: { pressed: "node.add_to_cart" } },
+      { step: 3, stepId: "d3", resultCode: "core.replay.replayed", evidence: { rows: [{ name: "Towels", price: "9.99" }] } }
+    ]);
+  });
+
+  it("reports nothing for a step whose answer could not be read, and nothing when the reset failed", async () => {
+    const steps: SiteStep[] = [{ node: "node.open_towels", from: STORE, there: true }, { node: "node.add_to_cart", from: STORE, there: true }];
+    const unreadable = await replayAutomationStudioFlowDraft({
+      steps: draft(steps),
+      attempt: 1,
+      executeTool: async (call) => {
+        if (String(call.value.node) === "node.add_to_cart") throw new Error("the host does not replay");
+        return answering(steps)(call);
+      }
+    });
+    expect(unreadable.observations.map((each) => each.step)).toEqual([1]);
+    const noReset = await replayAutomationStudioFlowDraft({ steps: draft(steps), attempt: 1, executeTool: async () => answer("core.replay.reset_failed") });
+    expect(noReset.observations).toEqual([]);
+  });
+});

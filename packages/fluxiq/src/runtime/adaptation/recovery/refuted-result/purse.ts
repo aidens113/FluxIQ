@@ -58,7 +58,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmRunBudgetDiagnostic } from "../../../agents/llm/index.ts";
+import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmRunBudgetDiagnostic } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY } from "./reauthor.ts";
 
 /**

@@ -9,7 +9,7 @@
 // gap. No task, site, item or answer of any realistic scenario.
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../../../framework/automation-service/nodes/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../../../../../result-verification/index.ts";
 import { CAMP_READ, campsiteInstruction, campsiteRunSummary } from "../../../../../../result-verification/refuted-no/tests/campsite-fixture.ts";
 import { GAP_AND_CHANGE_NO as GAP_AND_CHANGE, GAP_NO as GAP } from "../../../../../../result-verification/refuted-no/tests/campsite-readings-fixture.ts";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../action-permission-requests/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialRequest, type AutomationStudioFlowCandidate } from "../../candidate/index.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetRead, type AutomationStudioSiteResetSpot } from "../../site-reset/index.ts";
 import type { AutomationStudioTrialChangeAsk } from "../index.ts";

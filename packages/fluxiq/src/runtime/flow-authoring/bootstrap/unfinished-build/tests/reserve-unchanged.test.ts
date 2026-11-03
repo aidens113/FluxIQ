@@ -9,8 +9,8 @@
 // 48 calls spent, and its reserve judgement's one call said yes unconfirmed.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { AutomationStudioLlmBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import { AutomationStudioLlmBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import { runAutomationStudioFlowBootstrapBuildPhases, type AutomationStudioFlowBootstrapTestVerdict } from "../index.ts";
 

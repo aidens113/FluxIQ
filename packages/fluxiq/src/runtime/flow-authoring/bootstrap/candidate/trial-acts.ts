@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permission-requests/index.ts";
 import { automationStudioSiteResetWitnessStampValid } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetSpot, AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "./contracts.ts";

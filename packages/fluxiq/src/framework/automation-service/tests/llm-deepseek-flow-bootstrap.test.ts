@@ -3,10 +3,10 @@ import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
   type AutomationStudioFlowBootstrapPlan
 } from "../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../runtime/agents/llm/index.ts";
-import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../../../runtime/agents/llm/index.ts";
-import { AutomationStudioLlmProviderError } from "../../../runtime/agents/llm/index.ts";
-import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../../runtime/agents/llm/token-estimation.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../runtime/llm/index.ts";
+import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekInputTokens } from "../../../runtime/llm/index.ts";
+import { AutomationStudioLlmProviderError } from "../../../runtime/llm/index.ts";
+import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../../runtime/llm/token-estimation.ts";
 
 describe("Automation Studio DeepSeek flow_bootstrap transport", () => {
   it("maps the task to flow_bootstrap and sends the exact compact schema without recording context", async () => {

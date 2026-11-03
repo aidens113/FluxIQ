@@ -81,7 +81,7 @@
 // act gate added or widened goes there; what stays here is the control's side
 // and the classes declared.
 
-import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../../action-permission-requests/index.ts";
 import { automationStudioSiteResetRefusal as refusal, type AutomationStudioSiteResetCanMeet, type AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
 import { automationStudioSiteResetActOwnControl as ownControlOf, automationStudioSiteResetActSubjects as actSubjects, automationStudioSiteResetOwnControlStanding as ownControlStanding, type AutomationStudioSiteResetObservations, type AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTarget } from "../site-reset/index.ts";

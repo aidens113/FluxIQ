@@ -6,7 +6,7 @@
 // is accepted, so it is a hint, never a block (`canMeet` stays true: a bound can always be written).
 // The refusal carries Core's resend mark (t650), as t641's and t666's do, so the repeat guard runs the
 // invited resend. A test of words is never refused.
-import type { AutomationStudioLlmEvidenceResendInvitation } from "../../../agents/llm/repeat-guard/index.ts";
+import type { AutomationStudioLlmEvidenceResendInvitation } from "../../../llm/repeat-guard/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission } from "../candidate/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioFlowPlanNumericTextTests, type AutomationStudioNumericTextTest } from "./found.ts";

@@ -9,7 +9,7 @@
 // on the request's words, is still kept, and dropping it is still refused once.
 // No model is called; no task, site, item or answer of any realistic scenario.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
 import {
   DRILL_HALDEN, DRILL_ORMSBY, DRILL_PRO, DRILL_READ, DRILL_SLOW, DRILL_TORVIK, SELLER_IS_TITLE, SELLER_LINE, hardwareInstruction, hardwareRunSummary

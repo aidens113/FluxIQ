@@ -5,7 +5,7 @@
 import type { ClientGatewayService, ClientGatewayTraceCaptureSource, ClientGatewayTraceStore } from "../../../../client-gateway/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioProjectContentProtection } from "../../../../framework/persistence/automation/index.ts";
-import type { AutomationStudioConversations } from "../../../interaction/conversations/index.ts";
+import type { AutomationStudioConversations } from "../../../conversations/index.ts";
 import type { AutomationStudioRunEnvironment } from "../../../../framework/automation-service/environment/index.ts";
 import type { AutomationStudioPrepareCandidateStart } from "../../../../framework/automation-service/service/candidate-trial/index.ts";
 import type { AutomationStudioOfflineTrialGateway } from "../../../../framework/automation-service/service/offline-trial/index.ts";

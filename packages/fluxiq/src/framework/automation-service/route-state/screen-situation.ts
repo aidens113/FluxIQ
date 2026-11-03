@@ -1,9 +1,9 @@
 // The same privacy boundary as full route evidence, before any delta is made.
 import type { JsonObject } from "../../../core/index.ts";
-import { automationStudioLlmEvidenceCanonicalJson } from "../../../runtime/agents/llm/evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceCanonicalJson } from "../../../runtime/llm/evidence-loop-decision.ts";
 // The harness barrel reaches route-state through flow-bootstrap; use its leaf
 // to keep this model projection outside that import cycle.
-import { screenAutomationStudioLlmEvidence } from "../../../runtime/agents/llm/harness/evidence-screen.ts";
+import { screenAutomationStudioLlmEvidence } from "../../../runtime/llm/harness/evidence-screen.ts";
 
 /** Screen first, then snapshot the visible values independently of the host. */
 export function automationStudioScreenRouteSituation(state: JsonObject, deniedKeys: readonly string[]): JsonObject {

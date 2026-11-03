@@ -7,7 +7,7 @@
 // completion was refused `cannot_run_again` on step 1.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftReplayable, automationStudioFlowDraftStartsWhereItStands } from "../index.ts";
-import { automationStudioFlowDraftSeedFromFlow } from "../../../agents/llm/node-tools/index.ts";
+import { automationStudioFlowDraftSeedFromFlow } from "../../../llm/node-tools/index.ts";
 
 function saved(start: boolean) {
   return automationStudioFlowDraftSeedFromFlow({

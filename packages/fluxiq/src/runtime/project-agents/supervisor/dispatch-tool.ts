@@ -1,9 +1,9 @@
 import type { JsonObject } from "../../../core/index.ts";
-import { emitAutomationStudioProjectBriefCard, emitAutomationStudioProjectReturnCard } from "../../activity/automation/project/index.ts";
+import { emitAutomationStudioProjectBriefCard, emitAutomationStudioProjectReturnCard } from "../../automation-activity/project/index.ts";
 import { automationStudioCandidateSameBehaviour } from "../../flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../../flow-authoring/bootstrap/plan/index.ts";
 import type { AutomationStudioSubflowProposal } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioProjectBuilderReturn, automationStudioProjectBuilderReturn as RETURN, automationStudioProjectEarlierAttempt as EARLIER, automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectStructurePlan, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTrialRef } from "../contracts/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import { AutomationStudioProjectAssembledFrom, automationStudioProjectSingleSubflowPlan, automationStudioProjectSingleSubflowTrial } from "../single-subflow/index.ts";

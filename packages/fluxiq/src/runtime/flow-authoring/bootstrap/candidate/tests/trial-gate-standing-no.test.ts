@@ -7,7 +7,7 @@
 // campsite search of `../../../result-verification/standing-no-record/tests/campsite-swing-fixture.ts`.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestVerdict } from "../../../../result-verification/index.ts";
 import { campsiteInstruction } from "../../../../result-verification/refuted-no/tests/campsite-fixture.ts";
 import { CAMPSITE_YES, DROP_NAME_CONDITIONS_NO } from "../../../../result-verification/refuted-no/tests/campsite-readings-fixture.ts";

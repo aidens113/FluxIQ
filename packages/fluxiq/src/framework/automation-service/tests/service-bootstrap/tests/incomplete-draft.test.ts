@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioFlowBootstrapIncompleteDraftStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../../service/index.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";

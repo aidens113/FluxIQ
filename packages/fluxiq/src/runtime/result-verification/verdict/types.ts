@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmDiagnosisFields } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "../../llm/index.ts";
 import type { AutomationStudioResultVerdictBasis, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import type { AutomationStudioRequestWording } from "../request-rows/index.ts";
 

@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import { AutomationStudioSiteResetProjectLedger } from "../../../../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { automationStudioSubflowBuilderAutoComplete } from "../../../../../../../runtime/flow-authoring/bootstrap/subflow-submit-then/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../../../../runtime/llm/index.ts";
 import type { AutomationStudioProjectBriefPortRequest } from "../../../../../../../runtime/project-agents/index.ts";
 import { automationStudioProjectBuildBriefPorts } from "../../../brief-ports.ts";
 
-vi.mock("../../../../../../../runtime/agents/llm/index.ts", async (original) => ({
+vi.mock("../../../../../../../runtime/llm/index.ts", async (original) => ({
   ...(await original<object>()),
   automationStudioLlmNodeDescriptions: () => ({ ids: () => [], definition: () => undefined }),
   automationStudioHarnessOptionRegistry: () => ({ evidenceLoopBinding: () => ({ tools: [], observedStateKeys: [], executeTool: async () => ({ ok: true }) }) })

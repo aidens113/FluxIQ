@@ -8,8 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioActionDeclaration } from "../../../action-permissions/automation/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioActionDeclaration } from "../../../action-permission-requests/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../action-permissions.ts";
 import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetClaim, AutomationStudioSiteResetExplored, AutomationStudioSiteResetSpot, AutomationStudioSiteResetTarget } from "../site-reset/index.ts";
 

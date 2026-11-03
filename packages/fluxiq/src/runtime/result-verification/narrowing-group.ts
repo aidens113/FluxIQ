@@ -36,7 +36,7 @@
 // set. The result counts are numbers and always said.
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import { screenAutomationStudioLlmEvidence } from "../agents/llm/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 import type { AutomationStudioResultNarrowingStep } from "./contracts/index.ts";
 
 /** One option group as a snapshot summary carries it. */

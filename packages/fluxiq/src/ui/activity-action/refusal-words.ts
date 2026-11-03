@@ -1,14 +1,14 @@
 /**
  * Core's plain words for why it did not do what a decision asked, written once
  * for every client's card and for Core's own wording
- * (`runtime/activity/automation/wording/draft-edit-card.ts`,
+ * (`runtime/automation-activity/wording/draft-edit-card.ts`,
  * which checks at compile time that every reason the draft can give has words
  * here).
  *
  * - `amendment`: why an edit to the draft changed nothing, by the draft's own
  *   refusal reason (`runtime/flow-authoring/draft/amendment/types.ts`).
  * - `repeated`: why a call, or a step asked to run again, was not run, by what
- *   the same call came to before (`runtime/agents/llm/repeat-guard/outcomes.ts`).
+ *   the same call came to before (`runtime/llm/repeat-guard/outcomes.ts`).
  * - `resent`: why a whole Flow sent again unchanged (a candidate build's
  *   submission) was not taken, by the same.
  *

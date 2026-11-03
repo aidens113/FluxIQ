@@ -9,9 +9,9 @@ import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialP
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetRead } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
 import { AutomationStudioSubflowScopedSubmissionController, type AutomationStudioSubflowProposal } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../../../flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../agents/llm/index.ts";
-import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseJudging } from "../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
+import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseJudging } from "../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../../../framework/automation-service/service/paths/index.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectInstructionSource, AutomationStudioProjectSubflowBrief } from "../../contracts/index.ts";
 import type { AutomationStudioProjectDispatchRequest } from "../../dispatch/index.ts";

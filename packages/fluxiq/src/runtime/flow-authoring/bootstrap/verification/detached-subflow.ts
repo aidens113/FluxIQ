@@ -66,7 +66,7 @@ import {
   type AutomationStudioFlowBootstrapSubflow,
   type AutomationStudioFlowBuildPlan
 } from "../plan/index.ts";
-import { runAutomationStudioActivityPreparation } from "../../../activity/automation/step/index.ts";
+import { runAutomationStudioActivityPreparation } from "../../../automation-activity/step/index.ts";
 import { automationStudioArrivalPlanNode } from "./arrival-node.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "./contracts.ts";
 import type { runAutomationStudioDetachedCandidate } from "./detached-execution.ts";

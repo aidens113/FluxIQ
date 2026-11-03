@@ -49,7 +49,7 @@
 // under the draft path's code (`AUTOMATION_STUDIO_INSTRUCTED_ACT_OPTIONAL_ISSUE_CODE`),
 // at the step's `optional:` line, with what to write instead.
 import type { AutomationStudioFlowBootstrapIssueLocator, AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from "../authoring/index.ts";
-import { automationStudioModelFacingControlWords } from "../../../agents/llm/model-facing/index.ts";
+import { automationStudioModelFacingControlWords } from "../../../llm/model-facing/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioFlowScriptStepSaysOptional } from "../script-statements/index.ts";
 import type { AutomationStudioInstructedAct } from "./contracts.ts";

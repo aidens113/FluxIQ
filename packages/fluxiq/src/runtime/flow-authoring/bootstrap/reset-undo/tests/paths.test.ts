@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioActionConsequence } from "../../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetOriginal } from "../../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetSpot } from "../../site-reset/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDO_PATHS as PATHS } from "../paths.ts";

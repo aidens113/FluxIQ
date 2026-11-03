@@ -25,7 +25,7 @@ import {
 } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioCandidateSubmissionRefusal } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { readAutomationStudioFlowScriptFact } from "../../../../../runtime/flow-authoring/bootstrap/script-statements/index.ts";
-import { AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION, automationStudioLlmRunNodeTool, resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../../../runtime/agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION, automationStudioLlmRunNodeTool, resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../../../runtime/llm/index.ts";
 
 /** The words that name how a page finds an element, which a model is never asked for. */
 const LOCATOR_WORDS = /\b(?:css|xpath|selectors?|locators?)\b/iu;

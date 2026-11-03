@@ -7,7 +7,7 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../../../engine/automation/tests/fixture-contracts.ts";
 import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../runtime/automation-activity/index.ts";
 import type { AutomationStudioFactEvaluationContext, AutomationStudioHostRuntimeBoundary } from "../../../../../runtime/automation-host/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../../../engine/automation/index.ts";
 import { automationStudioRootInvocation } from "../../../../../engine/automation/frames/index.ts";

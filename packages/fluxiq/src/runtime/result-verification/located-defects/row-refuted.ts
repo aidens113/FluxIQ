@@ -45,7 +45,7 @@
 // so a mark refutes neither. Core knows only "an item marked outside the
 // person's set", never what kind of set or offer the client found.
 
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioResultNoStoredRow } from "../refuted-no/index.ts";
 import type { AutomationStudioResultLeftOutRowRecord } from "./row-cells.ts";
 

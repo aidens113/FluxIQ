@@ -209,7 +209,7 @@ import { automationStudioStepNotRunSaid } from "../../executor/step-skip/index.t
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { automationStudioAttemptSettled } from "../../../../runtime/adaptation/flow-change/index.ts";
-import { automationStudioModelFacingFailureText } from "../../../../runtime/agents/llm/model-facing/index.ts";
+import { automationStudioModelFacingFailureText } from "../../../../runtime/llm/model-facing/index.ts";
 import { automationStudioResultAdviceShown } from "../../../../runtime/result-verification/agreement/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES, automationStudioResultReadListContinues, automationStudioResultSummaryWithPagingWords, type AutomationStudioBuildTestVerdict, type AutomationStudioResultReadAccount, type AutomationStudioRunResultSummary } from "../../../../runtime/result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";

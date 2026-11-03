@@ -31,7 +31,7 @@ import {
   type AutomationStudioTrialLeftAct,
   type AutomationStudioTrialWitnessPlace
 } from "../trial-change/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetChecks } from "./contracts.ts";
 import type { AutomationStudioSiteResetControlWitnesses } from "./control-witnesses.ts";
 import type { AutomationStudioSiteResetCreateBaselines } from "./create-baselines.ts";

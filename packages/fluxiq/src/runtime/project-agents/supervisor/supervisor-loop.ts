@@ -123,10 +123,10 @@
 import { authoringScopePartOf } from "../../flow-authoring/bootstrap/record-defaults/index.ts";
 import { automationStudioCandidateTestRequestKey } from "../../flow-authoring/bootstrap/test-request/index.ts";
 import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialResult, type AutomationStudioFlowCandidate } from "../../flow-authoring/bootstrap/candidate/index.ts";
-import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../agents/llm/build-purse/index.ts";
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../agents/llm/evidence-loop.ts";
-import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../agents/llm/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS, AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../agents/loop-limits/index.ts";
+import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS, AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../llm/loop-limits/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectBuildEnding } from "../record/index.ts";
 import { automationStudioProjectSupervisorAssembleTool } from "./assemble-tool.ts";

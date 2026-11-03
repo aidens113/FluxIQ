@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioActionConsequence } from "../../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../action-permission-requests/index.ts";
 import { automationStudioSiteResetAdmission } from "../../reset-admission/index.ts";
 import {
   AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS,

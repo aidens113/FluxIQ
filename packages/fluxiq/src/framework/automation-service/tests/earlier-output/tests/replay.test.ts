@@ -11,7 +11,7 @@
 // `core.replay.unresolved_binding` and nothing is sent for it.
 // The llm barrel first, as `../../../llm/decision-context/tests/recorded-runs.ts` says why.
 import { describe, expect, it } from "vitest";
-import { replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/agents/llm/index.ts";
+import { replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 

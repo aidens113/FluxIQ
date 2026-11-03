@@ -7,7 +7,7 @@
 // answer without that row stays unknown. On the made-up timetable of
 // `../../../located-defects/tests/build-test-answer-fixture.ts`; no model is called.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import {
   ENROLLED_LESSONS,
   KEPT_OTHER_COURSE_NO,

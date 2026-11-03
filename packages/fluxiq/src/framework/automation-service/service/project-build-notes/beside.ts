@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../runtime/llm/index.ts";
 
 // Core's own words beside a tool's answer (`../project-build/brief-ports.ts`, `./told.ts`):
 // the domain's evidence is kept whole, and Core's note is added under its own

@@ -5,7 +5,7 @@
 // provider decide, and keeps each decision the loop was handed, after the
 // builder's own wrapper, as the activity observer would see it.
 import type { JsonObject } from "../../../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool } from "../../../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool } from "../../../../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID,
   AutomationStudioSubflowPendingRepair,

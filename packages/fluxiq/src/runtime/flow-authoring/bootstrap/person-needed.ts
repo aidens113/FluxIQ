@@ -42,14 +42,14 @@
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../core/index.ts";
-import { automationStudioActivityAskPort } from "../../activity/automation/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../agents/llm/index.ts";
+import { automationStudioActivityAskPort } from "../../automation-activity/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,
   AUTOMATION_STUDIO_PERSON_NEEDED_MAX_ASKS,
   automationStudioPersonNeededToolCalls,
   type AutomationStudioParkingPort
-} from "../../parking/automation/index.ts";
+} from "../../automation-parking/index.ts";
 import { flowBootstrapUserInterventionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure/index.ts";
 
 /** How many times one build may put the question to a person. */

@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmDiagnosisFields } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "../../llm/index.ts";
 import type { AutomationStudioResultVerdict } from "../contracts/index.ts";
 
 /** The verdict a model's `answersRequest` field carries, with anything else read as `unsure`. */

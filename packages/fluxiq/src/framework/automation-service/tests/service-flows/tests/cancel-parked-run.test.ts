@@ -6,8 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { automationStudioActivityHub } from "../../../../../runtime/activity/automation/index.ts";
-import { automationStudioParkedRun, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft } from "../../../../../runtime/parking/automation/index.ts";
+import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
+import { automationStudioParkedRun, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft } from "../../../../../runtime/automation-parking/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { createRunnableCanonicalFlow } from "../../service-fixtures.ts";
 

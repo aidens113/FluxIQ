@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION } from "../../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION } from "../../../../llm/index.ts";
 import { bindAutomationStudioInRunRepair } from "../../../../../framework/automation-service/service/runtime-session/index.ts";
 import { IN_RUN_REPAIR_RUN_ID, inRunRepairGraph, inRunRepairRequest, inRunRepairWorld } from "../../../../../framework/automation-service/service/runtime-session/tests/in-run-repair-fixture.ts";
 import { automationStudioInRunRepairSlot, automationStudioRepairUnitContract } from "../index.ts";

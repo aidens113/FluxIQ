@@ -6,7 +6,7 @@
 // catch turned into `flow_bootstrap.post_provider_validation_failed` on A8
 // canary `run-mv8zw5l2-98064abf`.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { flowBootstrapEvidenceLoopFailure, flowBootstrapLoopProviderUnavailableEnding, parseAutomationStudioFlowBootstrapFailureDiagnostic, parseAutomationStudioFlowBootstrapGenerationError } from "../index.ts";
 
 type Failed = Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>;

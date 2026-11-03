@@ -13,7 +13,7 @@
 import type { AutomationStudioFlowDocument } from "../../../flows/authoring/model/index.ts";
 import { classifyAutomationStudioAdaptiveFailure } from "../adaptive-orchestrator.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor.ts";
-import { isAutomationStudioRuntimeTargetOverrideTarget, type AutomationStudioRuntimePatch, type AutomationStudioRuntimeTargetOverrideTarget } from "../../agents/llm/index.ts";
+import { isAutomationStudioRuntimeTargetOverrideTarget, type AutomationStudioRuntimePatch, type AutomationStudioRuntimeTargetOverrideTarget } from "../../llm/index.ts";
 import { automationStudioRuntimeTargetOverrideFailedAction } from "./failed-action.ts";
 import {
   AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS,

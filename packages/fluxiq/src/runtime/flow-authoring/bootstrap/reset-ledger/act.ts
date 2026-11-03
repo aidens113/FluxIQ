@@ -4,7 +4,7 @@
 // write it. Never shown to a model as it is: the ledger names an act
 // through `namedAct` (`./named-act.ts`, t797).
 
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetPress, AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetControlOriginal, AutomationStudioSiteResetEffect, AutomationStudioSiteResetPlace, AutomationStudioSiteResetSpot } from "../site-reset/index.ts";
 

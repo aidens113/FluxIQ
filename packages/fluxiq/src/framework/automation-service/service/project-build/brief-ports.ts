@@ -1,13 +1,13 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../nodes/index.ts";
-import { type AutomationStudioActionConsequence } from "../../../../runtime/action-permissions/automation/index.ts";
-import { observeAutomationStudioEvidenceLoop } from "../../../../runtime/activity/automation/index.ts";
+import { type AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
+import { observeAutomationStudioEvidenceLoop } from "../../../../runtime/automation-activity/index.ts";
 import { AutomationStudioExploredInterruptions, AutomationStudioLearnedPaces, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, flowBootstrapEvidenceUnusableDecisionFailure, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapActionPermissions, type AutomationStudioFlowBootstrapPersonNeeded } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, AUTOMATION_STUDIO_SITE_RESET_WORDS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetCalls, type AutomationStudioSiteResetIssuedRef, type AutomationStudioSiteResetNamedAct, type AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetTarget, type AutomationStudioSiteResetTrialReset } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, type AutomationStudioSubflowEntryLeftAct, type AutomationStudioSubflowTrialPreparingPort } from "../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
-import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../../runtime/agents/llm/evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../../runtime/llm/evidence-loop/index.ts";
+import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmHarnessInput } from "../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION, type AutomationStudioProjectBriefEnding, type AutomationStudioProjectBriefPortFactory, type AutomationStudioProjectBriefPortRequest, type AutomationStudioProjectBuilderPorts } from "../../../../runtime/project-agents/index.ts";
 import { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import { automationStudioCandidateStallCode, automationStudioCandidateSubmissionRefusals } from "../candidate-failure/index.ts";

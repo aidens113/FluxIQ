@@ -2,8 +2,8 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import { activityActionOf } from "../../../../../ui/index.ts";
-import { automationStudioActivityHub } from "../../../../../runtime/activity/automation/index.ts";
-import { automationStudioParkedRun, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft } from "../../../../../runtime/parking/automation/index.ts";
+import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
+import { automationStudioParkedRun, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft } from "../../../../../runtime/automation-parking/index.ts";
 import { settleAutomationStudioParkedRunWait } from "../parked-wait.ts";
 
 let seen: ClientGatewayActivity[] = [];

@@ -30,7 +30,7 @@
 // (`./object-binding.ts`): a step whose record names another act's object, and
 // not this one's, does not do this one.
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
 

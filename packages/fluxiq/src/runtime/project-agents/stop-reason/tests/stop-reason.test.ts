@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../llm/evidence-loop.ts";
 import { automationStudioProjectSupervisorStopReason } from "../index.ts";
 
 const failed = (code: string, extra: Record<string, unknown> = {}): AutomationStudioLlmEvidenceLoopResult => ({ ok: false, code, trace: [], steps: [], accounting: {}, ...extra }) as unknown as AutomationStudioLlmEvidenceLoopResult;

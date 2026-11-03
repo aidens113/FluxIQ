@@ -32,7 +32,7 @@ import {
   type AutomationStudioExplorationTraceGapEntry
 } from "../../adaptation/exploration-reduction/index.ts";
 import { automationStudioFlowDraftProposedSteps, type AutomationStudioFlowDraft, type AutomationStudioFlowDraftStep } from "../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 
 /** Where a reduced draft's steps came from. */
 export type AutomationStudioFlowBootstrapDraftBasis =

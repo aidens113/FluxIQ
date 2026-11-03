@@ -32,8 +32,8 @@
 // named by its place among the rows collected rather than sent empty.
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import { automationStudioActivityLoops } from "../activity/automation/loop/index.ts";
-import { screenAutomationStudioLlmEvidence } from "../agents/llm/index.ts";
+import { automationStudioActivityLoops } from "../automation-activity/loop/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 
 const FOR_EACH = "builtin.control.for-each";
 /** A row field minted per read rather than part of the row. */

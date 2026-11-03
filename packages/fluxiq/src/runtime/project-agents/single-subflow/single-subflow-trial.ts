@@ -3,9 +3,9 @@ import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandid
 import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as OFFLINE } from "../../flow-authoring/bootstrap/offline-first/index.ts";
 import type { AutomationStudioSubflowTrialKeptEveryRowRead, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult, AutomationStudioSubflowTrialRowCheck } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioResultKeptCondition, AutomationStudioResultKeptConditionsCarrier } from "../../result-verification/standing-no/index.ts";
-import { automationStudioLlmBuildPurseJudgeBackstopScope, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurse } from "../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/evidence-loop.ts";
-import { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "../../activity/automation/index.ts";
+import { automationStudioLlmBuildPurseJudgeBackstopScope, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "../../automation-activity/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 import type { AutomationStudioProjectDispatchWholeTrial, AutomationStudioProjectDispatchWholeTrialAnswer } from "../dispatch/index.ts";

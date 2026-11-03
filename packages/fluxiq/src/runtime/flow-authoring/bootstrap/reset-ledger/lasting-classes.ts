@@ -3,7 +3,7 @@
 // (`./recording.ts`) reads both, the settlement answers
 // (`./answers.ts`) whether an act is of a class no control takes back.
 
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 
 /** The classes an act may leave that the site's own controls can reverse. */
 export const AUTOMATION_STUDIO_SITE_RESET_UNDOABLE_CLASSES: ReadonlySet<AutomationStudioActionConsequence> = new Set(["create_new", "modify_existing", "delete"]);

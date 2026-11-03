@@ -20,8 +20,8 @@ import type {
   AutomationStudioActionDeclarationRecord,
   AutomationStudioActionPermissionRequest,
   AutomationStudioInstructedConsequence
-} from "../../action-permissions/automation/index.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace } from "../../agents/llm/index.ts";
+} from "../../action-permission-requests/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace } from "../../llm/index.ts";
 import type { AutomationStudioBootstrapExistingTopology } from "./extend.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../../adaptation/flow-change/index.ts";
 import { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioRouteSignaturesValue } from "../../../framework/automation-service/route-state/signatures/index.ts";

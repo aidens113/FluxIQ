@@ -1,7 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { emitAutomationStudioProjectReceiptCard } from "../../activity/automation/project/index.ts";
+import { emitAutomationStudioProjectReceiptCard } from "../../automation-activity/project/index.ts";
 import { automationStudioSiteResetProjectReset, type AutomationStudioSiteResetChecks, type AutomationStudioSiteResetTrialReset } from "../../flow-authoring/bootstrap/site-reset/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import { automationStudioProjectSingleSubflowPlan } from "../single-subflow/index.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";

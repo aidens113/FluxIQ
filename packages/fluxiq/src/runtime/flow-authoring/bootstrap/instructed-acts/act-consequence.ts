@@ -14,7 +14,7 @@
 // buy, purchase, pay -- `move_money`; send, post, publish, submit, apply --
 // `send_or_publish`. A verb outside it implies nothing, which is where every
 // act stood before.
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
 
 const IMPLIED: ReadonlyArray<readonly [RegExp, AutomationStudioActionConsequence]> = [

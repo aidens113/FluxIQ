@@ -7,7 +7,7 @@ import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest } from "../../../nodes/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../../../runtime/llm/index.ts";
 import { getPrimarySubflowGraph, installPrimaryRouter, adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).

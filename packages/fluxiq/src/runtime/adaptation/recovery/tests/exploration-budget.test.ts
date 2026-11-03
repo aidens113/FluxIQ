@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS,
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS,

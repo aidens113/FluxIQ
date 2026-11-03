@@ -25,7 +25,7 @@
 // say only what the Flow keeps and what the person can do next
 // (`./codes.ts`, `conversations/commands/`).
 
-import { automationStudioActivityEndedReason } from "../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityEndedReason } from "../../../../runtime/automation-activity/index.ts";
 import type { AutomationStudioProjectBuildReading } from "./reading.ts";
 import { automationStudioProjectBuildReadingsTold } from "./readings-told.ts";
 import { automationStudioProjectBuildReasonNothingChanged } from "./reason-nothing-changed.ts";

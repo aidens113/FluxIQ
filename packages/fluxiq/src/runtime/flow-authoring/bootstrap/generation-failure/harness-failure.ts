@@ -7,7 +7,7 @@
 // `automationStudioFlowBootstrapFailureState`, the one table the parser reads
 // too, so a projection cannot describe a state the reader will refuse. Three
 // copies of that decision used to exist; this file held one of them.
-import { parseAutomationStudioLlmProviderRefusal } from "../../../agents/llm/provider-refusal/index.ts";
+import { parseAutomationStudioLlmProviderRefusal } from "../../../llm/provider-refusal/index.ts";
 import type {
   AutomationStudioLlmDiagnostic,
   AutomationStudioLlmProviderMetadata,
@@ -16,8 +16,8 @@ import type {
   AutomationStudioLlmRunBudgetDiagnostic,
   AutomationStudioLlmTaskRequest,
   AutomationStudioLlmUsageSummary
-} from "../../../agents/llm/index.ts";
-import type { AutomationStudioLlmProviderRefusal } from "../../../agents/llm/provider-refusal/index.ts";
+} from "../../../llm/index.ts";
+import type { AutomationStudioLlmProviderRefusal } from "../../../llm/provider-refusal/index.ts";
 import type { AutomationStudioFlowBootstrapFailureStage, AutomationStudioFlowBootstrapPhaseFailureCode } from "./codes.ts";
 import { flowBootstrapDiagnosticIssueCodes } from "./diagnostic.ts";
 import { parseAutomationStudioFlowBootstrapProviderThrow } from "./diagnostic-parse.ts";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioActivityTimeLimitTried } from "../../../../../runtime/activity/automation/index.ts";
+import type { AutomationStudioActivityTimeLimitTried } from "../../../../../runtime/automation-activity/index.ts";
 import { automationStudioProjectBuildEndingTold, automationStudioProjectBuildRecordTold } from "../index.ts";
 
 // t753, rerun round 5: a failed or partial build's ending said one verdict three times, contradicted itself and

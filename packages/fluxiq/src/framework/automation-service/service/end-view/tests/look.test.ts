@@ -8,7 +8,7 @@
 // `initialObservation`), by the view keys the domain declared, bounded in time.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { harness, verify } from "../../../../../runtime/result-verification/tests/run-outcome-harness.ts";
 import { automationStudioEndViewLook, automationStudioRunEndViewReader } from "../index.ts";
 

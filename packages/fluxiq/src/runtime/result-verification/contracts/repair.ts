@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 
 /**
  * One thing wrong with what a run produced, as Core's own arithmetic found it.

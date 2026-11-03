@@ -3,7 +3,7 @@
 // `run-mv5q4j5c-49bfb5e2` cut a judge off at the harness's 20 s default).
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { automationStudioFlowBootstrapBuildJudge } from "../build-judge.ts";
 
 const ASKS = "Read the price of every product on the page.";

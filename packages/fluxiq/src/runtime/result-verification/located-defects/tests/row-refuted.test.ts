@@ -5,7 +5,7 @@
 // holds nor is held by the value claimed. On the made-up reading-circle board
 // of `./circle-board-fixture.ts`. No model is called.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmVerificationDefect } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultNoRecord } from "../../refuted-no/index.ts";
 import { automationStudioRequestWording } from "../../request-rows/index.ts";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetRead } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
 import { automationStudioProjectDispatchResetDone } from "../reset-done.ts";
 

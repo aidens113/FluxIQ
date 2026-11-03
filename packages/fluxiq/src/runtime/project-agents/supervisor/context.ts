@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlowCandidateTrialGate } from "../../flow-authoring/bootstrap/candidate/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import type { AutomationStudioProjectSupervisorState } from "./state.ts";
 

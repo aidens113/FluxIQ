@@ -4,7 +4,7 @@
 // retests left).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopDecision } from "../../../../agents/llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceLoopDecision } from "../../../../llm/evidence-loop/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../framework/automation-service/nodes/index.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,

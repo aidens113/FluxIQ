@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmRunPurse } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmRunPurse } from "../../llm/index.ts";
 
 /** Project the canonical ledger, preserving recovery facts and unknown historical accounting. */
 export function automationStudioResultRunAccounting(purse: AutomationStudioLlmRunPurse | undefined, runId: string, previous: unknown): JsonObject | undefined {

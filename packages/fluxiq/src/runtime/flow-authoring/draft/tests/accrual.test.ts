@@ -2,7 +2,7 @@
 // what an amendment decision does to it.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { runAutomationStudioLlmEvidenceLoop } from "../../../agents/llm/index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../../llm/index.ts";
 
 const inspect = { toolId: "inspect", description: "Look at the page.", inputSchema: { type: "object" }, effect: "observe" as const };
 const press = { toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const };

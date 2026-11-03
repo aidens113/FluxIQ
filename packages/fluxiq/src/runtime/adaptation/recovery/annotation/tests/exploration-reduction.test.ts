@@ -7,7 +7,7 @@ import {
   type AutomationStudioHarnessOption,
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioLlmProvider
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../../context.ts";
 import { startAutomationStudioRecoveryDeadline } from "../../recovery-deadline.ts";
 import { runAutomationStudioRecoveryExploration } from "../exploration.ts";

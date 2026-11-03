@@ -84,7 +84,7 @@
 // unknown-handle issue whose handles include an `extraction.N` now carries
 // `from`: one fixed sentence saying so, in no domain's words.
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../../framework/automation-service/nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapIssueDetail } from "./contracts.ts";
 import { automationStudioFlowBootstrapParameterText } from "./parameter-text.ts";

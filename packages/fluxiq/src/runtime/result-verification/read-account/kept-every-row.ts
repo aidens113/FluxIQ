@@ -32,7 +32,7 @@
 // row label is carried.
 
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../flows/authoring/model/index.ts";
-import { automationStudioActivityLoops } from "../../activity/automation/loop/index.ts";
+import { automationStudioActivityLoops } from "../../automation-activity/loop/index.ts";
 import { automationStudioNodeActLasts } from "../../../framework/automation-service/executor/defensive/index.ts";
 import type { AutomationStudioResultKeptEveryRow, AutomationStudioResultReadAccount } from "../contracts/index.ts";
 import { automationStudioResultReadParameters } from "./read-parameters.ts";

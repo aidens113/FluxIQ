@@ -15,8 +15,8 @@
 // result nobody judged reading as a result that was right is the exact failure
 // this whole area exists to stop.
 
-import { redeemAutomationStudioResultCheckAuthorization, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND } from "../../../../runtime/result-control/check-authorization/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_CODES, AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS, type AutomationStudioResultCheckDecision, type AutomationStudioResultCheckState } from "../../../../runtime/result-control/check-schedule/index.ts";
+import { redeemAutomationStudioResultCheckAuthorization, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND } from "../../../../runtime/result-verification/check-authorization/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_CODES, AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS, type AutomationStudioResultCheckDecision, type AutomationStudioResultCheckState } from "../../../../runtime/result-verification/check-schedule/index.ts";
 import type { AutomationStudioResultVerificationProvider } from "../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";
 

@@ -21,8 +21,8 @@
 // (`../../flow-draft/scheduled-candidate/step-copy.ts`), so a candidate survives
 // both copies (t690).
 import { automationStudioFlowDraftStepCopy } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../agents/llm/index.ts";
-import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "../../../agents/llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "../../../llm/evidence-loop/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapRoundEnding } from "./contracts.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";

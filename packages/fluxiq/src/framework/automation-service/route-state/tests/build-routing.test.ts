@@ -19,9 +19,9 @@ import {
   type AutomationStudioLlmEvidenceCompletionCheck,
   type AutomationStudioLlmEvidenceLoopResult,
   type AutomationStudioLlmEvidenceToolExecutionResult
-} from "../../../../runtime/agents/llm/index.ts";
-import { replayRecordedRun, type RecordedRunName } from "../../../../runtime/agents/llm/decision-context/tests/recorded-runs.ts";
-import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../runtime/agents/loop-limits/index.ts";
+} from "../../../../runtime/llm/index.ts";
+import { replayRecordedRun, type RecordedRunName } from "../../../../runtime/llm/decision-context/tests/recorded-runs.ts";
+import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../runtime/llm/loop-limits/index.ts";
 import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudioFlowBootstrapRoutingContext } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../../host-runtime.ts";
 import { describe, expect, it } from "vitest";

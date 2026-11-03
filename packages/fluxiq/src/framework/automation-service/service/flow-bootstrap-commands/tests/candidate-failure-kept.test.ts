@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
-import { automationStudioConversationCallCause } from "../../../../../runtime/interaction/conversations/commands/index.ts";
+import { automationStudioConversationCallCause } from "../../../../../runtime/conversations/commands/index.ts";
 import { parseAutomationStudioFlowBootstrapFailureDiagnostic } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioCandidateStallCode } from "../../candidate-failure/index.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";

@@ -18,7 +18,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
 import {
   AutomationStudioSiteResetLedger,
   AutomationStudioSiteResetProjectLedger,
@@ -27,7 +27,7 @@ import {
   type AutomationStudioSiteResetRead,
   type AutomationStudioSiteResetSpot
 } from "../../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
-import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmHarnessInput } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmHarnessInput } from "../../../../../runtime/llm/index.ts";
 import { runAutomationStudioSubflowBuilderLoop } from "../../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioProjectBriefPortRequest } from "../../../../../runtime/project-agents/index.ts";
 import { gardenBrief, gardenBuild } from "../../../../../runtime/project-agents/dispatch/tests/dispatch-fixture.ts";
@@ -49,7 +49,7 @@ const site = vi.hoisted(() => ({
 // Both reads of a settled read back to back (`settle-ms.ts`).
 vi.mock("../../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS: 0 }));
 // The harness options: one run-node tool over the stub site (header).
-vi.mock("../../../../../runtime/agents/llm/index.ts", async (original) => ({
+vi.mock("../../../../../runtime/llm/index.ts", async (original) => ({
   ...(await original<object>()),
   automationStudioLlmNodeDescriptions: () => ({ ids: () => [], definition: () => undefined }),
   automationStudioHarnessOptionRegistry: () => ({

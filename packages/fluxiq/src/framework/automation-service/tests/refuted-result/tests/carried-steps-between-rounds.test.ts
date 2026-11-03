@@ -23,9 +23,9 @@ import {
 } from "../../../../../runtime/flow-authoring/bootstrap/unfinished-build/index.ts";
 import { automationStudioFlowDraftReplayable, automationStudioFlowDraftReplayFrom, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../../../../../runtime/flow-authoring/draft/scheduled-candidate/index.ts";
-import { automationStudioLlmEvidenceLoopEmptyAccounting } from "../../../../../runtime/agents/llm/evidence-loop/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/agents/llm/index.ts";
-import { automationStudioFlowDraftSeedFromFlow, replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "../../../../../runtime/agents/llm/node-tools/index.ts";
+import { automationStudioLlmEvidenceLoopEmptyAccounting } from "../../../../../runtime/llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
+import { automationStudioFlowDraftSeedFromFlow, replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "../../../../../runtime/llm/node-tools/index.ts";
 import { automationStudioBuildTestResultSummary, automationStudioBuildTestUntestedCarried } from "../../../../../runtime/result-verification/index.ts";
 
 const HOME = "http://127.0.0.1:60760/scenarios/everything-store/";

@@ -1,4 +1,4 @@
-import type { AutomationStudioActionConsequence } from "../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import type { AutomationStudioProjectTaskSpec } from "./task-spec.ts";
 
 // The lasting acts a brief may permit: none when no part it names asks for one,

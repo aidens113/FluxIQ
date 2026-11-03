@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { automationStudioActivityHub } from "../../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
 import { AutomationStudioRunControlRegistry, runAutomationStudioGraph } from "../../../../../framework/automation-service/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import { registerAutomationStudioApi } from "../index.ts";

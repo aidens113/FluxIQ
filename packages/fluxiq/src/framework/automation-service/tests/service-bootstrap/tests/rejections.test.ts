@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { automationStudioFlowBootstrapSizeLimits } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, blankFixturesPerService, type DataDirSeed } from "./fixtures.ts";

@@ -19,7 +19,7 @@ import {
   type AutomationStudioFlowBootstrapBuildEnding
 } from "../generation-failure/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
-import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";

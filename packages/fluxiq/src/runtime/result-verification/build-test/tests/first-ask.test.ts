@@ -4,7 +4,7 @@
 // and two refuted nos asked again make a yes of four calls that is not. No
 // model is called; the provider is scripted. A lamp shop, not a Lab scenario.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { LAMP_SHADE, LAMPS_INSTRUCTION, SAME_LAMP_NO, lampsRunSummary } from "../../refuted-no/tests/lamps-fixture.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 

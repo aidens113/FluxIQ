@@ -175,10 +175,10 @@
 // submit tool keeps `effect: "observe"`: the folded answer carries the page the
 // test left (`pageAfterTrial`), and a look asked again is run once more.
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
-import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../agents/llm/evidence-loop/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceCompletionCheck, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../llm/evidence-loop/index.ts";
 import { renderAutomationStudioFlowScriptFormat } from "../script-examples/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../../agents/llm/decision-handlers/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../../llm/decision-handlers/index.ts";
 import { automationStudioCandidateSubmissionRefusal } from "../candidate/index.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import type { AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowScope, AutomationStudioSubflowTrialResult } from "./contracts.ts";

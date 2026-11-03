@@ -13,7 +13,7 @@
 
 import type { JsonValue } from "../../../core/index.ts";
 import { automationStudioFlowDraftInputs, type AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
-import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioBuildTestInput } from "../contracts/index.ts";
 
 /** What a test value the screen refused is said as, as a withheld row label is. */

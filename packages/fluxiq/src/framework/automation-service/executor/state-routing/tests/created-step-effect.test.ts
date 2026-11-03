@@ -20,7 +20,7 @@ import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowArtif
 import { AutomationStudioNodeRegistry } from "../../../../../components/automation/index.ts";
 import { normalizeAutomationStudioFlowBuildPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../../../runtime/flow-authoring/bootstrap/plan/tests/index.ts";
-import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/harness-options/index.ts";
+import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/harness-options/index.ts";
 import { automationStudioNodeRouteSignatures } from "../../../route-state/index.ts";
 import { runAutomationStudioGraph } from "../../index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../../../engine/automation/index.ts";

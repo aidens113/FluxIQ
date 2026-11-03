@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioActionConsequence } from "../../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS, AutomationStudioSiteResetLedger, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetSpot, type AutomationStudioSiteResetTarget } from "../../site-reset/index.ts";
 
 // t797 P4 item 3 (rerun round 6 `run-mvrj7qg9-b6dc94f6`, root cause 2; `run-mvrj7qg8-6916b3f7`, question 3): one answer

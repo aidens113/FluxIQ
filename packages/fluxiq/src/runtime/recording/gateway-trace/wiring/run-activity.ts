@@ -7,7 +7,7 @@
 //
 // Nothing installed: exactly the activity scope.
 
-import { withAutomationStudioRunActivity } from "../../../activity/automation/index.ts";
+import { withAutomationStudioRunActivity } from "../../../automation-activity/index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../installation.ts";
 
 type RunSettled = { status: string; metadata?: unknown; trace?: unknown };

@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../core/index.ts";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/automation/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../agents/llm/evidence-loop.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permission-requests/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_PROJECT_BRIEF_KINDS, AUTOMATION_STUDIO_PROJECT_RECEIPT_KINDS } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "./tool-ids.ts";

@@ -1,4 +1,4 @@
-import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/index.ts";
 
 // The state digest a build takes either side of each step it runs.
 //

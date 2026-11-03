@@ -9,7 +9,7 @@ import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowAdapt
 import type { AutomationStudioAdaptationPolicy } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { prepareAutomationStudioInRunRepair } from "../../../../../runtime/adaptation/live-patch.ts";
-import type { AutomationStudioRuntimePatch } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch } from "../../../../../runtime/llm/index.ts";
 import { automationStudioJudgedPromotionCandidate, settleAutomationStudioJudgedPromotions } from "../../runtime-adaptation/index.ts";
 import type { AutomationStudioSubflowSummaryPage } from "../../summaries/index.ts";
 import { applyAutomationStudioUnitRepairPatch } from "../unit-repair-apply.ts";

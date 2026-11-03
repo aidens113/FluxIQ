@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { automationStudioFlowBootstrapGenerationCatch as caught, flowBootstrapHarnessFailure, flowBootstrapPhaseFailure, flowBootstrapUnclassifiedThrowCode, parseAutomationStudioFlowBootstrapFailureDiagnostic, parseAutomationStudioFlowBootstrapGenerationError } from "../index.ts";
 
 it("preserves recognized classification with known count, and omits an unknown count", () => {

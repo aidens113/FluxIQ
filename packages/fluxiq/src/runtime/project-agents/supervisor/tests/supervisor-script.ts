@@ -2,7 +2,7 @@
 // each read off the evidence it is shown) over a build from
 // `./supervisor-fixture.ts`, and the steps those scripts are written with.
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS, runAutomationStudioProjectSupervisorLoop, type AutomationStudioProjectSupervisorClock } from "../index.ts";
 import { BUILD, HOST_TOOLS, project } from "./supervisor-fixture.ts";
 

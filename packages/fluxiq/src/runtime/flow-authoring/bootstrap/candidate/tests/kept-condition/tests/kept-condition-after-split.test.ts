@@ -20,7 +20,7 @@
 // unknown's record beside the feedback, as it hands a no's (t652).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../../../../../result-verification/index.ts";
 import { DRILL_PRO, DRILL_READ, DRILL_SLOW, HOUSE, SELLER_IS_TITLE, hardwareInstruction, hardwareRunSummary } from "../../../../../../result-verification/refuted-no/tests/hardware-fixture.ts";
 import {

@@ -81,16 +81,16 @@
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../../action-permissions/automation/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../agents/loop-limits/index.ts";
-import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../../activity/automation/index.ts";
+import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../../action-permission-requests/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../llm/loop-limits/index.ts";
+import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../../automation-activity/index.ts";
 import {
   AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,
   automationStudioPermissionAskOutcome,
   automationStudioPersonNeededToolCalls,
   type AutomationStudioPermissionAsk,
   type AutomationStudioPersonNeededEnding
-} from "../../parking/automation/index.ts";
+} from "../../automation-parking/index.ts";
 import {
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioHarnessOptionLoopBinding,
@@ -98,7 +98,7 @@ import {
   type AutomationStudioLlmEvidenceLoopInput,
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceToolExecutionResult
-} from "../../agents/llm/index.ts";
+} from "../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS,
   AutomationStudioExplorationBudgetLedger,

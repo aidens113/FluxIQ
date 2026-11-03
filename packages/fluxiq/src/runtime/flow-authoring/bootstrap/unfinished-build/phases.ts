@@ -186,16 +186,16 @@
 // the caller's loop raises that is not a stall -- a permission ask, a person
 // needed, a provider failure -- passes through untouched.
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../../agents/llm/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResume } from "../../../agents/llm/evidence-loop/index.ts";
-import type { AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResume } from "../../../llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { automationStudioResultUnconfirmedInspection } from "../../../result-verification/unconfirmed-inspection/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../agents/loop-limits/index.ts";
-import { automationStudioLlmStepLogScope } from "../../../agents/llm/step-log/index.ts";
-import { automationStudioLlmBuildTrace } from "../../../agents/llm/evidence-progress/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../llm/loop-limits/index.ts";
+import { automationStudioLlmStepLogScope } from "../../../llm/step-log/index.ts";
+import { automationStudioLlmBuildTrace } from "../../../llm/evidence-progress/index.ts";
 import { automationStudioFlowBootstrapBudgetExhausted, type AutomationStudioFlowBootstrapCostSpending, type AutomationStudioFlowBootstrapNextRoundHold } from "./budget-exhausted.ts";
 import type {
   AutomationStudioFlowBootstrapJudgeSpend,

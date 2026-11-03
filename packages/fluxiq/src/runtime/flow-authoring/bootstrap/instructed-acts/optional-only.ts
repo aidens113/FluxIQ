@@ -32,7 +32,7 @@
 // Nothing here calls a provider or reads a page.
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { checkAutomationStudioInstructedActs } from "./check.ts";
 

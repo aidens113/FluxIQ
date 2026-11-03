@@ -3,7 +3,7 @@ import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation"
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../flows/authoring/model/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult } from "../run-outcome.ts";
-import { AutomationStudioLlmRunPurse } from "../../agents/llm/index.ts";
+import { AutomationStudioLlmRunPurse } from "../../llm/index.ts";
 import { ANSWER, UNAVAILABLE, datasetSummary, flow, memberHarness as harness, instruction, provider, runDetail, session, verify } from "./run-outcome-harness.ts";
 import * as resultVerifier from "../verify.ts";
 import { automationStudioResultVerdict } from "../verdict/index.ts";

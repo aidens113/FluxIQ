@@ -10,11 +10,11 @@ import { automationStudioSubflowBriefWords } from "../brief-words.ts";
 import { AutomationStudioNodeRegistry } from "../../../../../framework/automation-service/nodes/index.ts";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../../llm/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS, AUTOMATION_STUDIO_SUBFLOW_FINISHING_JUDGE_CALLS, AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowRepeatedAdvice, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest, type AutomationStudioSubflowTrialResult } from "../index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../agents/llm/evidence-loop/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../../agents/llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS } from "../../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../llm/evidence-loop/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../../llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS } from "../../../../llm/evidence-loop.ts";
 import { OPEN, SIBLINGS, callPart, part, script, testScope, testSubmission } from "./subflow-fixture.ts";
 
 const look: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a node", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "web.inspect" } } };

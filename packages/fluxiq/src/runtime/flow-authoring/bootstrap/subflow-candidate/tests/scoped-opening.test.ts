@@ -6,7 +6,7 @@
 // tests, because the candidate directory's tests are another task's.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../llm/index.ts";
 import { runAutomationStudioFlowCandidateAuthoringLoop } from "../../candidate/index.ts";
 import { AutomationStudioSiteResetLedger } from "../../site-reset/index.ts";
 import { testSubmission } from "./subflow-fixture.ts";

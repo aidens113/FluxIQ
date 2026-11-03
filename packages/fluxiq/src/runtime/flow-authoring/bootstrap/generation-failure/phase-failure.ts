@@ -5,7 +5,7 @@ import {
   type AutomationStudioFlowBootstrapFailureStage,
   type AutomationStudioFlowBootstrapPhaseFailureCode
 } from "./codes.ts";
-import type { AutomationStudioLlmRequestRefusalCode } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmRequestRefusalCode } from "../../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { AutomationStudioFlowBootstrapGenerationError, parseAutomationStudioFlowBootstrapGenerationError } from "./error.ts";
 import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstrapProviderStatus } from "./failure-state.ts";

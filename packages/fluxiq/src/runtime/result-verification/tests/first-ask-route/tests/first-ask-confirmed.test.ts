@@ -7,7 +7,7 @@
 // (a paging read, a garden catalogue, a lamp shop), not a Lab scenario.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../../flows/authoring/model/index.ts";
-import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../../contracts/index.ts";
 import { LAMP_SHADE, LAMPS_INSTRUCTION, SAME_LAMP_NO, lampsRunSummary } from "../../../refuted-no/tests/lamps-fixture.ts";
 import { REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary } from "../../../request-rows/tests/request-words-fixture.ts";

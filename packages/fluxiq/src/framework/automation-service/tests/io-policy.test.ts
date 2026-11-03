@@ -9,7 +9,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } fro
 import { classifyAutomationStudioAdaptiveFailure } from "../../../runtime/adaptation/adaptive-orchestrator.ts";
 import { runAutomationStudioGraph } from "../executor.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher, dispatchPolicyOutput } from "../io-policy.ts";
-import { packAutomationStudioLlmContext } from "../../../runtime/agents/llm/index.ts";
+import { packAutomationStudioLlmContext } from "../../../runtime/llm/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../service/index.ts";
 
 import { createElementMatcher } from "../../../runtime/target-matching/index.ts";

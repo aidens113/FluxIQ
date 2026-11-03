@@ -2,7 +2,7 @@
 // message saying what happened and how many tries, never a bare code (t211).
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "../../generation-failure/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import { runAutomationStudioFlowBootstrapBuildPhases, type AutomationStudioFlowBootstrapBuildPhasesInput } from "../index.ts";

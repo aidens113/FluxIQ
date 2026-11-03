@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioResultActStep } from "./act-steps.ts";
 
 /**

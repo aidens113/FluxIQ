@@ -11,7 +11,7 @@
 // the rows themselves, and never a code.
 
 import { ACTIVITY_RESULT_CHECK_LABELS } from "../../ui/index.ts";
-import { automationStudioActivityInBuild, automationStudioActivityReasonText } from "../activity/automation/index.ts";
+import { automationStudioActivityInBuild, automationStudioActivityReasonText } from "../automation-activity/index.ts";
 import type { AutomationStudioResultVerificationOutcome } from "./contracts/index.ts";
 import { automationStudioResultVerificationAnswers, automationStudioResultVerificationFailsRun } from "./contracts/index.ts";
 import { automationStudioResultCheckWords } from "./check-words.ts";

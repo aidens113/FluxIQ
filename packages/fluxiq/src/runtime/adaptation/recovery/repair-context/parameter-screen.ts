@@ -79,7 +79,7 @@ import {
   automationStudioExecutableTargetKey,
   automationStudioLocatorShapedText,
   screenAutomationStudioLlmEvidence
-} from "../../../agents/llm/harness/index.ts";
+} from "../../../llm/harness/index.ts";
 import { automationStudioSecretNamedKey } from "./secret-named-key.ts";
 
 /** The parameters a step ran with, as the repair is shown them. */

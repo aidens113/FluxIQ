@@ -10,7 +10,7 @@
 // and only the person's cancel still ends without one.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AutomationStudioLlmUnusableDecisionError } from "../../../agents/llm/index.ts";
+import { AutomationStudioLlmUnusableDecisionError } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { FIND, assembled, brief, call, complete, dispatch, end, supervise, test, type Entry, type Step } from "./supervisor-script.ts";

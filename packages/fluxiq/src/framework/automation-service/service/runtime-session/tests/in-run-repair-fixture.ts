@@ -15,9 +15,9 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeProposal, AutomationStudioFlowDocument } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import type { AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../../executor/lifecycle-run/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "../../../../../runtime/adaptation/recovery/index.ts";
-import { resolveAutomationStudioResultCheckSchedule } from "../../../../../runtime/result-control/check-schedule/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../../../runtime/result-verification/check-schedule/index.ts";
 import type { AutomationStudioTrainingModeBehavior } from "../../../../../runtime/adaptation/training-modes.ts";
 import { promoteAutomationStudioRuntimeAdaptation, type AutomationStudioRuntimeAdaptationContext } from "../../runtime-adaptation/index.ts";
 

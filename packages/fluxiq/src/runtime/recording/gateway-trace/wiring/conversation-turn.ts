@@ -5,7 +5,7 @@
 // page at a time to its end. Work not started from a chat has no thread, and
 // a thread that cannot be read is said so rather than failing the work.
 
-import { currentAutomationStudioConversation } from "../../../interaction/conversations/context/index.ts";
+import { currentAutomationStudioConversation } from "../../../conversations/context/index.ts";
 import type { AutomationStudioGatewayTraceConversationContext, AutomationStudioGatewayTraceConversationReader } from "./types.ts";
 
 const PAGE_TURNS = 200;

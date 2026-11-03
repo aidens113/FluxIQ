@@ -19,7 +19,7 @@
 
 import type { AutomationStudioResultReturnedValues } from "./contracts/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../framework/automation-service/executor/index.ts";
-import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../agents/llm/index.ts";
+import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 
 /** Core's sentence beside the values (header). */
 const SAID = "The single value each of these steps returned when it ran in this run, by nodeId, in run order. "

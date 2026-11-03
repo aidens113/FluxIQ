@@ -15,8 +15,8 @@
 // yes it finishes on is recorded as `stopped_short` (`../finishing-verdict.ts`).
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   runAutomationStudioFlowBootstrapBuildPhases,

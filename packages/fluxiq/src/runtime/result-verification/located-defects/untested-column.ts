@@ -31,7 +31,7 @@
 // of an `equals` list, `./tested-value-only.ts` still decides it (t785). Such a
 // no is then re-asked once (`../agreement/unsupported-no.ts`).
 
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultConditionName, automationStudioResultReadConditionColumn } from "../read-account/index.ts";
 import { automationStudioRequestRowLabel } from "../request-rows/index.ts";

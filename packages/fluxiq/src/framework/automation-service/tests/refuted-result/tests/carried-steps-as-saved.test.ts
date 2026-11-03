@@ -26,15 +26,15 @@ import {
   automationStudioFlowBootstrapStepsNotRunInThisBuild
 } from "../../../../../runtime/flow-authoring/bootstrap/unfinished-build/index.ts";
 import { automationStudioFlowDraftReplayable, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { automationStudioLlmEvidenceResumeEntry } from "../../../../../runtime/agents/llm/evidence-loop/index.ts";
+import { automationStudioLlmEvidenceResumeEntry } from "../../../../../runtime/llm/evidence-loop/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../../../../../runtime/flow-authoring/draft/scheduled-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import {
   automationStudioFlowDraftDryRunGate,
   automationStudioFlowDraftSeedFromFlow,
   replayAutomationStudioFlowDraft,
   type AutomationStudioFlowDraftReplayInput
-} from "../../../../../runtime/agents/llm/node-tools/index.ts";
+} from "../../../../../runtime/llm/node-tools/index.ts";
 import { automationStudioReauthorBrief, automationStudioResultRepairHistoryEntry } from "../../../../../runtime/adaptation/recovery/refuted-result/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../../../../runtime/result-verification/index.ts";
 

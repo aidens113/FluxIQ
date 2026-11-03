@@ -11,7 +11,7 @@
 // breaks -- and it breaks loudly, in the temporal dead zone of a `const`.
 // `diagnostic-parse.ts` and `harness-failure.ts` do import a value across the
 // same edge, and safely, because both call it from inside a function.
-import type { AutomationStudioLlmProviderPreflightErrorCode, AutomationStudioLlmRunBudgetDiagnostic } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProviderPreflightErrorCode, AutomationStudioLlmRunBudgetDiagnostic } from "../../../llm/index.ts";
 
 type ProviderPreflightSuffix<Code> = Code extends `llm.provider_${infer Suffix}` ? Suffix : never;
 

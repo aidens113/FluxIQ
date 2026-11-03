@@ -1,7 +1,7 @@
 // The one copy every draft hand-over goes through (`../step-copy.ts`, t690).
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftScheduledCandidateCall, automationStudioFlowDraftStepCopy } from "../index.ts";
-import { automationStudioFlowDraftSeedFromFlow } from "../../../../agents/llm/node-tools/index.ts";
+import { automationStudioFlowDraftSeedFromFlow } from "../../../../llm/node-tools/index.ts";
 
 function saved() {
   return automationStudioFlowDraftSeedFromFlow({

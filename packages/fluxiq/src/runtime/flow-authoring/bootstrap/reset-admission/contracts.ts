@@ -3,7 +3,7 @@
 // (`../site-reset/create-baselines.ts`, `known()`) supply every part but the
 // explored acts, which the caller's ledger supplies. Types only.
 
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetCanMeet, AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
 import type { AutomationStudioSiteResetDeclared } from "../site-reset/index.ts";
 import type { AutomationStudioSiteResetIssuedRef, AutomationStudioSiteResetSettlementSpot } from "../reset-settlement/index.ts";

@@ -12,7 +12,7 @@ import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions
 import { AutomationStudioExploredToggles } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { AutomationStudioSiteResetProjectLedger } from "../../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { AutomationStudioSubflowScopedSubmissionController, type AutomationStudioSubflowProposal, type AutomationStudioSubflowScope } from "../../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioProjectBriefPortRequest } from "../../../../../runtime/project-agents/index.ts";
 import { runAutomationStudioSubflowTrial } from "../../subflow-trial/index.ts";
 import { subflowTrialFixture } from "../../subflow-trial/tests/fixtures.ts";
@@ -21,7 +21,7 @@ import { automationStudioProjectBuildBriefPorts } from "../brief-ports.ts";
 const RUN_NODE: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a node", effect: "mutate", perCallEffect: true, inputSchema: { type: "object" } } as unknown as AutomationStudioLlmEvidenceTool;
 const PRESS = { node: "domain.demo.press", parameters: { target: { handle: "t1" } }, consequences: [] };
 
-vi.mock("../../../../../runtime/agents/llm/index.ts", async (original) => ({
+vi.mock("../../../../../runtime/llm/index.ts", async (original) => ({
   ...(await original<object>()),
   automationStudioLlmNodeDescriptions: () => ({ ids: () => [], definition: () => undefined }),
   automationStudioHarnessOptionRegistry: () => ({

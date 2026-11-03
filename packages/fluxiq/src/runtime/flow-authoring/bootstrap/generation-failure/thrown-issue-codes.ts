@@ -6,12 +6,12 @@
 // dropped the throw, so which line of Core threw could not be read from the run.
 //
 // Two codes, both Core's own words and neither a sentence: the error's class,
-// and where in Core it was thrown -- the first stack frame inside Automation
-// Studio, as its path from there and its line. A message is never read, so no
+// and where in Core it was thrown -- the first stack frame inside Core's own
+// source, as its path from there and its line. A message is never read, so no
 // page text, instruction or credential can ride on it.
 import { DIAGNOSTIC_ISSUE_CODE } from "./diagnostic.ts";
 
-const CORE_FRAME = /automation-studio[\\/]((?:[\w.-]+[\\/])*[\w.-]+\.[cm]?[jt]s):(\d+)/u;
+const CORE_FRAME = /fluxiq[\\/](?:src|dist)[\\/]((?:[\w.-]+[\\/])*[\w.-]+\.[cm]?[jt]s):(\d+)/u;
 /** Frames in this directory are the catch building the failure, not the throw. */
 const OWN_FRAME = /generation-failure[\\/]/u;
 

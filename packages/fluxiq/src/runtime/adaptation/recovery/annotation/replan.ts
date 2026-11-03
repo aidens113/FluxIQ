@@ -43,7 +43,7 @@ import {
   runAutomationStudioLlmHarness,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmTaskResult
-} from "../../../agents/llm/index.ts";
+} from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { planAutomationStudioRuntimeRecovery, type AutomationStudioRuntimeRecoveryPlan } from "../plan.ts";

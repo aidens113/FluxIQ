@@ -1,8 +1,8 @@
 import type { JsonObject } from "../../../core/index.ts";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialVerdict } from "../../flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioFlowBootstrapInterface } from "../../flow-authoring/bootstrap/plan/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../agents/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../llm/loop-limits/index.ts";
 import { automationStudioProjectAskedActs } from "./asked-acts.ts";
 import { automationStudioProjectDigest } from "./digest.ts";
 import { automationStudioProjectEarlierAttempt, type AutomationStudioProjectEarlierAttempt } from "./earlier-attempt.ts";

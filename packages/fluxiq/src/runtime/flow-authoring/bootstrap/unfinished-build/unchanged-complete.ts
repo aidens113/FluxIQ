@@ -32,7 +32,7 @@
 // doable: the instruction said "not doable" until t264 corrected it.
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopResume } from "../../../agents/llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopResume } from "../../../llm/evidence-loop/index.ts";
 
 /** The issue code a completion of the unchanged refuted Flow is refused with. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG = "bootstrap.flow_unchanged_since_judged_wrong";

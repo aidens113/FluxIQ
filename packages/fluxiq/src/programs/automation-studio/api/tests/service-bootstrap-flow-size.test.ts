@@ -16,7 +16,7 @@ import {
   type AutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBuildPlan
 } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 import { caller, mockProvider } from "../../../../framework/automation-service/tests/service-bootstrap/tests/fixtures.ts";

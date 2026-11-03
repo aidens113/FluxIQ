@@ -8,7 +8,7 @@
 // passed. Both a candidate trial and a subflow trial ask this judge
 // (`../../build-test/judge.ts`). No model is called; the provider is scripted.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskChecklist } from "../../build-test/index.ts";
 import {
   AUDIOBOOKS_INSTRUCTION, AUDIOBOOKS_LOW_RATED, AUDIOBOOKS_NOT_ON_SHELF, AUDIOBOOKS_PROMOTED, AUDIOBOOKS_REQUEST, AUDIOBOOKS_SAMPLER, AUDIOBOOKS_YES, audiobooksRunSummary

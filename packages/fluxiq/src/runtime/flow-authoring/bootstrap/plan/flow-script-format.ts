@@ -192,7 +192,7 @@ import { renderAutomationStudioFlowScriptAct } from "../script-guidance/index.ts
 // own filter whose group heading names it, not by reading every item. Its
 // example is a library catalogue's format filter, on no Lab lane's kind of site.
 
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permission-requests/index.ts";
 
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "Write the Flow as plain lines, not JSON. One fact per line, `key: value`.",

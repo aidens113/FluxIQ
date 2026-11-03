@@ -43,7 +43,7 @@
 // ledger pairs a later press by it (`../reset-undo/claims.ts`, `pairOf`).
 
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, automationStudioSiteResetValueReplacements as replacements } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetEffect, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 

@@ -46,7 +46,7 @@
 // back and so may still be on the site; its reset then comes back blocked
 // (`./ending.ts`, `gateUnsatisfiable`).
 
-import { automationStudioActivityActsSaid } from "../../activity/automation/wording/index.ts";
+import { automationStudioActivityActsSaid } from "../../automation-activity/wording/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../flow-authoring/bootstrap/site-reset/index.ts";
 
 /** A reset's `done` when nothing of the build stayed on the site. */

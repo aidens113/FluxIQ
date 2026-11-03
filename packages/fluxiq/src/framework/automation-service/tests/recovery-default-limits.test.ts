@@ -13,8 +13,8 @@ import {
   AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS,
   AutomationStudioLlmRunBudgetLedger,
   estimateAutomationStudioDeepSeekCostUsd
-} from "../../../runtime/agents/llm/index.ts";
-import { automationStudioLlmProjectedCallCostUsd } from "../../../runtime/agents/llm/build-purse/index.ts";
+} from "../../../runtime/llm/index.ts";
+import { automationStudioLlmProjectedCallCostUsd } from "../../../runtime/llm/build-purse/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS,
   AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,

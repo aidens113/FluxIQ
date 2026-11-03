@@ -8,7 +8,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapInterface } from "../../../flow-authoring/bootstrap/plan/index.ts";
 import { AutomationStudioSiteResetProjectLedger } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
 import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowProposal, runAutomationStudioSubflowBuilderLoop } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AutomationStudioBuildCancellation } from "../../../../framework/automation-service/service/flow-bootstrap-commands/index.ts";
 import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../../../framework/automation-service/service/paths/index.ts";
 import { automationStudioProjectStructurePlan, automationStudioProjectTaskSpec, type AutomationStudioProjectStructurePlan, type AutomationStudioProjectSubflowBrief, type AutomationStudioProjectTaskSpec } from "../../contracts/index.ts";

@@ -16,7 +16,7 @@
 // with none is `null`. Nothing here knows any client's words.
 
 import type { JsonValue } from "../../../core/index.ts";
-import { automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioResultItemMark } from "../read-condition.ts";
 
 /** What a mark text that may not be said reads as: the stored rows' own marker. */

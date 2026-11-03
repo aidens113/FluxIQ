@@ -1,4 +1,4 @@
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permission-requests/index.ts";
 import {
   AUTOMATION_STUDIO_PROJECT_AGENT_ROLES,
   automationStudioProjectBuilderReturn,

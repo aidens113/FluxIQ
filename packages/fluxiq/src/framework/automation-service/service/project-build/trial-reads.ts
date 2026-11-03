@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
 import { automationStudioRunEndViewReader } from "../end-view/index.ts";
 

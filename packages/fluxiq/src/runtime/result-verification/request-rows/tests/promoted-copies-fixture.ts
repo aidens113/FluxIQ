@@ -9,7 +9,7 @@
 // No task, site, product or answer of any realistic scenario.
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmDiagnosisFields } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioRequestWording } from "../request-wording.ts";
 

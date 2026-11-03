@@ -2,8 +2,8 @@ import { parseAutomationStudioFlowBootstrapGenerationError } from "../../flow-au
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetUnsettleableAct } from "../../flow-authoring/bootstrap/site-reset/index.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmBuildPurse } from "../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../llm/index.ts";
 import { automationStudioCandidateRefusalCodes as refusalCodes } from "../../../framework/automation-service/service/candidate-failure/index.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectReceiptRef, AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import { automationStudioProjectDispatchAllowanceSaid, type AutomationStudioProjectDispatchSizedAtStart } from "./allowance-said.ts";

@@ -19,7 +19,7 @@
 // compares, or is negated.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { automationStudioEvidenceKey, automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { automationStudioEvidenceKey, automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 
 /** Keys that name the value a condition tests, rather than saying something about it. */
 const NAMING_KEYS: ReadonlySet<string> = new Set(["field", "read"]);

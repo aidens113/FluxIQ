@@ -9,7 +9,7 @@
 // attempt, Stage A, Stage B -- called in the order `annotate.ts` calls it.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmTaskResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmTaskResult } from "../../../llm/index.ts";
 import type { AutomationStudioResultVerificationOutcome } from "../../../result-verification/index.ts";
 import type { AutomationStudioTrainingModeSettings } from "../../training-modes.ts";
 import { buildAutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";

@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmTaskResult } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 
 /**
  * Which rung of the recovery loop declined, when one did.

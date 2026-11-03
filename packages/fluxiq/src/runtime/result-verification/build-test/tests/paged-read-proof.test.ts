@@ -16,7 +16,7 @@
 //      run-dataset store and processed as a run's end processes it, stores the
 //      same 13 rows in the same order.
 // The llm barrel first, as `../../../llm/decision-context/tests/recorded-runs.ts` says why.
-import { replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import { replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolExecutionResult, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";

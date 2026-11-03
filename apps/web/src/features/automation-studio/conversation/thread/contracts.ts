@@ -20,7 +20,7 @@
 // Core did not build -- is kept in full below.
 //
 // The shapes read here are Core's own, measured against
-// `packages/fluxiq/src/runtime/interaction/conversations/`.
+// `packages/fluxiq/src/runtime/conversations/`.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "fluxiq/automation-studio/action-permissions";
 

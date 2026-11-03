@@ -2,7 +2,7 @@
 // the judged whole run and one repair round, held at the judge's own pricing,
 // and never carved into a brief's allowance.
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse } from "../../../../../runtime/agents/llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse } from "../../../../../runtime/llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "../reserve.ts";
 
 describe("a project build's reserve", () => {

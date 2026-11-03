@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../framework/automation-service/nodes/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopDecision } from "../../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopDecision } from "../../../../llm/evidence-loop.ts";
 import { runAutomationStudioFlowCandidateAuthoringLoop, AutomationStudioFlowCandidateSubmissionController, automationStudioCandidateSubmissionRefusal } from "../index.ts";
 
 // Lane A round 4 (`run-muyrpbnk-fef374e7`, 0037-0068): twelve submissions refused for the same two start-page handles,

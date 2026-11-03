@@ -7,7 +7,7 @@
 // with a region step before the read: no task, site, item or answer of any
 // realistic scenario. No model is called; the provider is scripted.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../../build-test/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../../contracts/index.ts";
 import { CAMPSITE_REQUEST, CAMP_OSPREY, CAMP_REGION, campsiteInstruction, campsiteRunSummary } from "../../../refuted-no/tests/campsite-fixture.ts";

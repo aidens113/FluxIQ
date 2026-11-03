@@ -17,7 +17,7 @@ import {
   AUTOMATION_STUDIO_LLM_CONSERVATIVE_UTF8_BYTES_PER_TOKEN,
   automationStudioLlmTokenBudgetBytes,
   estimateAutomationStudioLlmTokensFromUtf8Bytes
-} from "../../../agents/llm/token-estimation.ts";
+} from "../../../llm/token-estimation.ts";
 
 type NodeDefinitionOverrides = Omit<Partial<AutomationStudioNodeDefinition>, "outputAction"> & { outputAction?: AutomationStudioNodeDefinition["outputAction"] | undefined };
 

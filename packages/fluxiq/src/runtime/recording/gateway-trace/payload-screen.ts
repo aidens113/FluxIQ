@@ -20,7 +20,7 @@
 // never kept.
 
 import type { ClientGatewayTracePayloadInput, ClientGatewayTraceRedaction } from "../../../client-gateway/index.ts";
-import { automationStudioWithoutCardNumbers, screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { automationStudioWithoutCardNumbers, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 
 const SECRET_MARKER = "[withheld: secret]";
 /** A lower-case hex SHA-256 and nothing else. */

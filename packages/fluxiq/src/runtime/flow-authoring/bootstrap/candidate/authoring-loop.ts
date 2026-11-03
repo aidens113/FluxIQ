@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../agents/llm/index.ts";
-import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../agents/llm/evidence-loop/index.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { renderAutomationStudioFlowScriptFormat } from "../script-examples/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";

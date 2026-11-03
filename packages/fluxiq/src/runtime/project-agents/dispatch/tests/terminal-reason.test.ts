@@ -6,8 +6,8 @@
 // (`../../supervisor/completion.ts`). On the dispatcher's garden catalogue.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioSubflowBuilderOutcome } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
 import { automationStudioProjectBuilderReturn } from "../../contracts/index.ts";
 import { automationStudioProjectDispatchEnding as ending } from "../ending.ts";
 import { gardenBrief } from "./dispatch-fixture.ts";

@@ -4,9 +4,9 @@
 // the person and the domain are stand-ins on a bike-repair booking site.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioActionDeclaration } from "../../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioActionDeclaration } from "../../../../../runtime/action-permission-requests/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../../../runtime/parking/automation/index.ts";
+import type { AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import { automationStudioBootstrapPermissionOutcome } from "../../flow-bootstrap-commands/index.ts";
 import { AutomationStudioProjectBuildPermissions, type AutomationStudioProjectBuildPorts } from "../index.ts";
 

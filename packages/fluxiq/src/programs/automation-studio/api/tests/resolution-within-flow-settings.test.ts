@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { assertFlowLlmExecutionSettings } from "../handlers/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../../runtime/agents/llm/harness.ts";
-import { automationStudioLlmResolutionWithinFlowSettings } from "../../../../runtime/agents/llm/flow-execution-limits/resolution-within-flow-settings.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../../../../runtime/agents/llm/flow-execution-limits/run-call-backstop.ts";
-import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS } from "../../../../runtime/agents/llm/session-key-provider.ts";
+import type { AutomationStudioLlmProvider } from "../../../../runtime/llm/harness.ts";
+import { automationStudioLlmResolutionWithinFlowSettings } from "../../../../runtime/llm/flow-execution-limits/resolution-within-flow-settings.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../../../../runtime/llm/flow-execution-limits/run-call-backstop.ts";
+import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS } from "../../../../runtime/llm/session-key-provider.ts";
 
 // The Flow's stored `llmExecutionSettings` were saved and returned but never
 // read, so a Flow configured for 48 calls was built with 64

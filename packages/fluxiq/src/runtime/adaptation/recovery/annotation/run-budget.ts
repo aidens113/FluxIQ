@@ -37,7 +37,7 @@ import {
   resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmRunBudgetProfile,
   type AutomationStudioLlmTokenLimits
-} from "../../../agents/llm/index.ts";
+} from "../../../llm/index.ts";
 
 
 /**

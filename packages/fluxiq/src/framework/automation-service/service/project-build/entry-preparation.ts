@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
-import { runAutomationStudioActivityPreparation } from "../../../../runtime/activity/automation/step/index.ts";
+import { runAutomationStudioActivityPreparation } from "../../../../runtime/automation-activity/step/index.ts";
 import type { AutomationStudioCandidateTrialAct } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { runAutomationStudioDetachedSubflow, type AutomationStudioDetachedSubflowIdentity, type AutomationStudioDetachedSubflowProposal } from "../../../../runtime/flow-authoring/bootstrap/verification/index.ts";

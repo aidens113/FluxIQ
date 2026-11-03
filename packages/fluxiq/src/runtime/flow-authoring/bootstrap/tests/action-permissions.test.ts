@@ -10,8 +10,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioActionDeclaration, AutomationStudioActionPermissionVerdict, AutomationStudioInstructedConsequence } from "../../../action-permissions/automation/index.ts";
-import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../parking/automation/index.ts";
+import type { AutomationStudioActionDeclaration, AutomationStudioActionPermissionVerdict, AutomationStudioInstructedConsequence } from "../../../action-permission-requests/index.ts";
+import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../automation-parking/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapUnansweredSaid } from "../action-permissions.ts";
 import { automationStudioInstructedActs } from "../instructed-acts/index.ts";
 import type { AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";

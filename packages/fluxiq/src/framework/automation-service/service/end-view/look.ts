@@ -22,7 +22,7 @@
 // post-run check says it as withheld, a build's test drops it.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioResultEndView } from "../../../../runtime/result-verification/index.ts";
 
 /** How long one look may take before it is cancelled. */

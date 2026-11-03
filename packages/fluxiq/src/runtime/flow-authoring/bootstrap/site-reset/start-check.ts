@@ -63,8 +63,8 @@
 // model's rules. Only the arrival: the reads around it never go through a call.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioActionPermissionDenied } from "../../../action-permissions/automation/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, runAsAutomationStudioCoreMove, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool } from "../../../agents/llm/index.ts";
+import { automationStudioActionPermissionDenied } from "../../../action-permission-requests/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, runAsAutomationStudioCoreMove, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 import { automationStudioSiteResetValuesOf as valuesOf } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetLines, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 

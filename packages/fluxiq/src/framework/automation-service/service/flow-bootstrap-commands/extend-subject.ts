@@ -15,8 +15,8 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioBootstrapExistingTopology } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioBootstrapExtendSubflow } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioFlowDraftFlowSeed } from "../../../../runtime/agents/llm/index.ts";
-import { automationStudioFlowDraftSeedFromFlow } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioFlowDraftFlowSeed } from "../../../../runtime/llm/index.ts";
+import { automationStudioFlowDraftSeedFromFlow } from "../../../../runtime/llm/index.ts";
 
 /** What the build is handed, and what apply will need to reach the same topology. */
 export type AutomationStudioFlowBootstrapExtendSubject = {

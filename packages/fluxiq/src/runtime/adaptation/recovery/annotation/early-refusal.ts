@@ -19,7 +19,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmRunBudgetDiagnostic } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmRunBudgetDiagnostic } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../../framework/automation-service/service.ts";
 import { automationStudioRuntimeRecoveryRefusedTrace } from "../stages.ts";
 import { automationStudioUnresolvedFailedAttempt } from "../unresolved-failed-attempt.ts";

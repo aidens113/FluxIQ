@@ -21,7 +21,7 @@ import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmTaskRequest, AutomationStudioLlmVerificationDefect } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest, AutomationStudioLlmVerificationDefect } from "../../../../../runtime/llm/index.ts";
 import {
   automationStudioFlowGraphVersion,
   automationStudioFlowInstructionDigest,

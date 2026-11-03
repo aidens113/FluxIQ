@@ -39,7 +39,7 @@
 // rather than an absent record.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioUnattendedRepairRedemption } from "../../../result-control/check-authorization/index.ts";
+import type { AutomationStudioUnattendedRepairRedemption } from "../../../result-verification/check-authorization/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../../framework/automation-service/executor.ts";
 import {
@@ -52,9 +52,9 @@ import {
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmRunPurse,
   type AutomationStudioRuntimeSessionLlm
-} from "../../../agents/llm/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
-import { emitAutomationStudioActivityThought } from "../../../activity/automation/index.ts";
+} from "../../../llm/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
+import { emitAutomationStudioActivityThought } from "../../../automation-activity/index.ts";
 import { automationStudioMarkRunAdapting } from "../../../../framework/automation-service/run-control/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "../../live-patch.ts";
 import { flowRunSummaryWithInterventionSummaries } from "../../../../framework/automation-service/service/index.ts";
@@ -79,7 +79,7 @@ import { runAutomationStudioRecoveryExploration, type AutomationStudioRecoveryEx
 import { holdAutomationStudioRecoveryPatchReserve } from "./patch-reserve.ts";
 import type { AutomationStudioInRunRecovery } from "./in-run.ts";
 import { applyAutomationStudioRuntimeRecoveryPatches, automationStudioDeclinedRepairAttempt } from "./patches.ts";
-import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, type AutomationStudioPermissionAsk } from "../../../parking/automation/index.ts";
+import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, type AutomationStudioPermissionAsk } from "../../../automation-parking/index.ts";
 import { automationStudioRecoveryEarlyRefusal } from "./early-refusal.ts";
 import { automationStudioRecoveryPermissionGate } from "./permissions.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";

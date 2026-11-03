@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceTool } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 
 /** The two Core tools a supervisor keeps: what a node does, and a result it saw before. */
 const CORE_KEPT: ReadonlySet<string> = new Set(["core.describe_nodes", "core.recall_result"]);

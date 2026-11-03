@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { automationStudioCandidateTrialOffline } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { AutomationStudioSiteResetProjectLedger } from "../../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { createAutomationStudioScopedRunEnvironment, AutomationStudioVirtualClock } from "../../../environment/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioProjectBuildRecordStore } from "../../../../../runtime/project-agents/index.ts";
 import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { trialFixture } from "../../candidate-trial/tests/fixtures.ts";

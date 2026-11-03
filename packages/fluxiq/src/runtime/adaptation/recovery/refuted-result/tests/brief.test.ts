@@ -3,7 +3,7 @@
 // unfiltered extraction the check had just refuted.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../../../result-verification/index.ts";
-import { resolveAutomationStudioLlmInstructions } from "../../../../agents/llm/index.ts";
+import { resolveAutomationStudioLlmInstructions } from "../../../../llm/index.ts";
 import { AUTOMATION_STUDIO_REAUTHOR_BRIEF_INSTRUCTION_ID, automationStudioReauthorBrief } from "../brief.ts";
 import { automationStudioResultRepairHistoryEntry } from "../history.ts";
 import { automationStudioResultReadAccounts } from "../../../../result-verification/read-account/index.ts";

@@ -1,7 +1,7 @@
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioCandidateTrialOffline, type AutomationStudioCandidateTrialPort } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../../../runtime/llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../../../runtime/result-verification/index.ts";
 import { automationStudioCandidateTrialPort, type AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
 import { AutomationStudioOfflineTrialInstallation, automationStudioOfflineFirstWhole } from "../offline-first/index.ts";

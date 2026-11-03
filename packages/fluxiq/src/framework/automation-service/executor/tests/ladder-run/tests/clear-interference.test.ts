@@ -11,7 +11,7 @@ import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../../../../engine/automation/tests/fixture-contracts.ts";
 import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../../../../components/automation/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../../runtime/automation-activity/index.ts";
 import { runAutomationStudioGraph } from "../../../index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../../../../engine/automation/index.ts";
 

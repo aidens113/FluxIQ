@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioActionPermissionDenied } from "../../../../action-permissions/automation/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/index.ts";
+import { automationStudioActionPermissionDenied } from "../../../../action-permission-requests/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../llm/index.ts";
 import { AutomationStudioSiteResetStartCheck } from "../index.ts";
 
 // The start check against a fake domain: the start is read once, and a

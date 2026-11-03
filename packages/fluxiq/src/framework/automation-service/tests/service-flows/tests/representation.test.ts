@@ -7,7 +7,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { createBlankAutomationStudioFlowArtifact, withAutomationStudioFlowRepresentation } from "../../../../../flows/authoring/model/index.ts";
 import { generateFlowTypeScript } from "../../../../../flows/authoring/dsl/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioAttemptInputs } from "../../../executor/index.ts";
-import type { AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).

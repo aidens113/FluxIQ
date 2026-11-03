@@ -1,4 +1,4 @@
-import { automationStudioActivityEndedReason, automationStudioActivityHub, automationStudioActivityTimeLimitTold, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop, type AutomationStudioActivityTimeLimitTried } from "../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityEndedReason, automationStudioActivityHub, automationStudioActivityTimeLimitTold, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop, type AutomationStudioActivityTimeLimitTried } from "../../../../runtime/automation-activity/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
   AutomationStudioFlowBootstrapGenerationError,
@@ -9,7 +9,7 @@ import {
   flowBootstrapPhaseFailure
 } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioCandidateTrialResult } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../../../runtime/agents/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../../../runtime/llm/loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK,
   automationStudioProjectActiveInstructionSources,

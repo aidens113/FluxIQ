@@ -140,7 +140,7 @@
 // the site's memory removed (`./site-memory.ts`).
 
 import type { JsonValue } from "../../../core/index.ts";
-import { isAutomationStudioDestructiveActionConsequence } from "../../action-permissions/automation/index.ts";
+import { isAutomationStudioDestructiveActionConsequence } from "../../action-permission-requests/index.ts";
 import type { AutomationStudioFlowDraftReplayOutcome } from "./dry-run.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REMEMBERED_CODE } from "./site-memory.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";

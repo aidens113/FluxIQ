@@ -19,7 +19,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowInstruction, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge, summarizeAutomationStudioRunResult, type AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioCandidateTrialFeedback } from "../../../../framework/automation-service/service/candidate-trial/index.ts";
 import { judgeReply, mockProvider } from "../../../../framework/automation-service/tests/service-bootstrap/tests/fixtures.ts";

@@ -4,7 +4,7 @@
 // nothing said so.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../llm/index.ts";
 import { AutomationStudioSiteResetStartCheck } from "../index.ts";
 
 const arrival = { node: "demo.go", parameters: { to: "start" }, consequences: [] };

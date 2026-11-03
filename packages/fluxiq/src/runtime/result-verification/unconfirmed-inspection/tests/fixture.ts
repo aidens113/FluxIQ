@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmVerificationDefect } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioRequestWording } from "../../request-rows/index.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";

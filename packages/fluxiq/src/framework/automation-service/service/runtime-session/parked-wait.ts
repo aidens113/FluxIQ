@@ -1,5 +1,5 @@
 import type { AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
-import { emitAutomationStudioActivityAskResolved, runWithAutomationStudioActivity } from "../../../../runtime/activity/automation/index.ts";
+import { emitAutomationStudioActivityAskResolved, runWithAutomationStudioActivity } from "../../../../runtime/automation-activity/index.ts";
 
 /**
  * Settles, in the activity stream, the wait of a run that was parked on a

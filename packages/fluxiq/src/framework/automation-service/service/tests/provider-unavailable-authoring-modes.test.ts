@@ -18,9 +18,9 @@ import path from "node:path";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioActivityHub } from "../../../../runtime/activity/automation/index.ts";
-import { automationStudioConversationCallCause } from "../../../../runtime/interaction/conversations/commands/index.ts";
-import { AutomationStudioLlmProviderError, type AutomationStudioLlmTaskRequest } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioActivityHub } from "../../../../runtime/automation-activity/index.ts";
+import { automationStudioConversationCallCause } from "../../../../runtime/conversations/commands/index.ts";
+import { AutomationStudioLlmProviderError, type AutomationStudioLlmTaskRequest } from "../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../service.ts";
 import { blankFixture, caller, mockProvider, rejectedGenerationDiagnostic } from "../../tests/service-bootstrap/tests/fixtures.ts";
 

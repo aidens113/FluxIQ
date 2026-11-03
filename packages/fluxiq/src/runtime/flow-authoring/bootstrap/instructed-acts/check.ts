@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/harness-options/index.ts";
 // Whether every lasting act the instruction asks for has a step in the draft
 // that does it (`./contracts.ts` says why, and which run it was measured on).
 //

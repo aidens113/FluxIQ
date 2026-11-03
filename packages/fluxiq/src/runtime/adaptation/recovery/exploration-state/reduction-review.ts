@@ -33,7 +33,7 @@
 // A trace entry that was never an action -- a completion, an unusable provider
 // answer -- is not a gap in this sense and does not count against the answer.
 
-import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 import {
   automationStudioExplorationStepsFromTrace,
   reduceAutomationStudioExploration,

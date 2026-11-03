@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmTaskResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmTaskResult } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";
 import {
   AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_TEXT_MAX_LENGTH,

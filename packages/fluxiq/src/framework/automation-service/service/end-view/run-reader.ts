@@ -8,8 +8,8 @@
 // permission, and one that would do something lasting is refused. No start
 // location is sent: the run already reached it.
 
-import { automationStudioActionPermissionDenied } from "../../../../runtime/action-permissions/automation/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioActionPermissionDenied } from "../../../../runtime/action-permission-requests/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioResultVerificationPorts } from "../../../../runtime/result-verification/index.ts";
 import { automationStudioEndViewLook } from "./look.ts";
 

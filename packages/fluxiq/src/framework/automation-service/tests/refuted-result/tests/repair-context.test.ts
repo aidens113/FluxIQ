@@ -28,7 +28,7 @@ import {
   automationStudioLocatorShapedText,
   packAutomationStudioLlmContext,
   type AutomationStudioLlmHarnessInput
-} from "../../../../../runtime/agents/llm/index.ts";
+} from "../../../../../runtime/llm/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../../../../../runtime/adaptation/recovery/index.ts";
 import { automationStudioRefutedResultAttempt, repairAutomationStudioRefutedRunResult } from "../../../../../runtime/adaptation/recovery/refuted-result/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../../../../runtime/result-verification/index.ts";

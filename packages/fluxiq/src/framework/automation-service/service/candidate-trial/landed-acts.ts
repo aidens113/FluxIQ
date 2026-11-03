@@ -126,7 +126,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../flows/authoring/model/index.ts";
-import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence } from "../../../../runtime/action-permissions/automation/index.ts";
+import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioExecutedLocations, automationStudioNodeSideEffectClass, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY, type AutomationStudioCandidateTrialAct } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { automationStudioSiteResetWitnessStampValid } from "../../../../runtime/flow-authoring/bootstrap/reset-admission/index.ts";

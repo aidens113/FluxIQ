@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowAdaptation, AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioResultCheckSchedule, AutomationStudioResultCheckState } from "../../../../runtime/result-control/check-schedule/index.ts";
+import type { AutomationStudioResultCheckSchedule, AutomationStudioResultCheckState } from "../../../../runtime/result-verification/check-schedule/index.ts";
 import type { AutomationStudioStabilityMetrics, AutomationStudioTrainingBudgetState, AutomationStudioTrainingModeBehavior, AutomationStudioTrainingModeSettings, decideAutomationStudioTrainingBudget } from "../../../../runtime/adaptation/training-modes.ts";
 
 // What a run knows about its own adaptive behavior: the settings and policy in

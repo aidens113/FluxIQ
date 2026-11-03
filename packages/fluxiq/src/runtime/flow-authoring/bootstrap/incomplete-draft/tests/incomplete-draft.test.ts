@@ -7,8 +7,8 @@
 // builds of round 1: the repair loop had nothing to improve.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../agents/loop-limits/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/evidence-loop/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../llm/loop-limits/index.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../../plan/index.ts";
 import {
   AutomationStudioFlowBootstrapGenerationError,

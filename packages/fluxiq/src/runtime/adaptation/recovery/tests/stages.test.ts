@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioAdaptationPolicy } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmTaskResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmTaskResult } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";
 import type { AutomationStudioRuntimeLlmInvocationDecision } from "../llm-invocation.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";

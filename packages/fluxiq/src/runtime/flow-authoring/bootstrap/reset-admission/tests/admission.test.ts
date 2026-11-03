@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../../../action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS, type AutomationStudioSiteResetSpot } from "../../site-reset/index.ts";
 import { automationStudioSiteResetAdmission as admission, type AutomationStudioSiteResetAdmissionKnown, type AutomationStudioSiteResetAdmissionInput } from "../index.ts";
 

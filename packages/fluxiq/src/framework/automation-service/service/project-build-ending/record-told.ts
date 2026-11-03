@@ -25,7 +25,7 @@
 // **Every test refused (t791).** A build whose every asked test was refused before it ran has no tested part and no
 // whole run; its record says that plainly with the refusal's reason, not that nothing was tested.
 
-import type { AutomationStudioActivityTimeLimitTried } from "../../../../runtime/activity/automation/index.ts";
+import type { AutomationStudioActivityTimeLimitTried } from "../../../../runtime/automation-activity/index.ts";
 import type { AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 
 /** A test's last verdict, in words that finish "whose last test ...". */

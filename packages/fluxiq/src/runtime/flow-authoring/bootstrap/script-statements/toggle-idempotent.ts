@@ -3,7 +3,7 @@
 // step's own bounded evidence and passes back the exact stored signature.
 // Matching remains in toggle-tie.ts. No press order or wording supplies intent.
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioPlanControlState } from "../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioPlanControlState } from "../../../llm/harness-options/index.ts";
 import { automationStudioToggleStateChoice } from "../../../../framework/automation-service/toggle-state/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioExploredToggleTie } from "./toggle-tie.ts";

@@ -1,8 +1,8 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../../action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../../action-permission-requests/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../framework/automation-service/nodes/index.ts";
-import { automationStudioPlanStepConsequences } from "../../../../agents/llm/harness-options/index.ts";
+import { automationStudioPlanStepConsequences } from "../../../../llm/harness-options/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult } from "../../authoring/index.ts";
 import {
   AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA,

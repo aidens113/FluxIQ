@@ -3,8 +3,8 @@
 // for a revision and digest, so a completion its check refused goes back to the
 // model rather than round again, and with the line the chat shows as Core's.
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityDecisionReason, automationStudioActivityReasonText } from "../../../../activity/automation/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../agents/llm/index.ts";
+import { automationStudioActivityDecisionReason, automationStudioActivityReasonText } from "../../../../automation-activity/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../llm/index.ts";
 import { automationStudioSubflowBuilderAutoComplete } from "../index.ts";
 
 type Request = Parameters<AutomationStudioLlmEvidenceLoopInput["decide"]>[0];

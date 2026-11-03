@@ -9,9 +9,9 @@
 // program's central bounds (`runtime/llm/refusal-record.ts`). That one field is
 // the difference between a stored failure saying "the provider answered 400" and
 // one that can say which field it objected to.
-import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../action-permissions/automation/index.ts";
-import type { AutomationStudioLlmProviderRefusal } from "../../../agents/llm/provider-refusal/index.ts";
-import type { AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmProviderThrow } from "../../../agents/llm/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../action-permission-requests/index.ts";
+import type { AutomationStudioLlmProviderRefusal } from "../../../llm/provider-refusal/index.ts";
+import type { AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmProviderThrow } from "../../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceStep } from "../evidence-loop-steps.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import type { AutomationStudioFlowBootstrapCandidateKept } from "./candidate-kept.ts";
@@ -210,8 +210,8 @@ export const MAX_DIAGNOSTIC_ENDED_BECAUSE = 240;
 export const DIAGNOSTIC_SUPERVISOR_ENDING_CODES: ReadonlySet<string> = new Set(["project.build_blocked", "project.build_partial"]);
 
 export const MAX_DIAGNOSTIC_ISSUE_CODES = 16;
-/** The shape an issue code must have to travel: no whitespace, so no sentence. */
-export const DIAGNOSTIC_ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
+/** The shape an issue code must have to travel: no whitespace, so no sentence. Long enough for a stack frame's whole path from Core's source root. */
+export const DIAGNOSTIC_ISSUE_CODE = /^[a-z0-9_.:-]{1,160}$/i;
 
 /** Distinct issue codes, codes only, at most sixteen. */
 export function flowBootstrapDiagnosticIssueCodes(codes: readonly string[]): string[] {

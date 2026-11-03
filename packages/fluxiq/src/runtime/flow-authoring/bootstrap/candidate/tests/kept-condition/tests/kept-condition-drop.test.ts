@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import type { AutomationStudioBuildTestVerdict } from "../../../../../../result-verification/index.ts";
 import { CAMP_CEDAR } from "../../../../../../result-verification/refuted-no/tests/campsite-fixture.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE,
   AutomationStudioFlowCandidateSubmissionController,

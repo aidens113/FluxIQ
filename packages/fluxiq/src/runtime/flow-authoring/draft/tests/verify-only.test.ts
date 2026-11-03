@@ -7,7 +7,7 @@
 // replays of one save press moved a person's cart lines to the saved list.
 import { describe, expect, it } from "vitest";
 // The llm barrel first, as `../../decision-context/tests/recorded-runs.ts` says why.
-import { automationStudioFlowDraftReplaySteps, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/index.ts";
+import { automationStudioFlowDraftReplaySteps, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,

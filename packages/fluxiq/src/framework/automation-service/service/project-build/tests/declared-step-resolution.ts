@@ -6,7 +6,7 @@
 // (`llm/harness-options/plan-parameter-resolution.ts`), so a stub builder could
 // never submit the lasting act its part asks for.
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration, AutomationStudioActionPermissionCheck } from "../../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration, AutomationStudioActionPermissionCheck } from "../../../../../runtime/action-permission-requests/index.ts";
 
 /** The resolver a stub binding carries (`resolvePlanNodeParameters`). */
 export async function automationStudioTestDeclaredStepResolution(input: { nodeDefinitionId: string; parameters: JsonObject; permission: AutomationStudioActionPermissionCheck; declaredConsequences?: readonly AutomationStudioActionConsequence[] | undefined }, control?: AutomationStudioActionDeclaration["control"]) {

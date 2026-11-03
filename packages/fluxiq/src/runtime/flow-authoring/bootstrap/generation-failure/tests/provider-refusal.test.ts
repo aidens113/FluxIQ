@@ -24,14 +24,14 @@ import {
   AutomationStudioLlmProviderError,
   normalizedAutomationStudioLlmProviderFailure,
   type AutomationStudioLlmTaskRequest
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 // The adapter's own barrel: reading and screening a refusal belongs to the
 // adapter that got the answer, and `runtime/llm/` does not republish it.
 import {
   automationStudioDeepSeekRefusalText,
   automationStudioDeepSeekRequestShape,
   readAutomationStudioDeepSeekRefusal
-} from "../../../../agents/llm/deepseek/index.ts";
+} from "../../../../llm/deepseek/index.ts";
 
 const INSTRUCTION = "Collect every product on the sale page and save the ones under twenty pounds";
 const CREDENTIAL = "sk-live-credential-must-never-travel";

@@ -15,7 +15,7 @@
 // its own: what the last trial left stays on the site and is named.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { FIND, assembled, brief, call, complete, dispatch, end, supervise, test, type Entry, type Step } from "./supervisor-script.ts";

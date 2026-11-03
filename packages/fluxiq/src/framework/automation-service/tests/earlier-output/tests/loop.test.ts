@@ -18,7 +18,7 @@ import {
   replayAutomationStudioFlowDraft,
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioLlmEvidenceToolExecutionResult
-} from "../../../../../runtime/agents/llm/index.ts";
+} from "../../../../../runtime/llm/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 
 const REPLAYED = "core.replay.replayed";

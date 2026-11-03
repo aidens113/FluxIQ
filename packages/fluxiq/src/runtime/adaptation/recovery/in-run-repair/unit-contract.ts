@@ -23,7 +23,7 @@ import {
   type AutomationStudioLlmInRunRepairContract,
   type AutomationStudioLlmInRunRepairPort,
   type AutomationStudioLlmInRunRepairStep
-} from "../../../agents/llm/harness/index.ts";
+} from "../../../llm/harness/index.ts";
 import { automationStudioScreenedAuthoredState, automationStudioScreenedNodeParameters } from "../repair-context/index.ts";
 
 /** A graph a part is read from: a Flow artifact carries its interface, a bare document none. */

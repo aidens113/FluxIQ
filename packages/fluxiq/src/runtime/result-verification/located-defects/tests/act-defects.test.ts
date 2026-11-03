@@ -5,7 +5,7 @@
 // `../../agreement/tests/loan-fixture.ts` shows an act defect is never taken
 // where the result stores rows.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmVerificationDefect } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../../llm/index.ts";
 import type { AutomationStudioBuildTestAccount, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioRequestWording } from "../../request-rows/index.ts";
 import { automationStudioResultNoRecord } from "../../refuted-no/index.ts";

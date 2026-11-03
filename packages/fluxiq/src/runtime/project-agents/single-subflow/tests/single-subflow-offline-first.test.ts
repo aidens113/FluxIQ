@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioCandidateTrialView, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialVerdict } from "../../../flow-authoring/bootstrap/candidate/index.ts";
-import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as OFFLINE } from "../../../flow-authoring/bootstrap/offline-first/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../../supervisor/index.ts";
 import { BUILD, planInput, subflow, taskSpecInput } from "../../supervisor/tests/supervisor-fixture.ts";

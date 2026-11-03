@@ -6,7 +6,7 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../framework/automation-service/nodes/index.ts";
 import { activityActionOf } from "../../../../../ui/index.ts";
-import { automationStudioActivityHub, observeAutomationStudioEvidenceLoop, runWithAutomationStudioActivity } from "../../../../activity/automation/index.ts";
+import { automationStudioActivityHub, observeAutomationStudioEvidenceLoop, runWithAutomationStudioActivity } from "../../../../automation-activity/index.ts";
 import { runAutomationStudioFlowCandidateAuthoringLoop, type AutomationStudioCandidateTrialPort } from "../index.ts";
 
 const definition: AutomationStudioNodeDefinition = {

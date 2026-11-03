@@ -9,8 +9,8 @@ import type { AutomationStudioFlowInstruction } from "../../../../../flows/autho
 // The judge before the evidence loop: the loop's barrel, loaded first, reaches
 // the judge's harness through a cycle before that harness is defined.
 import { automationStudioBuildTestJudge, type AutomationStudioRunResultSummary } from "../../../../result-verification/index.ts";
-import { automationStudioLlmEvidenceResumeEntry } from "../../../../agents/llm/evidence-loop/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import { automationStudioLlmEvidenceResumeEntry } from "../../../../llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
 import { RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_REQUEST, RUN_MUW60J7C_TEST_JUDGE, RUN_MUW60J7C_TEST_READS, runMuw60j7cTestSummary } from "../../../../result-verification/request-rows/tests/run-muw60j7c.ts";
 import type { AutomationStudioFlowBootstrapTestVerdict } from "../contracts.ts";

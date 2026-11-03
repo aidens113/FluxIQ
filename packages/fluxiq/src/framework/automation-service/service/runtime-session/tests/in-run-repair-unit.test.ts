@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRepairUnit } from "../../../executor/lifecycle-run/index.ts";
-import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../../../../runtime/llm/index.ts";
 import { automationStudioInRunRepairUnitRefusal } from "../in-run-repair-unit.ts";
 
 type HandlerPatch = Extract<AutomationStudioRuntimePatch, { kind: "add_handler" }>;

@@ -4,7 +4,7 @@ import { automationStudioResultCheckActivity } from "../check-activity.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationAgreement } from "../agreement/index.ts";
 import { automationStudioResultVerdict } from "../verdict/index.ts";
-import { runWithAutomationStudioActivity } from "../../activity/automation/index.ts";
+import { runWithAutomationStudioActivity } from "../../automation-activity/index.ts";
 
 const summary: AutomationStudioRunResultSummary = {
   schemaVersion: "automation-studio.run-result-summary.v1",

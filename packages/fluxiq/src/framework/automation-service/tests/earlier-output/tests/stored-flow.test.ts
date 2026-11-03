@@ -17,7 +17,7 @@ import {
   automationStudioLlmNodeDescriptions,
   replayAutomationStudioFlowDraft,
   type AutomationStudioLlmEvidenceToolExecutionResult
-} from "../../../../../runtime/agents/llm/index.ts";
+} from "../../../../../runtime/llm/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, AutomationStudioNodeRegistry, type AutomationNodeExecutionResult } from "../../../nodes/index.ts";
 import { createBlankAutomationStudioFlowArtifact } from "../../../../../flows/authoring/model/index.ts";

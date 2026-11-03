@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import type { AutomationStudioResolvedControlIntent } from "../../../../../agents/llm/harness-options/index.ts";
-import { AutomationStudioActionPermissionGate } from "../../../../../action-permissions/automation/index.ts";
+import type { AutomationStudioResolvedControlIntent } from "../../../../../llm/harness-options/index.ts";
+import { AutomationStudioActionPermissionGate } from "../../../../../action-permission-requests/index.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "../../index.ts";
 import { refusalTestSubmission } from "../../tests/refusal-domain-fixture.ts";
 

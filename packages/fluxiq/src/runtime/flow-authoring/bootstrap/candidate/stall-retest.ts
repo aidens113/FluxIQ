@@ -17,7 +17,7 @@
 // gate still bounds the trials themselves. Each ending carries the code that
 // says why nothing was left (`candidate.stall_*`).
 
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, type AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
 
 /** The code a stall ends under when its retest was already run at this revision and trial count. */

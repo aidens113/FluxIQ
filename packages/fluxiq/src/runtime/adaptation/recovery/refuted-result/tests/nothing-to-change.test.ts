@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../flow-authoring/draft/index.ts";
-import { runAutomationStudioLlmEvidenceLoop } from "../../../../agents/llm/index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../../../llm/index.ts";
 import { automationStudioReauthorEndingWatch } from "../nothing-to-change.ts";
 
 const REASON = "Step 10 chose 12 Double Rolls and step 11 raised the quantity to 2: the cart line reads 12 Double Rolls, Qty 2.";

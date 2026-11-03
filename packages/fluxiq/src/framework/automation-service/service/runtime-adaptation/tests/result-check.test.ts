@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider } from "../../../../../runtime/agents/llm/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES, type AutomationStudioResultCheckAuthorization } from "../../../../../runtime/result-control/check-authorization/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_CODES, AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS, resolveAutomationStudioResultCheckSchedule, type AutomationStudioResultCheckSettings } from "../../../../../runtime/result-control/check-schedule/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../../../runtime/llm/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES, type AutomationStudioResultCheckAuthorization } from "../../../../../runtime/result-verification/check-authorization/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_CODES, AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS, resolveAutomationStudioResultCheckSchedule, type AutomationStudioResultCheckSettings } from "../../../../../runtime/result-verification/check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../contracts.ts";
 import { automationStudioRepairedRunResultCheck, automationStudioResultCheckEpoch, automationStudioResultCheckStateFromRows, automationStudioRunResultCheck, resolveAutomationStudioResultCheckProvider } from "../result-check.ts";
 

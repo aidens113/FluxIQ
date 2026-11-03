@@ -16,7 +16,7 @@
 // whether the model had seen the control.
 
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioRuntimeTargetOverrideTarget } from "../../agents/llm/index.ts";
+import type { AutomationStudioRuntimeTargetOverrideTarget } from "../../llm/index.ts";
 
 export const AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_REFUSAL_REASONS = Object.freeze({
   action_not_repairable: "the failed action offers nothing a repair may re-point",

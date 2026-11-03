@@ -10,9 +10,9 @@
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/automation/index.ts";
-import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/index.ts";
-import { AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS, type AutomationStudioAsk, type AutomationStudioAskAnswer, type AutomationStudioParkingPort } from "../../../parking/automation/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../automation-activity/index.ts";
+import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS, type AutomationStudioAsk, type AutomationStudioAskAnswer, type AutomationStudioParkingPort } from "../../../automation-parking/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import { automationStudioExplorationTraceEvent, runAutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
 

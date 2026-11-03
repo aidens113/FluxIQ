@@ -1,4 +1,4 @@
-import { checkAutomationStudioFlowBootstrapCompletion } from "../../../agents/llm/harness-options/index.ts";
+import { checkAutomationStudioFlowBootstrapCompletion } from "../../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioInterfaceOutputPort } from "./interface-output-port.ts";
 

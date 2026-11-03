@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../../framework/automation-service/nodes/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../llm/index.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetDecision, type AutomationStudioSiteResetRead, type AutomationStudioSiteResetTrialAct, type AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate, runAutomationStudioFlowCandidateAuthoringLoop, type AutomationStudioFlowCandidate, type AutomationStudioCandidateTrialRequest, type AutomationStudioCandidateTrialResult } from "../index.ts";
 

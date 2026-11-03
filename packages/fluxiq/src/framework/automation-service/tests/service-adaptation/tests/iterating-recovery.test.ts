@@ -22,7 +22,7 @@ import {
   createAutomationStudioSessionKeyProviderResolver,
   type AutomationStudioLlmRunCallRecord,
   type AutomationStudioRuntimeSessionLlmIntent
-} from "../../../../../runtime/agents/llm/index.ts";
+} from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createFailingCanonicalFlow } from "../../service-fixtures.ts";
 

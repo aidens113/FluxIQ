@@ -6,7 +6,7 @@
 // two calls, the same no, two distinct stored rows called one. No model is
 // called; the provider is scripted.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskChecklist } from "../../build-test/index.ts";
 import { LAMP_CLAMP, LAMP_SHADE, LAMPS_INSTRUCTION, LAMPS_REQUEST, SAME_LAMP_NO, lampsRunSummary } from "./lamps-fixture.ts";
 

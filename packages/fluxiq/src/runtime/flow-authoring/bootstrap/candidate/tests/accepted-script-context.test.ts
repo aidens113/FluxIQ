@@ -19,7 +19,7 @@
 // decision was shown.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopDecision } from "../../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopDecision } from "../../../../llm/evidence-loop.ts";
 import { runAutomationStudioFlowCandidateAuthoringLoop } from "../index.ts";
 import { refusalTestSubmission } from "./refusal-domain-fixture.ts";
 

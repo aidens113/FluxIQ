@@ -36,7 +36,7 @@
 // exploration the reduction could actually see.
 
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 import type { AutomationStudioExplorationStep, AutomationStudioExplorationStepOutcome } from "./step.ts";
 
 /** What the caller knows about a step that the exploration trace does not record. */

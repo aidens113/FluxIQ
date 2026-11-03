@@ -49,7 +49,7 @@
 // summary written onto a run is verdicts and counts, as below.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmTaskResult } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import type {
   AutomationStudioRuntimeDeterministicDiagnosis,
   AutomationStudioRuntimeDiagnosisAchievability

@@ -5,7 +5,7 @@
 // started it as its manifest context. Everything the run sends from here on
 // records into that trace.
 
-import { bindAutomationStudioActivityRun } from "../../../activity/automation/index.ts";
+import { bindAutomationStudioActivityRun } from "../../../automation-activity/index.ts";
 import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT } from "./context-schemas.ts";
 import { automationStudioGatewayTraceConversationContext } from "./conversation-turn.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../installation.ts";

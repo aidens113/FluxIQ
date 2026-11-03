@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { runAutomationStudioDetachedCandidate } from "../../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import { automationStudioBuildTestJudge } from "../../../../../runtime/result-verification/index.ts";
 import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";

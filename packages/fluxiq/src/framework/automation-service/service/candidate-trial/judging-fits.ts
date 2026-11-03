@@ -34,7 +34,7 @@ import {
   type AutomationStudioLlmBuildPurse,
   type AutomationStudioLlmBuildPurseCall,
   type AutomationStudioLlmBuildPurseRefusal
-} from "../../../../runtime/agents/llm/build-purse/index.ts";
+} from "../../../../runtime/llm/build-purse/index.ts";
 
 /** The judge calls one trial needs: a first answer and its confirming call. */
 const JUDGE_CALLS = 2;

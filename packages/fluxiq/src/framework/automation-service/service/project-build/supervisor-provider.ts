@@ -1,4 +1,4 @@
-import { automationStudioLlmProviderWithDomainInstructions, type AutomationStudioLlmProvider } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioLlmProviderWithDomainInstructions, type AutomationStudioLlmProvider } from "../../../../runtime/llm/index.ts";
 import { automationStudioProjectSupervisorSystemInstructions } from "../../../../runtime/project-agents/index.ts";
 
 /**

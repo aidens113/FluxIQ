@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS } from "../../../../../runtime/result-control/check-authorization/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS } from "../../../../../runtime/result-control/check-schedule/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS } from "../../../../../runtime/result-verification/check-authorization/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS } from "../../../../../runtime/result-verification/check-schedule/index.ts";
 import { resultCheckConfigurationFromMetadata } from "../result-check-settings.ts";
 import { trainingModeSettingsFromMetadata } from "../training-mode-settings.ts";
 

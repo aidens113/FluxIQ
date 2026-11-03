@@ -15,7 +15,7 @@
 // may name: the gate never learns what an act was.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionEffect } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetAdmissionDeclared, AutomationStudioSiteResetStepAsk, AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
 import type { AutomationStudioSiteResetCollection, AutomationStudioSiteResetUnmet, AutomationStudioSiteResetValueWitness } from "../reset-settlement/index.ts";
 import type { AutomationStudioTrialChangeAsk, AutomationStudioTrialChangeSession, AutomationStudioTrialUnwitnessed } from "../trial-change/index.ts";

@@ -16,8 +16,8 @@
 // digest. The submit tool watched is the caller's, `core.submit_candidate`
 // unless it names another, and the project build watches each builder's own
 // (`../project-build/brief-ports.ts`).
-import { automationStudioActivityIssuesOf } from "../../../../runtime/activity/automation/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioActivityIssuesOf } from "../../../../runtime/automation-activity/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../../../../runtime/llm/index.ts";
 import { automationStudioCandidateRefusalCodes } from "./refusal-codes.ts";
 
 /** `core.submit_candidate` (`../../flow-bootstrap/candidate/authoring-loop.ts`), as a plain string: the submit tool watched unless the caller names another. */

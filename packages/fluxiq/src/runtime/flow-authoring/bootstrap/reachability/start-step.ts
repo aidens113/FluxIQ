@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/harness-options/index.ts";
 // The step that took a build to where its Flow starts is kept in the Flow,
 // whatever the amendments since said about it.
 //

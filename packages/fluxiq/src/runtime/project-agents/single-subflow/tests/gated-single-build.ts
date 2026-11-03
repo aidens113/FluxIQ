@@ -21,7 +21,7 @@ import {
   type AutomationStudioSubflowScope,
   type AutomationStudioSubflowScopedSubmission
 } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectSubflowBrief } from "../../contracts/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "../../supervisor/index.ts";
 import { BUILD, project } from "../../supervisor/tests/supervisor-fixture.ts";

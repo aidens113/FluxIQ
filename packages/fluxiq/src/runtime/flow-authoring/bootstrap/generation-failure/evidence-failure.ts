@@ -11,8 +11,8 @@ import type {
   AutomationStudioLlmEvidenceLoopProviderUnavailable,
   AutomationStudioLlmEvidenceLoopResult,
   AutomationStudioLlmEvidenceLoopTrace
-} from "../../../agents/llm/index.ts";
-import type { AutomationStudioActionPermissionRequest } from "../../../action-permissions/automation/index.ts";
+} from "../../../llm/index.ts";
+import type { AutomationStudioActionPermissionRequest } from "../../../action-permission-requests/index.ts";
 import { automationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_CODES, type AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import type { AutomationStudioFlowBootstrapPhaseFailureCode } from "./codes.ts";

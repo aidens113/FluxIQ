@@ -12,8 +12,8 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
-import type { AutomationStudioActionConsequence, AutomationStudioActionDeclarationRecord } from "../../../action-permissions/automation/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../agents/llm/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionDeclarationRecord } from "../../../action-permission-requests/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../action-permissions.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, runAutomationStudioFlowCandidateAuthoringLoop, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialRequest } from "../candidate/index.ts";
 import { AutomationStudioSiteResetLedger } from "../site-reset/index.ts";

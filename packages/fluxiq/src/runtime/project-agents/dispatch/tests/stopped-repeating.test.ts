@@ -10,7 +10,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../../../flow-authoring/bootstrap/generation-failure/index.ts";
 import { runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowBuilderOutcome } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { testSubmission } from "../../../flow-authoring/bootstrap/subflow-candidate/tests/subflow-fixture.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import { automationStudioProjectBuilderReturn, type AutomationStudioProjectEarlierAttempt } from "../../contracts/index.ts";
 import { automationStudioProjectDispatchEnding as ending } from "../ending.ts";
 import type { AutomationStudioProjectBuilderPorts } from "../index.ts";

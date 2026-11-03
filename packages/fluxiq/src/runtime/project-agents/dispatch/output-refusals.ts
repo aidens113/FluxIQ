@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { parseAutomationStudioFlowScript } from "../../flow-authoring/bootstrap/authoring/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import { automationStudioProjectDispatchEnding as ending } from "./ending.ts";
 import type { AutomationStudioProjectBriefEnding } from "./types.ts";

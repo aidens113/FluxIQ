@@ -13,7 +13,7 @@
 // row a judge must still name a short id.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../build-test/index.ts";
 import { automationStudioResultVerificationAgreement } from "../agreement/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";

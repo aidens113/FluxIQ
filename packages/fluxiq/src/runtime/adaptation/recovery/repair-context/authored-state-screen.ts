@@ -40,7 +40,7 @@
 // is what makes the `null` honest.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { screenAutomationStudioLlmEvidence } from "../../../agents/llm/harness/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../../../llm/harness/index.ts";
 
 /** An authored document value as the repair is shown it, with what did not survive named. */
 export type AutomationStudioScreenedAuthoredState = {

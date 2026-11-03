@@ -9,9 +9,9 @@
 // counts against the build's budget. Judges are scripted: no provider.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace } from "../../../../agents/llm/index.ts";
-import { automationStudioLlmEvidenceResumeEntry } from "../../../../agents/llm/evidence-loop/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace } from "../../../../llm/index.ts";
+import { automationStudioLlmEvidenceResumeEntry } from "../../../../llm/evidence-loop/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   runAutomationStudioFlowBootstrapBuildPhases,

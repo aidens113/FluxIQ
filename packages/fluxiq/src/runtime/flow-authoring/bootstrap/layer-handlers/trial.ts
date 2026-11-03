@@ -16,7 +16,7 @@
 //   the domain fills in at resolution, the plan's check would refuse it, and
 //   the handler would be dropped (t799 headed proof).
 
-import type { AutomationStudioRuntimeAddHandlerPatch } from "../../../agents/llm/index.ts";
+import type { AutomationStudioRuntimeAddHandlerPatch } from "../../../llm/index.ts";
 import type { AutomationStudioTrialInterruption } from "../explored-interruptions.ts";
 import { automationStudioLayerHandlerPatch } from "./patch.ts";
 

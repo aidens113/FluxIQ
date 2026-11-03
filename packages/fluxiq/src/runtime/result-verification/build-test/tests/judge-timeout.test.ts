@@ -6,7 +6,7 @@
 // No model is called: the provider is scripted, and time is faked.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS, AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS, AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 import { automationStudioBuildTestResultSummary } from "../summary.ts";
 import { PICKUP_CART, RUN_40_CLAIMS, RUN_40_STEPS, run40 } from "./live-run-drafts.ts";

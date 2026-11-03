@@ -27,7 +27,7 @@ import type { AutomationStudioFlowDraftAmendmentRefusal } from "../draft/index.t
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation";
 import { readRuntimeTargetActionability } from "../../result-control/index.ts";
-import { automationStudioLlmEvidenceDiagnostic } from "../../agents/llm/evidence-diagnostic/index.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../../llm/evidence-diagnostic/index.ts";
 import type {
   AutomationStudioLlmEvidenceRestoredStep,
   AutomationStudioLlmEvidenceLoopAnswerability,
@@ -36,8 +36,8 @@ import type {
   AutomationStudioLlmEvidenceLoopProgress,
   AutomationStudioLlmEvidenceLoopTrace,
   AutomationStudioLlmUsageSummary
-} from "../../agents/llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../agents/loop-limits/index.ts";
+} from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../llm/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "./plan/index.ts";
 

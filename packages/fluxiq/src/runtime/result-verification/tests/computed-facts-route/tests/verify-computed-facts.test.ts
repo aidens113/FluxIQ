@@ -5,7 +5,7 @@
 // per call. On the made-up library catalog of
 // `../../../located-defects/tests/garden-catalog-fixture.ts`.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../../build-test/index.ts";
 import { automationStudioResultComputedFacts } from "../../../computed-facts/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultComputedFact, type AutomationStudioRunResultSummary } from "../../../contracts/index.ts";

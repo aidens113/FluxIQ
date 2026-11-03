@@ -34,10 +34,10 @@
 // keeps `../../service.ts` from growing.
 
 import { resolveAutomationStudioLlmTestRunCostCeilingUsd } from "../../../../flows/authoring/model/index.ts";
-import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmTaskResult } from "../../../../runtime/agents/llm/index.ts";
-import { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseRefused, automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurseRefusal } from "../../../../runtime/agents/llm/build-purse/index.ts";
-import { automationStudioLlmStepLogScope } from "../../../../runtime/agents/llm/step-log/index.ts";
-import type { AutomationStudioParkingPort } from "../../../../runtime/parking/automation/index.ts";
+import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmTaskResult } from "../../../../runtime/llm/index.ts";
+import { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseRefused, automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurseRefusal } from "../../../../runtime/llm/build-purse/index.ts";
+import { automationStudioLlmStepLogScope } from "../../../../runtime/llm/step-log/index.ts";
+import type { AutomationStudioParkingPort } from "../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../index.ts";
 
 /** One build's share of its Flow creation's purse. */

@@ -14,8 +14,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
-import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES } from "../../../../../runtime/agents/llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES } from "../../../../../runtime/llm/build-purse/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, mockProvider, plan, rejectedGenerationDiagnostic } from "./fixtures.ts";
 

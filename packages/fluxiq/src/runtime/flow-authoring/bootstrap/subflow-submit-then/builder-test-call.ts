@@ -9,7 +9,7 @@
 // handed back for the builder's own bookkeeping (`tried`, `lastTrial`); a
 // refused call and a run from a step ran none.
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
 import { automationStudioCandidateTrialView } from "../candidate/index.ts";
 import type { AutomationStudioSubflowRepeatedAdvice, AutomationStudioSubflowTrialGate, AutomationStudioSubflowTrialResult } from "../subflow-candidate/index.ts";
 

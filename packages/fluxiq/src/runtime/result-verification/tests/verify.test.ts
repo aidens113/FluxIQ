@@ -3,8 +3,8 @@
 // never asked again). No model is called: the provider is scripted per call.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../agents/llm/build-purse/index.ts";
-import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../agents/llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../llm/build-purse/index.ts";
+import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioResultVerificationDeadlineMs, AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS } from "../deadline.ts";
 import { RUN_MUW60J7C_REQUEST, runMuw60j7cRunSummary } from "../request-rows/tests/run-muw60j7c.ts";
 import {

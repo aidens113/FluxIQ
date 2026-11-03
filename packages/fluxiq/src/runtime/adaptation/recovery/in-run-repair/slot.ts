@@ -5,7 +5,7 @@
 // a run that could not hold gets after it ends (`../annotation/annotate.ts`).
 
 import type { AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../../../framework/automation-service/executor/lifecycle-run/index.ts";
-import type { AutomationStudioLlmInRunRepairContext, AutomationStudioLlmInRunRepairContract, AutomationStudioLlmInRunRepairUnit } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmInRunRepairContext, AutomationStudioLlmInRunRepairContract, AutomationStudioLlmInRunRepairUnit } from "../../../llm/index.ts";
 import { automationStudioInRunRepairHistory } from "./history.ts";
 
 /** The request's `inRunRepair` slot for this incident. */

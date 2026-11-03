@@ -26,7 +26,7 @@
 // every line names it by (`./read-account/condition-name.ts`, t574).
 
 import type { AutomationStudioRecordProcessingAccount, AutomationStudioRecordProcessingConditionAccount } from "@fluxiq/contracts/automation";
-import { screenAutomationStudioLlmEvidence } from "../agents/llm/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 
 /**
  * One `where` condition of a record set's processing, as the judge is shown it

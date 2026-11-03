@@ -16,14 +16,14 @@
 //   asks about, rather than one per recovery.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioActionPermissionGate } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionPermissionGate } from "../../../action-permission-requests/index.ts";
 import type {
   AutomationStudioLlmContextPacket,
   AutomationStudioLlmInRunRepairContext,
   AutomationStudioLlmRunBudgetLedger,
   AutomationStudioLlmRunBudgetProfile,
   AutomationStudioRuntimePatch
-} from "../../../agents/llm/index.ts";
+} from "../../../llm/index.ts";
 import type { AutomationStudioRuntimePatchKind } from "../plan.ts";
 import type { AutomationStudioRuntimeRecoveryPatchOutcome } from "./patches.ts";
 

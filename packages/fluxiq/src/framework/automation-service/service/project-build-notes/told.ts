@@ -1,9 +1,9 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../../runtime/action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../../runtime/action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { automationStudioSubflowEntryLeft } from "../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
-import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../../runtime/agents/llm/evidence-loop/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../../runtime/llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../runtime/llm/index.ts";
 import { automationStudioProjectBuildEvidenceBeside as beside } from "./beside.ts";
 
 // What a brief's loop is told beside its own calls' answers (`../project-build/brief-ports.ts`,

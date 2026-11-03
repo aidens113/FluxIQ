@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { runAutomationStudioCandidateTrial } from "../../candidate-trial/index.ts";
 import { trialFixture } from "../../candidate-trial/tests/fixtures.ts";
 import { harness, verify } from "../../../../../runtime/result-verification/tests/run-outcome-harness.ts";
-import { automationStudioLlmEvidenceRuntimeBindingChecked } from "../../../../../runtime/agents/llm/domain-instructions/index.ts";
+import { automationStudioLlmEvidenceRuntimeBindingChecked } from "../../../../../runtime/llm/domain-instructions/index.ts";
 import { automationStudioRunEndViewReader } from "../index.ts";
 
 const STALE = "Visible status: nine available";

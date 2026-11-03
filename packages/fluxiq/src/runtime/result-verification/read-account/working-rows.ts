@@ -34,7 +34,7 @@
 // first read's condition left out is still a stored row a yes must account for.
 
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../flows/authoring/model/index.ts";
-import { automationStudioActivityLoops } from "../../activity/automation/loop/index.ts";
+import { automationStudioActivityLoops } from "../../automation-activity/loop/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioResultWorkingRows } from "../contracts/index.ts";
 import { automationStudioResultReadSameTarget } from "./same-target.ts";
 

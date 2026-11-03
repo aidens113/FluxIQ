@@ -1,7 +1,7 @@
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../nodes/index.ts";
-import { resolveAutomationStudioLlmInstructions } from "../../../../runtime/agents/llm/index.ts";
-import { emitAutomationStudioBuildRequest } from "../../../../runtime/activity/automation/index.ts";
+import { resolveAutomationStudioLlmInstructions } from "../../../../runtime/llm/index.ts";
+import { emitAutomationStudioBuildRequest } from "../../../../runtime/automation-activity/index.ts";
 import { automationStudioFlowBootstrapSizeLimitsOf, buildAutomationStudioFlowBootstrapContext, flowBootstrapPhaseFailure } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { AutomationStudioCandidateSource, type AutomationStudioCandidateOriginalSourceOutcome } from "../candidate-drafts/index.ts";
 import { automationStudioCandidateFingerprint } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";

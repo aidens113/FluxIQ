@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "../project-build/index.ts";
 // From its owner, not the project-build barrel, whose whole trials import this module back (a module cycle).

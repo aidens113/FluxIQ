@@ -64,7 +64,7 @@
 // holds an ending for it (`./completion.ts`). The person is told it as an act
 // the build could not undo, which may still be there; or, where no read ever
 // showed it change anything, as one that may have changed nothing.
-import { AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT, automationStudioActivityLeftTold, emitAutomationStudioActivity, type AutomationStudioActivityLeftAct } from "../../activity/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT, automationStudioActivityLeftTold, emitAutomationStudioActivity, type AutomationStudioActivityLeftAct } from "../../automation-activity/index.ts";
 import { automationStudioProjectBuildReasonNothingChanged } from "../../../framework/automation-service/service/project-build-ending/index.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 

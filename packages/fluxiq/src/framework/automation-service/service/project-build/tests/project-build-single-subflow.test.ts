@@ -24,7 +24,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { ProgramJsonStore } from "../../../../../programs/_shared/storage.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../../../host-runtime.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourceHolder, AutomationStudioHostResourcePort } from "../../../../../runtime/project-agents/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";

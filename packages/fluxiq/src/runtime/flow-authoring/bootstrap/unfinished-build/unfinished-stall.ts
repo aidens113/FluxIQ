@@ -9,7 +9,7 @@
 // hook returns instead: the stall and the draft as it stood, which the build
 // catches, tests, judges and repairs (`./phases.ts`).
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopTrace } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopTrace } from "../../../llm/index.ts";
 
 export class AutomationStudioFlowBootstrapUnfinishedStall extends Error {
   readonly name = "AutomationStudioFlowBootstrapUnfinishedStall";

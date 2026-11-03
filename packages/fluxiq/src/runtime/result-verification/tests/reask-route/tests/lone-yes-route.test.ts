@@ -9,7 +9,7 @@
 // advised -- is carried on. On the made-up notice board of
 // `../../../located-defects/tests/club-notices-fixture.ts`; no model is called.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun } from "../../../contracts/index.ts";
 import { INVENTED_CLUB_NO, NOTICE_YES, noticeInstruction, noticeRunSummary } from "../../../located-defects/tests/club-notices-fixture.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../../verdict/index.ts";

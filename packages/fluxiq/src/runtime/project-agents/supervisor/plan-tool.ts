@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../core/index.ts";
-import { emitAutomationStudioProjectPlanCard } from "../../activity/automation/project/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/evidence-loop.ts";
-import type { AutomationStudioLlmEvidenceResendInvitation } from "../../agents/llm/repeat-guard/index.ts";
+import { emitAutomationStudioProjectPlanCard } from "../../automation-activity/project/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceResendInvitation } from "../../llm/repeat-guard/index.ts";
 import { AutomationStudioProjectRecordRefusal } from "../record/index.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";

@@ -1,9 +1,9 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioSiteResetTrialActPlace } from "../site-reset/index.ts";
 import type { AutomationStudioSiteResetWitnessStamp } from "../reset-admission/index.ts";
-import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFlowBootstrapPlanHandleView } from "../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFlowBootstrapPlanHandleView } from "../../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioRunEnvironmentKind } from "../../../../framework/automation-service/environment/index.ts";
 import type { AutomationStudioTrialOfflineFirst } from "../offline-first/index.ts";

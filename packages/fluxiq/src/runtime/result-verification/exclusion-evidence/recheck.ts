@@ -17,7 +17,7 @@
 // `../verdict/`): the last sentence says what is asked of those.
 
 import type { AutomationStudioResultVerification } from "../contracts/index.ts";
-import { screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 
 /** What the recheck asks, said once above Core's lines (header). Written for no site or kind of item. */
 const RECHECK = "Your affirmative judgement lacked required exclusion evidence. Recheck the same request and result; do not change the Flow or invent an exclusion. "

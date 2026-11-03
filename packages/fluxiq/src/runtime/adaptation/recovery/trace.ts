@@ -34,7 +34,7 @@
 // success recorded from the absence of contradicting evidence.
 
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLoopStage } from "../../agents/llm/index.ts";
+import type { AutomationStudioLoopStage } from "../../llm/index.ts";
 
 /** The loop's stages at the failure entry point, in the only order they may occur. */
 export const AUTOMATION_STUDIO_RECOVERY_TRACE_STAGES = Object.freeze([

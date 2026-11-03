@@ -8,7 +8,7 @@
 // effect with that act whether or not the call names it (`./claims.ts`).
 
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, type AutomationStudioLlmEvidenceTool } from "../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY } from "../reset-settlement/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../site-reset/words.ts";
 

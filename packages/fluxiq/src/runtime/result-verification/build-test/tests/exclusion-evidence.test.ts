@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary } from "../../request-rows/tests/request-words-fixture.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 

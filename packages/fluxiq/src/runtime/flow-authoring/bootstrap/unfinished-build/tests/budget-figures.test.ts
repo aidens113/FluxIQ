@@ -7,8 +7,8 @@
 // `./shared-purse.test.ts`.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import type { AutomationStudioLlmBuildPurseRefusal } from "../../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmBuildPurseRefusal } from "../../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   automationStudioFlowBootstrapBudgetExhausted,

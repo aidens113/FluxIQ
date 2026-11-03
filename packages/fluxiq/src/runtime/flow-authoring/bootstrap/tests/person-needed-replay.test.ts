@@ -8,8 +8,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioFlowDraftReplayClearedCode, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/index.ts";
-import type { AutomationStudioAsk, AutomationStudioParkingPort } from "../../../parking/automation/index.ts";
+import { automationStudioFlowDraftReplayClearedCode, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
+import type { AutomationStudioAsk, AutomationStudioParkingPort } from "../../../automation-parking/index.ts";
 import { automationStudioFlowBootstrapPersonNeeded } from "../person-needed.ts";
 
 const tool = { toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true };

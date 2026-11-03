@@ -26,7 +26,7 @@ import type {
   AutomationStudioActionDeclarationRecord,
   AutomationStudioActionPermissionRequest,
   AutomationStudioInstructedConsequence
-} from "../../../../runtime/action-permissions/automation/index.ts";
+} from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 
 /** What the gate says, in the shape a proposal stores it. Absent fields are facts the build has none of. */

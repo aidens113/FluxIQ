@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioGraphHandlerRegistrations } from "../../../../framework/automation-service/executor/lifecycle/index.ts";
-import type { AutomationStudioRuntimePatch } from "../../../agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch } from "../../../llm/index.ts";
 import { applyAutomationStudioInsertedSteps, automationStudioGraphUnits, automationStudioUnitDigestRefusal, overlayAutomationStudioRuntimePatch } from "../index.ts";
 
 const RUN = "run.overlay";

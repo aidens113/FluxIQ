@@ -18,7 +18,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/authoring/model/index.ts";
 import { actionTargetParameterValues } from "../flow-change/index.ts";
-import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../llm/index.ts";
 import { automationStudioRuntimePatchHandlerGraph } from "./handler-build.ts";
 import { automationStudioOverlayValidationRefusal, type AutomationStudioOverlayValidationContext } from "./overlay-validation.ts";
 import { applyAutomationStudioInsertedSteps, automationStudioInsertedStepNodeId } from "./step-insert.ts";

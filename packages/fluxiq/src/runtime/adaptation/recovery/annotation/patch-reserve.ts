@@ -26,7 +26,7 @@ import {
   resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmRunBudgetLedger,
   type AutomationStudioLlmTokenLimits
-} from "../../../agents/llm/index.ts";
+} from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS,
   resolveAutomationStudioExplorationBudget,

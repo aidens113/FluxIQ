@@ -7,7 +7,7 @@
 // step (`../../service/runtime-session/in-run-repair.ts`).
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmContextPacket, AutomationStudioRuntimeTargetOverrideTarget } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmContextPacket, AutomationStudioRuntimeTargetOverrideTarget } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeTargetOverrideEvidenceValidation, AutomationStudioRuntimeTargetOverrideFailedAction } from "../../live-patch.ts";
 import { isJsonRecord } from "../../../../framework/automation-service/service/index.ts";
 import { automationStudioExploredEvidenceHandle } from "./exploration.ts";

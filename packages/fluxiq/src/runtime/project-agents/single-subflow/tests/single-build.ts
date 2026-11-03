@@ -10,7 +10,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import { refusalTestSubmission } from "../../../flow-authoring/bootstrap/candidate/tests/refusal-domain-fixture.ts";
 import { AutomationStudioSubflowScopedSubmissionController, type AutomationStudioSubflowProposal, type AutomationStudioSubflowScope } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { withAutomationStudioProjectAgent } from "../../attribution/index.ts";
 import type { AutomationStudioProjectBuilderReturn, AutomationStudioProjectSubflowBrief } from "../../contracts/index.ts";
 import type { AutomationStudioProjectDispatchRequest, AutomationStudioProjectDispatchWholeTrialAnswer } from "../../dispatch/index.ts";

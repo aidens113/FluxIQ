@@ -14,8 +14,8 @@
 // Only the tool is taken from the observer. The test decides nothing, so the
 // observer's decision side is never asked.
 
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../runtime/agents/llm/index.ts";
-import { observeAutomationStudioEvidenceLoop } from "../../../../runtime/activity/automation/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../runtime/llm/index.ts";
+import { observeAutomationStudioEvidenceLoop } from "../../../../runtime/automation-activity/index.ts";
 
 /** `executeTool`, observed for the chat as the loop's own calls are. */
 export function automationStudioObservedTestTool(input: {

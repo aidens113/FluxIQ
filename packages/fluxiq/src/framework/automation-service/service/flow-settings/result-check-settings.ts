@@ -13,13 +13,13 @@
 // not and never defaults.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, type AutomationStudioResultCheckAuthorization, type AutomationStudioUnattendedRepairClause } from "../../../../runtime/result-control/check-authorization/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, type AutomationStudioResultCheckAuthorization, type AutomationStudioUnattendedRepairClause } from "../../../../runtime/result-verification/check-authorization/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS,
   automationStudioResultCheckShapeValue,
   type AutomationStudioResultCheckConfiguration,
   type AutomationStudioResultCheckSettings
-} from "../../../../runtime/result-control/check-schedule/index.ts";
+} from "../../../../runtime/result-verification/check-schedule/index.ts";
 import { jsonObjectFromUnknown } from "../json-values.ts";
 import { finiteNumber } from "../scalar-readings/index.ts";
 import { booleanSetting, stringSetting } from "./settings-readings.ts";

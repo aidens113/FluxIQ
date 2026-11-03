@@ -1,6 +1,6 @@
 // An incomplete draft read back from storage.
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../agents/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../llm/loop-limits/index.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraft } from "./record.ts";
 

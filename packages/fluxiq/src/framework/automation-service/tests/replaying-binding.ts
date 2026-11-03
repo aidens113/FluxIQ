@@ -26,7 +26,7 @@
 // an action that did not apply, which is never a step of the Flow.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../runtime/llm/index.ts";
 
 /** The replay calls this stand-in answered, in order: what a test can assert the build's test sent. */
 export type AutomationStudioReplayingBindingCalls = { toolId: string; value: JsonObject }[];

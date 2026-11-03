@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioConversations } from "../../../../runtime/interaction/conversations/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioConversations } from "../../../../runtime/conversations/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioCatalogue } from "../catalogue.ts";
 import type { AutomationStudioRunDatasets } from "../datasets/index.ts";
 import type { automationStudioRunGraphOptions } from "../runtime-session/index.ts";

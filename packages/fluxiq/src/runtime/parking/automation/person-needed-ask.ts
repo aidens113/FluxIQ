@@ -1,2 +1,0 @@
-// Compatibility export; implementation belongs to the framework.
-export { AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS, automationStudioPersonNeededAskDraft, automationStudioPersonNeededAnswerIsDone, type AutomationStudioPersonNeededOutcome, automationStudioPersonNeededAsk, automationStudioAskedPersonNeeded } from "../index.ts";

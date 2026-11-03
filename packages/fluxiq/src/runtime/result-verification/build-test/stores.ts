@@ -62,7 +62,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_RECORD_WRITE_MODES } from "../../../framework/automation-service/nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
-import { automationStudioLocatorShapedText } from "../../agents/llm/index.ts";
+import { automationStudioLocatorShapedText } from "../../llm/index.ts";
 import type { AutomationStudioBuildTestStore } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY, automationStudioBuildTestReadRows } from "./read-rows.ts";
 

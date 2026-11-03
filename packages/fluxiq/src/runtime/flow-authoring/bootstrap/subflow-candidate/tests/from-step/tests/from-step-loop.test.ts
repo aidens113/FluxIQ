@@ -4,7 +4,7 @@
 // the brief finishes only on a judged whole run of its latest revision.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool } from "../../../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool } from "../../../../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID,
   AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID,

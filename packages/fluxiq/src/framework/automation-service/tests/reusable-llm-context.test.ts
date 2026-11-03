@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioReusableLlmContextRecord } from "../../persistence/automation/index.ts";
-import { packAutomationStudioReusableLlmContext } from "../../../runtime/agents/llm/reusable-context.ts";
+import { packAutomationStudioReusableLlmContext } from "../../../runtime/llm/reusable-context.ts";
 
 describe("packAutomationStudioReusableLlmContext", () => {
   // No ranking (2026-09-30): newest first, whatever the outcome or review, and

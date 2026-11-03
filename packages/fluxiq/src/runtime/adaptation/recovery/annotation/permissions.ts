@@ -38,7 +38,7 @@ import {
   isAutomationStudioActionConsequence,
   type AutomationStudioActionConsequence,
   type AutomationStudioInstructedConsequence
-} from "../../../action-permissions/automation/index.ts";
+} from "../../../action-permission-requests/index.ts";
 
 /** The recovery's authority, as classes only: what a run detail records and a reader compares. */
 export type AutomationStudioRecoveryPermissionSummary = {

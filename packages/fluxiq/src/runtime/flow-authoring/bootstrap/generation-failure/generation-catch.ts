@@ -1,7 +1,7 @@
 // The outer generation catch: preserve a recognized failure, or classify its phase,
 // then attach the known current build's settled provider count and what the
 // build's permission gate read the instruction to ask for.
-import { automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import { automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioFlowBootstrapFailureStage, AutomationStudioFlowBootstrapPhaseFailureCode } from "./codes.ts";
 import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 import { AutomationStudioFlowBootstrapGenerationError, parseAutomationStudioFlowBootstrapGenerationError } from "./error.ts";

@@ -57,7 +57,7 @@ import {
   automationStudioLocatorShapedText,
   automationStudioWithoutLocators,
   screenAutomationStudioLlmEvidence
-} from "../../agents/llm/index.ts";
+} from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_BUILD_TEST_CHANGE_LINES_KEY, automationStudioBuildTestChangeLines } from "./change-lines.ts";
 import { automationStudioBuildTestReadRows } from "./read-rows.ts";
 

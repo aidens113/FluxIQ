@@ -23,11 +23,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioRuntimeSessionLlm } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioRuntimeSessionLlm } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { automationStudioRecoveryPermissionGate } from "../../../../../runtime/adaptation/recovery/index.ts";
-import { AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES } from "../../../../../runtime/result-control/check-authorization/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../../../runtime/result-control/check-schedule/index.ts";
+import { AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES } from "../../../../../runtime/result-verification/check-authorization/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../../../runtime/result-verification/check-schedule/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 

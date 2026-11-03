@@ -34,7 +34,7 @@ import {
   AutomationStudioConversations,
   createAutomationStudioDeepSeekPanelCommandModel
 } from "../../../../../../../framework/automation-service/index.ts";
-import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "../../../../../../../runtime/agents/llm/deepseek/index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "../../../../../../../runtime/llm/deepseek/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../../../../../../../framework/persistence/automation/index.ts";
 import { registerAutomationStudioConversationEndpoints, type AutomationStudioConversationApiDependencies } from "../../../conversations.ts";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioResolvedControlIntent } from "../../../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioResolvedControlIntent } from "../../../../../llm/harness-options/index.ts";
 import { AutomationStudioSubflowScopedSubmissionController } from "../../index.ts";
 import { OPEN, SIBLINGS, script, testScope, testSubmission } from "../../tests/subflow-fixture.ts";
 

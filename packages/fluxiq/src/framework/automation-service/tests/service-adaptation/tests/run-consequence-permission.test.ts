@@ -15,13 +15,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
 import type {
   AutomationStudioHarnessOptionBundle,
   AutomationStudioLlmProvider,
   AutomationStudioLlmProviderResolverInput,
   AutomationStudioLlmTaskRequest
-} from "../../../../../runtime/agents/llm/index.ts";
+} from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createFailingCanonicalFlow } from "../../service-fixtures.ts";
 

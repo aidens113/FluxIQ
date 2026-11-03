@@ -17,7 +17,7 @@
 // settlement's (`../reset-settlement/act-subjects.ts`): both callers read it
 // there, as the settlement's group witnesses do.
 
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetOriginal } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetSpot } from "../site-reset/index.ts";
 

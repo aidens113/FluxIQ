@@ -15,10 +15,10 @@
 // this Flow spent, and what the call could have cost at most.
 // This drives the real loop through the real harness with run 13's figures.
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse } from "../../../../agents/llm/build-purse/index.ts";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../../../../agents/llm/harness.ts";
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/evidence-loop.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse } from "../../../../llm/build-purse/index.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../../../../llm/harness.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceTool } from "../../../../llm/evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import { runAutomationStudioFlowBootstrapBuildPhases } from "../index.ts";
 

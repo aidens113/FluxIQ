@@ -19,7 +19,7 @@ import {
   parseAutomationStudioFlowBootstrapGenerationError,
   parseAutomationStudioFlowBootstrapProviderThrow
 } from "../index.ts";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 
 const REQUEST = { requestId: "request.throw", estimatedInputTokens: 10 } as unknown as AutomationStudioLlmTaskRequest;
 const PROVIDER = { provider: "deepseek", model: "deepseek-flash" };

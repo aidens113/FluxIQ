@@ -3,8 +3,8 @@
 // No model is called: the provider is scripted, or `verify` is injected.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../agents/llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { verifyAutomationStudioRunResult, type AutomationStudioResultVerificationReport, type AutomationStudioResultVerificationRequest } from "../../verify.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 import { automationStudioBuildTestResultSummary } from "../summary.ts";

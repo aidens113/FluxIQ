@@ -10,7 +10,7 @@
 // activity scope, nothing read and nothing opened.
 
 import { randomUUID } from "node:crypto";
-import { withAutomationStudioBuildActivity } from "../../../activity/automation/index.ts";
+import { withAutomationStudioBuildActivity } from "../../../automation-activity/index.ts";
 import { AUTOMATION_STUDIO_GATEWAY_TRACE_CONTEXT } from "./context-schemas.ts";
 import { automationStudioGatewayTraceConversationContext } from "./conversation-turn.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../installation.ts";

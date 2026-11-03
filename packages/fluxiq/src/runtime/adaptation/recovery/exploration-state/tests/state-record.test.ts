@@ -3,7 +3,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import {
   automationStudioHarnessOptionRegistry,
   type AutomationStudioLlmEvidenceTool
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../../exploration-budget.ts";
 import { runAutomationStudioRuntimeExploration, type AutomationStudioRuntimeExploration } from "../../runtime-exploration.ts";
 import { reviewAutomationStudioExplorationReduction } from "../reduction-review.ts";

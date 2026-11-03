@@ -9,7 +9,7 @@
 // writes it goes on to dispatch, assemble and a yes.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as BUDGET, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { FIND, call, complete, dispatch, lastOf, supervise, test, type Entry } from "./supervisor-script.ts";

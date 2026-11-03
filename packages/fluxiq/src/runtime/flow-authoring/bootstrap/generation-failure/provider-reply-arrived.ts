@@ -13,7 +13,7 @@
 // with a cost -- the instruction reading, a judge, a builder -- is in the
 // build's accounting as tokens the provider reported. Where the loop did not
 // say, a reply is assumed, as every ending past the request stage always has.
-import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 

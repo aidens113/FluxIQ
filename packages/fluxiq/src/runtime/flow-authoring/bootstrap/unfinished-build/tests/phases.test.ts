@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { automationStudioLlmStepLogScope, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmStepLogContext } from "../../../../agents/llm/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../../agents/llm/build-purse/index.ts";
+import { automationStudioLlmStepLogScope, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmStepLogContext } from "../../../../llm/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../../llm/build-purse/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   AutomationStudioFlowBootstrapUnfinishedStall,

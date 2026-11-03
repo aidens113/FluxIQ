@@ -16,7 +16,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioBuildTestVerdict } from "../../../../result-verification/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE, automationStudioCandidateSubmissionRefusal } from "../../candidate/index.ts";
 import { CAMP_WHERE, GAP_AND_CHANGE_NO, GAP_NO, KEPT_CONDITION_SUBMISSION, campsiteJudging, campsiteReadScript as script } from "../../candidate/tests/kept-condition/tests/kept-condition-fixture.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID,
   AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID,

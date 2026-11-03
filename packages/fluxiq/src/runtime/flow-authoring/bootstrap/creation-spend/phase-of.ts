@@ -9,7 +9,7 @@
 // `runtime`. That scope is kept only while the step log is on
 // (`FLUXIQ_LLM_STEP_LOG_DIR`), which every Lab run sets; with it off, a call
 // that is not a judge's reads as `runtime`.
-import type { AutomationStudioLlmStepLogContext } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmStepLogContext } from "../../../llm/index.ts";
 import type { AutomationStudioFlowSpendPhase } from "./record.ts";
 
 export function automationStudioFlowSpendPhaseOf(call: { judge: boolean }, scope: AutomationStudioLlmStepLogContext | undefined): AutomationStudioFlowSpendPhase {

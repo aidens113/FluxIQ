@@ -73,7 +73,7 @@
 // so a project's act list still names it, answered not left. A trial's act is
 // never paired: only an exploration press can be the build's undo.
 
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import { automationStudioSiteResetWitnessStampValid as stampValid } from "../reset-admission/index.ts";
 import {
   automationStudioSiteResetToggleWitness as toggleWitness,

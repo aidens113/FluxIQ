@@ -7,7 +7,7 @@
 // reset's own look at a place moved the tab, and the refusal said nothing moved.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../llm/index.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowTrialRequest } from "../index.ts";
 import { OPEN, SIBLINGS, callPart, part, script, testScope, testSubmission } from "./subflow-fixture.ts";

@@ -7,7 +7,7 @@ import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument } f
 import type { AutomationStudioAdaptiveCandidateKind } from "../../adaptive-orchestrator.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor.ts";
 import { preflightAutomationStudioRuntimePatch } from "../../live-patch.ts";
-import type { AutomationStudioLlmTaskResult, AutomationStudioRuntimePatch } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmTaskResult, AutomationStudioRuntimePatch } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
 

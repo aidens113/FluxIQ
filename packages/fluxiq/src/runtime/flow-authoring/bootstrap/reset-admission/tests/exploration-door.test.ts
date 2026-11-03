@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../../site-reset/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../../../framework/automation-service/executor/index.ts";
 import {
   AutomationStudioSiteResetCreateBaselines,

@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { STOPPED_REASON, planInput, project, subflow, taskSpecInput, type BuilderPlan } from "./supervisor-fixture.ts";
 import { FIND, HOLD, assembled, brief, call, dispatch, end, supervise, test, type Entry } from "./supervisor-script.ts";

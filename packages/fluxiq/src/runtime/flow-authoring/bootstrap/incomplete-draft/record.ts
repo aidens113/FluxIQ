@@ -17,7 +17,7 @@
 // continuation is held to every completion gate a first build is, the dry run
 // included, so a kept step reaches a Flow only by being proved again.
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResume } from "../../../agents/llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResume } from "../../../llm/evidence-loop/index.ts";
 
 export type AutomationStudioFlowBootstrapIncompleteDraft = {
   kind: "flow_bootstrap_incomplete_draft";

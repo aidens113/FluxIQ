@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { automationStudioLlmBuildPurseHoldCall, automationStudioLlmCurrentFlowPurse } from "../../../../runtime/agents/llm/build-purse/index.ts";
+import { automationStudioLlmBuildPurseHoldCall, automationStudioLlmCurrentFlowPurse } from "../../../../runtime/llm/build-purse/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../index.ts";
 
 const PROJECT_ID = "project.spend";

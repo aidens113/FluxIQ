@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioActionPermissionCheck } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionPermissionCheck } from "../../../action-permission-requests/index.ts";
 import {
   automationStudioHarnessOptionRegistry,
   type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceToolExecutionResult
-} from "../../../agents/llm/index.ts";
+} from "../../../llm/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import {
   isAutomationStudioExplorationOutcome,

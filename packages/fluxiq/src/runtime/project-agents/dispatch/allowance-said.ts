@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmBuildPurseTopUp } from "../../agents/llm/build-purse/index.ts";
+import type { AutomationStudioLlmBuildPurseTopUp } from "../../llm/build-purse/index.ts";
 
 // What a brief's return says of its money beyond what it spent (t627), in
 // figures only: what it was given when it started, where that was less than the

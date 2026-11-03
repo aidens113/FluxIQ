@@ -23,7 +23,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../../../runtime/result-control/check-schedule/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../../../runtime/result-verification/check-schedule/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";

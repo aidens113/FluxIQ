@@ -5,7 +5,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime, AutomationStudioService } from "../../../index.ts";
 import { blankFixture, caller, expectNoTopology, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic } from "../../service-bootstrap/index.ts";
 

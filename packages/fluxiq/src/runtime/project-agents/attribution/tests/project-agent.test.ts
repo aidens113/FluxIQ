@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { automationStudioActivityHub, currentAutomationStudioActivityAgent, emitAutomationStudioActivity, runWithAutomationStudioActivity } from "../../../activity/automation/index.ts";
-import { automationStudioLlmStepLogScope, automationStudioLlmStepLogTool } from "../../../agents/llm/step-log/index.ts";
+import { automationStudioActivityHub, currentAutomationStudioActivityAgent, emitAutomationStudioActivity, runWithAutomationStudioActivity } from "../../../automation-activity/index.ts";
+import { automationStudioLlmStepLogScope, automationStudioLlmStepLogTool } from "../../../llm/step-log/index.ts";
 import { withAutomationStudioProjectAgent } from "../index.ts";
 
 let directory: string;

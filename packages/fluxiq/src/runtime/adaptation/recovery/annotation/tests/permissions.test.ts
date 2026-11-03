@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../../flows/authoring/model/index.ts";
-import { automationStudioInstructionDigest } from "../../../../action-permissions/automation/index.ts";
+import { automationStudioInstructionDigest } from "../../../../action-permission-requests/index.ts";
 import { automationStudioRecoveryPermissionGate } from "../permissions.ts";
 
 // A class the gate still asks about, so what each row proves is the authority

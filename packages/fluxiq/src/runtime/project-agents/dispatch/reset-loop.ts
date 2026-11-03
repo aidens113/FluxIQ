@@ -1,7 +1,7 @@
 import type { AutomationStudioSiteResetIssuedRef, AutomationStudioSiteResetNamedAct } from "../../flow-authoring/bootstrap/site-reset/index.ts";
-import type { AutomationStudioLlmBuildPurse } from "../../agents/llm/build-purse/index.ts";
+import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 // From its own module, as the subflow builder imports it: through the `llm` barrel it arrived undefined under the test loader (a module cycle).
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult } from "../../agents/llm/evidence-loop.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION } from "./reset-completion.ts";
 import type { AutomationStudioProjectResetPorts } from "./types.ts";

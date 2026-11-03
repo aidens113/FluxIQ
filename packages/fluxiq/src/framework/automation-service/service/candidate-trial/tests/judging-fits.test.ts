@@ -4,7 +4,7 @@
 // the site, no judge is asked, and the answer says so in figures.
 
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseRun, automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurseCall } from "../../../../../runtime/agents/llm/build-purse/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseRun, automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurseCall } from "../../../../../runtime/llm/build-purse/index.ts";
 import { automationStudioCandidateTrialPort, automationStudioTrialJudgingShortfall, automationStudioTrialLargestJudgePrompt, runAutomationStudioCandidateTrial } from "../index.ts";
 import { trialFixture } from "./fixtures.ts";
 

@@ -3,13 +3,13 @@
 // trial moved the browser to a filtered page and the model held only handles
 // from the page before it).
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioActionPermissionDenied } from "../../../../action-permissions/automation/index.ts";
-import { createAutomationStudioDeepSeekProvider } from "../../../../agents/llm/deepseek/index.ts";
+import { automationStudioActionPermissionDenied } from "../../../../action-permission-requests/index.ts";
+import { createAutomationStudioDeepSeekProvider } from "../../../../llm/deepseek/index.ts";
 import type { JsonValue } from "../../../../../core/index.ts";
-import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../agents/llm/evidence-loop.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../../agents/llm/harness.ts";
-import { packAutomationStudioLlmContext } from "../../../../agents/llm/harness/index.ts";
-import { automationStudioLlmNodeDescriptions, automationStudioLlmRunNodeDescribingFailures } from "../../../../agents/llm/node-tools/index.ts";
+import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../llm/evidence-loop.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../llm/harness.ts";
+import { packAutomationStudioLlmContext } from "../../../../llm/harness/index.ts";
+import { automationStudioLlmNodeDescriptions, automationStudioLlmRunNodeDescribingFailures } from "../../../../llm/node-tools/index.ts";
 import { automationStudioCandidateTrialView } from "../index.ts";
 
 const look: AutomationStudioLlmEvidenceTool = { toolId: "core.run_node", description: "Run a node", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, initialObservation: { input: { node: "web.inspect" }, arrival: { node: "web.navigate" } } };

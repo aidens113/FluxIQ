@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   automationStudioFlowBootstrapFinishingVerdict,

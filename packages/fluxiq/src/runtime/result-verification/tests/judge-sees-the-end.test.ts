@@ -16,7 +16,7 @@ import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automa
 import { summarizeAutomationStudioRunResult, type AutomationStudioRunResultSummaryWithEndView } from "../result-summary.ts";
 import { harness, session, verify } from "./run-outcome-harness.ts";
 // After the modules under test: loaded first, the llm barrel is met mid-cycle and arrives without its screens.
-import { automationStudioLlmRequestEvidenceRefusal } from "../../agents/llm/index.ts";
+import { automationStudioLlmRequestEvidenceRefusal } from "../../llm/index.ts";
 
 const DENIED = ["html", "cookies", "selector"];
 

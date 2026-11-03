@@ -6,7 +6,7 @@
 // double no stood and a correct result was refuted. On the made-up club board
 // of `../../located-defects/tests/club-posts-fixture.ts`; no model is called.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun } from "../../contracts/index.ts";
 import { CLUB_POSTS_YES, TESTED_CLUB_NO, clubPostsInstruction, clubPostsRunSummary } from "../../located-defects/tests/club-posts-fixture.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../verdict/index.ts";

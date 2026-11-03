@@ -5,8 +5,8 @@
 // split. On the made-up recipe archive of `../../../agreement/tests/recipe-split-fixture.ts`:
 // no task, site, item or answer of any realistic scenario. No model is called.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SPLIT_NO_RECHECK } from "../../../agreement/index.ts";
 import { RECIPE_DEFECT_NO as DEFECT_READING, RECIPE_HYPOTHETICAL_NO as HYPOTHETICAL_READING, RECIPE_YES, recipeInstruction, recipeRunSummary } from "../../../agreement/tests/recipe-split-fixture.ts";
 import { verifyAutomationStudioRunResult } from "../../../verify.ts";

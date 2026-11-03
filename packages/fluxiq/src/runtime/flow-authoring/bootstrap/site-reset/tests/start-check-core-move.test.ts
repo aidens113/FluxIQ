@@ -5,7 +5,7 @@
 // and the domain's implementation reads the frame as a domain does.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AutomationStudioHarnessOptionRegistry, automationStudioEvidenceBuildScope, type AutomationStudioEvidenceBuildScope, type AutomationStudioHarnessOptionBundle } from "../../../../agents/llm/index.ts";
+import { AutomationStudioHarnessOptionRegistry, automationStudioEvidenceBuildScope, type AutomationStudioEvidenceBuildScope, type AutomationStudioHarnessOptionBundle } from "../../../../llm/index.ts";
 import { AutomationStudioSiteResetStartCheck } from "../index.ts";
 
 // A domain with nothing of the web in it: a reading list whose one node goes to a shelf.

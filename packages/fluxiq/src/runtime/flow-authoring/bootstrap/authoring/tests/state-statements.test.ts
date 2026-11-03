@@ -11,7 +11,7 @@ import { type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootst
 import { savedFlowValidation, stateNodeRegistryFixture, webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, automationStudioFlowBootstrapIssuePlace, parseAutomationStudioFlowScript } from "../index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../../agents/llm/index.ts";
+import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../../llm/index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
 const registry = stateNodeRegistryFixture(webDomainNodeDefinitionsFixture());

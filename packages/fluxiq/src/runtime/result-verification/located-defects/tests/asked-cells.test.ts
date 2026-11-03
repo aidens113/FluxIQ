@@ -8,7 +8,7 @@
 // row "is a row the result holds" for a stored row whose label was the group.
 // On the made-up notice board of `./club-notices-fixture.ts`.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmVerificationDefect } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { AutomationStudioRequestRowId, automationStudioRequestWording } from "../../request-rows/index.ts";
 import { automationStudioResultNoRecord } from "../../refuted-no/index.ts";

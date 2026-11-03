@@ -1,5 +1,5 @@
 import { validateAutomationStudioFlowInstruction, type AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "../../../../runtime/agents/llm/index.ts";
+import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "../../../../runtime/llm/index.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioCandidateOriginalSourceBinding } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { sanitizedBootstrapAccounting } from "../../../../runtime/flow-authoring/bootstrap/index.ts";

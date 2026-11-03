@@ -19,7 +19,7 @@ import { automationStudioResultNoRecord, automationStudioResultRefutedReading } 
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioRequestWording } from "../index.ts";
 // Imported last: imported first, the harness barrel loads the verdict's evidence screen half-built (an import cycle).
-import { parseAutomationStudioLlmProviderResult } from "../../../agents/llm/harness/index.ts";
+import { parseAutomationStudioLlmProviderResult } from "../../../llm/harness/index.ts";
 
 const BODY = "List every mystery novel the library lends itself (not partner libraries) that is available to borrow today at my branch and rated 4.5 or higher, going through every page. Leave out featured listings, list each title once, in relevance order, with columns title, author and rating.";
 const PREFIX = "node.bootstrap.5d1a9e.find_mysteries";

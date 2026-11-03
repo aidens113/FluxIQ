@@ -6,9 +6,9 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 // After the judge: the adapter's barrel loaded first reaches the judge's modules through a cycle before they are evaluated.
-import { createAutomationStudioDeepSeekProvider } from "../../../agents/llm/deepseek/index.ts";
+import { createAutomationStudioDeepSeekProvider } from "../../../llm/deepseek/index.ts";
 import { LIBRARY_HOLDS_REQUEST, libraryHoldsChange, libraryHoldsSummary } from "./library-holds-fixture.ts";
 
 const instruction: AutomationStudioFlowInstruction = {

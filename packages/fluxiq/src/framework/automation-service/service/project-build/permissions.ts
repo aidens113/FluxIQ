@@ -1,4 +1,4 @@
-import { automationStudioActionDeclarationCrossCheck, type AutomationStudioActionPermissionRequest, type AutomationStudioInstructedConsequence } from "../../../../runtime/action-permissions/automation/index.ts";
+import { automationStudioActionDeclarationCrossCheck, type AutomationStudioActionPermissionRequest, type AutomationStudioInstructedConsequence } from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
 

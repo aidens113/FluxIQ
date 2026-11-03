@@ -12,7 +12,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { activityActionOf } from "../../../../../ui/index.ts";
-import { automationStudioActivityHub } from "../../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 

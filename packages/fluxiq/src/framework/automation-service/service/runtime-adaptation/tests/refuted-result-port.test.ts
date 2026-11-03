@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapGenerationCatch, flowBootstrapBuildEndingFailure, flowBootstrapPhaseFailure, flowBootstrapHarnessFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRunBudgetLedger, AutomationStudioLlmRequestRefusedError, AutomationStudioLlmProviderError, AutomationStudioLlmProviderRetryLedger, automationStudioLlmRunCostCeilingUsd, runAutomationStudioLlmHarness } from "../../../../../runtime/agents/llm/index.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../../../runtime/agents/llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRunBudgetLedger, AutomationStudioLlmRequestRefusedError, AutomationStudioLlmProviderError, AutomationStudioLlmProviderRetryLedger, automationStudioLlmRunCostCeilingUsd, runAutomationStudioLlmHarness } from "../../../../../runtime/llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../../../runtime/llm/build-purse/index.ts";
 import {
   AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID,
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,

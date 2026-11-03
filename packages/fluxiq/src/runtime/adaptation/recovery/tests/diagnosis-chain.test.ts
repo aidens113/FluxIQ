@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmTaskResult } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES,
   automationStudioRuntimePatchRefusalIsCheckableByExploration,

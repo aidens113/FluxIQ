@@ -13,8 +13,8 @@
 // the gate does not let complete -- one Core could not confirm or held, or one
 // standing while a failed test's repair is unchecked -- is not ready, and the
 // model decides as before.
-import { automationStudioActivityDecisionReason, automationStudioActivityFoldedReason } from "../../../activity/automation/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../agents/llm/index.ts";
+import { automationStudioActivityDecisionReason, automationStudioActivityFoldedReason } from "../../../automation-activity/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_THEN_WORDS as WORDS } from "./submit-then-words.ts";
 
 type Decide = AutomationStudioLlmEvidenceLoopInput["decide"];

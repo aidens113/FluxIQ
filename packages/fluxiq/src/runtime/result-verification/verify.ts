@@ -174,7 +174,7 @@ import {
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmRunBudgetLedger,
   type AutomationStudioLlmTokenLimits
-} from "../agents/llm/index.ts";
+} from "../llm/index.ts";
 import type {
   AutomationStudioResultComputedFact,
   AutomationStudioResultRequestedOutput,
@@ -201,7 +201,7 @@ import { automationStudioResultReaskNarrowingNo } from "./unsure-doubts/index.ts
 import { automationStudioResultVerdict } from "./verdict/index.ts";
 import { automationStudioResultAdviceKept, automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { automationStudioResultFirstAskConfirmed, automationStudioResultModelSaid } from "./first-ask/index.ts";
-import { emitAutomationStudioActivity } from "../activity/automation/index.ts";
+import { emitAutomationStudioActivity } from "../automation-activity/index.ts";
 
 /**
  * Core's codes for a run that was not verified, and why. Never a verdict.

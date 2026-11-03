@@ -41,14 +41,14 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
-import { automationStudioActionPermissionDenied, automationStudioConsequencesInOrder, type AutomationStudioActionConsequence, type AutomationStudioActionPermissionGate } from "../../../../runtime/action-permissions/automation/index.ts";
-import { emitAutomationStudioActivityThought } from "../../../../runtime/activity/automation/index.ts";
+import { automationStudioActionPermissionDenied, automationStudioConsequencesInOrder, type AutomationStudioActionConsequence, type AutomationStudioActionPermissionGate } from "../../../../runtime/action-permission-requests/index.ts";
+import { emitAutomationStudioActivityThought } from "../../../../runtime/automation-activity/index.ts";
 import { automationStudioLegacyGraphRequest } from "../../legacy-envelope/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
 import type { AutomationStudioIncidentRepair, AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../executor/lifecycle-run/index.ts";
-import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/agents/llm/build-purse/index.ts";
+import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/llm/build-purse/index.ts";
 import { prepareAutomationStudioInRunRepair, type AutomationStudioInRunRepairPreparation } from "../../../../runtime/adaptation/live-patch.ts";
-import type { AutomationStudioLlmRunPurse, AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeSessionLlm } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmRunPurse, AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeSessionLlm } from "../../../../runtime/llm/index.ts";
 import {
   annotateAutomationStudioRunDetailWithRuntimeLlm,
   automationStudioInRunRepairSlot,

@@ -12,7 +12,7 @@
 // the conditions its advice keeps -- and t515 still never asks it again. No
 // model is called; the provider is scripted.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
 import { automationStudioResultNoRecord, automationStudioResultRefutedReading } from "../../refuted-no/index.ts";
 import { AUDIOBOOKS_INSTRUCTION, AUDIOBOOKS_PROMOTED, AUDIOBOOKS_READ, AUDIOBOOKS_REQUEST, AUDIOBOOKS_YES, audiobooksRunSummary } from "../../value-readings/tests/audiobooks-fixture.ts";

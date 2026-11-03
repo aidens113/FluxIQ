@@ -12,7 +12,7 @@
 // model answers with and what the panel looks up. A title, a summary, a group
 // and a control are filled from the id when they are missing.
 
-import { AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "../../../runtime/action-permissions/automation/client/index.ts";
+import { AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "../../../runtime/action-permission-requests/client/index.ts";
 import type { AutomationStudioPanelCapability, AutomationStudioPanelCapabilityArgument } from "./capability.ts";
 
 /** The longest vocabulary Core will carry. Well past the panel's 38; a backstop, not a budget. */

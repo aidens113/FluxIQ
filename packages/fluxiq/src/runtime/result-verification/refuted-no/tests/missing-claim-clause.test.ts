@@ -6,7 +6,7 @@
 // realistic scenario.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultNoRecord, automationStudioResultRefutedReading, automationStudioResultRowClauses } from "../index.ts";

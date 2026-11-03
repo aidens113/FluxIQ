@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioActivityTimeLimitTried } from "../../../../../runtime/activity/automation/index.ts";
+import type { AutomationStudioActivityTimeLimitTried } from "../../../../../runtime/automation-activity/index.ts";
 import { automationStudioProjectBuildReasonChecked } from "../reason-checked.ts";
 import { automationStudioProjectBuildRecordTold } from "../record-told.ts";
 

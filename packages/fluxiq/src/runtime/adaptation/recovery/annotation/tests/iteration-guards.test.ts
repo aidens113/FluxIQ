@@ -14,9 +14,9 @@ import {
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmTaskRequest
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 import type { AutomationStudioTrainingModeSettings } from "../../../training-modes.ts";
-import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-control/check-schedule/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-verification/check-schedule/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioRuntimeAdaptationContext } from "../../../../../framework/automation-service/service.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "../ports.ts";

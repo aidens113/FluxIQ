@@ -4,7 +4,7 @@
 // every defect the request's own words. The made-up library account of
 // `../../tests/loan-fixture.ts`: no task, site, item or answer of any realistic scenario.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmVerificationDefect } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioRequestWording, AutomationStudioRequestRowId } from "../../request-rows/index.ts";
 import { automationStudioResultNoRecord } from "../../refuted-no/index.ts";

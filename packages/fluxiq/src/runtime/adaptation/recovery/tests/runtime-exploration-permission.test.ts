@@ -13,10 +13,10 @@
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/automation/index.ts";
-import { AutomationStudioActionPermissionGate, type AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
-import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../parking/automation/index.ts";
-import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool } from "../../../agents/llm/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../automation-activity/index.ts";
+import { AutomationStudioActionPermissionGate, type AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
+import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../automation-parking/index.ts";
+import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import { automationStudioExplorationTraceEvent, runAutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
 

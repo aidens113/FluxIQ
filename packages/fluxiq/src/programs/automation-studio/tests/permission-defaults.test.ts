@@ -36,7 +36,7 @@ import {
   AUTOMATION_STUDIO_ACTION_CONSEQUENCES,
   AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES,
   isAutomationStudioDestructiveActionConsequence
-} from "../../../runtime/action-permissions/automation/index.ts";
+} from "../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioChangeConfidenceDecision } from "../../../runtime/adaptation/flow-change/index.ts";
 import { adaptationPolicyFromFlowMetadata, trainingModeSettingsFromMetadata } from "../../../framework/automation-service/service/flow-settings/index.ts";
 import {

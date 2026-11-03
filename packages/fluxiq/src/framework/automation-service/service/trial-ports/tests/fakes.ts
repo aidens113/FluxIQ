@@ -3,7 +3,7 @@
 // collaborator a trial port reached and with what. No store, run or model.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioServiceTrialCollaborators } from "../index.ts";
 
 export const PROJECT = "project.trial-ports";

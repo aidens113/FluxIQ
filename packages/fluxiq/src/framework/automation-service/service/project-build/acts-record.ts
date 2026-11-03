@@ -1,4 +1,4 @@
-import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetAdmissionDeclared } from "../../../../runtime/flow-authoring/bootstrap/reset-admission/index.ts";
 import type { AutomationStudioSiteResetCalls, AutomationStudioSiteResetProjectLedger, AutomationStudioSiteResetTrialAct } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { AutomationStudioProjectRecordRefusal, type AutomationStudioProjectBuildActOwner, type AutomationStudioProjectBuildRecordStore, type AutomationStudioProjectBuildRef } from "../../../../runtime/project-agents/index.ts";

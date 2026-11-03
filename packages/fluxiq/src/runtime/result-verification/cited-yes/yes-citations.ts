@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmVerificationChecked } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationChecked } from "../../llm/index.ts";
 import type { AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultCitationRefuted } from "./citation-refuted.ts";
 import { automationStudioResultCitedStoredCells } from "./stored-cells.ts";

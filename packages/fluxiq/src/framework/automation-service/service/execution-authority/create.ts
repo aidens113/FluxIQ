@@ -1,7 +1,7 @@
 import type { AutomationStudioFlowScope } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioFlowDraftReplayClearedCode } from "../../../../runtime/agents/llm/node-tools/index.ts";
-import { automationStudioLlmPriorNodesRuntimeAuthority } from "../../../../runtime/agents/llm/prior-nodes/index.ts";
+import { automationStudioFlowDraftReplayClearedCode } from "../../../../runtime/llm/node-tools/index.ts";
+import { automationStudioLlmPriorNodesRuntimeAuthority } from "../../../../runtime/llm/prior-nodes/index.ts";
 import type { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
 
 /** Assemble one build's actual permission, person-needed and current rerun authority boundaries together. */

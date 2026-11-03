@@ -14,7 +14,7 @@
 // equal; and none of subject, page or resource present on both and different.
 // Pure.
 
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioSiteResetSettlementSpot } from "./spot.ts";
 
 type Side = { consequences: readonly AutomationStudioActionConsequence[]; spot?: AutomationStudioSiteResetSettlementSpot | undefined };

@@ -48,13 +48,13 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared
 import { registerAutomationStudioApi } from "../handlers/index.ts";
 import { resolveAutomationStudioAuthoringMode } from "../../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
-import { automationStudioActivityHub } from "../../../../runtime/activity/automation/index.ts";
-import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmTaskRequest } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioActivityHub } from "../../../../runtime/automation-activity/index.ts";
+import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmTaskRequest } from "../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../../framework/automation-service/service.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 import { automationStudioReplayingBinding } from "../../../../framework/automation-service/tests/replaying-binding.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_EXPLORE, automationStudioConversationCommandWork } from "../../../../runtime/interaction/conversations/commands/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_EXPLORE, automationStudioConversationCommandWork } from "../../../../runtime/conversations/commands/index.ts";
 
 const OPEN_ID = "domain.example.open";
 const SEARCH_ID = "domain.example.search";

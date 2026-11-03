@@ -22,7 +22,7 @@
 //
 // It reads the assembled plan, as `./record-replace-in-repeat.ts` does.
 import type { JsonObject } from "../../../../core/index.ts";
-import { isAutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import { isAutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../../framework/automation-service/nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioFlowPlanLoopBody } from "../script-statements/index.ts";

@@ -3,7 +3,7 @@
 // further" over a Flow refused for its repeat, then sent again unchanged.
 import { describe, expect, it } from "vitest";
 import { flowBootstrapDiagnosticIssueCodes } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../../../../../runtime/llm/index.ts";
 import { automationStudioCandidateRefusalCodes, automationStudioCandidateSubmissionRefusals } from "../index.ts";
 
 const ran = (evidence: Record<string, unknown>) => ({ kind: "llm_evidence_tool_execution" as const, evidence, effectApplied: false });

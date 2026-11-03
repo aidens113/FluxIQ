@@ -14,9 +14,9 @@
 // tests. The stand-in provider is scripted; nothing here calls a model.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioActionDeclaration } from "../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioActionDeclaration } from "../../../../runtime/action-permission-requests/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioInstructedActs } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioLlmBuildPurseHoldCall } from "../../../../runtime/agents/llm/build-purse/index.ts";
+import { automationStudioLlmBuildPurseHoldCall } from "../../../../runtime/llm/build-purse/index.ts";
 import { automationStudioFlowBootstrapCreationPurse } from "../flow-bootstrap-commands/index.ts";
 import { automationStudioFlowBootstrapInstructionAuthority } from "../instruction-authority.ts";
 

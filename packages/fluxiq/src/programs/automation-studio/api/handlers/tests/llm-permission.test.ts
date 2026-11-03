@@ -8,7 +8,7 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_sha
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import { AutomationStudioActionPermissionGate, AutomationStudioFlowBootstrapGenerationError } from "../../../../../framework/automation-service/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
-import { automationStudioConversationEffectiveCaller } from "../../../../../runtime/interaction/conversations/commands/index.ts";
+import { automationStudioConversationEffectiveCaller } from "../../../../../runtime/conversations/commands/index.ts";
 
 /** The service's conversations, answering `callerFor` as Core does for a person's own session: unchanged. */
 const CONVERSATIONS = { callerFor: (who: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(who, () => null) };

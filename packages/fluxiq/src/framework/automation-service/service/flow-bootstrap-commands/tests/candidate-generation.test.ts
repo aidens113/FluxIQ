@@ -102,7 +102,7 @@ import { AutomationStudioProjectPaths, AutomationStudioFlowPaths } from "../../p
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../../flows/authoring/model/index.ts";
-import { runAutomationStudioLlmHarness } from "../../../../../runtime/agents/llm/index.ts";
+import { runAutomationStudioLlmHarness } from "../../../../../runtime/llm/index.ts";
 
 function boundGeneration(store: Pick<AutomationStudioFlowCandidateDraftStore, "save">) {
   const registry = new AutomationStudioNodeRegistry(), resolution = { scope: { kind: "domain" as const, domainId: "isolated" }, permissions: [], runtimeCapabilities: [] };

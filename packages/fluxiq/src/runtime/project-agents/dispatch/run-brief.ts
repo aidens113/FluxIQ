@@ -1,10 +1,10 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { AutomationStudioSubflowPendingRepair, AutomationStudioSubflowRepeatedAdvice, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialResult } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../framework/automation-service/executor/index.ts";
-import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../agents/llm/evidence-loop.ts";
-import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../agents/llm/evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE, automationStudioLlmValueWithoutDeniedKeys } from "../../agents/llm/harness/index.ts";
+import { automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../llm/evidence-loop/index.ts";
+import { AUTOMATION_STUDIO_LLM_DRAFT_WITHHELD_NOTE, automationStudioLlmValueWithoutDeniedKeys } from "../../llm/harness/index.ts";
 import { automationStudioProjectCarriedScript } from "../amendment/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import { automationStudioProjectSubflowBrief, type AutomationStudioProjectBuilderReturn, type AutomationStudioProjectFailingTrial, type AutomationStudioProjectReceiptRef, type AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";

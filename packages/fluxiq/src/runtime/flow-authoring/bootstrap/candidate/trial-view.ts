@@ -39,8 +39,8 @@
 // gets the same look, says no trial ran, and is answered as having moved it.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/evidence-loop.ts";
-import { AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY as DESCRIBED } from "../../../agents/llm/node-tools/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY as DESCRIBED } from "../../../llm/node-tools/index.ts";
 
 /** What the model is told beside the page. */
 const VIEW_NOTE = "pageAfterTrial is the page as this trial left it, with the handles to use now. A handle from a view before this trial may name a page that is no longer there.";

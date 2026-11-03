@@ -38,7 +38,7 @@
 
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioRuntimePatch } from "../../agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch } from "../../llm/index.ts";
 
 /** The node id an inserted step takes, derived so the trial, the record and the apply agree. */
 export function automationStudioInsertedStepNodeId(runId: string, index: number): string {

@@ -9,7 +9,7 @@ import type {
   AutomationStudioLlmEvidenceLoopResult,
   AutomationStudioLlmEvidenceLoopTrace,
   AutomationStudioLlmEvidenceLoopUnreadable
-} from "../../../agents/llm/index.ts";
+} from "../../../llm/index.ts";
 import type { AutomationStudioRequestRowsNamed } from "../../../result-verification/request-rows/index.ts";
 import type { AutomationStudioResultVerification } from "../../../result-verification/contracts/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound } from "../generation-failure/index.ts";

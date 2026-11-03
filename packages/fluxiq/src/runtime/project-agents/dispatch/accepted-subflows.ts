@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, type AutomationStudioSubflowProposal } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/evidence-loop.ts";
 
 // Every subflow proposal Core accepted for a brief of one build, with the
 // script its builder sent for it (A8 social `run-mv96rz6h`, t622). A repair

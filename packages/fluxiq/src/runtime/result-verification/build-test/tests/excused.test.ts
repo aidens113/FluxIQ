@@ -9,7 +9,7 @@
 // what that means.
 import { describe, expect, it } from "vitest";
 // The llm barrel first, as `../../../llm/decision-context/tests/recorded-runs.ts` says why.
-import "../../../agents/llm/index.ts";
+import "../../../llm/index.ts";
 import type { AutomationStudioFlowDraftReplayOutcome } from "../../../flow-authoring/draft/index.ts";
 import { automationStudioBuildTestResultSummary } from "../summary.ts";
 import { DENIED, SITE, navigate, replayed, report, verified, web } from "./draft-steps.ts";

@@ -26,7 +26,7 @@
 // sent, is `./observation.ts`'s to decide; it screens the result again.
 
 import type { JsonValue } from "../../../core/index.ts";
-import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 
 /** The member of a replayed step's answer that says what it changed. The domain writes the same word. */
 export const AUTOMATION_STUDIO_BUILD_TEST_CHANGE_LINES_KEY = "changed";

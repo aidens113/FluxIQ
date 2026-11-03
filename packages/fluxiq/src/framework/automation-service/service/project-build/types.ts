@@ -1,8 +1,8 @@
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowPort } from "../../../../flows/authoring/model/index.ts";
 import type { automationStudioFlowBootstrapActionPermissions } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskResult } from "../../../../runtime/agents/llm/index.ts";
-import type { AutomationStudioParkingPort } from "../../../../runtime/parking/automation/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskResult } from "../../../../runtime/llm/index.ts";
+import type { AutomationStudioParkingPort } from "../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioHostResourcePort } from "../../../../runtime/project-agents/index.ts";
 import type { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import type { AutomationStudioBuildCancellation } from "../flow-bootstrap-commands/index.ts";

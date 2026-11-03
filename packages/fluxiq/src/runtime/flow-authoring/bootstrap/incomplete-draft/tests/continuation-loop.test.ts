@@ -3,8 +3,8 @@
 // appends to it rather than starting over.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID } from "../../../../agents/llm/evidence-loop/index.ts";
-import { runAutomationStudioLlmEvidenceLoop } from "../../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID } from "../../../../llm/evidence-loop/index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../../../llm/index.ts";
 import { automationStudioFlowBootstrapIncompleteDraftKeeper, type AutomationStudioFlowBootstrapIncompleteDraft } from "../index.ts";
 
 const library = [{ toolId: "run_node", description: "Run one node.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true as const }];

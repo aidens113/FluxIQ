@@ -4,7 +4,7 @@
 // candidate trial and a subflow trial both ask, with a scripted provider. A
 // runtime check keeps none. No model is called.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
 import { CAMP_CEDAR, CAMP_SILVER, CAMP_LARCH, CAMP_OSPREY, CAMP_READ, CAMP_WILLOW, campsiteInstruction, campsiteRunSummary, NAME_CONDITIONS } from "../../refuted-no/tests/campsite-fixture.ts";
 import { CAMPSITE_YES, DROP_NAME_CONDITIONS_NO, GAP_AND_CHANGE_NO, GAP_NO, WRONGLY_LEFT_OUT_NO } from "../../refuted-no/tests/campsite-readings-fixture.ts";

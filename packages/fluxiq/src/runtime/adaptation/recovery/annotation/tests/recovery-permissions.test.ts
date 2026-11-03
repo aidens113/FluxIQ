@@ -19,13 +19,13 @@ import type {
   AutomationStudioFlowInstruction,
   AutomationStudioFlowRunDetail
 } from "../../../../../flows/authoring/model/index.ts";
-import { automationStudioInstructionDigest } from "../../../../action-permissions/automation/index.ts";
+import { automationStudioInstructionDigest } from "../../../../action-permission-requests/index.ts";
 import type {
   AutomationStudioHarnessOptionBundle,
   AutomationStudioLlmProvider,
   AutomationStudioLlmTaskRequest
-} from "../../../../agents/llm/index.ts";
-import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-control/check-schedule/index.ts";
+} from "../../../../llm/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-verification/check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../../../framework/automation-service/service.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 

@@ -33,7 +33,7 @@
 // judge, the whole pair (`callsFit`); otherwise the build ends at the allowance.
 //
 // The reserves come from the purse's own leaf module, never `../../llm/index.ts`: that barrel reaches back into `flow-bootstrap/`, and importing a value from it here closed a module cycle that left the harness undefined in tests.
-import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, type AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, type AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import type { AutomationStudioFlowBootstrapNextRoundHold } from "./budget-exhausted.ts";
 
 /** The judge calls judging one Flow takes at most: a first answer and a second (`../../result-verification/verify.ts`). */

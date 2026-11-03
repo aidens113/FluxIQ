@@ -14,11 +14,11 @@
 // come to disagree about it.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmBuildPurseCharged } from "../../../../runtime/agents/llm/build-purse/index.ts";
+import type { AutomationStudioLlmBuildPurseCharged } from "../../../../runtime/llm/build-purse/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permissions/automation/index.ts";
-import { automationStudioRunNodeStartPages, type AutomationStudioLlmModelCaller } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
+import { automationStudioRunNodeStartPages, type AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
   automationStudioReauthorEndingWatch,

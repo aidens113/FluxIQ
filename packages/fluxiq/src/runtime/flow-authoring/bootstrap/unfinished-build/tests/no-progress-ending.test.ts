@@ -11,8 +11,8 @@
 // and two in a row end it unfinished, the Flow kept, with what is left to do.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "../../generation-failure/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {

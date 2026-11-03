@@ -36,9 +36,9 @@ import {
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioLlmTokenLimits,
   type AutomationStudioSessionKeyPorts
-} from "../../../runtime/agents/llm/index.ts";
+} from "../../../runtime/llm/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm, type AutomationStudioRuntimeRecoveryPorts } from "../../../runtime/adaptation/recovery/index.ts";
-import { resolveAutomationStudioResultCheckSchedule } from "../../../runtime/result-control/check-schedule/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../runtime/result-verification/check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../service.ts";
 
 /** The shape Secret Keys mints its ids in: `secret:` and a UUID. */

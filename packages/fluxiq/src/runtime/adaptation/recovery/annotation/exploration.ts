@@ -73,11 +73,11 @@ import {
   type AutomationStudioLlmRunBudgetLedger,
   type AutomationStudioLlmTaskResult,
   type AutomationStudioLlmTokenLimits
-} from "../../../agents/llm/index.ts";
-import type { AutomationStudioActionPermissionGate } from "../../../action-permissions/automation/index.ts";
-import { automationStudioActivityDecisionReason } from "../../../activity/automation/index.ts";
-import { automationStudioPersonNeededLookCallId, automationStudioToolResultNeedsPerson, type AutomationStudioPermissionAsk } from "../../../parking/automation/index.ts";
-import type { AutomationStudioReusableLlmContextPacket } from "../../../agents/llm/reusable-context.ts";
+} from "../../../llm/index.ts";
+import type { AutomationStudioActionPermissionGate } from "../../../action-permission-requests/index.ts";
+import { automationStudioActivityDecisionReason } from "../../../automation-activity/index.ts";
+import { automationStudioPersonNeededLookCallId, automationStudioToolResultNeedsPerson, type AutomationStudioPermissionAsk } from "../../../automation-parking/index.ts";
+import type { AutomationStudioReusableLlmContextPacket } from "../../../llm/reusable-context.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { resolveAutomationStudioExplorationBudget, type AutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import { AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET } from "../exploration-outcome.ts";
@@ -194,7 +194,7 @@ export type AutomationStudioRecoveryExplorationResult = {
 // builder in `runtime/llm/harness`, which carries only packets labelled that
 // way. The reader is re-exported here, where the target check has always
 // imported it from; it is the same binding, not a copy.
-export { automationStudioExploredEvidenceHandle } from "../../../agents/llm/index.ts";
+export { automationStudioExploredEvidenceHandle } from "../../../llm/index.ts";
 
 /** One bounded exploration on the recovery path, ending in one named outcome. */
 export async function runAutomationStudioRecoveryExploration(

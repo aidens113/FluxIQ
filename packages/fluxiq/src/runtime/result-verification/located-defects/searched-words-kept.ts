@@ -29,7 +29,7 @@
 // request, or no request text, the defect is located as before. Such a no is
 // then re-asked once (`../agreement/unsupported-no.ts`).
 
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioResultNoRecord } from "../refuted-no/index.ts";
 import { automationStudioRequestAsksEveryResult } from "../asked-words/index.ts";
 import { automationStudioRequestRowWords, type AutomationStudioRequestRowWord } from "../request-rows/index.ts";

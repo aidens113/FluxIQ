@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../llm/index.ts";
 import { automationStudioSiteResetUndoesTool } from "../undoes-tool.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../../site-reset/index.ts";
 

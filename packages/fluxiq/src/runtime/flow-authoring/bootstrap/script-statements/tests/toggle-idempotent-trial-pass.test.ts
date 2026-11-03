@@ -17,7 +17,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor/index.ts";
-import type { AutomationStudioPlanControlState } from "../../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioPlanControlState } from "../../../../llm/harness-options/index.ts";
 import { AutomationStudioExploredToggles } from "../../explored-toggles.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import { automationStudioFlowPlanLoopBody } from "../loop-body.ts";

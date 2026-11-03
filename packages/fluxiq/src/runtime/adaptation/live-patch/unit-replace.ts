@@ -19,7 +19,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS } from "../../../framework/automation-service/nodes/control-flow/index.ts";
-import type { AutomationStudioRuntimePatchHandlerSpec, AutomationStudioRuntimePatchStep } from "../../agents/llm/index.ts";
+import type { AutomationStudioRuntimePatchHandlerSpec, AutomationStudioRuntimePatchStep } from "../../llm/index.ts";
 import { automationStudioRuntimePatchHandlerGraph } from "./handler-build.ts";
 import { automationStudioGraphUnits } from "./unit-digest.ts";
 

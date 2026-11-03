@@ -25,7 +25,7 @@
 
 import { describe, expect, it } from "vitest";
 import { executeAutomationStudioRuntimePatch } from "../../../framework/automation-service/index.ts";
-import { isAutomationStudioRuntimeTargetOverrideTarget } from "../../../runtime/agents/llm/index.ts";
+import { isAutomationStudioRuntimeTargetOverrideTarget } from "../../../runtime/llm/index.ts";
 import { normalizeAutomationStudioElementTarget, validateAutomationStudioElementTarget } from "../../../flows/authoring/model/index.ts";
 import { createAutomationStudioElementMatcher } from "../../../runtime/target-matching/fingerprinting/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";

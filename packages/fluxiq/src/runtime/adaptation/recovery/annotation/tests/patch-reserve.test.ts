@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmRunBudgetLedger, estimateAutomationStudioDeepSeekCostUsd } from "../../../../agents/llm/index.ts";
+import { AutomationStudioLlmRunBudgetLedger, estimateAutomationStudioDeepSeekCostUsd } from "../../../../llm/index.ts";
 import { AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS, AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS } from "../../exploration-budget.ts";
 import { holdAutomationStudioRecoveryPatchReserve } from "../patch-reserve.ts";
 

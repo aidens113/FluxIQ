@@ -22,8 +22,8 @@
 // something with a lasting consequence meets the recovery's permission gate
 // with nothing permitted and raises a request for the person.
 
-import { redeemAutomationStudioUnattendedRepairAuthorization, type AutomationStudioUnattendedRepairRedemption } from "../../../../runtime/result-control/check-authorization/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmProviderResolution } from "../../../../runtime/agents/llm/index.ts";
+import { redeemAutomationStudioUnattendedRepairAuthorization, type AutomationStudioUnattendedRepairRedemption } from "../../../../runtime/result-verification/check-authorization/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmProviderResolution } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioResultCheckProviderRequest, AutomationStudioResultCheckProviderResolution } from "./result-check.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";
 

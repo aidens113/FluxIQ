@@ -5,7 +5,7 @@
 
 import { isDeepStrictEqual } from "node:util";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion, type AutomationStudioFlowBootstrapCompletionVerdict } from "../../../agents/llm/harness-options/index.ts";
+import { checkAutomationStudioFlowBootstrapCompletion, checkAutomationStudioFlowBootstrapPlanCompletion, type AutomationStudioFlowBootstrapCompletionVerdict } from "../../../llm/harness-options/index.ts";
 import { automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript } from "../authoring/index.ts";
 import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).

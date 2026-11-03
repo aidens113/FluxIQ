@@ -6,7 +6,7 @@
 // every run value is. No model is called: the provider is scripted.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { summarizeAutomationStudioRunResult } from "../../../result-summary.ts";
 import { verifyAutomationStudioRunResult } from "../../../verify.ts";
 

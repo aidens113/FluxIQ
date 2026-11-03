@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidencePlanningStep, AutomationStudioLlmEvidencePlanningTools } from "../../agents/llm/evidence-progress/index.ts";
+import type { AutomationStudioLlmEvidencePlanningStep, AutomationStudioLlmEvidencePlanningTools } from "../../llm/evidence-progress/index.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET } from "./look-budget.ts";

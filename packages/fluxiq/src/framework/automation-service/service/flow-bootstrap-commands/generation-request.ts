@@ -13,8 +13,8 @@
 
 import { automationStudioFlowStartLocation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioBootstrapAdaptationMode } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../../../runtime/action-permissions/automation/index.ts";
-import type { AutomationStudioLlmModelCaller } from "../../../../runtime/agents/llm/index.ts";
+import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
+import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
 import { assertExactObjectFields, requiredBootstrapCommandId } from "./field-readings.ts";
 
 /** The fields a generation request may carry, and the fields its caller may carry. */

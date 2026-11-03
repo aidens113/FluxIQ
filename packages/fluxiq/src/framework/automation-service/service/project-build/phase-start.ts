@@ -13,7 +13,7 @@ import {
 } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import type { AutomationStudioSubflowScope } from "../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
 import type { runAutomationStudioDetachedSubflow } from "../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
-import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/index.ts";
 import { automationStudioCandidateTrialStart, type AutomationStudioCandidateTrialStart } from "../candidate-trial/index.ts";
 import type { AutomationStudioBuildCancellation } from "../flow-bootstrap-commands/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";

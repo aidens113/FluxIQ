@@ -8,7 +8,7 @@
 // nothing Core can find stays unsure. On the made-up library account of
 // `../../../located-defects/tests/act-only-fixture.ts`. No model is called.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun } from "../../../contracts/index.ts";
 import { REMINDER_MISSING_NO, REMINDER_OTHER_NO, REMINDER_WRONG_NO, reminderInstruction, reminderRunSummary } from "../../../located-defects/tests/act-only-fixture.ts";
 import { MIXED_ACT_NO, MIXED_ROW_NO, mixedInstruction, mixedRunSummary } from "../../../located-defects/tests/mixed-fixture.ts";

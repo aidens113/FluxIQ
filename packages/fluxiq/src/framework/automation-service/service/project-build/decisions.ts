@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioActivityDecisionReason } from "../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityDecisionReason } from "../../../../runtime/automation-activity/index.ts";
 import { flowBootstrapHarnessFailure, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioLlmUnusableDecisionError, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmHarnessInput, type AutomationStudioLlmTaskResult } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioLlmUnusableDecisionError, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmHarnessInput, type AutomationStudioLlmTaskResult } from "../../../../runtime/llm/index.ts";
 import type { generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 
 // Every model decision of a project build (unit A5c): the supervisor's, each

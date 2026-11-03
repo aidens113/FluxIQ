@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftSavedInput, automationStudioFlowDraftScheduledCandidateCall } from "../index.ts";
-import { automationStudioFlowDraftSeedFromFlow } from "../../../../agents/llm/node-tools/index.ts";
+import { automationStudioFlowDraftSeedFromFlow } from "../../../../llm/node-tools/index.ts";
 import { automationStudioFlowDraftStepActDone, automationStudioFlowDraftStepReplayMode } from "../../index.ts";
 
 function seed(consequences: string[] | null = [], start = true, declarationRequired?: () => boolean) {

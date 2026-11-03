@@ -33,7 +33,7 @@
 // this file, which is where the decision belongs.
 
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioLlmRunBudgetDiagnostic } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioLlmRunBudgetDiagnostic } from "../../llm/index.ts";
 
 /**
  * The only endings there are. An exploration that ended for a reason outside

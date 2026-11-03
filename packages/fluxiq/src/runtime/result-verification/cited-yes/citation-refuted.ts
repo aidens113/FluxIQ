@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmVerificationChecked } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationChecked } from "../../llm/index.ts";
 import { AutomationStudioRequestRowId } from "../request-rows/index.ts";
 
 /** A cell as the located defects compare one: lower case, each run of spaces one, no closing stop (`../located-defects/row-cells.ts`). */

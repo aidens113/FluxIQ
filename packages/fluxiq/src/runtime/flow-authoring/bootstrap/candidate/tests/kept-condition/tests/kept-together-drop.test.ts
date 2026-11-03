@@ -11,7 +11,7 @@
 // site, item or answer of any realistic scenario; the provider is scripted.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../../../../../result-verification/index.ts";
 import { CAMP_BLUEWATER, CAMP_READ, campsiteInstruction, campsiteRunSummary } from "../../../../../../result-verification/refuted-no/tests/campsite-fixture.ts";
 import {

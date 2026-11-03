@@ -2,7 +2,7 @@
 // undo a trial refusal demands, in any role; and no note forbids a step the brief's parts may require.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../../runtime/llm/index.ts";
 import { automationStudioProjectBuildBriefTold as told } from "../index.ts";
 
 type Call = Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[0];

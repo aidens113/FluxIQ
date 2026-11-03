@@ -3,8 +3,8 @@
 // the judge counts against it like the build and the repairs.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../agents/llm/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from "../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { RUN_MUW60J7C_REQUEST, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary } from "../request-rows/tests/run-muw60j7c.ts";
 import { verifyAutomationStudioRunResult } from "../verify.ts";
 

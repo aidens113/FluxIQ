@@ -24,7 +24,7 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
-import { automationStudioModelFacingControlText, automationStudioModelFacingControlWords } from "../../../../runtime/agents/llm/model-facing/index.ts";
+import { automationStudioModelFacingControlText, automationStudioModelFacingControlWords } from "../../../../runtime/llm/model-facing/index.ts";
 
 /** The longest read value said as a step's control: past it, the words are no short name for the step (header). */
 const MAX_READ_WORDS = 160;

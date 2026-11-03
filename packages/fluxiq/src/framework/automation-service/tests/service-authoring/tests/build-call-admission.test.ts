@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
 import { AutomationStudioService } from "../../../index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { blankFixture, caller, expectNoTopology, isJudgeRequest, judgeReply, mockProvider, permissionScopedNativeRuntime, rejectedGenerationDiagnostic } from "../../service-bootstrap/index.ts";
 
 it("bounds a fresh service build's reader, decisions and judges before sends and preserves failed aggregate", async () => {

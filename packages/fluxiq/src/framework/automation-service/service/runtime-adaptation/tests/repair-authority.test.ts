@@ -2,8 +2,8 @@
 // the two things it deliberately does not buy: permission to act, and any task
 // kind outside the repair.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES } from "../../../../../runtime/result-control/check-authorization/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES } from "../../../../../runtime/result-verification/check-authorization/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../contracts.ts";
 import { resolveAutomationStudioUnattendedRepairAuthority } from "../repair-authority.ts";
 

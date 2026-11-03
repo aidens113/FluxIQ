@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import type { AutomationStudioResultVerification, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
-import type { AutomationStudioLlmDiagnosisFields } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { automationStudioResultNoRecord, automationStudioResultRefutedReading } from "../../refuted-no/index.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioResultChangeCountClaim } from "../index.ts";

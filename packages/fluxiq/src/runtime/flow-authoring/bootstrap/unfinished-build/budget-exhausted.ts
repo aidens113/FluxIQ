@@ -33,8 +33,8 @@
 // "Its last check found", in a person's words
 // (`automationStudioActivityPersonWords`): never "the judge", "Step 8" or
 // "dedup".
-import { automationStudioActivityPersonWords } from "../../../activity/automation/index.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../agents/llm/index.ts";
+import { automationStudioActivityPersonWords } from "../../../automation-activity/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../llm/index.ts";
 import {
   type AutomationStudioFlowBootstrapBudgetBound,
   type AutomationStudioFlowBootstrapBuildEnding

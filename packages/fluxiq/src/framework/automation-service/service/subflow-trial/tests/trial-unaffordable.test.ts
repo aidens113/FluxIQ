@@ -2,7 +2,7 @@
 // under can hold both judge calls at their worst case (`../../candidate-trial/judging-fits.ts`).
 
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../../../runtime/agents/llm/build-purse/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../../../runtime/llm/build-purse/index.ts";
 import { automationStudioSubflowTrialPort, runAutomationStudioSubflowTrial } from "../index.ts";
 import { subflowTrialFixture as fixture } from "./fixtures.ts";
 

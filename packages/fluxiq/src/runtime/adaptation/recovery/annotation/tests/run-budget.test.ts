@@ -5,7 +5,7 @@ import {
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD as CEILING,
   AutomationStudioLlmRunBudgetLedger,
   estimateAutomationStudioDeepSeekCostUsd
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
   resolveAutomationStudioRecoveryRunBudget

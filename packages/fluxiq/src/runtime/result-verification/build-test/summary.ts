@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harness-options/index.ts";
 // What the judge of a build's test is shown: every step the Flow proposes, in
 // order, each with its own words and how the test answered it.
 //
@@ -126,7 +126,7 @@ import {
   automationStudioLocatorShapedText,
   automationStudioWithoutLocators,
   screenAutomationStudioLlmEvidence
-} from "../../agents/llm/index.ts";
+} from "../../llm/index.ts";
 import type { AutomationStudioBuildTestAccount, AutomationStudioBuildTestNote, AutomationStudioBuildTestStep } from "../contracts/index.ts";
 import {
   automationStudioResultEndView,

@@ -21,13 +21,13 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioFlowCandidate } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../../../../../runtime/flow-authoring/bootstrap/plan/index.ts";
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored } from "../../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal, type AutomationStudioSubflowScope } from "../../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { automationStudioArrivalPlanNode } from "../../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { automationStudioProjectStructurePlan, automationStudioProjectTaskSpec } from "../../../../../runtime/project-agents/contracts/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../../../runtime/project-agents/host-resources/index.ts";
 import { StubHost } from "../../../../../runtime/project-agents/host-resources/tests/stub-host.ts";

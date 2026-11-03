@@ -89,7 +89,7 @@ export const CONFIG = {
       reason: "Host ports own the contracts consumed by the engine; they cannot depend back on the executor."
     },
     {
-      from: "packages/fluxiq/src/runtime/agents/llm",
+      from: "packages/fluxiq/src/runtime/llm",
       to: "packages/fluxiq/src/runtime/adaptation/recovery",
       valueOnly: true,
       reason: "runtime/llm must not import a value out of runtime/recovery: recovery drives the evidence loop out of runtime/llm, so the return edge closes a module cycle and a constant read at module-evaluation time arrives undefined with a clean type check. Import the type if that is what you need, call the value from the coordinator that already owns both sides, or move the shared value into runtime/loop-limits/, which neither directory owns."
@@ -129,8 +129,8 @@ export const CONFIG = {
       "packages/fluxiq/src/framework/automation-service/nodes/action-effect/index.ts",
       "packages/fluxiq/src/framework/automation-service/actionability/index.ts",
       "packages/fluxiq/src/runtime/target-matching/fingerprinting/index.ts",
-      "packages/fluxiq/src/runtime/agents/llm/models/index.ts",
-      "packages/fluxiq/src/runtime/action-permissions/automation/client/index.ts",
+      "packages/fluxiq/src/runtime/llm/models/index.ts",
+      "packages/fluxiq/src/runtime/action-permission-requests/client/index.ts",
       "packages/fluxiq/src/framework/automation-service/panel-capabilities/client/index.ts",
       "packages/fluxiq/src/client-gateway/contracts.ts",
       "packages/client-gateway-websocket/src/index.ts",
@@ -168,7 +168,7 @@ export const CONFIG = {
       // the gate is the one place it is built. A field that stopped arriving --
       // the consequence, the control's name -- would ask a person a question
       // they cannot answer, with every gate green.
-      path: "packages/fluxiq/src/runtime/action-permissions/automation",
+      path: "packages/fluxiq/src/runtime/action-permission-requests",
       reason: "the action-permission gate builds the request a run carries out to a person, and the grant's permission set",
       remedy: "Write each field by name, passing an absent value as `null`."
     }
@@ -251,22 +251,22 @@ export const CONFIG = {
     {
       name: "trace-free model guidance",
       from: [
-        "packages/fluxiq/src/runtime/agents/llm/model-facing/",
-        "packages/fluxiq/src/runtime/agents/llm/deepseek/system-prompt.ts",
-        "packages/fluxiq/src/runtime/agents/llm/provider-task/system-prompt.ts",
-        "packages/fluxiq/src/runtime/agents/llm/provider-task/request-messages.ts",
-        "packages/fluxiq/src/runtime/agents/llm/anthropic/request.ts",
-        "packages/fluxiq/src/runtime/agents/llm/domain-instructions/",
-        "packages/fluxiq/src/runtime/agents/llm/diagnosis-instructions.ts",
-        "packages/fluxiq/src/runtime/agents/llm/stages/instructions.ts",
-        "packages/fluxiq/src/runtime/agents/llm/node-tools/node-descriptions.ts",
+        "packages/fluxiq/src/runtime/llm/model-facing/",
+        "packages/fluxiq/src/runtime/llm/deepseek/system-prompt.ts",
+        "packages/fluxiq/src/runtime/llm/provider-task/system-prompt.ts",
+        "packages/fluxiq/src/runtime/llm/provider-task/request-messages.ts",
+        "packages/fluxiq/src/runtime/llm/anthropic/request.ts",
+        "packages/fluxiq/src/runtime/llm/domain-instructions/",
+        "packages/fluxiq/src/runtime/llm/diagnosis-instructions.ts",
+        "packages/fluxiq/src/runtime/llm/stages/instructions.ts",
+        "packages/fluxiq/src/runtime/llm/node-tools/node-descriptions.ts",
         "packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/catalog.ts",
         "packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/catalog-names.ts",
         "packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/flow-script-format.ts",
         "packages/fluxiq/src/runtime/flow-authoring/bootstrap/offline-first/",
         "packages/fluxiq/src/runtime/project-agents/supervisor/system-instructions.ts",
         "packages/fluxiq/src/runtime/project-agents/supervisor/guidance.ts",
-        "packages/fluxiq/src/runtime/interaction/conversations/instructions/prompt.ts"
+        "packages/fluxiq/src/runtime/conversations/instructions/prompt.ts"
       ],
       to: [
         "packages/fluxiq/src/client-gateway/trace/",

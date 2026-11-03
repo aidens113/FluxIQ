@@ -4,7 +4,7 @@
 // located as before. Run `run-mvskodlp-9966d618`'s shape, on the made-up club
 // board of `./club-posts-fixture.ts`.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmVerificationDefect } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../../llm/index.ts";
 import { automationStudioResultNoRecord } from "../../refuted-no/index.ts";
 import { automationStudioRequestWording } from "../../request-rows/index.ts";
 import { automationStudioResultDefectsLocated } from "../index.ts";

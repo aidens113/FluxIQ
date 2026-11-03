@@ -117,7 +117,7 @@ const REFUSAL_REASONS: readonly Reason[] = [
   // (`AUTOMATION_STUDIO_REPEATED_ANSWER_REASON`, `answered_the_same_again`):
   // the cause was said on the first of them, and
   // the chat's observer carries it onto the repeats where it saw it
-  // (`runtime/activity/automation/repeated-reason.ts`). Never a
+  // (`runtime/automation-activity/repeated-reason.ts`). Never a
   // page miss: the repeats of a list read refused for its list read "it wasn't
   // on the page" (R2-U-6, `run-muwansvz-a2b4a987`, steps 0039 and 0046).
   { words: new RegExp(`_(${AUTOMATION_STUDIO_REPEATED_ANSWER_REASON}|same_answer_again)_`, "u"), why: "FluxIQ didn't send it, for the same reason as the time before", read: "FluxIQ didn't read it, for the same reason as the time before" },
@@ -143,7 +143,7 @@ const REFUSAL_REASONS: readonly Reason[] = [
 
 /**
  * Why a step a test of the Flow ran did not hold, by its replay code
- * (`runtime/agents/llm/node-tools/replay.ts`). It read "it
+ * (`runtime/llm/node-tools/replay.ts`). It read "it
  * didn't work the same way again" for all of them, so a card said "Didn't
  * work: it didn't work the same way again" -- the result twice and no reason
  * (t174-w111 D21, `run-musq0b1m-0472cfa0`).

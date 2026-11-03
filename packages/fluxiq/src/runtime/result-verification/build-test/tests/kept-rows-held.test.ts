@@ -9,7 +9,7 @@
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { ORGANIZER, SCREW_PACKS } from "../../request-rows/tests/kept-rows-fixture.ts";
 import { summarizeAutomationStudioRunResult } from "../../result-summary.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";

@@ -58,9 +58,9 @@ import {
   type AutomationStudioInstructionRouteAccessor,
   type AutomationStudioInstructionRouteReading,
   type AutomationStudioInstructionText
-} from "../../../runtime/action-permissions/automation/index.ts";
+} from "../../../runtime/action-permission-requests/index.ts";
 import { automationStudioInstructedActs } from "../../../runtime/flow-authoring/bootstrap/index.ts";
-import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type runAutomationStudioLlmHarness } from "../../../runtime/agents/llm/index.ts";
+import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type runAutomationStudioLlmHarness } from "../../../runtime/llm/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 
 type HarnessInput = Parameters<typeof runAutomationStudioLlmHarness>[0];

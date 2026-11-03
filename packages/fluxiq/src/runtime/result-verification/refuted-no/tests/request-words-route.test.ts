@@ -12,7 +12,7 @@
 // (`../../../flow-bootstrap/candidate/trial-gate.ts`, `closedDigests`), and a
 // subflow trial's gate the same way: the unknown below never reaches it.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskChecklist } from "../../build-test/index.ts";
 import {
   DROPPED_INCLUDING_NO, LIBRARY_YES, MISSING_LIST_NO, MISSING_QUALIFYING_NO, UNREAD_TITLE_NO

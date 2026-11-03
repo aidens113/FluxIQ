@@ -1,4 +1,4 @@
-import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, type AutomationStudioLlmBuildPurseJudging } from "../../../../runtime/agents/llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, type AutomationStudioLlmBuildPurseJudging } from "../../../../runtime/llm/build-purse/index.ts";
 
 // What the project supervisor keeps back of the Flow's purse (plan:
 // Invariants, `Allowance`): the judged whole run, and one repair round, sized

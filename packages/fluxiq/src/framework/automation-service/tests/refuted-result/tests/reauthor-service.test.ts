@@ -9,7 +9,7 @@ import {
   AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
   type AutomationStudioNodeDefinition,
 } from "../../../nodes/index.ts";
-import { AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioRuntimeSessionLlmIntent } from "../../../../../runtime/agents/llm/index.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioRuntimeSessionLlmIntent } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import {
   AutomationStudioService,

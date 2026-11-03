@@ -96,8 +96,8 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../../flows/authoring/model/index.ts";
-import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../../agents/llm/harness/index.ts";
-import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../agents/llm/model-facing/index.ts";
+import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../../llm/harness/index.ts";
+import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
 import { automationStudioFlowGraphSection, automationStudioScreenedAuthoredState, automationStudioStepParametersSection } from "./repair-context/index.ts";
 
 /**

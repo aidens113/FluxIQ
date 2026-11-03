@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../../../runtime/project-agents/host-resources/index.ts";
 import { StubHost } from "../../../../../runtime/project-agents/host-resources/tests/stub-host.ts";
 import type { AutomationStudioProjectBuildRecordStore } from "../../../../../runtime/project-agents/index.ts";

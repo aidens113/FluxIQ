@@ -5,7 +5,7 @@
 // split. Now its recheck's yes is taken, keeping the advice's code, and the two yeses finish the test. Both a candidate
 // trial and a subflow trial ask this judge. No model is called; the provider is scripted.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { WAITLIST_INSTRUCTION, WAITLIST_REQUEST, WAITLIST_YES, waitlistRunSummary } from "../../value-readings/tests/tool-waitlist-fixture.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskChecklist } from "../index.ts";
 

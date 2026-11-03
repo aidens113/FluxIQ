@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { automationStudioPanelCapabilityVocabulary, parseAutomationStudioPanelCapabilities } from "../index.ts";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
-const packageRoot = path.resolve(testsDir, "..", "..", "..", "..", "..", "..", "..");
+const packageRoot = path.resolve(testsDir, "..", "..", "..", "..", "..", "..");
 const subpath = "./automation-studio/panel-capabilities";
 
 describe("the browser-safe panel-capabilities subpath", () => {

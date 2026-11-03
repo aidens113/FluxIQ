@@ -47,7 +47,7 @@ const listed = CONTRACT_TESTS.map((entry) => `${entry.package}/${entry.file}`);
 
 test("the contract list names the three prompt contract tests", () => {
   assert.deepEqual(listed, [
-    "packages/fluxiq/src/runtime/agents/llm/deepseek/tests/system-prompt.test.ts",
+    "packages/fluxiq/src/runtime/llm/deepseek/tests/system-prompt.test.ts",
     "packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/tests/extraction-vocabulary.test.ts",
     "packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/tests/issue-feedback.test.ts"
   ]);

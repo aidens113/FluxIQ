@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES, automationStudioFlowDraftReplayClearedCode, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/index.ts";
-import { AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS, AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, type AutomationStudioAsk, type AutomationStudioAskAnswer, type AutomationStudioParkingPort } from "../../../parking/automation/index.ts";
+import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES, automationStudioFlowDraftReplayClearedCode, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS, AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, type AutomationStudioAsk, type AutomationStudioAskAnswer, type AutomationStudioParkingPort } from "../../../automation-parking/index.ts";
 import { parseAutomationStudioFlowBootstrapFailureDiagnostic } from "../generation-failure/index.ts";
 import { automationStudioFlowBootstrapPersonNeeded } from "../person-needed.ts";
 

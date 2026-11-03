@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { candidateSourceFixture as fixture } from "./fixtures.ts";
 import { AutomationStudioCandidateSource as Source } from "../source.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
-import { resolveAutomationStudioLlmInstructions } from "../../../../../runtime/agents/llm/index.ts";
+import { resolveAutomationStudioLlmInstructions } from "../../../../../runtime/llm/index.ts";
 
 it("retains full originals and explicit inapplicable exclusions with immutable bytes", () => {
   const original = fixture.instruction(), excluded = fixture.instruction({ instructionId: "instruction.other", scope: { kind: "flow", projectId: "project.other", flowId: "flow.other" } });

@@ -10,9 +10,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { activityActionKey } from "../../../ui/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../activity/automation/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../automation-activity/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
-import type { AutomationStudioLlmProvider } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioBuildTestResultSummary } from "../build-test/index.ts";
 import { verifyAutomationStudioRunResult } from "../verify.ts";
 

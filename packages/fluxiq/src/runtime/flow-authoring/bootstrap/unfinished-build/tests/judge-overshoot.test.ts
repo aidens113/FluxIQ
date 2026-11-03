@@ -4,7 +4,7 @@
 // its overshoot used to reach the purse and not the build's accounting.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { AutomationStudioLlmBuildPurse } from "../../../../agents/llm/build-purse/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../../llm/build-purse/index.ts";
 import { runAutomationStudioFlowBootstrapBuildPhases } from "../index.ts";
 
 function step(position: number): AutomationStudioFlowDraftStep {

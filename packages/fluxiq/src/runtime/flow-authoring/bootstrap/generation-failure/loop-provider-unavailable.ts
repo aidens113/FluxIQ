@@ -22,7 +22,7 @@
 // (`../unfinished-build/provider-unavailable.ts`), which also knows its
 // checklist and what it kept. The provider's own message is never said: only
 // the closed words `../../llm/unanswered-calls.ts` gives each code.
-import type { AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
 // Types only: `./build-ending.ts` is on a module cycle through `loop-limits/`, and this file stays off it.
 import type { AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 

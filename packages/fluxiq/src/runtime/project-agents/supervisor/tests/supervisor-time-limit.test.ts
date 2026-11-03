@@ -17,7 +17,7 @@
 // asserted is asserted on that clock instead: which deadline fired, which was
 // still pending, and that the run cleared both when it returned.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import type { AutomationStudioProjectBuilderReturn } from "../../contracts/index.ts";
 import type { AutomationStudioProjectDispatchRequest } from "../../dispatch/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS, type AutomationStudioProjectSupervisorClock } from "../index.ts";

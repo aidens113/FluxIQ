@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../core/index.ts";
-import { emitAutomationStudioActivity } from "../../activity/automation/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../agents/llm/decision-handlers/index.ts";
-import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../agents/llm/evidence-loop.ts";
+import { emitAutomationStudioActivity } from "../../automation-activity/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../llm/decision-handlers/index.ts";
+import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../llm/evidence-loop.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "./brief-sizing.ts";
 import type { AutomationStudioProjectSupervisorContext } from "./context.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";

@@ -38,7 +38,7 @@
 // and nothing new is persisted: the trace is the session's own, in memory.
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../agents/llm/index.ts";
+import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 import type { AutomationStudioResultFlowStepSummary } from "./contracts/index.ts";
 
 /** One traced attempt, as far as this reads it. */

@@ -18,7 +18,7 @@
 // Either way the ending's own code is left exactly as it was. The pointer added
 // beside it says only that the work was kept, never that the build succeeded.
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../agents/llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../llm/evidence-loop/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../generation-failure/index.ts";
 import { automationStudioFlowBootstrapIncompleteDraftContinuation, type AutomationStudioFlowBootstrapIncompleteDraftContinuation } from "./continuation.ts";
 import { automationStudioFlowBootstrapIncompleteDraftKept } from "./kept.ts";

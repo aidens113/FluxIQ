@@ -5,7 +5,7 @@
 // Core could not confirm, held for its rows, or standing beside a repair
 // completes nothing, and the model decides as before.
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityDecisionReason } from "../../../../../../activity/automation/index.ts";
+import { automationStudioActivityDecisionReason } from "../../../../../../automation-activity/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, type AutomationStudioSubflowTrialKeptEveryRowRead, type AutomationStudioSubflowTrialResult } from "../../../index.ts";
 import { answerOf, runBuilder, submitCall, twoSteps, type Entry } from "./then-fixture.ts";
 

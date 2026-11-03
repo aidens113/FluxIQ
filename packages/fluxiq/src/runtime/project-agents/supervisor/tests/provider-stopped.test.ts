@@ -6,8 +6,8 @@
 // loop a guard stopped still resets first. Run on the build of
 // `./supervisor-fixture.ts` with its real lasting-act ledger.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmBuildPurse } from "../../../agents/llm/build-purse/index.ts";
-import { AutomationStudioLlmUnusableDecisionError } from "../../../agents/llm/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
+import { AutomationStudioLlmUnusableDecisionError } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
 import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
 import { FIND, HOLD, brief, call, dispatch, supervise, type Step } from "./supervisor-script.ts";

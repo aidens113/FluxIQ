@@ -20,7 +20,7 @@ import type { AutomationStudioFlowInstruction } from "../../../../../flows/autho
 // own imports, and loaded first it would find them not yet evaluated.
 import { verifyAutomationStudioRunResult } from "../../../verify.ts";
 import { REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary } from "../../../request-rows/tests/request-words-fixture.ts";
-import { createAutomationStudioDeepSeekProvider } from "../../../../agents/llm/deepseek/index.ts";
+import { createAutomationStudioDeepSeekProvider } from "../../../../llm/deepseek/index.ts";
 
 const instruction: AutomationStudioFlowInstruction = {
   schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Collect the catalogue", body: REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS,

@@ -2,7 +2,7 @@
 // split from action-permissions.test.ts when that file passed its line budget.
 
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationStudioActionDeclaration } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionDeclaration } from "../../../action-permission-requests/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../action-permissions.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetCalls } from "../site-reset/index.ts";
 

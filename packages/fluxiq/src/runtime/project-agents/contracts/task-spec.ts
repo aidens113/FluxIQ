@@ -1,4 +1,4 @@
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import { automationStudioProjectDigest } from "./digest.ts";
 import type { AutomationStudioProjectInstructionSource } from "./instruction-source.ts";
 import type { AutomationStudioProjectTaskEffect } from "./task-effect.ts";

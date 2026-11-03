@@ -3,7 +3,7 @@
 // states on its result -- so that build makes no digest call.
 
 // The llm barrel first: `runtime/loop-limits/` imports back into it.
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioBootstrapStateDigestHook } from "../state-digest.ts";
 

@@ -9,7 +9,7 @@
 
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowArtifact, AutomationStudioFlowRunSummary } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioTrainingAdaptationSummary } from "../../../../runtime/adaptation/training-modes.ts";
-import { resolveAutomationStudioResultCheckSchedule } from "../../../../runtime/result-control/check-schedule/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../../runtime/result-verification/check-schedule/index.ts";
 import { behaviorForAutomationStudioTrainingMode, computeAutomationStudioStabilityMetrics, decideAutomationStudioTrainingBudget } from "../../../../runtime/adaptation/training-modes.ts";
 import { adaptationPolicyFromFlowMetadata, mergedFlowSettingsMetadata, trainingModeSettingsFromMetadata } from "../flow-settings/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";

@@ -1,5 +1,5 @@
 import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseAllowanceRefusal } from "../../agents/llm/build-purse/index.ts";
+import type { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseAllowanceRefusal } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioProjectDispatchSizedAtStart } from "./allowance-said.ts";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioLocatorShapedText, automationStudioWithoutLocators } from "../../../../agents/llm/harness/index.ts";
+import { automationStudioLocatorShapedText, automationStudioWithoutLocators } from "../../../../llm/harness/index.ts";
 import { automationStudioScreenedNodeParameters } from "../parameter-screen.ts";
 
 // How a withheld parameter is *named*, as opposed to which values are carried.

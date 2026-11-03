@@ -12,9 +12,9 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioHarnessOptionBundle, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
-import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../../parking/automation/index.ts";
-import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-control/check-schedule/index.ts";
+import type { AutomationStudioHarnessOptionBundle, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
+import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../../automation-parking/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-verification/check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../../../framework/automation-service/service.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 

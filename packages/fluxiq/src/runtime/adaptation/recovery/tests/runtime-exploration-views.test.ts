@@ -4,7 +4,7 @@
 // registry binding.
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { automationStudioHarnessOptionRegistry } from "../../../agents/llm/index.ts";
+import { automationStudioHarnessOptionRegistry } from "../../../llm/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import { runAutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
 

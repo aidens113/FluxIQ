@@ -48,9 +48,9 @@ import {
   type AutomationStudioRefutedResultRepairPort,
   type AutomationStudioResultRepairPurse
 } from "../../../../runtime/adaptation/recovery/refuted-result/index.ts";
-import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/agents/llm/build-purse/index.ts";
-import { automationStudioLlmBuildTrace } from "../../../../runtime/agents/llm/evidence-progress/index.ts";
-import { AutomationStudioLlmRunBudgetLedger } from "../../../../runtime/agents/llm/index.ts";
+import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/llm/build-purse/index.ts";
+import { automationStudioLlmBuildTrace } from "../../../../runtime/llm/evidence-progress/index.ts";
+import { AutomationStudioLlmRunBudgetLedger } from "../../../../runtime/llm/index.ts";
 import { automationStudioReauthorBuild, type AutomationStudioReauthorBuildDependencies, type AutomationStudioReauthorBuilt } from "./reauthor-build.ts";
 
 type RepairRequest = Parameters<AutomationStudioRefutedResultRepairPort>[0];

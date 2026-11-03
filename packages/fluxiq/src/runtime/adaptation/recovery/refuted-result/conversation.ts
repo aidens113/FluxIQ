@@ -18,7 +18,7 @@ import {
   type AutomationStudioConversationSubject,
   type AutomationStudioConversationThreadPage,
   type AutomationStudioConversationTurn
-} from "../../../interaction/conversations/index.ts";
+} from "../../../conversations/index.ts";
 
 /** The narrow slice of the conversations collaborator this reads. */
 export type AutomationStudioRecoveryConversationReader = {

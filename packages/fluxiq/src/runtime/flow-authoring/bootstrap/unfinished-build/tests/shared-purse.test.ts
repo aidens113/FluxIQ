@@ -5,13 +5,13 @@
 // Rounds are scripted: each charges the purse it is handed as its calls would.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { AutomationStudioLlmBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../../../agents/llm/build-purse/index.ts";
+import { AutomationStudioLlmBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../../../llm/build-purse/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
   type AutomationStudioLlmEvidenceLoopAccounting,
   type AutomationStudioLlmEvidenceLoopBudget,
   type AutomationStudioLlmEvidenceLoopResult
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   runAutomationStudioFlowBootstrapBuildPhases,

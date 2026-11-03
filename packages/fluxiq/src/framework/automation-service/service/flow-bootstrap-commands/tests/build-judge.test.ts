@@ -9,7 +9,7 @@ import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions
 import { automationStudioFlowBootstrapJudgeFinished, automationStudioFlowBootstrapRepairingJudgedSaid } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../../../runtime/flow-authoring/bootstrap/plan/tests/index.ts";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { checkAutomationStudioFlowBootstrapCompletion, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/agents/llm/index.ts";
+import { checkAutomationStudioFlowBootstrapCompletion, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { automationStudioFlowBootstrapBuildJudge } from "../build-judge.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };

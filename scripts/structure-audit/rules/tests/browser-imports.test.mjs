@@ -13,7 +13,7 @@ import ts from "typescript";
 import { run } from "../browser-imports.mjs";
 
 const NODES = "packages/fluxiq/src/framework/automation-service/nodes";
-const PARKING = "packages/fluxiq/src/runtime/parking/automation";
+const PARKING = "packages/fluxiq/src/runtime/automation-parking";
 
 const BUNDLES = {
   consumer: "the fixture browser bundle",

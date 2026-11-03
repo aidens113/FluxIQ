@@ -42,8 +42,8 @@
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../flows/authoring/model/index.ts";
-import { screenAutomationStudioLlmEvidence } from "../agents/llm/index.ts";
-import { automationStudioModelFacingControlWords } from "../agents/llm/model-facing/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
+import { automationStudioModelFacingControlWords } from "../llm/model-facing/index.ts";
 import type { AutomationStudioResultNarrowingStep } from "./contracts/index.ts";
 import { automationStudioResultNarrowingGroup } from "./narrowing-group.ts";
 

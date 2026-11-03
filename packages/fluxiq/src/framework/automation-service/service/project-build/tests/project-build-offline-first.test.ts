@@ -6,7 +6,7 @@
 // the site, and completes only on a live yes. On the offline harnesses'
 // traced gateway; the judge is a scripted provider, no model is called.
 import { afterEach, describe, expect, it } from "vitest";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../../../runtime/project-agents/host-resources/index.ts";
 import { StubHost } from "../../../../../runtime/project-agents/host-resources/tests/stub-host.ts";
 import type { AutomationStudioProjectBuildRecordStore } from "../../../../../runtime/project-agents/index.ts";

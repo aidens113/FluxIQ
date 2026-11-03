@@ -109,8 +109,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowIntervention } from "../../../flows/authoring/model/index.ts";
-import { automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmProvider } from "../../agents/llm/index.ts";
+import { automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";

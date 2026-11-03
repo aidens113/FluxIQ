@@ -28,9 +28,9 @@ import {
   automationStudioLlmBuildPurseHoldCall,
   automationStudioLlmBuildPurseRun,
   automationStudioLlmBuildPurseScope
-} from "../../../../agents/llm/build-purse/index.ts";
-import { estimateAutomationStudioDeepSeekCostUsd } from "../../../../agents/llm/deepseek/index.ts";
-import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+} from "../../../../llm/build-purse/index.ts";
+import { estimateAutomationStudioDeepSeekCostUsd } from "../../../../llm/deepseek/index.ts";
+import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import { runAutomationStudioFlowBootstrapBuildPhases, type AutomationStudioFlowBootstrapRoundRequest, type AutomationStudioFlowBootstrapTestVerdict } from "../index.ts";
 

@@ -3,7 +3,7 @@ import { AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES } from "../../framework/automa
 import type { AutomationStudioChangeProposalKind, AutomationStudioChangeProposalMode, AutomationStudioChangeProposalStatus, AutomationStudioFlowAdaptation, AutomationStudioFlowRunDetail, AutomationStudioFlowRunSummary, AutomationStudioFlowSubflow } from "../../flows/authoring/model/index.ts";
 import type { AutomationStudioBootstrapAdaptationMode } from "../flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioChangeConfidenceDecision } from "./flow-change/index.ts";
-import type { AutomationStudioResultCheckConfiguration } from "../result-control/check-schedule/index.ts";
+import type { AutomationStudioResultCheckConfiguration } from "../result-verification/check-schedule/index.ts";
 
 export type AutomationStudioTrainingAdaptationSummary = {
   adaptationId: string;

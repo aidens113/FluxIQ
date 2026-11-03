@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument } from "../../../flows/authoring/model/index.ts";
 import { compareAutomationStudioTransition } from "../executor.ts";
 import type { AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "../executor.ts";
-import type { AutomationStudioRuntimePatch } from "../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch } from "../../../runtime/llm/index.ts";
 import { adaptationFromRuntimePatch, executeAutomationStudioRuntimePatch, preflightAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride } from "../../../runtime/adaptation/live-patch.ts";
 
 describe("Automation Studio live patch testing", () => {

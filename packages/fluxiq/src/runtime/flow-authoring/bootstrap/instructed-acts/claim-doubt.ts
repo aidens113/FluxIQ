@@ -18,7 +18,7 @@
 // whole word, and the repair loop went round with nothing to fix.
 import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep } from "../../draft/index.ts";
 import type { AutomationStudioInstructedAct } from "./contracts.ts";
-import { automationStudioModelFacingControlWords } from "../../../agents/llm/model-facing/index.ts";
+import { automationStudioModelFacingControlWords } from "../../../llm/model-facing/index.ts";
 import { automationStudioInstructedActWordsNameAct, automationStudioInstructedActWordsShowDone } from "./kind-words.ts";
 
 /** A possible mismatch between an act claim and its known control; executes nothing, and alone never changes done/todo (see the header). */

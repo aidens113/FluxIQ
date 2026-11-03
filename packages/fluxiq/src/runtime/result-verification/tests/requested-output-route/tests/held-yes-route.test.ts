@@ -7,7 +7,7 @@
 // unlike the run's.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../llm/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioResultTaskChecklist, AutomationStudioRunResultSummary } from "../../../contracts/index.ts";
 import { automationStudioResultRequestedOutputMissing, automationStudioResultRequestedOutputOwed } from "../../../requested-output/index.ts";
 import { verifyAutomationStudioRunResult } from "../../../verify.ts";

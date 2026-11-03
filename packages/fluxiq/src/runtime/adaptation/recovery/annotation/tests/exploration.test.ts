@@ -8,7 +8,7 @@ import {
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmProvider
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../../context.ts";
 import { resolveAutomationStudioExplorationBudget } from "../../exploration-budget.ts";
 import { startAutomationStudioRecoveryDeadline } from "../../recovery-deadline.ts";

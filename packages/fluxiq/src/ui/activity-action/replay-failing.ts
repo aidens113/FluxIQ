@@ -1,4 +1,4 @@
-/** A replay's result codes (`runtime/agents/llm/node-tools/replay.ts`, `AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES`). */
+/** A replay's result codes (`runtime/llm/node-tools/replay.ts`, `AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES`). */
 const REPLAY_PREFIX = "core.replay.";
 
 /**

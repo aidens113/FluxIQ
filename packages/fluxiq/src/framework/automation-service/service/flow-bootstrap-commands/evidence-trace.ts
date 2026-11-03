@@ -9,10 +9,10 @@ import {
   evidenceStepRestoredStep,
   type AutomationStudioFlowBootstrapEvidenceTraceRow
 } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../../../runtime/agents/llm/index.ts";
-import { automationStudioLlmEvidenceDiagnostic } from "../../../../runtime/agents/llm/evidence-diagnostic/index.ts";
+import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../../../runtime/llm/index.ts";
+import { automationStudioLlmEvidenceDiagnostic } from "../../../../runtime/llm/evidence-diagnostic/index.ts";
 import { readRuntimeTargetActionability } from "../../../../runtime/result-control/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../runtime/agents/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../runtime/llm/loop-limits/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
 
 // The evidence loop trace an audit event records: validated first, then

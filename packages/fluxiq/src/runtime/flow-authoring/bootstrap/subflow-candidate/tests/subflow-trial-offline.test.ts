@@ -13,7 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRunEnvironmentKind } from "../../../../../framework/automation-service/environment/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION, automationStudioCandidateTrialView } from "../../candidate/index.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as WORDS, type AutomationStudioTrialOfflineFirst } from "../../offline-first/index.ts";
 import type { AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
 import { AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPreparingPort, type AutomationStudioSubflowTrialRequest, type AutomationStudioSubflowTrialResult, type AutomationStudioSubflowTrialWeighed } from "../index.ts";

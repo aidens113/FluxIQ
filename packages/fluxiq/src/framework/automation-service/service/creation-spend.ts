@@ -10,8 +10,8 @@ import {
   type AutomationStudioFlowSpendItem,
   type AutomationStudioFlowSpendPhase
 } from "../../../runtime/flow-authoring/bootstrap/index.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmCurrentFlowPurse, automationStudioLlmFlowPurseScope } from "../../../runtime/agents/llm/build-purse/index.ts";
-import { automationStudioLlmStepLogScope } from "../../../runtime/agents/llm/step-log/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmCurrentFlowPurse, automationStudioLlmFlowPurseScope } from "../../../runtime/llm/build-purse/index.ts";
+import { automationStudioLlmStepLogScope } from "../../../runtime/llm/step-log/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "./paths/index.ts";
 import type { AutomationStudioProjectStore } from "./projects/index.ts";
 

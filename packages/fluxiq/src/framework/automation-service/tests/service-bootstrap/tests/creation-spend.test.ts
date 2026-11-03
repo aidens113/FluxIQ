@@ -15,9 +15,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioActivityHub } from "../../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
 import type { AutomationStudioFlowBootstrapCreationSpend } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES } from "../../../../../runtime/agents/llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES } from "../../../../../runtime/llm/build-purse/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
   AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS,
@@ -25,7 +25,7 @@ import {
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmTaskRequest
-} from "../../../../../runtime/agents/llm/index.ts";
+} from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, caller, copyDataDirSeed, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";

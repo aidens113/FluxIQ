@@ -1,8 +1,8 @@
 // A run of a Flow under the Flow's one purse, in a Lab-scoped run only (t438).
 // The user's words (2026-10-01): "bring the ceiling down to $0.1 per flow max".
 import { describe, expect, it } from "vitest";
-import { automationStudioLlmCurrentFlowPurse } from "../../../../../runtime/agents/llm/build-purse/index.ts";
-import { automationStudioLlmRunCostCeilingUsd } from "../../../../../runtime/agents/llm/index.ts";
+import { automationStudioLlmCurrentFlowPurse } from "../../../../../runtime/llm/build-purse/index.ts";
+import { automationStudioLlmRunCostCeilingUsd } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
 import { automationStudioLabFlowPurse } from "../flow-spend.ts";
 

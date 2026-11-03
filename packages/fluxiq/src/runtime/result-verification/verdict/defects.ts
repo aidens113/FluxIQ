@@ -1,4 +1,4 @@
-import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence, type AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence, type AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 
 /** The kinds a defect may name, the act kinds among them (t766); any other is not carried. */
 const KINDS: ReadonlySet<string> = new Set(["kept_not_asked", "asked_missing", "wrong_value", "act_missing", "act_wrong", "other"]);

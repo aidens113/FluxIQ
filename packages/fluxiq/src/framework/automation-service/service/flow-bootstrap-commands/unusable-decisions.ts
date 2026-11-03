@@ -15,7 +15,7 @@
 // ends the loop through `stalled`. The build's own endings -- a question put to
 // the person: a permission ask, a check only they can pass -- win over the
 // stall, because the build waits on the person's answer rather than end past it.
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../../runtime/llm/index.ts";
 
 type UnusableDecisions = NonNullable<AutomationStudioLlmEvidenceLoopInput["unusableDecisions"]>;
 type Stall = Parameters<UnusableDecisions["stalled"]>[0];

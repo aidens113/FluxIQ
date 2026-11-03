@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmRunPurse } from "../../../agents/llm/index.ts";
+import { AutomationStudioLlmRunPurse } from "../../../llm/index.ts";
 import { automationStudioResultRunAccounting } from "../accounting.ts";
 
 describe("canonical run accounting projection", () => {

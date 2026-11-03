@@ -10,7 +10,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
 import type { AutomationStudioRecoveryIncident } from "../../../../framework/automation-service/executor/lifecycle/index.ts";
-import type { AutomationStudioLlmInRunRepairAttempt, AutomationStudioLlmInRunRepairContext, AutomationStudioLlmInRunRepairRecovery } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmInRunRepairAttempt, AutomationStudioLlmInRunRepairContext, AutomationStudioLlmInRunRepairRecovery } from "../../../llm/index.ts";
 
 /** The part of the in-run repair slot this builds. */
 export type AutomationStudioInRunRepairHistory = Pick<AutomationStudioLlmInRunRepairContext, "incident" | "failedAttempt" | "recoveriesTried" | "actsCompleted">;

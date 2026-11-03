@@ -245,8 +245,8 @@
 // (`./from-step-run.ts`); and a live whole test that failed leaves a repair standing (`./pending-repair.ts`), which
 // refuses the next whole test, and completion, `subflow.trial_from_step_first` until a run from that step passes it.
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/evidence-loop.ts";
-import { automationStudioLlmStepLogReset } from "../../../agents/llm/step-log/index.ts";
+import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop.ts";
+import { automationStudioLlmStepLogReset } from "../../../llm/step-log/index.ts";
 import {
   AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION,
   AUTOMATION_STUDIO_CANDIDATE_OFFLINE_YES_INSTRUCTION,

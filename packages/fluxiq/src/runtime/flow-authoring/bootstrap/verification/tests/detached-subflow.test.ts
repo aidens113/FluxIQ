@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityPreparing } from "../../../../activity/automation/step/index.ts";
+import { automationStudioActivityPreparing } from "../../../../automation-activity/step/index.ts";
 import type { JsonValue } from "../../../../../core/index.ts";
 import { createBlankAutomationStudioFlowArtifact } from "../../../../../flows/authoring/model/index.ts";
 import { automationNodeStateBinding, AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions, type AutomationStudioNodeDefinition } from "../../../../../framework/automation-service/nodes/index.ts";

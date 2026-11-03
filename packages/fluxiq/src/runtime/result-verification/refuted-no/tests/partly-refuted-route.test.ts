@@ -10,7 +10,7 @@
 // asked nothing more, and call 1's reading carries Core's label for the part
 // its record contradicts. No model is called; the provider is scripted.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
 import { campsiteInstruction, campsiteRunSummary } from "./campsite-fixture.ts";
 import { GAP_AND_CHANGE_NO, GAP_NO } from "./campsite-readings-fixture.ts";

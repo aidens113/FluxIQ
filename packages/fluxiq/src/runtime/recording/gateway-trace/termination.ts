@@ -3,7 +3,7 @@
 // other throw is `failed`. The detail names the error and its message, unless
 // the message is itself secret-shaped, in which case only the name is kept.
 
-import { screenAutomationStudioLlmEvidence } from "../../agents/llm/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioGatewayTraceTermination } from "./types.ts";
 
 const MAX_DETAIL_LENGTH = 500;

@@ -11,7 +11,7 @@
 // names nothing Core can check stays as it was. No model is called; the
 // provider is scripted. No task, site, item or answer of any realistic scenario.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestVerdict } from "../../build-test/index.ts";
 import { libraryInstruction, libraryRunSummary } from "./library-fixture.ts";
 import { LIBRARY_YES } from "./library-readings-fixture.ts";

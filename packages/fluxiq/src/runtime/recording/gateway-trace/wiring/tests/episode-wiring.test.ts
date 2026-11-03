@@ -4,7 +4,7 @@
 // answers land in the calling episode, and with nothing installed nothing is
 // read, opened or stored.
 import { afterEach, describe, expect, it } from "vitest";
-import { runInAutomationStudioConversation } from "../../../../interaction/conversations/context/index.ts";
+import { runInAutomationStudioConversation } from "../../../../conversations/context/index.ts";
 import type { AutomationStudioGatewayTraceConversationReader } from "../index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../../index.ts";
 import {

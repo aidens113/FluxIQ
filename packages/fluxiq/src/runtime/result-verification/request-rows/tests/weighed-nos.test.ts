@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationReaskContradicted } from "../../agreement/index.ts";
 import type { AutomationStudioResultVerification } from "../../contracts/index.ts";
-import type { AutomationStudioLlmDiagnosisFields } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { campsiteRequestText, campsiteRunSummary, campsiteWording } from "../../refuted-no/tests/campsite-fixture.ts";
 import { GAP_AND_CHANGE_NO, GAP_NO } from "../../refuted-no/tests/campsite-readings-fixture.ts";
 import { LAMP_CLAMP, LAMPS_REQUEST_TEXT, SAME_LAMP_NO, lampsRunSummary, lampsWording } from "../../refuted-no/tests/lamps-fixture.ts";

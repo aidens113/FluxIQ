@@ -1,5 +1,5 @@
 import type { JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceResendInvitation } from "../../../agents/llm/repeat-guard/index.ts";
+import type { AutomationStudioLlmEvidenceResendInvitation } from "../../../llm/repeat-guard/index.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import type { AutomationStudioResultKeptConditionDrop } from "../../../result-verification/standing-no/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission } from "./contracts.ts";

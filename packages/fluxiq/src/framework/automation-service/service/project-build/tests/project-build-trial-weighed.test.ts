@@ -4,7 +4,7 @@
 // it kept (`weighed`). Through the real project-build port; no model is called.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../../../runtime/project-agents/host-resources/index.ts";
 import { StubHost } from "../../../../../runtime/project-agents/host-resources/tests/stub-host.ts";
 import type { AutomationStudioProjectBuildRecordStore } from "../../../../../runtime/project-agents/index.ts";

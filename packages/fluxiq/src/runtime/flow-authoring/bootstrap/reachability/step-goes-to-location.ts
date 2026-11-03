@@ -2,7 +2,7 @@
 // The host declares opaque action identity and its location parameter; unrelated
 // retained arguments on another action cannot prove arrival.
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../agents/llm/harness-options/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/harness-options/index.ts";
 import { automationStudioFlowBootstrapValuesCarryLocation } from "./location-agreement.ts";
 
 /** Read only the host-declared arrival argument, preferring what actually ran. */

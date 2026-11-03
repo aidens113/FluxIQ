@@ -19,7 +19,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowDocument, AutomationStudioUnitRepairChangeKind } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioRepairUnitDigest, overlayAutomationStudioRuntimePatch, type AutomationStudioOverlayValidationContext } from "../../../../runtime/adaptation/live-patch/index.ts";
-import type { AutomationStudioRuntimePatch } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioRuntimePatch } from "../../../../runtime/llm/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 
 type UnitRepairChange = AutomationStudioFlowAdaptation["patch"][number] & { kind: AutomationStudioUnitRepairChangeKind };

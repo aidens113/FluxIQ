@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmEvidenceTool } from "../../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../llm/index.ts";
 import { automationStudioSubflowBuilderTools } from "../index.ts";
 
 const tool = (toolId: string): AutomationStudioLlmEvidenceTool => ({ toolId, description: toolId, effect: "observe", inputSchema: { type: "object" } });

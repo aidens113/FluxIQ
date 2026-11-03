@@ -48,7 +48,7 @@
 // found. The domain's codes travel beside it for the record.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { automationStudioActionPermissionDenied, resolveAutomationStudioPlanActionEffect, type AutomationStudioActionPermissionCheck, type AutomationStudioPlanActionEffectSource } from "../../../action-permissions/automation/index.ts";
+import { automationStudioActionPermissionDenied, resolveAutomationStudioPlanActionEffect, type AutomationStudioActionPermissionCheck, type AutomationStudioPlanActionEffectSource } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioFactCondition } from "../../../../framework/automation-service/executor/lifecycle/index.ts";
 import type { AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../../flow-authoring/bootstrap/index.ts";
 import {
@@ -61,7 +61,7 @@ import {
   type AutomationStudioRuntimePatch,
   type AutomationStudioRuntimePatchHandlerSpec,
   type AutomationStudioRuntimePatchStep
-} from "../../../agents/llm/index.ts";
+} from "../../../llm/index.ts";
 import { isJsonRecord } from "../../../../framework/automation-service/service/index.ts";
 import { automationStudioRecoveryPatchFactKind } from "./patch-fact-kind.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";

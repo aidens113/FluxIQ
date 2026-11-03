@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultReadListContinues, automationStudioResultReadStop, automationStudioResultReadWorkingSets } from "../read-account/index.ts";
 import {

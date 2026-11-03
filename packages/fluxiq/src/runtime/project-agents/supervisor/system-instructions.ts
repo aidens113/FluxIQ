@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmTaskDomainInstructions } from "../../agents/llm/domain-instructions/index.ts";
+import type { AutomationStudioLlmTaskDomainInstructions } from "../../llm/domain-instructions/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 
 /** Names the supervisor's text, so a step log or a cached prefix that changed traces to the edit (as a domain's `version` does). */

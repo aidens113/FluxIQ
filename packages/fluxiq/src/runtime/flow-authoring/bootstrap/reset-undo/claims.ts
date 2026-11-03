@@ -93,7 +93,7 @@
 // tab there, so it bounded nothing.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import { automationStudioSiteResetRefusal as refusal } from "../reset-answers/index.ts";
 import type { AutomationStudioSiteResetObservations } from "../reset-settlement/index.ts";
 import type {

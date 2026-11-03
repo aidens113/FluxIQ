@@ -3,7 +3,7 @@
 // build's own reading of the acts as information.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftReplayable } from "../../../flow-authoring/draft/index.ts";
-import { automationStudioLlmRequestEvidenceRefusal, type AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import { automationStudioLlmRequestEvidenceRefusal, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioBuildTestResultSummary, automationStudioBuildTestUntestedCarried } from "../summary.ts";
 import {

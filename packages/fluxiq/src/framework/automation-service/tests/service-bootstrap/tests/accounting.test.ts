@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmProvider } from "../../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { plan, mockProvider, blankFixture, caller, copyDataDirSeed, expectNoTopology, rejectedGenerationDiagnostic, seedDataDir, successfulHarnessResult, blankFixturesPerService, type DataDirSeed } from "./fixtures.ts";
@@ -136,7 +136,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       providerInvocation: "not_attempted",
       providerResponse: "not_received",
       // The resolver's own throw, named by class and line and never by its message.
-      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)]
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:framework\.automation-service\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)]
     });
     expect(JSON.stringify(resolutionDiagnostic)).not.toContain("raw resolver");
   });
@@ -182,7 +182,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       providerInvocation: "not_attempted",
       providerResponse: "not_received",
       // What was thrown and where, never what it said (`generation-failure/thrown-issue-codes.ts`).
-      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)]
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:framework\.automation-service\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)]
     });
     expect(JSON.stringify(diagnostic)).not.toContain("private setup detail");
     expect(resolver).toHaveBeenCalledTimes(1);
@@ -298,7 +298,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         estimatedCostUsd: 0.002
       },
       // Core's own refusal of the plan, thrown in the service and named by its line there.
-      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.service\.ts:\d+$/u)],
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:framework\.automation-service\.service\.ts:\d+$/u)],
       // The purse's settled questions: the stubbed harness reported its accounting without passing through the purse.
       totalProviderCallCount: 0
     });
@@ -381,7 +381,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         providerInvocation: "not_attempted",
         providerResponse: "not_received",
         // Only the resolver that threw is named, by its throw's class and line.
-        ...(threwHere ? { issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)] } : {})
+        ...(threwHere ? { issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:framework\.automation-service\.tests\.service-bootstrap\.tests\.accounting\.test\.ts:\d+$/u)] } : {})
       });
     }
   });

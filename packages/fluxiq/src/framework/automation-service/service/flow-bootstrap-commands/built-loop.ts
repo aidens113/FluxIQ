@@ -9,7 +9,7 @@
 
 import type { AutomationStudioBootstrapAccounting, AutomationStudioFlowBootstrapActionPermissions, AutomationStudioFlowBootstrapBuildPhasesOutcome, AutomationStudioFlowBootstrapIncompleteDraftKeeper, AutomationStudioFlowBootstrapPersonNeeded } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { flowBootstrapBuildEndingFailure, flowBootstrapEvidenceLoopFailure } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../runtime/agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowBootstrapCreationPurse } from "./creation-purse.ts";
 
 /** The loop a build's phases left with a Flow, or a throw of the ending that stopped it short. */

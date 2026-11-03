@@ -55,8 +55,8 @@
 // nor the judge is asked, and a reserve-stopped round ends at its budget
 // unjudged (`./phases.ts`).
 import { automationStudioFlowDraftFlowSignature } from "../../draft/index.ts";
-import { automationStudioLlmCurrentBuildPurse } from "../../../agents/llm/build-purse/index.ts";
-import type { AutomationStudioLlmEvidenceLoopResult } from "../../../agents/llm/index.ts";
+import { automationStudioLlmCurrentBuildPurse } from "../../../llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapTestVerdict } from "./contracts.ts";
 import { automationStudioFlowBootstrapWithJudgeAccount, automationStudioFlowBootstrapYesNotAboutThisFlow } from "./judgement.ts";
 

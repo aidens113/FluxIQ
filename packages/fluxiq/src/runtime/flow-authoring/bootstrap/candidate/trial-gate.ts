@@ -267,8 +267,8 @@
 // is live, so a gap is never re-tried offline.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/evidence-loop.ts";
-import { automationStudioLlmStepLogOfflineTrial, automationStudioLlmStepLogReset } from "../../../agents/llm/step-log/index.ts";
+import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/evidence-loop.ts";
+import { automationStudioLlmStepLogOfflineTrial, automationStudioLlmStepLogReset } from "../../../llm/step-log/index.ts";
 import { automationStudioTrialOfflineFirstStep } from "../offline-first/index.ts";
 import { automationStudioCandidateTrialActs } from "./trial-acts.ts";
 import { automationStudioCandidateTrialSlowDown as SlowDown } from "./trial-slow-down.ts";

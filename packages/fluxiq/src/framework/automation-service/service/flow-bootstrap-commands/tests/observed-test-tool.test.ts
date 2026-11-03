@@ -5,10 +5,10 @@
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../runtime/automation-activity/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/agents/llm/index.ts";
-import { automationStudioFlowDraftDryRunGate } from "../../../../../runtime/agents/llm/node-tools/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
+import { automationStudioFlowDraftDryRunGate } from "../../../../../runtime/llm/node-tools/index.ts";
 import { automationStudioObservedTestTool } from "../observed-test-tool.ts";
 
 let seen: ClientGatewayActivity[] = [];

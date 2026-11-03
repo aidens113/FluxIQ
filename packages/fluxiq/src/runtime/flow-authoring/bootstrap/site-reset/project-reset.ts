@@ -73,7 +73,7 @@
 // its node as the step door noted it at submission, `../reset-admission/trial-steps.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type {
   AutomationStudioSiteResetChecks,
   AutomationStudioSiteResetComparison,

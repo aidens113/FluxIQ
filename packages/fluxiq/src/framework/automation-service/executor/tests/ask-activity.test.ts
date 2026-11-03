@@ -6,7 +6,7 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../../../engine/automation/tests/fixture-contracts.ts";
 import type { AutomationNodeExecutionResult } from "../../../../components/automation/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../runtime/activity/automation/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../runtime/automation-activity/index.ts";
 import { AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION, type AutomationStudioAskAnswer, type AutomationStudioParkingPort } from "../../../../runtime/parking/index.ts";
 import { resumeAutomationStudioGraph, runAutomationStudioGraph } from "../index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../../engine/automation/index.ts";

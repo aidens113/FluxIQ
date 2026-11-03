@@ -12,12 +12,12 @@ import type {
   AutomationStudioLlmEvidenceRuntimeBinding,
   AutomationStudioLlmProvider,
   AutomationStudioLlmTaskRequest
-} from "../../../../agents/llm/index.ts";
+} from "../../../../llm/index.ts";
 import type {
   AutomationStudioTrainingModeBehavior,
   AutomationStudioTrainingModeSettings
 } from "../../../training-modes.ts";
-import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-control/check-schedule/index.ts";
+import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-verification/check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../../../framework/automation-service/service.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
 import {

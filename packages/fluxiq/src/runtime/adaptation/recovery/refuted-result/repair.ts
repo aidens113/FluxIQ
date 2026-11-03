@@ -46,7 +46,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor.ts";
 import { automationStudioResultCheckActivity, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
-import { emitAutomationStudioActivity, emitAutomationStudioActivityThought } from "../../../activity/automation/index.ts";
+import { emitAutomationStudioActivity, emitAutomationStudioActivityThought } from "../../../automation-activity/index.ts";
 import { automationStudioRefutedResultAttempt } from "./attempt.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_MAX_ATTEMPTS,

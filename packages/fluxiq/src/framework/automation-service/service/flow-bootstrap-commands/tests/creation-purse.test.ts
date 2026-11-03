@@ -4,7 +4,7 @@
 // per flow max" -- so the build runs under it, the chat's reading is counted
 // in it, and it outlives the creation for the Flow's runs to draw on.
 import { describe, expect, it } from "vitest";
-import { automationStudioLlmBuildPurseHoldCall, automationStudioLlmCurrentFlowPurse } from "../../../../../runtime/agents/llm/build-purse/index.ts";
+import { automationStudioLlmBuildPurseHoldCall, automationStudioLlmCurrentFlowPurse } from "../../../../../runtime/llm/build-purse/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
 import { automationStudioFlowBootstrapCreationPurse } from "../creation-purse.ts";
 

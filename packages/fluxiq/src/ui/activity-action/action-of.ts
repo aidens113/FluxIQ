@@ -76,7 +76,7 @@ const CORE_NODE_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   ["builtin.control.repeat", "repeat"]
 ]);
 
-/** A result code that says the action did not happen (`runtime/activity/automation/observer.ts` reads codes the same way). */
+/** A result code that says the action did not happen (`runtime/automation-activity/observer.ts` reads codes the same way). */
 const FAILING = /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved|not_observed|state_mismatch/u;
 /** A result code that says the page needs a person before the work can go on. */
 const PERSON_CODE = /(?:^|[._-])(intervention|check_required|human_check)(?:[._-]|$)/u;
@@ -93,7 +93,7 @@ const NOT_CONFIRMED: ReadonlySet<string> = new Set([ACTIVITY_RESULT_CHECK_LABELS
 /**
  * What a look's title says it looked over, at or for ("Looking over the whole
  * page", "Looking for the repeating list on the page": the wording in
- * `runtime/activity/automation/wording/action.ts`).
+ * `runtime/automation-activity/wording/action.ts`).
  */
 const LOOKED_AT = /^Looking (?:over|at|for) (.+)$/u;
 /** A look at the bare page names nothing a person could tell apart from any other. */
@@ -109,7 +109,7 @@ const ADDRESS_PATH = /^…?\/\S*$/u;
  * letters. A dotted id ("web.output.browser-navigate") does not end so.
  */
 const SITE_NAME = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}$/iu;
-/** The navigate wording's name for an address it does not show (`runtime/activity/automation/wording/action.ts`). */
+/** The navigate wording's name for an address it does not show (`runtime/automation-activity/wording/action.ts`). */
 const START_PAGE = /^Opening (the (?:start|home) page|another page)$/u;
 /** Something shaped like a dotted id ("web.output.dom-click"), which a card never shows. */
 const ID_SHAPED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;

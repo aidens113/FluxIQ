@@ -12,7 +12,7 @@
 // its error never shown. An abort propagates. A check not tried (no recording
 // yet) is logged and adds nothing to the evidence (D46).
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioLlmStepLogOfflineTrial } from "../../../agents/llm/step-log/index.ts";
+import { automationStudioLlmStepLogOfflineTrial } from "../../../llm/step-log/index.ts";
 import { automationStudioTrialOfflineFirstStep } from "../offline-first/index.ts";
 import type { AutomationStudioSubflowScopeIdentity, AutomationStudioSubflowTrialPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "./contracts.ts";
 import { automationStudioSubflowTrialResultRead } from "./subflow-trial-result.ts";

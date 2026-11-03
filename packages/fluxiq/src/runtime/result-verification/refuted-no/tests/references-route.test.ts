@@ -10,7 +10,7 @@
 // naming a row the read wrongly left out stands. No model is called; the
 // provider is scripted.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge, type AutomationStudioBuildTestTaskChecklist } from "../../build-test/index.ts";
 import { CAMP_SILVER, CAMPSITE_REQUEST, campsiteInstruction, campsiteRunSummary } from "./campsite-fixture.ts";
 import { CAMPSITE_YES, DROP_NAME_CONDITIONS_NO, DROPPED_NOT_EXCLUDED_NO, RELAX_ONE_CONDITION_NO, WRONGLY_LEFT_OUT_NO } from "./campsite-readings-fixture.ts";

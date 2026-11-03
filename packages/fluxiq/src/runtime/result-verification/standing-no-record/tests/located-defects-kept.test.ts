@@ -3,7 +3,7 @@
 // row as Core located them, never the judge's prose, and never a defect Core
 // cannot find. No model is called.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../../build-test/index.ts";
 import { campsiteInstruction } from "../../refuted-no/tests/campsite-fixture.ts";
 import { CABIN_KEPT_NO, CAMP_CABIN, cabinKeptSummary } from "./campsite-swing-fixture.ts";

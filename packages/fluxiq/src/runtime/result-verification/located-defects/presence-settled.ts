@@ -25,7 +25,7 @@
 // left-out row Core accounts for by the request's own words is decided before
 // it (`./located-defects.ts`, `quotesRequest`).
 
-import type { AutomationStudioLlmVerificationDefect } from "../../agents/llm/index.ts";
+import type { AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioRequestRowLabel } from "../request-rows/index.ts";
 import { automationStudioResultLeftOutLabelKey } from "./row-cells.ts";

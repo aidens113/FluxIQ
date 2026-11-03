@@ -1,7 +1,7 @@
 // Every guard that refuses to build a model request has its own closed code,
 // so a failed build says which guard refused (`run-mulxk0ro-36bf090d`).
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_REQUEST_REFUSAL_CODES, AutomationStudioLlmRequestRefusedError } from "../../../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_REQUEST_REFUSAL_CODES, AutomationStudioLlmRequestRefusedError } from "../../../../llm/index.ts";
 import { automationStudioFlowBootstrapFailureDiagnosticOf, parseAutomationStudioFlowBootstrapGenerationError } from "../index.ts";
 import { AutomationStudioFlowBootstrapGenerationError } from "../error.ts";
 

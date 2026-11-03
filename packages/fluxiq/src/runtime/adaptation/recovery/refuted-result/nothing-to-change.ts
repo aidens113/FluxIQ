@@ -43,7 +43,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
-import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../../../agents/llm/index.ts";
+import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../../../llm/index.ts";
 
 /** The outcome a re-author that found nothing to change is recorded under (`resultReauthor.outcome`). */
 export const AUTOMATION_STUDIO_REAUTHOR_NOTHING_TO_CHANGE = "nothing_to_change";

@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
-import { automationStudioFlowDraftDryRunGate, automationStudioLlmRequestEvidenceRefusal, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import { automationStudioFlowDraftDryRunGate, automationStudioLlmRequestEvidenceRefusal, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioBuildTestResultSummary, type AutomationStudioBuildTestReportInput } from "../summary.ts";
 import { DENIED, SITE, navigate, replayed, report, web } from "./draft-steps.ts";

@@ -7,7 +7,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioSiteResetNamedAct } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowBuilderOutcome, type AutomationStudioSubflowTrialRequest } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { OPEN, callPart, part, script, testSubmission } from "../../../flow-authoring/bootstrap/subflow-candidate/tests/subflow-fixture.ts";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../../agents/llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../../llm/evidence-loop.ts";
 import { automationStudioProjectStructurePlan } from "../../contracts/index.ts";
 import type { AutomationStudioProjectBuilderPorts, AutomationStudioProjectResetPorts } from "../index.ts";
 import { gardenBrief, gardenBuild, gardenPlan, REF, type BuilderScript } from "./dispatch-fixture.ts";

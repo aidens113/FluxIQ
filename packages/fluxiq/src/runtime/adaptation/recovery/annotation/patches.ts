@@ -33,7 +33,7 @@ import {
   automationStudioConsequencesInOrder,
   type AutomationStudioActionConsequence,
   type AutomationStudioActionPermissionGate
-} from "../../../action-permissions/automation/index.ts";
+} from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../../framework/automation-service/executor.ts";
 import {
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
@@ -41,7 +41,7 @@ import {
   type AutomationStudioNoRepairReason,
   type AutomationStudioRuntimePatch,
   type AutomationStudioRuntimeTargetOverrideTarget
-} from "../../../agents/llm/index.ts";
+} from "../../../llm/index.ts";
 import {
   executeAutomationStudioRuntimePatch,
   preflightAutomationStudioRuntimePatch,

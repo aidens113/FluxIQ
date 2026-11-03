@@ -8,8 +8,8 @@
 // brief's allowance with the build's judging reserve as its backstop (t685).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { currentAutomationStudioActivityAgent } from "../../../activity/automation/index.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseCall } from "../../../agents/llm/build-purse/index.ts";
+import { currentAutomationStudioActivityAgent } from "../../../automation-activity/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseCall } from "../../../llm/build-purse/index.ts";
 import { automationStudioTrialJudgingShortfall } from "../../../../framework/automation-service/service/candidate-trial/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE, AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../../supervisor/index.ts";
 import { BUILD, planInput, subflow, taskSpecInput } from "../../supervisor/tests/supervisor-fixture.ts";

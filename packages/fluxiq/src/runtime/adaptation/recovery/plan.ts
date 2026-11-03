@@ -38,7 +38,7 @@
 // that has told the model to do work that cannot land.
 
 import type { AutomationStudioAdaptationPolicy } from "../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_IN_RUN_REPAIR_PATCH_KINDS, type AutomationStudioLlmTaskResult, type AutomationStudioRuntimePatch } from "../../agents/llm/index.ts";
+import { AUTOMATION_STUDIO_IN_RUN_REPAIR_PATCH_KINDS, type AutomationStudioLlmTaskResult, type AutomationStudioRuntimePatch } from "../../llm/index.ts";
 import type { AutomationStudioAdaptiveCandidateKind } from "../adaptive-orchestrator.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "./deterministic-diagnosis.ts";
 import {

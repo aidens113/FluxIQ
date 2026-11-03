@@ -21,7 +21,7 @@ import {
   parseAutomationStudioFlowBootstrapGenerationError,
   type AutomationStudioFlowBootstrapFailureDiagnostic
 } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { AutomationStudioLlmProviderError, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioSessionKeyPorts } from "../../../../../runtime/agents/llm/index.ts";
+import { AutomationStudioLlmProviderError, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioSessionKeyPorts } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";

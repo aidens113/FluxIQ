@@ -2,7 +2,7 @@
 // is held to Core's own record, and the reading is wholly refuted only when at
 // least one claim is refuted and nothing it says stands.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmDiagnosisFields } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmDiagnosisFields } from "../../../llm/index.ts";
 import { automationStudioResultVerificationAgreement } from "../../agreement/index.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioResultCountClaim, automationStudioResultNoRecord, automationStudioResultRefutedReading, type AutomationStudioResultNoNamedRows, type AutomationStudioResultNoRecord } from "../index.ts";

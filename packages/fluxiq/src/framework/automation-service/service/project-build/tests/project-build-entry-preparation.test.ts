@@ -6,7 +6,7 @@
 // run every phase through it), so it is handed that start and runs no hook.
 
 import { describe, expect, it } from "vitest";
-import { automationStudioActivityPreparing } from "../../../../../runtime/activity/automation/step/index.ts";
+import { automationStudioActivityPreparing } from "../../../../../runtime/automation-activity/step/index.ts";
 import type { AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioDetachedSubflowInput, AutomationStudioDetachedSubflowResult } from "../../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import type { AutomationStudioCandidateTrialStart } from "../../candidate-trial/index.ts";

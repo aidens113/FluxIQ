@@ -53,7 +53,7 @@
 // Which issued list a creation names is never judged here (t748, C5).
 // Pure.
 
-import type { AutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import { automationStudioSiteResetRefusal as refusal, type AutomationStudioSiteResetCanMeet, type AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
 import { automationStudioSiteResetTrialRepeats as repeats } from "../reset-settlement/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS as WORDS } from "../site-reset/words.ts";

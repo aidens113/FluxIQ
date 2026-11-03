@@ -16,7 +16,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioFlowBootstrapRepairingNotRunSaid } from "../not-done.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
-import { automationStudioFlowDraftStepCarried, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../../agents/llm/index.ts";
+import { automationStudioFlowDraftStepCarried, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../../instructed-acts/index.ts";
 import {
   automationStudioFlowBootstrapJudgeUnfinished,

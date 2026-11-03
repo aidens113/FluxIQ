@@ -18,7 +18,7 @@
 // (`./submission-refusal.ts`), as t641's kept-condition refusal is.
 
 import type { JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioLlmEvidenceResendInvitation } from "../../../agents/llm/repeat-guard/index.ts";
+import type { AutomationStudioLlmEvidenceResendInvitation } from "../../../llm/repeat-guard/index.ts";
 // Its own barrel, not result-verification's (a module cycle; `./submission.ts`).
 import { automationStudioResultKeptStepsDropped, type AutomationStudioResultKeptStepDrop } from "../../../result-verification/standing-no/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";

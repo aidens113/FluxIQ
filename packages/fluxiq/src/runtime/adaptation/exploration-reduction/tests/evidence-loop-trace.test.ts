@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { reduceAutomationStudioExploration } from "../backward-slice.ts";
 import { automationStudioExplorationStepsFromTrace } from "../evidence-loop-trace.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../../agents/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 
 // The adapter reads the trace Phase 2.3 actually produces. These fixtures are
 // the shapes `runAutomationStudioRuntimeExploration` writes: a `tool_call`

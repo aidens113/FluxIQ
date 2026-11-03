@@ -1,14 +1,14 @@
 import type { ActivityActionKind } from "./types.ts";
 
-/** A replay's result codes (`runtime/agents/llm/node-tools/replay.ts`). */
+/** A replay's result codes (`runtime/llm/node-tools/replay.ts`). */
 const VERIFIED = "core.replay.verified";
 const ALREADY_DONE: ReadonlySet<string> = new Set(["core.replay.present", "core.replay.remembered"]);
-/** A step written into the Flow without being run (`runtime/agents/llm/node-tools/replay.ts`, `write: true`). */
+/** A step written into the Flow without being run (`runtime/llm/node-tools/replay.ts`, `write: true`). */
 const WRITTEN = "core.run_node.written";
 
 /**
  * Why a test passes over a step that did not hold, as the activity record
- * names it (`Excused: <reason>`, `runtime/activity/automation/observer.ts`;
+ * names it (`Excused: <reason>`, `runtime/automation-activity/observer.ts`;
  * the reasons are the dry run's, `runtime/flow-authoring/draft/excused.ts`).
  */
 const OPTIONAL: ReadonlySet<string> = new Set(["interruption", "optional"]);

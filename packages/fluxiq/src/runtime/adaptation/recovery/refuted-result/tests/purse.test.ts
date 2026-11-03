@@ -2,7 +2,7 @@
 // user's words (2026-10-01): "bring the ceiling down to $0.1 per flow max".
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
-import { automationStudioLlmRunCostCeilingUsd } from "../../../../agents/llm/index.ts";
+import { automationStudioLlmRunCostCeilingUsd } from "../../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
   automationStudioResultRepairPurse,
