@@ -1,3 +1,5 @@
+"use client";
+
 // FluxIQ's chat widget (`@fluxiq/ui-components`) in the panel: a thin React
 // host over the real widget, reaching Core's real conversation endpoints.
 export { ChatWidget, type ChatWidgetProps } from "./ChatWidget";
