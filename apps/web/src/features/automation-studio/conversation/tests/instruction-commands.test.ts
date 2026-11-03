@@ -127,7 +127,7 @@ describe("the composer sends an instruction, not a remark", () => {
 
   it("keeps the message when it could not be stored, and says so when only the answer could not be written", async () => {
     const refused = await sendConversationInstruction(transport({ ok: false, error: "Conversations require project storage." }).api, { projectId: "p", conversationId: "c", text: "hi" });
-    expect(refused).toEqual({ ok: false, error: "Conversations require project storage.", problem: null, decision: null, execution: null, dispatch: null });
+    expect(refused).toEqual({ ok: false, error: "Conversations require project storage.", failure: { ok: false, error: "Conversations require project storage." }, problem: null, decision: null, execution: null, dispatch: null });
 
     const halfway = await sendConversationInstruction(transport({ ok: true, payload: { response: null, problem: "Your message was saved, but my answer could not be written into the thread: disk full" } }).api, { projectId: "p", conversationId: "c", text: "hi" });
     expect(halfway).toMatchObject({ ok: true, decision: null, problem: expect.stringContaining("Your message was saved") });

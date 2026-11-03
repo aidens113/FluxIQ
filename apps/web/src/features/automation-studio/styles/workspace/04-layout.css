@@ -369,7 +369,7 @@
    36px header row whose own collapse control sits at its right-hand end,
    which is exactly the corner the launcher occupied. */
 body:has(.automation-studio-shell) {
-  --automation-conversation-dock-bottom: calc(var(--space-lg) + 44px);
+  --chat-window-bottom: calc(var(--space-lg) + 44px);
 }
 
 .automation-mounted-view-stack,

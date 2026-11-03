@@ -40,15 +40,48 @@ export type ChatSend = {
   onScreen?: ChatOnScreen;
 };
 
-/** An answer to a question Core asked in a turn. */
-export type ChatAnswer = { askId: string; kind: string; value: string | undefined; projectId: string | undefined };
+/** A reference a turn carries beside its words, as Core wrote it. Never a payload. */
+export type ChatAttachment = { kind: string; ref: string };
+
+/**
+ * An answer to a question Core asked in a turn. `authorizationPin` is present
+ * only when the person just re-authorized this answer (`ChatAskPort`): a
+ * transport sends it and forgets it, and the chat never stores or logs it.
+ * `turn` says which turn asked, for a client that must act on what that turn
+ * carries once the answer is taken.
+ */
+export type ChatAnswer = {
+  askId: string;
+  kind: string;
+  value: string | undefined;
+  projectId: string | undefined;
+  authorizationPin?: string;
+  turn?: { conversationId: string; turnId: string; attachment?: ChatAttachment };
+};
+
+/** Every thread a person can see: across all their projects when `projectId` is absent. */
+export type ChatThreadCatalogQuery = { projectId?: string; limit: number };
 
 /** Core's conversation. Each `conversation`/`conversations` field holds Core's record as it answered it. */
 export type ChatConversationPort = {
   listThreads(query: ChatThreadListQuery): Promise<ChatResult<{ conversations?: unknown }>>;
   readThread(query: ChatThreadReadQuery): Promise<ChatResult<{ conversation?: unknown }>>;
-  send(message: ChatSend): Promise<ChatResult<{ conversation?: unknown }>>;
+  /** `problem`: the message was stored, but something after that went wrong; the chat says it. */
+  send(message: ChatSend): Promise<ChatResult<{ conversation?: unknown; problem?: string }>>;
+  /** `problem` in the value: the answer was taken, but something after that went wrong; the chat says it. */
   answer(answer: ChatAnswer): Promise<ChatResult<unknown>>;
+  /** Every thread, for the thread list (`ChatThreadsOptions`). Absent: the chat shows one thread at a time. */
+  listAllThreads?(query: ChatThreadCatalogQuery): Promise<ChatResult<{ conversations?: unknown }>>;
+};
+
+/**
+ * Hears that something the chat shows may have changed, as soon as the client
+ * knows of it. Absent: the chat reads on its 4 s poll alone. Present: it reads at
+ * once on each change and its poll drops to a slow beat, which stays because a
+ * change made elsewhere reaches a client with no push channel in no other way.
+ */
+export type ChatChangesPort = {
+  subscribe(listener: (change: { conversationId?: string }) => void): () => void;
 };
 
 /** How a page overlay shows, for a client that has one; a client with none answers `hidden`. */
@@ -105,4 +138,5 @@ export type ChatTransport = {
   readonly runs: ChatRunPort;
   readonly recordings?: ChatRecordingsPort;
   readonly models?: ChatModelsPort;
+  readonly changes?: ChatChangesPort;
 };

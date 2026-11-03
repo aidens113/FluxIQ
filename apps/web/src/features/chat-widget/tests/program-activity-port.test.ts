@@ -78,12 +78,15 @@ describe("the activity port", () => {
     expect(state(result.value.state).history?.map((entry) => entry.sequence)).toEqual([1, 2]);
   });
 
-  it("answers a failed read as a failure and a missing project without asking", async () => {
+  it("answers a failed read as a failure, and a missing project as an idle chat without asking", async () => {
     const failing = fakeProgramApi({ "get-activity": { ok: false, status: 0, code: "request_failed" } });
     const port = createProgramActivityPort(failing, { projectId: () => "p1", timers: manualTimers().timers });
     expect(await port.read()).toMatchObject({ ok: false, code: "unreachable" });
     const none = fakeProgramApi();
-    expect(await createProgramActivityPort(none, { projectId: () => undefined, timers: manualTimers().timers }).read()).toMatchObject({ ok: false, code: "no_project" });
+    expect(await createProgramActivityPort(none, { projectId: () => undefined, timers: manualTimers().timers }).read()).toEqual({
+      ok: true,
+      value: { state: { current: null, display: null, recent: [], overlay: "hidden", live: true } }
+    });
     expect(none.calls).toEqual([]);
   });
 

@@ -10,9 +10,13 @@
  *               thread (Core subject `flow`), a run in its own (subject `run`).
  *               `activityId` is the unit of work that asked; `title` names
  *               the thread in the context line.
+ *   thread      one thread by its id, chosen from the thread list. It carries
+ *               its own project: the list may span every project the person
+ *               can see.
  */
 export type ChatTarget =
   | { kind: "latest"; projectId?: string | undefined }
   | { kind: "project"; projectId: string }
   | { kind: "automation"; flowId: string; name: string; projectId?: string | undefined }
-  | { kind: "question"; activityId: string; subjectKind: "flow" | "run"; subjectId: string; title: string; projectId?: string | undefined };
+  | { kind: "question"; activityId: string; subjectKind: "flow" | "run"; subjectId: string; title: string; projectId?: string | undefined }
+  | { kind: "thread"; conversationId: string; projectId: string };

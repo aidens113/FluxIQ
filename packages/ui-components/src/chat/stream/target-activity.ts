@@ -13,6 +13,9 @@
 //     screen.
 //   - A question's chat (the thread a build or a run asked the person in)
 //     shows the work that asked, and what speaks through the thread on screen.
+//   - A thread chosen from the thread list (`kind: "thread"`) is told by its id
+//     and shows what the project's chats show: the work that speaks through
+//     another thread stays out, the rest is the project's, as in the old chat.
 //
 // The live line follows the paced display while the unit of work it
 // describes is one this chat shows, and always while that work waits for the
@@ -46,6 +49,9 @@ export type TargetActivity = {
 /** `state`'s activity for `target`, whose thread on screen is `conversationId` when there is one. */
 export function activityForTarget(state: ChatActivityState, target: ChatTarget, conversationId: string | undefined): TargetActivity {
   const display = state.display ?? null;
+  // A chosen thread is known by its id before it has been read.
+  if (target.kind === "thread") conversationId = target.conversationId;
+  const wide = target.kind === "latest" || target.kind === "project" || target.kind === "thread";
   const own = target.kind === "question" ? target.activityId : undefined;
   const inScope = (event: ClientGatewayActivity): boolean => target.projectId === undefined || event.subject.projectId === target.projectId;
   const story = (state.history ?? state.recent).filter(inScope);
@@ -59,7 +65,7 @@ export function activityForTarget(state: ChatActivityState, target: ChatTarget, 
   const belongs = (event: ClientGatewayActivity): boolean => {
     if (!inScope(event)) return false;
     if (elsewhere.has(event.activityId)) return false;
-    if (target.kind === "latest" || target.kind === "project") return true;
+    if (wide) return true;
     if (conversationId !== undefined && event.conversationId === conversationId) return true;
     return target.kind === "automation" ? event.subject.flowId === target.flowId : event.activityId === target.activityId;
   };
@@ -68,7 +74,7 @@ export function activityForTarget(state: ChatActivityState, target: ChatTarget, 
   const answerIn = asked !== undefined && (target.projectId === undefined || asked.projectId === target.projectId) && !asksHere(target, asked) ? asked : null;
   const carried = (): boolean => display !== null
     && (target.projectId === undefined || [...story, ...state.recent, ...(state.current ? [state.current] : [])].some(event => event.activityId === display.activityId && inScope(event)))
-    && (display.outcome === "waiting" || ((target.kind === "latest" || target.kind === "project") && elsewhere.size === 0) || [...events, ...state.recent].some((event) => event.activityId === display.activityId && belongs(event)));
+    && (display.outcome === "waiting" || (wide && elsewhere.size === 0) || [...events, ...state.recent].some((event) => event.activityId === display.activityId && belongs(event)));
   const shown = display !== null && (display.kind === "starting" || carried());
   return { events, display: shown ? display : null, answerIn };
 }

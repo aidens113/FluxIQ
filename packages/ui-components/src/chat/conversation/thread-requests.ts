@@ -22,6 +22,11 @@
 //               parking port writes the ask. A message there says which Flow
 //               or run is on screen.
 //
+//   thread      one thread by its id, chosen from the thread list. It is not
+//               found by a list at all (`readThread` asks for it directly),
+//               and a message goes into it with the project the thread
+//               itself belongs to, whichever project the panel has open.
+//
 // A message may also carry a recording the person attached (`recordingId`):
 // it joins `onScreen`, beside any Flow or run, and Core links it to the Flow the
 // chat creates.
@@ -59,6 +64,9 @@ export function threadListRequest(target: ChatTarget): ChatThreadListQuery {
 /** The message that sends `text` to `target`: into `shown` when there is one, or into a thread opened for it. */
 export function threadSendRequest(target: ChatTarget, shown: ShownThread | undefined, text: string, recordingId?: string): ChatSend {
   const message: ChatSend = { text, conversationId: shown?.conversationId, projectId: shown?.projectId };
+  if (target.kind === "thread") {
+    message.conversationId = target.conversationId;
+  }
   let onScreen: ChatOnScreen | undefined;
   if (target.projectId !== undefined) {
     message.projectId = target.projectId;

@@ -71,11 +71,11 @@ describe("the conversation port", () => {
     expect(await refusedTurn.transport.conversation.send({ text: "hi", conversationId: "conv-1", projectId: "p1" })).toMatchObject({ ok: false, code: "failed", sentence: "Core is busy." });
   });
 
-  it("refuses an empty message and a missing project before it asks Core anything", async () => {
+  it("refuses an empty message and a missing project before it asks Core anything, and lists nothing without a project", async () => {
     const { api, transport } = transportOver({}, null);
     expect(await transport.conversation.send({ text: "   ", conversationId: "c", projectId: "p1" })).toMatchObject({ ok: false, code: "invalid_request" });
     expect(await transport.conversation.send({ text: "hi", conversationId: "c", projectId: undefined })).toMatchObject({ ok: false, code: "no_project" });
-    expect(await transport.conversation.listThreads({ subjectKind: "project", status: "open", limit: 1 })).toMatchObject({ ok: false, code: "no_project" });
+    expect(await transport.conversation.listThreads({ subjectKind: "project", status: "open", limit: 1 })).toEqual({ ok: true, value: { conversations: [] } });
     expect(api.calls).toEqual([]);
   });
 

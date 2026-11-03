@@ -29,8 +29,8 @@ packages/
   fluxiq/               Importable framework package
   client-gateway-websocket/
                          Typed WebSocket client for FluxIQ web-panel clients
-  ui-components/        FluxIQ's chat UI as plain DOM and CSS; any client mounts it
-                         through ports (@fluxiq/ui-components)
+  ui-components/        FluxIQ's one chat UI as plain DOM and CSS; the web panel and
+                         the extension mount it through ports (@fluxiq/ui-components)
 docs/
   architecture/         Framework architecture and migration notes
 ```

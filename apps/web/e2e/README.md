@@ -74,3 +74,20 @@ Phase 8 expands that matrix to Chromium-compatible, Edge, and Firefox projects.
 Use `test:e2e:phase8:chromium` for all four Chromium viewports and
 `test:e2e:phase8:cross-browser` for desktop engine parity. Missing hosted-panel
 or browser prerequisites remain unexecuted failures, never implicit passes.
+
+## Chat widget
+
+`e2e/chat-widget.spec.ts` drives the panel's chat in a headed browser, with no model call. Seed the isolated root and its threads
+with the server stopped, then run it against a server you started on a free port with `FLUXIQ_IMPORTER_ROOT` set to
+`apps/web/.e2e-host` and no model key in its environment:
+
+```powershell
+$env:FLUXIQ_E2E_CHAT_ONLY = "true"; $env:FLUXIQ_E2E_FAST_STUDIO = "true"
+pnpm --filter @fluxiq/web fixture:e2e
+node apps/web/e2e/support/seed-chat-threads.mjs
+$env:FLUXIQ_E2E_BASE_URL = "http://127.0.0.1:<port>"
+npx playwright test e2e/chat-widget.spec.ts --headed --project=desktop-chromium --workers=1
+```
+
+`FLUXIQ_E2E_CHAT_ONLY` seeds bare projects: the Flow corpus no longer saves against Core's Subflow-graph rule. The spec answers
+asks, so each run needs a fresh seed. The typed send runs only when the panel's own key snapshot shows no enabled key.

@@ -9,6 +9,7 @@
 export {
   CONVERSATION_TEXT_MAX,
   parseConversation,
+  parseConversationAsk,
   parseConversations,
   parseConversationTurn,
   parseConversationTurns,
@@ -26,18 +27,8 @@ export {
   type ConversationTurn,
   type ConversationTurnAuthor
 } from "./contracts";
-export {
-  CONVERSATION_TAIL_SLACK_PX,
-  CONVERSATION_VISIBLE_TURNS,
-  conversationFollowsTail,
-  latestConversationTurnId,
-  mergeConversationTurns,
-  pendingConversationTurn,
-  sortConversationsForThreadList,
-  unansweredConversationCount,
-  visibleConversationTurns
-} from "./model";
-export { conversationDisplayTitle, conversationSubjectFallbackLabel, conversationSubjectLabel } from "./naming";
+export { pendingConversationTurn } from "./model";
+export { conversationSubjectLabel } from "./naming";
 export {
   conversationAnswerNeedsReauthorization,
   conversationAnswerRequest,
@@ -66,7 +57,6 @@ export {
 export {
   CONVERSATION_PANEL_CAPABILITY_ATTACHMENT,
   CONVERSATION_PANEL_RESULT_ATTACHMENT,
-  conversationAttachmentIsPanelRecord,
   conversationPanelInvocation,
   type ConversationPanelInvocation
 } from "./panel-records";

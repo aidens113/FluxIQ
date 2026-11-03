@@ -33,9 +33,6 @@ const canonicalViewIds = new Set<string>(automationStudioViewIds);
 const canonicalEntryViews = [
   "adaptations/AdaptationsView.tsx",
   "clients/ClientGatewayView.tsx",
-  "conversation/components/ConversationDock.tsx",
-  "conversation/components/ConversationView.tsx",
-  "conversation/components/ConversationViewContent.tsx",
   "flow-editor/components/FlowEditorView.tsx",
   "inspector/InspectorView.tsx",
   "instructions/InstructionsView.tsx",

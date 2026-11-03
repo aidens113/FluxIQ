@@ -33,7 +33,7 @@ vi.mock("../../hooks", async (importOriginal) => {
 vi.mock("../../view-host", () => ({ useAutomationConnectedViewEntries: () => [], useAutomationConnectedViewSource: () => ({}), useAutomationConnectorCommands: () => ({}) }));
 vi.mock("../../../project", () => ({ useAutomationProjectCatalogLoader: () => () => undefined }));
 vi.mock("../../../sync", () => ({ useAutomationProjectPreload: () => undefined }));
-vi.mock("../../../conversation/components", () => ({ ConversationDock: () => <aside>Conversation</aside> }));
+vi.mock("../../../../chat-widget", () => ({ ChatDock: () => <aside>Conversation</aside> }));
 vi.mock("../AutomationStudioProjectGate", () => ({ AutomationStudioProjectGate: (props: { state: string; onOpenProject: (id: string) => void }) => <section><p>{props.state === "restoring" ? "Project restoring" : "Catalog remains usable"}</p><button onClick={() => props.onOpenProject("chosen")}>Choose project</button></section> }));
 vi.mock("../AutomationStudioWorkspaceComposition", () => ({ AutomationStudioWorkspaceComposition: () => {
   const [draft, setDraft] = useState("workspace draft");

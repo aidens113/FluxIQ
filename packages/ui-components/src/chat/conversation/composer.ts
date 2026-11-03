@@ -12,8 +12,14 @@
 //     send that fails says so on that turn, not here, and the words come back
 //     to the box to send again -- unless the person has typed, filled or
 //     changed chats since, which is kept.
-//   - The unsent draft is kept (`draftStorage`), so a closed popup keeps it.
+//   - The unsent draft is kept (`draftStorage`), so a closed popup keeps it;
+//     with `keepDraft: false` it is kept in memory only (`draft-memory.ts`).
+//   - With `maxLength` the box takes no more, and under `remainingHintBelow`
+//     characters left it says how many (`composer-hint`).
 //   - Not connected, the box is disabled and says "Connect to FluxIQ first".
+//   - With nowhere to send (`setUnavailable`: no thread and no project to open
+//     one on) the box is disabled and the reason stands above it, in words,
+//     until the host lifts it.
 //   - A described recording can ride with a message (`attachment`): a button
 //     beside Send picks it, a chip names it, and it leaves the chip only once
 //     a send went; a failed send keeps it.
@@ -26,6 +32,8 @@
 import { createElement } from "../../dom/index.ts";
 import { composerKeyAction } from "./composer-keys.ts";
 import type { ConversationState } from "./controller.ts";
+import type { ChatComposerOptions } from "./chat-composer-options.ts";
+import { memoryDraftStorage } from "./draft-memory.ts";
 import { draftStorage } from "./draft-storage.ts";
 import type { ChatOwner } from "../owner-context.ts";
 import type { RecordingAttachment } from "../attachment/index.ts";
@@ -41,36 +49,44 @@ export type Composer = {
   setPlaceholder(text: string): void;
   /** Binds the draft to observed context; foreign drafts require explicit adoption. */
   setOwner(owner: ChatOwner): void;
+  /** Disables the box and says why above it; undefined lifts it. Takes effect at the next `render`. */
+  setUnavailable(reason: string | undefined): void;
 };
 
 const PLACEHOLDER = "Message FluxIQ";
 const OFFLINE_PLACEHOLDER = "Connect to FluxIQ first";
+const UNAVAILABLE_PLACEHOLDER = "Chat unavailable";
 /** The most lines the box grows to before it scrolls. */
 const MAX_LINES = 8;
 const SVG = "http://www.w3.org/2000/svg";
 
 /** Creates the composer; `send` answers true once the words went, and gets the attached recording's id, if any. */
-export function createComposer(send: (text: string, recordingId?: string) => Promise<boolean>, attachment?: RecordingAttachment): Composer {
-  const draft = draftStorage();
+export function createComposer(send: (text: string, recordingId?: string) => Promise<boolean>, attachment?: RecordingAttachment, options: ChatComposerOptions = {}): Composer {
+  const draft = options.keepDraft === false ? memoryDraftStorage() : draftStorage();
+  const maxLength = options.maxLength;
   const box = createElement("textarea", {
     id: "conversationInput",
     className: "composer-box",
-    attrs: { rows: "1", placeholder: PLACEHOLDER, "aria-label": "Message to FluxIQ", enterkeyhint: "send" }
+    attrs: { rows: "1", placeholder: PLACEHOLDER, "aria-label": "Message to FluxIQ", enterkeyhint: "send", ...(maxLength === undefined ? {} : { maxlength: String(maxLength) }) }
   });
   box.value = draft.read();
   const sendButton = createElement("button", {
     id: "conversationSendButton",
     className: "composer-send",
-    attrs: { type: "button", "aria-label": "Send", title: "Send (Enter)" }
+    attrs: { type: "button", "aria-label": "Send", title: options.sendHint ?? "Send (Enter)" }
   }, [arrowIcon()]);
   const parkedNotice = createElement("p", { className: "notice", text: "Review this draft before sending it in this chat.", attrs: { role: "status" } });
   let adopt = createElement("button", { className: "button", text: "Use draft here", attrs: { type: "button" } });
   let clear = createElement("button", { className: "button", text: "Clear draft", attrs: { type: "button" } });
+  const unavailableLine = createElement("p", { className: "composer-unavailable", hidden: true, attrs: { role: "status" } });
   const parkedControls = createElement("div", { className: "composer-draft-review", hidden: true }, [parkedNotice, adopt, clear]);
+  const hint = createElement("p", { className: "composer-hint", hidden: true, attrs: { role: "status" } });
   const fieldParts = attachment ? [box, attachment.button, sendButton] : [box, sendButton];
   const element = createElement("div", { className: "composer" }, [
     ...(attachment ? [attachment.chip, attachment.menu] : []),
+    unavailableLine,
     createElement("div", { className: "composer-field" }, fieldParts),
+    ...(maxLength === undefined || options.remainingHintBelow === undefined ? [] : [hint]),
     parkedControls
   ]);
   let enabled = false;
@@ -79,6 +95,7 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
   let editRevision = 0;
   let placeholder = PLACEHOLDER;
   let owner: ChatOwner | undefined;
+  let unavailable: string | undefined;
   let draftOwner: string | null = null;
   let operation: object | undefined;
   let parked = false;
@@ -112,6 +129,17 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
     attachment?.refresh();
     attachment?.setDisabled(!enabled || sending || operation !== undefined || parked || !current());
     adopt.disabled = clear.disabled = !enabled || !current();
+    syncHint();
+  }
+
+  // Says how many characters are left, only once few are.
+  function syncHint(): void {
+    if (maxLength === undefined || options.remainingHintBelow === undefined) return;
+    const left = maxLength - box.value.length;
+    const shown = enabled && left < options.remainingHintBelow;
+    const words = shown ? `${left.toLocaleString()} characters left.` : "";
+    if (hint.textContent !== words) hint.textContent = words;
+    if (hint.hidden !== !shown) hint.hidden = !shown;
   }
 
   function submit(): void {
@@ -200,10 +228,10 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
   return {
     element,
     render(state) {
-      enabled = state.mode !== "offline" && state.mode !== "fallback" && (state.scopeState === undefined || state.scopeState === "ready");
+      enabled = state.mode !== "offline" && state.mode !== "fallback" && (state.scopeState === undefined || state.scopeState === "ready") && unavailable === undefined;
       sending = state.sending;
       if (box.disabled !== !enabled) box.disabled = !enabled;
-      const shown = enabled ? placeholder : state.mode === "offline" ? OFFLINE_PLACEHOLDER : state.scopeState === "loading" ? "Loading the conversation..." : state.scopeState === "error" ? "Chat unavailable" : OFFLINE_PLACEHOLDER;
+      const shown = enabled ? placeholder : unavailable !== undefined ? UNAVAILABLE_PLACEHOLDER : state.mode === "offline" ? OFFLINE_PLACEHOLDER : state.scopeState === "loading" ? "Loading the conversation..." : state.scopeState === "error" ? "Chat unavailable" : OFFLINE_PLACEHOLDER;
       if (box.placeholder !== shown) box.placeholder = shown;
       syncButton();
       // A kept draft is sized once the box is on screen.
@@ -227,6 +255,12 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
     setPlaceholder(text) {
       placeholder = text.trim() || PLACEHOLDER;
       if (enabled && box.placeholder !== placeholder) box.placeholder = placeholder;
+    },
+    setUnavailable(reason) {
+      unavailable = reason;
+      const text = reason ?? "";
+      if (unavailableLine.textContent !== text) unavailableLine.textContent = text;
+      if (unavailableLine.hidden !== (reason === undefined)) unavailableLine.hidden = reason === undefined;
     },
     setOwner(next) {
       if (owner?.token === next.token) return;

@@ -554,3 +554,124 @@
 .chat-hold:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chat-hold-status { flex: 1 0 100%; text-align: center; color: var(--muted); font-size: 12px; }
 .chat-hold-status:empty { display: none; }
+
+/* The thread list: one line over the stream, a picker when there are several threads, else the chat's name. */
+.chat-thread-header { display: flex; flex: 0 0 auto; align-items: center; min-height: 40px; border-bottom: 1px solid var(--divider); padding: 0 12px; }
+.chat-thread-picker { display: block; width: 100%; min-width: 0; }
+.chat-thread-select {
+  width: 100%; min-height: 30px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface);
+  color: var(--text); padding: 0 8px; font-size: 13px;
+}
+.chat-thread-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.chat-thread-title { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.chat-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; white-space: nowrap; }
+
+/* Turns the chat keeps off the top of a long thread, behind one control. */
+.chat-earlier { display: flex; justify-content: center; }
+.chat-earlier-button {
+  border: 1px solid var(--divider); border-radius: 999px; background: var(--surface-muted); color: var(--muted);
+  padding: 4px 12px; font-size: 13px; cursor: pointer;
+}
+.chat-earlier-button:hover { background: var(--hover); color: var(--text); }
+.chat-earlier-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* A host's welcome: lines with an icon each, in the empty chat. */
+.chat-welcome-items { display: grid; gap: 12px; width: 100%; max-width: 420px; margin: 8px 0 0; padding: 0; list-style: none; text-align: left; }
+.chat-welcome-items:empty { display: none; }
+.chat-welcome-item { display: flex; align-items: flex-start; gap: 10px; }
+.chat-welcome-item svg { flex: 0 0 auto; margin-top: 3px; color: var(--muted); }
+.chat-welcome-copy { display: grid; gap: 2px; font-size: 13px; line-height: 1.45; }
+.chat-welcome-copy span { color: var(--muted); }
+
+/* Nowhere to send: the reason stands over the disabled box. */
+.composer-unavailable { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.composer-unavailable[hidden] { display: none; }
+
+/* The chat as a window: a launcher always in the corner and a panel over the page.
+   A host with a status bar lifts it with --chat-window-bottom. */
+.chat-window {
+  position: fixed; right: 16px; bottom: var(--chat-window-bottom, 16px); z-index: 40;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  font-family: var(--chat-font); pointer-events: none;
+}
+.chat-window > * { pointer-events: auto; }
+.chat-window-panel {
+  display: flex; flex-direction: column; width: min(420px, calc(100vw - 32px)); height: min(640px, calc(100vh - 96px));
+  overflow: hidden; border: 1px solid var(--divider); border-radius: var(--radius); background: var(--surface);
+  box-shadow: var(--shadow); color: var(--text);
+}
+.chat-window-panel[data-wide="true"] { width: min(720px, calc(100vw - 32px)); }
+.chat-window-panel[hidden] { display: none; }
+.chat-window-panel:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.chat-window-bar {
+  display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 40px; padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--divider); background: var(--surface-raised); font-size: 13px;
+}
+.chat-window-mark { display: inline-flex; color: var(--accent); }
+.chat-window-heading { display: flex; flex: 1 1 auto; align-items: baseline; gap: 8px; min-width: 0; }
+.chat-window-heading strong { font-weight: 650; }
+.chat-window-heading span { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.chat-window-icon {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); padding: 0; cursor: pointer;
+}
+.chat-window-icon:hover { background: var(--hover); color: var(--text); }
+.chat-window-icon:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.chat-window-launcher {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; border: 1px solid var(--divider); border-radius: 999px;
+  background: var(--surface-raised); box-shadow: var(--shadow-sm); color: var(--text); padding: 0 16px;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.chat-window-launcher:hover { background: var(--hover); }
+.chat-window-launcher:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.chat-window-launcher[data-waiting="true"] { border-color: var(--warning); background: var(--warning-soft); color: var(--warning-text); }
+.chat-window-badge { min-width: 20px; border-radius: 999px; background: var(--warning); color: #ffffff; padding: 1px 6px; font-size: 12px; font-weight: 700; text-align: center; }
+.chat-window-badge[hidden] { display: none; }
+@media (max-width: 520px) {
+  .chat-window { right: 8px; left: 8px; align-items: stretch; }
+  .chat-window-panel, .chat-window-panel[data-wide="true"] { width: auto; }
+  .chat-window-launcher { align-self: flex-end; }
+}
+
+/* A question in the host's words: title, lead, what an answer commits, and the answers. */
+.chat-answer .turn-ask-title { margin: 0; font-weight: 650; }
+.chat-answer .turn-ask-lead { margin: 0; color: var(--muted); font-size: 13px; }
+.chat-answer .turn-ask-consequences { display: grid; gap: 4px; margin: 0; padding-left: 20px; font-size: 13px; }
+.chat-answer .turn-ask .small-button[data-tone="primary"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.chat-answer .turn-ask .small-button[data-tone="danger"] { border-color: var(--danger); color: var(--danger-text); }
+.chat-answer .turn-answer-form { display: grid; gap: 6px; justify-items: start; }
+.chat-answer .turn-answer-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+}
+.chat-answer .turn-answer-text:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* A record the host wrote on the person's behalf: a quiet line on FluxIQ's side, not their bubble. */
+.chat-record { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.chat-record-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* What a turn carries: a reference to open, or the host's drawing of it. */
+.chat-attachment { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--muted); font-size: 13px; }
+.chat-attachment-words { min-width: 0; }
+.chat-attachment-ref { border-radius: 6px; background: var(--code-bg); padding: 1px 5px; font-family: var(--chat-mono); font-size: .86em; overflow-wrap: anywhere; }
+
+/* FluxIQ stopped and waits on the person: said over the transcript, with the way to the question. */
+.chat-pending {
+  display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+  border-bottom: 1px solid var(--divider); background: var(--warning-soft); color: var(--warning-text);
+  padding: 6px 12px; font-size: 12.5px;
+}
+.chat-pending-words { flex: 1 1 auto; min-width: 0; }
+
+/* Characters left in the box, once few are. */
+.composer-hint { margin: 0; color: var(--muted); font-size: 12px; text-align: right; }
+.composer-hint[hidden] { display: none; }
