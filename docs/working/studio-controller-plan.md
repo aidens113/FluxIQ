@@ -24,12 +24,13 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 | Backend moves and controller | t845 | Lead | Done and pushed; integrates t846 and t847 |
 | Chat package and second client | t846 | Sub-supervisor | Merged into t845 |
 | Web semantics downstream | t847 | Worker | Merged into t845 |
-| Final validation | t845 | Lead | Core suites done; extension suite and live test in progress |
+| Final validation | t845 | Lead | Live tests passed; final full sweep running |
 
 **Next steps**
 
-1. Read the extension's full suite. Rerun the two live tasks once the Lab's relaunch window has passed.
-2. Merge both repositories to `dev` through `pnpm task finish`, then fast-forward `main` once a full sweep on the merged trees has passed.
+1. Read the final full sweep of both repositories.
+2. Merge both repositories to `dev` through `pnpm task finish`, Core-paired task first downstream, then fast-forward `main` once a full sweep on that tree has passed.
+3. Close t846 and t847 through `pnpm task abandon` once their commits are on `dev`.
 
 **Left out of this unit on purpose, for the user to decide:**
 
@@ -39,6 +40,8 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 - **Core's panel has two chat UIs,** its own and the shared widget at `/programs/automation-studio/chat`, which nothing links to yet. Replacing its own needs six port additions; see `reports/chat-package.md`.
 - **t841** is saved and pushed, unmerged: an unfinished fix for correct results being held as unsure.
 - **Other `retry_allowed` refusals** may have the same gap the re-test fix closed; see `reports/dev-failures.md`.
+- **A repaired run's rows came out neither deduped nor sorted.** In `run-mw0jw263-0251c104` the 3 rows of the failed attempt stayed in front of the 10 of the repaired read, duplicates included, though `processEndedRunDatasets` is called after a repair. Why is not established: either the rows were not reprocessed or their stored keys differ. The run was honestly reported as failed, and it needs a failure and a repair to appear.
+- **A check met while exploring is proven by tests only.** The fix for a call stopped by a person-only check ran live only where its condition did not apply; `run-mw0l0e9y-a7d8ae51` met its checks in test steps and playback, which carry no draft.
 
 **Blockers:** none. Everything is pushed on `task/t845-studio-controller` in both repositories.
 
@@ -160,6 +163,16 @@ Older parked work from before this refactor was left alone: unmerged branches t7
 - Validation: `model-text` -> 426 files scanned, no findings. Audit passes in both repositories.
 - Live: first launch refused before starting, cost $0, because `--llm-max-cost-usd 2` cannot reach a chat-started build. Second, `run-mw0gxo08-241fb3e7`: cost $0, failed in the web build; see its debug note. Third refused by the Lab's `loop` and `debug` guards, cost $0.
 - Outcome: awaiting the extension suite and the live rerun.
+
+### 2026-11-03 - Live tests, and three defects they found on dev
+
+- Agent: lead.
+- Live, all Claude Sonnet 5.5 from the extension chat: `run-mw0hzrhs-344f6976` $1.0621 and `run-mw0irrs5-cb525a15` $1.0767 failed on a blank-tab capture (t842's defect, fixed). `everything-store-kettle-to-cart`, `run-mw0jgf2o-478d13da`, $1.1600 -> passed: 13 of 13 steps, 2 of 2 rows. `crossborder-marketplace-free-hubs-under-ten`, `run-mw0jw263-0251c104`, $1.8942 -> failed: see its debug note. The same task after the fixes, `run-mw0l0e9y-a7d8ae51`, $1.1163 -> passed: 10 of 10 rows in order, 40 of 40 fields, all 3 pages, 0 repairs. Total $6.31.
+- Changed: none of the three defects came from the moves; the files match `dev` apart from imports. A call a person-only check stopped now stands as having acted when its draft says it went out (`person-needed-tool-calls.ts`), which started that run's failure. A condition named by a read the screen took apart is matched to no column (`condition-authored.ts`). The extension's Next fallback uses the shared current-page rule (`detect-pagination.ts`, downstream).
+- Changed: `fluxiq` 0.27.0, `@fluxiq/contracts` 0.7.0 and `@fluxiq/client-gateway-websocket` 0.1.1, with a migration note in `docs/architecture/package-boundaries.md`.
+- Validation: each fix's test was seen to fail first. `vitest run` over `person-needed.test.ts`, `computed-facts`, `located-defects` and the two other person-needed suites -> 135 passed. `node scripts/test-extension.mjs detect-pagination pagination` -> 51 passed, 0 failed. Core `pnpm --filter fluxiq check` -> exit 0. Audit passes in both repositories.
+- Validation: `crossborder-next-page` specs, headed Chromium on the realistic marketplace -> 2 passed. The new spec without the fix -> failed with `ended: control_absent`, the run's own error.
+- Outcome: live tests pass. The final sweep follows.
 
 ## Open Questions
 
