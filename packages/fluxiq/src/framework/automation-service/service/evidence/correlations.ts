@@ -3,6 +3,7 @@ import { safeSegment } from "../../../../programs/_shared/storage.ts";
 import type { StateDelta, StateElementDescriptor, StateElementKind, StateValue } from "../../../../flows/authoring/model/index.ts";
 import type { EvidenceClaim, EvidenceFact, EvidenceObservation, StateActionCorrelation } from "../../mining/index.ts";
 import type { NormalizedTimeline } from "../../../../runtime/recording/normalization/index.ts";
+import type { AutomationStudioStateElementKindReader } from "../../nodes/index.ts";
 import { uniqueStrings } from "../collections.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { formatStatePath, readableStatePath } from "./text.ts";
@@ -18,7 +19,8 @@ export function createStateActionCorrelations(
   miningRunId: string,
   timeline: NormalizedTimeline,
   actions: NormalizedTimeline["timeline"],
-  descriptors: Map<string, StateElementDescriptor>
+  descriptors: Map<string, StateElementDescriptor>,
+  readKind?: AutomationStudioStateElementKindReader
 ): StateActionCorrelation[] {
   const correlations: StateActionCorrelation[] = [];
   const checkpoints = timeline.timeline.filter((entry) => entry.type === "state_checkpoint");
@@ -31,8 +33,8 @@ export function createStateActionCorrelations(
     const previousCheckpoint = [...checkpoints].reverse().find((checkpoint) => checkpoint.monotonicOffsetMs <= action.monotonicOffsetMs);
     if (previousCheckpoint?.type === "state_checkpoint") {
       let index = 0;
-      for (const [statePath, stateValue] of prioritizedStateValuesForAction(previousCheckpoint.state, descriptors, MAX_PRE_ACTION_STATE_CORRELATIONS)) {
-        const descriptor = descriptorForStateValue(statePath, stateValue, descriptors);
+      for (const [statePath, stateValue] of prioritizedStateValuesForAction(previousCheckpoint.state, descriptors, MAX_PRE_ACTION_STATE_CORRELATIONS, readKind)) {
+        const descriptor = descriptorForStateValue(statePath, stateValue, descriptors, readKind);
         correlations.push({
           schemaVersion: "0.1",
           correlationId: `corr.${safeSegment(timeline.recordingId)}.${safeSegment(action.id)}.before.${index + 1}`,
@@ -64,8 +66,8 @@ export function createStateActionCorrelations(
       deltaEntry.deltas.forEach((delta, deltaIndex) => {
         const statePath = formatStatePath(delta.namespace, delta.path);
         const stateValue = delta.current ?? delta.previous;
-        if (!stateValue || !isValuableStateElement(statePath, stateValue, descriptors)) return;
-        const descriptor = descriptorForStateValue(statePath, stateValue, descriptors);
+        if (!stateValue || !isValuableStateElement(statePath, stateValue, descriptors, readKind)) return;
+        const descriptor = descriptorForStateValue(statePath, stateValue, descriptors, readKind);
         correlations.push({
           schemaVersion: "0.1",
           correlationId: `corr.${safeSegment(timeline.recordingId)}.${safeSegment(action.id)}.after.${safeSegment(deltaEntry.id)}.${safeSegment(statePath)}.${deltaIndex + 1}`,

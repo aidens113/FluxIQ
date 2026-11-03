@@ -78,6 +78,16 @@ export type AutomationStudioGraphExecutionOptions = {
    */
   onRecordBatch?: (batch: AutomationStudioRecordBatch) => Promise<AutomationStudioRunDatasetSummary> | AutomationStudioRunDatasetSummary;
   /**
+   * Told when a repair's trial begins and when it failed, where the record hook
+   * holds a trial's rows rather than storing them, so a failed trial's leave.
+   */
+  trialRecordBatches?: { begin(): void; reject(): void };
+  /**
+   * Removes stored batches by key: those of a unit an in-run repair replaced, once
+   * its fix is held, and of the trial itself if the fix is dropped. Absent, they stay.
+   */
+  discardRecordBatches?: (batchKeys: readonly string[]) => Promise<void>;
+  /**
    * Attempt ids of the Call Flow attempts enclosing this run, outermost first,
    * for `AutomationStudioRecordBatch.batchKey`. The executor extends it on the
    * options it hands `compositeExecutor`, which passes them on to the child run,

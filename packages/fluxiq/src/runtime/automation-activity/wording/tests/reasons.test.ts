@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../../flow-authoring/draft/index.ts";
 import {
   automationStudioActivityCompletionRefusal,
@@ -8,6 +8,11 @@ import {
   automationStudioActivityRecoveryChoice
 } from "../index.ts";
 import { activityActionOf } from "../../../../ui/index.ts";
+
+vi.mock("../control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../tests/example-control.ts")).exampleActivityControlReader
+}));
 
 const QUOTE = { tagName: "button", role: "button", accessibleName: "Get a free quote" };
 

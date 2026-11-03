@@ -147,7 +147,8 @@ export function automationStudioProjectSupervisorCompletion(context: AutomationS
         automationStudioProjectSupervisorReliesOnRecovery(context, "ended", { endedWith, rescue });
         return { ok: true };
       }
-      if (!rescue && !context.state.anyNotDone() && !context.state.wholeTrialFailed) return refused("project.completion_ended_too_soon", GUIDANCE.completion.endedTooSoon);
+      // A dispatch that failed tells the model to end, so that ending is not too soon (`./dispatch-tool.ts`, t849).
+      if (!rescue && !context.state.anyNotDone() && !context.state.wholeTrialFailed && !context.state.dispatchFailed) return refused("project.completion_ended_too_soon", GUIDANCE.completion.endedTooSoon);
       // Each failed subflow gets one changed brief while money is left, before the reset rule (header, t743).
       const repair = rescue ? undefined : repairFirst(loop?.turnsLeft);
       if (repair) return repair;

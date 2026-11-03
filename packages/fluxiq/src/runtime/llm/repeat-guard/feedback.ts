@@ -158,6 +158,7 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
     ...(candidate?.issues ? { issues: candidate.issues } : {}),
     refusedInARow: input.inARow,
     maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
-    instruction: candidate ? candidate.instruction : input.undrafted === true ? undrafted(instructionFor(input.earlier, input.rerunStep)) : instructionFor(input.earlier, input.rerunStep)
+    // A loop that drafts nothing has no draft to change first, though its tools may be keyed on what they test or dispatch (t849).
+    instruction: candidate ? candidate.instruction : input.undrafted === true ? undrafted(instructionFor(input.earlier.outcome === "same_draft" ? { ...input.earlier, outcome: "changed_nothing" } : input.earlier, input.rerunStep)) : instructionFor(input.earlier, input.rerunStep)
   };
 }

@@ -37,9 +37,13 @@ export function automationStudioActivityRunEnding(record: Fields | null | undefi
   const found = refuted ? coreFound(verification, rows) : undefined;
   if (found) return found;
   if (refuted && doubtOnly(verification, repair, fields(record?.resultReauthor))) return doubted(rows);
-  const repaired = repairEnding(repair, fields(record?.resultReauthor));
+  const repaired = fields(record?.adaptiveRetry)?.notResumableCode === LASTING_ACT_DECLINED ? LASTING_ACT_ENDING : repairEnding(repair, fields(record?.resultReauthor));
   return `${judged(rows, refuted)}${repaired ? `, and ${repaired}` : ""}.`;
 }
+
+/** Why a fixed Flow was not run again (`service/runtime-adaptation/repair-rerun.ts`), and what that is to a person: the fix exists, and nothing about it failed. */
+const LASTING_ACT_DECLINED = "repair_rerun.lasting_act_may_have_landed";
+const LASTING_ACT_ENDING = "the fix wasn't run: that would repeat what this run already did";
 
 /** The code of a no Core reached from its own computed facts, with no judge asked (`result-verification/computed-facts/computed-no.ts`). */
 const COMPUTED_FACT_FAILED = "core.result.computed_fact_failed";
@@ -48,9 +52,9 @@ const MAX_FOUND = 110;
 
 /**
  * The ending for a no Core reached itself: what Core found, in its own sentence
- * (the verification's observation is the failing facts' sentences). Nothing was
- * being fixed, so no repair is spoken of ("the fix didn't finish" told a person
- * a fix had been tried). Undefined for any other verification.
+ * (the verification's observation is the failing facts' sentences). What Core
+ * found is what a person needs here, so no repair is spoken of, whatever became
+ * of it. Undefined for any other verification.
  */
 function coreFound(verification: Fields, rows: number | undefined): string | undefined {
   if (verification.basis !== "core_observation" || verification.code !== COMPUTED_FACT_FAILED) return undefined;

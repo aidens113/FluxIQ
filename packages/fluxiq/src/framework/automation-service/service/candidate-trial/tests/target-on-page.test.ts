@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioFlowCandidate } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { automationStudioCandidateTrialFeedback } from "../index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../../runtime/domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../../runtime/domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 // t420, paid run R4a (`run-mv2nlh9l-52e476da`, 0038): the one trial stopped at the typing step with
 // `web.target.not_found` after 4 attempts. Its saved address quoted an id the page mints again on every load, and the

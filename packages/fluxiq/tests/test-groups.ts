@@ -21,6 +21,16 @@ export const REAL_SQL_MARKER = "// @fluxiq-test-group real-sql";
 /** Workers the real-SQL group runs with. Low on purpose: see above. */
 export const REAL_SQL_MAX_WORKERS = 3;
 
+/**
+ * The test and hook timeout of a marked file, in either group and in a plain
+ * `vitest run <path>` (`real-sql-guard.ts`). Few workers keep this package from
+ * starving itself, and nothing keeps another lane's run from doing it: with the
+ * CPU at 100%, forty durable commits measured about 10 s and passed or failed at
+ * 15 s, and two whole migrated projects took 13 s when they passed (t848). Four
+ * times the default leaves room for that, and a hung test still fails.
+ */
+export const REAL_SQL_TEST_TIMEOUT_MS = 60_000;
+
 const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/u;
 const SKIPPED_DIRECTORIES = new Set(["node_modules", "dist", "coverage"]);
 const GLOB_SYNTAX = /[*?[\]{}()!+@]/u;
@@ -54,7 +64,7 @@ export function findRealSqlTestFiles(root: string): string[] {
   return found.sort();
 }
 
-export type TestGroupOptions = { include?: string[]; exclude?: string[]; maxWorkers?: number; minWorkers?: number };
+export type TestGroupOptions = { include?: string[]; exclude?: string[]; maxWorkers?: number; minWorkers?: number; testTimeout?: number; hookTimeout?: number };
 
 /**
  * The vitest options for one group. No group (a plain `vitest run <path>`) runs
@@ -64,6 +74,6 @@ export type TestGroupOptions = { include?: string[]; exclude?: string[]; maxWork
 export function testGroupOptions(group: string | undefined, root: string, defaultExclude: readonly string[]): TestGroupOptions {
   if (group === undefined || group === "") return {};
   if (group === "parallel") return { exclude: [...defaultExclude, ...findRealSqlTestFiles(root)] };
-  if (group === "real-sql") return { include: findRealSqlTestFiles(root), maxWorkers: REAL_SQL_MAX_WORKERS, minWorkers: 1 };
+  if (group === "real-sql") return { include: findRealSqlTestFiles(root), maxWorkers: REAL_SQL_MAX_WORKERS, minWorkers: 1, testTimeout: REAL_SQL_TEST_TIMEOUT_MS, hookTimeout: REAL_SQL_TEST_TIMEOUT_MS };
   throw new Error(`FLUXIQ_TEST_GROUP="${group}" is not a test group; use "parallel" or "real-sql", or leave it unset to run everything selected.`);
 }

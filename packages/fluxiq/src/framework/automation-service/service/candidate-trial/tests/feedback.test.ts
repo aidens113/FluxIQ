@@ -1,5 +1,5 @@
 import { SPENT_TWO } from "./fixtures.ts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
@@ -7,6 +7,12 @@ import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary
 import { automationStudioCandidateTrialStop } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { automationStudioCandidateTrialFeedback, automationStudioTrialStepControl } from "../index.ts";
 import { runLibraryHolds } from "./act-ledger/tests/library-holds-loop.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../../runtime/domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../../runtime/domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 // Lane A round 4 (`run-muyrpbnk-fef374e7`, 0032 and 0048): the model was told only "step 2, dom-click, failed,
 // web.target.not_found" and then "web.action.rate_limited". C4: each step names the control it acted on and what

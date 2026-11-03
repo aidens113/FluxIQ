@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { AutomationStudioDomainReadings } from "../domain-readings/index.ts";
 import { activitySaidOnce, cutAtWord } from "../../ui/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
@@ -13,7 +14,7 @@ import { runWithAutomationStudioActivity } from "./scope.ts";
  * the person (`../flow-bootstrap/generation-failure/build-ending.ts`) rather
  * than the bare "Build failed" 30 live runs ended on (audit A3, cause 1).
  */
-export async function withAutomationStudioBuildActivity<T>(target: { projectId?: unknown; flowId?: unknown }, fn: () => Promise<T>): Promise<T> {
+export async function withAutomationStudioBuildActivity<T>(target: { projectId?: unknown; flowId?: unknown; domainReadings?: Readonly<AutomationStudioDomainReadings> | undefined }, fn: () => Promise<T>): Promise<T> {
   if (typeof target.projectId !== "string" || !target.projectId) return await fn();
   const flowId = typeof target.flowId === "string" && target.flowId ? target.flowId : undefined;
   return await runWithAutomationStudioActivity({ kind: "build", id: `build-${randomUUID()}`, projectId: target.projectId, ...(flowId ? { flowId } : {}) }, async () => {
@@ -41,7 +42,7 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
       emitAutomationStudioActivity({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", ...(text ? { text } : {}) }, final: true, ...(stopped ? { stopped: true as const } : {}) });
       throw error;
     }
-  });
+  }, { readings: target.domainReadings });
 }
 
 /**

@@ -40,6 +40,7 @@
 // lent no quote: the lending below stays for a row named row by row. Nor is a
 // settled condition named by a tested column that is one of the answer's own
 // (`summary-reads.ts`), which a reply lists routinely.
+// A settled condition is deliberately stricter than an unsettled row: Core measured its rows, so what is left to show is that the condition is the request's, and naming rows beside any request quote does not show that (t841 tried accepting it and reverted).
 //
 // **A row is named by Core's short id too (t599, `row-id.ts`)**, which the
 // judge's copy shows before each left-out row (`row-naming.ts`). And the reads

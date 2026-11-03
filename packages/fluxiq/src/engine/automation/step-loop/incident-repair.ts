@@ -6,6 +6,7 @@ import type { AutomationStudioAttemptRepairTrace, AutomationStudioClearedLayer, 
 import type { AutomationStudioFaultAssessment } from "../defensive/index.ts";
 import type { AutomationStudioInvocationOptions } from "../frames/index.ts";
 import { automationStudioIncidentHandlerRetrial, type AutomationStudioIncidentRepair, type AutomationStudioIncidentRepairRequest, type AutomationStudioInterruptionLearningRequest, type AutomationStudioRepairUnit, type AutomationStudioRunRepair } from "../lifecycle-run/index.ts";
+import { automationStudioRecordBatchKey } from "../records/index.ts";
 import { AUTOMATION_STUDIO_TARGET_GONE_CODE } from "../target-reacquire/index.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
 import { automationStudioStepLifecycleRegister } from "./lifecycle/index.ts";
@@ -53,7 +54,10 @@ export async function automationStudioStepRepairIncident(
   if (!options.repairIncident || !invocation || !incidentId) return undefined;
   const prior = invocation.run.lifecycle.repairs.get(incidentId);
   if (prior) {
-    if (prior.outcome === "held") dropOverlay(ctx, invocation, failure, incidentId, prior);
+    if (prior.outcome === "held") {
+      dropOverlay(ctx, invocation, failure, incidentId, prior);
+      await discardRowsOfReplaced(ctx, failure);
+    }
     return undefined;
   }
   if (!automationStudioStepRepairWillAsk(ctx, failure)) return undefined;
@@ -76,7 +80,30 @@ export async function automationStudioStepRepairIncident(
     record(ctx, invocation, failure, incidentId, { unit: answer.unit, outcome: "none", reason: `The fix left out ${failure.node.id}, the step it was to fix, so it was not used.` });
     return undefined;
   }
+  await discardRowsOfReplaced(ctx, failure);
   return { kind: "next", node: holdOverlay(ctx, invocation, failure, incidentId, answer, reattempt) };
+}
+
+/**
+ * What the failing unit stored leaves with it: the fix's re-attempt is that unit
+ * again, under attempt ids of its own, so rows it stored before it failed (a part
+ * whose read succeeded before its contract broke, a read whose check failed after
+ * it stored) would stay beside the fix's. Rows of the run's other steps, an earlier
+ * loop pass of this one included, are not the unit's and are not touched.
+ */
+async function discardRowsOfReplaced(ctx: AutomationStudioStepLoopContext, failure: TrueFailure): Promise<void> {
+  const discard = ctx.options.discardRecordBatches;
+  if (!discard) return;
+  const path = ctx.options.callFlowAttemptPath ?? [];
+  const keys: string[] = [];
+  for (let at = failure.attemptIndex; at >= 0 && ctx.attempts[at]!.nodeId === failure.node.id && ctx.attempts[at]!.status === "failed"; at -= 1) keys.push(...attemptBatchKeys(ctx.attempts[at]!, path));
+  await discard(keys);
+}
+
+/** The batch key an attempt would store under, and those of the attempts it called: a called graph's attempts key under the attempt that called them. */
+function attemptBatchKeys(attempt: AutomationStudioNodeAttemptTrace, path: readonly string[]): string[] {
+  const childPath = [...path, attempt.attemptId];
+  return [automationStudioRecordBatchKey(path, attempt.attemptId), ...(attempt.childTrace?.attempts ?? []).flatMap((child) => attemptBatchKeys(child, childPath))];
 }
 
 /**

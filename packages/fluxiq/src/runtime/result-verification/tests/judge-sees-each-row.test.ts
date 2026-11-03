@@ -121,4 +121,27 @@ describe("a check of a step that runs per row, over a saved trace's row markers"
     expect(rowsOf([recordSet({ collected: 4, kept: 4 })], true)).toEqual(placed);
     expect(rowsOf([])).toEqual(placed);
   });
+
+  // A repair's re-run from the Flow's start replaces what the run stored, so the
+  // ordinals its first pass's markers hold now point at the re-run's rows (t848).
+  it("never reads a marker of a pass the Flow ran again from its start as a row of the re-run", () => {
+    const rerun: AutomationStudioNodeAttemptTrace[] = [
+      ...saved,
+      attempt("s7", "succeeded"),
+      pass(marker(1)), attempt("s9", "succeeded"),
+      attempt("s8", "succeeded", { route: "done" })
+    ];
+    const summary = summarizeAutomationStudioRunResult({ recordSets: [recordSet()], flowNodes: withRead(false), flowEdges: edges, sessionAttempts: rerun, deniedEvidenceKeys: DENIED });
+    expect(summary.flowShape.find((entry) => entry.nodeId === "s9")!.rowsActedOn).toEqual(["row 2 collected into requests", "row 4 collected into requests", stored[0]]);
+  });
+
+  it("finds the re-run by a start node where the Flow has one, and reads a pass that was resumed as the same pass", () => {
+    const withStart: AutomationStudioFlowNode[] = [{ id: "begin", definitionId: "builtin.control.start" }, ...withRead(false)];
+    const startEdges: AutomationStudioFlowEdge[] = [{ id: "e0", sourceNodeId: "begin", targetNodeId: "s7" }, ...edges];
+    const begin = () => ({ attemptId: `a${++next}`, nodeId: "begin", definitionId: "builtin.control.start", startedAt: next, status: "succeeded" as const, inputs: {}, outputs: {}, effects: [] });
+    const rowsFor = (attempts: AutomationStudioNodeAttemptTrace[]) => automationStudioResultStepRows({ flowNodes: withStart, flowEdges: startEdges, attempts, deniedEvidenceKeys: DENIED, capturedRow: (_dataset, ordinal) => stored[ordinal - 1] }).rows.get("s9");
+    // A retried read, and a resume at the loop, are the same pass: every marker there still names its own row.
+    expect(rowsFor([begin(), attempt("s7", "failed"), attempt("s7", "succeeded"), pass(marker(2)), attempt("s9", "failed"), pass(marker(4)), attempt("s9", "succeeded")])).toEqual([stored[3]]);
+    expect(rowsFor([begin(), attempt("s7", "succeeded"), pass(marker(2)), attempt("s9", "succeeded"), begin(), attempt("s7", "succeeded"), pass(marker(1)), attempt("s9", "succeeded")])).toEqual(["row 2 collected into requests", stored[0]]);
+  });
 });

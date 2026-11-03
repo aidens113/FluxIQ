@@ -279,6 +279,8 @@ this entry if you write element targets or read their fingerprints.
 
 **Unchanged.** Every other undeclared fingerprint key is still dropped.
 
+**New hooks (t851).** The implementation bundle gains `recordedStepReader`, `controlWordsReader`, `controlParameterKeys`, `activityControlReader` and `stateElementKindReader`. A domain that supplies none keeps working, on the closed side: its recorded steps are withheld, a model is told no name for a control, a checked rerun takes no new value, and a card says its verb alone ([what each does with none](./runtime-ownership.md#hooks-on-the-implementation-bundle)). `fluxiq/automation` also exports `runWithAutomationStudioDomainReadings`, for a host seam that runs outside a build.
+
 **Moved.** Core no longer exports `isAutomationStudioElementTarget`, `normalizeAutomationStudioElementTarget` or `validateAutomationStudioElementTarget`, and `model/action-element-target` holds passive types only. The web domain owns target normalization and registers `outputTargetPreparer` and its sibling hooks; Core carries a target unread ([hooks](runtime-ownership.md#hooks-on-the-implementation-bundle)).
 
 ### Next minor (unreleased): a retried step is judged by its retry, and a kept re-author is a durable change (`fluxiq`)
@@ -500,9 +502,10 @@ patch receipts or call the promotion gate yourself.
 
 **Added.**
 - `awaitsJudgedRun?: true` on the `unverifiable` member of
-  `AutomationStudioRuntimePatchVerification`. It is set only for a
-  `temporary_target_override` whose trial verdict is `unverifiable` with
-  `notResumableCode: "no_evidence"`. The trial still records no validation
+  `AutomationStudioRuntimePatchVerification`. It is set for a
+  `temporary_target_override`, or (t848) a `temporary_action_sequence` that
+  declared no consequence and did nothing lasting in its trial, whose trial verdict
+  is `unverifiable` with `notResumableCode: "no_evidence"`. The trial still records no validation
   result, `restoredExpectedState` stays false and the adaptation stays in
   `testing`.
 - `awaitsJudgedRun?: boolean` on `AutomationStudioAdaptationPromotionGateInput`.
@@ -515,7 +518,9 @@ patch receipts or call the promotion gate yourself.
 **Changed.**
 - `retryOriginalAction` (on the execution result, its receipt and the
   adaptation's metadata) is now true for a verification that awaits its judged
-  run, as it is for a `verified` one; never for `temporary_action_sequence`.
+  run, as it is for a `verified` one; since t848 that includes
+  `temporary_action_sequence`, whose resume point falls after its inserted steps,
+  so they are not taken twice.
 - The run resumes at the trial's resume point for such a receipt, under every
   other resume-point rule. The promotion decision records
   `evidence: "judged_whole_run"` when it allows one unattended.
@@ -1103,7 +1108,9 @@ a grant.
 
 **`edit_recovery` adaptations are refused.** Applying one used to report
 success and change nothing. It now throws "Adaptation patch edit_recovery has
-no durable application; <id> refused."
+no durable application; <id> refused." A `temporary_action_sequence` no longer
+maps to it: since t848 its change kind is `insert_steps`, a unit repair the
+candidate and the apply write through the overlay, gated like `replace_unit`.
 
 **Rolling back a graph change restores the whole graph.** The inverse of
 `delete_node` now restores the edges the deletion removed. Restoring a snapshot

@@ -21,19 +21,21 @@
 // not said: only that the page explored was changed by an act the start took
 // back and no step does.
 //
+// A step's control's words are the domain's reading of its parameters. With no
+// reading in scope nothing can be measured, so no finding is said: this says a
+// step does not do an act, and that is never guessed.
+//
 // Words are generic: the act is named as the act log records it (its id, what
 // it did, the call that made it), and nothing names a site, page or task.
 
-import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import type { JsonObject } from "../../../../core/index.ts";
+import { automationStudioControlWordsOf, automationStudioModelFacingControlWordsReadable } from "../../../llm/model-facing/index.ts";
 import type { AutomationStudioSiteResetAbsorbedAct } from "./contracts.ts";
 
 /** The finding's code, first in each finding. */
 const CODE = "trial.explored_on_absorbed_act";
 /** More findings than this in one trial say nothing more. */
 const MAX_FINDINGS = 10;
-/** The fields a step's own parameters keep a control's words in (`../../llm/model-facing/control-words.ts`), and a flat target's name. */
-const WORD_FIELDS = ["accessibleName", "visibleText", "label", "placeholder"] as const;
-const FLAT_FIELDS = [...WORD_FIELDS, "name"] as const;
 
 /**
  * The `trial.explored_on_absorbed_act` findings of one trial (header): each
@@ -50,9 +52,9 @@ export function automationStudioSiteResetExploredOnAbsorbed(input: {
   whose: "subflow" | "flow";
 }): JsonObject[] {
   const explored = (input.absorbed ?? []).filter((act) => act.call !== undefined && words(act.control) !== "" && (input.owner === undefined || act.owner === input.owner));
-  if (!explored.length) return [];
+  if (!explored.length || !automationStudioModelFacingControlWordsReadable()) return [];
   const named = [
-    ...input.steps.flatMap((step) => [step.label, ...stepWords(step.parameters)]),
+    ...input.steps.flatMap((step) => [step.label, ...(automationStudioControlWordsOf(step.parameters)?.words ?? [])]),
     ...(input.ran ?? []).flatMap((act) => [act.label, act.control])
   ].map(words).filter((said) => said !== "");
   return explored
@@ -67,16 +69,6 @@ function said(act: AutomationStudioSiteResetAbsorbedAct, whose: "subflow" | "flo
   const steps = whose === "subflow" ? "no step of this subflow, nor of a subflow run before it," : "no step of this Flow";
   return `${act.act} (${act.did}${act.call ? `, call ${act.call}` : ""}) was made ${made}, and the start reset took it back before this trial; ${steps} does it. `
     + `So the page explored after it was changed by an act this trial's start undid and no step does, and the trial did not meet that page.`;
-}
-
-/** Every word-bearing field of a step's control, from its resolved `element`, its `target`'s fingerprint, or a flat `target`. */
-function stepWords(parameters: JsonObject | undefined): string[] {
-  const element = record(parameters?.element);
-  const target = record(parameters?.target);
-  const fingerprint = record(target?.fingerprint);
-  const flat = target && !fingerprint ? target : undefined;
-  const read = (identity: JsonObject | undefined, fields: readonly string[]) => (identity ? fields.map((field) => identity[field]).filter((value): value is string => typeof value === "string") : []);
-  return [...read(element, WORD_FIELDS), ...read(fingerprint, WORD_FIELDS), ...read(flat, FLAT_FIELDS)];
 }
 
 /** Words compared as a person reads them: case, spacing and surrounding quotes aside. */
@@ -101,8 +93,4 @@ function holds(text: string, phrase: string): boolean {
 
 function wordChar(char: string | undefined): boolean {
   return char !== undefined && /[\p{L}\p{N}]/u.test(char);
-}
-
-function record(value: JsonValue | undefined): JsonObject | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
 }

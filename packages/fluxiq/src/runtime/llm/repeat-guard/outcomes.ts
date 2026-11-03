@@ -132,7 +132,10 @@
 // `trial_reset_required`, `trial_reset_unproved` or `trial_start_differs`
 // (`candidate.` or `project.`) is lifted, on every page, by any later call that
 // ran and was not refused -- a look included -- so the identical trial reaches
-// the ledger again, which answers it afresh. A refused call meets nothing, and
+// the ledger again, which answers it afresh. So is `subflow.trial_from_step_first`
+// (t849): the run from the step that clears it is the same tool with another
+// input, its gate's answers report no page, and whether a repair is checked is
+// the gate's state, which no page digest holds. A refused call meets nothing, and
 // with no call between, the identical trial is still refused. Meeting it
 // changes nothing the page could show, so the call that met it is recorded as
 // any call is. Every trial gate today also answers these refusals with the
@@ -142,6 +145,18 @@
 // retry exemption; the precondition is lifted only once a call meets it.
 // The loop's own memory of a
 // refused action is the other layer (`../refused-action-retest.ts`).
+//
+// **A refusal about the build is keyed on the build (t849).** A project
+// supervisor's own tools report no page, and a builder moves the target without
+// its loop seeing it, so after one look the page in the key stood still. A
+// `project.dispatch` refused `project.brief_repeated`, `project.repair_unchanged`
+// or `project.reset_repeated` was told what to do first, did it, and was refused
+// unrun here though Core's own check would have sent it. Such a tool names what
+// its refusals read through `requestContextKey` (`draftOf` here,
+// `../../project-agents/supervisor/request-keys/`), as a part run names its
+// draft: once that changes it is a new call, and until then it is refused as any
+// repeat. `project.assemble` is keyed the same way, on the returns it assembles.
+// No refusal is exempt and no answer's words are read.
 //
 // **A rerun that changed nothing is keyed on the decision and the draft, not
 // the page.** Live run `run-muwaobm2-882cadd9` (lane A, iterations 17-24) sent
@@ -295,8 +310,8 @@ const PRECONDITIONS: readonly AutomationStudioLlmEvidencePrecondition[] = [
     changesState: true
   },
   {
-    // `trial_starts_in_end_state` (t775) and the retired `trial_reset_required` / `trial_reset_unproved` / `trial_start_differs`: the trial waits on what this build has done since, a look included (header, office r2).
-    names: /^(?:trial[_-]?starts[_-]?in[_-]?end[_-]?state|trial[_-]?reset[_-]?required|trial[_-]?reset[_-]?unproved|trial[_-]?start[_-]?differs)$/iu,
+    // `trial_starts_in_end_state` (t775), `trial_from_step_first` (t804, t849) and the retired `trial_reset_required` / `trial_reset_unproved` / `trial_start_differs`: the trial waits on what this build has done since, a look included (header, office r2).
+    names: /^(?:trial[_-]?starts[_-]?in[_-]?end[_-]?state|trial[_-]?from[_-]?step[_-]?first|trial[_-]?reset[_-]?required|trial[_-]?reset[_-]?unproved|trial[_-]?start[_-]?differs)$/iu,
     met: (call) => !call.refused,
     changesState: false
   }

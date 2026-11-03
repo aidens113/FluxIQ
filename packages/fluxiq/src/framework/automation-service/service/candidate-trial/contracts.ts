@@ -6,6 +6,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { runAutomationStudioDetachedCandidate } from "../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import type { AutomationStudioHostResourceLease } from "../../../../runtime/project-agents/host-resources/index.ts";
+import type { AutomationStudioDomainReadings } from "../../../../runtime/domain-readings/index.ts";
 import type { AutomationStudioBuildTestJudgeInput, AutomationStudioBuildTestVerdict, AutomationStudioResultEndView, AutomationStudioResultRecordSetInput, AutomationStudioRunResultSummary } from "../../../../runtime/result-verification/index.ts";
 
 /**
@@ -144,6 +145,8 @@ export type AutomationStudioCandidateTrialPorts = {
   actionAttempts?: ((session: AutomationStudioRuntimeSession) => readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined) | undefined;
   observedStateKeys?: readonly string[] | undefined;
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /** The bound domain's readings of a node's parameters, entered for the trial (`../../../../runtime/domain-readings/`). Absent, the trial keeps those of the build it runs inside. */
+  domainReadings?: Readonly<AutomationStudioDomainReadings> | undefined;
   prepareStart?: AutomationStudioPrepareCandidateStart | undefined;
   /**
    * The handle the model can name each way out the trial's run pressed by, from

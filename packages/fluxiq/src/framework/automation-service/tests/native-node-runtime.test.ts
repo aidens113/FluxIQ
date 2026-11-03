@@ -7,7 +7,6 @@ import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automa
 import type { AutomationStudioRecordBatch } from "../executor/index.ts";
 import { runAutomationStudioGraph } from "../executor/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioLlmStepLogPageText } from "../../../runtime/llm/step-log/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../runtime/native-nodes/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import { automationStudioRunGraphOptions } from "../service/runtime-session/index.ts";
@@ -41,6 +40,17 @@ describe("a domain's target readings in its implementation bundle", () => {
     expect(new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({})).getTargetHooks("example")).toEqual({});
   });
 
+  it("hold the readings that keep Core free of a domain's fields, per domain", () => {
+    const recordedStepReader = () => null;
+    const stateElementKindReader = () => undefined;
+    const activityControlReader = () => undefined;
+    const controlParameterKeys = new Set(["target"]);
+    const runtime = new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ recordedStepReader, stateElementKindReader, activityControlReader, controlParameterKeys }));
+    expect(runtime.getTargetHooks("example")).toEqual({ recordedStepReader, stateElementKindReader, activityControlReader, controlParameterKeys });
+    expect(runtime.getTargetHooks("other")).toBeUndefined();
+    expect(() => runtime.register(manifest([]), { ...bundleOf({ controlParameterKeys: new Set(["other"]) }), packageId: "example.package" })).toThrow();
+  });
+
   it("refuse a second, different reading for one domain, and leave the first in place", () => {
     const first = () => ({ ok: true as const });
     const runtime = new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ outputTargetPreparer: first }));
@@ -57,16 +67,14 @@ describe("a domain's target readings in its implementation bundle", () => {
     expect(runtime.listRecordingMappers("example")[0]?.normalizeParameters).toBe(recordingCandidateParameterNormalizer);
   });
 
-  it("registers its evidence summary with the step log, which answers from nothing else", () => {
+  it("reads page text through its own registered evidence summaries only, never another runtime's", () => {
     const evidence = { registered: true };
-    expect(automationStudioLlmStepLogPageText.of(evidence)).toBeUndefined();
     const llmEvidenceSummary = { pageText: (value: unknown) => value === evidence ? "the domain's reading" : undefined };
-    new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ llmEvidenceSummary }));
-    expect(automationStudioLlmStepLogPageText.of(evidence)).toBe("the domain's reading");
-    const drop = automationStudioLlmStepLogPageText.use(llmEvidenceSummary);
-    expect(automationStudioLlmStepLogPageText.of({ other: true })).toBeUndefined();
-    drop();
-    expect(automationStudioLlmStepLogPageText.of(evidence)).toBeUndefined();
+    const registered = new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ llmEvidenceSummary }));
+    const bare = new AutomationStudioNativeNodeRuntime();
+    expect(registered.stepLogPageText(evidence)).toBe("the domain's reading");
+    expect(registered.stepLogPageText({ other: true })).toBeUndefined();
+    expect(bare.stepLogPageText(evidence)).toBeUndefined();
   });
 });
 

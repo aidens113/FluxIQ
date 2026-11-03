@@ -57,5 +57,7 @@ export const AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES: Record<AutomationStudioCh
   // nodes on a recovery path or the path a run takes. Structural, and linked to
   // its review record like every recovery path the plan names.
   add_handler: GATED,
-  replace_unit: GATED
+  replace_unit: GATED,
+  // Steps inserted ahead of a node run on the path every later run takes.
+  insert_steps: GATED
 };

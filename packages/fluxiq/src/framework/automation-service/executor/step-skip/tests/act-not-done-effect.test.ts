@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
 import { automationNodeStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioNodeDefinition, type AutomationStudioResolvedActionEffect } from "../../../../../components/automation/index.ts";
 import { automationStudioSkippedStepDoesAct } from "../index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../../runtime/domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../../runtime/domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 type Node = Parameters<typeof automationStudioSkippedStepDoesAct>[0];
 const commit: AutomationStudioResolvedActionEffect = { effectClass: "commit", permissionConsequences: [] };

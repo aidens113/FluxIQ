@@ -47,7 +47,9 @@ redact credential-like keys before entering execution traces.
 and Code Nodes, recording mappers, target resolvers, comparators, custom
 schemas, and editor metadata. `AutomationStudioImporterImplementationBundle`
 binds implementation functions separately. Manifests are safe for compiler and
-editor surfaces; implementation functions remain host-only.
+editor surfaces; implementation functions remain host-only. The bundle also
+carries the domain's readings of its own fields: [runtime ownership](./runtime-ownership.md#hooks-on-the-implementation-bundle)
+lists each hook, who calls it and what happens with none.
 
 Definitions are filtered to the active project scope before reaching the node
 palette. Domain nodes cannot appear globally or in another domain. Code-owned
@@ -421,11 +423,43 @@ processing again always starts from the collected rows, which stay as
 evidence. Processing never fails a run or replaces its error; a dataset left
 unprocessed reads as its collected rows, as every dataset did before.
 
+**What a repair writes.** A run's answer holds the rows of the passes that count,
+and nothing unjudged (`service/datasets/run-datasets.ts`, t848):
+
+- **A re-run from the Flow's start** replaces what earlier passes stored: each
+  dataset's first batch of the pass starts it over, taking on that batch's schema
+  and `process` declaration (`startsOver`), and a dataset the re-run leaves alone
+  keeps its rows until the re-run succeeds, when it is removed with a `deleted`
+  audit event. So a repaired run's dataset reads as a clean run's would.
+- **A patch's trial on a refuted run** stores nothing. Either a re-run follows it,
+  or the answer that was judged stands.
+- **A patch's trial on a failed step** is held in memory. Its rows join the run,
+  ahead of the retry's own, only if a retry takes it up; a trial that failed, or
+  one no retry took up, leaves none.
+- **An in-run repair** removes what the failing unit stored
+  (`discardRecordBatches`, by batch key), the attempts it called included, since
+  the unit's re-attempt stores under ids of its own. A dropped fix removes what its
+  trial stored too. Rows of the run's other steps stay, an earlier loop pass of the
+  same step included. A dataset left with no batch is removed, so the fix may store
+  another schema under its id.
+
+A saved trace's `$datasetRow` marker from a pass a re-run replaced is never read
+back as a row: its ordinal now names a row of the re-run, so it is named by its
+place instead (`runtime/result-verification/step-rows.ts`).
+
 **The account** (`AutomationStudioRecordProcessingAccount`, on a dataset
 summary's `processing`): `collected` (= `filteredOut` + `duplicates` + `cut`
 + `kept`), `keptNone` when the answer is empty, `belowMinRows` when it fell
 short, and `passes`: one entry per batch with its node, its pass number per
 node, its rows and its `newRows` (rows that repeat no earlier collected row).
+
+Each `where` condition also accounts for the rows it alone excluded. Its optional
+tested-value evidence comes from the same processing evaluation over collected
+rows, before answer-column projection. Evidence is screened before it reaches a
+judge and is left out of every public dataset and run-detail read; it is not an
+assertion the model can author. Older accounts remain valid
+without it and retain their previous verification requirements. Duplicate row
+labels cannot merge conflicting observations into a measured exclusion.
 
 **Not yet.** The build's test does not process: `buildTest.stores` still
 counts every row each pass of a read returned

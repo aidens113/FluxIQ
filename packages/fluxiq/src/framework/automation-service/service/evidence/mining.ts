@@ -3,11 +3,12 @@ import { safeSegment } from "../../../../programs/_shared/storage.ts";
 import type { RecordingDomainRegistry } from "../../../../flows/authoring/model/index.ts";
 import type { EvidenceObservation, SignalMiningResult } from "../../mining/index.ts";
 import type { CanonicalAutomationStudioRepositories } from "../../../persistence/automation/index.ts";
+import type { AutomationStudioStateElementKindReader } from "../../nodes/index.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 import type { AutomationStudioRecordingStore } from "../recordings/index.ts";
 import { createEvidenceFact, createEvidenceObservations } from "./facts.ts";
 import { confidenceForCorrelation, createCorrelationClaim, createStateActionCorrelations, createTransitionClaims } from "./correlations.ts";
-import { stateElementDescriptorsForTimeline } from "./state-elements.ts";
+import { stateElementDescriptorsForTimeline, stateElementKindReaderForTimeline } from "./state-elements.ts";
 import { formatStatePath } from "./text.ts";
 
 function uniqueBy<T>(values: T[], keyFor: (value: T) => string): T[] {
@@ -30,7 +31,8 @@ export class AutomationStudioEvidenceMining {
     private readonly recordingDomains: RecordingDomainRegistry,
     private readonly recordings: AutomationStudioRecordingStore,
     private readonly repositories: CanonicalAutomationStudioRepositories,
-    private readonly facade: AutomationStudioFacadePorts
+    private readonly facade: AutomationStudioFacadePorts,
+    private readonly stateElementKindReaderOf: (domainId: string) => AutomationStudioStateElementKindReader | undefined = () => undefined
   ) {}
 
   async mineRecordingEvidence(input: { projectId: string; normalizedTimelineId?: string; recordingId?: string }): Promise<SignalMiningResult> {
@@ -50,8 +52,9 @@ export class AutomationStudioEvidenceMining {
         observationsByFactId.set(factId, [...(observationsByFactId.get(factId) ?? []), observation]);
       }
     }
-    const descriptors = stateElementDescriptorsForTimeline(timeline, this.recordingDomains.list());
-    const correlations = createStateActionCorrelations(miningRunId, timeline, actions, descriptors);
+    const readKind = stateElementKindReaderForTimeline(timeline, this.recordingDomains.list(), this.stateElementKindReaderOf);
+    const descriptors = stateElementDescriptorsForTimeline(timeline, this.recordingDomains.list(), readKind);
+    const correlations = createStateActionCorrelations(miningRunId, timeline, actions, descriptors, readKind);
     const windows = actions.map((entry, index) => ({
       id: `window.${entry.id}`,
       kind: "immediate_post_action" as const,

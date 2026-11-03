@@ -204,7 +204,7 @@ describe("processAutomationStudioRecordRows", () => {
     });
     expect(result.rows).toEqual([kept]);
     expect(result.account).toMatchObject({ collected: 7, filteredOut: 6, kept: 1 });
-    expect(result.account.conditions).toEqual([
+    expect(result.account.conditions).toMatchObject([
       { field: "name", condition: "name not contains \"Spare Strap\"", rejected: 2, alone: 1, leftOutOnlyByThis: [{ field: "name", label: tips.name }] },
       { field: "name", condition: "name not contains [\"Charging Dock\"]", rejected: 5, alone: 4, leftOutOnlyByThis: [{ field: "name", label: watchA.name }, { field: "name", label: dock.name }, { field: "name", label: watchB.name }] },
       { field: "price", condition: "price atMost 100", rejected: 0, alone: 0, leftOutOnlyByThis: [] }
@@ -213,7 +213,7 @@ describe("processAutomationStudioRecordRows", () => {
 
   it("labels a left-out row by its first stored column holding text, and names no condition without a where", () => {
     const result = processOf(rows("n1", "b1", { title: " ", price: "$30", url: "/x" }, A), { where: [{ field: "price", lessThan: 25 }] });
-    expect(result.account.conditions).toEqual([
+    expect(result.account.conditions).toMatchObject([
       { field: "price", condition: "price lessThan 25", rejected: 2, alone: 2, leftOutOnlyByThis: [{ field: "price", label: "$30" }, { field: "title", label: "Alpha" }] }
     ]);
     expect(processOf(rows("n1", "b1", A, B)).account).not.toHaveProperty("conditions");

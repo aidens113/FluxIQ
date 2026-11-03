@@ -1,9 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioFlowDocument } from "../../../../../engine/automation/tests/fixture-contracts.ts";
 import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../runtime/automation-activity/index.ts";
 import { announceAutomationStudioStateRoute } from "../../../../../engine/automation/state-routing/index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../../runtime/domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../../runtime/domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;
