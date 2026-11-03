@@ -4,12 +4,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../../framework/persistence/project/migrations/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../content-protection.ts";
 import type { AutomationStudioProjectContentProtectionKey } from "../../content-protection.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import type { AutomationStudioProjectDatabase } from "../../database.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../../framework/persistence/project/migrations/index.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_KEY_MEDIA_TYPE, AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION } from "../index.ts";
 
 export type KeyringTestProject = {

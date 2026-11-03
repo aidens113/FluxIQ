@@ -5,7 +5,7 @@
 // chunk uses that name it are untouched. A keyed chunk is named by its digest;
 // a chunk still under the plain SHA-256 is named by its row, never by that
 // digest of page content.
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 import { GATEWAY_TRACE_CHUNK_MEDIA_TYPE } from "../gateway-trace-chunk-codec/index.ts";
 import type { ContentResealContext, ContentResealPassResult } from "./context.ts";
 import { resealSealedRows } from "./row-pass.ts";

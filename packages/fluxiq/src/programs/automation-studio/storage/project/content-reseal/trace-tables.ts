@@ -2,7 +2,7 @@
 // that never opened a gateway trace store has no trace tables, and one opened
 // only before chunk protection (0032) or keyed manifests (0034) has no sealed
 // form in them; the re-seal checks before it scans and never migrates them.
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 
 export type ContentResealTraceTables = { readonly chunks: boolean; readonly manifests: boolean };
 

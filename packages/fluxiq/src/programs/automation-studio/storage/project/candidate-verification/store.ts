@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
 import { automationStudioCandidateRequirementsDigest } from "../../../runtime/flow-bootstrap/verification/index.ts";
 import type { AutomationStudioCandidateLedgerRecord, AutomationStudioCandidateLedgerRequest, AutomationStudioCandidateLedgerStage } from "./contracts.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION } from "./migration.ts";

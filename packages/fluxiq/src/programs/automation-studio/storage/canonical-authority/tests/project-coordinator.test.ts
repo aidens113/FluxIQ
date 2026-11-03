@@ -2,7 +2,7 @@
 import { expect, it, vi } from "vitest";
 import { canonicalFixture } from "./fixture.ts";
 import { AutomationStudioProjectAuthorityGuardStore as Guard } from "../../project/authority-guard/index.ts";
-import { AutomationStudioProjectDatabasePool as Pool } from "../../project/index.ts";
+import { AutomationStudioProjectDatabasePool as Pool } from "../../../../../framework/persistence/project/sql/index.ts";
 
 it("deferred own-operation effect leaves both claims pending and global capture refuses", async () => {
   await canonicalFixture(async ({ create, owners, coordinator }) => {

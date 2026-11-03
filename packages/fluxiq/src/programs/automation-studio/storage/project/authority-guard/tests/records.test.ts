@@ -3,11 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectAuthorityGuardStore as Store } from "../index.ts";
 const digest = `sha256:${"a".repeat(64)}`;
 const request = { protocolVersion: 1 as const, projectId: "original-project", ownerKind: "flow", ownerId: "original-flow", operationKind: "flow.save", requestDigest: digest, expectedRevision: 0, operationKey: "original-operation" };
-async function fixture(run: (store: Store, sql: import("../../database.ts").AutomationStudioSqlExecutor) => Promise<void>) {
+async function fixture(run: (store: Store, sql: import("../../../../../../framework/persistence/project/sql/index.ts").AutomationStudioSqlExecutor) => Promise<void>) {
   const root = await mkdtemp(path.join(os.tmpdir(), "authority-records-")), pool = new AutomationStudioProjectDatabasePool({ rootDir: root });
   const store = await Store.open({ pool, projectId: request.projectId }), lease = await pool.acquire(request.projectId);
   try { await store.runLegacyMutation(request, async () => ({ value: null, resultDigest: digest })); await run(store, lease.database); }

@@ -1,14 +1,14 @@
 import { ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandClaim, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandReceipt, type ClientGatewayCommandRecord, type ClientGatewayCommandUnknownReason } from "../../../../../client-gateway/service/command-ledger/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
-import { AutomationStudioProjectUnitOfWork } from "../unit-of-work.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioProjectUnitOfWork } from "../../../../../framework/persistence/project/mutations/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
 import { AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT as SCAN_LIMIT, AUTOMATION_STUDIO_COMMAND_SCAN_PAGE as SCAN_PAGE, type AutomationStudioCommandRunObservation, type AutomationStudioCommandLedgerMutationProof, type AutomationStudioCommandLedgerOperation, type AutomationStudioCommandConsumptionOwner } from "./contracts.ts";
 import { AutomationStudioCommandRunAdmission } from "./admission.ts";
 import { AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "./migration.ts";
 import type { ExecutionEntry } from "../../../../../runtime/execution-admission/index.ts";
 import type { ExecutionAdmissionCommandLink, ExecutionCommandInventory } from "../execution-admission/index.ts";
-import type { AutomationStudioProjectMutationContext } from "../unit-of-work.ts";
+import type { AutomationStudioProjectMutationContext } from "../../../../../framework/persistence/project/mutations/index.ts";
 import { readExecutionCommandLinkProof } from "../execution-admission/command-proof.ts";
 type ClaimRow = {
     command_id: string;

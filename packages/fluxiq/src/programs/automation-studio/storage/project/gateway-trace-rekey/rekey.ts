@@ -20,7 +20,7 @@
 // request outlives a crash, a failed or busy VACUUM and an interrupted run, so
 // a later protected open still scrubs even when nothing is left to convert;
 // with no request the scrub is one read. Its status is reported, never thrown.
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 import { scrubProjectDatabaseIfRequested } from "../content-address/index.ts";
 import { protectGatewayTraceChunks } from "../gateway-trace-chunk-rows/index.ts";
 import type { ContentAddressScrubStatus } from "../content-address/index.ts";

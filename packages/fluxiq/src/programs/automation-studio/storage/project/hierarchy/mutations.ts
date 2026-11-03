@@ -1,6 +1,6 @@
 import type { AutomationStudioHierarchyEntry } from "./repository.ts";
-import type { AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
-import { AutomationStudioProjectUnitOfWork, type AutomationStudioIdempotentMutationResult } from "../unit-of-work.ts";
+import type { AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioProjectUnitOfWork, type AutomationStudioIdempotentMutationResult } from "../../../../../framework/persistence/project/mutations/index.ts";
 
 export const AUTOMATION_STUDIO_HIERARCHY_ROOT_PARENT_CACHE_ID = "__root__";
 

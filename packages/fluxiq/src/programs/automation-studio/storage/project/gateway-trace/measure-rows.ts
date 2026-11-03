@@ -1,6 +1,6 @@
 // Aggregate SELECTs behind the store's trace measures (lane T P3): lengths
 // and counts only, never a body, a digest or a payload.
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import type { AutomationStudioGatewayTraceChunkSetMeasure } from "./chunk-set-measure.ts";
 import type { AutomationStudioGatewayTraceMeasure } from "./measure.ts";
 

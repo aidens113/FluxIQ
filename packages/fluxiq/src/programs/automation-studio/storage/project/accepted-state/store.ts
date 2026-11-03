@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
-import { AutomationStudioProjectUnitOfWork } from "../unit-of-work.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioProjectUnitOfWork } from "../../../../../framework/persistence/project/mutations/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
 import type { AutomationStudioAcceptedProjectSnapshot, AutomationStudioAcceptedStateBinding, AutomationStudioAcceptedStateCurrent, AutomationStudioAcceptedStateMutationResult, AutomationStudioAcceptedStateReconciliation, AutomationStudioAcceptedStateRequest, AutomationStudioAcceptedStateTombstone } from "./contracts.ts";
 import { automationStudioAcceptedStateDigest } from "./digest.ts";
 import { AutomationStudioAcceptedStateValidation as Validation } from "./validation.ts";

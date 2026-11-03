@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 
 export type AutomationStudioEventStreamKind = "runtime" | "recording";

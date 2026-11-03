@@ -1,5 +1,5 @@
 import type { AutomationStudioProjectContentProtection } from "../content-protection.ts";
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 
 /** What opening the keyring or rotating its key needs. The caller has run 0033 on `database`. */
 export type AutomationStudioContentAddressKeyringInput = {

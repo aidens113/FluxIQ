@@ -1,7 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AutomationStudioProjectDatabasePool } from "./database.ts";
+import type { AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
 import type { AutomationStudioProjectContentProtection } from "./content-protection.ts";
 import {
   AutomationStudioProjectObjectRepository,

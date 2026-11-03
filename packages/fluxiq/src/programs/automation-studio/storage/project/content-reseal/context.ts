@@ -4,7 +4,7 @@
 // count and the test seams. A pass names an item by kind and id only: an
 // object id, a trace id, an address key id, or a chunk's keyed digest (a chunk
 // still under the plain SHA-256 is named by its row, never by that digest).
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 import type { ContentResealRetiringKeys } from "./retiring-keys.ts";
 
 /** The four kinds of sealed item a project holds. */

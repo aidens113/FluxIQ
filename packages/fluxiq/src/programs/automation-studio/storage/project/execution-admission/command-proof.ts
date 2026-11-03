@@ -1,5 +1,5 @@
-import type { AutomationStudioSqlExecutor } from "../database.ts";
-import { automationStudioMutationDigest as digest } from "../unit-of-work.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
+import { automationStudioMutationDigest as digest } from "../../../../../framework/persistence/project/mutations/index.ts";
 import { ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandClaim } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import { executionRecord } from "../../../../../runtime/execution-admission/validation/index.ts";
 import { executionAdmissionDecode, executionAdmissionEventValue, executionAdmissionRow } from "./codec.ts";

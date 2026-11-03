@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectAuthorityGuardStore as Store, type AuthorityGuardLegacyRequest } from "../index.ts";
 
 const digest = (letter = "a") => `sha256:${letter.repeat(64)}`;
@@ -77,7 +77,7 @@ describe("original project authority guard", () => {
 
   it("late unknown cannot leave a borrowed completion proof under unknown mutation key", async () => fixture(async store => {
     const claim = await store.claimLegacy(request()); if (!claim.executionAllowed) throw new Error("fixture");
-    const unit = Reflect.get(store, "unit") as import("../../unit-of-work.ts").AutomationStudioProjectUnitOfWork;
+    const unit = Reflect.get(store, "unit") as import("../../../../../../framework/persistence/project/mutations/index.ts").AutomationStudioProjectUnitOfWork;
     const original = unit.runIdempotent.bind(unit); let reached!: () => void, release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; }), waiting = new Promise<void>(resolve => { reached = resolve; });
     const spy = vi.spyOn(unit, "runIdempotent").mockImplementation(async (input, operation) => { if (input.operationKind === "authority_guard.legacy.unknown") { reached(); await gate; } return original(input, operation); });
@@ -90,7 +90,7 @@ describe("original project authority guard", () => {
   }));
 
   it("reconciles actual completion COMMIT followed by lost acknowledgement without second callback", async () => fixture(async store => {
-    const unit = Reflect.get(store, "unit") as import("../../unit-of-work.ts").AutomationStudioProjectUnitOfWork, original = unit.runIdempotent.bind(unit);
+    const unit = Reflect.get(store, "unit") as import("../../../../../../framework/persistence/project/mutations/index.ts").AutomationStudioProjectUnitOfWork, original = unit.runIdempotent.bind(unit);
     const spy = vi.spyOn(unit, "runIdempotent").mockImplementation(async (input, operation) => { const result = await original(input, operation); if (input.operationKind === "authority_guard.legacy.complete") throw new Error("lost acknowledgement after COMMIT"); return result; });
     let effects = 0; try { expect((await store.runLegacyMutation(request(), async () => { effects++; return { value: null, resultDigest: digest("b") }; })).status).toBe("completed"); }
     finally { spy.mockRestore(); }

@@ -1,4 +1,4 @@
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION: AutomationStudioSchemaMigration = {
   id: "0027_gateway_command_receipts_v1",

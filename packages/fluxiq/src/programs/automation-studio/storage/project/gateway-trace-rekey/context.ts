@@ -7,7 +7,7 @@
 import type { AutomationStudioContentAddressKeyring } from "../content-address/index.ts";
 import type { AutomationStudioProjectContentProtection } from "../content-protection.ts";
 import type { AutomationStudioProjectContentStore } from "../content-store.ts";
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 import type { GatewayTraceRekeyBudget } from "./budget.ts";
 
 /** The content store operations a rekey uses. */

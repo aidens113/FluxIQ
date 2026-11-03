@@ -21,10 +21,10 @@ import {
   type AutomationStudioRunDatasetPage,
   type AutomationStudioRunDatasetSummary
 } from "@fluxiq/contracts/automation-studio";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../framework/persistence/project/migrations/index.ts";
 
 /** One stored row: a JSON object keyed by the stored schema's field ids. */
 export type AutomationStudioRunDatasetRow = AutomationStudioRunDatasetPage["rows"][number];

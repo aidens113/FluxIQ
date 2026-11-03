@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectAuthorityGuardStore as Store } from "../index.ts";
 const enabled = process.env.FLUXIQ_AUTHORITY_GUARD_PROCESS_PROBE === "1";
 const request = { protocolVersion: 1 as const, projectId: "original-project", ownerKind: "flow", ownerId: "original-flow", operationKind: "flow.save", requestDigest: `sha256:${"a".repeat(64)}`, expectedRevision: 0, operationKey: "original-operation" };

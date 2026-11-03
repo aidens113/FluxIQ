@@ -5,7 +5,7 @@
 // chunks no use names. One transaction, so a trace appending its chunks and
 // their uses is seen whole or not at all. A project whose database never held a
 // trace has no chunk table, and so no chunks to free.
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 
 const DIGESTS_PER_STATEMENT = 400;
 

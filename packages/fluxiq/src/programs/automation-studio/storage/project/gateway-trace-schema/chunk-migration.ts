@@ -16,7 +16,7 @@
 // 0030 already holds data and its check allows only inline or object rows, so
 // the events table is rebuilt with the third form beside the first two. Every
 // existing row is copied as it was and still reads; 0030 itself is unchanged.
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 const EVENT_COLUMNS = "trace_id, sequence, event_id, stream, kind, message_type, command_id, recording_id, causation_event_id, event_json, event_object_id";
 

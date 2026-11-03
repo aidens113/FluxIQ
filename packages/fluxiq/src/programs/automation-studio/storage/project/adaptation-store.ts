@@ -5,12 +5,12 @@ import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, parseAutomationStudioDeterministic
 import { AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION } from "../../runtime/compiled-plan.ts";
 import { automationStudioJudgedApplication, type AutomationStudioJudgedApplication } from "../../runtime/durable-behavior/index.ts";
 import { actionTargetParameterValues, decideAutomationStudioChangeConfidence, withAutomationStudioNodeAdaptationId, type AutomationStudioChangeConfidence } from "../../runtime/flow-change/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
 import { AutomationStudioProjectCompiledPlanStore, type AutomationStudioCompiledArtifactManifest } from "./compiled-plan-store.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectGraphRepository, automationStudioGraphPatchRequestDigest, type AutomationStudioGraphPatchApplied, type AutomationStudioGraphPatchOperation, type AutomationStudioGraphPatchResult } from "./graph-store.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../framework/persistence/project/migrations/index.ts";
 
 export type AutomationStudioStoredAdaptationStatus = AutomationStudioFlowAdaptation["status"];
 export type AutomationStudioStoredAdaptationArtifactKind = "patch" | "prompt" | "response" | "evidence" | "validation" | "rollback" | "audit";

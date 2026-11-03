@@ -1,4 +1,4 @@
-import type { AutomationStudioProjectDatabasePool } from "../database.ts";
+import type { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 
 export type AuthorityGuardOwner = { protocolVersion: 1; projectId: string; ownerKind: string; ownerId: string; requestDigest: string; expectedRevision: number };
 export type AuthorityGuardLegacyRequest = AuthorityGuardOwner & { operationKey: string; operationKind: string };

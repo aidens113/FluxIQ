@@ -7,7 +7,7 @@
 // protected open. A busy or failed VACUUM or checkpoint is reported, never
 // thrown; a reason is SQLite's own message (it never quotes row content) or
 // an error class name, never a provider's text.
-import type { AutomationStudioProjectDatabase, AutomationStudioWalCheckpointResult } from "../database.ts";
+import type { AutomationStudioProjectDatabase, AutomationStudioWalCheckpointResult } from "../../../../../framework/persistence/project/sql/index.ts";
 
 export type ContentAddressScrubStage = "vacuum" | "checkpoint" | "clear";
 

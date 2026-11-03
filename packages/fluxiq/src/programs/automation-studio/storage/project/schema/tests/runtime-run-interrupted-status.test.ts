@@ -3,10 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import { AUTOMATION_STUDIO_PROJECT_RUNTIME_RUN_INTERRUPTED_STATUS_MIGRATION } from "../index.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../../framework/persistence/project/migrations/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_RUNTIME_RUN_INTERRUPTED_STATUS_MIGRATION } from "../../../../../../framework/persistence/project/schema/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../../framework/persistence/project/migrations/index.ts";
 
 // Migration 0024_runtime_run_interrupted_status rebuilds `runtime_runs` so its status may be `interrupted`.
 // What must hold on a database that already has runs: every row and column is

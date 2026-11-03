@@ -4,7 +4,7 @@
 // so every holder of a key got it from the same sealed row.
 import { randomBytes } from "node:crypto";
 import type { AutomationStudioProjectContentProtection } from "../content-protection.ts";
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_KEY_MEDIA_TYPE } from "./key-media-type.ts";
 
 export type SealedContentAddressKeyRow = { keyId: string; sealed: Buffer; encryption: string };

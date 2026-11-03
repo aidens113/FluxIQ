@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
-import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../../../../framework/persistence/project/migrations/index.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
 import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../canonical-authority/index.ts";
 

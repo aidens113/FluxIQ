@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabase, AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AutomationStudioProjectDatabase, AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once

@@ -1,15 +1,7 @@
-export * from "./database.ts";
-export * from "./store-unavailable-error.ts";
+export * from "../../../../framework/persistence/project/sql/index.ts";
 export * from "./schema.ts";
-export {
-  AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS,
-  AutomationStudioProjectAdministration,
-  AutomationStudioProjectMetaRepository,
-  AutomationStudioChangeFeedRepository,
-  AutomationStudioStorageOutboxRepository,
-  AutomationStudioMigrationJobRepository,
-  AutomationStudioBackgroundJobRepository
-} from "./administration.ts";
+export { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
+export { AutomationStudioProjectAdministration, AutomationStudioProjectMetaRepository, AutomationStudioChangeFeedRepository, AutomationStudioStorageOutboxRepository, AutomationStudioMigrationJobRepository, AutomationStudioBackgroundJobRepository } from "./administration.ts";
 export type {
   AutomationStudioProjectMeta,
   AutomationStudioStorageOutboxStatus,
@@ -19,7 +11,7 @@ export type {
   AutomationStudioBackgroundJobStatus,
   AutomationStudioBackgroundJob
 } from "./administration.ts";
-export * from "./unit-of-work.ts";
+export * from "../../../../framework/persistence/project/mutations/index.ts";
 export * from "./object-repository.ts";
 export * from "./content-store.ts";
 export * from "./content-protection.ts";

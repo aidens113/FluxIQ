@@ -1,7 +1,7 @@
 import type { ExecutionAdmissionPersistence } from "../../../../../runtime/execution-admission/index.ts";
 import { executionEvidence, executionText } from "../../../../../runtime/execution-admission/validation/index.ts";
 import { ClientGatewayCommandLedgerController as Rules } from "../../../../../client-gateway/service/command-ledger/index.ts";
-import { automationStudioMutationDigest as digest } from "../unit-of-work.ts";
+import { automationStudioMutationDigest as digest } from "../../../../../framework/persistence/project/mutations/index.ts";
 import { mutateExecutionAdmission } from "./mutation.ts";
 import { executionAdmissionTouches, requireActiveExecutionEntry } from "./state.ts";
 import type { ExecutionAdmissionStorageContext } from "./context.ts";

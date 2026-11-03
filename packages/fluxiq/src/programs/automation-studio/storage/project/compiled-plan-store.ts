@@ -10,10 +10,10 @@ import {
   type AutomationStudioCompiledPlanNode
 } from "../../runtime/compiled-plan.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../runtime/executor.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../framework/persistence/project/migrations/index.ts";
 
 export type AutomationStudioCompiledArtifactManifest = {
   artifactId: string;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExecutionAdmissionPersistence } from "../../../../../runtime/execution-admission/index.ts";
 import { executionRecord, executionText } from "../../../../../runtime/execution-admission/validation/index.ts";
-import { automationStudioMutationDigest as digest } from "../unit-of-work.ts";
+import { automationStudioMutationDigest as digest } from "../../../../../framework/persistence/project/mutations/index.ts";
 import { executionAdmissionEntry } from "./codec.ts";
 import { mutateExecutionAdmission } from "./mutation.ts";
 import { executionAdmissionAncestors, executionAdmissionTouches, inspectExecutionAdmission, requireActiveExecutionEntry } from "./state.ts";

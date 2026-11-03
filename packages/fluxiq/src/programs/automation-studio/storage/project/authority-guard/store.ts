@@ -1,7 +1,7 @@
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioSqlExecutor } from "../database.ts";
-import { AutomationStudioProjectUnitOfWork } from "../unit-of-work.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioProjectUnitOfWork } from "../../../../../framework/persistence/project/mutations/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
 import { AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION } from "./migration.ts";
 import { AutomationStudioAuthorityGuardValidation as V } from "./validation.ts";
 import { AutomationStudioAuthorityGuardRecords as Records } from "./records.ts";

@@ -1,4 +1,4 @@
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_STAGED_PROJECT_AUTHORITY_MIGRATION: AutomationStudioSchemaMigration = {
   id: "0026_staged_project_snapshots_v1",

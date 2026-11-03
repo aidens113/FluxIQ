@@ -8,7 +8,7 @@
 // naming only its key id. A retired row that does not open (its host key was
 // retired since) is left out instead: the keyring does not hold it, so only the
 // rows still under it fail when read, and the store itself stays usable.
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_KEY_MEDIA_TYPE } from "./key-media-type.ts";
 import { AutomationStudioContentAddressKeyring } from "./keyring.ts";
 import { assertContentAddressKeyringInput } from "./keyring-input.ts";

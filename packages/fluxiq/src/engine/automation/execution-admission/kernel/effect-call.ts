@@ -3,9 +3,10 @@ import { OutputObservationBindings } from "../../../../runtime/output-dispatch/a
 import { AutomationObservationBindings } from "../bindings.ts";
 import { AutomationAdmissionDriver } from "../internal/index.ts";
 import { AutomationRetrySeries } from "./series.ts";
+import { automationExecutionProperty } from "./callback/index.ts";
 
 export async function invokeAutomationEffect(options: AutomationStudioGraphExecutionOptions, effect: Parameters<NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>>[0], context: Parameters<NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>>[1], attemptId: string, effectOrdinal: number) {
-  const callback = options.effectDispatcher;
+  const callback = automationExecutionProperty(options, options, "effectDispatcher");
   if (!callback) return undefined;
   const observation = AutomationObservationBindings.of(options);
   if (!observation) return await callback.call(options, effect, context);

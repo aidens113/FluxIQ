@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
-import { AutomationStudioProjectUnitOfWork, automationStudioMutationDigest } from "../unit-of-work.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioProjectUnitOfWork, automationStudioMutationDigest } from "../../../../../framework/persistence/project/mutations/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once
@@ -24,7 +24,7 @@ describe("AutomationStudioProjectUnitOfWork", () => {
   it("runs trusted admission inside the mutation transaction before initial work and every replay", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir }), unit = await AutomationStudioProjectUnitOfWork.open({ pool, projectId: "project.admission" });
     let checks = 0, effects = 0;
-    const input = { mutationId: "mutation.admission", operationKind: "noop", ownerKind: "project", ownerId: "project.admission", request: { value: 1 }, validateAdmission: async (sql: import("../database.ts").AutomationStudioSqlExecutor) => { checks++; expect(await sql.get("select mutation_id from mutation_records where mutation_id='mutation.admission'")).toEqual(checks === 1 ? undefined : { mutation_id: "mutation.admission" }); if (checks === 3) throw new Error("admission.closed"); } };
+    const input = { mutationId: "mutation.admission", operationKind: "noop", ownerKind: "project", ownerId: "project.admission", request: { value: 1 }, validateAdmission: async (sql: import("../../../../../framework/persistence/project/sql/index.ts").AutomationStudioSqlExecutor) => { checks++; expect(await sql.get("select mutation_id from mutation_records where mutation_id='mutation.admission'")).toEqual(checks === 1 ? undefined : { mutation_id: "mutation.admission" }); if (checks === 3) throw new Error("admission.closed"); } };
     try {
       expect((await unit.runIdempotent(input, async () => { effects++; return { ok: true }; })).replayed).toBe(false);
       expect((await unit.runIdempotent(input, async () => { effects++; return { ok: false }; })).replayed).toBe(true);

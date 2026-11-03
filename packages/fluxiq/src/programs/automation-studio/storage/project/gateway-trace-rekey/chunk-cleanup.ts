@@ -9,7 +9,7 @@
 // keyed chunks in one transaction. When it deleted anything it also requests a
 // scrub of the database file, in the same transaction.
 import { requestContentAddressScrub } from "../content-address/index.ts";
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import type { GatewayTraceRekeyContext } from "./context.ts";
 import { gatewayTraceOldFormFilters } from "./old-forms.ts";
 

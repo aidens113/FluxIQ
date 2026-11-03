@@ -10,10 +10,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayTraceEvent } from "../../../../../../client-gateway/trace/index.ts";
 import { correlation, newRecorder, textEvent } from "../../../../../../client-gateway/trace/tests/trace-builders.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../../framework/persistence/project/migrations/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../../framework/persistence/project/migrations/index.ts";
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION } from "../../gateway-trace-schema/index.ts";
 import { AutomationStudioProjectGatewayTraceStore } from "../index.ts";
 

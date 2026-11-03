@@ -5,9 +5,9 @@
 // only records: no rule here decides that a version was worse than another,
 // and nothing here restores anything. That comes after there is something to
 // decide from.
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../framework/persistence/project/migrations/index.ts";
 
 export type AutomationStudioFlowGraphJudgementStatus = "confirmed" | "refuted" | "unverified" | "no_result";
 

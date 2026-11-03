@@ -3,10 +3,12 @@ import { invokeObservedExecutionCallback } from "../../../../../runtime/executio
 import type { AutomationStudioGraphExecutionOptions } from "../../../contracts/index.ts";
 import { AutomationObservationBindings } from "../../bindings.ts";
 import { AutomationAdmissionDriver } from "../../internal/index.ts";
+import { assertAutomationClockCallback } from "./clock.ts";
 
 export async function invokeAutomationCallback<TReceiver, TArguments extends unknown[], TResult>(options: AutomationStudioGraphExecutionOptions, call: ExecutionCallbackCall<TReceiver, TArguments, TResult>): Promise<Awaited<TResult>> {
   const observation = AutomationObservationBindings.of(options);
   if (!observation) return await call.callback.apply(call.receiver, call.args);
+  assertAutomationClockCallback(options, call.callback);
   const driver = AutomationObservationBindings.read(observation).source;
   if (!(driver instanceof AutomationAdmissionDriver)) throw new Error("execution_observation.foreign_automation_source");
   driver.ensurePure(call);

@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioObjectIndex, AutomationStudioObjectOwner, AutomationStudioObjectSummary } from "../file-store.ts";
-import type { AutomationStudioProjectDatabasePool } from "./database.ts";
+import type { AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectObjectRepository } from "./object-repository.ts";
 
 export type AutomationStudioLegacyObjectIndexMigrationResult = {

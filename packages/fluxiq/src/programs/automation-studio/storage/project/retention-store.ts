@@ -1,7 +1,7 @@
 import type { AutomationStudioBackgroundJobRepository } from "./administration.ts";
 import { AutomationStudioProjectAdministration } from "./administration.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
 import type { AutomationStudioEventStreamKind } from "./event-chunk-store.ts";
 import { sweepUnusedGatewayTraceChunks } from "./gateway-trace-chunk-rows/index.ts";
 

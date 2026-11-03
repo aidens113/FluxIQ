@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioProjectAcceptedStateStore as Store } from "../index.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectFlowResourceRepository } from "../../flow-resource-repository.ts";
 import { AutomationStudioProjectGraphRepository } from "../../graph-store.ts";
 import { AutomationStudioCandidateVerificationStore } from "../../candidate-verification/index.ts";

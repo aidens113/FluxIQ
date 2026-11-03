@@ -1,4 +1,4 @@
-import type { AutomationStudioSqlExecutor } from "./project/index.ts";
+import type { AutomationStudioSqlExecutor } from "../../../framework/persistence/project/sql/index.ts";
 
 export type AutomationStudioQueryPlanRow = { id: number; parent: number; notused: number; detail: string };
 

@@ -25,7 +25,7 @@ import type { ContentAddressScrubStatus } from "../content-address/index.ts";
 import { scrubProjectDatabaseIfRequested } from "../content-address/index.ts";
 import type { AutomationStudioProjectContentProtection } from "../content-protection.ts";
 import { AutomationStudioProjectContentStore } from "../content-store.ts";
-import type { AutomationStudioProjectDatabasePool } from "../database.ts";
+import type { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { resealContentAddressKeyRows } from "./address-key-pass.ts";
 import { resealGatewayTraceChunkRows } from "./chunk-pass.ts";
 import type { AutomationStudioProjectContentResealSeams, ContentResealContext, ContentResealItem, ContentResealPassResult } from "./context.ts";

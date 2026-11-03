@@ -11,7 +11,7 @@
 // same transaction (t745 u5), which the store honours at the end of its open.
 import { requestContentAddressScrub } from "../content-address/index.ts";
 import type { AutomationStudioContentAddressKeyring } from "../content-address/index.ts";
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 import { keyedReusableLlmContextDigest, reusableLlmContextDigestMatches } from "./digest.ts";
 
 export type ReusableLlmContextDigestRekeyOptions = {

@@ -10,5 +10,7 @@ export { AutomationNativeObservationBindings } from "./native-bindings.ts";
 export { invokeAutomationNative } from "./native-call.ts";
 export { invokeAutomationEffect } from "./effect-call.ts";
 export { invokeAutomationCallback, invokeAutomationCallbackSync, automationCallbackObservation, markAutomationCallbackFrameUnknown } from "./callback/index.ts";
+export { automationExecutionProperty, automationObservedProperty } from "./callback/index.ts";
+export { automationExecutionClock } from "./clock.ts";
 export { AutomationRetrySeries } from "./series.ts";
 export { invokeAutomationBackend } from "./backend.ts";

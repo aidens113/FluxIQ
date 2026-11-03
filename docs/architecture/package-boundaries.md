@@ -38,6 +38,16 @@ development and are rewritten to JavaScript extensions in emitted code and
 declarations. Package tarballs include only compiled output and a package
 README.
 
+Project SQL, connection pools, prepared-statement caches, schema migrations,
+default migration definitions and units of work are owned by framework project
+persistence, available through the server-only `fluxiq/framework/persistence`
+entry. Legacy Studio storage paths re-export the same constructors, constants
+and state owners. They do not create a second pool or migration cache. Applied
+migration IDs, order, checksums and SQL remain compatible. When both an
+operation and its cleanup fail, the database/unit-of-work owner reports an
+`AggregateError` retaining both original errors with the primary as `cause`;
+successful cleanup preserves the original primary throw.
+
 The declaration postprocessor also resolves emitted imports with NodeNext
 without workspace `baseUrl` or `paths`. It rejects unresolved aliases,
 absolute paths, private package subpaths and relative imports outside the

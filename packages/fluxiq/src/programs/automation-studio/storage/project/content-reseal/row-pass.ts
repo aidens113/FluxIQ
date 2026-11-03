@@ -12,7 +12,7 @@
 // id and never written. Selection needs no job state: a rerun after a stop
 // finds exactly the rows still under a retiring key.
 import { requestContentAddressScrub } from "../content-address/index.ts";
-import type { AutomationStudioProjectDatabase, AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioProjectDatabase, AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import type { ContentResealContext, ContentResealKind, ContentResealPassResult } from "./context.ts";
 
 /** A row's sealed form: the sealed bytes and their envelope. */

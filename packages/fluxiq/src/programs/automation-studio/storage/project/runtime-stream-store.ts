@@ -15,7 +15,7 @@ import type {
   StateSnapshot,
   StateValue
 } from "../../model/index.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import { AutomationStudioProjectEventChunkStore, type AutomationStudioChunkEvent } from "./event-chunk-store.ts";
 import { AutomationStudioRecordingStreamStore, AutomationStudioRecordingStreamSummary, AutomationStudioRecordingStreamProjection } from "./recording-stream/index.ts";

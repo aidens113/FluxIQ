@@ -1,1 +1,1 @@
-export * from "./schema/index.ts";
+export * from "../../../../framework/persistence/project/schema/index.ts";

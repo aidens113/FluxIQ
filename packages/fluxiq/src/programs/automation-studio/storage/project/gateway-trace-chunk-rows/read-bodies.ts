@@ -5,7 +5,7 @@
 // never returned shortened or with a piece left out. An event and every chunk
 // it names must be in the same form (t745): the same address key, or none; a
 // chunk in another form throws, as a keyed chunk the store cannot verify does.
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import { openGatewayTraceChunk } from "../gateway-trace-chunk-codec/index.ts";
 import type { GatewayTraceChunkSealing, GatewayTraceChunkedBodyRef } from "../gateway-trace-chunk-codec/index.ts";
 

@@ -1,4 +1,4 @@
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioAuthorityGuardValidation as V } from "./validation.ts";
 import type { AuthorityGuardCaptureRecord, AuthorityGuardCaptureRequest, AuthorityGuardCaptureRelease, AuthorityGuardCompletion, AuthorityGuardLegacyRecord, AuthorityGuardLegacyRequest, AuthorityGuardState, AuthorityGuardUnknownReason } from "./contracts.ts";
 

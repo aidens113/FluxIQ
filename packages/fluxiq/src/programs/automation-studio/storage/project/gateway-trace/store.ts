@@ -44,12 +44,12 @@ import type {
   ClientGatewayTraceManifest,
   ClientGatewayTraceStore
 } from "../../../../../client-gateway/trace/index.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, openAutomationStudioContentAddressKeyring } from "../content-address/index.ts";
 import type { AutomationStudioProjectContentProtection } from "../content-protection.ts";
 import { AutomationStudioProjectContentStore } from "../content-store.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import { rekeyGatewayTraceStore } from "../gateway-trace-rekey/index.ts";
 import type { GatewayTraceRekeyOptions, GatewayTraceRekeyResult } from "../gateway-trace-rekey/index.ts";
 import { gatewayTraceArtifactRowDigest, prepareGatewayTraceEventBody } from "../gateway-trace-chunk-codec/index.ts";

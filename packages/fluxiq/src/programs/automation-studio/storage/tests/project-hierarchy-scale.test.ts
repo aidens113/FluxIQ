@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool, AutomationStudioProjectHierarchyRepository } from "../project/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioProjectHierarchyRepository } from "../project/index.ts";
 import { assertNoCriticalFullScan, assertPlanMentions, explainAutomationStudioQueryPlan } from "../query-plan.ts";
 
 // Its own directory per case: a fixed path under the working directory was

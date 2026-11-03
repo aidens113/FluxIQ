@@ -1,8 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioProject, AutomationStudioProjectCategory } from "../api/contracts.ts";
-import { AutomationStudioProjectDatabase } from "./project/index.ts";
-import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "./schema-migrations.ts";
+import { AutomationStudioProjectDatabase } from "../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../../../framework/persistence/project/migrations/index.ts";
 
 export type AutomationStudioCatalogProject = AutomationStudioProject & {
   storagePath: string;

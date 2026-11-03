@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectEventChunkStore, type AutomationStudioChunkEvent, type AutomationStudioEventChunkRecord, type AutomationStudioEventStreamKind } from "./event-chunk-store.ts";
 
 export type AutomationStudioEventStreamWriter = {

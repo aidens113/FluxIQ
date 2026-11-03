@@ -1,4 +1,4 @@
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import type { AutomationStudioChunkEvent, AutomationStudioProjectEventChunkStore } from "../event-chunk-store.ts";
 import { automationStudioRecordingEntry as entryCodec } from "./entry.ts";
 

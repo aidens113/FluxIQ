@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { nativeExchangeLogFunctions as original } from "./functions.ts";
+import { NativeClock } from "../../../clock/native/index.ts";
 
 /** Per-call native facts only. This object issues no execution or completion authority. */
 export class NativeExchangeLogInvocation {
@@ -15,9 +16,7 @@ export class NativeExchangeLogInvocation {
       const descriptor = Object.getOwnPropertyDescriptor(original.fs, name);
       if (descriptor && "value" in descriptor && descriptor.value === callback) this.#available.add(name);
     }
-    const date = Object.getOwnPropertyDescriptor(globalThis, "Date");
-    const now = typeof original.date === "function" ? Object.getOwnPropertyDescriptor(original.date, "now") : undefined;
-    if (date && "value" in date && date.value === original.date && now && "value" in now && now.value === original.now && typeof original.now === "function") this.#available.add("now");
+    if (NativeClock.available("now")) this.#available.add("now");
   }
 
   static state(value: NativeExchangeLogInvocation): "unused" | "disabled" | "acknowledged" | "failed" | "unsupported" {
@@ -97,11 +96,10 @@ export class NativeExchangeLogInvocation {
 
   static now(value: NativeExchangeLogInvocation | undefined): number {
     if (value === undefined) return Date.now();
-    return this.#original(value).#perform("now", () => {
-      if (typeof original.now !== "function") throw new Error("exchange_log.native_clock_unavailable");
-      const now: unknown = Reflect.apply(original.now, original.date, []);
-      if (typeof now !== "number") throw new Error("exchange_log.native_clock_invalid");
-      return now;
+    const invocation = this.#original(value);
+    return invocation.#perform("now", () => {
+      if (typeof original.now !== "function") throw new Error("exchange_log.native_identity_unavailable");
+      return Reflect.apply(original.now, original.date, []);
     });
   }
 

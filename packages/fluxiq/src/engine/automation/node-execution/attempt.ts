@@ -42,7 +42,7 @@ import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refre
 import { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP, automationStudioRuntimeRepeatExecutionKind } from "../../../runtime/repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "../repeat/index.ts";
 import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
-import { invokeAutomationNative, invokeAutomationEffect, invokeAutomationCallback, invokeAutomationCallbackSync, AutomationPureCallbacks, hasAutomationExecutionObservation, markAutomationCallbackFrameUnknown } from "../execution-admission/kernel/index.ts";
+import { invokeAutomationNative, invokeAutomationEffect, invokeAutomationCallback, invokeAutomationCallbackSync, AutomationPureCallbacks, hasAutomationExecutionObservation, markAutomationCallbackFrameUnknown, automationExecutionProperty, automationExecutionClock } from "../execution-admission/kernel/index.ts";
 import { assertAutomationRecordBatchData } from "../execution-admission/options/index.ts";
 
 // `cleared` collects the layers each dispatch of the attempt says the client
@@ -82,7 +82,7 @@ export class AutomationStudioNodeAttemptExecution {
     repeatSample?: AutomationStudioRuntimeRepeatSample
   ): Promise<AutomationStudioNodeAttemptTrace> {
     await options.commandRun?.checkpoint();
-    const startedAt = options.now?.() ?? Date.now();
+    const startedAt = automationExecutionClock(options, "now", options);
     const attemptId = `${node.id}.attempt.${attemptNumber}`;
     const consumer = options.commandRun ? Object.freeze({}) : undefined;
     if (consumer) this.entries.set(consumer, Object.freeze({ run: options.commandRun!, invocationId: randomUUID(), attemptId, nodeId: node.id, executingFlowId: flow.flowId, executingFlowDigest: Rules.digest(flow) }));
@@ -108,25 +108,27 @@ export class AutomationStudioNodeAttemptExecution {
     // to which a trusted false schema default may honestly apply.
     runState.actionEffects.delete(node.id);
     try {
-      const originalFloor = options.resolveActionEffect?.(node, resolvedParameters.missingPaths.length ? authoredParameters : resolvedParameters.values);
-      const refreshedFloor = executionParameters !== resolvedParameters.values ? options.resolveActionEffect?.(node, executionParameters) : undefined;
+      const originalResolver = automationExecutionProperty(options, options, "resolveActionEffect");
+      const originalFloor = originalResolver ? invokeAutomationCallbackSync(options, { receiver: options, callback: originalResolver, args: [node, resolvedParameters.missingPaths.length ? authoredParameters : resolvedParameters.values] }) : undefined;
+      const refreshedResolver = executionParameters !== resolvedParameters.values ? automationExecutionProperty(options, options, "resolveActionEffect") : undefined;
+      const refreshedFloor = refreshedResolver ? invokeAutomationCallbackSync(options, { receiver: options, callback: refreshedResolver, args: [node, executionParameters] }) : undefined;
       const actionEffect = combineAutomationStudioResolvedActionEffects([originalFloor, refreshedFloor, parameterOverlay?.floor]);
       if (actionEffect) runState.actionEffects.set(node.id, actionEffect);
     } catch {
       return {
-        attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [],
+        attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: automationExecutionClock(options, "now", options), status: "failed", route: "failed", inputs, outputs: {}, effects: [],
         message: "The trusted action-effect declaration could not be resolved; the action was not run.",
         failure: { category: "graph_validation_or_unknown_node", code: "executor.action_effect.resolve_failed", retryable: false, stage: "dispatch", effect: "unacted" }
       };
     }
-    const hostCapabilities = hostRuntimeCapabilityIds(options.hostRuntime);
+    const hostCapabilities = hostRuntimeCapabilityIds(automationExecutionProperty(options, options, "hostRuntime"));
     if (resolvedParameters.missingPaths.length) {
       return {
         attemptId,
         nodeId: node.id,
         definitionId: node.definitionId,
         startedAt,
-        finishedAt: options.now?.() ?? Date.now(),
+        finishedAt: automationExecutionClock(options, "now", options),
         status: "failed",
         route: "failed",
         inputs,
@@ -143,7 +145,7 @@ export class AutomationStudioNodeAttemptExecution {
     const beforeAction = await captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" }, runState);
     if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
     if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
-      return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch", effect: "unacted" } }, options, beforeAction, hostCapabilities, runState);
+      return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: automationExecutionClock(options, "now", options), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch", effect: "unacted" } }, options, beforeAction, hostCapabilities, runState);
     }
     if (repeatSample) {
       const kind = automationStudioRuntimeRepeatExecutionKind(definition);
@@ -162,7 +164,7 @@ export class AutomationStudioNodeAttemptExecution {
       if (!admitted) {
         // Only this graph-owned private sample can authorize the terminal stop.
         repeatSample.stop();
-        return { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP.message, failure: { ...AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP.failure } };
+        return { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: automationExecutionClock(options, "now", options), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP.message, failure: { ...AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP.failure } };
       }
     }
     // A Call Subflow runs its sibling graph as a frame of this run, never through a host (`../frames/call-subflow.ts`).
@@ -175,10 +177,10 @@ export class AutomationStudioNodeAttemptExecution {
       // Its `inputs` were resolved above, as every parameter is: each holds the value it gives the child.
       runState.dispatchedActions.add(node.id);
       const called = await automationStudioCallSubflow({ node: executionNode, options: this.callFlowChildOptions(options, attemptId) });
-      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
+      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, automationExecutionClock(options, "now", options), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
     }
     if (!definition?.execute) {
-      if (!options.commandRun && options.nativeNodeExecutor) runState.dispatchedActions.add(node.id);
+      if (!options.commandRun && automationExecutionProperty(options, options, "nativeNodeExecutor")) runState.dispatchedActions.add(node.id);
       const native = await (!options.commandRun ? invokeAutomationNative(options, {
         node: executionNode,
         // The run's own Flow inputs, then what an edge brings: a declared port is
@@ -200,24 +202,24 @@ export class AutomationStudioNodeAttemptExecution {
         // An importer's definition is the native runtime's, so it says which routes the node declares.
         const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
         const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, target, definition?.outputs ?? native.declaredOutputs);
-        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities, runState);
+        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, automationExecutionClock(options, "now", options), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
-      if (options.commandRun && (!options.compositeExecutor || !options.commandRun.acceptsComposite(options.compositeExecutor))) {
+      const compositeExecutor = automationExecutionProperty(options, options, "compositeExecutor");
+      if (options.commandRun && (!compositeExecutor || !options.commandRun.acceptsComposite(compositeExecutor))) {
         await options.commandRun.stop("executor.unsupported_native_or_composite");
         throw new Error("executor.unsupported_native_or_composite");
       }
-      if (options.compositeExecutor) runState.dispatchedActions.add(node.id);
-      const compositeExecutor = options.compositeExecutor;
+      if (compositeExecutor) runState.dispatchedActions.add(node.id);
       const composite = compositeExecutor ? await invokeAutomationCallback(options, { receiver: options, callback: compositeExecutor, args: [{ node: executionNode, inputs, options: this.callFlowChildOptions(options, attemptId) }] }) : undefined;
       if (composite) {
-        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
+        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, automationExecutionClock(options, "now", options), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
       return await enrichAttemptWithHostState(executionNode, {
         attemptId,
         nodeId: node.id,
         definitionId: node.definitionId,
         startedAt,
-        finishedAt: options.now?.() ?? Date.now(),
+        finishedAt: automationExecutionClock(options, "now", options),
         status: "failed",
         route: "failed",
         inputs,
@@ -229,8 +231,8 @@ export class AutomationStudioNodeAttemptExecution {
     }
     // The node asks the host whether expected state holds; Core names which node
     // and attempt asked, and which snapshot the question is about.
-    const expectationHost = options.hostRuntime;
-    const boundEvaluator = expectationHost?.expectationEvaluator;
+    const expectationHost = automationExecutionProperty(options, options, "hostRuntime");
+    const boundEvaluator = expectationHost ? automationExecutionProperty(options, expectationHost, "expectationEvaluator") : undefined;
     const expectationEvaluator: AutomationNodeExpectationEvaluator | undefined = boundEvaluator
       ? (conditions, mode, timeoutMs, evaluationContext) => invokeAutomationExpectation(options, { receiver: expectationHost, callback: boundEvaluator, args: [conditions, mode, timeoutMs, { ...evaluationContext, nodeId: node.id, attemptId, ...(beforeAction ? { stateRef: beforeAction.stateRef } : {}) }] })
       : undefined;
@@ -241,8 +243,13 @@ export class AutomationStudioNodeAttemptExecution {
         // Run-scoped: one map for the whole run, so a write reaches the nodes after it.
         variables: runState.variables,
         iteration: this.iterationFor(runState, node.id),
-        ...(options.random ? { random: options.random } : {}),
-        ...(options.now ? { now: options.now } : {}),
+        ...(hasAutomationExecutionObservation(options) ? {
+          ...(automationExecutionProperty(options, options, "random") ? { random: function (this: unknown) { return automationExecutionClock(options, "random", this); } } : {}),
+          ...(automationExecutionProperty(options, options, "now") ? { now: function (this: unknown) { return automationExecutionClock(options, "now", this); } } : {})
+        } : {
+          ...(options.random ? { random: options.random } : {}),
+          ...(options.now ? { now: options.now } : {})
+        }),
         ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
         ...(expectationEvaluator ? { expectationEvaluator } : {})
@@ -253,7 +260,7 @@ export class AutomationStudioNodeAttemptExecution {
       let result = await invokeAutomationCallback(options, { receiver: definition, callback: execute, args: [context] });
       const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, definition.outputs);
-      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target) }, options, beforeAction, hostCapabilities, runState);
+      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, automationExecutionClock(options, "now", options), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target) }, options, beforeAction, hostCapabilities, runState);
     } catch (error) {
       await options.commandRun?.stop("executor.attempt_failed");
       // The one place a node's throw becomes an attempt, and therefore the one
@@ -318,16 +325,16 @@ export class AutomationStudioNodeAttemptExecution {
         if (options.commandRun && dispatched.failure?.code === "record_output.persist_failed") throw new Error("executor.required_capture_failed");
       } else {
         if (options.commandRun) {
-          if (effect.type !== "policy.output.dispatch" || !target.consumer || !options.effectDispatcher) throw new Error("executor.unsupported_required_effect");
+          if (effect.type !== "policy.output.dispatch" || !target.consumer || !automationExecutionProperty(options, options, "effectDispatcher")) throw new Error("executor.unsupported_required_effect");
           issued = await options.commandRun.context(target.consumer, index);
         }
-        if (!options.effectDispatcher) continue;
+        if (!automationExecutionProperty(options, options, "effectDispatcher")) continue;
         if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
         // Native implementations may emit an output whose floor becomes known
         // only now. Raise the same execution-only entry before dispatch throws.
         if (effect.type === "policy.output.dispatch" && effect.payload && typeof effect.payload === "object" && !Array.isArray(effect.payload)) {
           const outputNode: AutomationStudioFlowNode = { id: target.nodeId, definitionId: "builtin.policy.action", parameterValues: effect.payload };
-          const resolve = options.resolveActionEffect;
+          const resolve = automationExecutionProperty(options, options, "resolveActionEffect");
           const outputFloor = resolve ? invokeAutomationCallbackSync(options, { receiver: options, callback: resolve, args: [outputNode, effect.payload] }) : undefined;
           const combined = combineAutomationStudioResolvedActionEffects([target.runState.actionEffects.get(target.nodeId), outputFloor]);
           if (combined) target.runState.actionEffects.set(target.nodeId, combined);
@@ -510,7 +517,7 @@ export class AutomationStudioNodeAttemptExecution {
           throw error;
         }
       }
-      const persist = options.onRecordBatch;
+      const persist = automationExecutionProperty(options, options, "onRecordBatch");
       stored = persist ? await invokeAutomationCallback(options, { receiver: options, callback: persist, args: [batch] }) : undefined;
     } catch {
       target.runState.records.record(batch);

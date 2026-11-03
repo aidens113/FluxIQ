@@ -11,7 +11,7 @@
 // store opened with a protection seals every unsealed chunk as it opens, and
 // seals an unsealed chunk again whenever a write reuses it (`../gateway-trace-chunk-rows/protect-chunks.ts`,
 // `../gateway-trace-chunk-rows/write-chunks.ts`). The partial index keeps that check to the unsealed rows.
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_PROTECTION_MIGRATION: AutomationStudioSchemaMigration = {
   id: "0032_client_gateway_trace_chunk_protection",

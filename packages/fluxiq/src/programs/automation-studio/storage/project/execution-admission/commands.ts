@@ -1,6 +1,6 @@
 import type { ExecutionEntry, ExecutionEntryBridge, ExecutionEntrySnapshot } from "../../../../../runtime/execution-admission/index.ts";
 import { ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandClaim } from "../../../../../client-gateway/service/command-ledger/index.ts";
-import { automationStudioMutationDigest as digest } from "../unit-of-work.ts";
+import { automationStudioMutationDigest as digest } from "../../../../../framework/persistence/project/mutations/index.ts";
 import { readExecutionAdmissionInventory } from "./inventory.ts";
 import { executionAdmissionAncestors, inspectExecutionAdmission, requireActiveExecutionEntry } from "./state.ts";
 import { executionAdmissionEventDigest } from "./proof.ts";
@@ -9,7 +9,7 @@ import { executionAdmissionEventValue } from "./codec.ts";
 import type { ExecutionAdmissionCommandLink } from "./command-link.ts";
 import type { ExecutionAdmissionStorageContext } from "./context.ts";
 import type { ExecutionAdmissionSnapshot } from "./snapshot.ts";
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 export function createExecutionAdmissionCommandLink(context: ExecutionAdmissionStorageContext, bridge: ExecutionEntryBridge, sourceOwner: object, assertOpen: () => void): ExecutionAdmissionCommandLink {
     const prepared = new WeakMap<ExecutionEntry, {
         sql: AutomationStudioSqlExecutor;

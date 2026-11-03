@@ -5,7 +5,7 @@ const [root, phase, coreRoot] = process.argv.slice(2);
 const resolved = path.resolve(root);
 if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith("authority-process-")) throw new Error("Unowned probe root");
 const { pathToFileURL } = await import("node:url");
-const { AutomationStudioProjectDatabasePool } = await import(pathToFileURL(path.join(coreRoot, "packages/fluxiq/dist/programs/automation-studio/storage/project/database.js")).href);
+const { AutomationStudioProjectDatabasePool } = await import("fluxiq/framework/persistence");
 const { AutomationStudioProjectAuthorityGuardStore: Store } = await import(pathToFileURL(path.join(coreRoot, "packages/fluxiq/dist/programs/automation-studio/storage/project/authority-guard/index.js")).href);
 const pool = new AutomationStudioProjectDatabasePool({ rootDir: resolved });
 const store = await Store.open({ pool, projectId: "original-project" });

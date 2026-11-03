@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION, AutomationStudioCandidateVerificationStore, type AutomationStudioCandidateLedgerRequest } from "../index.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectFlowResourceRepository } from "../../flow-resource-repository.ts";
 import { automationStudioCandidateRequirementsDigest } from "../../../../runtime/flow-bootstrap/verification/index.ts";
 

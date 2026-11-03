@@ -1,7 +1,7 @@
-import type { AutomationStudioProjectDatabase, AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
+import type { AutomationStudioProjectDatabase, AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, AUTOMATION_STUDIO_PENDING_REMOVAL_PATH_MIGRATION, requestContentAddressScrub } from "./content-address/index.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../framework/persistence/project/migrations/index.ts";
 
 export type AutomationStudioProjectObjectRecord = {
   objectId: string;

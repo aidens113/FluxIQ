@@ -1,5 +1,5 @@
 import path from "node:path";
-import { AutomationStudioProjectDatabase, type AutomationStudioSqlExecutor } from "../project/database-owner/index.ts";
+import { AutomationStudioProjectDatabase, type AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioAuthorityGuardRecords as Records, type AuthorityGuardLegacyRequest } from "../project/authority-guard/index.ts";
 import type { CanonicalWholeCapability, CanonicalWholeSqlCapability } from "./contracts.ts";
 import { CanonicalAuthorityValidation as V } from "./validation.ts";

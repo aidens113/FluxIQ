@@ -4,7 +4,7 @@
 // retirement stay, so every address made under the key still verifies; only
 // the sealed form and its envelope change. A fresh seal that holds the key's
 // bytes as they are is refused, as it is when the key is first made.
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_KEY_MEDIA_TYPE } from "../content-address/index.ts";
 import type { ContentResealContext, ContentResealPassResult } from "./context.ts";
 import { resealSealedRows } from "./row-pass.ts";

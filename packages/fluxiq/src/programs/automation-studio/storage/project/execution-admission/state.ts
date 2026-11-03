@@ -1,5 +1,5 @@
 import type { ExecutionInspection } from "../../../../../runtime/execution-admission/index.ts";
-import { automationStudioMutationDigest as digest } from "../unit-of-work.ts";
+import { automationStudioMutationDigest as digest } from "../../../../../framework/persistence/project/mutations/index.ts";
 import type { ExecutionAdmissionRows } from "./rows.ts";
 import type { ExecutionAdmissionSnapshot } from "./snapshot.ts";
 import type { ExecutionAdmissionEvent } from "./event.ts";

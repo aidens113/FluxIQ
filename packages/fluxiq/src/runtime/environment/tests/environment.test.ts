@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { AutomationStudioChannelScope, automationStudioLiveRunEnvironment, AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironment } from "../index.ts";
 
 describe("automationStudioLiveRunEnvironment", () => {
+  it.each(["now", "random"] as const)("preserves an unobserved live %s wrapper's ordinary native replacement behavior", operation => {
+    const container = operation === "now" ? Date : Math;
+    const descriptor = Object.getOwnPropertyDescriptor(container, operation);
+    if (!descriptor) throw new Error("test.native_clock_missing");
+    let calls = 0;
+    let result: number | undefined;
+    try {
+      Object.defineProperty(container, operation, { configurable: true, value: () => {
+        calls++;
+        return 0.25;
+      } });
+      result = automationStudioLiveRunEnvironment[operation]();
+    } finally {
+      Object.defineProperty(container, operation, descriptor);
+    }
+    expect(result).toBe(0.25);
+    expect(calls).toBe(1);
+  });
+
   it("is today's fallbacks: the wall clock, a real wait, live randomness, unique ids and no channel scope", async () => {
     const env = automationStudioLiveRunEnvironment;
     const before = Date.now();

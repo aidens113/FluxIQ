@@ -25,7 +25,7 @@
 // still be on disk; the row goes in the releasing transaction, and the file and
 // then the row are removed after commit, or by the next content store open.
 // 0036 (t747) rekeys that table by file path; see pending-removal-path-migration.ts.
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION: AutomationStudioSchemaMigration = {
   id: "0033_content_addresses",

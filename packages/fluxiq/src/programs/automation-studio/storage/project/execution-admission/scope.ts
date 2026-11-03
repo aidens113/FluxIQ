@@ -1,6 +1,6 @@
 import type { ExecutionAdmissionPersistence, StoredExecutionScope } from "../../../../../runtime/execution-admission/index.ts";
 import { executionBinding, executionText } from "../../../../../runtime/execution-admission/validation/index.ts";
-import { automationStudioMutationDigest as digest } from "../unit-of-work.ts";
+import { automationStudioMutationDigest as digest } from "../../../../../framework/persistence/project/mutations/index.ts";
 import { mutateExecutionAdmission } from "./mutation.ts";
 import type { ExecutionAdmissionStorageContext } from "./context.ts";
 import type { ExecutionAdmissionRows } from "./rows.ts";

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { RecordingSession } from "../../../model/index.ts";
-import type { AutomationStudioProjectDatabaseLease } from "../database.ts";
+import type { AutomationStudioProjectDatabaseLease } from "../../../../../framework/persistence/project/sql/index.ts";
 import type { AutomationStudioChunkEvent, AutomationStudioProjectEventChunkStore } from "../event-chunk-store.ts";
 import { automationStudioRecordingEntry as entryCodec } from "./entry.ts";
 import { AutomationStudioRecordingStreamProjection } from "./projection.ts";

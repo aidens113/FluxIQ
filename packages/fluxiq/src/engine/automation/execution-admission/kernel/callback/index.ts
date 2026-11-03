@@ -2,3 +2,7 @@ export { invokeAutomationCallback } from "./invoke.ts";
 export { invokeAutomationCallbackSync } from "./sync.ts";
 export { automationCallbackObservation } from "./observation.ts";
 export { markAutomationCallbackFrameUnknown } from "./unknown.ts";
+export { markAutomationCallbackFrameUnknownSync } from "./unknown-sync.ts";
+export { automationExecutionProperty } from "./property.ts";
+export { automationObservedProperty } from "./observed-property.ts";
+export { assertAutomationClockCallback } from "./clock.ts";

@@ -7,7 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AutomationStudioProjectContentProtection } from "../../content-protection.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectGatewayTraceStore } from "../index.ts";
 
 const SQLITE_TRACE_PROJECT_ID = "project.gateway-trace";

@@ -3,12 +3,12 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
 import { AutomationStudioProjectEventChunkStore, type AutomationStudioChunkEvent, type AutomationStudioEventStreamKind } from "./event-chunk-store.ts";
 import { AutomationStudioProjectGraphRepository } from "./graph-store.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
 import { migrateAutomationStudioLegacyObjectIndex, type AutomationStudioLegacyObjectIndexMigrationResult } from "./object-index-migration.ts";
-import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../schema-migrations.ts";
+import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_V2_STORAGE_FEATURE = "automation_studio_v2_storage" as const;
 

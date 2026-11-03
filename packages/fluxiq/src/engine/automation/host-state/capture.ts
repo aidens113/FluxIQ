@@ -3,7 +3,7 @@ import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/i
 import type { AutomationStudioHostStateSnapshotRef } from "../../../runtime/automation-host/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { AutomationStudioRunState } from "../state/index.ts";
-import { invokeAutomationCallback } from "../execution-admission/kernel/index.ts";
+import { invokeAutomationCallback, automationExecutionProperty, automationExecutionClock } from "../execution-admission/kernel/index.ts";
 
 /**
  * How recent the page the last attempt ended on must be for the next attempt
@@ -35,11 +35,12 @@ export async function captureHostState(
 ): Promise<AutomationStudioHostStateSnapshotRef | undefined> {
   const ended = input.point === "before_action" ? runState.pageEnded : undefined;
   if (input.point === "before_action") runState.pageEnded = undefined;
-  const capture = options.hostRuntime?.captureStateSnapshot;
+  const host = automationExecutionProperty(options, options, "hostRuntime");
+  const capture = host ? automationExecutionProperty(options, host, "captureStateSnapshot") : undefined;
   if (!capture) return undefined;
   const offered = ended && now(options) - ended.receivedAt <= PAGE_ENDED_FRESH_MS ? ended.ref : undefined;
   try {
-    const outcome = await invokeAutomationCallback(options, { receiver: options.hostRuntime, callback: capture, args: [offered ? { ...input, previousStateRef: offered } : input] });
+    const outcome = await invokeAutomationCallback(options, { receiver: host, callback: capture, args: [offered ? { ...input, previousStateRef: offered } : input] });
     if ("stateSnapshotId" in outcome) return outcome;
     return undefined;
   } catch (cause) {
@@ -61,11 +62,12 @@ export async function enrichAttemptWithHostState(
 ): Promise<AutomationStudioNodeAttemptTrace> {
   const afterAction = await captureHostState(options, { node, attemptId: attempt.attemptId, inputs: attempt.inputs, point: "after_action" }, runState);
   runState.pageEnded = afterAction ? { ref: afterAction, receivedAt: now(options) } : undefined;
-  const inspectStateDiff = options.hostRuntime?.inspectStateDiff;
+  const host = automationExecutionProperty(options, options, "hostRuntime");
+  const inspectStateDiff = host ? automationExecutionProperty(options, host, "inspectStateDiff") : undefined;
   let stateDiff: JsonObject | undefined;
   if (inspectStateDiff && (beforeAction || afterAction)) {
     try {
-      stateDiff = await invokeAutomationCallback(options, { receiver: options.hostRuntime, callback: inspectStateDiff, args: [{
+      stateDiff = await invokeAutomationCallback(options, { receiver: host, callback: inspectStateDiff, args: [{
         ...(beforeAction ? { before: beforeAction } : {}),
         ...(afterAction ? { after: afterAction } : {}),
         node,
@@ -90,5 +92,5 @@ export async function enrichAttemptWithHostState(
 }
 
 function now(options: AutomationStudioGraphExecutionOptions): number {
-  return options.now?.() ?? Date.now();
+  return automationExecutionClock(options, "now", options);
 }

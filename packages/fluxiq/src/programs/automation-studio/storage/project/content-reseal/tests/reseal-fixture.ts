@@ -10,8 +10,8 @@ import { rotateAutomationStudioContentAddressKey } from "../../content-address/i
 import { AutomationStudioAesGcmProjectContentProtection } from "../../content-protection.ts";
 import type { AutomationStudioProjectContentProtection } from "../../content-protection.ts";
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import type { AutomationStudioProjectDatabase } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectGatewayTraceStore } from "../../gateway-trace/index.ts";
 import { recordTrace, viewText } from "../../gateway-trace/tests/keyed-trace-support.ts";
 

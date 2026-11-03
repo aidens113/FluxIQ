@@ -11,7 +11,7 @@
 // is in reach. Rows already held stay in their old form and keep reading; the
 // partial indexes keep a later rekey pass to the rows still in that form: the
 // unkeyed ones, and after a rotation those under a retired key (t745 u5).
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_KEYED_ADDRESS_MIGRATION: AutomationStudioSchemaMigration = {
   id: "0034_client_gateway_trace_keyed_addresses",

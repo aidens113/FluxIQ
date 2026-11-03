@@ -1,9 +1,9 @@
-import type { AutomationStudioChangeFeedOperation } from "../administration.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../database.ts";
+import type { AutomationStudioChangeFeedOperation } from "../../../../../framework/persistence/project/mutations/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AUTOMATION_STUDIO_HIERARCHY_ROOT_PARENT_CACHE_ID } from "./mutations.ts";
 import type { AutomationStudioHierarchyEntry } from "./repository.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export type AutomationStudioHierarchyCacheUpdate = {
   sequence: number;

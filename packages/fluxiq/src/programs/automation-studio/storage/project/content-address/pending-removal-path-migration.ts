@@ -9,7 +9,7 @@
 // pending twice, which 0033 could not write for two objects with distinct
 // digests, keeps its latest release). The index on `objects.relative_path`
 // serves the held check.
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_PENDING_REMOVAL_PATH_MIGRATION: AutomationStudioSchemaMigration = {
   id: "0036_object_pending_removal_paths",

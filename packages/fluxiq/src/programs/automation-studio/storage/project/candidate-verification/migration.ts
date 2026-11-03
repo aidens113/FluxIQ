@@ -1,4 +1,4 @@
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 /**
  * Runs after the whole administration ledger, so its ID must sort after the

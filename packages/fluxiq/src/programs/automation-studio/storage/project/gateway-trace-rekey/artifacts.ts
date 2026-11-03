@@ -18,7 +18,7 @@
 // and left as it is; it still fails (or reads as missing) exactly as before.
 import { gatewayTraceArtifactRowDigest } from "../gateway-trace-chunk-codec/index.ts";
 import { requestContentAddressScrub } from "../content-address/index.ts";
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectObjectRepository } from "../object-repository.ts";
 import type { GatewayTraceRekeyContext, GatewayTraceRekeySkip } from "./context.ts";
 import { gatewayTraceOldFormFilters } from "./old-forms.ts";

@@ -3,10 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import { AUTOMATION_STUDIO_PROJECT_INSTRUCTION_NODE_SCOPE_MIGRATION } from "../index.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../../framework/persistence/project/migrations/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_INSTRUCTION_NODE_SCOPE_MIGRATION } from "../../../../../../framework/persistence/project/schema/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../../framework/persistence/project/migrations/index.ts";
 
 // Migration 0026_relaxed_instruction_node_guard drops the guard that tied an
 // instruction scope's node id to a `graph_nodes` row (t571). What must hold on

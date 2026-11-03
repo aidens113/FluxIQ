@@ -11,7 +11,7 @@ import { AutomationStudioNodeAttemptExecution } from "./attempt.ts";
 import { automationStudioNodeAttemptFailure } from "./failure.ts";
 import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refresh/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "../repeat/index.ts";
-import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
+import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync, automationExecutionProperty, automationExecutionClock } from "../execution-admission/kernel/index.ts";
 
 const observedAttemptKernel = registerAutomationExecutionKernel(undefined, executeNodeBody, "attempt");
 
@@ -71,12 +71,12 @@ async function executeNodeBody(
   runState.dispatchedActions.delete(node.id);
   try {
     if (parameterOverlay?.effectFailure) throw new Error("executor.action_effect.resolve_failed");
-    const resolve = options.resolveActionEffect;
+    const resolve = automationExecutionProperty(options, options, "resolveActionEffect");
     const resolved = resolve ? invokeAutomationCallbackSync(options, { receiver: options, callback: resolve, args: [node] }) : undefined;
     const actionEffect = combineAutomationStudioResolvedActionEffects([resolved, parameterOverlay?.floor]);
     if (actionEffect) runState.actionEffects.set(node.id, actionEffect);
   } catch {
-    const startedAt = options.now?.() ?? Date.now();
+    const startedAt = automationExecutionClock(options, "now", options);
     return nodeAttemptWithAdaptationIds(node, {
       attemptId: `${node.id}.attempt.${attemptNumber}`,
       nodeId: node.id,
@@ -102,7 +102,7 @@ async function executeNodeBody(
     return nodeAttemptWithAdaptationIds(node, attempt);
   } catch (error) {
     repeatSample?.abandon();
-    const startedAt = options.now?.() ?? Date.now();
+    const startedAt = automationExecutionClock(options, "now", options);
     return nodeAttemptWithAdaptationIds(node, automationStudioNodeAttemptFailure(node, error, options, attemptNumber, startedAt, collectNodeInputs(flow, node, values), runState.dispatchedActions.has(node.id)));
   }
 }

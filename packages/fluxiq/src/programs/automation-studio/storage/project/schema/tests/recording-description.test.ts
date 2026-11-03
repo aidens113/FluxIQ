@@ -3,8 +3,9 @@ import { expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectDatabasePool } from "../../index.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../../framework/persistence/project/migrations/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../../framework/persistence/project/migrations/index.ts";
 
 it("adds optional descriptions to legacy summaries without inventing or losing data", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "recording-description-migration-"));

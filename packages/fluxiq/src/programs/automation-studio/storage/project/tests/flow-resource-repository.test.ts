@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectFlowResourceRepository, type AutomationStudioSqlInstructionScope } from "../flow-resource-repository.ts";
 import { AutomationStudioProjectFlowResourceMutations } from "../flow-resource-mutations.ts";
 import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../../canonical-authority/index.ts";

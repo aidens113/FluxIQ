@@ -1,8 +1,8 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioHierarchyNode, AutomationStudioProjectHierarchy } from "../../../api/contracts.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../database.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export type AutomationStudioHierarchyEntry = {
   entryId: string;

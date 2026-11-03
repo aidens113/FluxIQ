@@ -3,7 +3,7 @@
 // form `../gateway-trace/manifest-row.ts` reads (the sealed prefix plus base64,
 // the envelope beside it). Only the two manifest columns change; the indexed
 // columns stay. A row whose text is not in the sealed form is unreadable.
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 import { GATEWAY_TRACE_MANIFEST_MEDIA_TYPE, GATEWAY_TRACE_SEALED_MANIFEST_PREFIX } from "../gateway-trace/index.ts";
 import type { ContentResealContext, ContentResealPassResult } from "./context.ts";
 import { resealSealedRows } from "./row-pass.ts";

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
-import { AutomationStudioProjectUnitOfWork, type AutomationStudioIdempotentMutationResult } from "./unit-of-work.ts";
+import type { AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioProjectUnitOfWork, type AutomationStudioIdempotentMutationResult } from "../../../../framework/persistence/project/mutations/index.ts";
 import type { AutomationStudioSqlFlowRecord, AutomationStudioSqlInstructionScope, AutomationStudioSqlSubflow } from "./flow-resource-repository.ts";
 
 export class AutomationStudioProjectFlowResourceMutations {

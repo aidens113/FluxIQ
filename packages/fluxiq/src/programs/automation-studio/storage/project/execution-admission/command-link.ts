@@ -1,7 +1,7 @@
 import type { ClientGatewayCommandClaim } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import type { ExecutionEntry } from "../../../../../runtime/execution-admission/index.ts";
-import type { AutomationStudioSqlExecutor } from "../database.ts";
-import type { AutomationStudioProjectMutationContext } from "../unit-of-work.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
+import type { AutomationStudioProjectMutationContext } from "../../../../../framework/persistence/project/mutations/index.ts";
 /** Trusted participant in the existing claim transaction; no nested claim or receipt owner. */
 export interface ExecutionAdmissionCommandLink {
     readonly projectId: string;

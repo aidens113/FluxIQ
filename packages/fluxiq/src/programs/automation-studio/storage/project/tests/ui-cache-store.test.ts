@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES, AUTOMATION_STUDIO_UI_CACHE_MAX_ENTRY_BYTES, AutomationStudioMemoryUiCacheStore, AutomationStudioSqliteUiCacheStore } from "../ui-cache-store.ts";
 import { assertNoCriticalFullScan, assertPlanMentions, explainAutomationStudioQueryPlan } from "../../query-plan.ts";
 

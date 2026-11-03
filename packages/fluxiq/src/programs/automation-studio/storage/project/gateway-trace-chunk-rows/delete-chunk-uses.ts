@@ -2,7 +2,7 @@
 // uses. Runs inside the trace deletion's transaction: the chunks are freed in
 // the same step as the rows that named them, and a chunk another trace shares
 // stays.
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 
 export async function deleteGatewayTraceChunkUses(sql: AutomationStudioSqlExecutor, traceId: string): Promise<void> {
   await sql.run(

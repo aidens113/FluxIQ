@@ -11,7 +11,7 @@ import { artifactInput, newRecorder, textEvent } from "../../../../../../client-
 import { openAutomationStudioContentAddressKeyring } from "../../content-address/index.ts";
 import type { AutomationStudioContentAddressKeyring } from "../../content-address/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../content-protection.ts";
-import type { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import type { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import type { AutomationStudioProjectGatewayTraceStore } from "../index.ts";
 
 export function hostProtection(keyByte = 7, keyId = "key.1"): AutomationStudioAesGcmProjectContentProtection {

@@ -7,17 +7,17 @@ import type {
 export type { AutomationStudioReusableLlmContextOutcome, AutomationStudioReusableLlmContextReviewerState, AutomationStudioReusableLlmContextValidationState };
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import type { AutomationStudioProjectContentProtection } from "./content-protection.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectObjectRepository } from "./object-repository.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, openAutomationStudioContentAddressKeyring, scrubProjectDatabaseIfRequested } from "./content-address/index.ts";
 import type { AutomationStudioContentAddressKeyring, ContentAddressScrubStatus } from "./content-address/index.ts";
 import { keyedReusableLlmContextDigest, rekeyReusableLlmContextDigests, reusableLlmContextDigestMatches } from "./reusable-llm-context-digest/index.ts";
 import type { ReusableLlmContextDigestRekeyOptions, ReusableLlmContextDigestRekeyResult } from "./reusable-llm-context-digest/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_REUSABLE_LLM_CONTEXT_KEYED_DIGEST_MIGRATION } from "./schema/index.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_REUSABLE_LLM_CONTEXT_KEYED_DIGEST_MIGRATION } from "../../../../framework/persistence/project/schema/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_VERSION = "automation-studio.reusable-llm-context.v1" as const;
 export const AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_TTL_MS = 7 * 24 * 60 * 60 * 1_000;

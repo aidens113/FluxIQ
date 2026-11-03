@@ -1,4 +1,4 @@
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import type { ExecutionAdmissionEvent } from "./event.ts";
 export async function writeExecutionAdmissionEvent(sql: AutomationStudioSqlExecutor, event: ExecutionAdmissionEvent): Promise<void> {
     await sql.run("insert into execution_admission_events(event_id,mutation_id,operation,request_json,changes_json,proof_digest) values(?,?,?,?,?,?)", [event.eventId, event.mutationId, event.operation, JSON.stringify({ ownerId: event.ownerId, value: event.request }), JSON.stringify(event.changes), event.proofDigest]);

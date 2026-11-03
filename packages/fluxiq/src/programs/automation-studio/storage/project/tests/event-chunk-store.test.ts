@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectAdministration } from "../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectEventChunkStore } from "../event-chunk-store.ts";
 
 // Its own directory per case: a fixed path under the working directory was

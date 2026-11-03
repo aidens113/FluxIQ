@@ -8,7 +8,7 @@
 //
 // The single row's time only ever grows, even within one millisecond, so a
 // scrub that started before a later request clears only the request it saw.
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 
 export async function requestContentAddressScrub(sql: AutomationStudioSqlExecutor, now: number): Promise<void> {
   if (!Number.isFinite(now)) throw new Error("A content address scrub request needs a finite time.");

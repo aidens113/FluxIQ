@@ -8,7 +8,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail, Autom
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioNodeAttemptTrace } from "../../../runtime/executor/index.ts";
 import { flowRunSummaryWithInterventionSummaries, runtimeSessionToFlowRunDetail } from "../../../runtime/service/summaries/index.ts";
 import { AutomationStudioProjectAdministration } from "../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectRunDatasetStore, type AutomationStudioRunDatasetBatch } from "../run-dataset-store.ts";
 import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioRuntimeStreamEvent } from "../runtime-stream-store.ts";
 

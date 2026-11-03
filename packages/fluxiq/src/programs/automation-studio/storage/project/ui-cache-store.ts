@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { JsonValue } from "../../../../core/index.ts";
-import { AutomationStudioProjectDatabase, type AutomationStudioSqlExecutor } from "./database.ts";
+import { AutomationStudioProjectDatabase, type AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
 
 export const AUTOMATION_STUDIO_UI_CACHE_MAX_BATCH_ENTRIES = 100;
 export const AUTOMATION_STUDIO_UI_CACHE_MAX_ENTRY_BYTES = 256 * 1024;

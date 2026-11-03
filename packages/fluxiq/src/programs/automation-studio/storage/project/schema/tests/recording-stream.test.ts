@@ -3,10 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import { AUTOMATION_STUDIO_PROJECT_RECORDING_STREAM_MIGRATION } from "../index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../../framework/persistence/project/migrations/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../../framework/persistence/project/migrations/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_RECORDING_STREAM_MIGRATION } from "../../../../../../framework/persistence/project/schema/index.ts";
 
 const migration = AUTOMATION_STUDIO_PROJECT_RECORDING_STREAM_MIGRATION;
 const previous = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter(item => item.id !== migration.id);

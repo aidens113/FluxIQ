@@ -1,5 +1,5 @@
-import type { AutomationStudioSqlExecutor } from "../database.ts";
-import { automationStudioMutationDigest as digest } from "../unit-of-work.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
+import { automationStudioMutationDigest as digest } from "../../../../../framework/persistence/project/mutations/index.ts";
 import { executionAdmissionDecode, executionAdmissionEventValue } from "./codec.ts";
 import { readExecutionAdmissionInventory } from "./inventory.ts";
 import { executionAdmissionEventDigest } from "./proof.ts";

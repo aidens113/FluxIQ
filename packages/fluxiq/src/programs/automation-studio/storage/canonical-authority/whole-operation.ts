@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { JsonObject } from "../../../../core/index.ts";
 import { SQLiteRepository, type SQLiteTransaction } from "../../../database-manager/storage/sqlite-repository.ts";
-import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDatabaseLease } from "../project/database-owner/index.ts";
+import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDatabaseLease } from "../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectAuthorityGuardStore as Guard, type AuthorityGuardCompletionCapability, type AuthorityGuardLegacyRequest } from "../project/authority-guard/index.ts";
 import { CANONICAL_AUTHORITY_SCHEMA } from "./migration.ts";
 import { CanonicalAuthorityCatalogue } from "./catalogue.ts";

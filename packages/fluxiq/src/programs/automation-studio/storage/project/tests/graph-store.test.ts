@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBlankAutomationStudioFlowArtifact } from "../../../model/index.ts";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectGraphRepository, type AutomationStudioGraphEdgeRecord, type AutomationStudioGraphNodeRecord, type AutomationStudioGraphPatchOperation, type AutomationStudioGraphPatchResult } from "../graph-store.ts";
 
 // Its own directory per case: a fixed path under the working directory was

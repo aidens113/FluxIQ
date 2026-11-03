@@ -1,4 +1,5 @@
-export type AutomationStudioChangeFeedOperation = "create" | "update" | "delete" | "touch";
+import type { AutomationStudioChangeFeedOperation } from "../../../../framework/persistence/project/mutations/contracts/index.ts";
+export type { AutomationStudioChangeFeedOperation };
 
 export type AutomationStudioChangeFeedEntityKind =
   | "project"

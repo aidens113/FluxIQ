@@ -1,4 +1,4 @@
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 /** Allocated after inspecting the current project migration head, 0036. */
 export const AUTOMATION_STUDIO_EXECUTION_ADMISSION_MIGRATION: AutomationStudioSchemaMigration = {
     id: "0037_execution_admission_v1",

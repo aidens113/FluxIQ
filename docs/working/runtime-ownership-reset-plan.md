@@ -1,7 +1,7 @@
 # Runtime Ownership Refactor: Reset Plan
 
 Status: Active
-Status detail: User authorized plan execution after salvage audit; first bounded foundation and defect batches active.
+Status detail: SQL foundation and first callback batch validated; public-package integration active before next parallel ownership and performance units.
 Created: 2026-11-02
 Last updated: 2026-11-02
 Owner: Senior supervisor
@@ -12,13 +12,13 @@ Related: [existing record](runtime-ownership-refactor.md), [remaining owner inve
 ## Current State
 
 The user authorized execution on 2026-11-02 ("Ok follow the plan"). The implementation freeze is lifted for this plan. The completed salvage audit remains evidence for selective retention; do not discard the preserved source wholesale.
-First active briefs: SQL foundation (project persistence and original storage aliases/consumers); callback guards (descriptor/clock integration and immediate tests); stalled build (source tracing first, runtime probe only on a frozen closure). Exact ownership and acceptance are in runtime-ownership-reset-plan/briefs/. Root owns shared documents, exports outside assigned paths, integration and final verification.
+First SQL and callback batches validated; original composed positive remains unverified after the bounded diagnostic. Next exact briefs: rich-flow-contracts, remaining-adapters-execute and bulk-admission-proofs. Source release follows the first checkpoint push. Admission/cohort and remaining web-boundary manifests are ready for following batches. Root owns shared documents, integration, final verification and public export coordination.
 No paid/browser/panel run is started. Package-wide readers wait for a coherent frozen tree; workers may run stable owner-local tests.
 User additionally requested the fastest safe execution on 2026-11-02. Root owns the parallel [time-reduction investigation](runtime-ownership-reset-plan/reports/time-reduction.md); it may reduce redundant collection/builds and dependency waits but cannot weaken acceptance. Retained budget/unknown-frame small unit: 17 tests passed, two-root strict closure zero diagnostics/program edges, scoped structure 19 files zero failures.
 Authoring pair: C:/Users/osrs_/FluxStuff/fxwork/t843/!FluxIQ and sibling !FluxIQWebExtension, task/t843-runtime-foundations. The IDE's t842 document is an older checkout.
 Latest pushed checkpoints: Core c0dee9bbe, downstream 460a5af6. They are partial task backups; dev/main have not advanced for this unit.
 At that checkpoint Core typecheck/structure passed, normal public-package downstream domain check/build passed, all82 selected domain cases passed, extension check/build passed. One real composed build test remains stalled before start-state admission; no complete-runtime acceptance is claimed.
-Newer local work is unvalidated in aggregate: a mechanical project SQL/schema move, partial descriptor/clock integration, five isolated log contract files, and Root's small budget/helper/export changes. Preserve it; do not silently discard or label it passing.
+Current SQL foundation and first callback-adapter batch passed focused lead tests, package typecheck and full structure. Normal Core public package rebuilt; emitted server import preserves constructor/migration identity and exposes all 30 original migration definitions. Remaining adapter groups, five isolated model-log contracts and composed acceptance remain unfinished; do not treat this as complete ownership or release acceptance.
 The previous 1–3 day estimate was not derived from scheduled work units. It is not a delivery commitment. This plan must be reconciled into owned migration batches before a replacement estimate.
 
 ## Required Outcome
@@ -153,6 +153,22 @@ No measured finish date follows from this audit. Earlier 1-3 day and conversatio
 - Validation: `pnpm.cmd exec vitest run src/runtime/agents/budget/run-cost-ceiling/tests/run-cost-ceiling-env.test.ts src/programs/automation-studio/model/run-cost-ceiling/tests/run-cost-ceiling-env.test.ts src/runtime/execution-observation/tests/frame-unknown.test.ts --minWorkers 1 --maxWorkers 1` (packages/fluxiq) -> 3 files, 17 tests passed, 1.95s.
 - Validation: `node -` TypeScript strict two-root closure -> 72 local modules, zero errors and zero program dependencies; `node --input-type=module -` scoped structure -> 19 files, zero failures. These are stable owner checks, not aggregate-tree acceptance.
 - Outcome: budget move/frame helper accepted as a small unit; other batches remain active. User explicitly requested maximizing safe speed; measured costs and controls recorded in reports/time-reduction.md.
+
+### 2026-11-02 - Foundation validation and bounded runtime witness
+- Agent: Codex senior supervisor with file-owned workers.
+- Changed: canonical project SQL/migrations/schema/UOW and exact legacy aliases/consumer imports; four named cleanup-error branches; first descriptor/native-clock adapter batch. Lead resolved the API change-feed duplicate type by re-exporting its canonical declaration, moved the alias-identity test to legacy ownership, and moved all 18 original pool cases to canonical SQL tests without changing assertions.
+- Validation: lead SQL selection -> 16 files, 78 tests passed, 38.45s; strict project-index closure -> 174 local modules, zero diagnostics/program dependencies. Source comparison accounts for all 137 old declarations: 35 retained, 96 moved token-identical, 3 moved whitespace-only helpers, one equivalent result alias and two state-owning classes with the four explicit cleanup corrections; none missing.
+- Validation: `pnpm.cmd --filter fluxiq check` -> first failed on callback whitelist typing and duplicate API type; after narrow overload/type-alias corrections -> exit 0 (63.331s).
+- Validation: lead grouped callback/native-log/clock/node/host/environment plus alias cases -> 21 files, 168 tests passed, 19.28s. Relocated pool/alias cases -> 2 files, 22 passed, 2.45s.
+- Validation: `node .fluxiq/refactor/lead-common-structure.cjs` -> initial reverse test imports, then directory-count failure; after test ownership moves -> exit 0, 43.744s. No baseline growth/exception.
+- Validation: `node scripts/build-cache/cli.mjs contracts:build fluxiq:build client-gateway-websocket:build` -> exit 0; contracts/gateway reused, FluxIQ 118.852s/22,571 outputs. Emitted `fluxiq/framework/persistence` smoke -> public import and original constructor/migration identities true, 30 default migrations.
+- Validation: `node .fluxiq/refactor/stall-reset-run.mjs` with frozen slot -> intentional diagnostic cancellation/exit 1, not acceptance; 182.58s Vitest (68.62s collection/113.14s tests), 183.747s runner. At cancellation 158,631 mutation-proof gets/392 events; all 177 entered store calls eventually drained, no fixed FIFO/native wait established. Original positive remains unverified.
+- Outcome: first ownership batches have bounded evidence; next queued source units are rich Flow contracts, remaining callback/clock adapters and transaction-local proof loading. Downstream normal rebuilt-package gates passed before source release: domain check/build, 82 selected cases (zero failed/cancelled/skipped), extension check/build for Chrome/Firefox/e2e-Chromium. No live browser was run. No paid/browser/panel run or full sweep launched.
+
+### 2026-11-02 - Separate push-gate time optimization
+- Agent: Codex senior supervisor.
+- Changed: Core pre-push uses the existing all-visible-input structure-audit cache and captures one failure output rather than running a failed audit twice. This is a separate tooling optimization, not an ownership migration.
+- Validation: `bash -n .githooks/pre-push` -> exit 0; `node --test scripts/build-cache/tests/audit-replay.test.mjs scripts/build-cache/tests/invalidation.test.mjs scripts/build-cache/tests/stamp-rules.test.mjs scripts/build-cache/tests/registry.test.mjs` -> 21 passed, including changed-input invalidation and uncached failures. Actual hook cold/reuse calls both exited 0: 52.091s cold, 1.609s unchanged; same fingerprinted audit gate. Documentation changes still invalidate the cache.
 
 ## Open Questions
 

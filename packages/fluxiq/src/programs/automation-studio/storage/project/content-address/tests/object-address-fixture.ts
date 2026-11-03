@@ -6,8 +6,8 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
 import type { AutomationStudioProjectContentProtection } from "../../content-protection.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import type { AutomationStudioProjectDatabase } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../../framework/persistence/project/sql/index.ts";
 import type { AutomationStudioContentObjectAddressBackfillOptions } from "../index.ts";
 
 export type ObjectAddressRow = { objectId: string; mediaType: string; encryption: string | null; relativePath: string; contentAddress: string | null; contentAddressKeyId: string | null };

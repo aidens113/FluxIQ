@@ -10,7 +10,7 @@
 // or names another trace is counted and left as it is. A batch that sealed any
 // manifest also requests a scrub of the database file, in the same transaction.
 import { requestContentAddressScrub } from "../content-address/index.ts";
-import type { AutomationStudioSqlExecutor } from "../database.ts";
+import type { AutomationStudioSqlExecutor } from "../../../../../framework/persistence/project/sql/index.ts";
 import { GATEWAY_TRACE_MANIFEST_MEDIA_TYPE, GATEWAY_TRACE_SEALED_MANIFEST_PREFIX, readGatewayTraceManifestRow } from "../gateway-trace/manifest-row.ts";
 import type { GatewayTraceRekeyContext, GatewayTraceRekeySkip } from "./context.ts";
 

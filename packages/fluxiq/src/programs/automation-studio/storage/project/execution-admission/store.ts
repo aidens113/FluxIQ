@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { ExecutionAdmissionPersistence, ExecutionEntry, ExecutionEntryBridge, ExecutionScopeBinding } from "../../../../../runtime/execution-admission/index.ts";
-import type { AutomationStudioProjectDatabasePool } from "../database.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
-import { AutomationStudioProjectUnitOfWork, automationStudioMutationDigest as digest } from "../unit-of-work.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import type { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
+import { AutomationStudioProjectUnitOfWork, automationStudioMutationDigest as digest } from "../../../../../framework/persistence/project/mutations/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
 import { AutomationStudioProjectCommandLedgerStore, AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "../command-ledger/index.ts";
 import { AUTOMATION_STUDIO_EXECUTION_ADMISSION_MIGRATION } from "./migration.ts";
 import { openExecutionAdmissionScope } from "./scope.ts";

@@ -3,10 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
-import { AutomationStudioProjectDatabasePool, type AutomationStudioSqlExecutor } from "../../database.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUN_DATASET_MIGRATION } from "../index.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../../framework/persistence/project/migrations/index.ts";
+import { AutomationStudioProjectDatabasePool, type AutomationStudioSqlExecutor } from "../../../../../../framework/persistence/project/sql/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUN_DATASET_MIGRATION } from "../../../../../../framework/persistence/project/schema/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../../framework/persistence/project/migrations/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once

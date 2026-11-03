@@ -1,4 +1,4 @@
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION: AutomationStudioSchemaMigration = {
   id: "0028_original_project_authority_guard_v1",

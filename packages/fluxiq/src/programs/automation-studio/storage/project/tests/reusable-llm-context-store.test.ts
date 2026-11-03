@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../content-protection.ts";
 import {
   AUTOMATION_STUDIO_REUSABLE_LLM_CONTEXT_MAX_TTL_MS,

@@ -12,7 +12,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioProjectContentProtection } from "../../content-protection.ts";
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { resealAutomationStudioProjectContent } from "../index.ts";
 import type { AutomationStudioProjectContentResealOptions } from "../index.ts";
 import { PLAIN_OBJECT, PROJECT, SwitchableHost, filesUnder, keyIdsByKind, readEverything, sealedForms, sealedProject, withDatabase } from "./reseal-fixture.ts";

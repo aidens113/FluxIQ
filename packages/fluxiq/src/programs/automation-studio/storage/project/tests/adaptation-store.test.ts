@@ -8,7 +8,7 @@ import type { AutomationStudioFlowAdaptation } from "../../../model/index.ts";
 import { createBlankAutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { evaluateFlowAdaptationPromotionGates } from "../../../runtime/recovery/index.ts";
 import { AutomationStudioProjectAdaptationStore } from "../adaptation-store.ts";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectGraphRepository } from "../graph-store.ts";
 
 // Its own directory per case: a fixed path under the working directory was

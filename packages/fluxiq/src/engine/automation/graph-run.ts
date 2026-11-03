@@ -33,7 +33,7 @@ import { automationStudioRuntimeRepeatStoppedTrace } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatTraceProvenance } from "./repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "./repeat/index.ts";
 import { copyAutomationExecutionOptions } from "./execution-admission/index.ts";
-import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync, AutomationRetrySeries, hasAutomationExecutionObservation } from "./execution-admission/kernel/index.ts";
+import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync, AutomationRetrySeries, hasAutomationExecutionObservation, automationExecutionProperty, automationExecutionClock } from "./execution-admission/kernel/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -138,7 +138,7 @@ async function runGraphFromSeed(
   seed: AutomationStudioGraphRunSeed | undefined,
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
-  const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
+  const startedAt = seed?.startedAt ?? automationExecutionClock(options, "now", options);
   const suppliedReferenceNow = options.referenceNow;
   const executionOptions = copyAutomationExecutionOptions(options);
   delete executionOptions.referenceNow;
@@ -150,12 +150,12 @@ async function runGraphFromSeed(
     return await runAutomationStudioGraphInFrame(flow, executionOptions, runAutomationStudioGraph, (framed) => runGraphToTrace(flow, framed, startedAt, seed, onExecutedTrace));
   } catch (error) {
     await options.commandRun?.stop("executor.graph_stopped");
-    const fault = automationStudioFaultFromThrownError(error, { now: options.now?.() ?? Date.now(), aborted: options.signal?.aborted === true });
+    const fault = automationStudioFaultFromThrownError(error, { now: automationExecutionClock(options, "now", options), aborted: options.signal?.aborted === true });
     return {
       status: "failed",
       startedAt,
       ...(referenceNow !== undefined && referenceNow !== startedAt ? { referenceNow } : {}),
-      finishedAt: options.now?.() ?? Date.now(),
+      finishedAt: automationExecutionClock(options, "now", options),
       attempts: seed ? [...seed.attempts] : [],
       values: {},
       effects: [],
@@ -296,7 +296,7 @@ async function executeAutomationStudioGraph(
   repeatTraceProvenance: ReturnType<typeof automationStudioRuntimeRepeatTraceProvenance.frame>,
   seed?: AutomationStudioGraphRunSeed
 ): Promise<AutomationStudioGraphExecutionTrace> {
-  const now = options.now ?? Date.now;
+  const now = () => automationExecutionClock(options, "now", undefined);
   const attempts: AutomationStudioNodeAttemptTrace[] = seed ? [...seed.attempts] : [];
   // A resumed run keeps what it had computed, with the caller's own inputs put
   // back over it: the seed comes from a saved trace, whose run inputs are
@@ -449,7 +449,7 @@ async function executeAutomationStudioGraph(
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
-          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution", effect: runState.dispatchedActions.has(node.id) ? "ambiguous" : "unacted" } }), options.commandRun, options.startTimer
+          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution", effect: runState.dispatchedActions.has(node.id) ? "ambiguous" : "unacted" } }), options.commandRun, automationExecutionProperty(options, options, "startTimer")
         ));
       // A required command whose outcome stayed unknown latched the run, so no checkpoint is asked before it stops (`step-loop/uncertain-stop.ts`).
       const outcomeUnknown = executed.failure?.code === AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN.code;

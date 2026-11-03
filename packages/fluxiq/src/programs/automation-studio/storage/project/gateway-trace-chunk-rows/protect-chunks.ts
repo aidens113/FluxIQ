@@ -8,7 +8,7 @@
 // A protected store runs it as the rekey's last pass, before the scrub (t745):
 // a batch that sealed rows in place requests one in its own transaction.
 import { requestContentAddressScrub } from "../content-address/index.ts";
-import type { AutomationStudioProjectDatabase } from "../database.ts";
+import type { AutomationStudioProjectDatabase } from "../../../../../framework/persistence/project/sql/index.ts";
 import { sealGatewayTraceChunk } from "../gateway-trace-chunk-codec/index.ts";
 import type { GatewayTraceChunkSealing } from "../gateway-trace-chunk-codec/index.ts";
 

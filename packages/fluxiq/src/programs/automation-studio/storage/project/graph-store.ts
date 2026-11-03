@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../framework/persistence/project/migrations/index.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
-import { AutomationStudioProjectUnitOfWork, automationStudioMutationDigest, type AutomationStudioIdempotentMutationResult } from "./unit-of-work.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioProjectUnitOfWork, automationStudioMutationDigest, type AutomationStudioIdempotentMutationResult } from "../../../../framework/persistence/project/mutations/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_GRAPH_PARTITION_SIZE = 1000;
 export const AUTOMATION_STUDIO_GRAPH_VIEWPORT_NODE_LIMIT = 500;

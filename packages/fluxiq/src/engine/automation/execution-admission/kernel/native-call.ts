@@ -3,9 +3,10 @@ import { AutomationObservationBindings } from "../bindings.ts";
 import { AutomationAdmissionDriver } from "../internal/index.ts";
 import { AutomationNativeObservationBindings } from "./native-bindings.ts";
 import { AutomationRetrySeries } from "./series.ts";
+import { automationExecutionProperty } from "./callback/index.ts";
 
 export async function invokeAutomationNative(options: AutomationStudioGraphExecutionOptions, request: Parameters<NonNullable<AutomationStudioGraphExecutionOptions["nativeNodeExecutor"]>>[0]) {
-  const callback = options.nativeNodeExecutor;
+  const callback = automationExecutionProperty(options, options, "nativeNodeExecutor");
   if (!callback) return undefined;
   const observation = AutomationObservationBindings.of(options);
   if (!observation) return await callback.call(options, request);

@@ -4,7 +4,7 @@
 // below the object threshold, otherwise in the project content store and named
 // here by its object id: exactly one of the two columns is set. Artifact bytes
 // always live in the content store, pinned by an owner reference.
-import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import type { AutomationStudioSchemaMigration } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 export const AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION: AutomationStudioSchemaMigration = {
   id: "0030_client_gateway_traces",

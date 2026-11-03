@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDatabase } from "../project/index.ts";
-import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../schema-migrations.ts";
+import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDatabase } from "../../../../framework/persistence/project/sql/index.ts";
+import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../../../../framework/persistence/project/migrations/index.ts";
 
 // The runner remembers, per open connection, a migration set it has already
 // checked. These cases pin when that memo is used and when the full check runs.

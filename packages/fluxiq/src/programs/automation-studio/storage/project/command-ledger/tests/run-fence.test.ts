@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandClaim } from "../../../../../../client-gateway/service/command-ledger/index.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectCommandLedgerStore as Store, AutomationStudioCommandRunAdmission, AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT } from "../index.ts";
 
 function claim(invocationId: string): ClientGatewayCommandClaim {

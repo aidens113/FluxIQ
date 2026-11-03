@@ -3,11 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../../../../framework/persistence/project/migrations/index.ts";
+import { AutomationStudioProjectAdministration } from "../administration.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectFlowResourceRepository } from "../flow-resource-repository.ts";
-import { AUTOMATION_STUDIO_PROJECT_DOMAIN_TABLES, AUTOMATION_STUDIO_PROJECT_INTERVENTION_MODE_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUNTIME_SUMMARY_ENVELOPE_MIGRATION, AUTOMATION_STUDIO_PROJECT_SEARCH_TABLES } from "../schema.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_DOMAIN_TABLES, AUTOMATION_STUDIO_PROJECT_INTERVENTION_MODE_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUNTIME_SUMMARY_ENVELOPE_MIGRATION, AUTOMATION_STUDIO_PROJECT_SEARCH_TABLES } from "../../../../../framework/persistence/project/schema/index.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../../framework/persistence/project/migrations/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once

@@ -1,5 +1,5 @@
 import type { RecordingSession } from "../../../model/index.ts";
-import type { AutomationStudioProjectDatabaseLease } from "../database.ts";
+import type { AutomationStudioProjectDatabaseLease } from "../../../../../framework/persistence/project/sql/index.ts";
 import { automationStudioRecordingEntry as entryCodec } from "./entry.ts";
 
 /** Header publication reads current durable identities at the SQL write boundary. */

@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRecordingSession, appendRecordingEntry } from "../../../../model/index.ts";
 import { AutomationStudioProjectAdministration } from "../../administration.ts";
-import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDatabaseLease } from "../../database.ts";
+import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDatabaseLease } from "../../../../../../framework/persistence/project/sql/index.ts";
 import { AutomationStudioProjectEventChunkStore } from "../../event-chunk-store.ts";
 import { AutomationStudioProjectRuntimeStreamStore } from "../../runtime-stream-store.ts";
 
