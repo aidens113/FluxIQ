@@ -158,11 +158,12 @@ export type AutomationStudioChangeProposalKind =
   | "promote_adaptation"
   | "edit_instruction"
   | "add_handler"
-  | "replace_unit";
+  | "replace_unit"
+  | "insert_steps";
 
 /**
- * The durable form of a unit repair (state-aware recovery plan, C12), the two
- * kinds an in-run repair keeps (C6 step 8). Both are applied by the unit repair
+ * The durable form of a unit repair (state-aware recovery plan, C12), the
+ * kinds a run's repair keeps (C6 step 8). Each is applied by the unit repair
  * applier (`runtime/service/adaptations/unit-repair-apply.ts`) through the same
  * overlay the run used, so the saved graph gets exactly what the judged run ran.
  *
@@ -176,9 +177,13 @@ export type AutomationStudioChangeProposalKind =
  *   `before.unitDigest` is the unit's digest in the graph the repair was made
  *   on, and the apply is refused when the saved unit no longer has it.
  *
- * Either kind is refused when it would change any unit but the one it names.
+ * - `insert_steps`: `targetId` is the node the steps run before; `after` is
+ *   `{ targetNodeId, steps, consequences? }`. Written where the run's trial and
+ *   its judged re-run wrote it (`runtime/adaptation/live-patch/step-insert.ts`).
+ *
+ * Each kind is refused when it would change any unit but the one it names.
  */
-export type AutomationStudioUnitRepairChangeKind = Extract<AutomationStudioChangeProposalKind, "add_handler" | "replace_unit">;
+export type AutomationStudioUnitRepairChangeKind = Extract<AutomationStudioChangeProposalKind, "add_handler" | "replace_unit" | "insert_steps">;
 
 /**
  * One action node a deterministic recovery path inserts into the graph it

@@ -423,6 +423,30 @@ processing again always starts from the collected rows, which stay as
 evidence. Processing never fails a run or replaces its error; a dataset left
 unprocessed reads as its collected rows, as every dataset did before.
 
+**What a repair writes.** A run's answer holds the rows of the passes that count,
+and nothing unjudged (`service/datasets/run-datasets.ts`, t848):
+
+- **A re-run from the Flow's start** replaces what earlier passes stored: each
+  dataset's first batch of the pass starts it over, taking on that batch's schema
+  and `process` declaration (`startsOver`), and a dataset the re-run leaves alone
+  keeps its rows until the re-run succeeds, when it is removed with a `deleted`
+  audit event. So a repaired run's dataset reads as a clean run's would.
+- **A patch's trial on a refuted run** stores nothing. Either a re-run follows it,
+  or the answer that was judged stands.
+- **A patch's trial on a failed step** is held in memory. Its rows join the run,
+  ahead of the retry's own, only if a retry takes it up; a trial that failed, or
+  one no retry took up, leaves none.
+- **An in-run repair** removes what the failing unit stored
+  (`discardRecordBatches`, by batch key), the attempts it called included, since
+  the unit's re-attempt stores under ids of its own. A dropped fix removes what its
+  trial stored too. Rows of the run's other steps stay, an earlier loop pass of the
+  same step included. A dataset left with no batch is removed, so the fix may store
+  another schema under its id.
+
+A saved trace's `$datasetRow` marker from a pass a re-run replaced is never read
+back as a row: its ordinal now names a row of the re-run, so it is named by its
+place instead (`runtime/result-verification/step-rows.ts`).
+
 **The account** (`AutomationStudioRecordProcessingAccount`, on a dataset
 summary's `processing`): `collected` (= `filteredOut` + `duplicates` + `cut`
 + `kept`), `keptNone` when the answer is empty, `belowMinRows` when it fell

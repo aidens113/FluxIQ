@@ -92,6 +92,8 @@ export async function rerun(options: {
   bootstrap?: AutomationStudioBootstrapAdaptation | null;
   /** The Subflow this run selected, and the graph Flow it owns. */
   subflow?: { subflowId: string; graphFlowId: string };
+  /** A step of the stored Flow, which the first pass ran, that says it lastingly acts. */
+  lastingStep?: string;
 } = {}) {
   const context = await adaptationContext();
   const first = await refutedSession();
@@ -106,6 +108,7 @@ export async function rerun(options: {
   const applied: string[] = [];
   // The stored Flow: a fresh copy each read, so a write onto it would show.
   const stored = structuredClone(flow);
+  for (const node of stored.nodes) if (node.id === options.lastingStep) node.metadata = { declaredConsequences: ["create_new"] };
   const result = await rerunAutomationStudioSessionAfterRepair({
     ports: {
       getFlowSubflow: async (_projectId, _flowId, subflowId) => options.subflow?.subflowId === subflowId ? { subflowId, graphFlowId: options.subflow.graphFlowId } as never : null,

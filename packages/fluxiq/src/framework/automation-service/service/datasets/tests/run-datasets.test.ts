@@ -10,7 +10,7 @@ import {
   encodeAutomationStudioRecordsCsvRows,
   type AutomationStudioRecordSchema
 } from "@fluxiq/contracts/automation";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioRecordBatch } from "../../../executor/index.ts";
 import {
   AutomationStudioProjectAdministration,
@@ -294,6 +294,84 @@ describe("AutomationStudioRunDatasets", () => {
     expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "listings" })).rows).toEqual([row("D"), row("C"), row("B"), row("A")]);
     // A batch declaring something else is refused by the store, so the declaration is what was stored.
     await expect(handler(batch({ process: { limit: 1 }, attemptId: "extract.attempt.3", batchKey: "extract.attempt.3", rows: [row("E")] }))).rejects.toThrow("Run dataset processing changed within one run.");
+  });
+
+  it("lets a repair's re-run replace what earlier passes stored, keeping them until it reaches each read", async () => {
+    const { pool, datasets } = await openFixture([{ runId: RUN, flowId: "flow.a" }]);
+    const row = (title: string) => ({ title, price: 1 });
+    const stored = datasets.recordBatchHandler(PROJECT, RUN);
+    await stored(batch({ rows: [row("H"), row("I"), row("J")] }));
+    await stored(batch({ datasetId: "abandoned", rows: [row("old")] }));
+    await stored(batch({ datasetId: "unreached", rows: [row("kept")] }));
+    await datasets.processRunDatasets({ projectId: PROJECT, runId: RUN });
+
+    // A re-run that fails after its first read removes nothing else.
+    const failed = datasets.restartedPass(PROJECT, RUN);
+    await failed.onRecordBatch(batch({ attemptId: "extract.attempt.2", batchKey: "extract.attempt.2", rows: [row("A"), row("H")] }));
+    await failed.settle("failed");
+    expect((await datasets.listRunDatasets({ projectId: PROJECT, runId: RUN })).map((summary) => summary.datasetId).sort()).toEqual(["abandoned", "listings", "unreached"]);
+    expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "listings" })).rows).toEqual([row("A"), row("H")]);
+
+    // The next pass starts over again, its own later batches append, and one that succeeded is the whole answer.
+    const pass = datasets.restartedPass(PROJECT, RUN);
+    await pass.onRecordBatch(batch({ attemptId: "extract.attempt.3", batchKey: "extract.attempt.3", rows: [row("A"), row("B")] }));
+    await pass.onRecordBatch(batch({ attemptId: "extract.attempt.4", batchKey: "extract.attempt.4", rows: [row("B"), row("H")] }));
+    await pass.onRecordBatch(batch({ datasetId: "unreached", attemptId: "extract.attempt.5", batchKey: "extract.attempt.5", rows: [row("fresh")] }));
+    await pass.settle("succeeded");
+    const processed = await datasets.processRunDatasets({ projectId: PROJECT, runId: RUN });
+
+    expect(processed.map((summary) => summary.datasetId).sort()).toEqual(["listings", "unreached"]);
+    expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "listings" })).rows).toEqual([row("A"), row("B"), row("H")]);
+    expect(processed.find((summary) => summary.datasetId === "listings")).toMatchObject({ processing: { collected: 4, duplicates: 1, kept: 3 } });
+    expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "unreached" })).rows).toEqual([row("fresh")]);
+    expect((await auditEvents(pool)).filter((event) => event.eventType === "deleted")).toMatchObject([{ datasetId: "abandoned", rowCount: 1 }]);
+  });
+
+  // The first batch is held back until the second has been stored, or for a second at most. With the batches
+  // queued the second never starts until the first is done, so what this asserts does not depend on timing.
+  it("stores a re-run's batches in the order they came, so a first batch never clears a later one", async () => {
+    const { datasets } = await openFixture([{ runId: RUN, flowId: "flow.a" }]);
+    const row = (title: string) => ({ title, price: 1 });
+    await datasets.recordBatchHandler(PROJECT, RUN)(batch({ rows: [row("old")] }));
+
+    const append = AutomationStudioProjectRunDatasetStore.prototype.appendBatch;
+    let laterStored = false;
+    const held = vi.spyOn(AutomationStudioProjectRunDatasetStore.prototype, "appendBatch").mockImplementation(async function (this: AutomationStudioProjectRunDatasetStore, input) {
+      for (let turn = 0; input.startsOver && !laterStored && turn < 50; turn += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+      const summary = await append.call(this, input);
+      if (!input.startsOver) laterStored = true;
+      return summary;
+    });
+    try {
+      const pass = datasets.restartedPass(PROJECT, RUN);
+      await Promise.all([
+        pass.onRecordBatch(batch({ attemptId: "extract.attempt.2", batchKey: "extract.attempt.2", rows: [row("A")] })),
+        pass.onRecordBatch(batch({ attemptId: "extract.attempt.3", batchKey: "extract.attempt.3", rows: [row("B")] }))
+      ]);
+    } finally {
+      held.mockRestore();
+    }
+    expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "listings" })).rows).toEqual([row("A"), row("B")]);
+  });
+
+  it("keeps a refused first batch from counting as the re-run's start", async () => {
+    const { datasets } = await openFixture([{ runId: RUN, flowId: "flow.a" }]);
+    const row = (title: string) => ({ title, price: 1 });
+    await datasets.recordBatchHandler(PROJECT, RUN)(batch({ rows: [row("H")] }));
+
+    const pass = datasets.restartedPass(PROJECT, RUN);
+    await expect(pass.onRecordBatch(batch({ attemptId: "extract.attempt.2", batchKey: "extract.attempt.2", rows: [{ title: "A", unknown: "refused" }] }))).rejects.toThrow("Run dataset row holds a key that is not in the stored schema.");
+    expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "listings" })).rows).toEqual([row("H")]);
+
+    await pass.onRecordBatch(batch({ attemptId: "extract.attempt.3", batchKey: "extract.attempt.3", rows: [row("A")] }));
+    expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "listings" })).rows).toEqual([row("A")]);
+  });
+
+  it("gives a trial options with no record hook, and every other option as it was", async () => {
+    const { datasets } = await openFixture([{ runId: RUN, flowId: "flow.a" }]);
+    const options = { maxSteps: 3, onRecordBatch: datasets.recordBatchHandler(PROJECT, RUN) };
+    expect(datasets.trialOptions(options)).toEqual({ maxSteps: 3 });
+    expect(options.onRecordBatch).toBeDefined();
   });
 
   it("leaves a dataset unprocessed, without throwing, when processing it fails at the run's end", async () => {

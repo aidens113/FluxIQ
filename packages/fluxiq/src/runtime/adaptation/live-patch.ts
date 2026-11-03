@@ -13,6 +13,7 @@ import { classifyAutomationStudioAdaptiveFailure } from "./adaptive-orchestrator
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "../../framework/automation-service/executor/index.ts";
 import {
   AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS,
+  automationStudioAttemptsMayHaveActedLastingly,
   automationStudioChangeValidationResult,
   automationStudioFlowChangeFailureState,
   trialAutomationStudioFlowChange,
@@ -52,13 +53,15 @@ export type AutomationStudioRuntimePatchPreflight = {
  * - `not_executed`: why the trial did not run the change.
  *
  * `awaitsJudgedRun` (t267) marks the one `unverifiable` case whose evidence is
- * the judged whole run instead: a target override whose trial's verdict is
- * `no_evidence` -- its changed node succeeded, no check failed or was unknown,
- * the trial named where to carry on, and the Flow declared nothing that could
- * prove it, as a Flow built from an instruction declares nothing. The trial
- * still proved nothing, so nothing is recorded for it here; the run carries on
- * through the change, and the judgement of that whole run is what promotes it
- * or not (`service/runtime-adaptation/judged-promotion.ts`).
+ * the judged whole run instead: a target override or inserted steps whose
+ * trial's verdict is `no_evidence` -- the changed node succeeded, no check failed
+ * or was unknown, the trial named where to carry on, and the Flow declared
+ * nothing that could prove it, as a Flow built from an instruction declares
+ * nothing. The trial still proved nothing, so nothing is recorded for it here;
+ * the run carries on through the change, and the judgement of that whole run is
+ * what promotes it or not (`service/runtime-adaptation/judged-promotion.ts`).
+ * Inserted steps take it only where nothing lasting was done in their trial:
+ * running them again would repeat the act.
  */
 export type AutomationStudioRuntimePatchVerification =
   | { status: "verified"; basis: AutomationStudioChangeVerdictEvidenceKind }
@@ -279,7 +282,8 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
   const origin = runtimePatchOrigin(input);
   const trial = await trialAutomationStudioFlowChange({
     candidate: application.flow,
-    changedNodeIds: [changedNodeId],
+    // Every inserted step is the change, so a resume point falls after the last of them.
+    changedNodeIds: input.patch.kind === "temporary_action_sequence" ? input.patch.steps.map((_step, index) => automationStudioInsertedStepNodeId(input.runId, index)) : [changedNodeId],
     startNodeId: changedNodeId,
     seedValues: input.failedAttempt.inputs,
     options,
@@ -288,11 +292,13 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
     ...(input.expectedComparison ? { expectedComparison: input.expectedComparison } : {}),
     ...(input.verifiesState ? { verifiesState: input.verifiesState } : {})
   });
-  const verification = runtimePatchVerification(trial, input.expectedComparison ?? input.failedAttempt.transitionComparison, input.patch);
+  const actedLastingly = input.patch.kind === "temporary_action_sequence" && await automationStudioAttemptsMayHaveActedLastingly({ flow: application.flow, attempts: trial.executedTrace.attempts, resolveActionEffect: options.resolveActionEffect, subflowGraphs: options.subflowGraphs });
+  const verification = runtimePatchVerification(trial, input.expectedComparison ?? input.failedAttempt.transitionComparison, input.patch, actedLastingly);
   const restoredExpectedState = verification.status === "verified";
-  const retryOriginalAction = runtimePatchRetriesOriginalAction(verification, input.patch);
-  const adaptation = adaptationFromRuntimePatch(input, trial.savedTrace, verification, trial);
-  const changeProposal = restoredExpectedState && requiresChangeProposalForRuntimePatch(input.patch)
+  const retryOriginalAction = runtimePatchRetriesOriginalAction(verification, input.patch, actedLastingly);
+  const adaptation = adaptationFromRuntimePatch(input, trial.savedTrace, verification, trial, actedLastingly);
+  // A patch waiting on the judged run needs its review record as much as a verified one: that run's apply asks for it.
+  const changeProposal = (restoredExpectedState || (verification.status === "unverifiable" && verification.awaitsJudgedRun === true)) && requiresChangeProposalForRuntimePatch(input.patch)
     ? changeProposalFromRuntimePatch(input, adaptation)
     : undefined;
   return {
@@ -382,11 +388,13 @@ function trialOptions(input: AutomationStudioRuntimePatchExecutionInput): Automa
 /**
  * Whether the run takes the repaired action again: after a trial that proved
  * the change, or one whose proof is the judged whole run it carries on into.
- * Never after inserted steps, which ran in the trial and are not taken twice.
+ * Inserted steps ran in the trial and are not taken twice: the trial's resume
+ * point is after the last of them, which is the action they stand before. A trial
+ * that did something lasting past them is not carried on from: that would repeat it.
  */
-function runtimePatchRetriesOriginalAction(verification: AutomationStudioRuntimePatchVerification, patch: AutomationStudioRuntimePatch): boolean {
+function runtimePatchRetriesOriginalAction(verification: AutomationStudioRuntimePatchVerification, patch: AutomationStudioRuntimePatch, actedLastingly: boolean): boolean {
   const proved = verification.status === "verified" || (verification.status === "unverifiable" && verification.awaitsJudgedRun === true);
-  return proved && !patchRunsItsOwnSteps(patch);
+  return proved && (patch.kind === "temporary_action_sequence" ? !actedLastingly : !patchRunsItsOwnSteps(patch));
 }
 
 /**
@@ -400,7 +408,7 @@ function patchRunsItsOwnSteps(patch: AutomationStudioRuntimePatch): boolean {
 }
 
 /** The receipt's reading of the verdict. The verdict decided; this only names why. */
-function runtimePatchVerification(trial: AutomationStudioFlowChangeTrialReport, comparison: AutomationStudioTransitionComparison | undefined, patch: AutomationStudioRuntimePatch): AutomationStudioRuntimePatchVerification {
+function runtimePatchVerification(trial: AutomationStudioFlowChangeTrialReport, comparison: AutomationStudioTransitionComparison | undefined, patch: AutomationStudioRuntimePatch, actedLastingly: boolean): AutomationStudioRuntimePatchVerification {
   const { verdict } = trial;
   const [basis] = verdict.basis;
   if (verdict.outcome === "verified" && basis) return { status: "verified", basis };
@@ -414,9 +422,11 @@ function runtimePatchVerification(trial: AutomationStudioFlowChangeTrialReport, 
   if (verdict.checks.some((check) => check.status === "unknown" && evidenceKinds.includes(check.kind))) return { status: "unverifiable", reason: "evidence_unevaluated" };
   // The verdict's `no_evidence` already means everything the marker needs: no
   // check failed or was unknown, a resume point was named, and the changed node
-  // succeeded. Only a target override takes it (t267): its trial ran the same
-  // action on a new target, which the judged whole run can vouch for.
-  const awaitsJudgedRun = patch.kind === "temporary_target_override" && verdict.outcome === "unverifiable" && verdict.notResumableCode === "no_evidence";
+  // succeeded. A target override takes it (t267): its trial ran the same action
+  // on a new target, which the judged whole run can vouch for. So do inserted
+  // steps, which that run runs again, unless their trial did something lasting.
+  const judgedRunCanVouch = patch.kind === "temporary_target_override" || (patch.kind === "temporary_action_sequence" && !patch.consequences?.length && !actedLastingly);
+  const awaitsJudgedRun = judgedRunCanVouch && verdict.outcome === "unverifiable" && verdict.notResumableCode === "no_evidence";
   return { status: "unverifiable", reason: comparison ? "expectation_empty" : "no_expectation_declared", ...(awaitsJudgedRun ? { awaitsJudgedRun: true as const } : {}) };
 }
 
@@ -431,7 +441,8 @@ export function adaptationFromRuntimePatch(
   input: AutomationStudioRuntimePatchExecutionInput,
   trace: AutomationStudioGraphExecutionTrace | undefined,
   verification: AutomationStudioRuntimePatchVerification,
-  trial?: Pick<AutomationStudioFlowChangeTrialReport, "verdict" | "origin" | "observedState" | "expectedState">
+  trial?: Pick<AutomationStudioFlowChangeTrialReport, "verdict" | "origin" | "observedState" | "expectedState">,
+  actedLastingly = false
 ): AutomationStudioFlowAdaptation {
   const now = input.now?.() ?? Date.now();
   const patch = changePatchFromRuntimePatch(input.patch, input.runId, input.failedAttempt.nodeId);
@@ -472,7 +483,7 @@ export function adaptationFromRuntimePatch(
       ...(trial ? { verdict: structuredClone(trial.verdict) } : {}),
       ...(origin ? { origin: { ...origin } } : {}),
       failureSignature: runtimePatchFailureSignature(input),
-      retryOriginalAction: runtimePatchRetriesOriginalAction(verification, input.patch)
+      retryOriginalAction: runtimePatchRetriesOriginalAction(verification, input.patch, actedLastingly)
     }
   };
 }
@@ -614,11 +625,9 @@ function changePatchFromRuntimePatch(patch: AutomationStudioRuntimePatch, runId:
     const unitDigest = unitGraph ? automationStudioRepairUnitDigest(unitGraph, patch.unit) : undefined;
     return { kind: "replace_unit", targetId: unitTargetId(patch.unit), summary: patch.reason, ...(unitDigest ? { before: { unitDigest } } : {}), after: structuredClone(spec) as unknown as JsonObject, metadata: { runtimePatchKind: patch.kind } };
   }
-  // An inserted sequence has no durable form: keeping a step belongs to the
-  // extend-mode build plan, which authors it from an exploration rather than
-  // from a patch (`live-patch/step-insert.ts`). `edit_recovery` has no durable
-  // applier, so a promotion of one is refused rather than half-applied.
-  return { kind: "edit_recovery", targetId: patch.targetNodeId, summary: patch.reason };
+  // Inserted steps carry what they insert, so the judged re-run's candidate and
+  // the apply write the same steps the trial ran (`live-patch/step-insert.ts`).
+  return { kind: "insert_steps", targetId: patch.targetNodeId, summary: patch.reason, after: { targetNodeId: patch.targetNodeId, steps: structuredClone(patch.steps), ...(patch.consequences ? { consequences: [...patch.consequences] } : {}) } as unknown as JsonObject, metadata: { runtimePatchKind: patch.kind } };
 }
 
 /** The id a unit is named by: its node's, or its Subflow's. */
@@ -679,7 +688,7 @@ function runtimePatchOrigin(input: AutomationStudioRuntimePatchExecutionInput): 
  * a route, a recovery path or a unit, which links to a review record.
  */
 function requiresChangeProposalForRuntimePatch(patch: AutomationStudioRuntimePatch): boolean {
-  return patch.kind === "temporary_reroute" || patch.kind === "temporary_recovery_subflow_call" || patch.kind === "add_handler" || patch.kind === "replace_unit";
+  return patch.kind === "temporary_reroute" || patch.kind === "temporary_recovery_subflow_call" || patch.kind === "add_handler" || patch.kind === "replace_unit" || patch.kind === "temporary_action_sequence";
 }
 
 function requiredHostCapabilitiesForRuntimePatch(patch: AutomationStudioRuntimePatch): string[] {

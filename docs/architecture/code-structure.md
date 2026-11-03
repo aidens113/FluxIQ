@@ -176,8 +176,12 @@ Every other file runs in the `parallel` group at full concurrency. A real-SQLite
 test spends its time in hundreds of sequential driver round trips; beside
 fourteen hundred files collecting the framework at full concurrency it ran 8 to
 15 times slower than alone, and every daily sweep in October 2026 timed out a
-different handful of them at 15 s. Isolating them is the fix; never raise their
-timeout.
+different handful of them at 15 s. Isolating them keeps this package from
+starving itself. It cannot stop another lane's run from doing it, and a plain
+`vitest run <path>` has no group, so a marked file also runs on a longer timeout
+in every kind of run (`REAL_SQL_TEST_TIMEOUT_MS`, 60 s against 15 s, set by the
+setup file below). The marker is what earns it: never raise a timeout instead of
+marking a file, and never on one test.
 
 - The marker in the file is the only membership rule; there is no list.
   `packages/fluxiq/tests/test-groups.ts` finds the marked files and gives each

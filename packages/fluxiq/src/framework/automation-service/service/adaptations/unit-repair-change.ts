@@ -1,6 +1,6 @@
 // A unit repair written onto one graph, in memory (state-aware recovery plan,
-// C12): an `add_handler` or `replace_unit` change, through the overlay the
-// run's in-run repair used (`../../live-patch/overlay.ts`), so the graph a
+// C12): an `add_handler`, `replace_unit` or `insert_steps` change, through the overlay the
+// run's repair used (`../../live-patch/overlay.ts`), so the graph a
 // judged run ran and the graph an apply saves cannot disagree.
 //
 // Two guards hold a saved repair to its unit, as the plan requires:
@@ -29,7 +29,7 @@ type UnitRepairGraph = Pick<AutomationStudioFlowDocument, "schemaVersion" | "flo
 
 /** Whether a change is a unit repair, which only the unit repair applier writes. */
 export function automationStudioIsUnitRepairChange(patch: AutomationStudioFlowAdaptation["patch"][number]): patch is UnitRepairChange {
-  return patch.kind === "add_handler" || patch.kind === "replace_unit";
+  return patch.kind === "add_handler" || patch.kind === "replace_unit" || patch.kind === "insert_steps";
 }
 
 /**
@@ -59,7 +59,7 @@ export function automationStudioGraphWithUnitRepair<TGraph extends UnitRepairGra
   const after = isJsonRecord(patch.after) ? patch.after : undefined;
   if (!after || !patch.targetId) throw refused("does not carry its repair and the unit it names");
   const automationScope = patch.kind === "add_handler" && isJsonRecord(after.scope) && after.scope.kind === "automation";
-  const runtime = { ...after, ...(automationScope ? { scope: { kind: "subflow", inherit: true } } : {}), kind: patch.kind, reason: patch.summary } as unknown as AutomationStudioRuntimePatch;
+  const runtime = { ...after, ...(automationScope ? { scope: { kind: "subflow", inherit: true } } : {}), kind: patch.kind === "insert_steps" ? "temporary_action_sequence" : patch.kind, reason: patch.summary } as unknown as AutomationStudioRuntimePatch;
   const part = runtime.kind === "replace_unit" && runtime.unit.kind === "part" ? runtime.unit.subflowId : undefined;
   if (runtime.kind === "replace_unit") {
     if (!isJsonRecord(after.unit)) throw refused("does not name the unit it replaces");
