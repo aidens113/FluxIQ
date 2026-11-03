@@ -1,6 +1,6 @@
 {
   "name": "@fluxiq/client-gateway-websocket",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Browser-safe WebSocket client for the FluxIQ client gateway.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",

@@ -7,9 +7,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 import type { JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace, type AutomationStudioService } from "../../../runtime/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
+import type { AutomationStudioFlowDocument } from "../../../../../flows/authoring/model/index.ts";
+import { runAutomationStudioGraph, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace, type AutomationStudioService } from "../../../../../framework/automation-service/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
 const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["programs.read", "runtime.control"] };

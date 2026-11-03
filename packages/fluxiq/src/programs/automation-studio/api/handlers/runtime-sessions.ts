@@ -9,8 +9,8 @@
 // JSON string can hold (`run-mv8mf0x5-95071c06`, t604). A page that would
 // still be too large to send is refused with a code, never attempted.
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../contracts.ts";
-import { automationStudioWithWholeAttemptInputs } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automation.ts";
+import { automationStudioWithWholeAttemptInputs } from "../../../../framework/automation-service/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 

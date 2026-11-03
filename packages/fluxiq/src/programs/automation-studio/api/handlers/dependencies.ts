@@ -4,11 +4,11 @@
 // parameters under exactOptionalPropertyTypes.
 
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
-import type { AutomationStudioService } from "../../runtime/index.ts";
+import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import type { IdentityAccessService } from "../../../identity-access/index.ts";
-import type { AutomationStudioClientGatewayBridge } from "../../client-gateway/index.ts";
+import type { AutomationStudioClientGatewayBridge } from "../../../../runtime/recording/client-gateway/index.ts";
 import type { ClientGatewayService } from "../../../../client-gateway/index.ts";
-import type { AutomationStudioRecordingCapturePolicy } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioRecordingCapturePolicy } from "@fluxiq/contracts/automation";
 
 export type AutomationStudioApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;

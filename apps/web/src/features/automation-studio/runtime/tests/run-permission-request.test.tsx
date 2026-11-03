@@ -1,7 +1,7 @@
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { AutomationStudioActionPermissionGate } from "fluxiq/automation-studio";
+import { AutomationStudioActionPermissionGate } from "fluxiq/automation";
 
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 vi.mock("../RunHistory", () => ({ RunHistory: () => null }));

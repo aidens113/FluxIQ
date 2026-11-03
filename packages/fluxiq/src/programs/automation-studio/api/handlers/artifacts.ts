@@ -1,7 +1,7 @@
 // Reading, writing and deleting a single project artifact.
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../contracts.ts";
-import type { AutomationStudioProjectArtifactKind } from "../../model/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automation.ts";
+import type { AutomationStudioProjectArtifactKind } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 

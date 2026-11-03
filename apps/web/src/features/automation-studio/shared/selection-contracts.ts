@@ -1,5 +1,5 @@
-import type { NodeStatePhase } from "fluxiq/automation-studio";
-import type { AutomationNodeParameter, AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import type { NodeStatePhase } from "fluxiq/automation";
+import type { AutomationNodeParameter, AutomationNodePort } from "fluxiq/automation/nodes";
 import type { JsonObject } from "../../programs/program-api";
 
 export type AutomationSelection =

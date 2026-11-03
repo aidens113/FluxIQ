@@ -1,0 +1,417 @@
+import { renderAutomationStudioFlowScriptAct } from "../script-guidance/index.ts";
+
+// The Flow script format, in the words the model is shown.
+//
+// This is the whole of what a model must learn to build a Flow. It replaced a
+// nested JSON schema of router, subflows, nodes, edges, endpoints and keys --
+// 2,600 bytes of shape the model had to hold consistent with itself while it
+// wrote, and most of the refused builds in the first full campaign failed on
+// that shape rather than on the reasoning. Lines cannot be unbalanced, a value
+// is never quoted, and nothing is ever escaped, so the failure mode the format
+// used to have does not exist.
+//
+// Core owns the grammar prefixes. Explicit client binding metadata supplies
+// worked examples through the script-examples renderer; absent metadata leaves
+// grammar only, including for older clients. Parser and executor semantics stay
+// unchanged. Inline medium-specific guidance remains a separate P10 migration.
+//
+// Two statements were added after the first four live campaign slices, in
+// which not one built Flow contained a step that acted on its target: every
+// Flow was "go there, read the whole list", and a task that asked for 14 of
+// 280 rows returned 280 and reported success. Neither the format nor the
+// validator ever refused an acting step -- a script naming a click, an entry
+// and a choice builds and validates today -- so what was missing was the
+// statement that one is allowed and, where the instruction asks for part of a
+// collection, required. The model had been told the opposite by inference: the
+// evidence tools it was offered refuse to act for anything but revealing
+// hidden structure, so "I may not do this" was the only reading available to
+// it.
+//
+// The third is about where a key goes. Live builds were refused
+// `bootstrap.unknown_parameter` for a bare `fields:`, `paginate:` or
+// `location:` line -- words the tool descriptions themselves use -- because
+// each belongs inside a parameter rather than beside it.
+//
+// The fourth is the sentence about handles, and it was learned twice. With the
+// statements above in place, the first live build authored exactly the right
+// narrowing Flow -- choose, choose, press, read -- and named each control by a
+// handle shaped like this example's old ones (`control.7`, `field.2`), which
+// the evidence never issued, so all three acting steps were refused
+// `web.handle.malformed` (`run-mu6b6lvl-db87c27f`) and the build that followed
+// went back to reading everything. Its extraction handle was right, because
+// the detection tool spells that shape out.
+//
+// Replacing the example handles with descriptions of the handle to copy --
+// `target: <the handle for the status filter>` -- made it worse: the next
+// build wrote the description as the value, and all three steps were refused
+// `bootstrap.invalid_parameter_value` (`run-mu6bgyc8-3d355b20`). A model
+// copies whatever shape the example shows, so the example must show the right
+// shape and the surrounding line must say it is a shape. That is what these
+// two now do together.
+//
+// The fifth is the replay premise, added on 2026-09-21 (P17). The only Flow the
+// first end-to-end panel campaign created (E1 lane B, E9) kept none of the
+// cookie and notification dismissals its exploration had needed: exploration
+// closed both, every page after that showed neither, and the Flow was written
+// from those pages. Nothing the model was shown said the Flow would run again
+// from the page as it first was, and the evidence policy tells it that what it
+// changes while looking is for looking -- so a dismissal read as scaffolding.
+// Replayed with no model, the Flow met both overlays. The statement says what
+// the replay starts from, and that a change the answer depended on is a step.
+//
+// The sixth is the consequence declaration, added on 2026-09-22. A step that
+// presses something is the one web act whose effect the page decides rather
+// than the action -- the same click applies a filter on one page and publishes
+// on the next -- so the model is the only party that can say what a step would
+// lastingly do, and the permission gate cannot ask a person about a step that
+// never said. Two live builds met the refusal that asks for it, wrote exactly
+// the right line, and were answered `bootstrap.unknown_parameter` because the
+// authoring readers had nowhere to put it (`run-mud7fssy-902f877b`,
+// `run-mud7p1wg-3049531f`). The reserved word now exists
+// (`../authoring/consequences.ts`), and this is where the model is told it
+// does. The classes are interpolated from `action-permissions/` rather than
+// spelled here, so a class added there is offered without anyone editing this
+// file.
+//
+// It is stated even though a build ordinarily reaches the gate the other way.
+// The model runs the library's nodes and each `run_node` call declares its own
+// consequences, so a Flow assembled from the steps that ran carries the
+// declaration already. This format is what a nested plan and any script the
+// model writes by hand go through, and a step that arrives here undeclared is
+// refused -- so the sentence is what makes that refusal answerable.
+//
+// Which steps declare is the bound domain's one rule, not this text's: the web
+// domain's `webPlanStepMustDeclare` (a press, a key press, a dialog answer, a
+// typing step that submits), which holds a plan's steps and every live
+// `run_node` call alike. Until t439 a live call of any acting node was refused
+// without one, so a saved navigate, check or type -- written exactly as this
+// sentence says -- could never be rerun in a repair (`run-mv4912r9-53b05a51`).
+// The sentence and the domain's rule must say the same; change them together.
+//
+// The routing lines were rewritten on 2026-09-18. The format used to say that
+// `step: run subflow <label>` reaches a block, and Core read that as a route
+// rule with no condition -- which always holds, so every Flow built with a
+// block ran that block and nothing else, whatever the page showed. A block now
+// says when it runs with a `when:` line, the router tests those before any
+// step runs, and the steps outside every block are what runs when none holds.
+// The paths a condition may read, and the values exploration saw for them,
+// arrive beside the format under `routing`.
+//
+// The act-on-one-item example at the end of this file was added on 2026-10-07
+// (t339), when candidate mode began showing this text on
+// `core.submit_candidate`. Every example in the format navigates, renames,
+// narrows or reads, and the Flows the creation lanes need choose options, set
+// a quantity and press a control that changes something. Its press declares
+// `modify_existing`, not `none`: adding to a basket changes it, and an example
+// that called a lasting press harmless would teach exactly the
+// under-declaration four live builds already showed. It is a second constant,
+// not more lines of the format, so the legacy completion schema -- which
+// carries the format and is held under a byte ratchet -- does not change while
+// legacy is the default and the baseline candidate mode is measured against.
+//
+// The choice and optional statements ahead of that example were added on
+// 2026-10-07 (t357), from lane A rounds 2-4 (t342). Every candidate script
+// pressed the Space Grey swatch, which the page arrives with already chosen,
+// so the press un-chose it (round 2's toggle trap): the only example of a
+// choice was a dropdown, and nothing said a press toggles. So a choice is now
+// taught as the state it leaves, with the nodes that set a state rather than
+// flip it (`web.dom.check`, `web.dom.select`), and the press kept for a plain
+// button the page arrives with unchosen. Since t364 (round 5) `web.dom.check`
+// also sets an option the page draws itself by the chosen state it shows -- the
+// Space Grey `<div>` swatch -- so the guidance points at the swatch, not at a
+// hidden box behind it, which round 5's model spent eight decisions seeking.
+// And no script could say a step was
+// only sometimes needed -- a consent banner or popup that may not show --
+// although the runtime already skips an absent step of that kind; the
+// `optional: yes` line now says it (`../authoring/assemble.ts`). Both live in
+// the same candidate-only constant, because that is what candidate mode shows
+// (`../candidate/authoring-loop.ts`) and the legacy schema must not change.
+//
+// The statement about checks was added on 2026-10-07 (t368), from lane A round 7
+// (t342, qualifying run 2, `run-muz3jyz8-1d363a69`). Every trial did every act
+// right and then failed on the model's own last step, a `wait_for_text` for
+// "Cart (3)": text the page holds only inside a closed mini-cart. The act
+// example ended exactly so, with a wait for a confirmation it invented, and a
+// model copies the example. A trial whose last step fails still fails, because
+// the saved Flow would fail there in playback; what changed is that the example
+// no longer ends with an invented check, and the guidance says why one is not
+// needed -- the build-test judge reads the page the run ends on -- and what a
+// wait may wait for when the Flow needs one.
+//
+// t378 made the text match the checks it is held to. The consequence sentence
+// said a typing step never needs the line, but the web domain asks it of a
+// `web.dom.type` with `submit: true`, which sends its form
+// (`step-permission.ts`), and lane B's script was refused for exactly that; the
+// legacy text changed by that one clause, and the act example now searches
+// with such a step. The loop text now says where `repeat most:` goes (lane C
+// wrote it under the span's last step), and that the rows a `repeat over`
+// visits are the ones its listing's `extractList.where` kept: lane D filtered
+// with `recordOutput.process`, which shapes only the saved answer at the end
+// of the run, and confirmed all eight requests where four were asked
+// (`run-mv0fuual-f9e6f089`).
+//
+// **No example is a Lab task (t378).** The candidate examples had drifted into
+// the live lanes' own tasks: two shirts with a colour and size into a basket
+// (the everything-store kettles, lanes A and B), earbuds under 50 on every
+// page (lane C's task), and friend requests confirmed per row, twice (lane
+// D's). A lane passing on an example of its own answer measures the example,
+// not the build. Each now keeps its exact shape -- the same nodes, edges,
+// bindings and numbers the tests hold -- on a site and an act none of the ten
+// realistic scenarios' tasks has: a task tracker, a library catalogue, a
+// billing tool and a mail inbox. A new example is held to the same rule.
+//
+// The state-aware statements (t388) are a fourth candidate-only constant,
+// `AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT`, at the end of this file: parts,
+// other entries, checkpoints, handlers and page facts, and when an
+// interruption is a handler rather than an optional step.
+//
+// Two rules came from R4a's second paid run (t423, `run-mv2pgqkj-f3552c70`).
+// Its optional step for a promotion the page raised pressed the promotion's
+// call to action, not its Close, while declaring `consequences: none`; on a real
+// site that takes the offer. So the optional rule, the handler rule and the
+// interruption rule each say an interruption is dismissed through its way out,
+// and a check refuses the step that does otherwise
+// (`../script-statements/way-out-steps.ts`). And it set a box's value with a
+// clear step and then a typing step, and the page put its default back when
+// the box was emptied, so the clear step could never be seen to work. Typing
+// already replaces what a box holds (the web domain's `web.dom.type`), so the
+// act text says to type the new value and never clear first.
+//
+// The narrowing sentence changed in t489 (lane C round 13,
+// `run-mv66s8yl-fbbfa221`, D2). It told the model to narrow a part of a
+// collection "first with the steps that set the target's own controls", which
+// invites the trap t482's judge rule catches: a site's band, category or option
+// that keeps less than the request asks, whose missing rows no read can show.
+// It now says a site control narrows only when its words keep exactly what the
+// instruction asks, and otherwise the read's own condition does. Its example
+// moved from a shop's orders to a help desk's tickets, a kind of site no Lab
+// lane uses, and is titled for the case it shows.
+//
+// t606 (A8 towels `run-mv8p37k8-f1a90624`) added the sentence before
+// "Otherwise": a condition the items do not print is narrowed by the site's
+// own filter whose group heading names it, not by reading every item. Its
+// example is a library catalogue's format filter, on no Lab lane's kind of site.
+
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permission-requests/index.ts";
+
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
+  "Write the Flow as plain lines, not JSON. One fact per line, `key: value`.",
+  "The first colon ends the key and the rest of the line is the value exactly as written, so a value may contain colons, quotes or braces and nothing is ever escaped.",
+  "Blank lines and indentation mean nothing. Keys are matched ignoring case, spaces, `-` and `_`.",
+  "`flow: <what the Flow does>` once, at the top.",
+  "`step: <what this step does>` starts a step. Write `step <label>: <what it does>` when another line needs to point at this step; the label is a name you invent.",
+  "`node: <an id or label from nodeCatalog>` chooses the node for the step.",
+  "Every other line in a step sets one of that node's parameters by its id, `url: https://example.test/a`. Reach inside a structured parameter with a dotted key, `extractList.fields.name: product-name`. A list is comma separated. Leave a parameter out and its default is used.",
+  "A key a parameter takes is written inside it: `extractList.minItems: 0`, `target.location: https://shop.test/members`.",
+  "A step may act, not only read: choose an option, enter text, set a control, press one. The tools you were given while gathering evidence are for looking; one refusing to act, or not existing, says nothing about what the Flow may contain.",
+  `A step that presses something says what pressing it would lastingly do: \`consequences: <classes>\`, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}, comma separated; \`consequences: none\` when it only reveals, opens, expands, filters, sorts, ticks, dismisses or navigates. Every press needs the line, and it says what that one press would cause, not what the Flow is for: the press that applies a filter is none, the press that publishes is send_or_publish. A typing step with \`submit: true\` sends its form, so it presses and needs the line too: \`consequences: none\` for a search. Any other step that types, chooses, waits or reads never needs it.`,
+  "The Flow runs later on its own, with no model, from the page the run starts on, and nothing you did while gathering evidence is still in effect then: a notice you closed, a consent you answered, a search you ran and a filter you chose are all as they were before you touched them. So every change the answer depended on is a step, in the order you made it, including closing a notice, prompt or banner that stood in front of a control. Arriving at an address changes nothing else: whatever that page puts in front of its content on arrival is still there.",
+  "When the instruction asks for part of a collection -- a count, a range, a status -- the Flow keeps exactly that part. A step that sets one of the site's own controls may narrow it only when that control's words keep exactly what the instruction asks: a range no narrower, and no category, option or value the instruction does not name. When the items do not print a condition the instruction asks for, look first for the site's own filter whose group heading names it, such as Format: Audiobook in a library catalogue, rather than reading every item. Otherwise read the collection and narrow in the read's own condition, `extractList.where`, written in the instruction's own terms. Returning everything is a wrong answer. Where the answer may be no rows, write `extractList.minItems: 0`.",
+  "Steps run and connect in the order written: never write ids, versions, keys or edges.",
+  "`on <port>: go to <label>` sends one of the node's other output ports to a named step instead of to the next one. Use a port the node's catalog entry lists, and never the step written next.",
+  "When the run can start in different situations that need different steps -- the instruction says so, or routing.situations shows it -- give each such situation a block: `subflow <label>: <the situation>`, then `when: <condition>`, then its steps, then `end`. The steps outside every block are what runs when no block's condition holds.",
+  "The router checks the blocks in the order written, before any step runs, and runs only the first whose `when:` holds; nothing else runs. So a block holds every step its situation needs, including the ones it shares with the others.",
+  "A condition is `<path> <test> [value]`, for example `when: state.page.dialog exists` or `when: inputs.mode is retry`. The path is one listed in routing.paths; the test is exists, is missing, is, is not, contains, does not contain, matches, starts with, greater than, less than, is true or is false. Two `when:` lines must both hold.",
+  "One situation needs no block and no `when:`: write its steps and nothing else.",
+  "A line with no `key:` continues the value above it on a new line.",
+  "Where a step names something you observed, its value is the handle the evidence printed for it, copied exactly. The handles in the examples below are the shape, not the value: read the real one out of the evidence, and never invent one, describe one, or reuse one from an example.",
+].join("\n");
+
+/**
+ * Candidate choice, optional-step and act guidance. The historical export name
+ * remains compatible; worked examples now come only from explicit client
+ * metadata and are appended by the script-examples renderer.
+ */
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = renderAutomationStudioFlowScriptAct();
+
+/**
+ * What a `where` condition may say, and how each comparison reads its value:
+ * the one text both places a condition is written are shown it (t478).
+ *
+ * **Why it is here.** It used to be written only in the web domain's detection
+ * tool's description. Lane D round 11 (`run-mv5yaapw-6d20d23d`) asked for the
+ * same detection three times running, Core withdrew every look until an act ran
+ * (`../../llm/decision-handlers/look-withdrawal.ts`), and the decisions that
+ * then wrote the listing's `where` were offered `core.submit_candidate`, which
+ * accepts one, and no word on what one may say. The model wrote a digit pattern
+ * for "five or more" and left out a row whose count was written another way. A
+ * withdrawal may take a look away; it must never take away the only description
+ * of a parameter a kept tool accepts. So the rules ride on the submission's own
+ * format (`AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT`), which no withdrawal
+ * touches, and a domain that describes the same conditions in a tool of its own
+ * says this same text rather than a second copy of it.
+ *
+ * The comparisons are the record processing vocabulary's
+ * (`@fluxiq/contracts`, `processing-vocabulary.ts`), the domain's item
+ * condition to the key, and the number a bound reads is the shared reader's
+ * (`read-number.ts`). `tests/condition-rules.test.ts` holds every key of that
+ * vocabulary to being named here.
+ *
+ * **A date bound (t790).** Run `run-mvswewhy-e4e469d4` was asked for rows "on
+ * or after Saturday 19 September 2026" and, with bounds that read only
+ * numbers, wrote `posted matches "(19|20|21) September 2026"`, which drops
+ * every row dated later. The bounds now take a date written as text with
+ * `as: "date"` (`@fluxiq/contracts`, `date-bound.ts`), and the rules
+ * say so with an example on a kind of site no realistic scenario is (a library's
+ * loans), that a bound states its year, and that a row whose date cannot be
+ * read is never kept.
+ *
+ * **Relative to the run (t800, K1).** A bound may also be `today`,
+ * `yesterday`, `now` or `<n> <unit> ago`, read against the run's `now`, and
+ * `within: "<n> <unit>"` keeps the rows dated in the last n units up to it
+ * (`date-bound.ts`, `date-within.ts`). One line says `within`, with an example
+ * on another kind of site no realistic scenario is (a permit office's
+ * applications), and that a day the request names is still a dated bound.
+ */
+export const AUTOMATION_STUDIO_FLOW_CONDITION_RULES = [
+  "Presence: is: \"present\" or \"absent\", for a column only some items have.",
+  "Number: atLeast, atMost, lessThan, greaterThan, or equals with a number, compare the number the value states: the first number written ($49 is 49, 3.7 out of 5 is 3.7), or the total of a combined count it recognises; a value stating no number fails.",
+  "A quantity -- a count, price, rating or amount -- is always compared with a bound, never a text test: a pattern reads characters, not the number, and misses the same count written another way.",
+  "Date: the same bounds with a date written as text and \"as\": \"date\" compare the date the value states (\"Tuesday 6 October 2026 at 09:00\", \"6 Oct 2026\", \"2026-10-06\", \"Oct 6, 2026\", or \"3 days ago\" from now): {\"field\": \"due\", \"atLeast\": \"2026-10-01\", \"as\": \"date\"} keeps loans due on or after 1 October 2026, and atLeast with atMost keeps the days between, both included. Write each bound as one date with its year, or relative to the run as today, yesterday, now or \"<n> <unit> ago\"; a bound with no time of day is its whole day. A row whose value states no date it can read is never kept. A date is always compared with a date bound, never a pattern: a pattern reads characters and misses the days it does not spell.",
+  "Within: within: \"<n> <unit>\" (minutes, hours, days or weeks) keeps the rows dated from n units before the run's now up to it: {\"field\": \"filed\", \"within\": \"7 days\"} keeps applications filed in the last 7 days, a row dated only by day counting whole days. A day the request names is a bound with its year, never a within.",
+  "Text: contains, startsWith, endsWith, equals with text, or matches for a regex, ignoring case; one value or a list meaning any. not: true keeps what the condition rejects."
+].join(" ");
+
+/**
+ * How a candidate repeats a span and binds a value, with an example of each
+ * loop (t346): reading every page of a list and processing the rows at the end
+ * of the run, and acting on each row a listing kept. Candidate-only, beside the act example and for the same reason: the
+ * legacy completion schema carries `AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT` and
+ * stays byte for byte what the baseline ran with.
+ *
+ * Every line is the grammar `../authoring/parse.ts` reads and every loop the
+ * one a drafted repeat becomes (`../authoring/draft-routing.ts`), so the
+ * examples build the graph shape the legacy path builds for the same loop.
+ *
+ * The third example (t378) is how a loop adapts when a trial says the site
+ * asked the run to slow down (lane D, `run-mv0fuual-f9e6f089`: the seventh
+ * confirm in a row met "you're going too fast"). The trial's feedback names the
+ * pass, its row and the wait (`../../service/candidate-trial/absorbed.ts`), and
+ * the Flow answers in its own lines: a step closing the site's notice when it
+ * shows (`optional: yes`, now allowed inside a span), a wait that runs only on
+ * the passes where it did (`only after:`), and a pace between passes
+ * (`repeat pace:`), which the saved Flow keeps
+ * (`../script-statements/`).
+ *
+ * The closing step is asked for only against a handle the trial named (t470).
+ * Lane D round 8 (`run-mv5jnc5m-a47c3e59`) was told to close a notice it had
+ * never been shown: the client had closed it by its way out, and the feedback
+ * named no control, so the step was written against the only close-like handle
+ * the model knew, the chat's "Close chat", and closed the chat. The feedback
+ * now lists what the run closed under `interruptions`, with the way out's
+ * handle as `wayOut` when the domain could name it
+ * (`../../service/candidate-trial/interruptions.ts`); with no handle, the Flow
+ * answers with its pace alone and writes no step for the notice.
+ *
+ * **What exclude and process.columns mean (t510, F3).** Breadth wave 1
+ * (`run-mv6qrbgx-06151cdb`) marked a sort key `handling: "exclude"` to keep it
+ * out of the answer and was refused three times: exclude means never stored,
+ * and a stored field leaves the answer through `process.columns`. The format
+ * now says both, and that a sort or dedupe key must be stored.
+ *
+ * **Only the first rows (F5).** A builder asked to act on a list's first few
+ * rows wrote `repeat most:` beside `repeat over:`, was refused, and dropped the
+ * bound (`run-mvecxeci-1c2cc227`). The pairing now means For Each's own stop
+ * (`nodes/control-flow/for-each.ts`, `stopAfter`), and one clause says so.
+ *
+ * **The order a repeat visits (t741).** Rerun round 3 (`run-mvgobp8h-b99ede98`)
+ * found the right rows by date but sorted them only in `recordOutput.process`,
+ * and `repeat most:` acted on the listing's first rows in page order. The text
+ * said what the process does not do and named no way to order the rows a
+ * repeat visits; the web domain reads one, `extractList.sort`, as a list of
+ * `{field, order, as}` (downstream `order-request.ts`), and the sentence after
+ * the `extractList.where` one names it in that shape. A Flow that still orders
+ * a lasting repeat's rows in the process is refused
+ * (`../script-statements/listing-order-in-repeat.ts`).
+ *
+ * **Not every listing can reorder (t751).** The web read hands its rows on in
+ * page order and its `extractList.sort` only orders the saved answer, so the
+ * sentence promised an order no web script could give; photo rerun 5
+ * (`run-mvhibis0-b536958b`) ran out between that advice and its refusal. The
+ * sentence now says a reordering is the listing node's to offer, and what the
+ * page-order case does instead -- narrow with `where`, `repeat most: N`, a
+ * limit of the same N and no sort -- which is what the refusal admits for a
+ * node declaring `answersRows: "page_order"`. Its example stays on a kind of
+ * site no realistic scenario is.
+ *
+ * **Core orders a repeat's rows by the listing's sort (t796).** A page that
+ * lists featured rows first left "the N newest" no honest way to be said, and a
+ * live build copied a cutoff out of the answer (`run-mvtdn37t-e1e4d0a7`). Core
+ * now gives the For Each over a page-order listing that listing's own sort
+ * (`../script-statements/repeat-order.ts`), so the sentence again names the listing's
+ * sort as the order a repeat visits, says rows the sort cannot read go last,
+ * and keeps the limit of the same N for saving only the acted rows.
+ */
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
+  "Repetitive work is a loop, never the same steps written again. A step starts a span that repeats with lines beside its node:",
+  "`repeat over: <label>` runs the span once for each row the labelled listing step read. The listing is written before the span and runs once; it never repeats itself. A step inside the span that presses a row's control finds that row's own control on each pass.",
+  "`repeat through: <label>` names the span's last step; without it the span is the step that says repeat, alone.",
+  "`repeat while: <label>` runs the span from this step through the labelled step, then again while that step succeeds. The loop ends when that step answers ended -- a next-page step does when there is no further page -- or after `repeat most: <passes>`; a last step that cannot answer ended needs repeat most.",
+  "`repeat most:` goes beside `repeat while:`, on the span's first step, never under its last: `repeat while: next` then `repeat most: 20`. A span whose last step answers ended -- a next-page step -- needs none. Beside `repeat over:` it acts on only the listing's first rows, in their order, and then the Flow goes on: `repeat over: bookmarks` then `repeat most: 2` does the span for the first two bookmarks.",
+  "A span holds no `on <port>:` line and no second repeat, and no branch goes into it.",
+  "An `optional: yes` step may stand inside a span: it is done on the passes that need it and gone past on the others. A step written directly after an optional step with `only after: <its label>` runs only on the passes where that step was done, and so does each step after it with the same line; then the pass goes on where it was. Keep them in the same span, its `repeat through:` naming the last of them. A step that does what the request asks never takes `optional:` or `only after:`: a step behind `only after: <label>` runs only on passes where <label> was done, so on a pass where <label> finds nothing to press the act is passed over and never done; keep both for a banner or popup the page only sometimes shows.",
+  "`repeat pace: <time>` goes beside `repeat over:` or `repeat while:`, on the span's first step: each pass then starts at least that long after the one before. Write `6 s`, `1500 ms` or `1 min`; a bare number is seconds.",
+  "When a trial says a step in a loop met the site's request to slow down -- its feedback names the pass, the row and the wait -- adapt the Flow rather than send it again: `repeat pace:` of at least that wait on the span's first step. When that step's feedback also lists the notice under `interruptions` with the handle of its way out, `wayOut`, add right after the step, inside the span, an `optional: yes` step that presses that handle, and directly after it a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named. A notice listed with no `wayOut` was closed by the run itself: write no step for it, and never close it through any other handle.",
+  "A value that changes between rows or runs is bound, never typed in: `$row.<field>` is a field the listing reads, of the row the pass is on, and only inside a repeat over that listing; `$input.<name> = <value>` is a Flow input, written with the value the person gave; `$step.<label>.<output>` is an output of an earlier step, by its label.",
+  "The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where: [{\"field\": \"amount\", \"atLeast\": 100}]`.",
+  "A `repeat over` visits its listing's rows in the listing's own order, so `repeat most: N` acts on the first N of that order. To act on them in another order, put the order on the listing step too, `extractList.sort: [{\"field\": \"due\", \"order\": \"asc\", \"as\": \"date\"}]`, where `order` is asc or desc and `as` is number, date or text: Core hands the repeat its rows in that order, rows the sort cannot read last, before `repeat most` takes the first of them, whatever order the page shows them in. So to pay the two oldest unpaid invoices, list the unpaid invoices with that sort, then `repeat over:` them with `repeat most: 2`; never stand for an order with a where that copies a value out of an answer. To save only the rows the repeat acts on, give the listing a limit of the same N. A sort or limit in `recordOutput.process` orders only the saved answer, never the rows a repeat visits.",
+  `A where condition, on a listing or in \`recordOutput.process\`, names a column by field and must hold for a row to be kept. ${AUTOMATION_STUDIO_FLOW_CONDITION_RULES}`,
+  "Rows a Flow reads are also collected over the whole run, and `recordOutput.process` on the reading step only shapes that saved answer at the end -- keep some, drop repeats, sort, limit -- over the columns it stores. It never changes which rows a repeat visits.",
+  "In a record output, a schema field with `handling: \"exclude\"` is never stored, for a value that must not be kept, while `process.columns` keeps a field stored but leaves it out of the answer. A sort or dedupe key must be stored: one the answer should not show stays in the schema and out of `process.columns`.",
+].join("\n");
+
+/**
+ * How a candidate writes a Flow that knows where it is (t388, contract C12):
+ * parts a step calls, a block's other entries, checkpoints, handlers and the
+ * page facts they test, each with a one-line example, then three worked
+ * examples -- starting where the page already is, an interruption that can
+ * appear at any pass, and a second known way that is checked the same way.
+ * Candidate-only, beside the loop text and for the same reason: the legacy
+ * completion schema carries `AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT` and stays
+ * byte for byte what the baseline ran with. Candidate mode shows it after the
+ * loop text (`../candidate/authoring-loop.ts`).
+ *
+ * Every line is the grammar `../authoring/parse.ts` reads and assembles
+ * (`../script-statements/`), which the guard test holds each example to. The
+ * interruption guidance keeps t378's rule for one place -- `optional:` and
+ * `only after:` -- and its pace rules, and adds the handler for an
+ * interruption that can come at several places or at any pass of a loop.
+ * Since t413 one rule gives a committing step its own `done when:`, which
+ * becomes its node's expected state, so a press whose answer was lost is
+ * settled from the page rather than stopped as uncertain.
+ *
+ * The second known way's parts read their one booking reference with the
+ * single-value read and hand it on through its `value` port (t646). They read
+ * it with a list extraction and its `records` until then, and a builder that had
+ * to hand on one value copied that `extraction.1` handle, which only the list
+ * detector gives, and was refused for every guess (A8 frozen pair 3).
+ *
+ * The last statement and example are values read one by one and saved as one
+ * row (t738). Office `run-mvgf04kw-310fc169` read four values with four
+ * single-value reads, every act right, and stored nothing: Write Records took
+ * its rows only through a port no script line connects. It now takes them in
+ * its `records` parameter, each value bound to a read
+ * (`nodes/data/write-records.ts`), and this says so, with the example a model
+ * copies.
+ *
+ * No example is a Lab task (t378's rule): a city permit portal, a weather
+ * network's station list, a meeting-room planner and an account's settings
+ * page are sites and acts none of the ten realistic scenarios has, and no
+ * example closes an email or newsletter offer, which two of them show.
+ */
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
+  "A part is steps another step runs by name, written once: `part <label>: <what it does>`, its steps, then `end`. It has no `when:` line. A step runs it and waits for it with `call: <label>` in place of `node:`: `step pay: pay for the order` then `call: payment`.",
+  "`input: <name>` in a part names a value it is given; its steps read it as `$input.<name>`, and the step that calls it gives it a line of its own, `card: $input.card = 4111`. `output: <name> = $step.<label>.<output>` names a value the part hands back, which a later step reads as `$step.<the calling step's label>.<name>`. Nothing else crosses: a `$step` names a step of its own block or part only.",
+  "`start at: <step label>`, with its `when:` lines right after it, lets a block begin further on when the page already shows what that step needs: `start at: search` then `when: exists t4`. Otherwise the block starts at its first step, as always.",
+  "`checkpoint: yes` on a step marks a place a handler may send the run back to.",
+  "`done when: <fact>` in a part, or in a handler, says what the page shows once it worked: `done when: text t11 contains \"Booked\"`.",
+  "Give a step that commits something (a press, a submit, a choice) its own `done when:` right under its `step` line, before `node:`, so if its answer is lost the run checks the page instead of giving up: `done when: text t9 contains \"Saved\"`.",
+  "A fact is `exists <handle>`, `absent <handle>`, `visible <handle>`, `enabled <handle>`, `text <handle> contains \"<words>\"` (or `is`, `matches`), `value <handle> is <value>` (a value may be `$input.<name>`), `count <handle> is <number>`, or `dialog <kind> \"<name>\"`, with `absent` after it when it should be gone. The handle is one the evidence printed, as on any step.",
+  "A handler is what the run does when something it recognises gets in the way: `on <event> [for <step labels> | for this part | everywhere]: <the situation>`, then its `when:` facts, its steps, `then: <what next>` and `end`. Without `for`, it covers the block it is written in. Events: `before` a step is tried, `retry` before it is tried again, `fail` once it has failed, `start` as the part begins, `next` after it succeeded: `on retry for open: a notice covers the list`. A handler's steps that clear what got in the way press its way out, exactly as an optional step does.",
+  "`then: carry on` goes on with the step (never after `fail`); `then: go to <checkpoint step>` goes back to a checkpoint; `then: use <output> = <value>`, only after `fail`, stands in for the failed step's results; `then: give up` lets the failure stand. A `before` or `retry` handler needs `done when:`, unless its `when:` says something is showing, whose going away is the proof.",
+  "An interruption, wherever it comes, is dismissed through its way out -- close, no thanks, not now, the X -- never through the control that accepts, joins, buys or continues: on a real site that press takes the offer. A cookie or consent banner is the exception: its reject or necessary-only answer is preferred, and its accept is allowed.",
+  "An interruption that can only come at one place is an `optional: yes` step there, with its `only after:` steps. One that can come at several places, or at any pass of a loop, is one handler instead -- `on before everywhere:` or `on retry for <steps>:` -- so one rule covers every place. A loop the site asked to slow down still takes `repeat pace:` as well.",
+  "A second known way to do a step is a `fail` handler for it whose steps call another part and end `then: use <output> = $step.<label>.<output>`. Give both parts the same `done when:`, so either way is checked the same.",
+  "Write a handler only for an interruption you met while gathering evidence or in a trial, or one the instruction names; never one you imagine. A trial lists what the run closed under a step's `interruptions`: one with a `wayOut` is dismissed through that handle and no other; one with none was closed by the run itself and needs no step.",
+  "Values read one by one, each by its own labelled step, are saved as one row by a last step `node: builtin.data.write-records` whose `records:` is a list holding one object, each value bound to a read: `records: [{\"plan\": \"$step.plan.value\"}]`. The row's keys are its columns unless `recordOutput.schema` names them. A listing saves its own rows and needs no such step.",
+].join("\n");

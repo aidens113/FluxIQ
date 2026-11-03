@@ -1,4 +1,4 @@
-import type { AutomationStudioFlowDocument, AutomationStudioTaskArtifact, PolicyGraph } from "fluxiq/automation-studio";
+import type { AutomationStudioFlowDocument, AutomationStudioTaskArtifact, PolicyGraph } from "fluxiq/automation";
 import type { AutomationHierarchyNode } from "../hierarchy/model";
 
 export function mergeById<TItem extends Record<string, unknown>>(primary: TItem[], secondary: TItem[], idKey: keyof TItem): TItem[] {

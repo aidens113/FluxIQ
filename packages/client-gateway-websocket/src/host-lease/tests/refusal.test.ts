@@ -1,7 +1,7 @@
 // The result a client answers a command refused for its host lease with.
 
 import { describe, expect, it } from "vitest";
-import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation";
 import { CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES } from "@fluxiq/contracts/client-gateway";
 import { clientGatewayHostLeaseRefusal } from "../index.ts";
 

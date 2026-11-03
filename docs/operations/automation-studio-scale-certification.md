@@ -37,7 +37,7 @@ Without an evidence file the command emits a blocked template. This is expected.
 Do not replace missing measurements with inferred or unit-test results.
 
 The JSON input follows `AutomationStudioScaleCertificationInput` in
-`packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts`.
+`packages/fluxiq/src/framework/automation-service/testing/scale-certification.ts`.
 Keep Playwright JSON, traces, screenshots, and scheduler diagnostics as
 companion artifacts; summarize only compatible measurements in `scaleMatrix`
 and `heapRetention`.

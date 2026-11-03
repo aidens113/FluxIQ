@@ -1,6 +1,6 @@
 {
   "name": "@fluxiq/contracts",
-  "version": "0.5.1",
+  "version": "0.7.1",
   "description": "Browser-safe shared contracts for FluxIQ programs, clients, and recording integrations.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -8,10 +8,13 @@
   "engines": { "node": ">=22" },
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./runtime": { "types": "./dist/runtime.d.ts", "import": "./dist/runtime.js" },
+    "./records": { "types": "./dist/records.d.ts", "import": "./dist/records.js" },
+    "./recording-capture": { "types": "./dist/recording-capture.d.ts", "import": "./dist/recording-capture.js" },
     "./core": { "types": "./dist/core.d.ts", "import": "./dist/core.js" },
     "./client-gateway": { "types": "./dist/client-gateway.d.ts", "import": "./dist/client-gateway.js" },
     "./program-api": { "types": "./dist/program-api.d.ts", "import": "./dist/program-api.js" },
-    "./automation-studio": { "types": "./dist/automation-studio.d.ts", "import": "./dist/automation-studio.js" },
+    "./automation": { "types": "./dist/automation.d.ts", "import": "./dist/automation.js" },
     "./iam": { "types": "./dist/iam.d.ts", "import": "./dist/iam.js" },
     "./platform": { "types": "./dist/platform.d.ts", "import": "./dist/platform.js" }
   },

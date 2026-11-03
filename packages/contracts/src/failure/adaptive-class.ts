@@ -1,13 +1,13 @@
 /**
  * FluxIQ's one failure-category list. Core names every member and classifies
  * failed attempts into them; a domain decides which member applies and reports
- * it in an `AutomationStudioFailureRecord`. No second list exists in Core or in
+ * it in a `RuntimeFailureRecord`. No second list exists in Core or in
  * an importing domain.
  *
  * Adding a member breaks exhaustive consumers, so before 1.0 it is a minor
  * version bump with a migration note.
  */
-export const AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES = Object.freeze([
+export const RUNTIME_ADAPTIVE_FAILURE_CLASSES = Object.freeze([
   /** The action ran and failed for a reason no other member names. */
   "action_failed",
   /** Expected transition evidence (outputs, effects, or state) was not confirmed. */
@@ -42,10 +42,17 @@ export const AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES = Object.freeze([
   "user_intervention_required"
 ] as const);
 
-export type AutomationStudioAdaptiveFailureClass = (typeof AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES)[number];
+export type RuntimeAdaptiveFailureClass = (typeof RUNTIME_ADAPTIVE_FAILURE_CLASSES)[number];
 
-const FAILURE_CLASSES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES);
+const FAILURE_CLASSES: ReadonlySet<string> = new Set(RUNTIME_ADAPTIVE_FAILURE_CLASSES);
 
-export function isAutomationStudioAdaptiveFailureClass(value: unknown): value is AutomationStudioAdaptiveFailureClass {
+export function isRuntimeAdaptiveFailureClass(value: unknown): value is RuntimeAdaptiveFailureClass {
   return typeof value === "string" && FAILURE_CLASSES.has(value);
 }
+
+// Compatibility names retained for existing Automation Studio consumers.
+export {
+  type RuntimeAdaptiveFailureClass as AutomationStudioAdaptiveFailureClass,
+  RUNTIME_ADAPTIVE_FAILURE_CLASSES as AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES,
+  isRuntimeAdaptiveFailureClass as isAutomationStudioAdaptiveFailureClass
+};

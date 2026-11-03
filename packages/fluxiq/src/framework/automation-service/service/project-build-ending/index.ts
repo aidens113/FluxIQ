@@ -1,0 +1,12 @@
+// Barrel for what a project build's ending says: the supervisor's reason checked against Core's record, and that
+// record in Core's words (t738); the one account of the ending its row says, and the codes it hands back (t753).
+export { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_CODES } from "./codes.ts";
+export { automationStudioProjectBuildEndingTold } from "./ending-told.ts";
+export { automationStudioProjectBuildReasonChecked } from "./reason/index.ts";
+export { automationStudioProjectBuildReasonUnrepeated } from "./reason/index.ts";
+export { automationStudioProjectBuildRecordTold } from "./record-told.ts";
+export type { AutomationStudioProjectBuildReading } from "./reading.ts";
+export { automationStudioProjectBuildReadingsTold } from "./readings-told.ts";
+export { automationStudioProjectBuildReasonContradicted } from "./reason/index.ts";
+export { automationStudioProjectBuildTestsRefused, type AutomationStudioProjectBuildTestEvent, type AutomationStudioProjectBuildTestsRefused } from "./tests-refused.ts";
+export { automationStudioProjectBuildReasonNothingChanged } from "./reason/index.ts";

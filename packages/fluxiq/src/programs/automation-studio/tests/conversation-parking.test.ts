@@ -24,10 +24,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GlobalProgramApiRegistry } from "../../_shared/api.ts";
 import type { ProgramApiActor } from "../../_shared/api.ts";
 import { IoRegistry } from "../../../io/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../api/contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../api-contracts/automation.ts";
 import { registerAutomationStudioApi } from "../api/handlers/index.ts";
-import type { AutomationStudioConversation, AutomationStudioConversationThread } from "../runtime/index.ts";
-import { AutomationStudioService } from "../runtime/service.ts";
+import type { AutomationStudioConversation, AutomationStudioConversationThread } from "../../../framework/automation-service/index.ts";
+import { AutomationStudioService } from "../../../framework/automation-service/service.ts";
 
 const DOMAIN_ID = "example";
 const PROMPT = "Publish the draft?";

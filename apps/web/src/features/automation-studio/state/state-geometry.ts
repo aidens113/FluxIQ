@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { EvidenceAnchor, StateVisualLayer } from "fluxiq/automation-studio";
+import type { EvidenceAnchor, StateVisualLayer } from "fluxiq/automation";
 import type { NodeStateViewModel, StateFactViewModel } from "./model/types";
 import type { StateBounds, StateBoundsKind, StateRenderKind, StateSize, StateVisualMetrics, StateVisualSurfaceMode } from "./state-visual-types";
 import { objectMetadata, stringMetadata } from "./state-visual-classification";

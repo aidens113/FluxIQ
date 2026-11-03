@@ -1,14 +1,15 @@
 # Package Boundaries And Distribution
 
-FluxIQ has three public ESM packages. They are compiled before use; consumers
+FluxIQ has four public ESM packages. They are compiled before use; consumers
 must not depend on repository TypeScript sources, workspace aliases, or a
 TypeScript runtime loader.
 
 | Package | Owns | Environment | Runtime dependencies |
 | --- | --- | --- | --- |
-| `@fluxiq/contracts` | JSON primitives, program API schemas, client-gateway protocol, and external Automation Studio recording contracts | Browser and Node.js | `zod` |
+| `@fluxiq/contracts` | JSON primitives, program API schemas, client-gateway protocol, and the shared automation contract (`@fluxiq/contracts/automation`: failure records, actionability, record sets, recording capture) | Browser and Node.js | `zod` |
 | `fluxiq` | Domain-neutral framework runtime, global programs, storage, migrations, and host integration | Node.js 22 or newer | contracts, QR generation, and native SQLite |
 | `@fluxiq/client-gateway-websocket` | The client half of the client gateway: WebSocket transport, reconnecting connection, offline outbox, in-flight command reconciliation, host-lease fencing, storage-area port, and the session-picking rule | Browser and Node.js 22 or newer | contracts only |
+| `@fluxiq/ui-components` | FluxIQ's chat UI as plain TypeScript DOM and CSS with no UI framework. A client mounts `createChatWidget` and supplies the ports (`ChatTransport` for conversation, live activity, run controls, recordings and model keys; `ChatWidgetOptions` for what only the host can do). Entries `.`, `./dom`, `./icons`, `./testing` and the stylesheets `./styles/tokens.css` and `./styles/chat.css` | Browser; no Node built-in and no browser-extension API | `fluxiq` |
 
 The contracts package is the dependency seam between browser clients and the
 framework. It must not import the runtime. The WebSocket client must not pull
@@ -26,6 +27,26 @@ the imported UI still uses the active importer's domain manifest for visible
 naming and branding.
 
 ## Exports And Builds
+
+The neutral browser-safe contract entry points `@fluxiq/contracts/runtime`,
+`@fluxiq/contracts/records` and `@fluxiq/contracts/recording-capture` own
+result control, record processing/datasets and capture policy.
+`@fluxiq/contracts/automation` is the shared automation contract and
+reexports the same authorities.
+
+### Automation entries of `fluxiq`
+
+| Entry | Is |
+| --- | --- |
+| `fluxiq/automation` | The automation runtime (`framework/automation-service/public`). Node-only |
+| `fluxiq/automation/nodes`, `/action-effect`, `/actionability`, `/fingerprinting`, `/action-permissions`, `/panel-capabilities`, `/llm-models` | Browser-safe subpaths of the runtime for node definitions, action effects, actionability, target matching, permission display, panel capabilities and the model catalog |
+| `fluxiq/automation/testing`, `/candidate-authoring`, `/evidence-build-scope` | Node-side subpaths for test support, candidate authoring results and build-scope evidence |
+| `fluxiq/automation-studio` | Only the controller: Automation Studio's endpoint registration, view state and metadata |
+| `fluxiq/automation-studio/dsl`, `/dsl/generator` | The Flow source language. The name is fixed because saved Flow source contains that exact import |
+| `fluxiq/runtime/output-dispatch/preparation` | Browser-safe contracts a domain implements to prepare an output action's target (see [runtime ownership](runtime-ownership.md#hooks-on-the-implementation-bundle)) |
+
+A browser bundle reaches Core only through entries the structure audit lists in
+`browserBundles.entries`. `@fluxiq/ui-components` is checked by the same rule.
 
 All packages are ESM-only and expose conditional `types` and `import` entries
 from `dist/`. Relative source imports use TypeScript extensions during local
@@ -46,44 +67,23 @@ The runtime keeps its established public subpaths during the 0.1 compatibility
 period. New subpaths should be added only for an independently useful surface;
 internal folders are not automatically public API.
 
-`fluxiq/automation-studio/action-permissions` is the browser-safe display seam
+`fluxiq/automation/action-permissions` is the browser-safe display seam
 for a permission request Core already produced. It exports the consequence
 phrases, request type, and strict request parser only. Browser panels use this
 subpath instead of reaching into runtime source or importing the Node-oriented
-`fluxiq/automation-studio` barrel; permission declaration, gating, instruction
+`fluxiq/automation` barrel; permission declaration, gating, instruction
 authority, services, and storage remain server-only implementation surfaces.
 
-`fluxiq` is a Node.js package, but one of its subpaths is not. The runtime is
-the only place the element matcher lives, and a host that scores element
-candidates does so where the elements are — in a browser. So
-`fluxiq/automation-studio/fingerprinting` publishes the fingerprint contracts
-and `createAutomationStudioElementMatcher` on their own, away from the
-`fluxiq/automation-studio` barrel, which reaches `node:crypto` and
-`node:perf_hooks` through `dsl/` and `testing/` and therefore cannot be
-resolved by a browser bundler at all. The subpath's compiled graph is three
-files with no runtime imports of any kind; that is not a claim about today's
-code but an invariant, checked by
-`src/programs/automation-studio/fingerprinting/tests/index.test.ts`, which
-fails if any module in the closure gains a value import. The alternative — a
-second matcher written in the browser host — would give two different answers
-to the same question within a release.
+`fluxiq/runtime/target-matching` publishes browser-safe neutral matching contracts, score aggregation and state identity matching. It does not interpret selectors, XPath, HTML tags, URL metadata, classes or attributes. Domains register their matcher explicitly for importer, recording and output dispatch contexts. Without a registered matcher, Core delegates unresolved target selection to the host rather than choosing with an incomplete score.
 
-Two of that matcher's scoring constants are no longer Core's to change alone.
-`MISSING_STABLE_IDENTIFIER_SIMILARITY` (−0.1) and
-`CONTRADICTED_STABLE_IDENTIFIER_SIMILARITY` (−0.8) in
-`fingerprinting/element-fingerprint.ts` are calibrated against a spec in the
-downstream FluxIQ Web Extension repository: returning the first to its former
-−0.55 was measured there to turn the `reworded-aria` case in
-`apps/extension/e2e/content/tests/identity-resolution.spec.ts` red. Changing
-either weight is therefore a cross-repository change. Re-measure that spec, push
-both `dev` branches in the same work unit, and give the release a minor version
-and a migration note — these numbers reach a consumer as `confidence`, and the
-runtime's own safety gates read it.
+The web domain owns its calibrated comparisons and snapshot projection under `domain/src/element-fingerprint/` in the downstream repository. The extension and domain use that single implementation. Its missing/contradicted stable-identifier similarities remain -0.1 and -0.8; the ownership migration preserves these values. Web identity regressions are validated downstream.
 
-`fluxiq/automation-studio/nodes` is the other browser-safe seam for contract
+The legacy `fluxiq/automation/fingerprinting` subpath remains a browser-safe compatibility surface for its names and serialized shapes. Its zero-argument factory now performs neutral state matching; callers requiring web comparisons must provide/register the downstream web matcher. Core never imports a downstream implementation. See [runtime ownership](runtime-ownership.md) for the migration map.
+
+`fluxiq/components/automation` is the browser-safe node seam (`fluxiq/automation/nodes` publishes the full pack) for contract
 logic a browser host must not restate. Since t728 it re-exports by name, from
-`@fluxiq/contracts/automation-studio`, record processing
-(`nodes/record-process.ts`): the condition, sort and presence vocabularies,
+`@fluxiq/contracts/automation`, record processing
+(`components/automation/record-process.ts`): the condition, sort and presence vocabularies,
 `automationStudioRecordConditionHolds` (which takes an
 `AutomationStudioRecordConditionTest`, every key optional, `field` included, and
 reads a blank or whitespace-only string as absent), `automationStudioRecordConditionPattern`,
@@ -93,9 +93,9 @@ reads a blank or whitespace-only string as absent), `automationStudioRecordCondi
 `countAutomationStudioRecordUnsortableRows` (a row counts once when any key's
 value is missing, blank or not of the key's kind) and the shared
 `AUTOMATION_STUDIO_RECORD_VALUE_READING_CASES` parity table; and the
-recording-capture policy and its clamp (`nodes/recording-capture.ts`,
+recording-capture policy and its clamp (`components/automation/recording-capture.ts`,
 [client gateway](automation-studio/client-gateway.md)). Both re-export files
-import only `@fluxiq/contracts/automation-studio`, and
+import only `@fluxiq/contracts/automation`, and
 `contracts/src/record-sets/process/` imports only relative paths; the tests
 beside them fail otherwise. `fluxiq/ui` likewise carries the activity status a
 browser and `apps/web` share (`ui/activity-status/`).
@@ -119,8 +119,8 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-`@fluxiq/contracts` is at version `0.2.0` and `fluxiq` at `0.7.0`;
-`@fluxiq/client-gateway-websocket` is at `0.1.0`. Before 1.0, compatible
+`@fluxiq/contracts` is at version `0.7.0`, `fluxiq` at `0.27.0`,
+`@fluxiq/client-gateway-websocket` at `0.1.1` and `@fluxiq/ui-components` at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes).
 "Compatible" is judged on what a consumer observes, not on the type surface: a
@@ -136,6 +136,35 @@ publication, tags, signing, provenance, the final legal licensor identity, and
 commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
+
+### 0.27.0: Automation Studio is a controller, and the runtime has its own entry (`fluxiq`, `@fluxiq/contracts`)
+
+Read this entry if a domain or client imports from `fluxiq/automation-studio` or
+`@fluxiq/contracts/automation-studio`. The runtime moved out of
+`programs/automation-studio`, so its public entries moved with it. Exported names
+did not change, including their `AutomationStudio` prefixes, so a consumer changes
+the path it imports and nothing else.
+
+**Renamed.**
+- `@fluxiq/contracts/automation-studio` is `@fluxiq/contracts/automation`.
+- Each of these `fluxiq/automation-studio/<name>` entries is `fluxiq/automation/<name>`:
+  `testing`, `evidence-build-scope`, `candidate-authoring`, `llm-models`,
+  `action-permissions`, `panel-capabilities`, `nodes`, `action-effect`,
+  `actionability`, `fingerprinting`.
+- The runtime exports of `fluxiq/automation-studio` are now in `fluxiq/automation`.
+  `fluxiq/automation-studio` keeps only the controller: its endpoint handlers,
+  metadata and view.
+
+**Not renamed.** `fluxiq/automation-studio/dsl` keeps its name because saved Flow
+source contains that exact import.
+
+**Added.**
+- `fluxiq/runtime/output-dispatch/preparation`, for a domain's output target hook.
+- A host may decline a capture with the reason `page_left_by_navigation`, so a Flow
+  can start from a page nothing can read. A consumer that switches over
+  `AutomationStudioHostStateCapture` reasons sees this new value.
+- `@fluxiq/ui-components` renders chat behind ports, for any client. See
+  [runtime ownership](runtime-ownership.md).
 
 ### Next minor (unreleased): a `where` bound may be a date (`@fluxiq/contracts`, `fluxiq`)
 
@@ -171,7 +200,7 @@ September 2026" and could only write a pattern of three days.
   refusal's message is Core's own sentence on how to write one.
 - A date bound never keeps a row whose value states no date it can read,
   whatever `not` says.
-- `fluxiq/automation-studio/nodes` re-exports no new name: a browser host judges
+- `fluxiq/automation/nodes` re-exports no new name: a browser host judges
   a date bound with `automationStudioRecordConditionHolds` as before.
 
 ### Next minor (unreleased): a candidate's node is told the steps before it, and the window counts only what is sent (`fluxiq`)
@@ -210,10 +239,10 @@ activity, or a tool reads build failures or Flow spend.
   record and `get-flow-spend` ([one purse per Flow creation](automation-studio/llm-flow-bootstrap.md#one-purse-per-flow-creation)).
 - `fluxiq/ui` activity status ([client gateway](automation-studio/client-gateway.md#per-step-activity-and-resolved-asks)).
 - Record processing and the recording-capture policy on
-  `fluxiq/automation-studio/nodes` (above), and `get-recording-capture-policy`
+  `fluxiq/automation/nodes` (above), and `get-recording-capture-policy`
   on the paired-client allowlist.
 - `automationStudioWithoutCardNumbers`; `AUTOMATION_STUDIO_REPEATED_ANSWER_REASON`
-  in `@fluxiq/contracts/automation-studio`.
+  in `@fluxiq/contracts/automation`.
 - `automationStudioEvidenceBuildScope()` and
   `automationStudioDomainBuildState(fluxiq, domainId)`
   ([build scope and durable state](automation-studio/llm-flow-bootstrap.md#a-domain-tool-calls-build-scope-and-durable-state)).
@@ -249,6 +278,8 @@ this entry if you write element targets or read their fingerprints.
   scores or compares it, and it does not make a target identifiable on its own.
 
 **Unchanged.** Every other undeclared fingerprint key is still dropped.
+
+**Moved.** Core no longer exports `isAutomationStudioElementTarget`, `normalizeAutomationStudioElementTarget` or `validateAutomationStudioElementTarget`, and `model/action-element-target` holds passive types only. The web domain owns target normalization and registers `outputTargetPreparer` and its sibling hooks; Core carries a target unread ([hooks](runtime-ownership.md#hooks-on-the-implementation-bundle)).
 
 ### Next minor (unreleased): a retried step is judged by its retry, and a kept re-author is a durable change (`fluxiq`)
 
@@ -314,7 +345,7 @@ dry-run gate directly.
 - A repair judgement's `judge` carries `testStepIsDraftStep` where the judged
   test numbered the round's steps otherwise than the repair seed; Core's own
   step numbers in it (`checked`, `fix`, `checkedRows`, `untestedCarried`) are
-  the seed's (`flow-bootstrap/unfinished-build/test-step-numbers.ts`).
+  the seed's (`runtime/flow-authoring/bootstrap/unfinished-build/test-step-numbers.ts`).
 - `automationStudioObservedTestTool`: the phases' test of a stopped round's
   Flow is said in the chat as the loop's own test is.
 
@@ -345,7 +376,7 @@ draft routing, or registers a node that should end a loop.
   `processAutomationStudioRecordRows`, `AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS`,
   the value readers and their parity table
   `AUTOMATION_STUDIO_RECORD_VALUE_READING_CASES`, from
-  `@fluxiq/contracts/automation-studio`.
+  `@fluxiq/contracts/automation`.
 - `AutomationStudioRunDatasetSummary.processing?:
   AutomationStudioRecordProcessingAccount`, set once a dataset is processed.
 - Project migration `0024_run_dataset_answers`: table
@@ -371,8 +402,8 @@ draft routing, or registers a node that should end a loop.
 - Assembly gives every extraction node a `recordOutput` (id
   `<slug>-<stepId>`), not only one whose instruction names columns.
 - A dispatched action's success may take a route its node declares with role
-  `branch`, named as `route` in its result payload (`runtime/io-policy.ts`,
-  `runtime/executor/node-execution.ts`); any other `route` is ignored.
+  `branch`, named as `route` in its result payload (`framework/automation-service/io-policy.ts`,
+  `engine/automation/node-execution/`); any other `route` is ignored.
 - `AutomationStudioFlowDraftStepRouting`'s repeat kind is a union: code that
   read `routing.over` as always present must narrow with
   `automationStudioFlowDraftRepeatIsWhile` first.
@@ -562,7 +593,7 @@ test pins a limit below.
   (`AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY`). A stored Flow
   without that key that holds exactly 12,000 has it cleared where it is read
   and where its settings resolve
-  (`runtime/service/flow-settings/tokens-per-run-default-migration.ts`);
+  (`framework/automation-service/service/flow-settings/tokens-per-run-default-migration.ts`);
   any other value stays. The web settings form saves a blank box as no cap
   and writes the key on every save, so a 12,000 a person types stays.
 - The caps on what a judgement, a repair and a build decision are told about
@@ -1094,11 +1125,11 @@ records each cascaded edge deletion as its own operation, and its
 - `InputOutputBinding` gains an opt-in `recordInputPayload`. A binding that sets
   it keeps the input event's payload on the recorded action entry, under
   `metadata.inputPayload`. Other bindings are unchanged.
-- 182 names are newly exported from the root, `fluxiq/automation-studio` and
-  `fluxiq/programs`, most of them from `runtime/recovery/` and `runtime/llm/`.
+- 182 names are newly exported from the root, `fluxiq/automation` and
+  `fluxiq/programs`, most of them from `runtime/adaptation/recovery/` and `runtime/llm/`.
 
 **For Core contributors.** The structure audit now fails a value import from
-`runtime/llm/` into `runtime/recovery/` (`importBoundaries` in
+`runtime/llm/` into `runtime/adaptation/recovery/` (`importBoundaries` in
 `scripts/structure-audit/config.mjs`). Type-only imports stay allowed, and a
 value both sides need lives in `runtime/loop-limits/`. No host is affected.
 
@@ -1428,7 +1459,7 @@ No type or export changed. One published number moves. An element candidate
 that does not carry a stable identifier the recording captured is now charged
 −0.1 of that identifier's weight where it was charged −0.55. A candidate
 carrying a *different* identifier is untouched and still costs −0.8. The two
-branches of `compareExactSignal` in `fluxiq/automation-studio/fingerprinting`
+branches of `compareExactSignal` in `fluxiq/automation/fingerprinting`
 are now the named constants `MISSING_STABLE_IDENTIFIER_SIMILARITY` and
 `CONTRADICTED_STABLE_IDENTIFIER_SIMILARITY`.
 
@@ -1503,8 +1534,8 @@ change under a minor increment.
 ### 0.2.0: one failure taxonomy (`@fluxiq/contracts`, `fluxiq`)
 
 `AutomationStudioAdaptiveFailureClass` now lives in `@fluxiq/contracts`
-(`@fluxiq/contracts/automation-studio`, with the frozen list
-`AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`) and `fluxiq/automation-studio`
+(`@fluxiq/contracts/automation`, with the frozen list
+`AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`) and `fluxiq/automation`
 re-exports it under the same name. It gains seven members: `target_not_found`,
 `target_ambiguous`, `navigation_unexpected`, `output_not_observed`,
 `page_changed`, `auth_required`, and `user_intervention_required`.

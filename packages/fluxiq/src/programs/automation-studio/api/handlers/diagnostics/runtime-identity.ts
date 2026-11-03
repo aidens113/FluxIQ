@@ -1,7 +1,7 @@
 import { endpointResource } from "../../../../_shared/iam/index.ts";
 import { readTrustedModuleIdentities } from "../../../../../runtime/build-identity/modules/index.ts";
 import { createHash } from "node:crypto";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";
 
 /** Authenticated, read-only projection of the retained executing service's build. */

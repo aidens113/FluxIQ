@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationNodeParameter, AutomationStudioRecordOutput } from "fluxiq/automation-studio/nodes";
+import type { AutomationNodeParameter, AutomationStudioRecordOutput } from "fluxiq/automation/nodes";
 import { RecordOutputEditor } from "../RecordOutputEditor";
 
 const parameter: AutomationNodeParameter = {

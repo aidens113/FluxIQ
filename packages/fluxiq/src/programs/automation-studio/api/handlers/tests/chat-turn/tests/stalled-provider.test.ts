@@ -27,15 +27,15 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../../../_shared/api.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../../../api-contracts/automation.ts";
 import {
   AUTOMATION_STUDIO_CONVERSATION_INTERPRET_LIMITS,
   automationStudioConversationCommandWork,
   AutomationStudioConversations,
   createAutomationStudioDeepSeekPanelCommandModel
-} from "../../../../../runtime/index.ts";
-import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "../../../../../runtime/llm/deepseek/index.ts";
-import { AutomationStudioProjectDatabasePool } from "../../../../../storage/index.ts";
+} from "../../../../../../../framework/automation-service/index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "../../../../../../../runtime/llm/deepseek/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../../../framework/persistence/automation/index.ts";
 import { registerAutomationStudioConversationEndpoints, type AutomationStudioConversationApiDependencies } from "../../../conversations.ts";
 
 type StallMode = "blank_lines_forever" | "no_headers" | "reply_after_20s";

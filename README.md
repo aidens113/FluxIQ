@@ -29,9 +29,21 @@ packages/
   fluxiq/               Importable framework package
   client-gateway-websocket/
                          Typed WebSocket client for FluxIQ web-panel clients
+  ui-components/        FluxIQ's chat UI as plain DOM and CSS; any client mounts it
+                         through ports (@fluxiq/ui-components)
 docs/
   architecture/         Framework architecture and migration notes
 ```
+
+## Automation Studio
+
+Automation Studio (`packages/fluxiq/src/programs/automation-studio`) is a thin
+controller of the framework. It registers endpoints with their permissions and
+holds view state and catalog metadata; the automation service, persistence, model
+loop, execution and verification it calls live in framework areas, and no
+framework area imports it. `fluxiq/automation` is the automation runtime,
+`fluxiq/automation-studio` only the controller, and `@fluxiq/contracts/automation`
+the shared contract. See [`docs/architecture/runtime-ownership.md`](docs/architecture/runtime-ownership.md).
 
 ## Domain Boundary
 

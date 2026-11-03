@@ -6,7 +6,7 @@ import {
   type AutomationNodeParameter,
   type AutomationStudioRecordOutput,
   type AutomationStudioRecordWriteMode
-} from "fluxiq/automation-studio/nodes";
+} from "fluxiq/automation/nodes";
 import { RecordFieldRow } from "./RecordFieldRow";
 import {
   addRecordField,

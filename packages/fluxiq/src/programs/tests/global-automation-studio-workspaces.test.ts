@@ -7,7 +7,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { AutomationStudioService } from "../automation-studio/index.ts";
+import { AutomationStudioService } from "../../framework/automation-service/public/index.ts";
 
 describe("global program services", () => {
   it("creates only populated documents in legacy folder-backed project workspaces", async () => {

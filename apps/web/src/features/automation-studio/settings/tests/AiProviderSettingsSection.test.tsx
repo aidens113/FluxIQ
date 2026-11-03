@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "fluxiq/automation-studio/llm-models";
+import { AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "fluxiq/automation/llm-models";
 
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 import { AI_PROVIDER_ADAPTATION_OFF_EXPLANATION, AiProviderSettingsSection, SettingsView, deepSeekKeyAvailability, flowSettingsDraftFromFlow, readSettingsSection, type FlowSettingsDraft } from "../index";

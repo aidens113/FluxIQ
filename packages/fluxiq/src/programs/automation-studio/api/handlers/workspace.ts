@@ -1,7 +1,7 @@
 // The workspace overview: one project's summary plus its recording and
 // artifact listings.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type RecordingProjectRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type RecordingProjectRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import { projectOrWorkspaceResource } from "./recordings.ts";

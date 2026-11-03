@@ -3,9 +3,8 @@
 How a build turns what it explored into a general Flow: steps that are run or
 written, values bound to a Flow input or to the row a loop is on, and the test
 that runs a loop once per row before the build may finish. Current-state
-design (t252, 2026-10-03), verified against source. Paths are under
-`packages/fluxiq/src/programs/automation-studio/`, and `runtime/` is that
-directory's `runtime/`. The wider build loop -- exploration, the draft's
+design (t252, 2026-10-03), verified against source. Paths are relative to
+`packages/fluxiq/src/`. The wider build loop -- exploration, the draft's
 amendments, the dry-run gate, `core.run_flow`, the judged whole run -- is in
 the [LLM Flow Bootstrap Contract](llm-flow-bootstrap.md#evidence-guided-generation);
 this page covers what t252 added to it.
@@ -84,7 +83,7 @@ verified fresh reset, unchanged saved opener, repaired bound value and acceptanc
 in that order. Core eligibility/refusal owners cover missing provenance, copied
 or edited candidates, unmapped outputs, unresolved binding and lasting verify.
 These scripted fixtures do not prove live browser behavior or provider-free
-saved reuse. Candidate scheduling remains private to `runtime/flow-draft/`;
+saved reuse. Candidate scheduling remains private to `runtime/flow-authoring/draft/`;
 ordinary recorded/written steps retain their existing contracts.
 
 Authored guidance also distinguishes preparation from the parent act: claim an
@@ -94,7 +93,7 @@ claims; the whole original requirement remains in the checklist.
 
 A claim on preparation does not count as the act. When the control of the step
 claimed for an act does not name it (the advisory doubt of
-`instructed-acts/claim-doubt.ts`) and a later step claimed for one of that act's
+`runtime/flow-authoring/bootstrap/instructed-acts/claim-doubt.ts`) and a later step claimed for one of that act's
 own choices acted at a different place, the step only opened the page of those
 choices: the checklist shows the act `todo: step_only_opens_its_choices` on that
 step, and the next step claimed for the act is tried. The claim itself stays on
@@ -111,11 +110,11 @@ node.
 - **Recorded.** `core.run_node` runs the node live; the step is evidence
   (`taken`) until the model adds it (`add: true`, or `amend_draft add`).
 - **Written.** `core.run_node` with `write: true`
-  (`runtime/llm/node-tools/run-node.ts`). The host checks the call as it would
+  (`runtime/llm/node-tools/run/node.ts`). The host checks the call as it would
   a live one -- node, parameters, the target resolved into its frozen identity,
   the `consequences` a mutating node owes -- and stops before acting. It answers
   `resultCode: "core.run_node.written"` (`AUTOMATION_STUDIO_NODE_WRITTEN_CODE`,
-  `runtime/llm/node-tools/replay.ts`), `effectApplied: false`, and a draft
+  `runtime/llm/node-tools/replay/replay.ts`), `effectApplied: false`, and a draft
   statement with `ranWith`, `replay` and `written: true`. No permission is asked
   at write time, because nothing is done; the build's test and the plan-time
   `flow_step` gate gate the step with the declaration it carries.
@@ -125,7 +124,7 @@ Core keeps `written: true` on the step only beside the written result code, so
 a host that ignored `write` and acted produces an ordinary recorded step, never
 a false "written" (`runtime/llm/evidence-loop/call-record.ts`). A written step
 is proposable whatever `effectApplied` says and is never `did_not_work`
-(`runtime/flow-draft/step.ts`).
+(`runtime/flow-authoring/draft/step.ts`).
 
 A live call holding a binding form, or a stored `$state`, anywhere in its
 parameters is refused `run_node.binding_needs_write`: a binding runs only in
@@ -135,12 +134,12 @@ naming its parameter path (`runtime/llm/unusable-decision.ts`).
 
 ### What The Draft Entry Shows
 
-The authored draft entry (`runtime/flow-draft/entry.ts`) shows, per step,
+The authored draft entry (`runtime/flow-authoring/draft/entry.ts`) shows, per step,
 `written: true` on a written step, its parameters with every stored binding
-rendered back in the form the model writes (`runtime/flow-draft/binding-render.ts`),
+rendered back in the form the model writes (`runtime/flow-authoring/draft/binding-render.ts`),
 and, after a test, `passes`: how many times a repeated step ran. Once for the
 draft it shows `inputs: [{name, test, steps}]`, the Flow inputs the proposed
-steps declare (`runtime/flow-draft/flow-inputs.ts`). Its instruction tells the
+steps declare (`runtime/flow-authoring/draft/flow-inputs.ts`). Its instruction tells the
 model it may write a step once it knows the node and parameters, that
 repetitive work is a loop (list with a `where`, do or write the act on one kept
 row, then `repeat` over the listing), to prefer writing a lasting act a loop
@@ -150,14 +149,14 @@ does, and the binding forms.
 
 The host may attach `toggle: {key, to}` to a mutating recorded step. Core
 compares the opaque control key and `on`/`off`; it does not interpret browser
-targets. `runtime/flow-draft/reversal.ts` removes opposite presses only when
+targets. `runtime/flow-authoring/draft/reversal.ts` removes opposite presses only when
 no kept proposable step between them could use or return the temporary state.
 An intervening action or exported read preserves both presses. Conditional
 steps and an explicit model decision to restore a removed step are preserved.
 Removed steps retain `cancels` and an `out` explanation; their old act claims
 are cleared so they cannot continue claiming instruction coverage. A drop or
 `exploratory` of a kept half runs the reversal rule only after the strand
-check (`runtime/flow-draft/amendment/apply.ts`): a drop put back because it
+check (`runtime/flow-authoring/draft/amendment/apply.ts`): a drop put back because it
 strands a kept step never takes its partner out with it.
 
 The host may attach `reads: <code>` to an observing recorded step: its opaque
@@ -169,7 +168,7 @@ when it is a code; anything else is withheld, never refused.
 ### A Second Copy Of A Step Is Not Added
 
 A step joining the Flow that copies a step already in it is not added
-(`runtime/flow-draft/second-copy.ts`; live run `run-murwdp4f-35f976d2`, C9,
+(`runtime/flow-authoring/draft/second-copy.ts`; live run `run-murwdp4f-35f976d2`, C9,
 added a second press of the 3-Pack link from the same results page).
 Candidates are other kept, proposable steps with the same action and tool. A
 changing step copies one when its `input` and `ranWith` are canonically equal
@@ -202,7 +201,7 @@ act was performed. Failed dry-run rows can show the opaque recorded
 ### `amend_draft bind`
 
 `bind` generalizes a kept step, recorded or written, by lifting concrete
-arguments into bindings (`automationStudioFlowDraftAmendmentBind`, `runtime/flow-draft/amendment/bind.ts`). Its
+arguments into bindings (`automationStudioFlowDraftAmendmentBind`, `runtime/flow-authoring/draft/amendment/bind.ts`). Its
 `input` is a JSON merge patch over the step's parameters, with or without
 `parameters` around it, as for `rerun`. The bindings are written into both
 `ranWith` and the shown `input`, and the first concrete argument of a recorded
@@ -221,7 +220,7 @@ Refusals, each naming the parameter's dotted path where there is one:
 | `bind_row_outside_loop` | a `$row` on a step outside a repeat span |
 | `already_so` | the step already holds exactly these bindings |
 
-The model is told each reason by `runtime/llm/draft-amendment-feedback.ts`.
+The model is told each reason by `runtime/llm/draft-amendment-feedback/`.
 What a bind lifts is a value a step typed, or a read's condition; a press's
 control or option is never bound, and the amendment schema and the draft entry
 say so. A `bind_new_key` whose key is absent from what the step ran with but
@@ -235,7 +234,7 @@ A step's `input` is the model-safe argument it was written with; `ranWith` is
 what it runs with, which a domain may have resolved -- a Web click written with
 a `target` handle runs with a private selector and element identity. The model
 read only `input`, bound the click's `target` five times, and was refused each
-time. `automationStudioFlowDraftBindablePaths` (`runtime/flow-draft/bindable/paths.ts`)
+time. `automationStudioFlowDraftBindablePaths` (`runtime/flow-authoring/draft/bindable/paths.ts`)
 lists the dotted parameter paths at which `input` and `ranWith ?? input` hold
 the same value: read from the shown input only, so a private resolved key or
 value is never named and no shown alias is mapped to what it resolved to. A
@@ -258,7 +257,7 @@ one exception is `act_already_named` for an act still to do, whose own todo is
 the fault. A `no_such_step` for the number right after the draft's last step
 says to run that action first with add true, since a step enters the draft
 only by running (t174-w108, Cause 6). **An act moved to another step names the
-step it left.** One act is done by one step (`runtime/flow-draft/act-claim.ts`):
+step it left.** One act is done by one step (`runtime/flow-authoring/draft/act-claim.ts`):
 claiming it takes it off any other step. When that leaves a step in the Flow
 with no act, the answer carries `moved: [{step, act, to, note}]` saying that
 step now does no act and is pressed in every run unless dropped, with the drop
@@ -270,7 +269,7 @@ after a tool call put into the Flow with `act` that moved it
 `runtime/llm/decision-handlers/amendment.ts`, called from
 `runtime/llm/evidence-loop.ts`).
 
-**A rerun keeps a step's kind** (`runtime/llm/evidence-loop/rerun-request.ts`).
+**A rerun keeps a step's kind** (`runtime/llm/evidence-loop/rerun/request.ts`).
 A rerun of a written step is sent with `write: true`, its forms translated as a
 written call's are (an untranslatable one is refused `bind_malformed`). A rerun
 of a recorded step whose merged argument still holds a binding is refused
@@ -281,8 +280,8 @@ Undoing a `bind` is such a rerun.
 ## Bindings
 
 The model writes a binding in `parameters`, at any depth. Core translates it
-once, where the step is written or bound (`runtime/flow-draft/binding-forms.ts`),
-into the executor's own state binding (`nodes/parameter-bindings.ts`), so the
+once, where the step is written or bound (`runtime/flow-authoring/draft/binding-forms.ts`),
+into the executor's own state binding (`components/automation/parameter-bindings.ts`), so the
 test, the assembler and the stored Flow read one shape and nothing new runs.
 
 | Model writes | Stored as | Resolved |
@@ -305,8 +304,8 @@ being written -- absent for one about to be appended -- the node lookup, and
 `stepAt` where the numbers are not the steps' own positions) and stored under
 the step's own id. Every path that writes a step passes the draft: a written
 `core.run_node` call's parameters (`runtime/llm/evidence-loop-decision.ts`, with
-the loop's draft and node lookup), a rerun's (`rerun-request.ts`, at the rerun
-step's position) and `amend_draft bind` (`amendment/bind.ts`, against the draft
+the loop's draft and node lookup), a rerun's (`runtime/llm/evidence-loop/rerun/request.ts`, at the rerun
+step's position) and `amend_draft bind` (`runtime/flow-authoring/draft/amendment/bind.ts`, against the draft
 as shown before the decision moved anything, so a `$step` beside a reorder
 names the step shown at `n`). A bind's `step_*` refusal is `bind_malformed`
 with its parameter; a call's is `run_node.binding_refused.step_*`. A step that
@@ -327,19 +326,19 @@ Nothing keeps run state under `$step` or `$node`, so an unrewritten reference
 is reported missing, never read. The build's test supplies each step's outputs
 under `$step.<id>` from its own answer in the same walk, and only from a step
 asked to run that ran (`core.replay.replayed`); each repeat pass starts with
-none of the last pass's (`replay-draft.ts`, `replay-span.ts`). Assembly
+none of the last pass's (`runtime/llm/node-tools/replay/draft.ts`, `runtime/llm/node-tools/replay/span.ts`). Assembly
 rewrites `$step.<id>` to `$node.<key>`, the plan key of the node the step
 became (`assemble-draft.ts`), and the executor resolves `<key>` to the one node
 of the graph whose `metadata.bootstrapSymbolicKey` is that key
-(`runtime/executor/node-inputs.ts`, `automationStudioNodeOutputReferences`),
+(`engine/automation/graph-navigation/`, `automationStudioNodeOutputReferences`),
 then reads `${nodeId}.<output>` with the ordinary resolver. A key no node or
 two nodes carry stays unresolved: the node fails
 `executor.parameter.unresolved_state_path` before it runs.
 
-**Assembly checks** (`runtime/flow-bootstrap/authoring/draft-bindings.ts`, run
+**Assembly checks** (`runtime/flow-authoring/bootstrap/authoring/draft-bindings.ts`, run
 on the assembled plan by `assemble-draft.ts`). A `$state` survives
 normalisation unchanged on string and array parameters
-(`authoring/values.ts`, `authoring/normalise.ts`). Then, read from the plan's
+(`runtime/flow-authoring/bootstrap/authoring/values.ts`, `runtime/flow-authoring/bootstrap/authoring/normalise.ts`). Then, read from the plan's
 graph:
 
 - `flow_draft.row_binding_outside_loop`: a row binding on a node not reached
@@ -378,8 +377,8 @@ to the page.
 ## The Build's Test
 
 The test is the replay walker, not a graph run
-(`automationStudioFlowDraftReplaySteps`, `runtime/llm/node-tools/replay-draft.ts`,
-with the span logic in `runtime/llm/node-tools/replay-span.ts`). Running the
+(`automationStudioFlowDraftReplaySteps`, `runtime/llm/node-tools/replay/draft.ts`,
+with the span logic in `runtime/llm/node-tools/replay/span.ts`). Running the
 graph would lose reanchoring, site memory (`remembered`), sometimes-present
 steps, withheld excusal and per-step verdicts; the walker sends the same calls.
 
@@ -391,7 +390,7 @@ steps, withheld excusal and per-step verdicts; the walker sends the same calls.
   resolve fails the step `core.replay.unresolved_binding` and sends nothing. A
   step with no binding is sent byte-identical to before.
 - **List spans.** At a `repeat` whose `over` step's node declares an array
-  output (the rule `runtime/flow-bootstrap/authoring/draft-routing.ts` uses),
+  output (the rule `runtime/flow-authoring/bootstrap/authoring/draft-routing.ts` uses),
   the rows are that step's `outputs[<port>]` in this test's answer
   (`AUTOMATION_STUDIO_NODE_OUTPUTS_KEY`). Each member runs once per row, in
   order, call ids `<callId>.pass.<n>`: with the row under `item` only when its
@@ -432,7 +431,7 @@ status is its first non-passing pass's, else `replayed`. A pass answering
 ### Lasting Acts And Excusal
 
 A member's mode is the same on every pass
-(`automationStudioFlowDraftStepReplayMode`, `runtime/flow-draft/verify-only.ts`):
+(`automationStudioFlowDraftStepReplayMode`, `runtime/flow-authoring/draft/verify-only.ts`):
 a step with a declared lasting consequence, or one claiming a lasting act of
 the person's, is sent `replay: "verify"` once per row, and is never pressed. An act
 of the person's is lasting by its kind (an add, save, claim, move or submit), by
@@ -443,10 +442,10 @@ answered as lasting -- runs again (t174-w107,
 [the instruction's read](llm-flow-bootstrap.md#permission-on-the-authoring-path)).
 
 **A step the test ran per row is excused only by a withheld act.** The verdict
-(`runtime/flow-draft/dry-run.ts`) never exempts an outcome that carries
+(`runtime/flow-authoring/draft/dry-run.ts`) never exempts an outcome that carries
 `passes` as a step the Flow does not always run; only `withheldBy` -- it needed
 what an earlier checked lasting act would have done -- excuses it, and its
-outcome then says `excused: "withheld"` (`runtime/flow-draft/excused.ts`). A
+outcome then says `excused: "withheld"` (`runtime/flow-authoring/draft/excused.ts`). A
 repeat that failed on some rows therefore blocks the completion.
 
 ### `not_reached`
@@ -460,7 +459,7 @@ expand, a recorded member bound to the row is refused the same way: its `$row`
 value had no row, so its call failed `core.replay.unresolved_binding` and its
 bound form never ran. A recorded member of a zero-row span is not refused (it
 ran while exploring), nor is a member excused as withheld. The sentence the model is shown names both causes and what to do
-(`runtime/flow-draft/full-run-required.ts`).
+(`runtime/flow-authoring/draft/full-run-required.ts`).
 
 ### The Unchanged-Replay Guard
 
@@ -472,7 +471,7 @@ the Flow signature through `ranWith`.
 
 ### Part Runs
 
-`core.run_flow` (`runtime/llm/node-tools/run-flow-part.ts`) runs the same
+`core.run_flow` (`runtime/llm/node-tools/run/flow-part.ts`) runs the same
 walker with no reset and no reanchor. A span expands only when its list step is
 inside the range; otherwise it runs once on the explored row. A pass that does
 not pass stops the run there, as a step does.
@@ -506,7 +505,7 @@ same node, resolved parameters and `item`, in the same order. Defaults the
 assembler writes onto plan nodes are dropped from the comparison while they
 hold exactly their default.
 
-End to end, `runtime/tests/service-authoring/tests/confirm-requests-build.test.ts`
+End to end, `framework/automation-service/tests/service-authoring/tests/confirm-requests-build.test.ts`
 builds "confirm every friend request with 5 or more mutual friends" through the
 service with a scripted model and judge: eight requests, three kept. The test
 checks the Confirm once per kept row with that row as `item`, presses nothing
@@ -524,7 +523,7 @@ refuses a mutating written node without a readable declaration. The
 declaration travels in `ranWith` into the plan node's `consequences`, so the
 plan-time `flow_step` gate and the test's per-pass gate see it; `bind` keeps
 it. A materialised Flow node keeps its plan node's declaration as
-`metadata.declaredConsequences` (`runtime/flow-bootstrap/adaptation.ts`; `[]`,
+`metadata.declaredConsequences` (`runtime/flow-authoring/bootstrap/adaptation.ts`; `[]`,
 "nothing lasting", is kept, an absent declaration is left off). **Nothing reads
 it at run time:** a plain run of a stored Flow gates nothing per node, for
 recorded and written steps alike. Gating stored runs on it would change what
@@ -539,7 +538,7 @@ An explicit act claim on a control whose wording does not name that act now incl
 Every step number in one `amend_draft` -- `step`, `to`, `check`, `through`,
 `over` -- names the step as the draft entry the model was shown numbered it,
 and the draft the model reads next is numbered 1..n in the order the steps then
-stand (`runtime/flow-draft/amendment/shown-numbering.ts`). `to` is the place
+stand (`runtime/flow-authoring/draft/amendment/shown-numbering.ts`). `to` is the place
 the step shown at that number holds: before it moving up, after it moving down
 (`move.ts`). So a listing after its act is moved with `18 reorder to 9` beside
 `9 repeat over 18`, in either order. Until t195 w45 a reorder renumbered at
@@ -548,8 +547,8 @@ once and the next amendment read the new numbers: live run
 repeat on its listing. The amendment schema, both draft-entry tellings and the
 refusal feedback say how numbers are read.
 
-**A move revalidates every repeat** (`runtime/flow-draft/amendment/repeat-revalidation.ts`,
-`automationStudioFlowDraftRepeatOrderProblem` in `runtime/flow-draft/routing.ts`).
+**A move revalidates every repeat** (`runtime/flow-authoring/draft/amendment/repeat-revalidation.ts`,
+`automationStudioFlowDraftRepeatOrderProblem` in `runtime/flow-authoring/draft/routing.ts`).
 A repeat the decision wrote is checked once all its moves are done; one that
 cannot run -- its `over` not before it, or its `through` before it -- is taken
 back and refused `over_not_before` or `no_such_position` as before. After a
@@ -567,9 +566,9 @@ off by hand.
 
 The unrepeat draft amendment accepts only step and change. It removes a repeat on that step without changing the input, act claims or disposition, and invalidates replay marks from that step onward. Existing keep and keep with act preserve intentional repeats. Quantity-is-a-repeat feedback names unrepeat on the beginning of the repeated span, followed by the item quantity control; missing cart actions still prevent completion.
 
-**A repeat over a step written after it is told the fix this draft needs (t195-w47).** When the Flow is written, a span whose `over` comes after it is refused `flow_draft.repeat_not_after_its_source` (`runtime/flow-bootstrap/authoring/draft-routing.ts`), and the sentence now depends on which step is out of place. A step another span repeats over, or a step with a list output, is a listing, which runs once and never repeats: it is told to take its repeat off with `unrepeat`, a listing nothing repeats over also to repeat the act over it instead. An act whose listing merely comes after it is told to `reorder` the listing to the act's number. A step repeating over a later check, which may be either, is told both. A span over a listing whose own repeat was refused is told the same `unrepeat` of that listing, rather than that a branch or loop runs it. Each amendment is written out with the step numbers it takes. Live run `run-musr9pv3-f4bf6256` (decision 0072) had a listing at step 15 repeating over the Confirm at 16, which repeated over 15; the one sentence it had told step 15 to move step 16 ahead of it, and the model looped fifteen turns. The completion's feedback (`runtime/llm/harness-options/bootstrap-completion.ts`) carries the sentence of each of draft-routing's six refusal codes, which quote only step numbers and the amendment; before, the issue feedback dropped them and the model saw a code and a path.
+**A repeat over a step written after it is told the fix this draft needs (t195-w47).** When the Flow is written, a span whose `over` comes after it is refused `flow_draft.repeat_not_after_its_source` (`runtime/flow-authoring/bootstrap/authoring/draft-routing.ts`), and the sentence now depends on which step is out of place. A step another span repeats over, or a step with a list output, is a listing, which runs once and never repeats: it is told to take its repeat off with `unrepeat`, a listing nothing repeats over also to repeat the act over it instead. An act whose listing merely comes after it is told to `reorder` the listing to the act's number. A step repeating over a later check, which may be either, is told both. A span over a listing whose own repeat was refused is told the same `unrepeat` of that listing, rather than that a branch or loop runs it. Each amendment is written out with the step numbers it takes. Live run `run-musr9pv3-f4bf6256` (decision 0072) had a listing at step 15 repeating over the Confirm at 16, which repeated over 15; the one sentence it had told step 15 to move step 16 ahead of it, and the model looped fifteen turns. The completion's feedback (`runtime/llm/harness-options/bootstrap-completion.ts`) carries the sentence of each of draft-routing's six refusal codes, which quote only step numbers and the amendment; before, the issue feedback dropped them and the model saw a code and a path.
 
-**A read before the last act asks for a new read, never a move (t195-w47, R18).** When every read giving the instruction's named columns runs before the draft's last act step, the note beside the draft (`runtime/flow-bootstrap/authoring/instruction-record-columns.ts`, through `runtime/llm/harness-options/draft-acts.ts`) says to run a new read after that step and add it, and to leave the reads before it where they are; of an act in a repeated span, that the listing it repeats over stays before it. "The draft needs a read after step N" had been read as "move the read": in the same run the model moved the loop's own listing after the act that walks it.
+**A read before the last act asks for a new read, never a move (t195-w47, R18).** When every read giving the instruction's named columns runs before the draft's last act step, the note beside the draft (`runtime/flow-authoring/bootstrap/authoring/instruction-record-columns.ts`, through `runtime/llm/harness-options/draft-acts.ts`) says to run a new read after that step and add it, and to leave the reads before it where they are; of an act in a repeated span, that the listing it repeats over stays before it. "The draft needs a read after step N" had been read as "move the read": in the same run the model moved the loop's own listing after the act that walks it.
 
 ### A list that continues
 
@@ -580,11 +579,11 @@ Next page node, `web.output.dom-next_page`, whose outputs are `success`,
 `failed` and `ended`, `ended` meaning there is no further page), and a
 do-while repeat on the read through that step:
 `{"step": <read>, "change": "repeat", "while": <next page>, "most"?: n}`
-(`runtime/flow-draft/amendment/schema.ts`; `through` defaults to `while`).
+(`runtime/flow-authoring/draft/amendment/schema.ts`; `through` defaults to `while`).
 The parse (`runtime/llm/evidence-loop-decision.ts`) drops as malformed a
 `while` with `over`, a `most` without `while`, a `most` that is not an integer
 from 1 to 500, and a `through` that differs from `while`. The routing is
-`{kind: "repeat", through, while, most?}` (`runtime/flow-draft/routing.ts`,
+`{kind: "repeat", through, while, most?}` (`runtime/flow-authoring/draft/routing.ts`,
 `automationStudioFlowDraftRepeatIsWhile`): the span, from the read through
 the moving step, runs, then runs again while its last step succeeds. Absent
 `most`, the Repeat node's default of 50 passes applies. `over` keeps its two
@@ -592,12 +591,12 @@ meanings, a list loop and a while loop whose check comes first. Every step
 between the read and the moving step is in the span and runs on every pass
 (a dialog dismissed, a wait).
 
-**Assembly** (`runtime/flow-bootstrap/authoring/draft-routing.ts`) writes
+**Assembly** (`runtime/flow-authoring/bootstrap/authoring/draft-routing.ts`) writes
 `prev -> loop (Merge) -> pass (builtin.control.repeat).body -> read ... last`,
 with `last.success` back to the loop's Merge, every `branch`-role output of
 the last step's node (`ended` for Next page) and the Repeat's `done` into an
 exit Merge, and the exit falling into the step after the span. The Repeat
-node (`nodes/control-flow/repeat.ts`) is a bounded pass counter: it keeps its
+node (`components/automation/control-flow/repeat.ts`) is a bounded pass counter: it keeps its
 count through `context.iteration` as For Each does, routes `body` with
 `{pass: n}` while fewer than `most` passes have begun, and otherwise routes
 `done`, a success whose message says the loop reached its most passes, and
@@ -606,16 +605,16 @@ the Flow carries on. Neither an `ended` exit nor the bound fails the run; a
 last step declares no `branch` output and that carries no `most` is refused
 `flow_draft.repeat_while_never_ends`, and one on the Flow's first step is
 refused `flow_draft.repeat_not_after_its_source`. The executor's step
-allowance (`runtime/executor/graph-run.ts`) and the state-routing progress
-mark (`runtime/executor/state-routing/progress-guard.ts`) count Repeat passes
+allowance (`framework/automation-service/executor/graph-run.ts`) and the state-routing progress
+mark (`engine/automation/state-routing/progress-guard.ts`) count Repeat passes
 as they count For Each's.
 
-**The route comes from the dispatch** (`runtime/io-policy.ts`,
-`runtime/executor/node-execution.ts`). An action names the route a success
+**The route comes from the dispatch** (`framework/automation-service/io-policy.ts`,
+`engine/automation/node-execution/`). An action names the route a success
 takes by putting `route: "<output id>"` in its result payload. The executor
 keeps it only when the node's definition declares that output with role
 `branch` (an importer node's declared outputs travel from
-`runtime/native-node-runtime.ts`); otherwise the route stays `success`. A
+`runtime/native-nodes/native-node-runtime.ts`); otherwise the route stays `success`. A
 failed dispatch is `failed` whatever it says. The build's test reads the same
 answer as `core.replay.ended` ([the walker](#the-walker)). A stored do-while
 Flow reads back as that routing on the read
@@ -624,7 +623,7 @@ repaired.
 
 **Collection.** By default, each pass of the read is a new attempt, so it appends a new
 batch to the read's own dataset: assembly always writes an extraction's
-`recordOutput` (`runtime/flow-bootstrap/authoring/assembled-record-output.ts`),
+`recordOutput` (`runtime/flow-authoring/bootstrap/authoring/assembled-record-output.ts`),
 its id the slug of the step's words then its stable step id
 (`<slug>-<stepId>`), its write mode `append` unless the model wrote
 `replace`. An explicit `purpose: "intermediate"` instead retains validated
@@ -640,7 +639,7 @@ Terminal recovery selects the newest failed or unknown attempt that has no later
 
 ### Lasting acts from counted-object instructions
 
-When one original instruction clause names multiple counted objects, each parsed act keeps its own display quote and parser-owned source clause/object provenance. On the quote path of the lasting-act rule (`instructedLastingActs`, `runtime/flow-bootstrap/action-permissions.ts`), the cached consequence read attributes such an act only when a grounded quote includes that child object and matches the original clause or display quote: a combined clause grounds both objects; a narrow sibling quote or shared verb grounds neither. The quote path is one of the three in [Lasting Acts And Excusal](#lasting-acts-and-excusal); split adds are lasting by their kind whatever the read quoted, so build tests check them and never press them again. In the read itself, a split act's answered classes are recorded as entries quoting its original clause, because the assembled display quote is not the person's words; sibling splits of one clause give one entry per class. Dotted choice IDs remain ordinary preparation, and this attribution changes no permissions or normal Flow execution.
+When one original instruction clause names multiple counted objects, each parsed act keeps its own display quote and parser-owned source clause/object provenance. On the quote path of the lasting-act rule (`instructedLastingActs`, `runtime/flow-authoring/bootstrap/action-permissions.ts`), the cached consequence read attributes such an act only when a grounded quote includes that child object and matches the original clause or display quote: a combined clause grounds both objects; a narrow sibling quote or shared verb grounds neither. The quote path is one of the three in [Lasting Acts And Excusal](#lasting-acts-and-excusal); split adds are lasting by their kind whatever the read quoted, so build tests check them and never press them again. In the read itself, a split act's answered classes are recorded as entries quoting its original clause, because the assembled display quote is not the person's words; sibling splits of one clause give one entry per class. Dotted choice IDs remain ordinary preparation, and this attribution changes no permissions or normal Flow execution.
 
 ### Checked configuration and prior execution
 
@@ -656,13 +655,13 @@ Restoration and instructed-act evidence classify arrival using the runtime bindi
 ### The route the person named
 
 A step may say which places on the route the person named it is on (`place`,
-stored as `places`; `runtime/flow-draft/route-places/`), once the draft shows
+stored as `places`; `runtime/flow-authoring/draft/route-places/`), once the draft shows
 that route (`route` in the draft entry). Many steps may be on one place, one
 step may be on two, and a claim replaces only that step's own; `none` clears
 it. An amend_draft `place` that changes nothing is refused `already_so`; no
 refusal reason of its own exists. A rerun carries the step's places to its
 replacement, and a stopped build's stored draft keeps them. Completion holds a
-named route to these claims (`runtime/flow-draft/route-places/coverage.ts`,
+named route to these claims (`runtime/flow-authoring/draft/route-places/coverage.ts`,
 `runtime/llm/harness-options/draft-route.ts`), as
 `docs/architecture/automation-studio/llm-flow-bootstrap.md` describes.
 
@@ -707,7 +706,7 @@ delta, including zero when nothing was sent. Whole-test, current-signature,
 lasting-effect and permission gates remain authoritative.
 
 A failed build's diagnostic may also carry `instructedConsequences` (t728,
-`generation-failure/diagnostic.ts`): the consequence classes the permission
+`runtime/flow-authoring/bootstrap/generation-failure/diagnostic.ts`): the consequence classes the permission
 gate read the instruction as asking for (`move_money`, `delete`,
 `send_or_publish`, `modify_existing`, `create_new`), deduplicated, in Core's
 order, present only when the gate read the instruction and it asked for at
@@ -789,10 +788,10 @@ or required continuations.
 A loop that ran no passes -- a For Each over a list its conditions kept no
 rows of, a Repeat or Loop that never took its `body` -- leaves the nodes only
 its body leads to unvisited by design, and they do not fail the run
-(`executor/graph-navigation/zero-pass-loop.ts`). A node the loop's other
+(`engine/automation/graph-navigation/zero-pass-loop.ts`). A node the loop's other
 routes also reach is still owed. A judged trial's feedback lists each list
 read with the rows it saw and kept and what each of its conditions rejected
-(`service/candidate-trial/reads.ts`); a read that kept none is said as a valid
+(`framework/automation-service/service/candidate-trial/reads.ts`); a read that kept none is said as a valid
 outcome whose conditions must all hold, never as a connection fault.
 
 Terminal coverage and unmatched-route failures carry closed Core codes

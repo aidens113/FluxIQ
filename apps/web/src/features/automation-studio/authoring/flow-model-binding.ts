@@ -1,4 +1,4 @@
-import { automationStudioLlmModelProvider } from "fluxiq/automation-studio/llm-models";
+import { automationStudioLlmModelProvider } from "fluxiq/automation/llm-models";
 
 /**
  * The part of a build request every build shares, whatever it does to the

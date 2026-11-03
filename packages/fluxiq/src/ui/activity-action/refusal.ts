@@ -2,7 +2,7 @@ import { ACTIVITY_ACTION_REFUSAL_WORDS } from "./refusal-words.ts";
 
 /**
  * The loop's codes for a decision Core declined before doing it
- * (`programs/automation-studio/runtime/llm/`): a call refused as a repeat of
+ * (`runtime/llm/`): a call refused as a repeat of
  * one that already ran (`repeat-guard/feedback.ts`), an edit to the draft whose
  * changes were refused (`draft-amendment-feedback/index.ts`), and an edit that only
  * put the draft back as it stood.

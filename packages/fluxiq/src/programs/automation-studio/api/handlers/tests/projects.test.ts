@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry } from "../../../../_shared/api.ts";
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import { cacheActor } from "./test-actor.ts";
 import { createCacheApiTestService } from "./test-service.ts";
 import { registerAutomationStudioApi } from "../index.ts";

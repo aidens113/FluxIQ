@@ -5,6 +5,39 @@ Global programs live in `packages/fluxiq/src/programs/<program-id>`.
 Each program should stay modular. Avoid single files that mix catalog metadata,
 API handlers, storage, runtime behavior, and UI state.
 
+A program is a controller of the framework. It registers its endpoints and
+view state; the capabilities behind them (services, stores, model calls,
+execution) belong to framework areas under `packages/fluxiq/src/`, even while
+the program is their only caller. See [Controller Programs](#controller-programs).
+
+## Controller Programs
+
+Automation Studio is the reference controller. It holds exactly this:
+
+```text
+programs/automation-studio/
+  index.ts              Public entry, published as fluxiq/automation-studio
+  metadata.ts           Program catalog entry only
+  api/
+    index.ts            Barrel
+    handlers.ts         Registers every handler group
+    handlers/           One file per endpoint group: permission, resource,
+                        classification, one call to the service
+  ui/
+    contracts.ts        View state and UI-facing DTOs
+```
+
+`scripts/structure-audit/rules/program-controllers.mjs` fails the audit if a
+source file in a controller program sits outside `api/`, `ui/`, `index.ts` and
+`metadata.ts`, and ratchets any function there over 20 lines, because a handler
+that long holds logic that belongs to the framework. The 20 lines is a threshold
+the audit uses, not a product rule. `importBoundaries` stops every framework
+area importing the program, so the dependency runs one way: program to
+framework. The framework side of Automation Studio is described in
+[runtime ownership](./runtime-ownership.md).
+
+A program that is not a controller may use the layered shape below.
+
 ## Standard Shape
 
 ```text
@@ -61,7 +94,8 @@ selection, Escape dismissal, backdrop dismissal, and narrow-viewport scrolling.
 ## Boundaries
 
 Global programs can depend on framework services such as `core`, `io`,
-`domains`, `components`, `flows`, and `engine`.
+`domains`, `components`, `flows`, `engine`, `framework` and `runtime`. No
+framework area depends on a program.
 
 Global programs must not import downstream domain implementations. Domain-owned
 programs belong to the importing repository under its configured

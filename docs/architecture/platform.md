@@ -370,7 +370,7 @@ the generated catalog yet (see Known gaps).
 **Project ownership.** `AutomationStudioProject.ownerUserId` is the owner
 recorded in `<automation data dir>/ownership/projects.json` (a SQLite row
 under layout v2, one transaction per change), beside the projects and outside
-the runtime's own records (`programs/automation-studio/api/ownership/`). A
+the runtime's own records (`framework/persistence/automation/ownership/`). A
 creator is recorded through `create-project`'s `creates`. The migration gives
 an unowned project the workspace owner, or the first enabled `admin` by
 creation; it is idempotent, never overwrites, and runs lazily on first lookup,
@@ -379,7 +379,7 @@ not a project answers no owner.
 
 Trusted in-process host initialization can record a project's creator with
 `recordAutomationStudioCreatedProjectOwner(service, projectId, userId)` from
-`fluxiq/automation-studio`, reusing that service's registered owner resolver.
+`fluxiq/automation`, reusing that service's registered owner resolver.
 It refuses missing registration, nonexistent projects, empty owners and a
 different recorded creator. Repeating the same creator is safe, including a
 retry after creating the project but failing to assign its owner; a migration

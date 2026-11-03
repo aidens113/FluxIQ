@@ -1,0 +1,7 @@
+{
+  "sourceRoot": "packages/fluxiq/src",
+  "moves": [
+    { "from": "framework/persistence/automation/project/tests/database-cleanup.test.ts", "to": "framework/persistence/automation/project/tests/cleanup/tests/database-cleanup.test.ts" },
+    { "from": "framework/persistence/automation/project/tests/unit-of-work-cleanup.test.ts", "to": "framework/persistence/automation/project/tests/cleanup/tests/unit-of-work-cleanup.test.ts" }
+  ]
+}

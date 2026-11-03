@@ -1,0 +1,342 @@
+{
+  "sourceRoot": "packages/fluxiq/src",
+  "downstream": "../!FluxIQWebExtension",
+  "moves": [
+    {
+      "from": "programs/automation-studio/model",
+      "to": "flows/authoring/model"
+    },
+    {
+      "from": "programs/automation-studio/dsl",
+      "to": "flows/authoring/dsl"
+    },
+    {
+      "from": "programs/automation-studio/fingerprinting",
+      "to": "runtime/target-matching/fingerprinting"
+    },
+    {
+      "from": "programs/automation-studio/storage",
+      "to": "framework/persistence/automation"
+    },
+    {
+      "from": "programs/automation-studio/api/ownership",
+      "to": "framework/persistence/automation/ownership"
+    },
+    {
+      "from": "programs/automation-studio/api/contracts",
+      "to": "api-contracts/automation"
+    },
+    {
+      "from": "programs/automation-studio/api/contracts.ts",
+      "to": "api-contracts/automation.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/flow-bootstrap",
+      "to": "runtime/flow-authoring/bootstrap"
+    },
+    {
+      "from": "programs/automation-studio/runtime/flow-draft",
+      "to": "runtime/flow-authoring/draft"
+    },
+    {
+      "from": "programs/automation-studio/runtime/flow-version",
+      "to": "runtime/flow-authoring/version"
+    },
+    {
+      "from": "programs/automation-studio/runtime/authored-metadata",
+      "to": "runtime/flow-authoring/authored-metadata"
+    },
+    {
+      "from": "programs/automation-studio/runtime/domain-build-state",
+      "to": "runtime/flow-authoring/domain-build-state"
+    },
+    {
+      "from": "programs/automation-studio/runtime/candidate-start-hook",
+      "to": "runtime/flow-authoring/candidate-start-hook"
+    },
+    {
+      "from": "programs/automation-studio/runtime/llm",
+      "to": "runtime/agents/llm"
+    },
+    {
+      "from": "programs/automation-studio/runtime/loop-limits",
+      "to": "runtime/agents/loop-limits"
+    },
+    {
+      "from": "programs/automation-studio/runtime/completed-llm-evidence.ts",
+      "to": "runtime/agents/llm/completed-evidence.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/reusable-llm-context.ts",
+      "to": "runtime/agents/llm/reusable-context.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/provider-refusal",
+      "to": "runtime/agents/llm/provider-refusal"
+    },
+    {
+      "from": "programs/automation-studio/runtime/result-verification",
+      "to": "runtime/result-verification"
+    },
+    {
+      "from": "programs/automation-studio/runtime/result-check-authorization",
+      "to": "runtime/result-control/check-authorization"
+    },
+    {
+      "from": "programs/automation-studio/runtime/result-check-schedule",
+      "to": "runtime/result-control/check-schedule"
+    },
+    {
+      "from": "programs/automation-studio/runtime/recovery",
+      "to": "runtime/adaptation/recovery"
+    },
+    {
+      "from": "programs/automation-studio/runtime/flow-change",
+      "to": "runtime/adaptation/flow-change"
+    },
+    {
+      "from": "programs/automation-studio/runtime/live-patch",
+      "to": "runtime/adaptation/live-patch"
+    },
+    {
+      "from": "programs/automation-studio/runtime/live-patch.ts",
+      "to": "runtime/adaptation/live-patch.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/adaptation-confidence",
+      "to": "runtime/adaptation/confidence"
+    },
+    {
+      "from": "programs/automation-studio/runtime/durable-behavior",
+      "to": "runtime/adaptation/durable-behavior"
+    },
+    {
+      "from": "programs/automation-studio/runtime/exploration-reduction",
+      "to": "runtime/adaptation/exploration-reduction"
+    },
+    {
+      "from": "programs/automation-studio/runtime/training-modes.ts",
+      "to": "runtime/adaptation/training-modes.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/adaptive-orchestrator.ts",
+      "to": "runtime/adaptation/adaptive-orchestrator.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/project-agents",
+      "to": "runtime/project-agents"
+    },
+    {
+      "from": "programs/automation-studio/runtime/conversations",
+      "to": "runtime/interaction/conversations"
+    },
+    {
+      "from": "programs/automation-studio/runtime/activity",
+      "to": "runtime/activity/automation"
+    },
+    {
+      "from": "programs/automation-studio/runtime/parking",
+      "to": "runtime/parking/automation"
+    },
+    {
+      "from": "programs/automation-studio/runtime/action-permissions",
+      "to": "runtime/action-permissions/automation"
+    },
+    {
+      "from": "programs/automation-studio/runtime/gateway-trace",
+      "to": "runtime/recording/gateway-trace"
+    },
+    {
+      "from": "programs/automation-studio/client-gateway",
+      "to": "runtime/recording/client-gateway"
+    },
+    {
+      "from": "programs/automation-studio/normalization",
+      "to": "runtime/recording/normalization"
+    },
+    {
+      "from": "programs/automation-studio/runtime/io-bridge.ts",
+      "to": "runtime/recording/io-bridge.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/recording-controller.ts",
+      "to": "runtime/recording/recording-controller.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/recording-flow-proposal.ts",
+      "to": "runtime/recording/recording-flow-proposal.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/pipeline-model.ts",
+      "to": "runtime/recording/pipeline-model.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/policy-model.ts",
+      "to": "runtime/recording/policy-model.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/region-compiler.ts",
+      "to": "runtime/recording/region-compiler.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/service",
+      "to": "framework/automation-service/service"
+    },
+    {
+      "from": "programs/automation-studio/runtime/service.ts",
+      "to": "framework/automation-service/service.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/index.ts",
+      "to": "framework/automation-service/index.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/contracts.ts",
+      "to": "framework/automation-service/contracts.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/tests",
+      "to": "framework/automation-service/tests"
+    },
+    {
+      "from": "programs/automation-studio/runtime/adapters.ts",
+      "to": "framework/automation-service/adapters.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/legacy-envelope",
+      "to": "framework/automation-service/legacy-envelope"
+    },
+    {
+      "from": "programs/automation-studio/runtime/route-state",
+      "to": "framework/automation-service/route-state"
+    },
+    {
+      "from": "programs/automation-studio/runtime/run-control",
+      "to": "framework/automation-service/run-control"
+    },
+    {
+      "from": "programs/automation-studio/runtime/toggle-state",
+      "to": "framework/automation-service/toggle-state"
+    },
+    {
+      "from": "programs/automation-studio/runtime/environment",
+      "to": "framework/automation-service/environment"
+    },
+    {
+      "from": "programs/automation-studio/runtime/composite-execution",
+      "to": "framework/automation-service/composite-execution"
+    },
+    {
+      "from": "programs/automation-studio/runtime/runtime-repeat",
+      "to": "framework/automation-service/runtime-repeat"
+    },
+    {
+      "from": "programs/automation-studio/runtime/reference-now",
+      "to": "framework/automation-service/reference-now"
+    },
+    {
+      "from": "programs/automation-studio/runtime/actionability",
+      "to": "framework/automation-service/actionability"
+    },
+    {
+      "from": "programs/automation-studio/runtime/executor",
+      "to": "framework/automation-service/executor"
+    },
+    {
+      "from": "programs/automation-studio/runtime/executor.ts",
+      "to": "framework/automation-service/executor.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/host-runtime.ts",
+      "to": "framework/automation-service/host-runtime.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/native-node-runtime.ts",
+      "to": "framework/automation-service/native-node-runtime.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/compiled-plan.ts",
+      "to": "framework/automation-service/compiled-plan.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/composite-executor.ts",
+      "to": "framework/automation-service/composite-executor.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/io-policy.ts",
+      "to": "framework/automation-service/io-policy.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/router-runtime.ts",
+      "to": "framework/automation-service/router-runtime.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/state-linker.ts",
+      "to": "framework/automation-service/state-linker.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/panel-capabilities",
+      "to": "framework/automation-service/panel-capabilities"
+    },
+    {
+      "from": "programs/automation-studio/nodes",
+      "to": "framework/automation-service/nodes"
+    },
+    {
+      "from": "programs/automation-studio/testing",
+      "to": "framework/automation-service/testing"
+    },
+    {
+      "from": "programs/automation-studio/learning",
+      "to": "framework/automation-service/learning"
+    },
+    {
+      "from": "programs/automation-studio/mining",
+      "to": "framework/automation-service/mining"
+    },
+    {
+      "from": "programs/automation-studio/api/ownership/tests/ownerships.test.ts",
+      "to": "programs/automation-studio/api/tests/ownerships.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/api/ownership/tests/record-created-project-owner.test.ts",
+      "to": "programs/automation-studio/api/tests/record-created-project-owner.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/conversations/commands/tests/extension-chat.test.ts",
+      "to": "programs/automation-studio/api/tests/extension-chat.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/llm/flow-execution-limits/tests/resolution-within-flow-settings.test.ts",
+      "to": "programs/automation-studio/api/tests/resolution-within-flow-settings.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/service/instruction-led/tests/service.test.ts",
+      "to": "programs/automation-studio/api/tests/instruction-led-service.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/tests/reusable-llm-context-service.test.ts",
+      "to": "programs/automation-studio/api/tests/reusable-llm-context-service.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/tests/service-adaptation/tests/caller-paid-result-check.test.ts",
+      "to": "programs/automation-studio/api/tests/caller-paid-result-check.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/tests/service-bootstrap/tests/adaptation.test.ts",
+      "to": "programs/automation-studio/api/tests/service-bootstrap-adaptation.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/tests/service-bootstrap/tests/flow-size.test.ts",
+      "to": "programs/automation-studio/api/tests/service-bootstrap-flow-size.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/runtime/service/offline-trial/tests/export.test.ts",
+      "to": "programs/automation-studio/tests/offline-trial-export.test.ts"
+    },
+    {
+      "from": "programs/automation-studio/types.ts",
+      "to": "api-contracts/automation/document-types.ts"
+    }
+  ]
+}

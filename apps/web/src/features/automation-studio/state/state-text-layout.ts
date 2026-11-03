@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { StateVisualLayer } from "fluxiq/automation-studio";
+import type { StateVisualLayer } from "fluxiq/automation";
 import type { StateFactViewModel } from "./model/types";
 import type { DirectRenderedTextCandidate, StateBounds, StateVisualMetrics } from "./state-visual-types";
 import { boundsForSurface, clampNumber, layerBounds, layerBoundsKind, layerRenderKind } from "./state-geometry";

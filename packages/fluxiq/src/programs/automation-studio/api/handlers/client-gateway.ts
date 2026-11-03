@@ -2,8 +2,8 @@
 // trust revocation, recording control, snapshots and action execution.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type CaptureClientSnapshotRequest, type ExecuteClientActionRequest, type RevokeClientTrustRequest, type StartClientRecordingRequest, type StopClientRecordingRequest } from "../contracts.ts";
-import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../../storage/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type CaptureClientSnapshotRequest, type ExecuteClientActionRequest, type RevokeClientTrustRequest, type StartClientRecordingRequest, type StopClientRecordingRequest } from "../../../../api-contracts/automation.ts";
+import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../../../../framework/persistence/automation/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerClientGatewayEndpoints(dependencies: AutomationStudioApiDependencies): void {

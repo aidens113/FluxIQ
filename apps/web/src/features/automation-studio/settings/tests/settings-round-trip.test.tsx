@@ -151,7 +151,7 @@ describe("Flow settings round trip", () => {
   // to Core's source, as the permission defaults below are, because Core's only
   // public export of the constant also carries the server runtime.
   it("defaults a Flow's adaptation cost per run independently of test runtime limits", () => {
-    const coreSource = (file: string) => readFileSync(new URL(`../../../../../../../packages/fluxiq/src/programs/automation-studio/${file}`, import.meta.url), "utf8");
+    const coreSource = (file: string) => readFileSync(new URL(`../../../../../../../packages/fluxiq/src/flows/authoring/${file}`, import.meta.url), "utf8");
     const ceiling = coreSource("model/run-cost-ceiling/run-cost-ceiling-env.ts").match(/AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD = ([0-9.]+);/)?.[1];
     const flows = coreSource("model/flows.ts");
     const draft = flowSettingsDraftFromFlow(flowOf());
@@ -170,7 +170,7 @@ describe("Flow settings round trip", () => {
     // only the resolver, so the copy is pinned to Core's source here: changing
     // Core's values without changing the panel's fails this test rather than
     // quietly making the settings screen describe a Flow that does not exist.
-    const core = readFileSync(new URL("../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/service/flow-settings/adaptation-policy.ts", import.meta.url), "utf8");
+    const core = readFileSync(new URL("../../../../../../../packages/fluxiq/src/framework/automation-service/service/flow-settings/adaptation-policy.ts", import.meta.url), "utf8");
     const coreDefault = (field: string) => {
       const found = core.match(new RegExp(`${field}:\\s*booleanSetting\\(settings\\.${field},\\s*(true|false)\\)`));
       expect(found, `Core no longer resolves ${field} with a boolean default; re-read adaptation-policy.ts`).toBeTruthy();

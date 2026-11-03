@@ -13,10 +13,10 @@
 // after the run finished, is never a failure.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../contracts.ts";
-import { automationStudioRunControlOf, automationStudioRunProgress, type AutomationStudioRunControlSnapshot, type AutomationStudioRunProgress } from "../../runtime/index.ts";
-import type { AutomationStudioRuntimeSession } from "../../model/index.ts";
-import { AutomationStudioGatewayTraceInstallation } from "../../runtime/gateway-trace/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automation.ts";
+import { automationStudioRunControlOf, automationStudioRunProgress, type AutomationStudioRunControlSnapshot, type AutomationStudioRunProgress } from "../../../../framework/automation-service/index.ts";
+import type { AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../../../runtime/recording/gateway-trace/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 /**

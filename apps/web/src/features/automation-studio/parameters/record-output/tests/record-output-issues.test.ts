@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioRecordField } from "fluxiq/automation-studio/nodes";
+import type { AutomationStudioRecordField } from "fluxiq/automation/nodes";
 import { recordOutputParameterError } from "../record-output-issues";
 
 function output(fields: AutomationStudioRecordField[]) {

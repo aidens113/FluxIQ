@@ -169,6 +169,22 @@ imports a downstream domain. The internal area ownership table is in the
 [architecture README](docs/architecture/README.md); public package boundaries
 are in [package boundaries](docs/architecture/package-boundaries.md).
 
+**Automation Studio is a controller of Core (user, 2026-11-02).** The user's words:
+"move logic of runtime and most other stuff out of the programs/automation-studio
+where it didnt belong, make programs/automation-studio just a controller of core".
+It holds endpoint registration with thin handlers, view state, metadata and its
+entry, and nothing else: execution, authoring, verification, persistence and
+orchestration belong to framework areas, even while Studio is their only client. The
+audit enforces it (`program-controllers`, and `importBoundaries` for every framework
+area). Public entries follow: `fluxiq/automation` is the automation runtime and
+`fluxiq/automation-studio` only the controller. `fluxiq/automation-studio/dsl` keeps its
+name because saved Flow source contains that exact import.
+
+**The chat UI has one home (user, 2026-11-02):** "its own package so otehr clients can
+use it and we can update that chat UI centrally". Chat rendering, stream models and
+styles change in `packages/ui-components`, never in a client; a client supplies its
+transport and host bindings through the package's ports.
+
 ## Code Structure
 
 Full methodology: [code structure](docs/architecture/code-structure.md).

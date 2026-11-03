@@ -2,7 +2,7 @@ import {
   AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS,
   AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS,
   parseAutomationStudioRecordOutput
-} from "fluxiq/automation-studio/nodes";
+} from "fluxiq/automation/nodes";
 
 const MAX_RECORDS = AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling.toLocaleString("en-US");
 const MAX_FIELDS = AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS.maxFields.toLocaleString("en-US");

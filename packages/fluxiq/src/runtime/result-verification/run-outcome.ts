@@ -1,0 +1,754 @@
+// What a finished run's verification does to the run's own record.
+//
+// A verdict nobody acts on is a comment. Four live runs on 2026-09-17 each
+// reported `passed` while returning the wrong thing, and the only reason that
+// was visible at all is that the test facility holds a written answer key. So
+// this is the half that makes the verdict count: a run whose result does not
+// answer the request, or whose result nobody could confirm, is written back as
+// `failed`, with the code, the reason and the observation on the run, exactly
+// as any other failure is.
+//
+// It runs only on a run that reported success. A run that already failed is
+// already telling the truth, and spending a model call to add a second reason
+// to it would buy nothing. The one thing a failed run is handed to here is the
+// failed-step re-author (`repairFailedStep` below): a step the patch ladder
+// could not repair is re-found by the build loop, and the re-run is judged.
+//
+// A run whose result could not be put to a model at all keeps the status its
+// steps earned and is recorded `unverified`, never `confirmed`
+// (`verification-status.ts` says why it is not failed instead). So does a run
+// the model did not judge to answer and then, asked again with the same
+// evidence, did not twice judge not to (`agreement.ts`): only two agreeing
+// refutations fail a run whose every step succeeded.
+//
+// **Every finished run is put to the question, including one that stored
+// nothing.** An empty record set, and a run with no record set at all, were
+// both exempt until 2026-09-24 and are not any more (`verify.ts` says what the
+// exemption cost). The one thing that changes for them here is the order of the
+// reads: the instructions, the provider and the run detail are fetched for them
+// too, because a model asked whether an empty answer is the right one cannot
+// answer without the request and without the steps that ran.
+//
+// **The whole of that is bounded.** Reading the result, resolving the provider
+// and making the calls all run inside one deadline (`deadline.ts`), because the
+// reason the empty result was exempt in the first place is a hang on that path
+// that was never root-caused. Nothing inside the bound writes anything -- every
+// write this module makes happens after the judgement comes back -- so an
+// abandoned verification cannot write over the record its own run is about to
+// get. One that does not finish is recorded as one that did not finish:
+// `core.result.verification_did_not_finish`, `unverified`, the run keeping the
+// status its steps earned. That is what the old exemption produced anyway,
+// except that now it is the failure case rather than the rule.
+//
+// **A double no on the same rows as the build's two yeses is held (t660).**
+// A8 frozen pair 6 candidate `run-mvac1av6-f7b0f9e2`: the playback of a built
+// Flow stored exactly the rows its build's judged test had stored, and two nos
+// refuted what two yeses had confirmed; the re-author that followed broke the
+// Flow. Where the caller names the trial its build judged this very revision by
+// (`judgedBuildTrial`), a double no on the rows that trial stored, against the
+// same request, is recorded unverified, not refuted (`./build-yes-hold/`). It
+// never makes a yes. Since t664 (A8 towels `run-mvahlxuu-760d9e28`, where the
+// build's yes was the wrong side) it holds only nos Core's record contradicts
+// at least in part, and every double no records why it was or was not held
+// (`resultVerification.buildYesHold`, one closed code) and says so in one
+// build-trace line.
+//
+// Everything it reaches outside itself is a port, for the reason
+// `recovery/annotation/ports.ts` states: the service is a six-thousand-line
+// class at its own line budget, and a path that can only be driven by standing
+// up a project directory and a live run is a path nobody writes an assertion
+// about.
+
+import type { AutomationStudioRunDatasetPage, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
+import type { JsonObject } from "../../core/index.ts";
+import type {
+  AutomationStudioAdaptationPolicy,
+  AutomationStudioFlowDocument,
+  AutomationStudioFlowInstruction,
+  AutomationStudioFlowRunDetail,
+  AutomationStudioRuntimeSession
+} from "../../flows/authoring/model/index.ts";
+import {
+  automationStudioFlowInstructionDigest,
+  automationStudioFlowVersionsFromMetadata,
+  type AutomationStudioFlowGraphJudgement,
+  type AutomationStudioFlowGraphVersion
+} from "../flow-authoring/version/index.ts";
+import { automationStudioAttemptInputs, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../framework/automation-service/executor/index.ts";
+import { automationStudioReferenceNow } from "../reference-time/index.ts";
+import { AutomationStudioLlmRunPurse, automationStudioLlmBuildTrace, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "../llm/index.ts";
+import { resolveAutomationStudioRecoveryRunBudget } from "../adaptation/recovery/annotation/index.ts";
+
+import {
+  automationStudioRefutedResultRerunsFlow,
+  automationStudioResultRepairSettled,
+  automationStudioStepFailureTarget,
+  repairAutomationStudioRefutedRunResult,
+  type AutomationStudioFailedStepRepairPort,
+  type AutomationStudioRefutedResultRepairPort,
+  type AutomationStudioResultRepairHistoryEntry,
+  type AutomationStudioResultRepairOutcome
+} from "../adaptation/recovery/refuted-result/index.ts";
+import { automationStudioResultCalledNodes, type AutomationStudioResultCalledGraphSource } from "./called-nodes.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRequestedOutput, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts/index.ts";
+import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
+import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
+import {
+  automationStudioResultEndViewRead,
+  summarizeAutomationStudioRunResult,
+  type AutomationStudioResultEndView,
+  type AutomationStudioResultRecordSetInput
+} from "./result-summary.ts";
+import {
+  automationStudioResultRecordAdaptationReplays,
+  automationStudioResultRecordedCheck,
+  automationStudioResultRecordedOutcome,
+  automationStudioResultRecordFlowGraphJudgements,
+  automationStudioResultRecordOnRunDetail
+} from "./run-record.ts";
+import { automationStudioResultVerificationStatus } from "./verification-status.ts";
+import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
+import { AutomationStudioCompletedVerificationChecks } from "./completed-checks/index.ts";
+import { automationStudioResultBuildYesHold, type AutomationStudioResultBuildYesHoldRecord, type AutomationStudioResultJudgedBuildTrialPort } from "./build-yes-hold/index.ts";
+
+/**
+ * A resolver's answer, normalized to the one shape the verification reads.
+ *
+ * Core's provider resolver answers either a provider or a resolution around
+ * one, and every caller has to tell them apart. Doing it here keeps that one
+ * line out of the run service, which is at its own line budget, and keeps the
+ * two shapes from being told apart twice and differently.
+ */
+export function automationStudioResultVerificationProvider(
+  resolved: AutomationStudioLlmProvider | AutomationStudioResultVerificationProvider | undefined
+): AutomationStudioResultVerificationProvider | undefined {
+  if (!resolved) return undefined;
+  return "provider" in resolved ? resolved : { provider: resolved };
+}
+
+/** The model that judges a result, with whatever the resolution bounds it to. */
+export type AutomationStudioResultVerificationProvider = {
+  provider: AutomationStudioLlmProvider;
+  tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
+  timeoutMs?: number;
+  maxEstimatedCostUsd?: number;
+  maxCallsPerRun?: number;
+  maxTotalTokensPerRun?: number;
+  maxTotalEstimatedCostUsd?: number;
+};
+
+/** Everything the verification reaches outside itself. */
+export type AutomationStudioResultVerificationPorts = {
+  /**
+   * The run's stored record sets. Absent where the deployment stores no records
+   * at all, which is a configuration and not a failure: a run that could never
+   * have stored a record set has no result of this kind to judge, and the run
+   * records that rather than a verdict.
+   */
+  listRunDatasets?: ((input: { projectId: string; runId: string }) => Promise<AutomationStudioRunDatasetSummary[]>) | undefined;
+  getRunDatasetPage?: ((input: { projectId: string; runId: string; datasetId: string; limit?: unknown; cursor?: unknown }) => Promise<AutomationStudioRunDatasetPage | null>) | undefined;
+  flowInstructionSet(input: { projectId: string; flowId: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]>;
+  getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null>;
+  saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<unknown>;
+  writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<unknown>;
+  /**
+   * Resolves the model that judges this run's result, or answers nothing.
+   *
+   * Nothing means the question cannot be put at all -- no model is configured
+   * for this Flow, or this run was not authorized to ask one. That is recorded
+   * as a verification that did not happen, which is a different fact from a
+   * verdict and must never be read as a pass.
+   */
+  resolveProvider?: ((input: { projectId: string; flowId: string }) => Promise<AutomationStudioResultVerificationProvider | undefined>) | undefined;
+  /** The bound domain's declared denied keys. Absent means nobody declared any, and no row is sampled. */
+  deniedEvidenceKeys?: readonly string[] | undefined;
+  /**
+   * Reads the view of its target -- the page -- the run ended on, as the domain
+   * produces it, for the check to judge from (t174-w87; run
+   * `run-murwd8le-79e735a8`'s checks judged a cart from status rows, with
+   * `Cart (3)` on a page they never saw). Nothing in a run's record holds it:
+   * a step's result says what the step did, not what the page then showed.
+   * Absent, or answering nothing, the check is made without it; a read that
+   * fails too, said as withheld, never as a verification that did not finish.
+   */
+  readEndView?: ((input: { projectId: string; runId: string; flowId: string }) => Promise<AutomationStudioResultEndView | undefined>) | undefined;
+  /** The bound domain's declared view keys, under which the page the run started on is read off its trace (`./result-summary.ts`). Absent, none is. */
+  observedStateKeys?: readonly string[] | undefined;
+  /**
+   * Says what this check found on the run's own conversation thread.
+   *
+   * Handed the facts and Core's own words, never a composed sentence: what to
+   * say, and whether a passing check says anything at all, is the schedule's to
+   * decide (`result-check-schedule/conversation.ts`). Absent where the
+   * deployment has no conversations, which is a configuration and not a
+   * failure.
+   */
+  sayResultCheck?: ((input: { runId: string; status: string; checked: boolean; reason: string; observation: string; datasetId?: string }) => Promise<unknown>) | undefined;
+  /**
+   * Hands a run whose result was judged wrong back to the loop's failure entry
+   * point, so the ladder repairs it as it repairs a failed step.
+   *
+   * Absent means nothing repairs a wrong answer here, and the verification's
+   * verdict is a receipt again. That is the behaviour this port was added to
+   * end, so it is left optional only because a deployment with no recovery
+   * configured has nowhere to hand it.
+   */
+  repairRefutedResult?: AutomationStudioRefutedResultRepairPort | undefined;
+  /**
+   * Re-authors a Flow whose run failed at a step the patch ladder could not
+   * repair, and answers the run with the attempt on it -- or nothing, when the
+   * run is not one it routes (`recovery/refuted-result/step-failure-decision.ts`).
+   * An applied edit is then re-run through `rerunRepairedFlow` and the re-run
+   * judged, exactly as a repaired wrong answer is. Absent, a failed run is
+   * handed back as the ladder left it.
+   */
+  repairFailedStep?: AutomationStudioFailedStepRepairPort | undefined;
+  /**
+   * Runs the Flow again once a repair has actually changed it, and answers the
+   * run that produced.
+   *
+   * Without this the loop does not close. A repair that edits the Flow and
+   * stops has produced a corrected Flow sitting on disk, and the thing that was
+   * asked for is the corrected Flow *answering the question*: until it has run,
+   * nobody -- not the person, not the next agent, not an evaluation -- knows
+   * whether the edit helped. So the re-run happens here, where the verdict that
+   * triggered it was reached, and its own result is judged in its turn.
+   *
+   * Absent leaves the older behaviour: the edit lands and the run reports the
+   * answer it originally gave.
+   */
+  rerunRepairedFlow?: ((input: { detail: AutomationStudioFlowRunDetail; subflowId?: string | undefined }) => Promise<{ session: AutomationStudioRuntimeSession; flow?: AutomationStudioFlowDocument | undefined; /** The check re-decided for the re-run, a repair's; absent keeps the run's own. */ resultCheck?: AutomationStudioRuntimeSessionVerificationInput["resultCheck"] } | undefined>) | undefined;
+  /**
+   * Binds this verdict to the graph versions the run executed.
+   *
+   * Until this existed the two were unjoined: a verdict keyed to a run, a
+   * version chain keyed to a graph, and nothing anywhere saying which revision
+   * the judged run had actually run. A regression could therefore be judged and
+   * never attributed, because "worse than what" had no referent.
+   *
+   * Absent where the deployment has no project database, which is a
+   * configuration and not a failure: the run still records its version set on
+   * its own detail, so a reader can still say which version a result belongs
+   * to; what is missing is only the queryable history across runs.
+   */
+  recordFlowGraphJudgements?: ((input: { projectId: string; judgement: AutomationStudioFlowGraphJudgement }) => Promise<unknown>) | undefined;
+  /**
+   * Judges a finished run that asked no model anything as a replay of each
+   * applied change it executed, and saves what it proved
+   * (`service/runtime-adaptation/adaptation-replays.ts`). Absent, no replay is
+   * ever recorded and no change rises past `provisional`.
+   */
+  recordAdaptationReplays?: ((input: { projectId: string; flowId: string; runId: string; checkedAt: number; trace: AutomationStudioGraphExecutionTrace; subflowId?: string }) => Promise<unknown>) | undefined;
+  /**
+   * The trial the build judged the very Flow revision this run executed by
+   * (`./build-yes-hold/judged-trial.ts`, t660): read only after a double no,
+   * which it holds where that trial was a confirmed yes on the same request and
+   * stored the same rows. Absent, a double no refutes as it always did.
+   */
+  judgedBuildTrial?: AutomationStudioResultJudgedBuildTrialPort | undefined;
+  /**
+   * The answers the Flow's build declared its parts owe, saved with the
+   * promoted Flow (t764): passed to the check as `requestedOutput`, so a run
+   * that stored none of the records it owes is not passed on a model's yes
+   * (`./requested-output/`, t757). Absent, or naming none, the run is judged as
+   * it always was.
+   */
+  requestedOutput?: ((scope: { projectId: string; flowId: string }) => Promise<AutomationStudioResultRequestedOutput | undefined>) | undefined;
+};
+
+export type AutomationStudioRuntimeSessionVerificationInput = {
+  ports: AutomationStudioResultVerificationPorts;
+  runPurse?: AutomationStudioLlmRunPurse | undefined;
+  projectId: string;
+  session: AutomationStudioRuntimeSession;
+  /** The Flow that ran, for its authored shape. */
+  flow?: AutomationStudioFlowDocument | undefined;
+  /**
+   * The run's own Subflow source (the executor's `subflowGraphs`), for each
+   * part a Call Subflow step ran to be read at the revision it ran, so a part's
+   * read reaches the judge by its own authored node (`./called-nodes.ts`,
+   * t574). Absent, a part's read is told by its counts.
+   */
+  calledGraphs?: AutomationStudioResultCalledGraphSource | undefined;
+  subflowId?: string | undefined;
+  policy?: AutomationStudioAdaptationPolicy | undefined;
+  maxEstimatedCostUsd?: number | undefined;
+  /**
+   * What the checking schedule decided about this run, recorded whether or not
+   * the run was checked.
+   *
+   * A run the schedule passed over is not silent about it. It still runs this
+   * verification, still reaches `core.result.no_model_available` and is still
+   * recorded `unverified` -- and it now carries the decision's own code and
+   * sentence beside that, so a reader can tell "this run is not one the
+   * schedule checks" from "nobody configured checking" from "the authorization
+   * ran out". Absent for a caller with no schedule in force, which leaves that
+   * caller's behaviour exactly as it was.
+   */
+  resultCheck?: { checked: boolean; epoch: number; code: string; reason: string } | undefined;
+  /**
+   * How long the whole verification may take, provider resolution included.
+   * Omitted takes `deadline.ts`'s default; zero or less removes the bound, which
+   * only a caller that supplies its own `signal` should do.
+   */
+  verificationDeadlineMs?: number | undefined;
+  signal?: AbortSignal | undefined;
+  /**
+   * The refutations earlier passes of this verification met on this run,
+   * oldest first, each as the next repair is shown it
+   * (`recovery/refuted-result/history.ts`). Set by the re-run below, never by
+   * a caller: it holds the check's own prose, which lives only as long as the
+   * repair loop that reads it.
+   */
+  repairHistory?: readonly AutomationStudioResultRepairHistoryEntry[] | undefined;
+};
+
+/**
+ * The session a run reports, after its result has been judged.
+ *
+ * The session that comes back is the one the caller returns to whoever started
+ * the run, so a failed verification reaches the caller as a failed run and not
+ * as a note filed somewhere.
+ */
+export async function verifyAutomationStudioRuntimeSessionResult(
+  input: AutomationStudioRuntimeSessionVerificationInput
+): Promise<AutomationStudioRuntimeSession> {
+  input = { ...input, runPurse: input.runPurse ?? new AutomationStudioLlmRunPurse() };
+  if (input.session.status !== "succeeded") return await repairFailedStep(input);
+  // Which graphs this run executed, and at which revision, as the run itself
+  // recorded when its session was written. Read from the session rather than
+  // re-read from storage: a second read could answer with a revision this run
+  // did not execute, and a version set naming a version that never ran is worse
+  // than none at all.
+  const flowVersions = automationStudioFlowVersionsFromMetadata(input.session.metadata);
+  // The whole verification, under one deadline: nothing it does can leave the
+  // run unfinished, and nothing it does writes, so an abandoned one cannot
+  // write over the record this call is about to write.
+  const completedChecks = new AutomationStudioCompletedVerificationChecks();
+  const bounded = await automationStudioResultVerificationWithinDeadline({
+    ...(input.verificationDeadlineMs !== undefined ? { deadlineMs: input.verificationDeadlineMs } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
+    judge: async () => await runVerification(input, completedChecks.record)
+  });
+  const retainedInterventions = completedChecks.finish();
+  const report: AutomationStudioRuntimeSessionVerificationReport = bounded.settled
+    ? bounded.value
+    : { outcome: verificationDidNotFinish(bounded.reason, bounded.error), interventions: retainedInterventions };
+  const outcome = report.outcome;
+  const failing = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
+  const scheduled = automationStudioResultRecordedCheck(input, outcome);
+  // A double no says on the record whether the build's yes held it, and why (header, t664).
+  const recordedMetadata = { resultVerification: { ...automationStudioResultRecordedOutcome(outcome), ...(report.buildYesHold ? { buildYesHold: report.buildYesHold } : {}) }, ...(scheduled ? { resultCheck: scheduled } : {}) };
+  const next: AutomationStudioRuntimeSession = failing
+    ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } }
+    : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } };
+  await input.ports.writeRuntimeSession(input.projectId, next);
+  const record = await automationStudioResultRecordOnRunDetail(input, next, outcome, report.interventions, flowVersions, bounded.settled);
+  const recorded = record?.detail;
+  // The join this module exists to make: the verdict, against the versions the
+  // run executed. It is written after the run's own record, so a reader who
+  // finds a judgement row always finds the run behind it, and before the repair
+  // below, so the refutation that sent a Flow to be repaired is on record at the
+  // revision it was about -- which is the revision a later rollback would return
+  // to, and the one thing the repair is about to change.
+  await automationStudioResultRecordFlowGraphJudgements(input, outcome, flowVersions, report.instructionDigest ?? null, next.finishedAt ?? Date.now());
+  // A run that asked no model anything is the replay the confidence rule counts
+  // (`./zero-provider-run.ts`), and it is recorded as one.
+  if (record?.askedNoModel) await automationStudioResultRecordAdaptationReplays(input, next);
+  // Only a run that was actually put to the question has anything to say. What
+  // to say, and whether to say it at all, belongs to the schedule: this hands
+  // over the facts and Core's own words, never the model's prose. It is said
+  // before the repair below is entered, so the thread reads in the order the
+  // run lived it: what the check found, then what was done about it.
+  if (input.resultCheck && outcome.performed === true) {
+    await input.ports.sayResultCheck?.({
+      runId: input.session.runId,
+      status: automationStudioResultVerificationStatus(outcome),
+      checked: input.resultCheck.checked,
+      reason: outcome.reason,
+      observation: outcome.observation,
+      ...(report.datasetId !== undefined ? { datasetId: report.datasetId } : {})
+    });
+  }
+  // The half that makes a wrong answer repairable. A run that failed here
+  // failed at `verification`, and until now that was the end of it: the ladder
+  // is keyed on a failed *attempt*, a clean run has none, and the planner
+  // answered `stop`. The run is handed to the same failure entry point every
+  // other failure goes through, carrying the attempt the refutation amounts to.
+  // It continues from the detail `automationStudioResultRecordOnRunDetail` (`./run-record.ts`) just wrote, verdict and
+  // schedule decision included, rather than re-reading the row it wrote.
+  if (recorded && report.summary && input.ports.repairRefutedResult) {
+    const repaired = await repairAutomationStudioRefutedRunResult({
+      runId: next.runId,
+      detail: recorded,
+      outcome,
+      summary: report.summary,
+      ...(input.flow ? { flow: input.flow } : {}),
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+      now: next.finishedAt ?? Date.now(),
+      repair: input.ports.repairRefutedResult,
+      saveFlowRunDetail: (detail) => input.ports.saveFlowRunDetail(detail),
+      history: input.repairHistory ?? [],
+      willRerun: input.ports.rerunRepairedFlow !== undefined
+    });
+    // The loop closes: the corrected Flow runs, and the run it produces is
+    // judged exactly as this one was. Only where the repair actually reached
+    // the Flow -- an edit that was built and could not be applied has changed
+    // nothing, and re-running would buy a second verdict on the same Flow.
+    //
+    // **Bounded by a count and by convergence, and each pass is told the ones
+    // before it.** The re-run keeps this run's id and carries its metadata
+    // forward, so the marker counting this run's repairs survives
+    // (`recovery/refuted-result/repair.ts`), and the pass below is handed this
+    // refutation as history. A refutation past the bound, or a second repair in
+    // a row that changed nothing in the answer, is recorded and stops there
+    // (`recovery/refuted-result/history.ts`).
+    if (repaired && !repaired.stopped) {
+      // A re-authored Flow, or a ladder patch held for a judged whole run, is re-run from the start (t249).
+      const reauthored = automationStudioRefutedResultRerunsFlow(repaired.detail);
+      const rerun = reauthored && input.ports.rerunRepairedFlow
+        ? await input.ports.rerunRepairedFlow({ detail: repaired.detail, ...(input.subflowId ? { subflowId: input.subflowId } : {}) })
+        : undefined;
+      if (rerun?.session.status === "succeeded") {
+        return await verifyAutomationStudioRuntimeSessionResult({
+          ...input,
+          session: rerun.session, resultCheck: rerun.resultCheck ?? input.resultCheck, // Judged as the repair it is (t273).
+          ...(rerun.flow ? { flow: rerun.flow } : {}),
+          repairHistory: [...(input.repairHistory ?? []), repaired.entry]
+        });
+      }
+      // A re-run that did not finish with a result has nothing to judge, and a
+      // repair that could not be re-run has nothing to show: either way the
+      // repair is over, and the run says so rather than reading as in progress.
+      if (reauthored && input.ports.rerunRepairedFlow) await settleResultRepair(input, next.runId, rerun ? "rerun_failed" : "not_rerun");
+      return rerun?.session ?? next;
+    }
+    if (repaired) return next;
+  }
+  // No repair was entered on this pass. If an earlier pass started one -- this
+  // is the re-run it earned -- it ends here, with this pass's verdict.
+  if (recorded) {
+    const settled = automationStudioResultRepairSettled(recorded, repairOutcomeOf(outcome, failing), Date.now());
+    if (settled) await input.ports.saveFlowRunDetail(settled);
+  }
+  return next;
+}
+
+/**
+ * A run that failed at a step, after the patch ladder has had it.
+ *
+ * Until t193 this was the first line of the verification and the end of the
+ * run: a failed run is already telling the truth about its steps, so it was
+ * handed back. That is still what happens to every failed run the failed-step
+ * route does not take. What the route takes -- a step whose target is gone
+ * from a changed site, which the ladder could not re-point -- is re-authored,
+ * and an edit that reached the Flow is run again and the re-run verified like
+ * any other run, which is what closes the loop for a failed step as
+ * `rerunRepairedFlow` closes it for a wrong answer. The attempt is saved on the
+ * run before the re-run, so a re-run that throws still leaves it on record.
+ * The route re-authors a run once (`step-failure-decision.ts`), so a re-run
+ * that fails at a step again comes back here and is handed back failed.
+ */
+async function repairFailedStep(input: AutomationStudioRuntimeSessionVerificationInput): Promise<AutomationStudioRuntimeSession> {
+  const port = input.ports.repairFailedStep;
+  if (input.session.status !== "failed" || !port) return input.session;
+  // The route re-authors only a step whose target was not found or not told
+  // apart, and the run's own trace says whether that is how it failed: the
+  // record's attempts are the trace's. Any other failed run is handed back
+  // before its record is read from the project's store, as every failed run
+  // was before t193. A store that is closing or cannot be opened -- which may
+  // be what the run failed at -- must not turn a failed run into a thrown one
+  // (t207, `recovery/refuted-result/step-failure-target.ts`). A session that
+  // carries no trace says nothing either way, so its record decides.
+  if (input.session.trace && !automationStudioStepFailureTarget(input.session.trace.attempts)?.targetLevel) return input.session;
+  const detail = await input.ports.getFlowRunDetail(input.projectId, input.session.runId);
+  if (!detail) return input.session;
+  const failedTraceAttempt = lastFailedAttempt(input.session.trace?.attempts ?? []);
+  const repaired = await port({
+    detail,
+    ...(failedTraceAttempt ? { failedTraceAttempt } : {}),
+    ...(input.flow ? { flow: input.flow } : {}),
+    ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+    ...(input.ports.deniedEvidenceKeys ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
+  });
+  if (!repaired) return input.session;
+  await input.ports.saveFlowRunDetail(repaired.detail);
+  if (!repaired.reauthored || !input.ports.rerunRepairedFlow) return input.session;
+  const rerun = await input.ports.rerunRepairedFlow({ detail: repaired.detail, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
+  if (!rerun) return input.session;
+  return await verifyAutomationStudioRuntimeSessionResult({ ...input, session: rerun.session, resultCheck: rerun.resultCheck ?? input.resultCheck, ...(rerun.flow ? { flow: rerun.flow } : {}) });
+}
+
+/**
+ * The run's last failed attempt with every input it executed with: a saved
+ * trace keeps on it only what changed since the attempt before
+ * (`executor/node-execution/shared-inputs.ts`), and the repair is handed the
+ * attempt alone.
+ */
+function lastFailedAttempt(attempts: readonly AutomationStudioNodeAttemptTrace[]): AutomationStudioNodeAttemptTrace | undefined {
+  for (let index = attempts.length - 1; index >= 0; index -= 1) {
+    const attempt = attempts[index]!;
+    if (attempt.status !== "failed") continue;
+    if (!attempt.inputsSince) return attempt;
+    const { inputsSince: _kept, ...whole } = attempt;
+    return { ...whole, inputs: automationStudioAttemptInputs(attempts, index) };
+  }
+  return undefined;
+}
+
+/** How a repair ends when the answer its re-run gave is not repaired again. */
+function repairOutcomeOf(outcome: AutomationStudioResultVerificationOutcome, failing: boolean): AutomationStudioResultRepairOutcome {
+  if (outcome.performed === true && outcome.verdict === "answers") return "answered";
+  return failing ? "stopped" : "unverified";
+}
+
+/** Marks a repair in progress on this run as finished, from the run's own stored record. */
+async function settleResultRepair(input: AutomationStudioRuntimeSessionVerificationInput, runId: string, outcome: AutomationStudioResultRepairOutcome): Promise<void> {
+  const detail = await input.ports.getFlowRunDetail(input.projectId, runId);
+  const settled = detail ? automationStudioResultRepairSettled(detail, outcome, Date.now()) : undefined;
+  if (settled) await input.ports.saveFlowRunDetail(settled);
+}
+
+
+type AutomationStudioRuntimeSessionVerificationReport = Awaited<ReturnType<typeof verifyAutomationStudioRunResult>> & {
+  /** What the run produced, when it could be read. The repair is shown it; the verification was already. */
+  summary?: AutomationStudioRunResultSummary;
+  /**
+   * The first record set the verification judged.
+   *
+   * The dataset id travels with the report so a conversation turn about a
+   * refutation can attach the rows that were judged. It is an id, never a row:
+   * what the person then opens is the stored record set, through the surface
+   * that already has permission to show it.
+   */
+  datasetId?: string;
+  /**
+   * The digest of the request this verdict was reached against, where the
+   * request was read at all. Absent for a verdict Core settled from its own
+   * arithmetic, which asks no model and reads no instruction --
+   * `flow-version/instruction-digest.ts` says why that is recorded as unknown
+   * rather than as the digest of an empty question.
+   */
+  instructionDigest?: string;
+  /** On a double no, whether the build's judged yes held it and why (`./build-yes-hold/because.ts`, t664). */
+  buildYesHold?: AutomationStudioResultBuildYesHoldRecord;
+};
+
+/** The verification, plus what the run produced and the first record set it judged. */
+async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput, recordIntervention: NonNullable<Parameters<typeof verifyAutomationStudioRunResult>[0]["recordIntervention"]>): Promise<AutomationStudioRuntimeSessionVerificationReport> {
+  const session = input.session;
+  let recordSets: AutomationStudioResultRecordSetInput[];
+  try {
+    recordSets = await readRecordSets(input.ports, input.projectId, session.runId);
+  } catch (error) {
+    // A result that could not be read is a result nobody checked, which is the
+    // one thing this module refuses to report as success. The read's own code
+    // is carried into the verdict so the run says what went wrong.
+    return { outcome: unreadableResult(error), interventions: [] };
+  }
+  // Read before the summary, not only for the model's call: its recorded
+  // attempts carry each list read's own account of itself -- pages, why paging
+  // stopped, what each condition rejected -- and a summary without them told
+  // `run-munq5s8x-6d620cdf`'s judge "8 records stored" of a read that had
+  // already paged and filtered, so it advised adding both.
+  const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
+  const read = input.ports.readEndView;
+  const ended = await automationStudioResultEndViewRead(read && (() => read({ projectId: input.projectId, runId: session.runId, flowId: session.flowId })));
+  const attempts = runDetail?.actionAttempts ? attemptsOfThisSession(runDetail.actionAttempts, session) : undefined;
+  // Each part a Call Subflow step ran, at the revision it ran, so a part's read is told by its own node (`./called-nodes.ts`, t574).
+  const calledNodes = attempts ? await automationStudioResultCalledNodes(attempts, input.calledGraphs) : undefined;
+  const summary = summarizeAutomationStudioRunResult({
+    recordSets,
+    referenceNow: automationStudioReferenceNow(session.trace?.referenceNow) ?? session.startedAt ?? session.trace?.startedAt,
+    // In the order the Flow runs them, never as its store lists the nodes (s1, s10, s11 ... s9: run-murwd8le's Cause 8).
+    ...(input.flow ? { flowNodes: input.flow.nodes, flowEdges: input.flow.edges } : {}),
+    ...ended,
+    ...(attempts ? { actionAttempts: attempts } : {}),
+    ...(calledNodes?.size ? { calledNodes } : {}),
+    // What each step changed, and the page the run started on, from this session's trace in memory (run-muw5zv4m-52d83027, run-mux6pndp-16feb842).
+    ...(session.trace ? { sessionAttempts: session.trace.attempts, ...(input.ports.observedStateKeys ? { observedStateKeys: input.ports.observedStateKeys } : {}) } : {}),
+    ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
+  });
+  const datasetId = recordSets[0]?.summary.datasetId;
+  const withResult = (report: { outcome: AutomationStudioResultVerificationOutcome; interventions: AutomationStudioRuntimeSessionVerificationReport["interventions"] }, instructionDigest?: string | null): AutomationStudioRuntimeSessionVerificationReport =>
+    ({ ...report, summary, ...(datasetId !== undefined ? { datasetId } : {}), ...(instructionDigest ? { instructionDigest } : {}) });
+  // Settled by Core's own counts: every row refused, or a stored row with no
+  // value for a field the Flow's schema requires. Neither needs the request
+  // read, so neither is worth a provider resolution or a call.
+  if (automationStudioResultCoreObservation(summary)) {
+    return withResult(await verifyAutomationStudioRunResult({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, summary, instructions: [] }));
+  }
+  // From here a model is asked. The request and the steps that ran are read for
+  // an empty result too: without them nothing can tell a Flow that searched and
+  // found nothing from one that never looked.
+  const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
+  const instructionDigest = automationStudioFlowInstructionDigest(instructions);
+  const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
+  const budget = resolved ? resolveAutomationStudioRecoveryRunBudget({
+    explicitRunBudget: true,
+    // A standing check's per-call grant must never become the run's total.
+    resolution: {
+      ...(resolved.maxCallsPerRun !== undefined ? { maxCallsPerRun: resolved.maxCallsPerRun } : {}),
+      ...(resolved.maxTotalTokensPerRun !== undefined ? { maxTotalTokensPerRun: resolved.maxTotalTokensPerRun } : {}),
+      ...(resolved.maxTotalEstimatedCostUsd !== undefined ? { maxTotalEstimatedCostUsd: resolved.maxTotalEstimatedCostUsd } : {}),
+      ...(resolved.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {})
+    },
+    policyMaxEstimatedCostUsdPerRun: input.policy?.maxEstimatedCostUsdPerRun,
+    model: resolved.provider.metadata.model
+  }) : undefined;
+  const runBudget = budget && input.runPurse ? input.runPurse.open(session.runId, budget) : undefined;
+  if (resolved && input.runPurse && !runBudget) return withResult({ interventions: [], outcome: {
+    schemaVersion: "automation-studio.result-verification.v1", performed: false,
+    code: input.runPurse.diagnostic!.code, reason: input.runPurse.diagnostic!.message
+  } }, instructionDigest);
+  const requestedOutput = await input.ports.requestedOutput?.({ projectId: input.projectId, flowId: session.flowId });
+  const verified = await verifyAutomationStudioRunResult({
+    projectId: input.projectId,
+    flowId: session.flowId,
+    runId: session.runId,
+    ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+    summary,
+    instructions,
+    ...(requestedOutput ? { requestedOutput } : {}),
+    ...(runDetail ? { runDetail } : {}),
+    ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {}),
+    ...(resolved ? { provider: resolved.provider } : {}),
+    ...(runBudget ? { runBudget } : {}),
+    recordIntervention,
+    ...(input.policy ? { policy: input.policy } : {}),
+    ...(resolved?.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {}),
+    ...(resolved?.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
+    ...(budget && runBudget ? { maxEstimatedCostUsd: Math.min(costCeiling(input, resolved) ?? Number.POSITIVE_INFINITY, budget.maxEstimatedCostUsdPerCallAt()) }
+      : costCeiling(input, resolved) !== undefined ? { maxEstimatedCostUsd: costCeiling(input, resolved) } : {}),
+    ...(input.signal ? { signal: input.signal } : {})
+  });
+  // A double no on the rows the build's two yeses judged is held where Core's record refutes part of each no; every double no says why (header, t660, t664).
+  const judgedBuildTrial = input.ports.judgedBuildTrial;
+  const { outcome, hold } = await automationStudioResultBuildYesHold({
+    outcome: verified.outcome, runId: session.runId, instructionDigest: instructionDigest ?? undefined, recordSets,
+    trial: async () => await judgedBuildTrial?.({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), runId: session.runId, flowVersions: automationStudioFlowVersionsFromMetadata(session.metadata) }),
+    trialRecordSets: async (trialRunId) => await readRecordSets(input.ports, input.projectId, trialRunId)
+  });
+  if (hold) automationStudioLlmBuildTrace.line(`result-check build-yes-hold run=${session.runId} held=${hold.held} because=${hold.because}`);
+  const report = withResult({ ...verified, outcome }, instructionDigest);
+  return hold ? { ...report, buildYesHold: hold } : report;
+}
+
+/**
+ * The recorded attempts this session made, and no other.
+ *
+ * A re-run keeps its run's id, so the record read by that id can still hold the
+ * attempts of the run it repaired; a read account taken from one of those would
+ * describe the Flow that was just replaced. The session's own trace names its
+ * root frame's attempts, and a called part's attempt is this session's when the
+ * Call Subflow attempt it ran under (`parentAttemptId`) is. A session with no
+ * trace at all has nothing to tell them apart by, and its record is taken as it
+ * stands.
+ */
+function attemptsOfThisSession(
+  attempts: NonNullable<AutomationStudioFlowRunDetail["actionAttempts"]>,
+  session: AutomationStudioRuntimeSession
+): NonNullable<AutomationStudioFlowRunDetail["actionAttempts"]> {
+  const traced = session.trace?.attempts;
+  if (!traced) return attempts;
+  const ids = new Set(traced.map((attempt) => attempt.attemptId));
+  const parents = new Map(attempts.map((attempt) => [attempt.attemptId, attempt.parentAttemptId]));
+  const ours = (attemptId: string, depth: number): boolean => {
+    const parent = parents.get(attemptId);
+    return parent === undefined ? ids.has(attemptId) : depth < parents.size && ours(parent, depth + 1);
+  };
+  return attempts.filter((attempt) => ours(attempt.attemptId, 0));
+}
+
+/**
+ * A verification that did not come back: its deadline passed, the run was
+ * cancelled under it, or the attempt threw before any verdict.
+ *
+ * `performed: false`, so it is recorded `unverified` and never read as a pass,
+ * and the run keeps the status its steps earned -- the same treatment a run gets
+ * when no model is configured, and for the same reason: nobody judged this
+ * result. The error's kind is named and its message is not, because a message
+ * can carry what the store or the page was holding.
+ */
+function verificationDidNotFinish(reason: "timed_out" | "aborted" | "threw", error: unknown): AutomationStudioResultVerificationOutcome {
+  const why = reason === "timed_out"
+    ? "it did not finish inside its deadline"
+    : reason === "aborted"
+      ? "the run was cancelled while it was being judged"
+      : "it failed before reaching a verdict";
+  // The reason is said in the chat, so the error's kind goes on the record, not into the sentence.
+  return {
+    schemaVersion: "automation-studio.result-verification.v1",
+    performed: false,
+    code: AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.notFinished,
+    reason: `Whether this run's result answers the request was never judged: ${why}.`,
+    ...(reason === "threw" ? { failureCode: errorName(error) } : {})
+  };
+}
+
+/** The narrower of what the caller allows this call and what the resolution allows it. */
+function costCeiling(
+  input: AutomationStudioRuntimeSessionVerificationInput,
+  resolved: AutomationStudioResultVerificationProvider | undefined
+): number | undefined {
+  const ceilings = [input.maxEstimatedCostUsd, resolved?.maxEstimatedCostUsd].filter((value): value is number => typeof value === "number" && value > 0);
+  return ceilings.length ? Math.min(...ceilings) : undefined;
+}
+
+/**
+ * The run's stored record sets, every one, each with every stored row: the
+ * store is read page by page until it says there are no more (2026-09-30, "the
+ * model sees the whole page"). The same rows serve the required-value check and
+ * the summary the model is shown. Exported for the candidate trial, which
+ * judges its own run's record sets the same way (`../service/candidate-trial/`).
+ */
+export async function readRecordSets(
+  ports: Pick<AutomationStudioResultVerificationPorts, "listRunDatasets" | "getRunDatasetPage">,
+  projectId: string,
+  runId: string
+): Promise<AutomationStudioResultRecordSetInput[]> {
+  if (!ports.listRunDatasets) return [];
+  const readPage = ports.getRunDatasetPage;
+  const summaries = await ports.listRunDatasets({ projectId, runId });
+  return await Promise.all(summaries.map(async (summary) => {
+    if (!readPage || summary.recordCount <= 0) return { summary };
+    let page = await readPage({ projectId, runId, datasetId: summary.datasetId, limit: RECORD_PAGE_SIZE });
+    if (!page) return { summary };
+    const schema = page.schema;
+    const rows = [...page.rows];
+    const cursors = new Set<string>();
+    // A cursor the store already handed back would read the same page again;
+    // the loop ends there rather than going round forever.
+    while (page?.nextCursor && !cursors.has(page.nextCursor)) {
+      cursors.add(page.nextCursor);
+      page = await readPage({ projectId, runId, datasetId: summary.datasetId, limit: RECORD_PAGE_SIZE, cursor: page.nextCursor });
+      if (page) rows.push(...page.rows);
+    }
+    return { summary, schema, rows, checkedRows: rows };
+  }));
+}
+
+/** The store's largest page. A read size, not a limit on what is read: every page is read. */
+const RECORD_PAGE_SIZE = 200;
+
+function unreadableResult(error: unknown): AutomationStudioResultVerificationOutcome {
+  const code = "core.result.unreadable";
+  // Said in the chat beside the reason: the error's kind is kept on the record instead.
+  const observation = "The run's stored records could not be read.";
+  return {
+    schemaVersion: "automation-studio.result-verification.v1",
+    performed: true,
+    verdict: "unsure",
+    basis: "model_unavailable",
+    code,
+    reason: "What the run produced could not be read, so whether it answers the request was never judged.",
+    observation,
+    failure: automationStudioResultFailureRecord({ verdict: "unsure", code, observation }),
+    failureCode: errorName(error)
+  };
+}
+
+/** The error's own name, never its message: a message can carry what the store was holding. */
+function errorName(error: unknown): string {
+  return error instanceof Error && error.name ? error.name : "unknown error";
+}

@@ -1,4 +1,4 @@
-import type { AutomationStudioFailureRecord, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
+import type { RuntimeFailureRecord, RuntimeTargetActionabilityRecord } from "@fluxiq/contracts/runtime";
 import type { JsonObject } from "../core/index.ts";
 
 export type FluxIQRuntimeTransportKind =
@@ -89,9 +89,9 @@ export type FluxIQRuntimeCommandResult = {
   target?: JsonObject;
   error?: string;
   /** Structured failure from the adapter or client. Values from a client are validated by the transport. */
-  failure?: AutomationStudioFailureRecord;
+  failure?: RuntimeFailureRecord;
   /** Validated exact-target measurement; absence is unknown, with no effect or retry claim. */
-  actionability?: AutomationStudioTargetActionabilityRecord;
+  actionability?: RuntimeTargetActionabilityRecord;
   /**
    * A wait on the target that cleared by itself while the command ran -- a check
    * the page stood up and then took down, with nobody asked -- and how long it

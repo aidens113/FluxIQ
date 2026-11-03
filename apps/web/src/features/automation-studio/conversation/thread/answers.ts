@@ -8,7 +8,7 @@
 // the buttons -- on the fifth tab of a detail pane. An answer lives in the turn
 // that asked for it.
 
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "fluxiq/automation-studio/action-permissions";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "fluxiq/automation/action-permissions";
 import type { AutomationStudioActionConsequence, ConversationAnswer, ConversationAsk } from "./contracts";
 
 export type ConversationAnswerAction = {

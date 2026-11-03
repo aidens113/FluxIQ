@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ComponentRegistry } from "../../components/index.ts";
 import { createEnvelope } from "../../io/index.ts";
-import { AutomationStudioNativeNodeRuntime, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../../programs/index.ts";
+import { AutomationStudioNativeNodeRuntime, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../automation-service/public/index.ts";
 import { FluxIQ } from "../index.ts";
 
 const ENV_KEYS = [

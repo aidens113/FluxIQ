@@ -347,7 +347,7 @@ function capabilityMatchesCommand(capability: FluxIQRuntimeCapability, command: 
   // An output is served by a capability that names it as an output or, as a
   // client gateway capability can only do, as an action type: the same rule
   // Automation Studio applies when it decides the runtime can dispatch it
-  // (`programs/automation-studio/runtime/io-policy.ts`), so the runtime never
+  // (`framework/automation-service/io-policy.ts`), so the runtime never
   // refuses a command it was just judged able to send.
   const outputMatches = command.outputId ? capability.outputIds?.includes(command.outputId) === true || capability.actionTypes?.includes(command.outputId) === true : false;
   if (command.actionType && !outputMatches && !capability.actionTypes?.includes(command.actionType)) return false;

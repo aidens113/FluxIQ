@@ -3,7 +3,7 @@
 // may not change without every reader changing with it.
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_REPEATED_ANSWER_REASON } from "../index.ts";
-import * as automationStudio from "../../automation-studio.ts";
+import * as automationStudio from "../../automation.ts";
 
 describe("the repeated-answer reason", () => {
   it("is the word every reader and the web domain already use, published on the automation-studio subpath", () => {

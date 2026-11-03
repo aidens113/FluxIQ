@@ -1,6 +1,6 @@
 /**
  * The status sentence (`ClientGatewayActivity.label`) each verdict of a run's
- * result check is said in (`programs/automation-studio/runtime/result-verification/check-activity.ts`).
+ * result check is said in (`runtime/result-verification/check-activity.ts`).
  * Written once, here, because a chat card reads two of them back: a result
  * Core could not confirm (`unconfirmed`, the two checks disagreed or the model
  * was unsure) and one it could not check at all (`unchecked`) are not a pass,

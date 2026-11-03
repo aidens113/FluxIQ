@@ -22,6 +22,7 @@
     "gateway:build": "node scripts/build-client-gateway-server.mjs"
   },
   "dependencies": {
+    "@fluxiq/ui-components": "workspace:*",
     "@xyflow/react": "^12.8.4",
     "fluxiq": "workspace:*",
     "lucide-react": "^0.468.0",

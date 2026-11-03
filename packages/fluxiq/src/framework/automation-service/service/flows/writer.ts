@@ -1,0 +1,425 @@
+import type { JsonObject } from "../../../../core/index.ts";
+import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import type { AutomationStudioProject } from "../../../../api-contracts/automation.ts";
+import { generateFlowTypeScript, verifyCodeOwnedFlowCompilation } from "../../../../flows/authoring/dsl/index.ts";
+import {
+  type AutomationStudioConfigArtifact,
+  type AutomationStudioFlowArtifact,
+  automationStudioFlowRepresentationKind,
+  type AutomationStudioFlowRepresentationKind,
+  type AutomationStudioFlowScope,
+  type AutomationStudioProjectArtifactKind,
+  isAutomationStudioSubflowGraphMetadata,
+  type AutomationStudioFlowValidationContext,
+  validateAutomationStudioFlow,
+  withAutomationStudioFlowRepresentation
+} from "../../../../flows/authoring/model/index.ts";
+import {
+  AutomationStudioProjectAdministration,
+  AutomationStudioProjectDatabasePool,
+  type AutomationStudioSqlFlowRecord,
+  type CanonicalAutomationStudioRepositories
+} from "../../../persistence/automation/index.ts";
+import { createHash } from "node:crypto";
+import { mkdir, open as openFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../paths/index.ts";
+import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseHeld } from "../projects/index.ts";
+import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
+import type { AutomationStudioLegacyRetirementStore } from "../legacy/index.ts";
+import type { AutomationStudioObjectDocuments } from "../object-documents.ts";
+import type { AutomationStudioFlowStore } from "./store.ts";
+import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
+import { stableJson } from "../stable-json.ts";
+import { projectArtifactDocumentFileName } from "../paths/index.ts";
+import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
+import { CanonicalAuthorityWholeOperation, CanonicalAuthorityValidation as V } from "../../../persistence/automation/canonical-authority/index.ts";
+import { flowSubflowCategoriesFromFlow } from "./mapping.ts";
+import { automationStudioFlowValidationContext } from "./validation-context.ts";
+
+// Writing a Flow document and everything derived from it: its representation
+// checks, the generated source file and config artifact, the summary index
+// entries, and the project change feed the write appends to. It reads Flows
+// back through the flow store rather than reaching for the documents itself.
+export class AutomationStudioFlowWriter {
+  constructor(
+    private readonly paths: AutomationStudioProjectPaths,
+    private readonly flowPaths: AutomationStudioFlowPaths,
+    private readonly projects: AutomationStudioProjectStore,
+    private readonly indexes: AutomationStudioServiceIndexes,
+    private readonly flows: AutomationStudioFlowStore,
+    private readonly legacy: AutomationStudioLegacyRetirementStore,
+    private readonly objectDocuments: AutomationStudioObjectDocuments,
+    private readonly repositories: CanonicalAutomationStudioRepositories,
+    // Calls into the service's public surface go through this port, never
+    // through the collaborator that owns the method, so an override or a stub
+    // on the public method is still honoured. See service/facade-ports.ts.
+    private readonly facade: AutomationStudioFacadePorts,
+    private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool,
+    private readonly authority?: CanonicalAuthorityWholeOperation
+  ) {}
+
+  async getProjectArtifact(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<unknown> {
+    await this.projects.requireProject(projectId);
+    const artifact = await new ProgramJsonStore<JsonObject>(this.paths.projectArtifactFile(projectId, kind, artifactId), () => ({})).read();
+    if (!Object.keys(artifact).length) throw new Error(`Unknown Automation Studio ${kind}: ${artifactId}`);
+    return artifact;
+  }
+
+  async saveProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifact: unknown }): Promise<unknown> {
+    if (this.authority && input.kind !== "config") throw new Error("canonical_whole.unsupported_artifact_write");
+    await this.projects.requireProject(input.projectId);
+    if (input.kind !== "config") await this.legacy.assertLegacyWriteAllowed(input.projectId);
+    if (!input.artifact || typeof input.artifact !== "object" || Array.isArray(input.artifact)) throw new Error("Artifact object is required.");
+    const artifact = input.artifact as Record<string, unknown>;
+    const id = this.projectArtifactId(input.kind, artifact);
+    const now = Date.now();
+    const withTimestamps = {
+      ...artifact,
+      schemaVersion: typeof artifact.schemaVersion === "string" ? artifact.schemaVersion : "0.1",
+      createdAt: typeof artifact.createdAt === "number" ? artifact.createdAt : now,
+      updatedAt: now
+    } as unknown as JsonObject;
+    if (this.authority && id !== flowConfigArtifactId(this.authority.currentFlowId())) throw new Error("canonical_whole.config_identity");
+    const store = new ProgramJsonStore<JsonObject>(this.paths.projectArtifactFile(input.projectId, input.kind, id), () => ({}));
+    await store.write(withTimestamps);
+    if (this.authority) await this.authority.fileEffect("generated_config", this.authority.currentFlowId(), withTimestamps, await store.read());
+    return withTimestamps;
+  }
+
+  async saveFlowInternal(
+    input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number; validation?: AutomationStudioFlowValidationContext },
+    allowPublicationMutation: boolean,
+    representationCreationKind?: AutomationStudioFlowRepresentationKind
+  ): Promise<AutomationStudioFlowArtifact> {
+    if (this.authority) {
+      if (allowPublicationMutation || representationCreationKind && representationCreationKind !== "orchestration" || input.flow.nodes.length || input.flow.edges.length || flowSubflowCategoriesFromFlow(input.flow).length || input.flow.source.mode !== "visual" || input.flow.metadata?.subflowGraph || input.flow.metadata?.parentFlowId || input.flow.metadata?.parentSubflowId || input.flow.publication.status !== "draft" || input.flow.publicationHistory?.length) throw new Error("canonical_whole.unsupported_flow_write");
+      const frozen = V.clone({ projectId: input.projectId, flow: input.flow, ...(input.expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt: input.expectedUpdatedAt }) });
+      const execute = () => this.saveFlowUnheld(frozen, false, representationCreationKind);
+      return CanonicalAuthorityWholeOperation.current(this.authority.globalRoot) === this.authority ? execute() : this.authority.saveFlow(input.projectId, input.flow.flowId, frozen as unknown as JsonObject, execute);
+    }
+    // The graph reconciliation, SQL projection and change feed each take a lease;
+    // held here, they share one open database (../projects/database-hold.ts).
+    return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId,
+      () => this.saveFlowUnheld(input, allowPublicationMutation, representationCreationKind));
+  }
+
+  private async saveFlowUnheld(
+    input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number; validation?: AutomationStudioFlowValidationContext },
+    allowPublicationMutation: boolean,
+    representationCreationKind?: AutomationStudioFlowRepresentationKind
+  ): Promise<AutomationStudioFlowArtifact> {
+    const project = this.authority ? await this.authority.requireProject(input.projectId) as unknown as AutomationStudioProject : await this.projects.findProject(input.projectId);
+    if (input.flow.projectId !== project.id) throw new Error("Flow projectId must match the target project.");
+    const expectedScope = flowScopeForProject(project);
+    if (!sameFlowScope(input.flow.scope, expectedScope)) throw new Error("Flow scope must match the target project scope.");
+    const existing = await this.repositories.flows.get(input.flow.flowId);
+    if (existing && existing.projectId !== project.id) throw new Error(`Flow ID is already owned by project ${existing.projectId}.`);
+    if (existing && input.expectedUpdatedAt !== undefined && existing.updatedAt !== input.expectedUpdatedAt) throw new Error(`FLOW_SAVE_CONFLICT: Flow changed after this draft began (expected ${input.expectedUpdatedAt}, current ${existing.updatedAt}).`);
+    if (existing && existing.source.mode !== input.flow.source.mode) throw new Error("Flow source ownership changes require an explicit conversion endpoint.");
+    if (existing) assertPublicationMutationAllowed(existing, input.flow, allowPublicationMutation);
+    else if (!allowPublicationMutation && (input.flow.publication.status === "published" || input.flow.publication.status === "deprecated" || input.flow.publicationHistory?.length)) throw new Error("Published Flow state can only be created through publishFlow().");
+    const now = Date.now();
+    const createdAt = existing?.createdAt ?? input.flow.createdAt ?? now;
+    const representationKind = this.resolveFlowRepresentationForSave(existing, input.flow, representationCreationKind);
+    let flow: AutomationStudioFlowArtifact = {
+      ...input.flow,
+      createdAt,
+      updatedAt: Math.max(now, createdAt),
+      metadata: withAutomationStudioFlowRepresentation(input.flow.metadata, representationKind)
+    };
+    await this.assertFlowRepresentationSaveAllowed(project.id, existing, flow, representationKind, representationCreationKind);
+    if (existing) flow = recordManualRecordingProposalChanges(existing, flow, now);
+    // The role of the Subflow a graph belongs to, which the graph does not carry (t398).
+    const context = await automationStudioFlowValidationContext(flow, (parentFlowId, subflowId) => this.facade.getFlowSubflow(project.id, parentFlowId, subflowId), input.validation);
+    const validation = validateAutomationStudioFlow(flow, context);
+    if (!validation.ok) throw new Error(`Invalid Automation Studio Flow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+    if (!verifyCodeOwnedFlowCompilation(flow)) throw new Error("Code-owned Flow IR does not match its compiler digest.");
+    flow = withFlowSourceFileMetadata(flow);
+    const validationWithSourceMetadata = validateAutomationStudioFlow(flow, context);
+    if (!validationWithSourceMetadata.ok) throw new Error(`Invalid Automation Studio Flow: ${validationWithSourceMetadata.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
+    const saved = await this.repositories.flows.put(flow);
+    await this.flows.writeProjectFlow(project.id, saved);
+    if (!this.authority) await this.flows.reconcileCanonicalGraphFromDocument(project.id, saved);
+    await this.writeFlowSourceFile(project.id, saved);
+    await this.writeGeneratedFlowConfig(project.id, saved);
+    const sqlFlow = await this.flows.writeSqlFlowMetadata(project.id, saved);
+    await this.appendProjectMutationChangeFeed({
+      projectId: project.id,
+      entityKind: "flow",
+      entityId: saved.flowId,
+      parentId: stringOrNull(jsonObjectFromUnknown(saved.metadata)?.parentFlowId),
+      operation: existing ? "update" : "create",
+      revision: flowFeedRevision(sqlFlow),
+      changedAt: saved.updatedAt,
+      hierarchyScope: { kind: "project", id: project.id }
+    });
+    return saved;
+  }
+
+  async deleteFlowArtifact(
+    input: { projectId: string; flowId: string },
+    allowOwnedSubflowGraph: boolean
+  ): Promise<{ deletedFlowId: string }> {
+    const flow = await this.facade.getFlow(input.projectId, input.flowId);
+    if (!allowOwnedSubflowGraph && this.persistedFlowRepresentation(flow) === "subflow_graph") {
+      throw new Error("Owned Subflow graph Flows must be deleted through their owning Subflow.");
+    }
+    const deletedAt = Date.now();
+    const sqlFlow = await this.flows.markSqlFlowDeleted(input.projectId, input.flowId, deletedAt);
+    await this.repositories.flows.delete(input.flowId);
+    await this.objectDocuments.deleteProjectArtifactFile(input.projectId, "config", flowConfigArtifactId(input.flowId));
+    await this.deleteFlowSourceFile(input.projectId, flow);
+    await this.indexes.writeFlowIndex(input.projectId, (index) => ({
+      schemaVersion: "0.1",
+      ...(index.ownershipMetadataVersion === 1 ? { ownershipMetadataVersion: 1 as const } : {}),
+      ...(index.hierarchyMetadataVersion === 1 ? { hierarchyMetadataVersion: 1 as const } : {}),
+      flows: (index.flows ?? []).filter((item) => item.flowId !== input.flowId)
+    }));
+    await ProgramJsonStore.deletePath(this.flowPaths.flowDirectory(input.projectId, input.flowId));
+    await rm(this.flowPaths.flowDirectory(input.projectId, input.flowId), { recursive: true, force: true });
+    await this.appendProjectMutationChangeFeed({
+      projectId: input.projectId,
+      entityKind: "flow",
+      entityId: input.flowId,
+      parentId: stringOrNull(jsonObjectFromUnknown(flow.metadata)?.parentFlowId),
+      operation: "delete",
+      revision: flowFeedRevision(sqlFlow),
+      changedAt: deletedAt,
+      hierarchyScope: { kind: "project", id: input.projectId }
+    });
+    return { deletedFlowId: input.flowId };
+  }
+
+  async appendProjectMutationChangeFeed(input: { projectId: string; entityKind: string; entityId: string; parentId?: string | null; operation: "create" | "update" | "delete" | "touch"; revision: number; changedAt: number; hierarchyScope?: { kind: string; id?: string } | null }): Promise<void> {
+    if (!this.runtimeProjectDatabasePool) { if (this.authority) throw new Error("canonical_whole.sql_unavailable"); return; }
+    const admin = await AutomationStudioProjectAdministration.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
+    try {
+      const feedInput: Parameters<typeof admin.changeFeed.append>[0] = {
+        transactionId: projectChangeTransactionId(input),
+        entityKind: input.entityKind,
+        entityId: input.entityId,
+        ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+        operation: input.operation,
+        revision: input.revision,
+        changedAt: input.changedAt,
+        ...(input.hierarchyScope !== undefined ? { hierarchyScope: input.hierarchyScope } : {})
+      };
+      await admin.changeFeed.append(feedInput, this.authority?.sqlCapability("project_change_feed", input.entityId, feedInput));
+    } finally {
+      await admin.close();
+    }
+  }
+
+  async assertFlowRepresentationSaveAllowed(
+    projectId: string,
+    existing: AutomationStudioFlowArtifact | null | undefined,
+    flow: AutomationStudioFlowArtifact,
+    representationKind: AutomationStudioFlowRepresentationKind,
+    representationCreationKind?: AutomationStudioFlowRepresentationKind
+  ): Promise<void> {
+    const hasOwnershipMetadata = flow.metadata?.subflowGraph === true
+      || typeof flow.metadata?.parentFlowId === "string"
+      || typeof flow.metadata?.parentSubflowId === "string";
+    if (representationKind !== "subflow_graph" && hasOwnershipMetadata) {
+      throw new Error("Top-level and legacy Flows cannot declare Subflow graph ownership metadata.");
+    }
+    if (representationKind === "orchestration") {
+      if (flow.nodes.length || flow.edges.length) throw new Error("Top-level orchestration Flows cannot own Nodes or edges; create a Subflow and edit its graph Flow instead.");
+      return;
+    }
+    if (representationKind === "legacy_single_graph") {
+      if (!existing && representationCreationKind !== "legacy_single_graph") throw new Error("Legacy single-graph compatibility cannot be selected for a newly created Flow.");
+      return;
+    }
+    if (!existing && representationCreationKind === "subflow_graph") return;
+    await this.assertOwnedSubflowGraph(projectId, flow);
+  }
+
+  resolveFlowRepresentationForSave(
+    existing: AutomationStudioFlowArtifact | null | undefined,
+    next: AutomationStudioFlowArtifact,
+    representationCreationKind?: AutomationStudioFlowRepresentationKind
+  ): AutomationStudioFlowRepresentationKind {
+    if (!existing) {
+      if (representationCreationKind === "subflow_graph") return "subflow_graph";
+      if (representationCreationKind === "legacy_single_graph") return "legacy_single_graph";
+      return "orchestration";
+    }
+    const existingKind = this.persistedFlowRepresentation(existing);
+    const requestedKind = automationStudioFlowRepresentationKind(next);
+    if (existingKind === "legacy_single_graph" && requestedKind === "orchestration"
+      && representationCreationKind === "orchestration" && next.nodes.length === 0 && next.edges.length === 0) return "orchestration";
+    return existingKind;
+  }
+
+  persistedFlowRepresentation(flow: AutomationStudioFlowArtifact): AutomationStudioFlowRepresentationKind {
+    const explicit = automationStudioFlowRepresentationKind(flow);
+    if (explicit) return explicit;
+    if (isAutomationStudioSubflowGraphMetadata(flow.metadata)) return "subflow_graph";
+    if (flow.legacyProvenance || flow.nodes.length > 0 || flow.edges.length > 0) return "legacy_single_graph";
+    return "orchestration";
+  }
+
+  async assertOwnedSubflowGraph(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
+    const parentFlowId = typeof flow.metadata?.parentFlowId === "string" ? flow.metadata.parentFlowId.trim() : "";
+    const parentSubflowId = typeof flow.metadata?.parentSubflowId === "string" ? flow.metadata.parentSubflowId.trim() : "";
+    if (!parentFlowId || !parentSubflowId || flow.metadata?.subflowGraph !== true) throw new Error("Subflow graph metadata is incomplete; graph mutation refused.");
+    const subflow = await this.facade.getFlowSubflow(projectId, parentFlowId, parentSubflowId);
+    if (!subflow || subflow.graphFlowId !== flow.flowId) throw new Error("Flow is not the graph owned by its declared Subflow; graph mutation refused.");
+  }
+
+  async writeFlowSourceFile(projectId: string, flow: AutomationStudioFlowArtifact, sourceText?: string): Promise<void> {
+    if (!this.paths.root) return;
+    const moduleId = flowSourceModuleId(flow);
+    const filePath = this.paths.projectFile(projectId, "flows", safeSegment(flow.flowId), "source", ...safeRelativePathParts(moduleId));
+    await mkdir(path.dirname(filePath), { recursive: true });
+    const expected = sourceText ?? generateFlowTypeScript(flow);
+    if (this.authority && Buffer.byteLength(expected) > 4 * 1024 * 1024) throw new Error("canonical_whole.source_size");
+    await writeFile(filePath, expected, "utf8");
+    if (this.authority) {
+      const handle = await openFile(filePath, "r"); let actual: string;
+      try { const bytes = Buffer.alloc(Buffer.byteLength(expected) + 1); let used = 0; while (used < bytes.length) { const chunk = await handle.read(bytes, used, bytes.length - used, used); if (!chunk.bytesRead) break; used += chunk.bytesRead; } if (used > Buffer.byteLength(expected)) throw new Error("canonical_whole.source_size"); actual = bytes.subarray(0, used).toString("utf8"); }
+      finally { await handle.close(); }
+      await this.authority.fileEffect("flow_source", flow.flowId, expected, actual);
+    }
+  }
+
+  async deleteFlowSourceFile(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
+    if (!this.paths.root) return;
+    await rm(this.paths.projectFile(projectId, "flows", safeSegment(flow.flowId), "source"), { recursive: true, force: true });
+  }
+
+  async writeGeneratedFlowConfig(projectId: string, flow: AutomationStudioFlowArtifact): Promise<AutomationStudioConfigArtifact> {
+    const configId = flowConfigArtifactId(flow.flowId);
+    const existing = await this.getProjectArtifact(projectId, "config", configId).then((artifact) => artifact as AutomationStudioConfigArtifact).catch(() => null);
+    const values: JsonObject = {
+      flowId: flow.flowId,
+      name: flow.name,
+      scope: flow.scope as unknown as JsonObject,
+      source: flow.source as unknown as JsonObject,
+      interface: flow.interface as unknown as JsonObject,
+      errors: flow.errors as unknown as JsonObject,
+      variables: flow.variables as unknown as JsonObject,
+      executionDefaults: flow.executionDefaults as unknown as JsonObject,
+      publication: flow.publication as unknown as JsonObject,
+      declaredDependencies: (flow.source.mode === "code" ? flow.source.declaredDependencies ?? [] : []) as unknown as JsonObject
+    };
+    if (flow.description !== undefined) values.description = flow.description;
+    // Ordinary JSON persistence omits this absent optional value. Keep that exact document in the opted receipt.
+    if (this.authority && flow.executionDefaults === undefined) delete values.executionDefaults;
+    const relativePath = `configs/${safeSegment(configId)}/${projectArtifactDocumentFileName("configs")}`;
+    const config: AutomationStudioConfigArtifact = {
+      schemaVersion: "0.1",
+      configId,
+      name: `${flow.name} config`,
+      description: `Generated configuration for Flow ${flow.flowId}.`,
+      values,
+      createdAt: existing?.createdAt ?? flow.createdAt,
+      updatedAt: flow.updatedAt,
+      metadata: {
+        ...(existing?.metadata ?? {}),
+        generated: true,
+        generatedKind: "flow.config",
+        ownerKind: "flow",
+        flowId: flow.flowId,
+        projectId,
+        relativePath
+      }
+    };
+    return await this.saveProjectArtifact({ projectId, kind: "config", artifact: config }) as AutomationStudioConfigArtifact;
+  }
+
+  projectArtifactId(kind: AutomationStudioProjectArtifactKind, artifact: Record<string, unknown>): string {
+    const id = kind === "task" ? artifact.taskId : kind === "routine" ? artifact.routineId : kind === "config" ? artifact.configId : artifact.flowId;
+    if (typeof id !== "string" || !id.trim()) throw new Error(`${kind} ID is required.`);
+    return id;
+  }
+}
+
+export function flowScopeForProject(project: AutomationStudioProject): AutomationStudioFlowScope {
+  return typeof project.domainId === "string" && project.domainId.trim()
+    ? { kind: "domain", domainId: project.domainId }
+    : { kind: "global" };
+}
+
+export function sameFlowScope(left: AutomationStudioFlowScope, right: AutomationStudioFlowScope): boolean {
+  return left.kind === right.kind && (left.kind !== "domain" || left.domainId === (right as Extract<AutomationStudioFlowScope, { kind: "domain" }>).domainId);
+}
+
+export function withFlowSourceFileMetadata(flow: AutomationStudioFlowArtifact): AutomationStudioFlowArtifact {
+  if (flow.source.mode === "code") return flow;
+  const moduleId = flowSourceModuleId(flow);
+  return {
+    ...flow,
+    metadata: {
+      ...(flow.metadata ?? {}),
+      generatedSource: {
+        moduleId,
+        relativePath: `flows/${safeSegment(flow.flowId)}/source/${safeRelativePathParts(moduleId).join("/")}`,
+        authoritative: false
+      }
+    }
+  };
+}
+
+function assertPublicationMutationAllowed(existing: AutomationStudioFlowArtifact, incoming: AutomationStudioFlowArtifact, allowPublicationMutation: boolean): void {
+  if (allowPublicationMutation) return;
+  if ((incoming.publication.status === "published" || incoming.publication.status === "deprecated") && existing.publication.status !== incoming.publication.status) {
+    throw new Error("Published Flow lifecycle can only be changed through publication endpoints.");
+  }
+  if ((existing.publication.status === "published" || existing.publication.status === "deprecated") && stableJson(existing.publication) !== stableJson(incoming.publication)) {
+    throw new Error("Published Flow snapshot metadata is immutable; use publication lifecycle endpoints.");
+  }
+  if (stableJson(existing.publicationHistory ?? []) !== stableJson(incoming.publicationHistory ?? [])) {
+    throw new Error("Flow publication history is immutable; use publishFlow() to append a version.");
+  }
+}
+
+function flowConfigArtifactId(flowId: string): string {
+  return `flow.${flowId}.config`;
+}
+
+function flowFeedRevision(flow: Pick<AutomationStudioSqlFlowRecord, "graphRevision" | "settingsRevision"> | null): number {
+  if (!flow) return 1;
+  return Math.max(1, Math.trunc(Math.max(flow.graphRevision, flow.settingsRevision)));
+}
+
+function flowSourceModuleId(flow: AutomationStudioFlowArtifact): string {
+  return flow.source.mode === "code" && flow.source.moduleId.trim()
+    ? flow.source.moduleId
+    : `flows/${safeSegment(flow.flowId)}.flow.ts`;
+}
+
+function projectChangeTransactionId(input: { projectId: string; entityKind: string; entityId: string; operation: string; changedAt: number }): string {
+  const digest = createHash("sha256").update(JSON.stringify([input.projectId, input.entityKind, input.entityId, input.operation, input.changedAt])).digest("hex").slice(0, 24);
+  return `project-change.${input.operation}.${digest}`;
+}
+
+function recordManualRecordingProposalChanges(existing: AutomationStudioFlowArtifact, next: AutomationStudioFlowArtifact, editedAt: number): AutomationStudioFlowArtifact {
+  const existingById = new Map(existing.nodes.map((node) => [node.id, node]));
+  const immutableKeys = ["recordingProposalId", "recordingCandidateId", "mapperId", "mapperVersion", "sourceObservationIds", "evidence", "rawEvidenceImmutable"] as const;
+  const nodes = next.nodes.map((node) => {
+    const previous = existingById.get(node.id);
+    if (!previous?.metadata?.recordingProposalId) return node;
+    const changedFields = (["definitionId", "label", "description", "parameterValues", "position"] as const).filter((key) => JSON.stringify(previous[key]) !== JSON.stringify(node[key]));
+    const immutableMetadata = Object.fromEntries(immutableKeys.flatMap((key) => previous.metadata?.[key] === undefined ? [] : [[key, structuredClone(previous.metadata[key])]])) as JsonObject;
+    if (!changedFields.length) return { ...node, metadata: { ...(node.metadata ?? {}), ...immutableMetadata } };
+    const priorEvents = Array.isArray(previous.metadata.manualProvenance) ? previous.metadata.manualProvenance : [];
+    return { ...node, metadata: { ...(node.metadata ?? {}), ...immutableMetadata, manualProvenance: [...priorEvents, { editedAt, changedFields }] } };
+  });
+  const retainedIds = new Set(next.nodes.map((node) => node.id));
+  const deleted = existing.nodes.filter((node) => node.metadata?.recordingProposalId && !retainedIds.has(node.id)).map((node) => ({ editedAt, change: "node_deleted", nodeId: node.id, recordingProposalId: String(node.metadata!.recordingProposalId) }));
+  if (!deleted.length) return { ...next, nodes };
+  const prior = Array.isArray(existing.metadata?.manualRecordingProposalChanges) ? existing.metadata.manualRecordingProposalChanges : [];
+  return { ...next, nodes, metadata: { ...(next.metadata ?? {}), manualRecordingProposalChanges: [...prior, ...deleted] } };
+}
+
+function safeRelativePathParts(moduleId: string): string[] {
+  const parts = moduleId
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => safeSegment(part))
+    .filter((part) => part && part !== "." && part !== "..");
+  return parts.length ? parts : ["flows", "flow.flow.ts"];
+}

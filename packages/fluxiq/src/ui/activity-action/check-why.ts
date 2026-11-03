@@ -2,7 +2,7 @@ import { activityActionSentences } from "./sentences.ts";
 
 /**
  * Core's count at the head of a result check's text
- * (`programs/automation-studio/runtime/result-verification/check-words.ts`):
+ * (`runtime/result-verification/check-words.ts`):
  * "82 rows would be stored." for a build's test, "13 rows came back." for a run.
  */
 const COUNT = /^(\d{1,9}|No) (rows?) (would be stored|came back)\.$/u;

@@ -1,5 +1,5 @@
 import { automationStudioViewId } from "../../views/view-registry";
-import type { NodeStatePhase, StateSnapshot } from "fluxiq/automation-studio";
+import type { NodeStatePhase, StateSnapshot } from "fluxiq/automation";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 import {
   stateCommandPostflight,

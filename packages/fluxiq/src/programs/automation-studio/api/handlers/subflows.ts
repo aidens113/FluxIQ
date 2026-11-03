@@ -1,7 +1,7 @@
 // Subflow listing, targets, and the full subflow mutation surface.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type CreateFlowSubflowRequest, type DuplicateFlowSubflowRequest, type FlowExpansionSummaryRequest, type FlowSubflowRequest, type MigrateLegacyFlowRepresentationRequest, type RenameFlowSubflowRequest, type UpdateFlowSubflowRequest } from "../contracts.ts";
-import type { AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type CreateFlowSubflowRequest, type DuplicateFlowSubflowRequest, type FlowExpansionSummaryRequest, type FlowSubflowRequest, type MigrateLegacyFlowRepresentationRequest, type RenameFlowSubflowRequest, type UpdateFlowSubflowRequest } from "../../../../api-contracts/automation.ts";
+import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 

@@ -1,0 +1,14 @@
+{
+  "sourceRoot": "packages/fluxiq/src",
+  "downstream": "../!FluxIQWebExtension",
+  "moves": [
+    { "from": "runtime/agents/loop-limits", "to": "runtime/llm/loop-limits" },
+    { "from": "runtime/agents/llm", "to": "runtime/llm" },
+    { "from": "runtime/interaction/conversations", "to": "runtime/conversations" },
+    { "from": "runtime/action-permissions/automation", "to": "runtime/action-permission-requests" },
+    { "from": "runtime/activity/automation", "to": "runtime/automation-activity" },
+    { "from": "runtime/parking/automation", "to": "runtime/automation-parking" },
+    { "from": "runtime/result-control/check-authorization", "to": "runtime/result-verification/check-authorization" },
+    { "from": "runtime/result-control/check-schedule", "to": "runtime/result-verification/check-schedule" }
+  ]
+}

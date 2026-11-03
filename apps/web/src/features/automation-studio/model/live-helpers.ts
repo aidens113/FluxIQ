@@ -1,4 +1,4 @@
-import type { NodeStatePhase } from "fluxiq/automation-studio";
+import type { NodeStatePhase } from "fluxiq/automation";
 import { automationStudioUiRequest, type AutomationStudioUiRequest } from "../data-request-policy";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { AutomationViewInstance } from "../views/view-types";

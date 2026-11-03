@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createGlobalProgramRuntime } from "../../index.ts";
 import { SecretKeysService } from "../../secret-keys/index.ts";
 const calls = vi.hoisted(() => ({ construct: vi.fn(), execution: vi.fn(), chat: vi.fn() }));
-vi.mock("../../automation-studio/index.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../../automation-studio/index.ts")>();
+vi.mock("../../../framework/automation-service/public/index.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../framework/automation-service/public/index.ts")>();
   return {
     ...original,
     AutomationStudioService: class extends original.AutomationStudioService {

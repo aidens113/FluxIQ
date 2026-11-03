@@ -1,23 +1,23 @@
-import { isAutomationStudioAdaptiveFailureClass, type AutomationStudioAdaptiveFailureClass } from "./adaptive-class.ts";
+import { isRuntimeAdaptiveFailureClass, type RuntimeAdaptiveFailureClass } from "./adaptive-class.ts";
 import {
-  AUTOMATION_STUDIO_FAILURE_EFFECTS,
-  AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS,
-  AUTOMATION_STUDIO_FAILURE_STAGES,
-  type AutomationStudioFailureEffect,
-  type AutomationStudioFailureRecord,
-  type AutomationStudioFailureStage
+  RUNTIME_FAILURE_EFFECTS,
+  RUNTIME_FAILURE_RECORD_LIMITS,
+  RUNTIME_FAILURE_STAGES,
+  type RuntimeFailureEffect,
+  type RuntimeFailureRecord,
+  type RuntimeFailureStage
 } from "./record.ts";
 
 const RECORD_FIELDS: ReadonlySet<string> = new Set(["category", "code", "retryable", "stage", "expected", "actual", "evidenceDigest", "effect", "retryAfterMs", "certainNoEffect", "transient"]);
-const FAILURE_STAGES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_FAILURE_STAGES);
-const FAILURE_EFFECTS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_FAILURE_EFFECTS);
+const FAILURE_STAGES: ReadonlySet<string> = new Set(RUNTIME_FAILURE_STAGES);
+const FAILURE_EFFECTS: ReadonlySet<string> = new Set(RUNTIME_FAILURE_EFFECTS);
 const CODE_PATTERN = /^[A-Za-z0-9._:-]+$/u;
 const EVIDENCE_DIGEST_PATTERN = /^[a-f0-9]{64}$/u;
 
 // Categories that need a person, a policy change, or a Flow fix before the
 // same action can succeed. A record calling one of them retryable
 // contradicts itself.
-const NEVER_RETRYABLE: ReadonlySet<AutomationStudioAdaptiveFailureClass> = new Set<AutomationStudioAdaptiveFailureClass>([
+const NEVER_RETRYABLE: ReadonlySet<RuntimeAdaptiveFailureClass> = new Set<RuntimeAdaptiveFailureClass>([
   "blocked_by_capability_or_policy",
   "missing_router_or_subflow_target",
   "graph_validation_or_unknown_node",
@@ -28,7 +28,7 @@ const NEVER_RETRYABLE: ReadonlySet<AutomationStudioAdaptiveFailureClass> = new S
 
 // Categories decided while resolving the action's target. A record placing
 // one of them at another stage contradicts itself.
-const TARGET_RESOLUTION_ONLY: ReadonlySet<AutomationStudioAdaptiveFailureClass> = new Set<AutomationStudioAdaptiveFailureClass>([
+const TARGET_RESOLUTION_ONLY: ReadonlySet<RuntimeAdaptiveFailureClass> = new Set<RuntimeAdaptiveFailureClass>([
   "target_not_found",
   "target_ambiguous"
 ]);
@@ -47,7 +47,7 @@ const TARGET_RESOLUTION_ONLY: ReadonlySet<AutomationStudioAdaptiveFailureClass> 
  * is only `true`, and only on a retryable record whose effect is `unacted`.
  * `transient` is only `true` and makes no retry/effect claim of its own.
  */
-export function parseAutomationStudioFailureRecord(value: unknown): AutomationStudioFailureRecord | null {
+export function parseRuntimeFailureRecord(value: unknown): RuntimeFailureRecord | null {
   try {
     return parseRecord(value);
   } catch {
@@ -55,11 +55,11 @@ export function parseAutomationStudioFailureRecord(value: unknown): AutomationSt
   }
 }
 
-function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
+function parseRecord(value: unknown): RuntimeFailureRecord | null {
   if (!isPlainRecord(value) || !Object.keys(value).every((key) => RECORD_FIELDS.has(key))) return null;
   const { category, code, retryable, stage, expected, actual, evidenceDigest, effect, retryAfterMs, certainNoEffect, transient } = value;
-  if (!isAutomationStudioAdaptiveFailureClass(category)) return null;
-  if (typeof code !== "string" || code.length > AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS.codeMaxLength || !CODE_PATTERN.test(code)) return null;
+  if (!isRuntimeAdaptiveFailureClass(category)) return null;
+  if (typeof code !== "string" || code.length > RUNTIME_FAILURE_RECORD_LIMITS.codeMaxLength || !CODE_PATTERN.test(code)) return null;
   if (retryable !== true && retryable !== false) return null;
   if (stage !== undefined && !isFailureStage(stage)) return null;
   if (expected !== undefined && !isBoundedText(expected)) return null;
@@ -72,7 +72,7 @@ function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
   if (stage !== undefined && TARGET_RESOLUTION_ONLY.has(category) && stage !== "target_resolution") return null;
   if (retryAfterMs !== undefined && !retryable) return null;
   if (certainNoEffect !== undefined && (certainNoEffect !== true || effect !== "unacted" || !retryable)) return null;
-  const record: AutomationStudioFailureRecord = {
+  const record: RuntimeFailureRecord = {
     category,
     code,
     retryable,
@@ -88,12 +88,12 @@ function parseRecord(value: unknown): AutomationStudioFailureRecord | null {
   return record;
 }
 
-function isFailureEffect(value: unknown): value is AutomationStudioFailureEffect {
+function isFailureEffect(value: unknown): value is RuntimeFailureEffect {
   return typeof value === "string" && FAILURE_EFFECTS.has(value);
 }
 
 function isRetryAfterMs(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS.retryAfterMsMax;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= RUNTIME_FAILURE_RECORD_LIMITS.retryAfterMsMax;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -102,10 +102,15 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function isFailureStage(value: unknown): value is AutomationStudioFailureStage {
+function isFailureStage(value: unknown): value is RuntimeFailureStage {
   return typeof value === "string" && FAILURE_STAGES.has(value);
 }
 
 function isBoundedText(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= AUTOMATION_STUDIO_FAILURE_RECORD_LIMITS.textMaxLength;
+  return typeof value === "string" && value.length > 0 && value.length <= RUNTIME_FAILURE_RECORD_LIMITS.textMaxLength;
 }
+
+// Compatibility names retained for existing Automation Studio consumers.
+export {
+  parseRuntimeFailureRecord as parseAutomationStudioFailureRecord
+};

@@ -19,7 +19,7 @@ lasting consequences outrank this promise. Combining floors retains it only
 when every state-contributing floor explicitly supplies it. Commit can never
 be made repeatable through this field or model metadata.
 
-The browser-safe public `fluxiq/automation-studio/action-effect` subpath exports
+The browser-safe public `fluxiq/automation/action-effect` subpath exports
 the contracts, strict readers, resolver and floor combination helper without
 loading the executor. `AutomationStudioNativeNodeRuntime.resolveActionEffect`
 and the canonical graph-options factory bind registered native/output floors.

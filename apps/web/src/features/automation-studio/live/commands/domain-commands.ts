@@ -1,4 +1,4 @@
-import type { AutomationStudioFlowDocument, StateSnapshot } from "fluxiq/automation-studio";
+import type { AutomationStudioFlowDocument, StateSnapshot } from "fluxiq/automation";
 import { applyAutomationGraphOperationBatch } from "../../graph/operation-history";
 import {
   loadAutomationGraphOperationDraft,

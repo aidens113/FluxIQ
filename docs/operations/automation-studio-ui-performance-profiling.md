@@ -79,7 +79,7 @@ The default manifest is
 tests.
 
 The in-process deterministic fixture under
-`automation-studio/testing/large-project-fixture.ts` is separate. It exercises
+`apps/web/src/features/automation-studio/testing/large-project-fixture.ts` is separate. It exercises
 models and bounded view behavior with 2,048 entities in most catalogs, 8,192
 actions and State facts, and 4,096 hierarchy nodes. It does not replace the
 browser fixtures or database certification.

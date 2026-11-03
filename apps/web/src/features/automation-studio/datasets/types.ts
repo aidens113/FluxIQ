@@ -9,7 +9,7 @@
 // because the table's columns depend on them. When a subpath re-exports the
 // dataset types, delete these and import them instead.
 
-import type { AutomationStudioRecordSchema } from "fluxiq/automation-studio/nodes";
+import type { AutomationStudioRecordSchema } from "fluxiq/automation/nodes";
 
 export type RunDatasetExportFormat = "csv" | "json";
 

@@ -1,0 +1,297 @@
+// A run's receipt, one line per provider call.
+//
+// The run ledger has always known the totals. What it did not keep was which
+// call made them up, so an iterating recovery's evidence calls -- which leave
+// no intervention -- could be counted and never seen. These pin the three
+// things a line must be: present for every call the ledger counts and for
+// nothing else, honest about which figures the provider reported and which
+// the ledger assumed, and bounded to identifiers, codes and numbers.
+
+import { describe, expect, it } from "vitest";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../harness/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
+import { automationStudioLlmBuildCallRecord, automationStudioLlmRunCallRecord } from "../run-call-record.ts";
+
+const RESERVED = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.1 };
+
+function ledger(maxCallsPerRun?: number): AutomationStudioLlmRunBudgetLedger {
+  return new AutomationStudioLlmRunBudgetLedger({ ...(maxCallsPerRun ? { maxCallsPerRun } : {}), maxTotalTokensPerRun: 10_000_000, maxOutputTokensPerRun: 10_000_000, maxEstimatedCostUsdPerRun: 10 });
+}
+
+function reserve(budget: AutomationStudioLlmRunBudgetLedger, requestId: string, extra: Partial<Parameters<AutomationStudioLlmRunBudgetLedger["reserve"]>[0]> = {}) {
+  const reservation = budget.reserve({ runId: "run.receipt", requestId, estimatedInputTokens: RESERVED.inputTokens, maxOutputTokens: RESERVED.outputTokens, maxEstimatedCostUsd: RESERVED.estimatedCostUsd, ...extra });
+  if (!reservation.ok) throw new Error(reservation.diagnostic.code);
+  return reservation.lease;
+}
+
+describe("the run ledger's per-call receipt", () => {
+  it("itemizes every counted call in order, and the lines add up to the snapshot", () => {
+    const budget = ledger();
+    reserve(budget, "request.diagnosis", { call: { taskKind: "runtime_diagnosis", stage: "gather", promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-flash" } })
+      .complete({ inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.001 }, { validationOk: true, issueCodes: [] });
+    // A hold no call spends has no line.
+    reserve(budget, "recovery.patch-reserve").release();
+    // An evidence call whose provider reported nothing is charged its reservation, and says so.
+    reserve(budget, "request.evidence", { allowance: "exploration", call: { taskKind: "evidence_tool_decision", stage: "gather", promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-flash" } })
+      .complete(undefined, { validationOk: false, issueCodes: ["llm.provider_timeout"] });
+    // Tokens reported but no cost: the tokens are the provider's, the cost is the reservation's.
+    reserve(budget, "request.patch", { call: { taskKind: "runtime_patch", stage: "implement", promptVersion: "automation-studio.runtime-patch.v1+stage.implement", provider: "deepseek", model: "deepseek-flash" } })
+      .complete({ inputTokens: 60, outputTokens: 20, totalTokens: 80 }, { validationOk: true, issueCodes: [] });
+
+    const receipt = budget.callRecords("run.receipt");
+    expect(receipt.omitted).toBe(0);
+    expect(receipt.calls).toEqual([
+      {
+        sequence: 1, requestId: "request.diagnosis", taskKind: "runtime_diagnosis", stage: "gather", allowance: "run",
+        promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-flash",
+        validation: { ok: true, issueCodes: [] },
+        reported: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.001 },
+        charged: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.001, tokens: "reported", cost: "reported" },
+        budgetBreach: false
+      },
+      {
+        sequence: 2, requestId: "request.evidence", taskKind: "evidence_tool_decision", stage: "gather", allowance: "exploration",
+        promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-flash",
+        validation: { ok: false, issueCodes: ["llm.provider_timeout"] },
+        reported: { inputTokens: null, outputTokens: null, totalTokens: null, estimatedCostUsd: null },
+        charged: { ...RESERVED, tokens: "reserved", cost: "reserved" },
+        budgetBreach: false
+      },
+      {
+        sequence: 3, requestId: "request.patch", taskKind: "runtime_patch", stage: "implement", allowance: "run",
+        promptVersion: "automation-studio.runtime-patch.v1+stage.implement", provider: "deepseek", model: "deepseek-flash",
+        validation: { ok: true, issueCodes: [] },
+        reported: { inputTokens: 60, outputTokens: 20, totalTokens: 80, estimatedCostUsd: null },
+        charged: { inputTokens: 60, outputTokens: 20, totalTokens: 80, estimatedCostUsd: RESERVED.estimatedCostUsd, tokens: "reported", cost: "reserved" },
+        budgetBreach: false
+      }
+    ]);
+    const snapshot = budget.snapshot("run.receipt");
+    const sum = (key: "inputTokens" | "outputTokens" | "totalTokens" | "estimatedCostUsd") => receipt.calls.reduce((total, call) => total + call.charged[key], 0);
+    expect({ calls: receipt.calls.length, explorationCalls: receipt.calls.filter((call) => call.allowance === "exploration").length, inputTokens: sum("inputTokens"), outputTokens: sum("outputTokens"), totalTokens: sum("totalTokens"), estimatedCostUsd: sum("estimatedCostUsd") })
+      .toEqual({ calls: snapshot.calls, explorationCalls: snapshot.explorationCalls, inputTokens: snapshot.inputTokens, outputTokens: snapshot.outputTokens, totalTokens: snapshot.totalTokens, estimatedCostUsd: snapshot.estimatedCostUsd });
+  });
+
+  it("still itemizes a call settled without a description or an outcome, leaving both unknown", () => {
+    const budget = ledger();
+    reserve(budget, "request.bare").complete();
+
+    expect(budget.callRecords("run.receipt").calls).toEqual([expect.objectContaining({
+      sequence: 1, requestId: "request.bare", taskKind: null, stage: null, allowance: "run", promptVersion: null, provider: null, model: null, validation: null
+    })]);
+    expect(budget.callRecords("run.none")).toEqual({ calls: [], omitted: 0 });
+  });
+
+  it("marks a line whose reported use overran its reservation as the breach the snapshot counts", () => {
+    const budget = ledger();
+    reserve(budget, "request.over").complete({ inputTokens: 180, outputTokens: 60, totalTokens: 240, estimatedCostUsd: 0.2 });
+
+    expect(budget.callRecords("run.receipt").calls[0]).toMatchObject({ budgetBreach: true, charged: { totalTokens: 240, estimatedCostUsd: 0.2, tokens: "reported", cost: "reported" } });
+    expect(budget.snapshot("run.receipt").budgetBreaches).toBe(1);
+  });
+
+  it("keeps at most the record limit and says how many calls it left out", () => {
+    const budget = ledger(AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT + 3);
+    for (let index = 0; index < AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT + 3; index += 1) {
+      reserve(budget, `request.${index}`, { maxEstimatedCostUsd: 0.000_001 }).complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 });
+    }
+
+    const receipt = budget.callRecords("run.receipt");
+    expect(receipt.calls).toHaveLength(AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT);
+    expect(receipt.omitted).toBe(3);
+    expect(receipt.calls.at(-1)?.sequence).toBe(AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT);
+    expect(budget.snapshot("run.receipt").calls).toBe(AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT + 3);
+  });
+
+  it("hands out copies, so a reader cannot rewrite the receipt", () => {
+    const budget = ledger();
+    reserve(budget, "request.one").complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }, { validationOk: true, issueCodes: [] });
+    const first = budget.callRecords("run.receipt").calls[0]!;
+    first.charged.totalTokens = 999;
+    first.validation!.issueCodes.push("tampered");
+
+    expect(budget.callRecords("run.receipt").calls[0]).toMatchObject({ charged: { totalTokens: 2 }, validation: { issueCodes: [] } });
+  });
+});
+
+describe("one call's line", () => {
+  const charged = { ...RESERVED, tokens: "reserved" as const, cost: "reserved" as const };
+
+  it("keeps identifiers, codes and numbers only, each bounded", () => {
+    const record = automationStudioLlmRunCallRecord({
+      sequence: 1,
+      requestId: "request.one",
+      allowance: "run",
+      description: { taskKind: "not_a_task" as never, stage: "wander" as never, promptVersion: "prompt with spaces", provider: "evil\nprovider", model: "m".repeat(201) },
+      outcome: {
+        validationOk: false,
+        issueCodes: ["llm.provider_timeout", "llm.provider_timeout", "The provider said: <secret page text>", "", ...Array.from({ length: 30 }, (_, index) => `code.${index}`)]
+      },
+      usage: { inputTokens: -1, outputTokens: 1.5, totalTokens: Number.NaN, estimatedCostUsd: Number.POSITIVE_INFINITY },
+      charged,
+      budgetBreach: false
+    });
+
+    expect(record).toMatchObject({ taskKind: null, stage: null, promptVersion: null, provider: null, model: null });
+    expect(record.validation?.issueCodes[0]).toBe("llm.provider_timeout");
+    expect(record.validation?.issueCodes).toHaveLength(16);
+    expect(record.validation?.issueCodes.join(" ")).not.toContain("secret");
+    expect(record.reported).toEqual({ inputTokens: null, outputTokens: null, totalTokens: null, estimatedCostUsd: null });
+  });
+
+  it("reads a staged prompt version and a zero figure as the provider gave them", () => {
+    const record = automationStudioLlmRunCallRecord({
+      sequence: 2,
+      requestId: "request.two",
+      allowance: "exploration",
+      description: { taskKind: "evidence_tool_decision", stage: "gather", promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", provider: "deepseek", model: "deepseek-flash" },
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+      charged,
+      budgetBreach: false
+    });
+
+    expect(record).toMatchObject({ taskKind: "evidence_tool_decision", stage: "gather", promptVersion: "automation-studio.evidence-tool-decision.v1+stage.gather", validation: null });
+    expect(record.reported).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
+  });
+});
+
+describe("the harness's line for each call", () => {
+  function call(budget: AutomationStudioLlmRunBudgetLedger, requestId: string, provider: AutomationStudioLlmProvider, maxOutputTokens = 2_000) {
+    return runAutomationStudioLlmHarness({
+      taskKind: "runtime_diagnosis",
+      stage: "gather",
+      projectId: "project.llm",
+      flowId: "flow.checkout",
+      runId: "run.receipt",
+      requestId,
+      instructions: [],
+      provider,
+      runBudget: budget,
+      tokenLimits: { maxInputTokens: 8_000, maxOutputTokens, maxTotalTokens: 8_000 + maxOutputTokens },
+      maxEstimatedCostUsd: 0.1
+    });
+  }
+  const answer = { response: { kind: "diagnosis", summary: "The control moved." } };
+
+  it("describes a staged call, and records how it ended", async () => {
+    const budget = ledger();
+    const answered = await call(budget, "request.answered", { metadata: { provider: "deepseek", model: "deepseek-flash" }, runTask: async () => ({ ...answer, usage: { inputTokens: 300, outputTokens: 40, totalTokens: 340, estimatedCostUsd: 0.0002 } }) });
+    const failed = await call(budget, "request.failed", { metadata: { provider: "deepseek", model: "deepseek-flash" }, runTask: async () => { throw new Error("socket closed with private detail"); } });
+    const garbled = await call(budget, "request.garbled", { metadata: { provider: "deepseek", model: "deepseek-flash" }, runTask: async () => ({ response: { kind: "diagnosis" }, stray: true }) });
+
+    expect([answered.ok, failed.ok, garbled.ok]).toEqual([true, false, false]);
+    const [first, second, third] = budget.callRecords("run.receipt").calls;
+    expect(first).toMatchObject({
+      requestId: "request.answered", taskKind: "runtime_diagnosis", stage: "gather", allowance: "run",
+      promptVersion: "automation-studio.runtime-diagnosis.v1+stage.gather", provider: "deepseek", model: "deepseek-flash",
+      validation: { ok: true, issueCodes: [] },
+      reported: { inputTokens: 300, outputTokens: 40, totalTokens: 340, estimatedCostUsd: 0.0002 },
+      charged: { tokens: "reported", cost: "reported" }
+    });
+    expect(second).toMatchObject({ requestId: "request.failed", validation: { ok: false }, reported: { totalTokens: null }, charged: { totalTokens: failed.request.estimatedInputTokens + 2_000, tokens: "reserved", cost: "reserved" } });
+    // Reserved, and so charged, at the request's own measured size, not its 8,000-token input limit.
+    expect(failed.request.estimatedInputTokens).toBeLessThan(8_000);
+    expect(second?.validation?.issueCodes).toEqual(failed.diagnostics.map((diagnostic) => diagnostic.code));
+    expect(JSON.stringify(second)).not.toContain("private detail");
+    expect(third).toMatchObject({ requestId: "request.garbled", validation: { ok: false } });
+    expect(third?.validation?.issueCodes.length).toBeGreaterThan(0);
+    // The intervention the harness returns agrees with the line about how the call went.
+    expect(answered.intervention.validation?.ok).toBe(first?.validation?.ok);
+  });
+
+  // The harness used to withhold a report over the request's limits, so the
+  // ledger charged the smaller reservation and never counted the breach. No
+  // reply cap is sent (user, 2026-10-03, t254), so a reply longer than what the
+  // window set aside is a valid reply -- and still a breach of its reservation,
+  // charged as reported.
+  it("charges a reported overage as reported and counts it as a breach", async () => {
+    const budget = ledger();
+    const result = await call(budget, "request.overage", { metadata: { provider: "mock", model: "debug-model" }, runTask: async () => ({ ...answer, usage: { inputTokens: 500, outputTokens: 90, totalTokens: 590 } }) }, 50);
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("llm_usage.output_limit_exceeded");
+    expect(budget.callRecords("run.receipt").calls).toEqual([expect.objectContaining({
+      validation: { ok: true, issueCodes: [] },
+      reported: { inputTokens: 500, outputTokens: 90, totalTokens: 590, estimatedCostUsd: null },
+      charged: expect.objectContaining({ outputTokens: 90, totalTokens: 590, tokens: "reported", cost: "reserved" }),
+      budgetBreach: true
+    })]);
+    expect(budget.snapshot("run.receipt")).toMatchObject({ outputTokens: 90, totalTokens: 590, budgetBreaches: 1 });
+  });
+
+  it("writes no line for a call the ledger refused, because no provider was asked", async () => {
+    const budget = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 1, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1 });
+    let asked = 0;
+    const provider: AutomationStudioLlmProvider = { metadata: { provider: "mock", model: "debug-model" }, runTask: async () => { asked += 1; return answer; } };
+    await call(budget, "request.first", provider);
+    const refused = await call(budget, "request.second", provider);
+
+    expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.run_call_limit");
+    expect(asked).toBe(1);
+    expect(budget.callRecords("run.receipt").calls.map((line) => line.requestId)).toEqual(["request.first"]);
+  });
+});
+
+// A build's receipt, in the same shape.
+//
+// A build holds no budget lease, so nothing reserved, counted or charged its
+// calls one at a time and the ledger above never saw them. The downstream
+// reader therefore published an empty per-call list beside a total it could not
+// break down. These pin the two things that make a build's line honest: it
+// carries only what the provider actually reported, and where the provider
+// reported nothing the line says the figure was never measured rather than
+// inventing a reservation a build never made.
+
+describe("a build's call, itemized the way a run's is", () => {
+  it("keeps the provider's figures and charges exactly them, so the lines add up to the build's own accounting", () => {
+    const record = automationStudioLlmBuildCallRecord({
+      sequence: 3,
+      usage: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005 }
+    });
+
+    expect(record).toMatchObject({
+      sequence: 3,
+      requestId: null,
+      allowance: "exploration",
+      reported: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005 },
+      charged: { inputTokens: 1_000, outputTokens: 80, totalTokens: 1_080, estimatedCostUsd: 0.0005, tokens: "reported", cost: "reported" },
+      budgetBreach: false
+    });
+  });
+
+  it("says a figure was never measured instead of filling it in from a reservation a build never made", () => {
+    const record = automationStudioLlmBuildCallRecord({ sequence: 1 });
+
+    expect(record.reported).toEqual({ inputTokens: null, outputTokens: null, totalTokens: null, estimatedCostUsd: null });
+    expect(record.charged).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, tokens: "reserved", cost: "reserved" });
+  });
+
+  it("derives a total the provider left out, because the build's accounting adds input and output the same way", () => {
+    const record = automationStudioLlmBuildCallRecord({ sequence: 1, usage: { inputTokens: 700, outputTokens: 40 } });
+
+    expect(record.reported.totalTokens).toBeNull();
+    expect(record.charged.totalTokens).toBe(740);
+  });
+
+  it("keeps a build's request id where it has one, and refuses a string that is not an identifier", () => {
+    expect(automationStudioLlmBuildCallRecord({ sequence: 1, requestId: "build.request.one" }).requestId).toBe("build.request.one");
+    expect(automationStudioLlmBuildCallRecord({ sequence: 1, requestId: "an id with spaces" }).requestId).toBeNull();
+  });
+
+  it("carries a description only as far as it is one, so an unknown task kind arrives as unknown", () => {
+    const record = automationStudioLlmBuildCallRecord({
+      sequence: 1,
+      description: { provider: "deepseek", model: "deepseek-chat" },
+      outcome: { validationOk: false, issueCodes: ["flow_script.unknown_node", "not a code"] }
+    });
+
+    expect(record).toMatchObject({
+      taskKind: null,
+      stage: null,
+      promptVersion: null,
+      provider: "deepseek",
+      model: "deepseek-chat",
+      validation: { ok: false, issueCodes: ["flow_script.unknown_node"] }
+    });
+  });
+});

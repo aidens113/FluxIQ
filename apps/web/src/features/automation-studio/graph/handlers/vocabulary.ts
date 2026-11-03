@@ -1,6 +1,6 @@
 // The ids and keys the handler views read, as Core names them. Core's
 // `nodes/control-flow/handler.ts` and `handler-end.ts` own them; the public
-// `fluxiq/automation-studio/nodes` entry does not export them, so they are
+// `fluxiq/automation/nodes` entry does not export them, so they are
 // repeated here, once, for every reader in the editor.
 
 import type { FlowLifecycleEvent } from "./types";

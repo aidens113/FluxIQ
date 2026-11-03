@@ -7,9 +7,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 
-import { AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY, type AutomationStudioRecordingCapturePolicy } from "@fluxiq/contracts/automation-studio";
+import { AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY, type AutomationStudioRecordingCapturePolicy } from "@fluxiq/contracts/automation";
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 import { registerRecordingEndpoints } from "../recordings.ts";
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";

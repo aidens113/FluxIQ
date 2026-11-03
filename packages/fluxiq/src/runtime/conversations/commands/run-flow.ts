@@ -1,0 +1,206 @@
+// "Run it": running a saved Flow for real.
+//
+// The panel's `run.execute`, run by Core: one `run-runtime-session` call with
+// the Flow, which answers when the run has ended. That can take minutes, so it
+// runs in the background and the thread gets the ending when there is one.
+//
+// The run asks for the model (`explore_and_adapt`), so a step that broke can
+// be repaired, under the caller's own session. Whatever the chat runs in -- a
+// paired extension or the web panel -- the person's key pays only for the
+// result checks that judge a repair (MVP item 23): a run whose steps all
+// succeed makes no model call on it. The command asks for that itself, because
+// a paired client's calls reach the endpoint as its person's unlocked session
+// and the endpoint cannot tell a chat's run from any other caller's.
+//
+// A run that ended without failing says in plain words what ran and how far it
+// got (MVP item 24): the Flow's name, never a run id, a status word or the
+// trace's message. It then says what it learned (`runLearned` below): only
+// Core's closed change kinds (`patch[].kind`, then `appliedTo[].kind`), never
+// the model's diagnosis, page text or a selector, and whether the next run
+// starts with it (applied) or it waits for review.
+
+import type { AutomationStudioChangeProposalKind, AutomationStudioFlowAdaptation } from "../../../flows/authoring/model/index.ts";
+import { automationStudioDecisionAppliedAutomatically } from "../../adaptation/durable-behavior/index.ts";
+import { automationStudioConversationCommandText } from "./argument.ts";
+import type { AutomationStudioConversationCommand, AutomationStudioConversationCommandPort } from "./command.ts";
+import { automationStudioConversationCallCause, automationStudioConversationCommandProgress, automationStudioConversationPlainCause } from "./progress.ts";
+
+const TITLE = "Run a Flow";
+
+type RunAnswer = {
+  runtimeSession?: { runId?: unknown; status?: unknown };
+  terminalReason?: unknown;
+  createdAdaptationIds?: unknown;
+  durableBehaviorChanged?: unknown;
+  reauthored?: unknown;
+};
+
+export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversationCommand = {
+  background: true,
+  capability: {
+    id: "run.execute",
+    title: TITLE,
+    summary: "Runs the Flow for real and reports what came back.",
+    group: "Running",
+    control: "Run",
+    arguments: [{ name: "flowId", describe: "The Flow to run.", required: true }],
+    phrases: ["run it", "run the flow", "go", "start it", "execute the flow", "try it"],
+    consequences: ["create_new"],
+    reauthorizes: false
+  },
+  announce: ({ flowName }) => `Running ${flowName ? `"${flowName}"` : "the Flow"} now. I'll say here how it went.`,
+  async run(context, args) {
+    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
+    const flowId = automationStudioConversationCommandText(args, "flowId");
+    if (!flowId) return progress.failed("I could not tell which Flow to run");
+    progress.carry({ flowId });
+    // What reading the message cost travels with the run: the Flow's spend in a Lab-scoped run (t438).
+    const reading = { ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }), ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }) };
+    const response = await context.port.call("run-runtime-session", { projectId: context.projectId, flowId, runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks", ...reading });
+    const answer = (response.payload ?? {}) as RunAnswer;
+    const runId = typeof answer.runtimeSession?.runId === "string" ? answer.runtimeSession.runId : undefined;
+    if (runId) progress.carry({ runId });
+    if (!response.ok) {
+      if (runId) progress.landed("started the run");
+      return progress.failed(automationStudioConversationCallCause("the run", response));
+    }
+    const status = typeof answer.runtimeSession?.status === "string" ? answer.runtimeSession.status : "ended";
+    const durable = typeof answer.durableBehaviorChanged === "boolean" ? answer.durableBehaviorChanged : undefined;
+    // A run that failed is said in plain words, with no run id and no code, as the thread keeps it (t276).
+    if (status === "failed" || status === "cancelled") {
+      const why = typeof answer.terminalReason === "string" && answer.terminalReason !== status ? automationStudioConversationPlainCause(answer.terminalReason) : "";
+      const ended = status === "failed" ? "failed" : "was cancelled";
+      return { ...progress.failed(`it ${ended}${why ? `: ${why}` : ""}`), summary: `The run ${ended}${why ? `: ${why}` : ""}. ${retentionWords(durable)}` };
+    }
+    const summary = await runEnding({ port: context.port, projectId: context.projectId, flowId, status, terminalReason: answer.terminalReason });
+    const adaptationIds = Array.isArray(answer.createdAdaptationIds) ? answer.createdAdaptationIds.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
+    const reauthored = answer.reauthored === "applied" || answer.reauthored === "not_applied" ? answer.reauthored : undefined;
+    const learned = await runLearned({ port: context.port, projectId: context.projectId, flowId, runId, adaptationIds, durableBehaviorChanged: durable, reauthored });
+    return progress.succeeded(learned ? `${summary} ${learned}` : summary);
+  }
+};
+
+/**
+ * What ran and how far it got, in plain words: the Flow's name (read from
+ * `get-flow`, or "the Flow" when it cannot be read), whether it ran all the way
+ * through, stopped to wait for the person (with a plain cause when there is
+ * one), or stopped before the end. No run id, status word or trace message.
+ */
+async function runEnding(input: { port: AutomationStudioConversationCommandPort; projectId: string; flowId: string; status: string; terminalReason: unknown }): Promise<string> {
+  const name = await flowName(input);
+  const subject = name ? `"${name}"` : "The Flow";
+  if (input.status === "succeeded") return `${subject} ran all the way through.`;
+  if (input.status === "waiting") {
+    const why = typeof input.terminalReason === "string" && input.terminalReason !== input.status ? automationStudioConversationPlainCause(input.terminalReason) : "";
+    return `${subject} stopped to wait for you${why ? `: ${why}` : ""}.`;
+  }
+  return `${subject} stopped before the end.`;
+}
+
+/** The Flow's own name, or "" when the port answers that it could not be read (the port answers a failure, it does not throw one). */
+async function flowName(input: { port: AutomationStudioConversationCommandPort; projectId: string; flowId: string }): Promise<string> {
+  const response = await input.port.call("get-flow", { projectId: input.projectId, flowId: input.flowId });
+  const name = response.ok ? (response.payload as { flow?: { name?: unknown } | null } | undefined)?.flow?.name : undefined;
+  return typeof name === "string" ? name.trim() : "";
+}
+
+type AppliedTarget = NonNullable<AutomationStudioFlowAdaptation["appliedTo"]>[number]["kind"];
+
+const BY_KIND: Record<AutomationStudioChangeProposalKind, string> = {
+  edit_action_target: "it now finds the control it presses a different way",
+  edit_expectation: "it changed what it waits to see after a step",
+  edit_subflow: "it re-wrote some of its steps",
+  create_subflow: "it added steps for a case it had not met before",
+  edit_router: "it now picks a different path at one point",
+  edit_recovery: "it learned a way past a step that goes wrong",
+  insert_deterministic_path: "it added steps that get it past a step that goes wrong",
+  promote_adaptation: "it kept a fix it had tried before",
+  edit_instruction: "it changed the instructions it follows",
+  add_handler: "it learned a way past an interruption it met",
+  replace_unit: "it re-wrote a step that stopped working"
+};
+
+const BY_TARGET: Record<AppliedTarget, string> = {
+  action_target: BY_KIND.edit_action_target,
+  expectation: BY_KIND.edit_expectation,
+  subflow: BY_KIND.edit_subflow,
+  router: BY_KIND.edit_router,
+  instruction: BY_KIND.edit_instruction
+};
+
+/** A re-authored Flow that was kept (t267 S4): only after a whole run with it was judged to answer. */
+const REAUTHORED = "it re-wrote some of its steps, and a whole run with them was judged to do what you asked";
+
+/** A re-author that was settled without being kept: the Flow is unchanged by it. */
+const REAUTHOR_NOT_KEPT = "It tried re-writing some of its steps, but those rewritten steps were not kept.";
+
+/** What a change that could not be read is called: something changed, and nothing is guessed about what. */
+const UNREAD = "it changed how it runs";
+
+/**
+ * The run's retention flag controls its ending. A current applied status alone
+ * cannot attribute a kind to this run: typed copy additionally needs its own
+ * settled same-run application decision. No exact kept count is guessed.
+ */
+async function runLearned(input: {
+  port: AutomationStudioConversationCommandPort;
+  projectId: string;
+  flowId: string;
+  runId?: string | undefined;
+  adaptationIds: readonly string[];
+  durableBehaviorChanged: boolean | undefined;
+  /** How the run's re-author settled (`run-runtime-session`'s `reauthored`): kept only once a whole re-run with it was judged to answer. */
+  reauthored?: "applied" | "not_applied" | undefined;
+}): Promise<string> {
+  const kept: string[] = input.durableBehaviorChanged === true && input.reauthored === "applied" ? [REAUTHORED] : [];
+  const current: string[] = [];
+  for (const adaptationId of input.adaptationIds) {
+    const response = await input.port.call("get-flow-adaptation", { projectId: input.projectId, flowId: input.flowId, adaptationId });
+    const adaptation = response.ok ? (response.payload as { adaptation?: Partial<AutomationStudioFlowAdaptation> | null } | undefined)?.adaptation : undefined;
+    const decision = adaptation?.metadata?.approvalDecision;
+    const sameRunApplied = input.durableBehaviorChanged === true && input.runId !== undefined
+      && decision !== null && typeof decision === "object" && !Array.isArray(decision)
+      && decision.judgedRunId === input.runId && decision.applied === true
+      && automationStudioDecisionAppliedAutomatically(decision);
+    if (adaptation?.status === "applied" && sameRunApplied) kept.push(changeWords(adaptation));
+    else {
+      const words = currentChangeWords(adaptation?.status);
+      if (words) current.push(words);
+    }
+  }
+  const changes = [...new Set(kept)];
+  const retention = changes.length
+    ? `It kept a change from this run: ${changes.join("; ")}. The next run starts with it.`
+    : retentionWords(input.durableBehaviorChanged);
+  return [retention, ...new Set(current), ...(input.reauthored === "not_applied" ? [REAUTHOR_NOT_KEPT] : [])].join(" ");
+}
+
+function retentionWords(durable: boolean | undefined): string {
+  if (durable === true) return "This run kept a change for future runs.";
+  if (durable === false) return "This run did not keep a change for future runs.";
+  return "Whether this run kept a change is not available.";
+}
+
+/** Current review state is separate from the run's historical kept change. */
+function currentChangeWords(status: unknown): string | undefined {
+  if (status === "applied") return undefined;
+  if (status === "proposed") return "A recorded change is proposed for review; it has not been kept.";
+  if (status === "validated") return "A recorded change passed validation but was not kept.";
+  if (status === "testing" || status === "validating") return "A recorded change has not finished validation.";
+  if (status === "rejected") return "A recorded change was rejected.";
+  if (status === "disabled" || status === "reverted" || status === "superseded") return "A recorded change is no longer active.";
+  return "The status of a recorded change is not available.";
+}
+
+/** The change in plain words, from its kinds alone. */
+function changeWords(adaptation: Partial<AutomationStudioFlowAdaptation>): string {
+  const byKind = (Array.isArray(adaptation.patch) ? adaptation.patch : []).flatMap((patch) => wordsFor(BY_KIND, patch?.kind));
+  const byTarget = (Array.isArray(adaptation.appliedTo) ? adaptation.appliedTo : []).flatMap((target) => wordsFor(BY_TARGET, target?.kind));
+  const words = [...new Set(byKind.length ? byKind : byTarget)];
+  return words.length ? words.join(" and ") : UNREAD;
+}
+
+/** The words for a stored kind, or none for one Core does not name (a stored record is not trusted to hold only known kinds). */
+function wordsFor(table: Readonly<Record<string, string>>, kind: unknown): string[] {
+  return typeof kind === "string" && Object.hasOwn(table, kind) ? [table[kind]!] : [];
+}
