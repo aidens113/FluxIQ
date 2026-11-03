@@ -71,3 +71,81 @@
   min-height: 0;
   background: var(--color-surface);
 }
+
+/* In a window over the panel the host takes no room of its own: the window is
+   fixed to the viewport, and the tokens above still reach it. */
+.chat-widget-host[data-windowed="true"] {
+  display: contents;
+}
+
+/* A proposed Flow change inside a turn (attachments/flow-graph-diff/draw.ts),
+   drawn by the host because the chat does not know the kind. */
+.panel-diff-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.panel-diff-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-diff-heading small {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.panel-diff-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.panel-diff {
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-diff-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-1);
+  padding: 4px 0;
+  border-top: 1px solid var(--divider);
+  font-size: var(--font-size-compact);
+  min-width: 0;
+}
+
+.panel-diff-row.heading {
+  border-top: 0;
+  color: var(--muted);
+  font-size: var(--font-size-caption);
+}
+
+.panel-diff-row > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.panel-diff-row[data-change="added"] > span:first-child {
+  color: var(--success);
+}
+
+.panel-diff-row[data-change="removed"] > span:first-child {
+  color: var(--danger-text);
+}
+
+.panel-diff-row[data-change="changed"] > span:first-child {
+  color: var(--warning-text);
+}
+
+@media (max-width: 768px) {
+  .panel-diff-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

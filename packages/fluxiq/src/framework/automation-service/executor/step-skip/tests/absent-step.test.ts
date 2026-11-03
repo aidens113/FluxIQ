@@ -4,12 +4,18 @@
 // beside these are in `optional-failed-route.test.ts`.
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../../../../engine/automation/tests/fixture-contracts.ts";
 import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../runtime/automation-activity/index.ts";
 import { runAutomationStudioGraph } from "../../index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../../../engine/automation/index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../../runtime/domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../../runtime/domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

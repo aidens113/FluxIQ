@@ -19,7 +19,9 @@
 // scoped chat not ready) makes no turn.
 //
 // Which thread: the target's (`thread-requests.ts`): the project's own open
-// thread, or the open thread about one automation. A read happens when the card is
+// thread, the open thread about one automation, or one thread by its id
+// (`kind: "thread"`, chosen from the thread list), which is read directly,
+// without listing, and always, since no list gives its revision here. A read happens when the card is
 // shown, after each send and answer, and on a timer while it is visible; a
 // thread whose `revision` has not moved is not read again. Changing the target
 // forgets the thread on screen at once, and a read still on its way for the
@@ -38,6 +40,11 @@
 // well have the message, so the turn shows the background's sentence saying
 // so, the thread is read, and a read that holds a person turn it had not held
 // replaces the panel's turn as for a send that went.
+//
+// A send or an answer Core took can still report a `problem` (something after it
+// went wrong); it shows as `notice` until the next send, answer or target change.
+// An answer made with the person's PIN (`extra.authorizationPin`) passes it on
+// to the transport and keeps it nowhere: not in state, errors or the outcome.
 //
 // Errors end with their cause. A send error clears when the person sends
 // again; the read notice, the send error and every answer error when the
@@ -59,10 +66,12 @@
 import type { ChatConversationPort, ChatResult } from "../ports/index.ts";
 import type { ChatTarget } from "../target.ts";
 import { sameThread } from "../same-thread.ts";
-import { parseConversation, type CoreTurn } from "./core-thread.ts";
+import type { AnswerOutcome } from "./answer-outcome.ts";
+import { parseConversation, type CoreConversation, type CoreTurn } from "./core-thread.ts";
+import { problemOf } from "./problem-of.ts";
 import { READ_RETRY, readFailureNotice, UNREADABLE_CODE, type ConversationClock, type ThreadReadStep } from "./read/index.ts";
 import { threadListRequest, threadSendRequest } from "./thread-requests.ts";
-import { readThreadTail } from "./thread-tail.ts";
+import { ALL_TURNS, readThreadTail, TURN_WINDOW } from "./thread-tail.ts";
 
 /** Which of the card's faces shows. */
 export type ConversationMode = "fallback" | "offline" | "loading" | "empty" | "thread";
@@ -88,6 +97,12 @@ export type ConversationState = {
   reading: boolean;
   sending: boolean;
   sendError?: string | undefined;
+  /** Something went wrong after a send or an answer Core took: its `problem`, until the next one or a new target. */
+  notice?: string | undefined;
+  /** True while turns before the first one on screen exist and are not shown. Absent reads as false. */
+  earlierTurns?: boolean | undefined;
+  /** How many turns those are, when known. */
+  earlierCount?: number | undefined;
   /** Asks whose answer is on its way. */
   answering: ReadonlySet<string>;
   /** Why an answer did not go, by ask. */
@@ -106,8 +121,28 @@ export type ConversationController = {
   retry(): Promise<void>;
   /** Sends `text` as the person's turn. Answers true once it went, so the composer can empty. */
   send(text: string, recordingId?: string): Promise<boolean>;
-  /** Answers a question FluxIQ asked. */
-  answer(askId: string, kind: string, value?: string): Promise<void>;
+  /**
+   * Answers a question FluxIQ asked, and says how it came out. `authorizationPin`
+   * goes to the transport with this one answer and is held nowhere.
+   */
+  answer(askId: string, kind: string, value?: string, extra?: { authorizationPin?: string }): Promise<AnswerOutcome>;
+  /** Reads the thread on screen from its start, without a window, and keeps every turn. */
+  showEarlier(): Promise<void>;
+};
+
+/** What a host may change about how the card reads. */
+export type ConversationReach = {
+  /** Turns kept per thread instead of `TURN_WINDOW`. */
+  window?: number;
+  /**
+   * Asked when the latest chat has no project: the card then has nowhere to
+   * look. `"waiting"`: the thread list has not been read, so nothing is
+   * known yet; `"empty"`: it has, and holds no thread. Undefined reads as
+   * today, by listing the open thread.
+   */
+  withoutProject?: () => "waiting" | "empty" | undefined;
+  /** True while the chat is out of sight: a read waits until it is asked for again. */
+  quiet?: () => boolean;
 };
 
 const SYSTEM_CLOCK: ConversationClock = {
@@ -131,6 +166,7 @@ const SEND_FAILED = "Couldn't send that. Try again.";
 /** The transport's code for a call FluxIQ did not answer in time. */
 const TIMED_OUT = "timed_out";
 const ANSWER_FAILED = "Couldn't send your answer. Try again.";
+const NOT_ANSWERABLE: AnswerOutcome = { ok: false, error: "That question is not waiting for an answer here." };
 
 /**
  * The person's message on its way or not sent, the turns Core held when it was
@@ -143,7 +179,12 @@ type Outgoing = { turn: CoreTurn; known: ReadonlySet<string>; deliveredAfterRead
 type Shown = { conversationId: string; projectId: string; revision: number | undefined };
 
 /** Creates the controller. `onChange` is called after every change to `state()`. */
-export function createConversationController(conversation: ChatConversationPort, onChange: () => void, clock: ConversationClock = SYSTEM_CLOCK): ConversationController {
+export function createConversationController(
+  conversation: ChatConversationPort,
+  onChange: () => void,
+  clock: ConversationClock = SYSTEM_CLOCK,
+  reach: ConversationReach = {}
+): ConversationController {
   let fallback: ConversationFallbackReason | undefined;
   let target: ChatTarget = { kind: "latest" };
   // Bumped by every target change; an answer that arrives for an older one is dropped.
@@ -153,10 +194,14 @@ export function createConversationController(conversation: ChatConversationPort,
   let scopeState: "loading" | "ready" | "error" = "loading";
   let shown: Shown | undefined;
   let anchorTurnId: string | undefined;
+  // How many turns come before the anchor, when known; and the thread whose every turn is wanted.
+  let earlier: number | undefined;
+  let everyTurnOf: string | undefined;
   let turns: readonly CoreTurn[] = [];
   let readError: string | undefined;
   let sending = false;
   let sendError: string | undefined;
+  let notice: string | undefined;
   // The message on its way or not sent, shown as the person's turn.
   let outgoing: Outgoing | undefined;
   let outgoingCount = 0;
@@ -230,37 +275,53 @@ export function createConversationController(conversation: ChatConversationPort,
   async function readOnce(): Promise<void> {
     const asked = generation;
     readsStarted += 1;
-    const listed = await safely(() => conversation.listThreads(threadListRequest(target)));
-    if (asked !== generation) {
+    // A chosen thread is named by the target; the others are found by listing.
+    const direct = target.kind === "thread";
+    const nowhere = target.kind === "latest" && target.projectId === undefined ? reach.withoutProject?.() : undefined;
+    if (nowhere === "waiting") {
       return;
     }
-    if (!listed.ok) {
-      return readFailed("list", listed);
+    if (nowhere === "empty") {
+      return settle(undefined, undefined, [], undefined);
     }
-    const list = listed.value.conversations;
-    if (!Array.isArray(list)) {
-      return readFailed("list", UNREADABLE_LIST);
-    }
-    const latest = list.length === 0 ? undefined : parseConversation(list[0]);
-    if (list.length > 0 && latest === undefined) {
-      return readFailed("list", UNREADABLE_LIST);
-    }
-    if (target.projectId !== undefined && latest !== undefined && latest.projectId !== target.projectId) {
-      return readFailed("list", UNREADABLE_LIST);
+    let latest: CoreConversation | undefined;
+    if (target.kind === "thread") {
+      latest = { conversationId: target.conversationId, projectId: target.projectId, revision: -1 };
+    } else {
+      const listed = await safely(() => conversation.listThreads(threadListRequest(target)));
+      if (asked !== generation) {
+        return;
+      }
+      if (!listed.ok) {
+        return readFailed("list", listed);
+      }
+      const list = listed.value.conversations;
+      if (!Array.isArray(list)) {
+        return readFailed("list", UNREADABLE_LIST);
+      }
+      latest = list.length === 0 ? undefined : parseConversation(list[0]);
+      if (list.length > 0 && latest === undefined) {
+        return readFailed("list", UNREADABLE_LIST);
+      }
+      if (target.projectId !== undefined && latest !== undefined && latest.projectId !== target.projectId) {
+        return readFailed("list", UNREADABLE_LIST);
+      }
     }
     if (latest === undefined) {
-      return settle(undefined, undefined, []);
+      return settle(undefined, undefined, [], undefined);
     }
     const same = shown?.conversationId === latest.conversationId;
-    if (same && shown?.revision === latest.revision) {
-      return settle(shown, anchorTurnId, turns);
+    if (!direct && same && shown?.revision === latest.revision) {
+      return settle(shown, anchorTurnId, turns, earlier);
     }
 
     const tail = await readThreadTail((query) => safely(() => conversation.readThread(query)), {
       conversationId: latest.conversationId,
       projectId: latest.projectId,
       requireIdentity: target.projectId !== undefined,
-      anchorTurnId: same ? anchorTurnId : undefined
+      anchorTurnId: same ? anchorTurnId : undefined,
+      window: everyTurnOf === latest.conversationId ? ALL_TURNS : reach.window ?? TURN_WINDOW,
+      earlier: same ? earlier : undefined
     });
     if (asked !== generation) {
       return;
@@ -269,15 +330,16 @@ export function createConversationController(conversation: ChatConversationPort,
       return readFailed("thread", tail);
     }
     if (tail.value.missing) {
-      return target.projectId !== undefined ? readFailed("thread", UNREADABLE_LIST) : settle(undefined, undefined, []);
+      return target.projectId !== undefined ? readFailed("thread", UNREADABLE_LIST) : settle(undefined, undefined, [], undefined);
     }
     // An incomplete read leaves the revision unknown, so the next one carries on.
-    settle({ ...latest, revision: tail.value.complete ? latest.revision : undefined }, tail.value.anchorTurnId, tail.value.turns);
+    settle({ ...latest, revision: tail.value.complete && !direct ? latest.revision : undefined }, tail.value.anchorTurnId, tail.value.turns, tail.value.earlier);
   }
 
-  function settle(next: Shown | undefined, nextAnchor: string | undefined, nextTurns: readonly CoreTurn[]): void {
+  function settle(next: Shown | undefined, nextAnchor: string | undefined, nextTurns: readonly CoreTurn[], nextEarlier: number | undefined): void {
     shown = next;
     anchorTurnId = nextAnchor;
+    earlier = nextEarlier;
     turns = nextTurns;
     loaded = true;
     scopeState = "ready";
@@ -322,11 +384,13 @@ export function createConversationController(conversation: ChatConversationPort,
       generation += 1;
       shown = undefined;
       anchorTurnId = undefined;
+      earlier = undefined;
       turns = [];
       loaded = false;
       scopeState = "loading";
       clearReadFailure();
       sendError = undefined;
+      notice = undefined;
       outgoing = undefined;
       answering.clear();
       answerErrors.clear();
@@ -351,6 +415,9 @@ export function createConversationController(conversation: ChatConversationPort,
         reading: inFlight !== undefined,
         sending,
         sendError,
+        notice,
+        earlierTurns: anchorTurnId !== undefined,
+        earlierCount: anchorTurnId === undefined ? undefined : earlier,
         answering: new Set(answering.keys()),
         answerErrors
       };
@@ -364,6 +431,7 @@ export function createConversationController(conversation: ChatConversationPort,
         if (fallback === "refused") fallback = undefined;
         clearReadFailure();
         sendError = undefined;
+        notice = undefined;
         outgoing = undefined;
         answering.clear();
         answerErrors.clear();
@@ -372,7 +440,7 @@ export function createConversationController(conversation: ChatConversationPort,
       if (next) void controller.refresh();
     },
     refresh() {
-      if (!readable()) return Promise.resolve();
+      if (!readable() || reach.quiet?.() === true) return Promise.resolve();
       if (inFlight) {
         again = true;
         return inFlight;
@@ -402,6 +470,7 @@ export function createConversationController(conversation: ChatConversationPort,
       if (target.projectId !== undefined && scopeState !== "ready") return false;
       sending = true;
       sendError = undefined;
+      notice = undefined;
       outgoingCount += 1;
       const mine: Outgoing = { turn: { turnId: `local-send:${outgoingCount}`, author: "person", text: body, ask: null }, known: new Set(turns.map((turn) => turn.turnId)) };
       outgoing = mine;
@@ -438,6 +507,7 @@ export function createConversationController(conversation: ChatConversationPort,
         onChange();
         return false;
       }
+      notice = problemOf(result.value);
       const opened = parseConversation(result.value.conversation);
       if (target.projectId !== undefined && opened !== undefined && opened.projectId !== target.projectId) {
         scopeState = "error";
@@ -468,25 +538,48 @@ export function createConversationController(conversation: ChatConversationPort,
       onChange();
       return true;
     },
-    async answer(askId, kind, value) {
-      if (target.projectId !== undefined && scopeState !== "ready") return;
-      if (answering.has(askId) || !readable() || !shown || !turns.some((turn) => turn.ask?.askId === askId && turn.ask.status === "pending")) return;
+    showEarlier() {
+      if (!readable() || shown === undefined || anchorTurnId === undefined) return Promise.resolve();
+      everyTurnOf = shown.conversationId;
+      anchorTurnId = undefined;
+      shown = { ...shown, revision: undefined };
+      return controller.refresh();
+    },
+    async answer(askId, kind, value, extra) {
+      if (target.projectId !== undefined && scopeState !== "ready") return NOT_ANSWERABLE;
+      const asking = turns.find((turn) => turn.ask?.askId === askId && turn.ask.status === "pending");
+      if (answering.has(askId) || !readable() || !shown || asking === undefined) return NOT_ANSWERABLE;
       const asked = generation;
       const operation = {};
       answering.set(askId, operation);
       answerErrors.delete(askId);
+      notice = undefined;
       onChange();
-      const result = await safely(() => conversation.answer({ askId, kind, value, projectId: shown?.projectId }));
+      // The turn that asked, for a client that must act on what it carries once the answer is taken.
+      const turn = { conversationId: shown.conversationId, turnId: asking.turnId, ...(asking.attachment === undefined ? {} : { attachment: asking.attachment }) };
+      const result = await safely(() => conversation.answer({
+        askId,
+        kind,
+        value,
+        projectId: shown?.projectId,
+        turn,
+        ...(extra?.authorizationPin === undefined ? {} : { authorizationPin: extra.authorizationPin })
+      }));
       if (answering.get(askId) === operation) answering.delete(askId);
-      if (asked !== generation) return;
       if (!result.ok) {
-        failed(result, ANSWER_FAILED, (sentence) => answerErrors.set(askId, sentence));
-        onChange();
-        return;
+        // A refused PIN is said by the host's dialog, which stays open on the outcome; the card does not say it twice.
+        if (asked === generation) {
+          failed(result, ANSWER_FAILED, (sentence) => { if (extra?.authorizationPin === undefined) answerErrors.set(askId, sentence); });
+          onChange();
+        }
+        return { ok: false, error: result.sentence };
       }
+      if (asked !== generation) return { ok: true };
+      notice = problemOf(result.value);
       if (shown) shown = { ...shown, revision: undefined };
       onChange();
       await controller.refresh();
+      return { ok: true };
     }
   };
   return controller;

@@ -8,6 +8,8 @@
 // blank card or a thrown error. Only the fields shown here are read; the rest
 // of each record is ignored.
 
+import type { ChatAttachment } from "../ports/index.ts";
+
 /** A thread, as `list-conversations` names it. */
 export type CoreConversation = { conversationId: string; projectId: string; revision: number };
 
@@ -23,6 +25,8 @@ export type CoreAsk = {
   status: string;
   options: CoreAskOption[] | null;
   answer: { kind: string; value: string | null } | null;
+  /** Core's record as it answered it, for a host that words the question itself (`ChatAskPort`). Nothing else reads it. */
+  record?: unknown;
 };
 
 /** One turn: who said it, what they said, and what it asks or shows. */
@@ -32,6 +36,8 @@ export type CoreTurn = {
   author: string;
   text: string;
   ask: CoreAsk | null;
+  /** What the turn carries beside its words: a reference, never a payload (`ChatAttachmentPort`). */
+  attachment?: ChatAttachment;
   /** When Core wrote it, in ms since the epoch, on Core's clock: the clock its live activity is stamped with. */
   createdAt?: number;
   /**
@@ -77,6 +83,7 @@ function parseTurn(value: unknown): CoreTurn | undefined {
     author: record.author,
     text: record.text,
     ask: parseAsk(record.ask),
+    ...attachmentOf(record.attachment),
     ...(typeof record.createdAt === "number" && Number.isFinite(record.createdAt) ? { createdAt: record.createdAt } : {})
   };
 }
@@ -98,8 +105,15 @@ function parseAsk(value: unknown): CoreAsk | null {
     options,
     answer: answer && typeof answer.kind === "string"
       ? { kind: answer.kind, value: typeof answer.value === "string" ? answer.value : null }
-      : null
+      : null,
+    record: value
   };
+}
+
+/** A turn's `attachment` when it names a kind and a reference; anything else is no attachment, and the turn still reads. */
+function attachmentOf(value: unknown): { attachment: ChatAttachment } | Record<string, never> {
+  const record = asRecord(value);
+  return record && isText(record.kind) && isText(record.ref) ? { attachment: { kind: record.kind, ref: record.ref } } : {};
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

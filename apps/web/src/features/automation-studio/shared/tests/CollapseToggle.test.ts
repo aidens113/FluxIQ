@@ -25,12 +25,12 @@ describe("one collapse control for one verb", () => {
   it("is the only collapse chevron the panel draws", () => {
     // Four regions wrote their own: "Collapse sidebar", "Collapse right area",
     // "Collapse timeline", "Collapse the conversation", with three different
-    // icon pairs and three different classes for one verb.
+    // icon pairs and three different classes for one verb. The conversation
+    // window is the chat package's now, and it draws its own collapse control.
     const regions = [
       "../../workspace/shell/RightPaneArea.tsx",
       "../../workspace/shell/TimelineDock.tsx",
-      "../../hierarchy/AutomationProjectHierarchySidebar.tsx",
-      "../../conversation/components/ConversationDock.tsx"
+      "../../hierarchy/AutomationProjectHierarchySidebar.tsx"
     ];
     for (const path of regions) {
       const region = source(path);

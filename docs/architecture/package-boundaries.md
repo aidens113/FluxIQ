@@ -9,7 +9,7 @@ TypeScript runtime loader.
 | `@fluxiq/contracts` | JSON primitives, program API schemas, client-gateway protocol, and the shared automation contract (`@fluxiq/contracts/automation`: failure records, actionability, record sets, recording capture) | Browser and Node.js | `zod` |
 | `fluxiq` | Domain-neutral framework runtime, global programs, storage, migrations, and host integration | Node.js 22 or newer | contracts, QR generation, and native SQLite |
 | `@fluxiq/client-gateway-websocket` | The client half of the client gateway: WebSocket transport, reconnecting connection, offline outbox, in-flight command reconciliation, host-lease fencing, storage-area port, and the session-picking rule | Browser and Node.js 22 or newer | contracts only |
-| `@fluxiq/ui-components` | FluxIQ's chat UI as plain TypeScript DOM and CSS with no UI framework. A client mounts `createChatWidget` and supplies the ports (`ChatTransport` for conversation, live activity, run controls, recordings and model keys; `ChatWidgetOptions` for what only the host can do). Entries `.`, `./dom`, `./icons`, `./testing` and the stylesheets `./styles/tokens.css` and `./styles/chat.css` | Browser; no Node built-in and no browser-extension API | `fluxiq` |
+| `@fluxiq/ui-components` | FluxIQ's chat UI as plain TypeScript DOM and CSS with no UI framework. It is the only chat UI: the web panel and the web extension both mount it. A client mounts `createChatWidget`, and `createChatWindow` for a launcher and window, and supplies the ports (`ChatTransport` for conversation, live activity, run controls, recordings, model keys and the change feed; `ChatWidgetOptions` for what only the host can do: the thread list, the PIN dialog, attachment renderers, navigation). Entries `.`, `./dom`, `./icons`, `./testing` and the stylesheets `./styles/tokens.css` and `./styles/chat.css` | Browser; no Node built-in and no browser-extension API | `fluxiq` |
 
 The contracts package is the dependency seam between browser clients and the
 framework. It must not import the runtime. The WebSocket client must not pull
@@ -279,6 +279,8 @@ this entry if you write element targets or read their fingerprints.
 
 **Unchanged.** Every other undeclared fingerprint key is still dropped.
 
+**New hooks (t851).** The implementation bundle gains `recordedStepReader`, `controlWordsReader`, `controlParameterKeys`, `activityControlReader` and `stateElementKindReader`. A domain that supplies none keeps working, on the closed side: its recorded steps are withheld, a model is told no name for a control, a checked rerun takes no new value, and a card says its verb alone ([what each does with none](./runtime-ownership.md#hooks-on-the-implementation-bundle)). `fluxiq/automation` also exports `runWithAutomationStudioDomainReadings`, for a host seam that runs outside a build.
+
 **Moved.** Core no longer exports `isAutomationStudioElementTarget`, `normalizeAutomationStudioElementTarget` or `validateAutomationStudioElementTarget`, and `model/action-element-target` holds passive types only. The web domain owns target normalization and registers `outputTargetPreparer` and its sibling hooks; Core carries a target unread ([hooks](runtime-ownership.md#hooks-on-the-implementation-bundle)).
 
 ### Next minor (unreleased): a retried step is judged by its retry, and a kept re-author is a durable change (`fluxiq`)
@@ -500,9 +502,10 @@ patch receipts or call the promotion gate yourself.
 
 **Added.**
 - `awaitsJudgedRun?: true` on the `unverifiable` member of
-  `AutomationStudioRuntimePatchVerification`. It is set only for a
-  `temporary_target_override` whose trial verdict is `unverifiable` with
-  `notResumableCode: "no_evidence"`. The trial still records no validation
+  `AutomationStudioRuntimePatchVerification`. It is set for a
+  `temporary_target_override`, or (t848) a `temporary_action_sequence` that
+  declared no consequence and did nothing lasting in its trial, whose trial verdict
+  is `unverifiable` with `notResumableCode: "no_evidence"`. The trial still records no validation
   result, `restoredExpectedState` stays false and the adaptation stays in
   `testing`.
 - `awaitsJudgedRun?: boolean` on `AutomationStudioAdaptationPromotionGateInput`.
@@ -515,7 +518,9 @@ patch receipts or call the promotion gate yourself.
 **Changed.**
 - `retryOriginalAction` (on the execution result, its receipt and the
   adaptation's metadata) is now true for a verification that awaits its judged
-  run, as it is for a `verified` one; never for `temporary_action_sequence`.
+  run, as it is for a `verified` one; since t848 that includes
+  `temporary_action_sequence`, whose resume point falls after its inserted steps,
+  so they are not taken twice.
 - The run resumes at the trial's resume point for such a receipt, under every
   other resume-point rule. The promotion decision records
   `evidence: "judged_whole_run"` when it allows one unattended.
@@ -1103,7 +1108,9 @@ a grant.
 
 **`edit_recovery` adaptations are refused.** Applying one used to report
 success and change nothing. It now throws "Adaptation patch edit_recovery has
-no durable application; <id> refused."
+no durable application; <id> refused." A `temporary_action_sequence` no longer
+maps to it: since t848 its change kind is `insert_steps`, a unit repair the
+candidate and the apply write through the overlay, gated like `replace_unit`.
 
 **Rolling back a graph change restores the whole graph.** The inverse of
 `delete_node` now restores the edges the deletion removed. Restoring a snapshot

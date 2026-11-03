@@ -54,8 +54,9 @@
 // fix stays `testing`, and so does a held one whose re-attempt gave no positive
 // evidence: an expected state no host evaluated, or nothing declared but a route.
 //
-// **A patch whose trial proved nothing (t267).** A target override on a Flow
-// that declares no evidence has a trial that neither proves nor contradicts it
+// **A patch whose trial proved nothing (t267).** A target override, or inserted
+// steps that did nothing lasting, on a Flow that declares no evidence has a
+// trial that neither proves nor contradicts it
 // (`verification.awaitsJudgedRun`). Its evidence is this run: on `apply` the
 // judged run is recorded as its succeeded trial, before the apply, so the
 // apply's own evidence gate reads it. No other outcome records anything.

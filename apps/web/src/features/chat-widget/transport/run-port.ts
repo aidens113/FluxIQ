@@ -8,11 +8,16 @@
 //   take over       `pause-runtime-session` with `takeControl`
 //   hand back       `resume-runtime-session` with `afterManualAction`
 //
+// Each press that changes a run tells the rest of the panel (`runtime-run.changed`),
+// so a run list or a run view open beside the chat reads at once. A build
+// stopped through its Flow names no run, so it tells nobody.
+//
 // `openInstructions` is absent: the panel shows a run's task instructions in
 // its own Studio, not in this chat, so the recovery button never shows.
 
 import type { ChatResult, ChatRunPort } from "@fluxiq/ui-components";
 import type { ProgramCommandTransport } from "../../automation-studio/data/program-transport";
+import { commitRuntimeRunChanged } from "../../automation-studio/runtime";
 import { chatFailure } from "./chat-failure";
 import { chatResult } from "./chat-result";
 import type { ProgramChatTransportOptions } from "./options";
@@ -31,7 +36,11 @@ export function createRunPort(api: ProgramCommandTransport, options: Pick<Progra
       const { projectId } = project;
       if (target.runId && target.flowId) return { ok: false, code: "invalid_request", sentence: "Stop must name a run or a build, not both." };
       if (target.flowId) return chatResult(await api.post<{ cancellationRequested?: unknown }>("cancel-flow-bootstrap", { projectId, flowId: target.flowId }), cancellation);
-      if (target.runId) return chatResult(await api.post<{ cancellationRequested?: unknown }>("cancel-runtime-session", { projectId, runId: target.runId, reason: STOP_REASON }), cancellation);
+      if (target.runId) {
+        const stopped = chatResult(await api.post<{ cancellationRequested?: unknown }>("cancel-runtime-session", { projectId, runId: target.runId, reason: STOP_REASON }), cancellation);
+        if (stopped.ok) commitRuntimeRunChanged({ projectId, runId: target.runId });
+        return stopped;
+      }
 
       const listed = await api.post<{ runtimeSessions?: unknown }>("list-runtime-sessions", { projectId, summaries: true, statuses: ACTIVE_RUN_STATES, limit: ACTIVE_RUN_SCAN_LIMIT });
       if (!listed.ok) return chatFailure(listed);
@@ -39,6 +48,7 @@ export function createRunPort(api: ProgramCommandTransport, options: Pick<Progra
       for (const runId of activeRunIds(Array.isArray(sessions) ? sessions : [])) {
         const stopped = await api.post("cancel-runtime-session", { projectId, runId, reason: STOP_REASON });
         if (!stopped.ok) return chatFailure(stopped);
+        commitRuntimeRunChanged({ projectId, runId });
       }
       return { ok: true, value: {} };
     },
@@ -46,13 +56,17 @@ export function createRunPort(api: ProgramCommandTransport, options: Pick<Progra
     async takeOver(target): Promise<ChatResult<unknown>> {
       const project = projectFor(target.projectId, options);
       if (!project.ok) return project.failure;
-      return chatResult(await api.post("pause-runtime-session", { projectId: project.projectId, runId: target.runId, takeControl: true }));
+      const taken = chatResult(await api.post("pause-runtime-session", { projectId: project.projectId, runId: target.runId, takeControl: true }));
+      if (taken.ok) commitRuntimeRunChanged({ projectId: project.projectId, runId: target.runId });
+      return taken;
     },
 
     async handBack(target): Promise<ChatResult<unknown>> {
       const project = projectFor(target.projectId, options);
       if (!project.ok) return project.failure;
-      return chatResult(await api.post("resume-runtime-session", { projectId: project.projectId, runId: target.runId, afterManualAction: true }));
+      const handed = chatResult(await api.post("resume-runtime-session", { projectId: project.projectId, runId: target.runId, afterManualAction: true }));
+      if (handed.ok) commitRuntimeRunChanged({ projectId: project.projectId, runId: target.runId });
+      return handed;
     }
   };
 }

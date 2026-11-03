@@ -30,12 +30,21 @@
 // read back as the stored row it stands for (`capturedRow`,
 // `./captured-rows.ts`), and where that row cannot be said for certain, it is
 // named by its place among the rows collected rather than sent empty.
+//
+// **A marker of a replaced pass is never read back (t848).** A repair's re-run from
+// the Flow's start replaces what the run stored and keeps its attempts after the
+// first pass's, so an ordinal from the first pass now names a row of the re-run:
+// another row, which is worse than none. Only the last pass from the start reads
+// its markers back; an earlier one is named by its place, as above. A retry or a
+// resume never reaches the Flow's entry again, so it stays one pass, and a route
+// back to the entry only costs a row its name, never shows a wrong one.
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { automationStudioActivityLoops } from "../automation-activity/loop/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 
 const FOR_EACH = "builtin.control.for-each";
+const START = "builtin.control.start";
 /** A row field minted per read rather than part of the row. */
 const MINTED_FIELD = /^\$|handle|evidence/iu;
 /** Stands in for a row that cannot be sent. */
@@ -73,10 +82,11 @@ export function automationStudioResultStepRows(input: {
   let begun = 0;
   /** The passes each step was already counted in, so a step run twice in one pass names its row once. */
   const counted = new Map<string, Set<string>>();
-  for (const attempt of input.attempts ?? []) {
+  const lastPass = lastPassStart(input.flowNodes, input.flowEdges, input.attempts ?? []);
+  for (const [at, attempt] of (input.attempts ?? []).entries()) {
     const loop = loops.find((entry) => entry.repeatId === attempt.nodeId);
     if (loop && attempt.route === "body") {
-      passes.set(loop.repeatId, { n: (passes.get(loop.repeatId)?.n ?? 0) + 1, row: rowFields(attempt.outputs?.item, input.capturedRow), at: ++begun });
+      passes.set(loop.repeatId, { n: (passes.get(loop.repeatId)?.n ?? 0) + 1, row: rowFields(attempt.outputs?.item, at < lastPass ? undefined : input.capturedRow), at: ++begun });
       continue;
     }
     if (!rowBound.has(attempt.nodeId) || attempt.status !== "succeeded" || attempt.skipped || attempt.stateHeld) continue;
@@ -103,6 +113,18 @@ export function automationStudioResultStepRows(input: {
     rows.set(attempt.nodeId, [...(rows.get(attempt.nodeId) ?? []), row]);
   }
   return { rowBound, rows, withheld };
+}
+
+/** Where the last pass from the Flow's start begins among the attempts: at its start node, or where it has none, at the last attempt of a node nothing enters. */
+function lastPassStart(
+  nodes: readonly { id: string; definitionId: string }[],
+  edges: readonly { targetNodeId: string }[] | undefined,
+  attempts: readonly Attempt[]
+): number {
+  const starts = nodes.filter((node) => node.definitionId === START);
+  const entered = new Set((edges ?? []).map((edge) => edge.targetNodeId));
+  const entries = new Set((starts.length ? starts : nodes.filter((node) => !entered.has(node.id))).map((node) => node.id));
+  return attempts.reduce((last, attempt, at) => (entries.has(attempt.nodeId) ? at : last), 0);
 }
 
 /** A row as its own fields, without what a read mints afresh; a captured-row marker read back as its stored row (header). */

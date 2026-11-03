@@ -1,20 +1,3 @@
-export {
-  conversationAttachmentKinds,
-  conversationAttachmentLabel,
-  conversationAttachmentRenderer,
-  ConversationDock,
-  conversationLauncherLabel,
-  ConversationView,
-  ConversationViewContent,
-  type ConversationDockProps,
-  type ConversationViewProps
-} from "./components";
-export {
-  useConversationCommands,
-  type ConversationCommands,
-  type ConversationViewHostCommands,
-  type ConversationViewHostModel
-} from "./conversation-host";
 export * from "./activity";
 export * from "./capabilities";
 export * from "./thread";
@@ -32,3 +15,4 @@ export {
   type ConversationInstructionResult,
   type ConversationOnScreen
 } from "./instruction-commands";
+export { getConversationAttachment, type ConversationAttachmentQuery } from "./turn-queries";

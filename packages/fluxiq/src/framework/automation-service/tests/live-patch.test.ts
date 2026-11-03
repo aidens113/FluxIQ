@@ -466,14 +466,11 @@ describe("Automation Studio live patch testing", () => {
     // rather than the node the patch was aimed in front of.
     expect(result.verification).not.toEqual({ status: "not_executed", reason: "unapplied_patch_kind:temporary_action_sequence" });
     expect(result.trace?.attempts.map((attempt) => attempt.nodeId)).toContain("node.runtime-patch.run.failed.step-1");
-    // The insert is a trial-only band-aid: keeping a step is the extend-mode
-    // build plan's job, so the durable form is `edit_recovery`, which no durable
-    // applier applies. Nothing here mints a Flow edit.
+    // Its durable form carries what it inserts, so the judged re-run's candidate and
+    // the apply write the steps this trial ran. Nothing here mints a Flow edit.
     expect(result.adaptation?.patch).toEqual([
-      { kind: "edit_recovery", targetId: "end", summary: "Search before reading the results." }
+      { kind: "insert_steps", targetId: "end", summary: "Search before reading the results.", after: { targetNodeId: "end", steps: [{ definitionId: "builtin.data.constant", label: "Search first", parameters: { value: "lamp" } }] }, metadata: { runtimePatchKind: "temporary_action_sequence" } }
     ]);
-    // The original action is not retried: the inserted step is what runs now.
-    expect(result.retryOriginalAction).toBe(false);
     expect(flow).toEqual(original);
   });
 

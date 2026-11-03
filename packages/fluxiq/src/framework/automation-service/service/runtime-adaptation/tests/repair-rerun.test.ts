@@ -216,6 +216,38 @@ describe("a re-run and a runtime patch still waiting for its judged run", () => 
     expect(result?.session?.status).toBe("succeeded");
   });
 
+  // A held target override is the one patch that may re-run with a step it did not insert.
+  it("declines the patch's re-run where the first pass ran a step that says it lastingly acts, and dispatches nothing", async () => {
+    const dispatched: string[] = [];
+    const { result, written } = await rerun({
+      reauthored: false,
+      lastingStep: "search",
+      dispatcher: (effect) => {
+        dispatched.push(JSON.stringify(effect.payload ?? null));
+        return readNeedsRepair(effect);
+      },
+      adaptations: [adaptation()],
+      detailMetadata: { runtimePatchAttempts: [receipt] }
+    });
+    expect(result).toEqual({ declinedCode: "repair_rerun.lasting_act_may_have_landed" });
+    expect(dispatched).toEqual([]);
+    expect(written).toEqual([]);
+  });
+
+  it("declines a re-authored Flow's re-run the same way, whatever the edit", async () => {
+    const dispatched: string[] = [];
+    const { result, written } = await rerun({
+      lastingStep: "search",
+      dispatcher: (effect) => {
+        dispatched.push(JSON.stringify(effect.payload ?? null));
+        return { status: "success", route: "success", outputs: { ok: true } };
+      }
+    });
+    expect(result).toEqual({ declinedCode: "repair_rerun.lasting_act_may_have_landed" });
+    expect(dispatched).toEqual([]);
+    expect(written).toEqual([]);
+  });
+
   it("declines a re-run from the start that would change nothing", async () => {
     const { result, written } = await rerun({ reauthored: false, adaptations: [], detailMetadata: {} });
 

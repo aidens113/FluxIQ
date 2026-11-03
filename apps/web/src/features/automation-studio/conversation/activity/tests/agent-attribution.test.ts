@@ -1,9 +1,10 @@
 // Core's own panel keeps working on a project build's activity: an event that
 // names its agent, and a `note` row that carries a project card, both read as
-// before. The panel ignores `agent` and treats every note as internal, so
+// before. The chat ignores `agent` and treats every note as internal, so
 // neither changes what it shows.
 import { describe, expect, it } from "vitest";
-import { conversationActivityIsInternal, conversationStepMessages, conversationStream, parseConversationActivitySnapshot } from "..";
+import { CHAT_STEP_MESSAGE_LIMIT, stepMessages } from "@fluxiq/ui-components";
+import { parseConversationActivitySnapshot } from "..";
 
 const at = (sequence: number) => new Date(1_790_000_000_000 + sequence * 1_000).toISOString();
 
@@ -68,8 +69,6 @@ describe("a project build's activity in Core's panel", () => {
 
   it("keeps the project notes internal, so only the builder's own step is a message", () => {
     const read = parseConversationActivitySnapshot({ current: null, recent: events });
-    expect(read.recent.slice(0, 2).every((event) => event.detail !== undefined && conversationActivityIsInternal(event.detail))).toBe(true);
-    expect(conversationStepMessages(read.recent).map((message) => message.title)).toEqual(["Opening the cookbook"]);
-    expect(conversationStream({ turns: [], activity: read.recent }).length).toBeGreaterThan(0);
+    expect(stepMessages(read.recent, CHAT_STEP_MESSAGE_LIMIT).map((message) => message.title)).toEqual(["Opening the cookbook"]);
   });
 });

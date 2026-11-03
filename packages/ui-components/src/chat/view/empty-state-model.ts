@@ -6,10 +6,14 @@
 // first run. The examples only fill the composer, so the person reads and
 // edits one before anything is sent; they show only when a message could be
 // sent now. An automation's empty chat asks about that automation; a
-// question's empty thread offers nothing to start from. No DOM.
+// question's empty thread offers nothing to start from. A host whose chat is
+// not about a page passes its own welcome (`offers.welcome`): the empty latest
+// chat, and an empty chosen thread, say that instead, with no starts, no
+// concept and no examples about the page. No DOM.
 
 import type { ConversationMode } from "../conversation/index.ts";
 import type { ModelReadiness } from "../onboarding/index.ts";
+import type { ChatWelcome, ChatWelcomeItem } from "../ports/index.ts";
 import type { ChatTarget } from "../target.ts";
 
 /** One of the latest chat's two starts. */
@@ -23,6 +27,8 @@ export type EmptyStateModel = {
   /** Says FluxIQ needs a model key, with Open FluxIQ beside it; null when it does not, or nobody knows. */
   keyLine: string | null;
   examples: readonly string[];
+  /** A host's welcome lines, each with its icon; empty except in a welcome. */
+  items: readonly ChatWelcomeItem[];
 };
 
 /** What FluxIQ is, in the latest chat's empty state. Its last sentence is true once Stop and Take over ship (t376). */
@@ -60,7 +66,7 @@ export function emptyStateModel(
   mode: ConversationMode,
   target: ChatTarget,
   readiness: ModelReadiness = "unknown",
-  offers: { readonly extract: boolean } = { extract: true }
+  offers: { readonly extract: boolean; readonly welcome?: ChatWelcome | undefined } = { extract: true }
 ): EmptyStateModel | null {
   // A question's thread that holds nothing: the question was answered and its
   // thread closed, or Core has not written it yet. It is no place to start.
@@ -71,6 +77,13 @@ export function emptyStateModel(
   const title = automation === undefined ? "What can FluxIQ do for you?" : `Ask about ${automation}`;
   switch (mode) {
     case "empty":
+      if (offers.welcome !== undefined && (target.kind === "latest" || target.kind === "thread")) {
+        return {
+          ...quiet(offers.welcome.title, offers.welcome.line),
+          items: offers.welcome.items,
+          keyLine: target.kind === "latest" && readiness === "missing" ? MODEL_KEY_LINE : null
+        };
+      }
       if (automation !== undefined) {
         return { ...quiet(title, "Ask for a change, a run, or why something happened. FluxIQ answers here."), examples: AUTOMATION_EXAMPLES };
       }
@@ -83,7 +96,8 @@ export function emptyStateModel(
         line: ONBOARDING_CONCEPT,
         starts: offers.extract ? LATEST_STARTS : LATEST_STARTS.filter((start) => start.id !== "extract"),
         keyLine: readiness === "missing" ? MODEL_KEY_LINE : null,
-        examples: LATEST_EXAMPLES
+        examples: LATEST_EXAMPLES,
+        items: []
       };
     case "offline":
       return quiet(title, "Connect to FluxIQ to start a conversation.");
@@ -95,5 +109,5 @@ export function emptyStateModel(
 }
 
 function quiet(title: string, line: string): EmptyStateModel {
-  return { title, line, starts: [], keyLine: null, examples: [] };
+  return { title, line, starts: [], keyLine: null, examples: [], items: [] };
 }

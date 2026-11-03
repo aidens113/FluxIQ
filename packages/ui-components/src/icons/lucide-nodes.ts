@@ -14,7 +14,7 @@
 // notice appear in all copies.
 
 /** One SVG element of an icon: its tag and attributes. */
-export type LucideIconNode = readonly [tag: "path" | "circle" | "rect", attrs: Readonly<Record<string, string>>];
+export type LucideIconNode = readonly [tag: "path" | "circle" | "rect" | "polyline" | "line", attrs: Readonly<Record<string, string>>];
 
 /** Each icon's elements, by lucide name (kebab case). */
 export const LUCIDE_ICON_NODES: Readonly<Record<string, readonly LucideIconNode[]>> = Object.freeze({

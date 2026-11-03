@@ -92,7 +92,8 @@ export function conversationOver(request: TestRequest): ChatConversationPort {
     listThreads: async (query) => payloadOf(await request({ type: TEST_MESSAGES.panelConversationRead, kind: "list", ...query })),
     readThread: async (query) => payloadOf(await request({ type: TEST_MESSAGES.panelConversationRead, kind: "get", ...query })),
     send: async (message) => payloadOf(await request({ type: TEST_MESSAGES.panelConversationSend, ...message })),
-    answer: async (answer) => payloadOf(await request({ type: TEST_MESSAGES.panelConversationAnswer, ...answer }))
+    // The message the extension's relay took before `turn` and `authorizationPin` existed: those are the new ports' own.
+    answer: async ({ askId, kind, value, projectId }) => payloadOf(await request({ type: TEST_MESSAGES.panelConversationAnswer, askId, kind, value, projectId }))
   };
 }
 

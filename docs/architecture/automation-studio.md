@@ -578,6 +578,33 @@ candidate and cannot promote it. The exact revision/digest may reuse its
 retained trial evidence for another judgement without repeating the graph.
 Actual refutations and strict row identity rules retain their existing gates.
 
+Output-processing filters retain evidence of the values Core actually tested,
+alongside their excluded-row account. The result summary screens that evidence
+under the same denied-key and credential rules as the rows themselves. Supported
+readings can use the existing measured-exclusion path, as native read filters do:
+the judge must still connect the condition to quoted words of the request, but
+need not explain each row separately where Core has established why it failed.
+Legacy, unavailable, conflicting or withheld evidence retains the original
+row-level obligations. Processing evidence does not supply a model approval or
+change the final verdict rules.
+
+A settled condition, on a native read or a processing filter alike, is accounted
+for only by a sentence that names it and itself quotes the request. This is
+deliberately stricter than an unsettled row: Core has measured that the rows fail
+the condition, so what is left to show is that the condition is the request's, and
+naming the rows beside a request quote does not show that. The settled sentence
+offers only what this rule accepts (lead decision, 2026-11-03): the condition's
+number, and its tested column only where the rule can read one and it is not one
+of the answer's own columns, which a reply lists routinely.
+
+The tested cells and the evaluated condition are the result check's evidence, and
+no public read returns them. No dataset endpoint returns a left-out row, so the
+store removes both in the one function that builds a dataset summary, which every
+list, page and run-detail read goes through. Only
+`listRunDatasetsForVerification`, which the result check's ports call and no
+endpoint does, returns the account whole. Exports hold the answer's rows and no
+account.
+
 Two codes and one status are historical. `core.result.no_records` and
 `core.result.nothing_to_judge` are produced by nothing and readable on runs
 recorded before 2026-09-24, and the `no_result` value of a run's
@@ -787,6 +814,8 @@ fix lines, plus optional screened judgement fields `expected`, `observed`, and
 failed attempt and recovery context independently of the 1,024-character
 failure prose. Persisted result records keep Core's bounded facts; arbitrary
 provider prose is not persisted as repair authority.
+
+A no Core's own record reached (`core.result.computed_fact_failed`) carries the same directive and is the same verdict, so it enters the re-author route as a judge's no does (`automationStudioRefutedResultReauthorDecision`), under the same purse and attempt limits. Any other refutation goes to the patch ladder.
 
 ### A repair is accepted only after a whole run judged success
 
@@ -1879,7 +1908,8 @@ where the node reads its target when it runs. For a native node that is
 which dispatches only its `parameters` payload, so its repair is written to
 `parameterValues.parameters.target`. A recorded step whose payload is not a
 plain object is refused rather than recorded as applied, and so is any
-`edit_recovery` patch, which has no durable form. In the shipped app, automatic
+`edit_recovery` patch, which has no durable form. Inserted steps are kept as
+`insert_steps`, written by the same overlay their trial ran. In the shipped app, automatic
 promotion never applies an adaptation; see
 [What the shipped app reaches](#what-the-shipped-app-reaches).
 
@@ -2087,6 +2117,10 @@ order below is the detached path's, as built:
    a `startNodeId` from `runRuntimeSession`.
 2. **The patch ladder writes a patch and trials it** from the changed node on a
    throwaway copy (`runtime/adaptation/live-patch.ts`), and saves the adaptation.
+   A trial that failed leaves the patch discarded. One that passed with nothing
+   declared to prove it (`no_evidence`) waits on the judged run
+   (`awaitsJudgedRun`): a target override, or inserted steps that declared no
+   consequence and did nothing lasting in their trial.
 3. **The promotion gate decides, and nothing is applied.**
    `promoteAutomationStudioRuntimeAdaptation`
    (`framework/automation-service/service/runtime-adaptation/runtime-promotion.ts`) records the
@@ -2117,6 +2151,17 @@ order below is the detached path's, as built:
      `runtime/adaptation/recovery/refuted-result/reauthor.ts`), and that run is judged.
      Before it starts, a patch an earlier pass already ran is settled on that
      pass's ending, so a later verdict never stands for it.
+   - **Any re-run from the start, a re-authored Flow's included,** goes through
+     every step again, and the completed-act ledger does not outlive a pass. So
+     where a step that states a lasting consequence ran, or an outcome stayed
+     uncertain, the re-run is declined (`repair_rerun.lasting_act_may_have_landed`)
+     and the act is not repeated. The run stays failed on the answer that was
+     judged, says the fix wasn't run and why, and the edit is settled unapplied:
+     a held re-author is rejected (`not_rerun`), so it stands in the way of no later
+     build, and the stored Flow is unchanged. A press with no statement is not
+     caught: its verb says only that the page decides what it does. No path runs a
+     re-authored Flow from just after the last lasting act: a resume needs a trial's
+     resume point in the graph that ran, which a re-authored graph does not have.
 5. **The result is judged, then the patch is settled.** Once
    `verifyAutomationStudioRuntimeSessionResult` returns, the service settles every
    pending patch of the run (`settleAutomationStudioRunJudgedPromotions`,

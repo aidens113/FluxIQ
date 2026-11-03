@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
+
+const chatCssPath = createRequire(import.meta.url).resolve("@fluxiq/ui-components/styles/chat.css");
 
 function css(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -47,11 +50,9 @@ describe("in-view layouts reflow against the pane, not the window", () => {
   });
 });
 
-describe("the conversation launcher keeps off the bottom-right chrome", () => {
+describe("the chat window keeps off the bottom-right chrome", () => {
   it("reads its distance from the bottom edge rather than fixing it", () => {
-    const dock = css("conversation/02-dock.css");
-    expect(dock).toContain("bottom: var(--automation-conversation-dock-bottom, var(--space-lg));");
-    expect(dock).toContain("bottom: var(--automation-conversation-dock-bottom, var(--space-sm));");
+    expect(readFileSync(chatCssPath, "utf8")).toContain("bottom: var(--chat-window-bottom, 16px);");
   });
 
   it("is raised above the step-preview dock, and above the sheet on a narrow screen", () => {
@@ -59,7 +60,7 @@ describe("the conversation launcher keeps off the bottom-right chrome", () => {
     // a single header row whose own collapse control sits at its right-hand
     // end, and on a narrow screen the preview sheet is `bottom: 0; width: 100vw`.
     expect(css("workspace/04-layout.css")).toContain("body:has(.automation-studio-shell) {");
-    expect(css("workspace/04-layout.css")).toContain("--automation-conversation-dock-bottom: calc(var(--space-lg) + 44px);");
+    expect(css("workspace/04-layout.css")).toContain("--chat-window-bottom: calc(var(--space-lg) + 44px);");
     expect(css("workspace/06-responsive.css")).toContain("body:has(.drawer-panel.automation-preview-sheet) {");
   });
 });

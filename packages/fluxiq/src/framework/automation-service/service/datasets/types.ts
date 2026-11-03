@@ -1,4 +1,5 @@
-import type { AutomationStudioRunDatasetExportFormat } from "@fluxiq/contracts/automation";
+import type { AutomationStudioRunDatasetExportFormat, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioRecordBatch } from "../../executor/index.ts";
 
 // Requests and answers of the run datasets collaborator. Endpoint handlers pass
 // request fields through by name. `limit` and `cursor` stay `unknown` because
@@ -13,6 +14,28 @@ export type AutomationStudioRunDatasetExportLimits = {
 };
 
 export type AutomationStudioRunDatasetsRunRequest = { projectId: string; runId: string };
+
+/**
+ * One re-run of a whole Flow under its run's id, as the store sees it. Hand
+ * `onRecordBatch` to the executor; call `settle` with how the re-run ended. A
+ * re-run that succeeded is the run's answer, so `settle` removes each dataset it
+ * did not write; any other leaves them, and neither ever throws for that.
+ */
+export type AutomationStudioRunDatasetHeldTrial = {
+  /** The run's options for its trials: their rows are held, and a failed trial's dropped. As given when there is no store or no options. */
+  trialOptions: <T extends AutomationStudioGraphExecutionOptions>(options: T | undefined) => T | undefined;
+  /** The run's options for the retry that carries on from a trial: its first batch stores what the trials held, ahead of it. */
+  resumeOptions: <T extends AutomationStudioGraphExecutionOptions>(options: T | undefined) => T | undefined;
+  /** A retry took the trial up: what is held joins the run. */
+  commit: () => Promise<void>;
+  /** Nothing took the trial up: what is held leaves. */
+  discard: () => void;
+};
+
+export type AutomationStudioRunDatasetRestartedPass = {
+  onRecordBatch: (batch: AutomationStudioRecordBatch) => Promise<AutomationStudioRunDatasetSummary>;
+  settle: (status: string) => Promise<void>;
+};
 
 export type AutomationStudioRunDatasetPageRequest = { projectId: string; runId: string; datasetId: string; limit?: unknown; cursor?: unknown };
 

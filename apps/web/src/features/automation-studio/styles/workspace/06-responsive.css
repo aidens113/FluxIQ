@@ -233,7 +233,7 @@
      corner, so the sheet's own controls were underneath the launcher. The
      height repeats the sheet's own, because that is the distance to clear. */
   body:has(.drawer-panel.automation-preview-sheet) {
-    --automation-conversation-dock-bottom: calc(max(320px, min(64dvh, 560px)) + var(--space-sm));
+    --chat-window-bottom: calc(max(320px, min(64dvh, 560px)) + var(--space-sm));
   }
 }
 

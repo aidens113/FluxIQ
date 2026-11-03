@@ -43,6 +43,7 @@ import type { AutomationStudioResultSortRead } from "../record-set-summary.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadParameters } from "../read-account/index.ts";
 import { automationStudioResultConditionReadings, type AutomationStudioResultReadCell } from "./condition-readings.ts";
 import { automationStudioResultRecordOutputs } from "./record-outputs.ts";
+import { automationStudioResultProcessingReadings } from "./processing-readings.ts";
 import { automationStudioResultSettledRows } from "./settled-rows.ts";
 import { automationStudioResultSortReadings } from "./sort-reading.ts";
 
@@ -78,15 +79,17 @@ export function automationStudioResultValueReadings(input: {
 }): { reads: AutomationStudioResultReadAccount[]; recordSets: AutomationStudioResultRecordSetSummary[] } {
   // A saved answer's processing is declared on the node that writes it, which for a called part is a node of its own graph.
   const declaring = [...input.flowNodes, ...(input.authoredNodes ?? []).filter((node): node is AutomationStudioFlowNode => node !== undefined && !input.flowNodes.includes(node))];
-  const recordSets = input.recordSets.map((set) => withAnswerReadings(set, declaring, input.now));
+  // The answers' columns name no settled condition (t790), so no sentence offers one.
+  const answerColumns = new Set(input.recordSets.flatMap((set) => set.columns));
+  const recordSets = input.recordSets.map((set) => withAnswerReadings(set, declaring, input.now, answerColumns));
   const reads = input.reads.map((read, index) => {
     const node = input.authoredNodes ? input.authoredNodes[index] : input.flowNodes.find((candidate) => candidate.id === read.nodeId && candidate.definitionId === read.definitionId);
-    return withReadReadings(read, input.recordSets, node?.definitionId === read.definitionId ? node : undefined, input.now);
+    return withReadReadings(read, input.recordSets, node?.definitionId === read.definitionId ? node : undefined, input.now, answerColumns);
   });
   return { reads, recordSets };
 }
 
-function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonly AutomationStudioResultRecordSetSummary[], node: AutomationStudioFlowNode | undefined, now: number): AutomationStudioResultReadAccount {
+function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonly AutomationStudioResultRecordSetSummary[], node: AutomationStudioFlowNode | undefined, now: number, answerColumns: ReadonlySet<string>): AutomationStudioResultReadAccount {
   const authored = automationStudioResultReadParameters(node?.parameterValues);
   if (!node || !authored || !read.conditions?.length) return read;
   const written = Array.isArray(authored.where) ? authored.where : [];
@@ -106,7 +109,7 @@ function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonl
     const leftOut = paired.flatMap(({ cell }) => cell ?? []);
     const valuesRead = column === undefined ? [] : automationStudioResultConditionReadings({ condition, column, kept, leftOut, now });
     // The rows a numeric bound, a presence test or a text test left out that Core read as failing it: settled, never quoted for row by row (`./settled-rows.ts`, t574, t599, t624).
-    const settled = read.unfiltered ? undefined : automationStudioResultSettledRows({ condition, column, number: entry.number ?? index + 1, wording: entry.condition, leftOut: paired, now });
+    const settled = read.unfiltered ? undefined : automationStudioResultSettledRows({ condition, column, number: entry.number ?? index + 1, wording: entry.condition, leftOut: paired, now, answerColumns });
     if (!valuesRead.length && !settled) return entry;
     changed = true;
     return { ...entry, ...(valuesRead.length ? { valuesRead } : {}), ...(settled ?? {}) };
@@ -114,16 +117,16 @@ function withReadReadings(read: AutomationStudioResultReadAccount, sets: readonl
   return changed ? { ...read, conditions } : read;
 }
 
-function withAnswerReadings(summarized: AutomationStudioResultRecordSetSummary, nodes: readonly AutomationStudioFlowNode[], now: number): AutomationStudioResultRecordSetSummary {
+function withAnswerReadings(summarized: AutomationStudioResultRecordSetSummary, nodes: readonly AutomationStudioFlowNode[], now: number, answerColumns: ReadonlySet<string>): AutomationStudioResultRecordSetSummary {
   const { set, hidden } = withoutHiddenSortKeys(summarized);
   const process = nodes.flatMap((node) => automationStudioResultRecordOutputs(node.parameterValues)).find((output) => output.datasetId === set.datasetId && output.process)?.process;
   const rows = set.sampleRows ?? [];
-  if (!rows.length || (!process && !hidden.length)) return set;
+  if (!process && !hidden.length) return set;
   const keys = process ? sortKeys(process.sort) : [];
   const stored = automationStudioResultSortReadings(keys, rows, now);
   const sortRead = [
     ...stored.map((read) => ({ read, position: keys.findIndex((key) => key.field === read.field) })),
-    ...hidden.filter((key) => !stored.some((read) => read.field === key.field)).map((key) => ({ read: hiddenSortRead(key, set.processing?.kept ?? rows.length), position: key.position }))
+    ...hidden.filter((key) => rows.length > 0 && !stored.some((read) => read.field === key.field)).map((key) => ({ read: hiddenSortRead(key, set.processing?.kept ?? rows.length), position: key.position }))
   ].sort((one, other) => one.position - other.position).map((entry) => entry.read);
   const where = process && Array.isArray(process.where) ? process.where : [];
   let conditionsChanged = false;
@@ -133,9 +136,10 @@ function withAnswerReadings(summarized: AutomationStudioResultRecordSetSummary, 
     const condition = column === undefined ? undefined : asRecordCondition(authored, column);
     if (!condition || column === undefined) return entry;
     const valuesRead = automationStudioResultConditionReadings({ condition, column, kept: keptCells(set, column), leftOut: [], now });
-    if (!valuesRead.length) return entry;
+    const settled = automationStudioResultProcessingReadings(entry, condition, index + 1, answerColumns);
+    if (!valuesRead.length && !settled) return entry;
     conditionsChanged = true;
-    return { ...entry, valuesRead };
+    return { ...entry, ...(valuesRead.length ? { valuesRead } : {}), ...(settled ?? {}) };
   });
   if (!sortRead.length && !conditionsChanged) return set;
   return {

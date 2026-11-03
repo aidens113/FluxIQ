@@ -6,6 +6,20 @@
 // builds and updates the parts. The client's own surfaces (an on-page status
 // preference, an Open FluxIQ control) stay with the client.
 export { createChatWidget, type ChatWidget, type ChatWidgetOptions } from "./chat-widget.ts";
+export {
+  conversationDisplayTitle,
+  conversationSubjectFallbackLabel,
+  conversationSubjectLabel,
+  parseThreadList,
+  sortThreadsForList,
+  threadOptions,
+  unansweredThreadCount,
+  type AnswerOutcome,
+  type ChatComposerOptions,
+  type ChatThreadSummary,
+  type ThreadOption,
+  type ThreadSubjectKind
+} from "./conversation/index.ts";
 export { createHoldControl, createStopControl } from "./controls/index.ts";
 export {
   createActivityFeed,
@@ -38,5 +52,6 @@ export {
   type StepMessage
 } from "./stream/index.ts";
 export type { ChatTarget } from "./target.ts";
+export { conversationLauncherLabel, createChatWindow, type ChatWindow, type ChatWindowChat, type ChatWindowOptions } from "./window/index.ts";
 export { createChatOwnerContext, type ChatOwner } from "./owner-context.ts";
-export { emptyStateModel, isAtBottom, liveLineModel, stepText, type EmptyStateModel, type LiveLineModel } from "./view/index.ts";
+export { emptyStateModel, isAtBottom, liveLineModel, stepText, type EmptyStateModel, type LiveLineModel, type TurnMeta } from "./view/index.ts";

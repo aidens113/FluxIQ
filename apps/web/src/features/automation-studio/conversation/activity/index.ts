@@ -1,5 +1,7 @@
-// Live activity in the chat: what Core is doing now, read from `get-activity`,
-// held per unit of work, and told as FluxIQ's step messages among the turns.
+// Live activity in the chat: what Core is doing now, as `get-activity` answers
+// it, held per unit of work. The chat widget reads it through the panel's
+// activity port (`chat-widget/activity`) and tells the steps as FluxIQ's
+// messages among the turns.
 
 export {
   parseConversationActivitySnapshot,
@@ -14,20 +16,3 @@ export {
 } from "./contracts";
 export { CONVERSATION_ACTIVITY_HOST_WORDS } from "./host-words";
 export { CONVERSATION_ACTIVITY_HISTORY_LIMITS, holdConversationActivity, type ConversationActivityHistoryLimits } from "./history";
-export { conversationActivityPollOutcome, conversationActivityStepText } from "./model";
-export { getConversationActivity, type ConversationActivityQuery, type ConversationActivityReadResult } from "./queries";
-export { useConversationActivity, type ConversationActivityState } from "./useConversationActivity";
-export { ConversationPacedStatus, type ConversationActivityDisplay, type ConversationActivityOutcome } from "./paced-status";
-export {
-  conversationActivityIsInternal,
-  conversationActivitySentence,
-  conversationActivityTextIsHuman,
-  conversationStepMessages,
-  conversationStepOutcomeWords,
-  type ConversationStepAction,
-  type ConversationStepMessage,
-  type ConversationStepMessageKind,
-  type ConversationStepOutcomeWords
-} from "./steps";
-export { conversationStream, type ConversationStreamEntry } from "./stream";
-export { usePacedConversationActivity } from "./usePacedConversationActivity";

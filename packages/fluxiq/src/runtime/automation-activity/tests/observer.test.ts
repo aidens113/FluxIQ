@@ -11,6 +11,11 @@ import { activityActionOf } from "../../../ui/index.ts";
 import { automationStudioLlmEvidenceCompletionAttempt } from "../../llm/evidence-loop/index.ts";
 import { automationStudioReauthorEndingWatch } from "../../adaptation/recovery/refuted-result/index.ts";
 
+vi.mock("../wording/control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../wording/tests/example-control.ts")).exampleActivityControlReader
+}));
+
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;
 beforeEach(() => {

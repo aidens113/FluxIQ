@@ -1,10 +1,15 @@
 // The ports a client supplies to mount the chat.
 export type { ChatActivityState } from "./activity-state.ts";
 export type { ChatHostStatus, ChatOpenControl, ChatOpenControlFactory } from "./host.ts";
+export type { ChatAskAction, ChatAskPort, ChatAskPresentation, ChatReauthorizeOutcome, ChatReauthorizeRequest } from "./ask.ts";
+export type { ChatAttachmentContext, ChatAttachmentDraw, ChatAttachmentPort } from "./attachment.ts";
 export type { ChatResult } from "./result.ts";
+export type { ChatThreadsOptions, ChatWelcome, ChatWelcomeItem } from "./threads.ts";
 export type {
   ChatActivityPort,
   ChatAnswer,
+  ChatAttachment,
+  ChatChangesPort,
   ChatConversationPort,
   ChatModelsPort,
   ChatOnScreen,
@@ -16,6 +21,7 @@ export type {
   ChatSend,
   ChatStopTarget,
   ChatSubjectKind,
+  ChatThreadCatalogQuery,
   ChatThreadListQuery,
   ChatThreadReadQuery,
   ChatTransport

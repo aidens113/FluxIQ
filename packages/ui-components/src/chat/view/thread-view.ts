@@ -9,14 +9,20 @@
 import { createElement } from "../../dom/index.ts";
 import type { AskControlsContext, CoreTurn } from "../conversation/index.ts";
 import type { ChatStream } from "../stream/index.ts";
+import type { ChatAttachmentPort } from "../ports/index.ts";
+import type { AttachmentPlace } from "./attachment-view.ts";
 import { createLiveLine } from "./live-line.ts";
 import type { LiveLineModel } from "./live-line-model.ts";
 import { createMessageView, type MessageView } from "./message-view.ts";
 import { placeChildren } from "./place-children.ts";
 import { createStepMessageView, type StepMessageView } from "./step-message-view.ts";
+import type { TurnMeta } from "./turn-meta.ts";
 
-/** What a turn's controls are given, and what makes them change. */
-export type TurnControls = { ask: AskControlsContext; state: string };
+/** What a turn's controls are given, and what makes them change. `place` is where its attachment is read from. */
+export type TurnControls = { ask: AskControlsContext; state: string; place?: AttachmentPlace | undefined };
+
+/** What a host adds to how the list draws its turns. */
+export type ThreadViewOptions = { attachments?: ChatAttachmentPort | undefined; meta?: TurnMeta | undefined };
 
 /** The mounted list. */
 export type ThreadView = {
@@ -31,12 +37,14 @@ export type ThreadView = {
   render(stream: ChatStream, live: LiveLineModel | null, controls: (turn: CoreTurn) => TurnControls, working?: string | null): boolean;
   /** Forgets every turn and step message, for a thread that replaces this one. */
   clear(): void;
+  /** The element of the turn `turnId`, once it has one: where a "Show me" scrolls to. */
+  turnElement(turnId: string): HTMLElement | undefined;
 };
 
 /** Creates the list; `onLiveAction` hears the live line's button. */
-export function createThreadView(onLiveAction: () => void = () => undefined): ThreadView {
+export function createThreadView(onLiveAction: () => void = () => undefined, options: ThreadViewOptions = {}): ThreadView {
   const liveLine = createLiveLine(onLiveAction);
-  const element = createElement("ol", { className: "chat-stream", attrs: { "aria-label": "Conversation with FluxIQ" } }, [liveLine.element]);
+  const element = createElement("ol", { className: "chat-stream", attrs: { "aria-label": "Conversation with FluxIQ", "aria-live": "polite" } }, [liveLine.element]);
   const turns = new Map<string, MessageView>();
   const steps = new Map<string, StepMessageView>();
 
@@ -49,7 +57,7 @@ export function createThreadView(onLiveAction: () => void = () => undefined): Th
         if (item.kind === "step") {
           let view = steps.get(item.key);
           if (view === undefined) {
-            view = createStepMessageView();
+            view = createStepMessageView(options.meta);
             steps.set(item.key, view);
           }
           view.update(item.message, working !== null && item.message.activityId === working);
@@ -57,11 +65,12 @@ export function createThreadView(onLiveAction: () => void = () => undefined): Th
         }
         let view = turns.get(item.key);
         if (view === undefined) {
-          view = createMessageView(item.turn.author);
+          view = createMessageView(item.turn.author, options);
+          view.element.setAttribute("data-turn-id", item.turn.turnId);
           turns.set(item.key, view);
         }
         const given = controls(item.turn);
-        view.update(item.turn, signature(item.turn, given.state), given.ask);
+        view.update(item.turn, signature(item.turn, given.state), given.ask, given.place);
         return view.element;
       });
       liveLine.update(live);
@@ -75,12 +84,14 @@ export function createThreadView(onLiveAction: () => void = () => undefined): Th
       steps.clear();
       liveLine.update(null);
       placeChildren(element, [liveLine.element]);
-    }
+    },
+    turnElement: (turnId) => turns.get(`turn:${turnId}`)?.element
   };
 }
 
 // A turn looks the same while what Core said in it, its question, the state
 // of its answer, and why it could not be sent do; a re-read that parsed a new but equal object keeps it.
 function signature(turn: CoreTurn, state: string): string {
-  return [turn.text, JSON.stringify(turn.ask), turn.sendError ?? "", state].join("\u0000");
+  const carries = turn.attachment === undefined ? "" : `${turn.attachment.kind}:${turn.attachment.ref}`;
+  return [turn.text, JSON.stringify(turn.ask), turn.sendError ?? "", carries, state].join("\u0000");
 }

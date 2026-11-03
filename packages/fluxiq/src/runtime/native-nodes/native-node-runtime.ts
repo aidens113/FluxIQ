@@ -1,12 +1,11 @@
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { createElementMatcher, type ElementMatcher } from "../target-matching/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../../flows/authoring/model/index.ts";
-import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioRecordingCandidateParameterNormalizer, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../../framework/automation-service/nodes/index.ts";
+import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioLlmEvidenceSummary, type AutomationStudioImporterImplementationBundle, type AutomationStudioRecordingCandidateParameterNormalizer, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../../framework/automation-service/nodes/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort } from "../../framework/automation-service/nodes/index.ts";
 import { automationStudioReferenceNow } from "../reference-time/index.ts";
 import { projectRuntimeTargetActionability } from "../result-control/index.ts";
 import { automationStudioResolveTargetRefresh } from "../../engine/automation/parameter-refresh/index.ts";
-import { automationStudioLlmStepLogPageText } from "../llm/step-log/index.ts";
 import type { AutomationStudioTargetRefreshResolution } from "../../engine/automation/parameter-refresh/index.ts";
 
 export type AutomationStudioNativeRuntimeGrants = {
@@ -27,9 +26,9 @@ export type AutomationStudioNativeRuntimeGrants = {
  */
 export type AutomationStudioNativeExecution = { result: AutomationNodeExecutionResult; logs: AutomationStudioNativeLogEntry[]; declaredOutputs?: readonly AutomationNodePort[] };
 
-/** The domain's target readings a registered bundle supplies, scoped to its domain and never inferred from target fields. */
-export type AutomationStudioDomainTargetHooks = Pick<AutomationStudioImporterImplementationBundle, "outputTargetPreparer" | "recordingEntryTargetPreparer" | "recordingTargetPolicy" | "recordingCandidateParameterNormalizer">;
-const TARGET_HOOKS = ["outputTargetPreparer", "recordingEntryTargetPreparer", "recordingTargetPolicy", "recordingCandidateParameterNormalizer"] as const;
+/** The domain's readings a registered bundle supplies, scoped to its domain and never inferred from target fields. */
+export type AutomationStudioDomainTargetHooks = Pick<AutomationStudioImporterImplementationBundle, "outputTargetPreparer" | "recordingEntryTargetPreparer" | "recordingTargetPolicy" | "recordingCandidateParameterNormalizer" | "recordedStepReader" | "stateElementKindReader" | "activityControlReader" | "controlWordsReader" | "controlParameterKeys">;
+const TARGET_HOOKS = ["outputTargetPreparer", "recordingEntryTargetPreparer", "recordingTargetPolicy", "recordingCandidateParameterNormalizer", "recordedStepReader", "stateElementKindReader", "activityControlReader", "controlWordsReader", "controlParameterKeys"] as const;
 
 /**
  * Explicit trusted-local implementation binder. This is an authorization and
@@ -46,6 +45,7 @@ export class AutomationStudioNativeNodeRuntime {
   readonly elementMatcher = createElementMatcher();
   private readonly elementMatchers = new Map<string, ElementMatcher>();
   private readonly targetHooks = new Map<string, AutomationStudioDomainTargetHooks>();
+  private readonly evidenceSummaries = new Set<AutomationStudioLlmEvidenceSummary>();
 
   constructor(grants: AutomationStudioNativeRuntimeGrants = {}) {
     this.grants = { permissions: [...(grants.permissions ?? [])], runtimeCapabilities: [...(grants.runtimeCapabilities ?? [])], networkDestinations: [...(grants.networkDestinations ?? [])], secretHandles: [...(grants.secretHandles ?? [])], filesystemRoots: [...(grants.filesystemRoots ?? [])], process: grants.process === true, childProcess: grants.childProcess === true };
@@ -72,7 +72,7 @@ export class AutomationStudioNativeNodeRuntime {
     this.sdk.register(manifest);
     if (bundle.elementMatcher) this.elementMatchers.set(manifest.domainId, bundle.elementMatcher);
     this.targetHooks.set(manifest.domainId, targetHooks);
-    if (bundle.llmEvidenceSummary) automationStudioLlmStepLogPageText.use(bundle.llmEvidenceSummary);
+    if (bundle.llmEvidenceSummary) this.evidenceSummaries.add(bundle.llmEvidenceSummary);
     // Bound on the registry that validation of a generated plan reads, never on the definition, which stays plain data.
     for (const [nodeId, contract] of Object.entries(bundle.parameterContracts ?? {})) this.sdk.nodes.bindParameterContract(nodeId, contract);
     for (const node of manifest.nodes) { const key = node.source.kind === "importer" || node.source.kind === "code" ? node.source.implementationKey : ""; const implementation = bundle.implementations[key]; if (implementation) this.bindings.set(node.id, { manifest, implementation }); }
@@ -81,6 +81,19 @@ export class AutomationStudioNativeNodeRuntime {
     for (const [id, implementation] of Object.entries(bundle.comparators ?? {})) this.comparators.set(`${manifest.domainId}:${id}`, implementation);
     return this;
   }
+
+  /**
+   * The page text a registered domain reads out of a step's evidence, for the
+   * step log's `page.txt` only. Hand it to a loop as `stepLogPageText`. Nothing
+   * registered, or no summary that answers, is `undefined`.
+   */
+  readonly stepLogPageText = (evidence: unknown): string | undefined => {
+    for (const summary of this.evidenceSummaries) {
+      const page = summary.pageText(evidence);
+      if (page !== undefined) return page;
+    }
+    return undefined;
+  };
 
   /** A matcher is scoped to one registered domain, never inferred from target fields. */
   getElementMatcher(domainId: string | null | undefined): ElementMatcher | undefined { return domainId ? this.elementMatchers.get(domainId) : undefined; }

@@ -98,7 +98,8 @@ import {
   type AutomationStudioRecordCondition
 } from "@fluxiq/contracts/automation";
 import { automationStudioResultConditionName } from "../read-account/index.ts";
-import type { AutomationStudioResultLeftOutObservation, AutomationStudioResultReadCondition } from "../read-condition.ts";
+import { automationStudioRequestSettledColumn } from "../request-rows/row/index.ts";
+import type { AutomationStudioResultReadCondition } from "../read-condition.ts";
 import type { AutomationStudioResultReadCell } from "./condition-readings.ts";
 
 /** The relations that compare a number. */
@@ -112,7 +113,11 @@ const NO_VALUE = "(no value)";
 type SettledRows = { leftOutSettled: string[]; settled: string; settledKind: NonNullable<AutomationStudioResultReadCondition["settledKind"]> };
 
 /** One left-out row as given, with its tested cell where the row says one, and its witness where the read sent one for every row. */
-type LeftOutRow = { row: string; cell: AutomationStudioResultReadCell | undefined; witness?: AutomationStudioResultLeftOutObservation | null | undefined };
+type LeftOutRow = {
+  row: string;
+  cell: AutomationStudioResultReadCell | undefined;
+  witness?: ({ state: "present"; value: string } | { state: "absent" | "unavailable" | "withheld" }) | null | undefined;
+};
 
 /**
  * The left-out rows Core settles for this condition, as given, and its
@@ -129,10 +134,16 @@ export function automationStudioResultSettledRows(input: {
   leftOut: readonly LeftOutRow[];
   /** What a relative date in a value is measured back from; the moment of reading when absent. */
   now?: number;
+  /** The columns the run's stored answers hold, which name no settled condition (t790): the sentence never offers one. */
+  answerColumns: ReadonlySet<string>;
 }): SettledRows | undefined {
   const { condition, column } = input;
   const name = automationStudioResultConditionName(input.number, input.wording);
-  const named = column === undefined ? name : `${name} or ${column}`;
+  // The sentence offers only what the rule takes (lead decision, 2026-11-03, t841): its condition, and a column only where the rule reads one.
+  const namedFor = (settled: readonly LeftOutRow[]): string => {
+    const nameable = automationStudioRequestSettledColumn(settled[0]!.row, input.wording, input.answerColumns);
+    return nameable === undefined ? name : `${name} or ${nameable}`;
+  };
   const keeps = presenceKept(condition);
   if (keeps) {
     // The witness says the value is the one the condition leaves out: absent for a test keeping rows with it, present for one keeping rows without it.
@@ -146,10 +157,10 @@ export function automationStudioResultSettledRows(input: {
       leftOutSettled: settled.map(({ row }) => row),
       settledKind: "presence",
       settled: `On each row in leftOutSettled the read ${found}, so each fails ${name} as written: Core settled these rows, so a yes need not quote the request beside each of them. `
-        + `It must still show the condition is the request's: quote, once, in a sentence that names ${named}, the request's own words asking for ${asks}. If the request asks no such thing, these rows are ones it asks for.`
+        + `It must still show the condition is the request's: quote, once, in a sentence that names ${namedFor(settled)}, the request's own words asking for ${asks}. If the request asks no such thing, these rows are ones it asks for.`
     };
   }
-  if (textOnly(condition)) return textSettled(input, name, named);
+  if (textOnly(condition)) return textSettled(input, name, namedFor);
   if (column === undefined || !numericOnly(condition)) return undefined;
   // A date bound reads the date, never the number in it (header, t790).
   const kind = automationStudioRecordConditionComparesDates(condition) ? "date" : "number";
@@ -170,7 +181,7 @@ export function automationStudioResultSettledRows(input: {
     leftOutSettled: settled.map(({ row }) => row),
     settledKind: "bound",
     settled: `${read}: Core settled these rows, so a yes need not quote the request beside each of them. `
-      + `It must still show the bound is the request's: quote, once, in a sentence that names ${named}, the request's own words stating that bound. If the request states no such bound, these rows are ones it asks for.`
+      + `It must still show the bound is the request's: quote, once, in a sentence that names ${namedFor(settled)}, the request's own words stating that bound. If the request states no such bound, these rows are ones it asks for.`
   };
 }
 
@@ -190,7 +201,7 @@ function foundEmpty({ row, witness }: LeftOutRow, column: string): boolean {
  * whose value, as found, fails the condition as written. Its sentence names the
  * value by its column where one is known.
  */
-function textSettled(input: { condition: AutomationStudioRecordCondition; column: string | undefined; leftOut: readonly LeftOutRow[] }, name: string, named: string): SettledRows | undefined {
+function textSettled(input: { condition: AutomationStudioRecordCondition; column: string | undefined; leftOut: readonly LeftOutRow[] }, name: string, namedFor: (settled: readonly LeftOutRow[]) => string): SettledRows | undefined {
   // A text test fails on no value unless it is negated (header, t636).
   const failsAbsent = !automationStudioRecordConditionHolds(input.condition, undefined);
   const absent = ({ witness }: LeftOutRow) => failsAbsent && witness?.state === "absent";
@@ -208,7 +219,7 @@ function textSettled(input: { condition: AutomationStudioRecordCondition; column
     leftOutSettled: settled.map(({ row }) => row),
     settledKind: "text",
     settled: `${read}, so Core settled these rows, and a yes need not quote the request beside each of them. `
-      + `It must still show the condition is the request's: quote, once, in a sentence that names ${named}, the request's own words ${asks} ${value} says what the condition looks for. If the request asks no such thing, these rows are ones it asks for.`
+      + `It must still show the condition is the request's: quote, once, in a sentence that names ${namedFor(settled)}, the request's own words ${asks} ${value} says what the condition looks for. If the request asks no such thing, these rows are ones it asks for.`
   };
 }
 

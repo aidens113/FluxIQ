@@ -47,7 +47,7 @@ export * from "./answer-step.ts";
 export * from "./directory.ts";
 export * from "./model-step.ts";
 export * from "./offline-trial-step.ts";
-export * from "./page-text.ts";
+export * from "./page-reader.ts";
 export * from "./reset-step.ts";
 export * from "./scope.ts";
 export * from "./screen.ts";

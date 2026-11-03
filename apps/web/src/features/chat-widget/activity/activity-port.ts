@@ -6,7 +6,8 @@
 // beat while the tab is hidden, an immediate read when it shows again) and
 // stops it when the last subscriber leaves. The state is the Studio's own:
 // `current` and `recent` as Core's snapshot, `display` from the shared pacer
-// with this panel's words, `history` held per unit of work. There is no page
+// with this panel's words, `history` held per unit of work. With no project to
+// read, the state is an idle one and nothing is asked. There is no page
 // overlay in the panel, so `overlay` is always `hidden` and `setOverlay` is
 // absent.
 
@@ -23,6 +24,8 @@ export type ProgramActivityPortOptions = {
   projectId(): string | undefined;
   timers?: ActivityTimers;
 };
+
+const NO_ACTIVITY: ChatActivityState = { current: null, display: null, recent: [], overlay: "hidden", live: true };
 
 export function createProgramActivityPort(api: ProgramCommandTransport, options: ProgramActivityPortOptions): ChatActivityPort {
   const timers = options.timers ?? browserActivityTimers;
@@ -44,7 +47,8 @@ export function createProgramActivityPort(api: ProgramCommandTransport, options:
 
   const read: ChatActivityPort["read"] = async () => {
     const projectId = options.projectId()?.trim();
-    if (!projectId) return { ok: false, code: "no_project", sentence: "FluxIQ has not said which project this chat belongs to yet." };
+    // No project open and no thread chosen: there is no work to read, which is an idle chat and not a failed one.
+    if (!projectId) return { ok: true, value: { state: NO_ACTIVITY } };
     const response = await api.post<unknown>("get-activity", { projectId });
     if (!response.ok) return chatFailure(response);
     // A read for a project the chat has left must not replace the new one's state.

@@ -176,8 +176,12 @@ Every other file runs in the `parallel` group at full concurrency. A real-SQLite
 test spends its time in hundreds of sequential driver round trips; beside
 fourteen hundred files collecting the framework at full concurrency it ran 8 to
 15 times slower than alone, and every daily sweep in October 2026 timed out a
-different handful of them at 15 s. Isolating them is the fix; never raise their
-timeout.
+different handful of them at 15 s. Isolating them keeps this package from
+starving itself. It cannot stop another lane's run from doing it, and a plain
+`vitest run <path>` has no group, so a marked file also runs on a longer timeout
+in every kind of run (`REAL_SQL_TEST_TIMEOUT_MS`, 60 s against 15 s, set by the
+setup file below). The marker is what earns it: never raise a timeout instead of
+marking a file, and never on one test.
 
 - The marker in the file is the only membership rule; there is no list.
   `packages/fluxiq/tests/test-groups.ts` finds the marked files and gives each
@@ -342,6 +346,14 @@ The detailed procedure for each, with the current offenders, is in the
   `pnpm check` fails when its bundle enters Core through a module missing
   from those entries, so the list follows the real bundle.
 
+- **Reading a domain's fields in Core.** `control.accessibleName`, `attributes.type === "password"`
+  or a key list holding `"selector"` type-check and run, and turn one domain's
+  vocabulary into Core's. The `web-vocabulary` rule fails them in all non-test
+  source under `domainNeutralPaths`, as names, whole strings and inside regular
+  expressions, past what `domainReadingExceptions` names with a reason. An
+  exception that no longer holds its terms fails too. The remedy is a hook on the
+  domain's implementation bundle
+  ([runtime ownership](./runtime-ownership.md#hooks-on-the-implementation-bundle)).
 - **Naming a capability outside the files allowed to hold it.** Some
   references are a capability, not a style: a model provider's host, its SDK,
   the environment variable holding its key. Written anywhere, they type-check

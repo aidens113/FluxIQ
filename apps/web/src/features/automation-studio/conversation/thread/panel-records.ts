@@ -24,17 +24,12 @@ export type ConversationPanelInvocation = {
   arguments: Record<string, unknown>;
 };
 
-/** Whether this attachment is the panel's own record rather than something to show. */
-export function conversationAttachmentIsPanelRecord(kind: string): boolean {
-  return kind === CONVERSATION_PANEL_CAPABILITY_ATTACHMENT || kind === CONVERSATION_PANEL_RESULT_ATTACHMENT;
-}
-
 /**
  * The invocation a confirmation turn carries, or null when the turn carries
  * none or its reference cannot be read. Null is not a silent refusal: the
  * caller says in the thread that there was nothing it could run.
  */
-export function conversationPanelInvocation(turn: ConversationTurn | undefined): ConversationPanelInvocation | null {
+export function conversationPanelInvocation(turn: Pick<ConversationTurn, "attachment"> | undefined): ConversationPanelInvocation | null {
   const attachment = turn?.attachment;
   if (!attachment || attachment.kind !== CONVERSATION_PANEL_CAPABILITY_ATTACHMENT) return null;
   let parsed: unknown;

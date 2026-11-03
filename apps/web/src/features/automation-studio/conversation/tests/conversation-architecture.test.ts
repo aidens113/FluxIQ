@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { automationStudioViewIds, createAutomationStudioViewInstances } from "../../views";
-import { conversationAttachmentKinds, conversationAttachmentLabel, conversationAttachmentRenderer, conversationLauncherLabel } from "../components";
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), "utf8");
@@ -29,16 +28,15 @@ describe("the conversation is an overlay, not one view among twelve", () => {
 
   it("mounts over the whole workspace, with a launcher that is always on screen", () => {
     const session = source("../../live/components/AutomationStudioSession.tsx");
-    expect(session).toContain("<ConversationDock");
+    expect(session).toContain("<ChatDock");
     // Outside the workspace composition, so it is over every region rather
     // than inside one of them. `lastIndexOf`, because the gate mounts one too
     // and the gate is returned earlier in the file -- see the next case.
-    expect(session.lastIndexOf("<ConversationDock")).toBeGreaterThan(session.indexOf("<AutomationStudioWorkspaceComposition"));
-
-    const dock = source("../components/ConversationDock.tsx");
-    expect(dock).toContain('className="automation-conversation-dock-launcher"');
-    expect(dock).toContain('role="dialog"');
-    expect(source("../../styles/conversation/02-dock.css")).toContain("position: fixed");
+    expect(session.lastIndexOf("<ChatDock")).toBeGreaterThan(session.indexOf("<AutomationStudioWorkspaceComposition"));
+    // The window is the chat package's: fixed to the viewport, its launcher
+    // always drawn (the package tests the launcher, the badge and Escape).
+    expect(source("../../../chat-widget/ChatDock.tsx")).toContain("windowed={WINDOW}");
+    expect(source("../../../chat-widget/ChatWidget.tsx")).toContain("createChatWindow(widget");
   });
 
   it("is on the landing screen too, which is where a person has nothing to work with yet", () => {
@@ -51,49 +49,26 @@ describe("the conversation is an overlay, not one view among twelve", () => {
     const session = source("../../live/components/AutomationStudioSession.tsx");
     const gate = session.indexOf("<AutomationStudioProjectGate");
     const workspace = session.indexOf("<AutomationStudioWorkspaceComposition");
-    const onTheGate = session.indexOf("<ConversationDock projectId={null} />");
+    const onTheGate = session.indexOf("<ChatDock projectId={null} />");
     expect(gate).toBeGreaterThan(-1);
     expect(onTheGate).toBeGreaterThan(gate);
     expect(onTheGate).toBeLessThan(workspace);
   });
 
-  it("collapses without unmounting, so the badge can still be lit by a question", () => {
-    const dock = source("../components/ConversationDock.tsx");
-    // `hidden` rather than a conditional render: the thread keeps its poller,
-    // its turns and its scroll position, and a question that arrives while the
-    // window is shut still reaches the launcher.
-    expect(dock).toContain("hidden={!open}");
-    expect(dock).not.toMatch(/\{open \? <ConversationView/u);
-    expect(dock).toContain('event.key !== "Escape"');
-  });
-
-  it("says on the launcher itself that something needs the person", () => {
-    expect(conversationLauncherLabel(false, 0)).toBe("Open the FluxIQ conversation");
-    expect(conversationLauncherLabel(false, 1)).toBe("Open the FluxIQ conversation - 1 thread is waiting on your answer");
-    expect(conversationLauncherLabel(true, 3)).toBe("Collapse the FluxIQ conversation - 3 threads are waiting on your answer");
-  });
-
-  it("splits into a view that binds commands and a content component that takes them", () => {
-    const view = source("../components/ConversationView.tsx");
-    const content = source("../components/ConversationViewContent.tsx");
-    expect(view).toContain("useConversationCommands()");
-    expect(view).toContain("<ConversationViewContent {...props} commands={commands} />");
-    expect(view).not.toMatch(/useProgramApi\s*\(|\bapi\.(?:get|post)\s*\(/u);
-    expect(content).toContain("commands: ConversationCommands");
-    expect(content).not.toContain("useConversationCommands");
+  it("has one conversation surface: nothing of the old React view or its styles is left", () => {
+    const manifest = source("../../../../app/programs/automation-studio/automation-studio.css");
+    expect(manifest).not.toContain("styles/conversation/");
+    expect(source("../../styles/workspace/04-layout.css")).toContain("--chat-window-bottom:");
+    expect(source("../../styles/workspace/04-layout.css")).not.toMatch(/automation-conversation/u);
   });
 });
 
 describe("a turn reaches the person without a push channel", () => {
-  it("polls with the adaptive backoff rather than a fixed interval", () => {
-    const controller = source("../useConversationThread.ts");
+  it("polls the global prompt with the adaptive backoff rather than a fixed interval", () => {
     const prompt = source("../../../../app/GlobalConversationPrompt.tsx");
-    for (const module of [controller, prompt]) {
-      expect(module).toContain("createBackoffPoller");
-      expect(module).not.toContain("setInterval");
-      expect(module).toContain('document.addEventListener("visibilitychange"');
-    }
-    expect(controller).toContain('kinds: ["conversation.changed"]');
+    expect(prompt).toContain("createBackoffPoller");
+    expect(prompt).not.toContain("setInterval");
+    expect(prompt).toContain('document.addEventListener("visibilitychange"');
   });
 
   it("reads on the hidden beat instead of standing still", () => {
@@ -105,12 +80,6 @@ describe("a turn reaches the person without a push channel", () => {
     expect(poller).not.toMatch(/if \(options\.hidden\(\)\) \{\s*queue\(/u);
     expect(poller).toContain("const hidden = options.hidden();");
     expect(poller).toContain("delayMs = hidden ? CONVERSATION_POLL_HIDDEN_MS");
-  });
-
-  it("keeps reading a project that has no thread yet, because that is where the next one opens", () => {
-    const controller = source("../useConversationThread.ts");
-    expect(controller).toContain("active: () => true");
-    expect(controller).not.toContain("active: () => Boolean(selectedRef.current)");
   });
 
   it("mounts the prompt globally, and stands down where the overlay already is", () => {
@@ -126,6 +95,8 @@ describe("a turn reaches the person without a push channel", () => {
     const store = source("../../stores/mutation-transaction-store.ts");
     expect(store).toContain('kind: "conversation.changed"');
     expect(source("../turn-commands.ts")).toContain("commitAutomationStudioMutation");
+    // The chat hears both kinds through its change feed.
+    expect(source("../../../chat-widget/transport/changes-port.ts")).toContain('kinds: ["conversation.changed", "runtime-run.changed"]');
   });
 });
 
@@ -150,53 +121,40 @@ describe("the conversation talks to Core in the shape Core answers", () => {
 
 describe("the conversation follows the panel's own conventions", () => {
   it("re-authorizes through the shared dialog rather than a second PIN field", () => {
-    const form = source("../components/ConversationAskForm.tsx");
-    expect(form).toContain("requirements={{ pin: true }}");
-    expect(form).not.toContain('<Field label="PIN">');
+    const dialog = source("../../../chat-widget/ReauthorizeDialog.tsx");
+    expect(dialog).toContain("<AuthorizationDialog");
+    expect(dialog).toContain("requirements={{ pin: true }}");
+    expect(dialog).not.toContain('<Field label="PIN">');
   });
 
   it("keeps browser persistence out of every part of the surface", () => {
     for (const path of [
-      "../components/ConversationDock.tsx",
-      "../components/ConversationView.tsx",
-      "../components/ConversationViewContent.tsx",
-      "../components/ConversationThread.tsx",
-      "../components/ConversationTurn.tsx",
-      "../useConversationThread.ts"
+      "../../../chat-widget/ChatDock.tsx",
+      "../../../chat-widget/ChatWidget.tsx",
+      "../../../chat-widget/ProgramChatWidget.tsx",
+      "../../../chat-widget/ReauthorizeDialog.tsx",
+      "../../../chat-widget/asks/present-ask.ts",
+      "../../../chat-widget/attachments/panel-attachment-port.ts",
+      "../../../chat-widget/options/panel-chat-options.ts",
+      "../../../chat-widget/transport/conversation-port.ts",
+      "../../../chat-widget/transport/answer-ask.ts"
     ]) {
-      expect(source(path)).not.toMatch(/localStorage|sessionStorage|indexedDB/u);
+      expect(source(path), path).not.toMatch(/localStorage|sessionStorage|indexedDB/u);
     }
-  });
-
-  it("owns its stylesheets, each imported once by the Studio route manifest", () => {
-    const manifest = source("../../../../app/programs/automation-studio/automation-studio.css");
-    const imports = manifest.split(/\r?\n/u).filter((line) => line.includes("styles/conversation/"));
-    expect(imports).toHaveLength(2);
-    expect(new Set(imports).size).toBe(2);
-    expect(source("../../styles/conversation/01-thread.css")).toContain(".automation-conversation-");
-    expect(source("../../styles/conversation/02-dock.css")).toContain(".automation-conversation-dock");
+    // The draft is kept in memory only, never in the browser.
+    expect(source("../../../chat-widget/options/panel-chat-options.ts")).toContain("keepDraft: false");
   });
 
   it("never leaves a control the person cannot use without saying why", () => {
-    const composer = source("../components/ConversationComposer.tsx");
-    expect(composer).toContain("unavailableReason");
-    expect(source("../components/ConversationViewContent.tsx")).toContain("unavailableReason:");
+    expect(source("../../../chat-widget/options/panel-chat-options.ts")).toContain("unavailableReason:");
   });
 });
 
 describe("a turn can carry something the panel draws itself", () => {
-  it("routes a known kind to its renderer and names an unknown one", () => {
-    expect(conversationAttachmentKinds()).toContain("flow-graph-diff");
-    expect(conversationAttachmentRenderer("flow-graph-diff")).toBeTruthy();
-    expect(conversationAttachmentRenderer("hologram")).toBeNull();
-    expect(conversationAttachmentLabel("flow-graph-diff")).toBe("Proposed Flow change");
-    expect(conversationAttachmentLabel("hologram")).toBe("Attachment");
-  });
-
   it("draws the structural change itself rather than mounting the graph editor", () => {
-    const diff = source("../components/FlowGraphDiffAttachment.tsx");
+    const diff = source("../../../chat-widget/attachments/flow-graph-diff/draw.ts");
     const imports = [...diff.matchAll(/^import[\s\S]*?from\s+"([^"]+)";$/gmu)].map((match) => match[1]);
     expect(imports.filter((specifier) => /flow-editor|xyflow/u.test(specifier ?? ""))).toEqual([]);
-    expect(diff).toContain('aria-label="Structural changes"');
+    expect(diff).toContain('"aria-label": "Structural changes"');
   });
 });

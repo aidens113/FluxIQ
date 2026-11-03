@@ -36,7 +36,8 @@
 // The element lives as long as the message, and each card's element as long
 // as its card: a render changes only the words and marks that changed, and
 // adds a new card after the others, so nothing remounts, reorders or flickers
-// while actions start and end. Text goes in through `textContent` only.
+// while actions start and end. Text goes in through `textContent` only. With
+// `turnMeta` the message says on hover when it happened.
 
 import { ACTIVITY_ACTION_ICONS } from "fluxiq/ui";
 import { createElement } from "../../dom/index.ts";
@@ -47,6 +48,7 @@ import type { ProjectCardWords } from "../stream/step/index.ts";
 import { createActionCardView, type ActionCardView } from "./action-card-view.ts";
 import { createDoneAgainView, type DoneAgainView } from "./done-again-view.ts";
 import { placeChildren } from "./place-children.ts";
+import type { TurnMeta } from "./turn-meta.ts";
 
 /** The mounted message. */
 export type StepMessageView = {
@@ -59,7 +61,7 @@ export type StepMessageView = {
 const SPOKEN: ReadonlySet<StepMessage["kind"]> = new Set<StepMessage["kind"]>(["decision", "repair", "recovery", "note"]);
 
 /** Creates an empty message. */
-export function createStepMessageView(): StepMessageView {
+export function createStepMessageView(meta?: TurnMeta): StepMessageView {
   const title = createElement("strong", { className: "chat-step-title" });
   const text = createElement("span", { className: "chat-step-text" });
   const line = createElement("p", { className: "chat-step-line" }, [title, text]);
@@ -76,6 +78,7 @@ export function createStepMessageView(): StepMessageView {
   return {
     element,
     update(message, current) {
+      if (meta !== undefined && Number.isFinite(message.at)) setAttr(element, "title", meta.formatTime(message.at));
       setAttr(element, "data-kind", message.kind);
       setAttr(element, "data-role", message.agent?.role ?? null);
       // A step of an agent working on a brief sits under that brief; the brief itself is the header.

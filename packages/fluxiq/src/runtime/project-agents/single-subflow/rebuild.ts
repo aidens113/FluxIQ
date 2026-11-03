@@ -4,6 +4,7 @@ import { authoringScopePartOf } from "../../flow-authoring/bootstrap/record-defa
 import { automationStudioProjectDispatchScope } from "../dispatch/index.ts";
 import { AutomationStudioProjectRecordRefusal, type AutomationStudioProjectBuildRecord } from "../record/index.ts";
 import { automationStudioProjectSingleSubflowAssemble } from "./proposal-assembly.ts";
+import { runWithAutomationStudioDomainReadings, type AutomationStudioDomainReadings } from "../../domain-readings/index.ts";
 import { automationStudioProjectSingleSubflowPlan } from "./single-subflow-plan.ts";
 
 // A single-subflow plan's candidate rebuilt from a script its builder submitted
@@ -46,6 +47,8 @@ export type AutomationStudioProjectSingleSubflowRebuildInput = {
   instructionText: string;
   /** The build's original sources, when its candidate binds them; absent for a build that bound none. */
   originalSource?: AutomationStudioCandidateOriginalSourceBinding | undefined;
+  /** The domain's readings of a node's parameters: this seam runs a build's script checks outside any build. Absent, it keeps what it was started under. */
+  domainReadings?: Readonly<AutomationStudioDomainReadings> | undefined;
 };
 
 /** The proposal and whole candidate a rebuild made, or the stage that refused it and its codes (with the proposal, once one was made). */
@@ -63,6 +66,10 @@ const NOT_THIS_PLAN = "project.whole_trial_not_this_plan";
  * for a brief the record does not hold or one written against an older plan.
  */
 export async function automationStudioProjectSingleSubflowRebuild(input: AutomationStudioProjectSingleSubflowRebuildInput): Promise<AutomationStudioProjectSingleSubflowRebuilt> {
+  return input.domainReadings ? await runWithAutomationStudioDomainReadings(input.domainReadings, () => rebuild(input)) : await rebuild(input);
+}
+
+async function rebuild(input: AutomationStudioProjectSingleSubflowRebuildInput): Promise<AutomationStudioProjectSingleSubflowRebuilt> {
   const { record } = input;
   const brief = record.briefs.find((entry) => entry.brief.briefId === input.briefId)?.brief;
   if (!brief) throw new AutomationStudioProjectRecordRefusal("project.brief_unknown", "briefId");

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findRealSqlTestFiles, hasRealSqlMarker, REAL_SQL_MARKER, REAL_SQL_MAX_WORKERS, testGroupOptions } from "./test-groups.ts";
+import { findRealSqlTestFiles, hasRealSqlMarker, REAL_SQL_MARKER, REAL_SQL_MAX_WORKERS, REAL_SQL_TEST_TIMEOUT_MS, testGroupOptions } from "./test-groups.ts";
 
 // Guards the test groups `pnpm test` runs in turn (`test-groups.ts`): membership
 // comes from the marker in a file's header and nothing else, and every file is
@@ -55,8 +55,13 @@ describe("testGroupOptions", () => {
   it("puts marked files in the real-SQL group with few workers and every other file in the parallel group", async () => {
     await file("src/tests/sql.test.ts", `${REAL_SQL_MARKER}\n`);
     await file("src/tests/plain.test.ts", "\n");
-    expect(testGroupOptions("real-sql", root, ["**/node_modules/**"])).toEqual({ include: ["src/tests/sql.test.ts"], maxWorkers: REAL_SQL_MAX_WORKERS, minWorkers: 1 });
+    expect(testGroupOptions("real-sql", root, ["**/node_modules/**"])).toEqual({ include: ["src/tests/sql.test.ts"], maxWorkers: REAL_SQL_MAX_WORKERS, minWorkers: 1, testTimeout: REAL_SQL_TEST_TIMEOUT_MS, hookTimeout: REAL_SQL_TEST_TIMEOUT_MS });
     expect(testGroupOptions("parallel", root, ["**/node_modules/**"])).toEqual({ exclude: ["**/node_modules/**", "src/tests/sql.test.ts"] });
+  });
+
+  it("leaves an unmarked file on the package's default timeout", () => {
+    const worker = (globalThis as { __vitest_worker__?: { config?: { testTimeout?: number } } }).__vitest_worker__;
+    expect(worker?.config?.testTimeout).toBe(15_000);
   });
 
   it("leaves a run with no group (a plain `vitest run <path>`) untouched, and refuses an unknown group", () => {

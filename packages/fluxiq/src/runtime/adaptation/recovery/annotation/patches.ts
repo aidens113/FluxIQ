@@ -181,9 +181,11 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       if (permission.outcome === "required") break;
       continue;
     }
+    input.graphOptions?.trialRecordBatches?.begin();
     const tested = proposalOnlyTargetOverride
       ? proposeAutomationStudioRuntimeTargetOverride(patchInput)
       : await executeAutomationStudioRuntimePatch(permission?.outcome === "permitted" ? { ...patchInput, sideEffectPermission: "permitted" } : patchInput);
+    if (tested.verification?.status === "contradicted" || tested.verification?.status === "not_executed") input.graphOptions?.trialRecordBatches?.reject();
     attempts.push(compactJsonObject({
       kind: patch.kind,
       // What the gate said, where it was asked: `permitted` (nothing declared,

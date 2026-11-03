@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
 import type { AutomationStudioInstructedAct } from "../contracts.ts";
 import { automationStudioInstructedActClaimDoubt, automationStudioInstructedActControlShowsDone } from "../claim-doubt.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 const add: AutomationStudioInstructedAct = { id: "a1", kind: "add_to", verb: "add", quote: "Add the hub to my cart." };
 function step(target?: string): AutomationStudioFlowDraftStep {

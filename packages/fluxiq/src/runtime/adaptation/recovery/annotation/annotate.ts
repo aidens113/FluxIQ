@@ -455,6 +455,8 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
     try {
       explorationResult = scope ? await runAutomationStudioRecoveryExploration({
         binding: ports.llmEvidenceRuntime,
+        controlParameterKeys: ports.controlParameterKeys,
+        ...(ports.stepLogPageText ? { stepLogPageText: ports.stepLogPageText } : {}),
         scope,
         policy: input.context.policy,
         // The authority over what an action may lastingly do. The policy's

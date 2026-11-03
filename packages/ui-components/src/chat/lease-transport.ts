@@ -2,7 +2,9 @@
 // no longer current, every request is answered as a failure and never reaches
 // the client: a reply for the chat's last context must land nowhere. Hearing
 // pushed activity is not a request, so `activity.subscribe` is passed through;
-// the activity feed already guards its own lifecycle.
+// the activity feed already guards its own lifecycle. The change feed
+// (`changes`) is pushed too and passed through the same way: the chat
+// unsubscribes it when the owner changes.
 
 import type { ChatResult, ChatTransport } from "./ports/index.ts";
 
@@ -24,7 +26,8 @@ function leased<Args extends unknown[], Value>(
 
 /** A copy of `transport` whose requests are answered only while `valid()` holds. */
 export function leaseTransport(transport: ChatTransport, valid: () => boolean): ChatTransport {
-  const { conversation, activity, runs, recordings, models } = transport;
+  const { conversation, activity, runs, recordings, models, changes } = transport;
+  const listAllThreads = conversation.listAllThreads;
   const setOverlay = activity.setOverlay;
   const openInstructions = runs.openInstructions;
   return {
@@ -32,7 +35,8 @@ export function leaseTransport(transport: ChatTransport, valid: () => boolean): 
       listThreads: leased(valid, (query) => conversation.listThreads(query)),
       readThread: leased(valid, (query) => conversation.readThread(query)),
       send: leased(valid, (message) => conversation.send(message)),
-      answer: leased(valid, (answer) => conversation.answer(answer))
+      answer: leased(valid, (answer) => conversation.answer(answer)),
+      ...(listAllThreads === undefined ? {} : { listAllThreads: leased(valid, (query) => listAllThreads.call(conversation, query)) })
     },
     activity: {
       read: leased(valid, () => activity.read()),
@@ -46,6 +50,7 @@ export function leaseTransport(transport: ChatTransport, valid: () => boolean): 
       ...(openInstructions === undefined ? {} : { openInstructions: leased(valid, (runId) => openInstructions.call(runs, runId)) })
     },
     ...(recordings === undefined ? {} : { recordings: { list: leased(valid, (query) => recordings.list(query)) } }),
-    ...(models === undefined ? {} : { models: { readKeys: leased(valid, () => models.readKeys()) } })
+    ...(models === undefined ? {} : { models: { readKeys: leased(valid, () => models.readKeys()) } }),
+    ...(changes === undefined ? {} : { changes: { subscribe: (listener) => changes.subscribe(listener) } })
   };
 }

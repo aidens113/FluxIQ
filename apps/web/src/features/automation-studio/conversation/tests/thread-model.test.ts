@@ -11,16 +11,7 @@ import {
   parseConversationTurn,
   parseConversationTurns
 } from "../thread";
-import {
-  conversationFollowsTail,
-  conversationSubjectLabel,
-  latestConversationTurnId,
-  mergeConversationTurns,
-  pendingConversationTurn,
-  sortConversationsForThreadList,
-  unansweredConversationCount,
-  visibleConversationTurns
-} from "../thread";
+import { conversationSubjectLabel, pendingConversationTurn } from "../thread";
 import { openConversationsFromPayload, promptableConversationTurn, withDismissedAsk } from "../thread";
 import { conversationAnswerNeedsReauthorization, conversationAskPresentation } from "../thread";
 
@@ -110,20 +101,6 @@ describe("conversation transcript", () => {
   const turn = (turnId: string, createdAt: number, ask?: Record<string, unknown>) =>
     parseConversationTurn(wireTurn({ turnId, createdAt, ...(ask ? { ask } : {}) }))!;
 
-  it("appends without rewriting what the person already read", () => {
-    const held = [turn("turn.b", 20), turn("turn.a", 10)];
-    const merged = mergeConversationTurns(held, [turn("turn.c", 30), { ...turn("turn.a", 10), text: "rewritten" }]);
-    expect(merged.map((entry) => entry.turnId)).toEqual(["turn.a", "turn.b", "turn.c"]);
-    expect(merged[0]?.text).toBe("Reading the page.");
-    expect(latestConversationTurnId(merged)).toBe("turn.c");
-    expect(latestConversationTurnId([])).toBeNull();
-  });
-
-  it("orders two turns written in the same millisecond stably", () => {
-    const merged = mergeConversationTurns([], [turn("turn.z", 10), turn("turn.a", 10)]);
-    expect(merged.map((entry) => entry.turnId)).toEqual(["turn.a", "turn.z"]);
-  });
-
   it("offers only the newest question still waiting", () => {
     const turns = [
       turn("turn.1", 10, wireAsk({ askId: "ask.old", status: "answered" })),
@@ -132,43 +109,6 @@ describe("conversation transcript", () => {
     ];
     expect(pendingConversationTurn(turns)?.ask?.askId).toBe("ask.new");
     expect(pendingConversationTurn([turn("turn.1", 10)])).toBeNull();
-  });
-
-  it("mounts a bounded tail and keeps the rest behind one control", () => {
-    const turns = Array.from({ length: 5_000 }, (_, index) => turn(`turn.${index}`, index));
-    const windowed = visibleConversationTurns(turns, false);
-    expect(windowed.turns).toHaveLength(200);
-    expect(windowed.hidden).toBe(4_800);
-    expect(windowed.turns[199]?.turnId).toBe("turn.4999");
-    expect(visibleConversationTurns(turns, true).turns).toHaveLength(5_000);
-  });
-
-  it("follows its tail only when the person is already at the bottom", () => {
-    expect(conversationFollowsTail({ scrollTop: 900, scrollHeight: 1_000, clientHeight: 100 })).toBe(true);
-    expect(conversationFollowsTail({ scrollTop: 860, scrollHeight: 1_000, clientHeight: 100 })).toBe(true);
-    expect(conversationFollowsTail({ scrollTop: 400, scrollHeight: 1_000, clientHeight: 100 })).toBe(false);
-  });
-
-  it("opens the list on whatever is waiting on an answer, then on live work", () => {
-    const base = {
-      conversationId: "c",
-      projectId: "p",
-      subject: { kind: "project" as const, id: "p" },
-      title: null,
-      turnCount: 1,
-      pendingAskCount: 0,
-      createdAt: 0
-    };
-    const sorted = sortConversationsForThreadList([
-      { ...base, conversationId: "c.resolved", status: "resolved" as const, updatedAt: 99 },
-      { ...base, conversationId: "c.old", status: "open" as const, updatedAt: 1 },
-      { ...base, conversationId: "c.new", status: "open" as const, updatedAt: 5 },
-      { ...base, conversationId: "c.waiting", status: "open" as const, updatedAt: 0, pendingAskCount: 1 }
-    ]);
-    // The question holding work up comes first, whatever its timestamp: it is
-    // the reason the person opened the window.
-    expect(sorted.map((entry) => entry.conversationId)).toEqual(["c.waiting", "c.new", "c.old", "c.resolved"]);
-    expect(unansweredConversationCount(sorted)).toBe(1);
   });
 });
 

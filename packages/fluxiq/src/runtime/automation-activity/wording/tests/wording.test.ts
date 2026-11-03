@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { automationStudioActivityAction, automationStudioActivityHumanLabel, automationStudioActivityToolCall } from "../index.ts";
+
+vi.mock("../control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../tests/example-control.ts")).exampleActivityControlReader
+}));
 
 const CLICK = "web.output.dom-click";
 const NAVIGATE = "web.output.browser-navigate";

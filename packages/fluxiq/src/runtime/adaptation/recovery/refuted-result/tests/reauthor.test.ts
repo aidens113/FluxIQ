@@ -15,12 +15,14 @@ import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authori
 import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "../history.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
+  AUTOMATION_STUDIO_RESULT_COMPUTED_NO_CODE,
   AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE,
   automationStudioReauthorRefutedResult,
   automationStudioRefutedResultFlowWasReauthored,
   automationStudioRefutedResultReauthorDecision,
   automationStudioRefutedResultReauthored
 } from "../reauthor.ts";
+import { automationStudioResultComputedNo } from "../../../../result-verification/computed-facts/index.ts";
 
 function detail(code?: string): AutomationStudioFlowRunDetail {
   return {
@@ -34,6 +36,16 @@ const ROUTABLE = { projectId: "project.demo", flowId: "flow.catalog" };
 describe("whether a refuted run re-enters the build loop", () => {
   it("routes a run refuted for its answer", () => {
     expect(automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE }))
+      .toEqual({ route: true, projectId: "project.demo", flowId: "flow.catalog" });
+  });
+
+  // A no Core's own record reached is the same verdict on the same answer (`computed-no.ts`), and this holds the code to the one it writes.
+  it("routes a no Core's own record reached, as it routes a judge's", () => {
+    const summary = { runId: "run-1", totalRecordCount: 0, recordSets: [], flowShape: [] } as unknown as Parameters<typeof automationStudioResultComputedNo>[0];
+    const failing = [{ kind: "count", status: "fails", said: "Core counted the rows.", defects: [] }] as Parameters<typeof automationStudioResultComputedNo>[1];
+    const written = automationStudioResultComputedNo(summary, failing);
+    expect(written).toMatchObject({ verdict: "does_not_answer", code: AUTOMATION_STUDIO_RESULT_COMPUTED_NO_CODE });
+    expect(automationStudioRefutedResultReauthorDecision({ detail: detail(written.code), ...ROUTABLE }))
       .toEqual({ route: true, projectId: "project.demo", flowId: "flow.catalog" });
   });
 

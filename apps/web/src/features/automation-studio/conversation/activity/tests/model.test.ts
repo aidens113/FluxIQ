@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conversationActivityPollOutcome, conversationActivityStepText, parseConversationActivitySnapshot } from "..";
+import { parseConversationActivitySnapshot } from "..";
 
 function wire(sequence: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -85,27 +85,5 @@ describe("reading Core's activity snapshot", () => {
   it("answers an empty snapshot for anything that is not one", () => {
     expect(parseConversationActivitySnapshot(null)).toEqual({ current: null, recent: [] });
     expect(parseConversationActivitySnapshot({ current: null, recent: "no" })).toEqual({ current: null, recent: [] });
-  });
-});
-
-describe("the step phrase", () => {
-  it("says step N of M, with a 1-based N", () => {
-    expect(conversationActivityStepText({ index: 1, count: 5 })).toBe("Step 1 of 5");
-    expect(conversationActivityStepText({ index: 5, count: 5 })).toBe("Step 5 of 5");
-  });
-
-  it("says just step N when N runs past M or M is not a count", () => {
-    expect(conversationActivityStepText({ index: 6, count: 5 })).toBe("Step 6");
-    expect(conversationActivityStepText({ index: 2, count: 0 })).toBe("Step 2");
-    expect(conversationActivityStepText({ index: 2, count: -1 })).toBe("Step 2");
-    expect(conversationActivityStepText({ index: 2, count: 2.5 })).toBe("Step 2");
-  });
-});
-
-describe("how fast to read again", () => {
-  it("is fast while Core's latest event is not its last, and ordinary once it is or before anything", () => {
-    expect(conversationActivityPollOutcome(snapshot([wire(1)]))).toBe("pending");
-    expect(conversationActivityPollOutcome(snapshot([wire(1, { final: true, phase: "done" })]))).toBe("idle");
-    expect(conversationActivityPollOutcome({ current: null, recent: [] })).toBe("idle");
   });
 });
