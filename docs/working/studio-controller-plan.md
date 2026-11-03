@@ -15,58 +15,36 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 
 **Done means:** nothing outside Studio imports Studio, tests included; Studio holds only endpoint registration and thin handlers, view state, metadata and its entry; the extension and a second real client both render chat from one package; both `dev` branches and `main` carry it after the full suites pass.
 
-**Progress measure:** implementation lines under `programs/automation-studio`. 120,705 on dev at the start; 3,504 after the move, all in `api/` and `metadata.ts`.
+**Progress measure:** implementation lines under `programs/automation-studio`. 120,705 on dev at the start; 2,928 now, across 30 files, with no function over 20 lines.
 
 **Lanes**
 
 | Lane | Task | Owner | State |
 | --- | --- | --- | --- |
-| Backend moves and controller | t845 | Lead | Moves done, audit passing, pushed. Two workers running: `thin-handlers`, `dev-failures` |
-| Chat package and second client | t846 | Sub-supervisor | Done and re-checked by the lead; pushed, not merged. Needs a browser run and `web:build` |
-| Web semantics downstream | t847 | Worker | Running |
+| Backend moves and controller | t845 | Lead | Done and pushed; integrates t846 and t847 |
+| Chat package and second client | t846 | Sub-supervisor | Merged into t845 |
+| Web semantics downstream | t847 | Worker | Merged into t845 |
+| Final validation | t845 | Lead | Core suites done; extension suite and live test in progress |
 
 **Next steps**
 
-1. Accept the `thin-handlers` and `dev-failures` reports, re-running their checks.
-2. Move the storage helpers moved code still takes from `programs/_shared` and `database-manager`. Retarget about 1,500 `fluxiq/automation-studio` imports and shrink Studio's barrel to the controller.
-3. Integrate t847, then t846, then finish t841. Port the push-gate cache change and the SQL cleanup error fix from t843.
-4. Update authored architecture documents and remove `scripts/refactor`.
-5. Run the full suites, a browser check of the chat in both clients, and `web:build`. Merge to both `dev` branches, then `main`.
+1. Read the extension's full suite. Rerun the two live tasks once the Lab's relaunch window has passed.
+2. Merge both repositories to `dev` through `pnpm task finish`, then fast-forward `main` once a full sweep on the merged trees has passed.
 
-**Blockers:** none. Both t845 branches and both t846 branches are pushed.
+**Left out of this unit on purpose, for the user to decide:**
 
-**Failures dev already has.** These fail on plain `dev` at `ff8eb0be8` as well as on t845, so the move did not cause them, and they block promotion. Paths are the new ones under `packages/fluxiq/src`.
+- **Five small browser-field readers remain in Core:** `recording-steps.ts`, `activity/wording/action.ts`, `evidence/state-elements.ts`, `rerun-check.ts`, `locator-text.ts`. They read fields of stored targets for wording and screening. Moving them needs a design per reader and adds risk before a live test.
+- **Framework code still imports `programs/_shared/storage.ts` and `database-manager`.** These are shared helpers rather than Studio, so the goals do not reach them.
+- **The step log's page reader is a process-wide registry.** It only writes the diagnostic `page.txt`, and replacing it means threading an option through the evidence loop.
+- **Core's panel has two chat UIs,** its own and the shared widget at `/programs/automation-studio/chat`, which nothing links to yet. Replacing its own needs six port additions; see `reports/chat-package.md`.
+- **t841** is saved and pushed, unmerged: an unfinished fix for correct results being held as unsure.
+- **Other `retry_allowed` refusals** may have the same gap the re-test fix closed; see `reports/dev-failures.md`.
 
-| File | Failing tests | Observed |
-| --- | ---: | --- |
-| `framework/automation-service/service/candidate-trial/tests/consequences.test.ts` | 5 | `expected { inputs: {}, …(7) } to be { inputs: {}, …(6) }` |
-| `runtime/flow-authoring/bootstrap/candidate/tests/trial-gate.test.ts` | 3 | Output contains `llm_evidence_loop.repeat_refused` |
-| `framework/automation-service/service/candidate-trial/tests/environment/tests/trial-environment.test.ts` | 1 | `expected { …(4) } to be { …(3) }` |
-| `framework/automation-service/service/subflow-trial/tests/environment.test.ts` | 1 | `expected { …(4) } to be { …(3) }` |
-| `framework/automation-service/service/end-view/tests/passive-result.test.ts` | 1 | `expected [Function bound spy] to be [Function spy]` |
-| `runtime/adaptation/recovery/tests/runtime-exploration-views.test.ts` | 1 | Not yet read |
-| `runtime/agents/llm/harness/tests/run-size.test.ts` | 1 | `expected 'attempted' to be 'not_attempted'` |
-| `runtime/result-verification/build-test/tests/task-checklist.test.ts` | 1 | Request bytes differ |
-| `framework/automation-service/tests/io-bridge.test.ts` | 1 | `expected undefined to match object { candidateId: 'save', …(1) }` |
+**Blockers:** none. Everything is pushed on `task/t845-studio-controller` in both repositories.
 
-**Failures the move caused.** Fixed in `debb7cb84` unless marked: two ownership checks that timed out because backend had been placed inside small neutral layers; `thrown-issue-codes` and `accounting`, from the stack-frame reader; two `client/tests/index` files and `explored-evidence-label`, which hard-coded paths. Awaiting a rerun on a rebuilt tree: `settings-round-trip` in `apps/web` and the four process-boundary files that load modules from `dist`.
+**Failures dev already had,** 15 tests in 9 files, are fixed: `reports/dev-failures.md` has each cause. One was a real regression: since t826, re-tests after a transient trial verdict were refused as repeats. The other eight groups were stale tests. `apps/extension/src/runtime/tests` also has 8 failures on dev, found by the web lane.
 
-**Functions still holding logic,** flagged by the new rule, all under `programs/automation-studio/api/handlers/`:
-
-| File | Function | Lines |
-| --- | --- | ---: |
-| `llm-generation.ts` | endpoint handler | 102 |
-| `runtime-execution.ts` | endpoint handler | 91 |
-| `llm-generation.ts` | `sanitizedFlowBootstrapGeneration` | 42 |
-| `conversations.ts` | endpoint handler | 34 |
-| `instructions.ts` | endpoint handler | 33 |
-| `flows.ts` | endpoint handler | 29 |
-| `llm-execution-settings.ts` | `assertFlowLlmExecutionSettings` | 28 |
-| `conversations.ts` | endpoint handler | 22 |
-| `conversations.ts` | endpoint handler | 21 |
-| `conversations.ts` | `commandContext` | 21 |
-
-The other 166 endpoints are already thin: a permission, a resource and a call to the service.
+**Handlers are thin.** All ten flagged functions moved to `framework/automation-service/service`, and the rule's baseline is empty. The same 246 endpoint tests pass before and after.
 
 ## Why The Plan Changed
 
@@ -91,7 +69,7 @@ Limit on the test comparison: t843 edited that test file by 347 lines, so these 
 
 The moves run as one commit rather than one per folder. The structure audit bans `runtime/` from importing Studio, and Studio's folders depend on each other, so moving them one at a time would fail the audit at every step and block every backup push.
 
-`scripts/refactor/retire-forwarding.mjs` deletes modules that only forward to one other module, pointing importers at the real one. `scripts/refactor/prefix-directories.mjs` applies the audit's rule that a shared filename prefix becomes a directory, for the groups the audit newly reports. Those groups were exempt only because their old paths were too deep to take another directory. All three tools are temporary and are removed when this work finishes.
+`scripts/refactor/retire-forwarding.mjs` deletes modules that only forward to one other module, pointing importers at the real one. `scripts/refactor/prefix-directories.mjs` applies the audit's rule that a shared filename prefix becomes a directory, for the groups the audit newly reports. Those groups were exempt only because their old paths were too deep to take another directory. All three were temporary and are gone from the tree; their manifests stay in `studio-controller-plan/moves/`.
 
 ## How It Stays Done
 
@@ -172,6 +150,16 @@ Older parked work from before this refactor was left alone: unmerged branches t7
 - Validation, chat lane, re-run by the lead: `vitest run` in `packages/ui-components` -> 65 files, 408 passed. `node scripts/test-extension.mjs panel/` from `apps/extension` -> 584 passed, 0 failed. Audit passes in both t846 worktrees; `core-mirror` matches. The lane's report is `studio-controller-plan/reports/chat-package.md` on t846.
 - Correction: the web-vocabulary rule listed its packages by hand after the chat lane's change, so a new package would have escaped it. It now covers every package except `ui-components`.
 - Outcome: no browser, paid run or panel started. One full run remains in today's allowance.
+
+### 2026-11-03 - Lanes merged, public entry renamed, final validation
+
+- Agent: lead; workers `thin-handlers`, `dev-failures`, `sql-cleanup-errors`, `architecture-docs`.
+- Changed: the fixes above. `fluxiq/automation` is the public automation entry, and `fluxiq/automation-studio` only the controller. `fluxiq/automation-studio/dsl` keeps its name because saved Flow source contains that import. `model-text` scanned a folder that no longer existed; it now reads the new locations and fails if they go missing.
+- Validation: `pnpm -r --no-bail test` at `6ad28e036` -> contracts 562 passed; gateway 182 passed; fluxiq 15,578 passed and 4 failed, then real-sql 1,709 passed; ui-components 408 passed; apps/web 3,495 passed. The 4 were tests naming the old subpaths: fixed, and those files -> 12 passed.
+- Validation: Core `pnpm check` -> exit 0. Core `pnpm build` -> first failed in `web:build`, then passed at `63f0780b7` with the chat route listed. Extension `pnpm check` -> 738 passed and 1 failed: a stale literal check that also fails on dev; fixed in `71dd2b09`.
+- Validation: `model-text` -> 426 files scanned, no findings. Audit passes in both repositories.
+- Live: first launch refused before starting, cost $0, because `--llm-max-cost-usd 2` cannot reach a chat-started build. Second, `run-mw0gxo08-241fb3e7`: cost $0, failed in the web build; see its debug note. Third refused by the Lab's `loop` and `debug` guards, cost $0.
+- Outcome: awaiting the extension suite and the live rerun.
 
 ## Open Questions
 
