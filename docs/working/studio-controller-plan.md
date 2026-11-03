@@ -176,10 +176,10 @@ Older parked work from before this refactor was left alone: unmerged branches t7
 ### 2026-11-03 - Final full sweep
 
 - Agent: lead.
-- Validation, at Core `2674c655d` and extension `8c8fdcc3`, with nothing heavy alongside:
-  - Core `pnpm -r --no-bail test` -> exit 0: contracts 562, gateway 182, fluxiq 15,584 (6 skipped), real-sql 1,709 (1 skipped), ui-components 408, web 3,495; 21,940 passed. `pnpm check` -> exit 0. `pnpm build` -> exit 0.
-  - Extension `pnpm test` -> exit 0: domain 2,900, extension 3,211, scenario-lab 1,015, test-runner 2,539, test-contracts 176, the rest 113; 9,954 passed, 0 failed. `pnpm build` -> exit 0.
-  - Extension `pnpm check` -> exit 1: the new spec read `validation.actual`, which not every variant of that type has. Playwright does not typecheck, and the earlier typecheck predated the spec. Fixed to `nextPage.outcome` and rerun -> exit 0, 739 passed; the spec, headed -> 1 passed.
+- Scope: Core `2674c655d` and extension `8c8fdcc3`, with nothing heavy alongside.
+- Validation: Core `pnpm -r --no-bail test` -> exit 0: contracts 562, gateway 182, fluxiq 15,584 (6 skipped), real-sql 1,709 (1 skipped), ui-components 408, web 3,495; 21,940 passed. `pnpm check` -> exit 0. `pnpm build` -> exit 0.
+- Validation: Extension `pnpm test` -> exit 0: domain 2,900, extension 3,211, scenario-lab 1,015, test-runner 2,539, test-contracts 176, the rest 113; 9,954 passed, 0 failed. `pnpm build` -> exit 0.
+- Validation: Extension `pnpm check` -> exit 1: the new spec read `validation.actual`, which not every variant of that type has. Playwright does not typecheck, and the earlier typecheck predated the spec. Fixed to `nextPage.outcome` and rerun -> exit 0, 739 passed; the spec, headed -> 1 passed.
 - The two scenario tests that failed beside a concurrent production build pass here, alone with the suite: load was the cause.
 - Outcome: the tree is ready to merge. It differs from the swept commits only by that spec line and this ledger.
 
