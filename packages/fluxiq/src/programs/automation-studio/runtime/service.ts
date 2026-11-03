@@ -739,7 +739,7 @@ export class AutomationStudioService {
     return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.recordings.getRawRecordingSession(input.recordingId, input.projectId);
       if (recording.endedAt !== undefined) throw new Error("Finalized recordings are immutable.");
-      const preparedEntries = await this.objectDocuments.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, input.entries);
+      const preparedEntries = await this.objectDocuments.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, input.entries, { domainId: recording.environment.domainId, preparer: this.nativeNodeRuntime?.getTargetHooks(recording.environment.domainId)?.recordingEntryTargetPreparer });
       const next = preparedEntries.reduce((current, entry) => appendRecordingEntry(current, entry), recording);
       const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(next, input.projectId);
       if (input.projectId && next.endedAt !== undefined) {

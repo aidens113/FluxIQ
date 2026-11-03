@@ -1,21 +1,28 @@
-/** How deep a `page` field is looked for: `value.page.page` is depth 2 (the domain's `web-llm-page.v3`). */
-const MAX_DEPTH = 4;
+import type { AutomationStudioLlmEvidenceSummary } from "../../../nodes/index.ts";
+
+/** Registered once per domain summary, by the implementation bundle (`AutomationStudioNativeNodeRuntime.register`). */
+const summaries = new Set<AutomationStudioLlmEvidenceSummary>();
 
 /**
- * The compact page text a tool result carries: the first string field named
- * `page` within four levels of the evidence, breadth first so the shallowest
- * wins. Undefined when there is none.
+ * The page text a step's evidence carries, as a registered domain reads it.
+ * Core knows no page: what evidence means belongs to the domain that produced
+ * it, and Core only writes the answer to `page.txt`. Process-wide, as the step
+ * log's own switch is, because a tool step has no domain in hand. No summary
+ * registered, or none that answers, means no `page.txt`.
  */
-export function automationStudioLlmStepLogPageText(evidence: unknown): string | undefined {
-  let level: unknown[] = [evidence];
-  for (let depth = 1; depth <= MAX_DEPTH && level.length; depth += 1) {
-    const next: unknown[] = [];
-    for (const value of level) {
-      if (typeof value !== "object" || value === null) continue;
-      if (!Array.isArray(value) && typeof (value as Record<string, unknown>).page === "string") return (value as Record<string, string>).page;
-      next.push(...(Array.isArray(value) ? value : Object.values(value)));
+export const automationStudioLlmStepLogPageText = {
+  of(evidence: unknown): string | undefined {
+    for (const summary of summaries) {
+      const page = summary.pageText(evidence);
+      if (page !== undefined) return page;
     }
-    level = next;
+    return undefined;
+  },
+  /** Adds a domain's summary, and returns how to take it away again. */
+  use(summary: AutomationStudioLlmEvidenceSummary): () => void {
+    summaries.add(summary);
+    return () => {
+      summaries.delete(summary);
+    };
   }
-  return undefined;
-}
+};

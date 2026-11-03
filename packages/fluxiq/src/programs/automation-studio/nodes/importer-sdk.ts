@@ -1,8 +1,10 @@
 import type { AutomationStudioRecordOutput } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { OutputTargetPreparer } from "../../../runtime/output-dispatch/index.ts";
 import type { ElementMatcher } from "../../../runtime/target-matching/index.ts";
 import type { AutomationStudioNativeLogEntry } from "../../../runtime/automation-host/index.ts";
 export type { AutomationStudioNativeLogEntry } from "../../../runtime/automation-host/index.ts";
+import type { AppendRecordingEntryInput, AutomationStudioRecordingTargetPolicy } from "../model/index.ts";
 import type { AutomationNodeExecutionResult } from "./contracts.ts";
 import { AutomationStudioNodeRegistry } from "./canonical-registry.ts";
 import { validateAutomationStudioNodeDefinition, type AutomationStudioNodeDefinition, type AutomationStudioNodeParameterContract } from "./definitions.ts";
@@ -99,6 +101,13 @@ export type AutomationStudioRecordingMapperContext = {
 export type AutomationStudioRecordingMapperImplementation = (observation: AutomationStudioRecordingMapperObservation, context: AutomationStudioRecordingMapperContext) => AutomationStudioRecordingMapperResult | Promise<AutomationStudioRecordingMapperResult>;
 export type AutomationStudioTargetResolverImplementation = (target: JsonObject, context: { signal: AbortSignal; elementMatcher: ElementMatcher }) => JsonObject | null | Promise<JsonObject | null>;
 export type AutomationStudioComparatorImplementation = (left: JsonValue, right: JsonValue) => { equal: boolean; score?: number };
+/** Trusted domain code, supplied by an implementation bundle: a mapper candidate's parameters as the domain reads them. */
+export type AutomationStudioRecordingCandidateParameterNormalizer = (domainId: string, parameters: JsonObject, context: { outputId: string; sourceEntryId: string; source: "mapper" }) => JsonObject;
+type RecordingActionEntryInput = Extract<AppendRecordingEntryInput, { type: "action" }>;
+/** A domain may project an action entry's target data; the entry's identity and all else about it stay Core's. Null keeps the entry as it came. */
+export type AutomationStudioRecordingEntryTargetPreparer = (domainId: string, entry: Readonly<RecordingActionEntryInput>) => Pick<RecordingActionEntryInput, "parameters" | "target"> | null;
+/** What a domain reads out of a tool's evidence for the step log's `page.txt`. Never reaches a model. */
+export type AutomationStudioLlmEvidenceSummary = { pageText(evidence: unknown): string | undefined };
 
 export type AutomationStudioImporterImplementationBundle = {
   packageId: string;
@@ -106,6 +115,15 @@ export type AutomationStudioImporterImplementationBundle = {
   implementations: Record<string, AutomationStudioNativeNodeImplementation>;
   /** Explicit matcher for this manifest domain. Missing adapters cannot score targets. */
   elementMatcher?: ElementMatcher;
+  /** The domain's reading of an output's target parameters before dispatch; absent, parameters pass through unread. */
+  outputTargetPreparer?: OutputTargetPreparer;
+  /** Projects a recording action entry's target data as it is stored. */
+  recordingEntryTargetPreparer?: AutomationStudioRecordingEntryTargetPreparer;
+  /** The domain's checks of the target data a recording carries, for `validateRecordingSession`. */
+  recordingTargetPolicy?: AutomationStudioRecordingTargetPolicy;
+  recordingCandidateParameterNormalizer?: AutomationStudioRecordingCandidateParameterNormalizer;
+  /** Evidence reading for the step log only: never a way to change what a model is sent. */
+  llmEvidenceSummary?: AutomationStudioLlmEvidenceSummary;
   recordingMappers?: Record<string, AutomationStudioRecordingMapperImplementation>;
   targetResolvers?: Record<string, AutomationStudioTargetResolverImplementation>;
   comparators?: Record<string, AutomationStudioComparatorImplementation>;

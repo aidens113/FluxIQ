@@ -3,8 +3,8 @@ import { parseAutomationStudioRecordOutput, type AutomationStudioRecordOutput } 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { IoRegistry } from "../../../../../io/index.ts";
 import { safeSegment } from "../../../../_shared/storage.ts";
-import { normalizeAutomationStudioElementTarget, type AutomationStudioFlowArtifact, type RecordingSession } from "../../../model/index.ts";
-import type { AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperObservation } from "../../../nodes/index.ts";
+import { type AutomationStudioFlowArtifact, type RecordingSession } from "../../../model/index.ts";
+import type { AutomationStudioRecordingCandidateParameterNormalizer, AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperObservation } from "../../../nodes/index.ts";
 import type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact } from "../../recording-flow-proposal.ts";
 import { uniqueStrings } from "../collections.ts";
 import { compactJsonObject } from "../compact-json.ts";
@@ -46,7 +46,7 @@ export function recordingMapperCalls(timeline: RecordingSession["timeline"], rec
  * action is still proposed. Its `recordOutput` and `timeoutMs` are kept when
  * valid and reject the candidate, by throwing, when present and invalid.
  */
-export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; recordedGapMs?: number; mapperOutputIds?: string[] }): RecordingFlowActionCandidate {
+export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate: AutomationStudioRecordingMapperCandidate; actionEntryId: string; sourceEntryId: string; recordingId: string; domainId: string; stateLink?: RecordingFlowActionCandidate["stateLink"]; recordedGapMs?: number; mapperOutputIds?: string[]; normalizeParameters?: AutomationStudioRecordingCandidateParameterNormalizer }): RecordingFlowActionCandidate {
   const outputId = input.candidate.outputId?.trim();
   if (!outputId) throw new Error("Recording mapper candidates must declare an outputId.");
   if (input.mapperOutputIds?.length && !input.mapperOutputIds.includes(outputId)) throw new Error(`Recording mapper emitted undeclared output ${outputId}.`);
@@ -64,7 +64,7 @@ export function recordingFlowActionCandidate(io: IoRegistry, input: { candidate:
     if ((adapter.definition.role ?? "state") !== "action") throw new Error(`Confirmation input ${confirmation.inputId} must be an action-role observation.`);
   }
   const sourceObservationIds = uniqueStrings([input.sourceEntryId, input.actionEntryId, ...(input.candidate.sourceObservationIds ?? [])]);
-  const parameters = normalizeRecordingCandidateElementTargetParameters(input.candidate.parameters ?? {});
+  const parameters = input.normalizeParameters?.(input.domainId, input.candidate.parameters ?? {}, { outputId, sourceEntryId: input.sourceEntryId, source: "mapper" }) ?? { ...input.candidate.parameters };
   const expectedState = liftedExpectedState(input.candidate.expectedState);
   const recordOutput = liftedRecordOutput(io, input.domainId, outputId, input.candidate.recordOutput);
   const timeoutMs = liftedTimeoutMs(outputId, input.candidate.timeoutMs);
@@ -259,12 +259,6 @@ function liftedTimeoutMs(outputId: string, value: unknown): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new Error(`Recording mapper candidate for ${outputId} has an invalid timeoutMs: it must be a whole number of milliseconds above zero.`);
   return value;
-}
-
-function normalizeRecordingCandidateElementTargetParameters(parameters: JsonObject): JsonObject {
-  const target = normalizeAutomationStudioElementTarget(parameters.element ? parameters : parameters.target, { source: "mapper" }) ?? normalizeAutomationStudioElementTarget(parameters, { source: "mapper" });
-  if (!target) return { ...parameters };
-  return compactJsonObject({ ...parameters, target });
 }
 
 function recordingEntryPayload(entry: RecordingSession["timeline"][number]): JsonObject {

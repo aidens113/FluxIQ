@@ -5,7 +5,8 @@ import { isDeepStrictEqual } from "node:util";
 import type { ClientGatewayService } from "../../../../client-gateway/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 import { ProgramJsonStore, safeSegment } from "../../../_shared/storage.ts";
-import { normalizeAutomationStudioElementTarget, type AppendRecordingEntryInput, type AutomationStudioProjectArtifactKind, type RecordingSession, type StateSnapshot } from "../../model/index.ts";
+import type { AutomationStudioRecordingEntryTargetPreparer } from "../../nodes/index.ts";
+import { type AppendRecordingEntryInput, type AutomationStudioProjectArtifactKind, type RecordingSession, type StateSnapshot } from "../../model/index.ts";
 import {
   AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES,
   automationStudioObjectApiPath,
@@ -140,8 +141,8 @@ export class AutomationStudioObjectDocuments {
     }
   }
 
-  async prepareRecordingEntriesForStorage(projectId: string | null | undefined, recordingId: string, entries: AppendRecordingEntryInput[]): Promise<AppendRecordingEntryInput[]> {
-    const normalized = entries.map((entry) => prepareRecordingEntryElementTarget(entry));
+  async prepareRecordingEntriesForStorage(projectId: string | null | undefined, recordingId: string, entries: AppendRecordingEntryInput[], targetPreparation?: { domainId: string | null | undefined; preparer: AutomationStudioRecordingEntryTargetPreparer | undefined }): Promise<AppendRecordingEntryInput[]> {
+    const normalized = entries.map((entry) => prepareRecordingEntryTarget(entry, targetPreparation?.domainId, targetPreparation?.preparer));
     if (!projectId || !this.objectStore) return normalized;
     return await Promise.all(normalized.map((entry) => this.dehydrateRecordingEntryStateSnapshot(entry, projectId, recordingId)));
   }
@@ -256,30 +257,10 @@ function isAutomationStudioRenderableAssetMediaType(mediaType: string): boolean 
   return normalized === "image/png" || normalized === "image/jpeg" || normalized === "image/webp" || normalized === "image/gif";
 }
 
-function prepareRecordingEntryElementTarget(entry: AppendRecordingEntryInput): AppendRecordingEntryInput {
-  if (entry.type !== "action") return entry;
-  const parameters = entry.parameters && typeof entry.parameters === "object" && !Array.isArray(entry.parameters) ? entry.parameters as Record<string, unknown> : {};
-  const target = entry.target && typeof entry.target === "object" && !Array.isArray(entry.target) ? entry.target as Record<string, unknown> : undefined;
-  const targetForNormalization = target || entry.visualTarget ? { ...(target ?? {}), ...(entry.visualTarget ? { visualTarget: entry.visualTarget } : {}) } : undefined;
-  const elementTarget = normalizeAutomationStudioElementTarget(target && "elementTarget" in target ? target.elementTarget : undefined, { source: "recording" })
-    ?? normalizeAutomationStudioElementTarget(parameters.target, { source: "recording" })
-    ?? normalizeAutomationStudioElementTarget(targetForNormalization, { source: "recording" });
-  if (!elementTarget) return entry;
-  return {
-    ...entry,
-    parameters: compactJsonObject({ ...parameters, target: elementTarget }),
-    target: compactJsonObject({
-      type: typeof entry.target?.type === "string" && entry.target.type.trim() ? entry.target.type : "ui_element",
-      ...(entry.target?.id ? { id: entry.target.id } : {}),
-      ...(entry.target?.label ? { label: entry.target.label } : {}),
-      ...(entry.target?.selector ? { selector: entry.target.selector } : {}),
-      ...(entry.target?.bounds ? { bounds: entry.target.bounds } : {}),
-      ...(entry.target?.relativePosition ? { relativePosition: entry.target.relativePosition } : {}),
-      ...(entry.target?.visualTarget ? { visualTarget: entry.target.visualTarget } : {}),
-      elementTarget,
-      ...(entry.target?.metadata ? { metadata: entry.target.metadata } : {})
-    }) as NonNullable<Extract<AppendRecordingEntryInput, { type: "action" }>["target"]>
-  };
+function prepareRecordingEntryTarget(entry: AppendRecordingEntryInput, domainId: string | null | undefined, preparer: AutomationStudioRecordingEntryTargetPreparer | undefined): AppendRecordingEntryInput {
+  if (entry.type !== "action" || !domainId || !preparer) return entry;
+  const projected = preparer(domainId, entry);
+  return projected ? { ...entry, ...projected } : entry;
 }
 
 function stateSnapshotVisualSummary(state: StateSnapshot): JsonObject {

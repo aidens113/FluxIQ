@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stateValue, type StateSnapshot } from "../../../../model/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
@@ -63,31 +64,22 @@ describe("AutomationStudioService recording persistence", () => {
     expect(compatible.canonical?.recordingSessions.map((recording) => recording.recordingId)).toContain("recording.snapshot-bound");
   });
 
-  it("normalizes recorded action element targets before storage", async () => {
-    const service = createService({ dataDir: tempRoot });
-    const project = await service.createProject({ name: "Element targets", domainId: "example" });
-    const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: "recording.element-target", domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
-    await service.appendRecordingEvent({
-      projectId: project.id,
-      recordingId: recording.recordingId,
-      entry: {
-        type: "action",
-        actionType: "click",
-        parameters: {},
-        target: { type: "client-target", metadata: { visibleText: "Save changes", testId: "save", selector: "button[data-testid='save']", token: "secret" } },
-        origin: "operator",
-        startedAt: 2,
-        timestamp: 2
-      }
-    });
-    const stored = await service.getRecordingSession(recording.recordingId, project.id);
-    const action = stored.timeline.find((entry) => entry.type === "action");
-    expect(action).toMatchObject({
-      type: "action",
-      target: { elementTarget: { kind: "element", fingerprint: { visibleText: "Save changes", testId: "save", selector: "button[data-testid='save']" } } },
-      parameters: { target: { kind: "element", fingerprint: { testId: "save" } } }
-    });
-    expect((action as any)?.target?.elementTarget?.fingerprint?.metadata).toBeUndefined();
+  it("stores a recorded action's target as the registered domain projects it, and as it came without one", async () => {
+    const projected = vi.fn(() => ({ parameters: { read: true }, target: { type: "projected" } }));
+    const manifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [] } as const;
+    const runtime = new AutomationStudioNativeNodeRuntime().register({ ...manifest, nodes: [] }, { packageId: "example.importer", packageVersion: "1.0.0", implementations: {}, recordingEntryTargetPreparer: projected });
+    const entry = { type: "action" as const, actionType: "click", parameters: { opaque: true }, target: { type: "client-target", metadata: { opaque: true } }, origin: "operator" as const, startedAt: 2, timestamp: 2 };
+    for (const [id, service] of [["registered", createService({ dataDir: tempRoot }).bindNativeNodeRuntime(runtime)], ["unregistered", createService({ dataDir: path.join(tempRoot, "unregistered") })]] as const) {
+      const project = await service.createProject({ name: "Element targets", domainId: "example" });
+      const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: `recording.element-target.${id}`, domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
+      await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry });
+      const stored = await service.getRecordingSession(recording.recordingId, project.id);
+      const action = stored.timeline.find((item) => item.type === "action");
+      if (id === "registered") expect(action).toMatchObject({ actionType: "click", parameters: { read: true }, target: { type: "projected" } });
+      else expect(action).toMatchObject({ actionType: "click", parameters: { opaque: true }, target: { type: "client-target", metadata: { opaque: true } } });
+    }
+    expect(projected).toHaveBeenCalledTimes(1);
+    expect(projected).toHaveBeenCalledWith("example", expect.objectContaining({ actionType: "click" }));
   });
 
   it("stores project recordings and normalized timelines in project folders", async () => {

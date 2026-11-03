@@ -49,7 +49,8 @@ describe("an approved target repair", () => {
     await seedFlow({ id: "recorded.save", definitionId: "builtin.policy.action", parameterValues: RECORDED });
     const recorded = await runRevision(1);
     expect(recorded.commands).toHaveLength(1);
-    expect(recorded.commands[0]?.target).toMatchObject({ kind: "element", fingerprint: { selector: "#save", accessibleName: "Save changes" } });
+    // Core reads no target: the recorded element travels as it was written, for the domain's own preparer to read.
+    expect(recorded.commands[0]).toEqual(RECORDED.parameters);
 
     const store = await AutomationStudioProjectAdaptationStore.open({ pool, projectId: PROJECT });
     try {
@@ -63,7 +64,7 @@ describe("an approved target repair", () => {
       // ...and the domain is asked to act on the repaired element. The recorded
       // locator stays beside it, as it does on a native node.
       expect(repaired.commands).toHaveLength(1);
-      expect(repaired.commands[0]?.target).toMatchObject({ kind: "element", fingerprint: { selector: "#apply", accessibleName: "Apply changes", tagName: "button" } });
+      expect(repaired.commands[0]?.target).toEqual(REPAIRED);
       expect(repaired.commands[0]).toMatchObject({ selector: "#save" });
 
       await store.rollbackAdaptation({ adaptationId: "adaptation.target-repair", actorId: "person.reviewer", changedAt: 40 });
@@ -72,7 +73,7 @@ describe("an approved target repair", () => {
     }
     const restored = await runRevision(3);
     expect(payloadParameters(restored.effects[0])).toEqual(RECORDED.parameters);
-    expect(restored.commands[0]?.target).toEqual(recorded.commands[0]?.target);
+    expect(restored.commands[0]).toEqual(recorded.commands[0]);
   });
 
   it("changes the target a native step receives, which it already read from the node", async () => {

@@ -1,11 +1,12 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { createElementMatcher, type ElementMatcher } from "../../../runtime/target-matching/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../model/index.ts";
-import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
+import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioRecordingCandidateParameterNormalizer, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort } from "../nodes/index.ts";
 import { automationStudioReferenceNow } from "./reference-now/index.ts";
 import { projectRuntimeTargetActionability } from "../../../runtime/result-control/index.ts";
 import { automationStudioResolveTargetRefresh } from "./executor/parameter-refresh/index.ts";
+import { automationStudioLlmStepLogPageText } from "./llm/step-log/index.ts";
 import type { AutomationStudioTargetRefreshResolution } from "./executor/parameter-refresh/index.ts";
 
 export type AutomationStudioNativeRuntimeGrants = {
@@ -26,6 +27,10 @@ export type AutomationStudioNativeRuntimeGrants = {
  */
 export type AutomationStudioNativeExecution = { result: AutomationNodeExecutionResult; logs: AutomationStudioNativeLogEntry[]; declaredOutputs?: readonly AutomationNodePort[] };
 
+/** The domain's target readings a registered bundle supplies, scoped to its domain and never inferred from target fields. */
+export type AutomationStudioDomainTargetHooks = Pick<AutomationStudioImporterImplementationBundle, "outputTargetPreparer" | "recordingEntryTargetPreparer" | "recordingTargetPolicy" | "recordingCandidateParameterNormalizer">;
+const TARGET_HOOKS = ["outputTargetPreparer", "recordingEntryTargetPreparer", "recordingTargetPolicy", "recordingCandidateParameterNormalizer"] as const;
+
 /**
  * Explicit trusted-local implementation binder. This is an authorization and
  * tracing boundary, not a security sandbox or containment mechanism.
@@ -40,6 +45,7 @@ export class AutomationStudioNativeNodeRuntime {
   /** @deprecated Neutral matching only; execution contexts use registered domain matchers. */
   readonly elementMatcher = createElementMatcher();
   private readonly elementMatchers = new Map<string, ElementMatcher>();
+  private readonly targetHooks = new Map<string, AutomationStudioDomainTargetHooks>();
 
   constructor(grants: AutomationStudioNativeRuntimeGrants = {}) {
     this.grants = { permissions: [...(grants.permissions ?? [])], runtimeCapabilities: [...(grants.runtimeCapabilities ?? [])], networkDestinations: [...(grants.networkDestinations ?? [])], secretHandles: [...(grants.secretHandles ?? [])], filesystemRoots: [...(grants.filesystemRoots ?? [])], process: grants.process === true, childProcess: grants.childProcess === true };
@@ -62,8 +68,11 @@ export class AutomationStudioNativeNodeRuntime {
     }
     const registeredMatcher = this.elementMatchers.get(manifest.domainId);
     if (bundle.elementMatcher && registeredMatcher && registeredMatcher !== bundle.elementMatcher) throw new Error(`A different element matcher is already registered for domain ${manifest.domainId}.`);
+    const targetHooks = mergedTargetHooks(manifest.domainId, this.targetHooks.get(manifest.domainId), bundle);
     this.sdk.register(manifest);
     if (bundle.elementMatcher) this.elementMatchers.set(manifest.domainId, bundle.elementMatcher);
+    this.targetHooks.set(manifest.domainId, targetHooks);
+    if (bundle.llmEvidenceSummary) automationStudioLlmStepLogPageText.use(bundle.llmEvidenceSummary);
     // Bound on the registry that validation of a generated plan reads, never on the definition, which stays plain data.
     for (const [nodeId, contract] of Object.entries(bundle.parameterContracts ?? {})) this.sdk.nodes.bindParameterContract(nodeId, contract);
     for (const node of manifest.nodes) { const key = node.source.kind === "importer" || node.source.kind === "code" ? node.source.implementationKey : ""; const implementation = bundle.implementations[key]; if (implementation) this.bindings.set(node.id, { manifest, implementation }); }
@@ -76,6 +85,8 @@ export class AutomationStudioNativeNodeRuntime {
   /** A matcher is scoped to one registered domain, never inferred from target fields. */
   getElementMatcher(domainId: string | null | undefined): ElementMatcher | undefined { return domainId ? this.elementMatchers.get(domainId) : undefined; }
   domainElementMatcher(domainId: string): ElementMatcher { return this.getElementMatcher(domainId) ?? unavailableElementMatcher(domainId); }
+  /** A domain's target readings, none when no bundle for that domain supplied one. */
+  getTargetHooks(domainId: string | null | undefined): Readonly<AutomationStudioDomainTargetHooks> | undefined { return domainId ? this.targetHooks.get(domainId) : undefined; }
 
   getDefinition(nodeId: string): AutomationStudioNodeDefinition | undefined { return this.sdk.nodes.get(nodeId); }
   /** Only canonical registered target-field declarations grant a refresh write-set. */
@@ -107,10 +118,11 @@ export class AutomationStudioNativeNodeRuntime {
     return { scope: structuredClone(scope), runtimeCapabilities: [...this.grants.runtimeCapabilities], permissions: [...this.grants.permissions] };
   }
   getRecordingMapper(domainId: string, id: string): AutomationStudioRecordingMapperImplementation | undefined { return this.recordingMappers.get(`${domainId}:${id}`); }
-  listRecordingMappers(domainId: string): Array<{ definition: NonNullable<AutomationStudioImporterSdkManifest["recordingMappers"]>[number]; packageId: string; packageVersion: string; implementation: AutomationStudioRecordingMapperImplementation }> {
+  listRecordingMappers(domainId: string): Array<{ definition: NonNullable<AutomationStudioImporterSdkManifest["recordingMappers"]>[number]; packageId: string; packageVersion: string; implementation: AutomationStudioRecordingMapperImplementation; normalizeParameters?: AutomationStudioRecordingCandidateParameterNormalizer }> {
     return this.sdk.list().filter((manifest) => manifest.domainId === domainId).flatMap((manifest) => (manifest.recordingMappers ?? []).flatMap((definition) => {
       const implementation = this.getRecordingMapper(domainId, definition.id);
-      return implementation ? [{ definition, packageId: manifest.packageId, packageVersion: manifest.packageVersion, implementation }] : [];
+      const normalizeParameters = this.targetHooks.get(domainId)?.recordingCandidateParameterNormalizer;
+      return implementation ? [{ definition, packageId: manifest.packageId, packageVersion: manifest.packageVersion, implementation, ...(normalizeParameters ? { normalizeParameters } : {}) }] : [];
     }));
   }
   getTargetResolver(domainId: string, id: string): AutomationStudioTargetResolverImplementation | undefined { return this.targetResolvers.get(`${domainId}:${id}`); }
@@ -179,6 +191,17 @@ function failed(message: string, unacted = false): AutomationStudioNativeExecuti
 }
 function readPositiveNumber(value: unknown): number | undefined { return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined; }
 function validateExtensionBindings(label: string, definitions: Array<{ id: string }> | undefined, implementations: Record<string, unknown> | undefined): void { const declared = new Set((definitions ?? []).map((item) => item.id)); const bound = new Set(Object.keys(implementations ?? {})); for (const id of bound) if (!declared.has(id)) throw new Error(`Implementation ${id} is not declared as an importer ${label}.`); for (const id of declared) if (!bound.has(id)) throw new Error(`Missing importer ${label} implementation ${id}.`); }
+
+function mergedTargetHooks(domainId: string, registered: AutomationStudioDomainTargetHooks | undefined, bundle: AutomationStudioImporterImplementationBundle): AutomationStudioDomainTargetHooks {
+  const merged: Record<string, unknown> = { ...registered };
+  for (const key of TARGET_HOOKS) {
+    const hook = bundle[key];
+    if (hook === undefined) continue;
+    if (merged[key] !== undefined && merged[key] !== hook) throw new Error(`A different ${key} is already registered for domain ${domainId}.`);
+    merged[key] = hook;
+  }
+  return merged as AutomationStudioDomainTargetHooks;
+}
 
 function unavailableElementMatcher(domainId: string): ElementMatcher {
   const unavailable = (): never => { throw new Error(`No element matcher is registered for domain ${domainId}. Register an explicit domain matcher before resolving targets.`); };

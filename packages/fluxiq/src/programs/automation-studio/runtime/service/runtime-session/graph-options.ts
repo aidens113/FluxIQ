@@ -54,8 +54,8 @@ export function automationStudioRunGraphOptions(input: {
   const bound = input.io;
   if (bound) {
     options.effectDispatcher = input.runtimeService
-      ? createRuntimePolicyEffectDispatcher(bound.io, bound.domainId, input.runtimeService, input.nativeNodeRuntime?.getElementMatcher(bound.domainId))
-      : createIoPolicyEffectDispatcher(bound.io, bound.domainId, input.nativeNodeRuntime?.getElementMatcher(bound.domainId));
+      ? createRuntimePolicyEffectDispatcher(bound.io, bound.domainId, input.runtimeService, input.nativeNodeRuntime?.getTargetHooks(bound.domainId)?.outputTargetPreparer)
+      : createIoPolicyEffectDispatcher(bound.io, bound.domainId, input.nativeNodeRuntime?.getTargetHooks(bound.domainId)?.outputTargetPreparer);
     options.runtimeCapabilities = ["policy-output", "io"];
     if (bound.domainId) options.authorizedDomainIds = input.authorizedDomainIds.filter((domainId) => domainId === bound.domainId);
   }

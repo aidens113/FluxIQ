@@ -1,8 +1,12 @@
-import { isAutomationStudioElementTarget, validateAutomationStudioElementTarget, type RecordingSession, type TimelineEntry } from "../index.ts";
+import type { RecordingSession, TimelineEntry } from "../index.ts";
+import type { AutomationStudioRecordingTargetPolicy } from "./recording-target-policy.ts";
 import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
 import { validateActionVisualEntityTarget } from "./visual-target.ts";
 
-export function validateRecordingSession(recording: RecordingSession): AutomationStudioValidationResult {
+/** Core reads no target data: a registered domain's policy does, and without one a recording is checked for structure only. */
+const STRUCTURE_ONLY: AutomationStudioRecordingTargetPolicy = { targetIssues: () => [], parameterIssues: () => [] };
+
+export function validateRecordingSession(recording: RecordingSession, targetPolicy: AutomationStudioRecordingTargetPolicy = STRUCTURE_ONLY): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];
   const entryIds = new Set<string>();
   const noteIds = new Set(recording.notes.map((note) => note.id));
@@ -35,7 +39,7 @@ export function validateRecordingSession(recording: RecordingSession): Automatio
     if (!sourceIds.has(entry.sourceId)) {
       addIssue(issues, "warning", "timeline.unknown_source", `Timeline entry references unknown source "${entry.sourceId}".`, `${path}.sourceId`);
     }
-    validateTimelineEntry(entry, issues, path, noteIds);
+    validateTimelineEntry(entry, issues, path, noteIds, targetPolicy);
   }
 
   for (const [index, note] of recording.notes.entries()) {
@@ -54,7 +58,8 @@ function validateTimelineEntry(
   entry: TimelineEntry,
   issues: AutomationStudioValidationIssue[],
   path: string,
-  noteIds: Set<string>
+  noteIds: Set<string>,
+  targetPolicy: AutomationStudioRecordingTargetPolicy
 ): void {
   if (entry.confidence !== undefined && (entry.confidence < 0 || entry.confidence > 1)) {
     addIssue(issues, "error", "timeline.invalid_confidence", "Timeline entry confidence must be between 0 and 1.", `${path}.confidence`);
@@ -63,13 +68,9 @@ function validateTimelineEntry(
     addIssue(issues, "warning", "timeline.missing_note", `Note entry references missing note "${entry.noteId}".`, `${path}.noteId`);
   }
   if (entry.type === "action" && entry.visualTarget) validateActionVisualEntityTarget(entry.visualTarget, issues, `${path}.visualTarget`);
-  if (entry.type === "action" && entry.target?.elementTarget) appendElementTargetIssues(validateAutomationStudioElementTarget(entry.target.elementTarget, `${path}.target.elementTarget`), issues);
-  if (entry.type === "action" && isAutomationStudioElementTarget(entry.parameters.target)) appendElementTargetIssues(validateAutomationStudioElementTarget(entry.parameters.target, `${path}.parameters.target`), issues);
+  if (entry.type === "action" && entry.target) issues.push(...targetPolicy.targetIssues(entry.target, `${path}.target`));
+  if (entry.type === "action") issues.push(...targetPolicy.parameterIssues(entry.parameters, `${path}.parameters`));
   if (entry.type === "state_delta" && entry.deltas.length === 0) {
     addIssue(issues, "warning", "timeline.empty_state_delta", "State delta entries should contain at least one delta.", `${path}.deltas`);
   }
-}
-
-function appendElementTargetIssues(result: ReturnType<typeof validateAutomationStudioElementTarget>, issues: AutomationStudioValidationIssue[]): void {
-  for (const item of result.issues) issues.push({ severity: item.severity, code: item.code, message: item.message, path: item.path });
 }

@@ -184,6 +184,10 @@
       "types": "./dist/runtime/target-matching/index.d.ts",
       "import": "./dist/runtime/target-matching/index.js"
     },
+    "./runtime/output-dispatch/preparation": {
+      "types": "./dist/runtime/output-dispatch/preparation/index.d.ts",
+      "import": "./dist/runtime/output-dispatch/preparation/index.js"
+    },
     "./runtime/automation-host": {
       "types": "./dist/runtime/automation-host/index.d.ts",
       "import": "./dist/runtime/automation-host/index.js"
