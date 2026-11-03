@@ -4,7 +4,7 @@ import { AdmissionTestPersistence } from "../../../../../../runtime/execution-ad
 import { candidateTrialReentry } from "../../reentry/index.ts";
 import { candidateAdmissionFixture } from "./fixture.ts";
 import { AutomationStudioProjectDatabasePool } from "../../../../storage/project/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../storage/project/execution-admission/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../../framework/persistence/project/execution-admission/index.ts";
 import { sqlAdmissionFixture } from "../../../../storage/project/execution-admission/tests/fixture.ts";
 
 describe("candidate source completion", () => {

@@ -2,7 +2,7 @@ import type { ExecutionCallbackCall, ExecutionCallbackRootLifecycle } from "../.
 import { ExecutionObservationSource, invokeExecutionCallbackRoot } from "../../../../../../runtime/execution-observation/index.ts";
 import { AutomationStudioSiteResetCallbackPolicies, AutomationStudioSiteResetObservation } from "../../../flow-bootstrap/reset-observation/index.ts";
 import { sqlAdmissionAuthority } from "../../../../storage/project/execution-admission/tests/fixture.ts";
-import type { AutomationStudioProjectExecutionAdmissionStore } from "../../../../storage/project/execution-admission/index.ts";
+import type { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../../framework/persistence/project/execution-admission/index.ts";
 
 export async function queuedWriterFixture(store: AutomationStudioProjectExecutionAdmissionStore, resource: string) {
   let callbacks!: ExecutionObservationSource;

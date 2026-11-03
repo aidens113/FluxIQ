@@ -1,7 +1,7 @@
 import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import type { ConfiguredExecutionSource, ExecutionAdmissionAssembly, ExecutionEntry, ExecutionObservationContext, ExecutionOriginRecord, ExecutionScope, ExecutionScopeBinding, ExecutionSourcePorts, ExecutionSourceRegistration, VerifiedExecutionEvidence } from "../../../../../runtime/execution-admission/index.ts";
 import type { ObservedGatewayBinding, ObservedGatewayProvenanceReader } from "../../../../../runtime/output-dispatch/admission/gateway/index.ts";
-import type { AutomationStudioProjectExecutionAdmissionStore } from "../../../storage/project/execution-admission/index.ts";
+import type { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../framework/persistence/project/execution-admission/index.ts";
 import type { AutomationStudioExecutionAdmissionPorts } from "./ports.ts";
 import { AutomationStudioObservedCommandContext } from "./context.ts";
 import type { AutomationStudioExecutionRootRuns } from "./run.ts";

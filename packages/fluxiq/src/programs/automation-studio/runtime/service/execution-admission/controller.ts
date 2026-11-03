@@ -1,7 +1,7 @@
 import { ClientGatewayCommandContext as Context, type ClientGatewayCommandClaim, type ClientGatewayCommandLedgerLease, type ClientGatewayCommandOutcomeObserver } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import { createExecutionAdmissionAuthority, type ExecutionScopeAttestor } from "../../../../../runtime/execution-admission/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore as Store } from "../../../storage/project/execution-admission/index.ts";
-import type { AutomationStudioProjectCommandLedgerStore, AutomationStudioCommandRunAdmission } from "../../../storage/project/command-ledger/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore as Store } from "../../../../../framework/persistence/project/execution-admission/index.ts";
+import type { AutomationStudioProjectCommandLedgerStore, AutomationStudioCommandRunAdmission } from "../../../../../framework/persistence/project/command-ledger/index.ts";
 import type { AutomationStudioExecutionAdmissionContinuation } from "./continuation.ts";
 import type { AutomationStudioExecutionAdmissionPorts } from "./ports.ts";
 import type { AutomationStudioExecutionAdmissionOptions } from "./options.ts";

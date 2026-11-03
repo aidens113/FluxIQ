@@ -12,7 +12,7 @@ import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "..
 import { AUTOMATION_STUDIO_STAGED_PROJECT_AUTHORITY_MIGRATION } from "../accepted-state/index.ts";
 import { AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION } from "../authority-guard/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION } from "../candidate-verification/index.ts";
-import { AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "../command-ledger/index.ts";
+import { AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "../../../../../framework/persistence/project/command-ledger/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once

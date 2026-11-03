@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ProgramJsonStore } from "../../../../../_shared/storage.ts";
 import { SQLiteRepository } from "../../../../../database-manager/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../../../../storage/project/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../storage/project/execution-admission/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../../framework/persistence/project/execution-admission/index.ts";
 import { sqlAdmissionAuthority, sqlAdmissionFixture } from "../../../../storage/project/execution-admission/tests/fixture.ts";
 import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../../service/paths/index.ts";
 import { AutomationStudioProjectBuildDocuments, AutomationStudioProjectBuildRecordStore } from "../../record/index.ts";

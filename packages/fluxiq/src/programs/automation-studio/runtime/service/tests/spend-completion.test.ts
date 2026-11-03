@@ -6,7 +6,7 @@ import { SQLiteRepository } from "../../../../../framework/persistence/sqlite/in
 import { ExecutionObservationSource, prepareObservedExecutionCallback, type OwnedExecutionCallback } from "../../../../../runtime/execution-observation/index.ts";
 import type { ModelExecutionOptions } from "../../../../../runtime/models/execution/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../../../storage/project/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore } from "../../../storage/project/execution-admission/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../framework/persistence/project/execution-admission/index.ts";
 import { sqlAdmissionAuthority, sqlAdmissionFixture } from "../../../storage/project/execution-admission/tests/fixture.ts";
 import { automationStudioLlmCurrentFlowPurse } from "../../llm/build-purse/index.ts";
 import { AutomationStudioFlowBootstrapCreationSpendStore } from "../creation-spend.ts";

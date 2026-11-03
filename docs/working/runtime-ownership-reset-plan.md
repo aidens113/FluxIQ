@@ -1,7 +1,7 @@
 # Runtime Ownership Refactor: Reset Plan
 
 Status: Active
-Status detail: SQL foundation and first callback batch validated; public-package integration active before next parallel ownership and performance units.
+Status detail: Rich contracts and transaction-local proof optimization locally validated; admission SQL owners and remaining callback/router entry integration active.
 Created: 2026-11-02
 Last updated: 2026-11-02
 Owner: Senior supervisor
@@ -12,12 +12,12 @@ Related: [existing record](runtime-ownership-refactor.md), [remaining owner inve
 ## Current State
 
 The user authorized execution on 2026-11-02 ("Ok follow the plan"). The implementation freeze is lifted for this plan. The completed salvage audit remains evidence for selective retention; do not discard the preserved source wholesale.
-First SQL and callback batches validated; original composed positive remains unverified after the bounded diagnostic. Next exact briefs: rich-flow-contracts, remaining-adapters-execute and bulk-admission-proofs. Source release follows the first checkpoint push. Admission/cohort and remaining web-boundary manifests are ready for following batches. Root owns shared documents, integration, final verification and public export coordination.
+First SQL and callback batches passed public-package integration. Complete rich Flow/session/evidence contracts, transaction-local proof reuse and admission SQL ownership are now implemented; exact evidence and held checks are in the ledger below. Remaining callback/environment guards and real router observation entry run as disjoint worker units. Original composed positive remains unverified after the bounded diagnostic. Root owns shared documents, integration, final verification and public export coordination.
 No paid/browser/panel run is started. Package-wide readers wait for a coherent frozen tree; workers may run stable owner-local tests.
 User additionally requested the fastest safe execution on 2026-11-02. Root owns the parallel [time-reduction investigation](runtime-ownership-reset-plan/reports/time-reduction.md); it may reduce redundant collection/builds and dependency waits but cannot weaken acceptance. Retained budget/unknown-frame small unit: 17 tests passed, two-root strict closure zero diagnostics/program edges, scoped structure 19 files zero failures.
 Authoring pair: C:/Users/osrs_/FluxStuff/fxwork/t843/!FluxIQ and sibling !FluxIQWebExtension, task/t843-runtime-foundations. The IDE's t842 document is an older checkout.
-Latest pushed checkpoints: Core c0dee9bbe, downstream 460a5af6. They are partial task backups; dev/main have not advanced for this unit.
-At that checkpoint Core typecheck/structure passed, normal public-package downstream domain check/build passed, all82 selected domain cases passed, extension check/build passed. One real composed build test remains stalled before start-state admission; no complete-runtime acceptance is claimed.
+Latest pushed checkpoints: Core bfd3ee47e, downstream ef842b99. They are partial task backups; dev/main have not advanced for this unit. New source batches remain local while combined gates wait for a coherent frozen tree.
+At the foundation checkpoint Core typecheck/structure passed, normal public-package downstream domain check/build passed, all82 selected domain cases passed, extension check/build passed. The bounded composed witness drained all177 store entries and progressed beyond the earlier wait, but was intentionally cancelled and is not complete-runtime acceptance. No fixed SQL/FIFO deadlock or exact stall cause was established.
 Current SQL foundation and first callback-adapter batch passed focused lead tests, package typecheck and full structure. Normal Core public package rebuilt; emitted server import preserves constructor/migration identity and exposes all 30 original migration definitions. Remaining adapter groups, five isolated model-log contracts and composed acceptance remain unfinished; do not treat this as complete ownership or release acceptance.
 The previous 1–3 day estimate was not derived from scheduled work units. It is not a delivery commitment. This plan must be reconciled into owned migration batches before a replacement estimate.
 
@@ -76,7 +76,7 @@ At most three workers plus Root. Workers must not be kept idle behind a single c
 | Partial accessor/native-clock protection | Concrete source risks identified; only scaffolding/preflight edits saved. | Review complete guard scope and finite getter/replacement/legacy-compatibility tests before continuing. |
 | Native model-log lifecycle completion | Existing native helpers accepted; new lifecycle not implemented, only isolated type scaffolds. | Separate identity-preserving lifecycle move from any additional completion protocol; explicitly decide the required integration gate. |
 | Native dataset callback completion | Relevant production callback still requires genuine durable completion evidence. | Reproduce the actual required path; specify the smallest owner-level fix and failure/zero-repeat oracle before authoring code. |
-| SQL cleanup fault retention | Historical behavior was identified; current SQL move contains no cleanup fixes. | Review named primary/cleanup/close cases separately from the mechanical ownership move; preserve original errors and state. |
+| SQL cleanup fault retention | Four named cleanup branches corrected and covered with the foundation acceptance. | Preserve primary error identity when cleanup succeeds and both errors when cleanup also fails; rerun touched cases on later integration. |
 
 These are finite named issues, not proof that additional mechanisms are already required everywhere. No discovered relevant weakness is silently called complete or omitted from release review.
 
@@ -170,6 +170,19 @@ No measured finish date follows from this audit. Earlier 1-3 day and conversatio
 - Changed: Core pre-push uses the existing all-visible-input structure-audit cache and captures one failure output rather than running a failed audit twice. This is a separate tooling optimization, not an ownership migration.
 - Validation: `bash -n .githooks/pre-push` -> exit 0; `node --test scripts/build-cache/tests/audit-replay.test.mjs scripts/build-cache/tests/invalidation.test.mjs scripts/build-cache/tests/stamp-rules.test.mjs scripts/build-cache/tests/registry.test.mjs` -> 21 passed, including changed-input invalidation and uncached failures. Actual hook cold/reuse calls both exited 0: 52.091s cold, 1.609s unchanged; same fingerprinted audit gate. Documentation changes still invalidate the cache.
 
+### 2026-11-02 - Parallel rich contracts, proof reuse and admission ownership
+- Agent: Codex senior supervisor with file-owned workers.
+- Changed: complete Flow/publication/settings contracts and complete session/action/fact/evidence contracts moved with exact legacy exports. Transaction-local admission inventory reuses its existing bounded mutation-record read; command-link direct SQL behavior is preserved. P1 moves actual admission/command-ledger SQL owners and state, with27 direct legacy aliases; outside consumer import-only retargeting assigned separately.
+- Validation: lead rich Flow parity/closure/scoped checks ->36 declarations preserved,405 modules/zero diagnostics/program dependencies,58 files/zero local structure failures. Lead grouped rich/performance tests ->9 files,50 passed,10.05s. Proof fixtures with8/24 child histories reduce native proof gets18/50 to0/0; corruption, project isolation and staged-write rollback cases pass. Whole-build elapsed improvement remains unmeasured.
+- Validation: lead session/evidence parity ->9 complete declarations and old export surfaces preserved; evidence-only strict closure ->11 modules/zero diagnostics/program dependencies;18-file scoped structure ->zero failures. Full session trace/compiler closure waits for frozen engine collaborators; erased runtime type assertions are not compiler evidence.
+- Worker claim awaiting lead acceptance: P1 ->49 original declarations preserved,271-module strict closure without Studio,60 cases passed. Parallel clocks ->125 passing cases in first owner run, one mixed legacy/observed fixture reconciled without weakening guards, then5/5 boundary cases passed. Final combined checks still required after the final observation forwarding line.
+- Assigned: callback_guards finishes descriptor/clock/environment adapters; stalled_build owns router-owner-entry brief (complete routing contracts, actual state-routing move, then proposed real existing-kernel entry); sql_foundation performs only19 import/export specifier replacements across17 exact outside-consumer files. File ownership transfer of Studio router-state.ts confirmed; engine router/run and shared helpers remain callback-owned.
+- Outcome: source batches local pending coherent combined acceptance. No provider/browser/panel/full sweep launched. Five isolated model-log scaffolds remain preserved and unfinished. Remaining A–N/backend/web/chat work remains required.
+
 ## Open Questions
+
+### Lead P1 acceptance checkpoint
+
+`pnpm.cmd exec vitest run` with the8 exact SQL/ledger files listed in reports/admission-sql-owner.md ->60/60 passed,61.57s (38.65s collection,18.81s tests). Lead strict two-barrel TypeScript check ->271 source modules,zero diagnostics/program dependencies. `node .fluxiq/refactor/lead-p1-parity.cjs` ->27 direct-export aliases,49 declarations preserved after resolved import-type path normalization,17 outside files/19 replacements inverse to entire original bytes. `node .fluxiq/refactor/lead-p1-structure.mjs` ->81 files,zero failures,three unchanged pre-existing baseline entries; baseline not changed. Raw rule probe first reported those existing entries before applying the normal audit ratchet. Emitted process-restart, whole-graph/package and composed gates remain held for common freeze. This supports a local coherent P1 checkpoint, not dev/main integration.
 
 The user approved execution of this migration/defect split. Exact batch manifests and the localized stall determine scheduling; earlier estimates remain withdrawn as unsupported.

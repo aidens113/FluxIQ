@@ -6,7 +6,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { AuthoringExecutionScope, invokeAuthoringExecutionCallback } from "../../../../../../runtime/flow-authoring/execution/observation/index.ts";
 import { ExecutionCallbackPolicies } from "../../../../../../runtime/execution-observation/policies/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../../../../storage/project/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../storage/project/execution-admission/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../../framework/persistence/project/execution-admission/index.ts";
 import { sqlAdmissionAuthority, sqlAdmissionFixture } from "../../../../storage/project/execution-admission/tests/fixture.ts";
 import { AutomationStudioSiteResetProjectLedger, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetProjectSnapshot } from "../../../flow-bootstrap/site-reset/index.ts";
 import { AutomationStudioProjectBuildDocuments } from "../../../project-agents/record/index.ts";

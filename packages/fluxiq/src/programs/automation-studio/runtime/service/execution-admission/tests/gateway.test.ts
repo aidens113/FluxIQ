@@ -1,7 +1,7 @@
 // @fluxiq-test-group real-sql
 import { expect, it, vi } from "vitest";
 import { ClientGatewayCommandOutcome as Outcome } from "../../../../../../client-gateway/service/command-ledger/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore as Store } from "../../../../storage/project/execution-admission/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore as Store } from "../../../../../../framework/persistence/project/execution-admission/index.ts";
 import { observedGatewayFixture } from "./fixture.ts";
 it("observes an actual client delivery on the original backend parent with a genuine persisted root run", async () => observedGatewayFixture(async (h) => {
     expect((await h.continuation.assembly.consumer.inspect(h.continuation.scope)).state).toBe("pending");

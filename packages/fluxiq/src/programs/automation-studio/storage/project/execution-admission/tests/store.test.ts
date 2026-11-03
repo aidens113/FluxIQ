@@ -1,7 +1,7 @@
 // @fluxiq-test-group real-sql
 import { expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore } from "../index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../../framework/persistence/project/execution-admission/index.ts";
 import { sqlAdmissionAuthority, sqlAdmissionFixture } from "./fixture.ts";
 it("persists actual entered children and complete frontier before clear, without closing on release", async () => sqlAdmissionFixture(async ({ store }) => {
     const actual = await sqlAdmissionAuthority(store);

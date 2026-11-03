@@ -33,7 +33,7 @@ export * from "./reusable-llm-context-store.ts";
 export * from "./run-dataset-store.ts";
 export * from "./candidate-verification/index.ts";
 export * from "./accepted-state/index.ts";
-export * from "./command-ledger/index.ts";
+export * from "../../../../framework/persistence/project/command-ledger/index.ts";
 export * from "./authority-guard/index.ts";
 export * from "./recording-stream/index.ts";
 export * from "./gateway-trace/index.ts";

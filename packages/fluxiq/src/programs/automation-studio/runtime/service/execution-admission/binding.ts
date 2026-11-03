@@ -1,7 +1,7 @@
 import type { ExecutionScopeAttestor, ExecutionScopeBinding, ExecutionScopeOwner } from "../../../../../runtime/execution-admission/index.ts";
 import { executionBinding, executionRecord, executionText, isExecutionCapability } from "../../../../../runtime/execution-admission/validation/index.ts";
 import { ClientGatewayCommandLedgerController as Rules } from "../../../../../client-gateway/service/command-ledger/index.ts";
-import type { AutomationStudioProjectExecutionAdmissionStore } from "../../../storage/project/execution-admission/index.ts";
+import type { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../framework/persistence/project/execution-admission/index.ts";
 type ScopeRecord = NonNullable<ReturnType<ExecutionScopeOwner["readBinding"]>>;
 
 /** Persisted Flow identity plus an optional original, trusted resource owner. */

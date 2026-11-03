@@ -10,7 +10,7 @@ import { ExecutionObservationSource, invokeExecutionCallbackRoot, type Execution
 import { ExecutionCallbackPolicies } from "../runtime/execution-observation/policies/index.ts";
 import type { ExecutionEntrySnapshot } from "../runtime/execution-admission/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../programs/automation-studio/storage/project/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore } from "../programs/automation-studio/storage/project/execution-admission/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore } from "../framework/persistence/project/execution-admission/index.ts";
 import { sqlAdmissionAuthority, sqlAdmissionFixture } from "../programs/automation-studio/storage/project/execution-admission/tests/fixture.ts";
 
 type SqlFixture = Parameters<Parameters<typeof sqlAdmissionFixture>[0]>[0];

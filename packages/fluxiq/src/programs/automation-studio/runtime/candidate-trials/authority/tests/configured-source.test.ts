@@ -1,7 +1,7 @@
 // @fluxiq-test-group real-sql
 import { describe, expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../../../../storage/project/index.ts";
-import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../storage/project/execution-admission/index.ts";
+import { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../../framework/persistence/project/execution-admission/index.ts";
 import { sqlAdmissionFixture } from "../../../../storage/project/execution-admission/tests/fixture.ts";
 import { AutomationStudioFlowCandidateTrialGate } from "../../../flow-bootstrap/candidate/index.ts";
 import { AutomationStudioCandidateTrialModeOwner } from "../../mode/index.ts";

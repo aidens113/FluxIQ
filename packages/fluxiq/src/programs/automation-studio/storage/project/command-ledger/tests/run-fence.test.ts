@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandClaim } from "../../../../../../client-gateway/service/command-ledger/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../../../../../../framework/persistence/project/sql/index.ts";
-import { AutomationStudioProjectCommandLedgerStore as Store, AutomationStudioCommandRunAdmission, AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT } from "../index.ts";
+import { AutomationStudioProjectCommandLedgerStore as Store, AutomationStudioCommandRunAdmission, AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT } from "../../../../../../framework/persistence/project/command-ledger/index.ts";
 
 function claim(invocationId: string): ClientGatewayCommandClaim {
   const owner = { projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId, attemptId: "node.attempt.1", effectOrdinal: 0 };

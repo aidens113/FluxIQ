@@ -1,6 +1,6 @@
 import type { ExecutionEntry, ExecutionEntryBridge, ExecutionObservationContext, ExecutionScopeBinding } from "../../../../../runtime/execution-admission/index.ts";
 import type { OrdinaryExecutionRunBinding, OrdinaryExecutionRunBindingReader } from "../../../../../runtime/output-dispatch/admission/gateway/index.ts";
-import type { AutomationStudioProjectExecutionAdmissionStore } from "../../../storage/project/execution-admission/index.ts";
+import type { AutomationStudioProjectExecutionAdmissionStore } from "../../../../../framework/persistence/project/execution-admission/index.ts";
 /** Original roots and private proofs, never copied bridge snapshots or caller run IDs. */
 export class AutomationStudioExecutionRootRuns implements OrdinaryExecutionRunBindingReader {
     private readonly proofs = new WeakMap<object, {

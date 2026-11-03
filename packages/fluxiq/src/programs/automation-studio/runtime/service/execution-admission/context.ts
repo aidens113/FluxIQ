@@ -1,8 +1,8 @@
 import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayDurableDispatch as Dispatch, type ClientGatewayCommandClaim, type ClientGatewayCommandLedgerLease, type ClientGatewayCommandOutcomeObserver } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import type { ExecutionAdmissionProducer, ExecutionEntry, VerifiedExecutionEvidence } from "../../../../../runtime/execution-admission/index.ts";
-import { AutomationStudioProjectCommandLedgerStore as Ledger, type AutomationStudioCommandRunAdmission } from "../../../storage/project/command-ledger/index.ts";
+import { AutomationStudioProjectCommandLedgerStore as Ledger, type AutomationStudioCommandRunAdmission } from "../../../../../framework/persistence/project/command-ledger/index.ts";
 import type { AutomationStudioProjectDatabasePool } from "../../../storage/project/index.ts";
-import type { ExecutionAdmissionCommandLink } from "../../../storage/project/execution-admission/index.ts";
+import type { ExecutionAdmissionCommandLink } from "../../../../../framework/persistence/project/execution-admission/index.ts";
 /** One original gateway invocation. It owns no second journal or completion observer. */
 export class AutomationStudioObservedCommandContext {
     private readonly observer: ClientGatewayCommandOutcomeObserver;
