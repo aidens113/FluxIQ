@@ -17,11 +17,11 @@
 // carried between the copy and the check. Core's lines (`../verdict/`) and
 // every other reader of the summary see the rows exactly as before.
 
-import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
-import type { AutomationStudioResultReadCondition } from "../../read-condition.ts";
-import { AutomationStudioRequestRowId } from "../row/index.ts";
-import { automationStudioRequestRowLabel } from "./reads.ts";
-import type { AutomationStudioRequestRowsStoredMark } from "../types.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../../../contracts/index.ts";
+import type { AutomationStudioResultReadCondition } from "../../../read-condition.ts";
+import { AutomationStudioRequestRowId } from "../../row/index.ts";
+import { automationStudioRequestRowLabel } from "../reads.ts";
+import type { AutomationStudioRequestRowsStoredMark } from "../../types.ts";
 
 /** What a label that may not be said reads as (`../read-account/alone-rows.ts`). */
 const WITHHELD_LABEL = "(withheld)";

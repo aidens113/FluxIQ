@@ -57,7 +57,7 @@ import {
   type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../../index.ts";
-import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../loop-limits/index.ts";
+import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../loop-limits/index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 
 export type RecordedRunName = "bigbox-run6" | "crossborder" | "everything-store-run4";

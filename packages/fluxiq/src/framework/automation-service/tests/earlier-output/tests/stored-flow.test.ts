@@ -29,7 +29,7 @@ import {
 import { assembleAutomationStudioFlowDraftPlan, normalizeAutomationStudioFlowBuildPlan, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioBootstrapExistingTopology } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../../../runtime/flow-authoring/bootstrap/plan/tests/index.ts";
 import { runAutomationStudioGraph } from "../../../executor/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { canonicalFlowDocument } from "../../../service/flows/index.ts";
 
 const resolution = {

@@ -8,7 +8,7 @@
 // work that extends Flow Bootstrap; the service imports both through this
 // directory's barrel.
 import type { AutomationStudioFlowAdaptation } from "../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../loop-limits/index.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
   type AutomationStudioBootstrapAccounting,

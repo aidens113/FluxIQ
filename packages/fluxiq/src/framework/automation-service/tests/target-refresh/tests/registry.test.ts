@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION } from "../../../nodes/index.ts";
 import { definition, setup } from "../../../executor/unbound-reacquire/tests/fixtures.ts";
 

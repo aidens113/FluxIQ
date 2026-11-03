@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { bootstrapAdaptationAsFlowAdaptation, parseAutomationStudioFlowBootstrapEvidenceSteps, type AutomationStudioBootstrapAdaptation } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../../../runtime/llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../../runtime/llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../../runtime/loop-limits/index.ts";
 import { bootstrapAdaptationAuditEvent } from "../audit-event.ts";
 import { evidenceTraceAuditDetail, sanitizeEvidenceLoopTrace } from "../evidence-trace.ts";
 

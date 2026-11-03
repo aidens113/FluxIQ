@@ -104,10 +104,10 @@ import { AutomationStudioLearnedPaces, automationStudioEvidenceFlowBootstrapDraf
 import { AutomationStudioSiteResetLedger, AutomationStudioSiteResetProjectLedger } from "../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { assertAutomationStudioBootstrapHasNoRecordingProvenance, automationStudioBootstrapTargetRefusal, bootstrapAdaptationAsFlowAdaptation, normalizeAutomationStudioFlowBuildPlan, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioBootstrapAdaptation, type AutomationStudioBootstrapAdaptationMode, type AutomationStudioBootstrapAdaptationOrigin, type AutomationStudioBootstrapExistingTopology } from "../../runtime/flow-authoring/bootstrap/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "../../runtime/adaptation/live-patch.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, automationStudioFlowBootstrapEvidenceLoopLimits } from "../../runtime/llm/loop-limits/index.ts";
-import { packAutomationStudioReusableLlmContext, type AutomationStudioReusableLlmContextPacket, type AutomationStudioReusableLlmContextPackingResult } from "../../runtime/llm/reusable-context.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "./host-runtime.ts";
-import type { AutomationStudioNativeNodeRuntime } from "./native-node-runtime.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, automationStudioFlowBootstrapEvidenceLoopLimits } from "../../runtime/loop-limits/index.ts";
+import { packAutomationStudioReusableLlmContext, type AutomationStudioReusableLlmContextPacket, type AutomationStudioReusableLlmContextPackingResult } from "../../runtime/llm/reusable-context/index.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../runtime/native-nodes/index.ts";
+import type { AutomationStudioNativeNodeRuntime } from "../../runtime/native-nodes/index.ts";
 import { finalizeRecordingStateLinks } from "./state-linker.ts";
 import { type RecordingFlowProposalArtifact, type RecordingFlowProposalDestination } from "../../runtime/recording/recording-flow-proposal.ts";
 import { AutomationStudioGatewayTraceServicePools, automationStudioGatewayTraceBuildId, bindAutomationStudioGatewayTraceRun, withAutomationStudioGatewayTraceBuildActivity, withAutomationStudioGatewayTraceRunActivity } from "../../runtime/recording/gateway-trace/wiring/index.ts";

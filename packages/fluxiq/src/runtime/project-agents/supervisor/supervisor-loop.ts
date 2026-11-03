@@ -126,7 +126,7 @@ import { AutomationStudioFlowCandidateSubmissionController, AutomationStudioFlow
 import { automationStudioLlmBuildPurseRun, AutomationStudioLlmBuildPurseRefused } from "../../llm/build-purse/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS, AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS, AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../loop-limits/index.ts";
 import { withAutomationStudioProjectAgent } from "../attribution/index.ts";
 import type { AutomationStudioProjectBuildEnding } from "../record/index.ts";
 import { automationStudioProjectSupervisorAssembleTool } from "./assemble-tool.ts";

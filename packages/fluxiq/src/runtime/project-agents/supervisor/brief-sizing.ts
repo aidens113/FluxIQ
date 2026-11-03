@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 import { automationStudioProjectSingleSubflowPlan } from "../single-subflow/index.ts";
 

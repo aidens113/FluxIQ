@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import * as published from "../../../../framework/automation-service/index.ts";
+import * as published from "../../../framework/automation-service/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS, AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS, AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../index.ts";
 
 // A project build runs a supervisor and several builders, trials and resets,

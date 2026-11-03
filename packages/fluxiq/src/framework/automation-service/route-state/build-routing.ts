@@ -5,7 +5,7 @@ import { automationStudioRouteSituationDelta } from "./delta.ts";
 import { automationStudioScreenRouteSituation } from "./screen-situation.ts";
 import type { AutomationStudioFlowPort } from "../../../flows/authoring/model/index.ts";
 import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudioFlowBootstrapRoutingContext } from "../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../runtime/native-nodes/index.ts";
 import { observeAutomationStudioRouteState, readAutomationStudioRouteState, type AutomationStudioRouteStateObservation } from "./observe.ts";
 import { automationStudioSignRouteEffect, automationStudioSignRouteState, type AutomationStudioRouteSignatures } from "./signatures/index.ts";
 

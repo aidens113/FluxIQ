@@ -10,7 +10,7 @@ import {
   type AutomationStudioNodeDefinition,
 } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioRuntimeSessionLlmIntent } from "../../../../../runtime/llm/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import {
   AutomationStudioService,
   type AutomationStudioLlmProviderResolverInput,

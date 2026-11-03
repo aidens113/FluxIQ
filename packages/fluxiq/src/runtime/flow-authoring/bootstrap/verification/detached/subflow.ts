@@ -57,7 +57,7 @@ import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapsho
 import { automationNodeStateBinding, type AutomationStudioNodeRegistry, type AutomationStudioNodeRegistryResolution } from "../../../../../framework/automation-service/nodes/index.ts";
 import { type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../../../../framework/automation-service/executor/index.ts";
 import { automationStudioReferenceNow } from "../../../../reference-time/index.ts";
-import type { AutomationStudioRouterExecutionResult } from "../../../../../framework/automation-service/router-runtime.ts";
+import type { AutomationStudioRouterExecutionResult } from "../../../../router-runtime/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS,
   validateAutomationStudioFlowBootstrapPlan,

@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { automationStudioProjectStructurePlan, type AutomationStudioProjectStructurePlan } from "../../contracts/index.ts";
 import { gardenBuild, REF } from "../../dispatch/tests/dispatch-fixture.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "../brief-sizing.ts";

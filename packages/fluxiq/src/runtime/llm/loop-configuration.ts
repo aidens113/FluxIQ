@@ -15,7 +15,7 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS,
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS
-} from "./loop-limits/index.ts";
+} from "../loop-limits/index.ts";
 import type { AutomationStudioLlmEvidenceFinishingTools, AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";

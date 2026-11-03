@@ -22,7 +22,7 @@ import {
   type AutomationStudioFlowBootstrapFailureDiagnostic
 } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { AutomationStudioLlmProviderError, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioSessionKeyPorts } from "../../../../../runtime/llm/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { draftObservation, issueCodesForEvidence, type DecisionObservation } from "./observation.ts";

@@ -11,7 +11,7 @@ import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequenc
 // them and the LLM adapter produces them, so neither feature barrel may own the
 // value without closing an initialization cycle through the other.
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../../llm/provider-refusal/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";

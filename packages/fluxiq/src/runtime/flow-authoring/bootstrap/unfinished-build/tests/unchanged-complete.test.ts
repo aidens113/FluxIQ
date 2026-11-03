@@ -8,7 +8,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, automationStudioFlowBootstrapDraftStepIsWritable, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW } from "../../../../llm/repeat-guard/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS } from "../../../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS } from "../../../../loop-limits/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG,

@@ -28,7 +28,7 @@ import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvi
 import { type AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
 import { automationStudioReferenceNow } from "../../../../runtime/reference-time/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "../../io-policy.ts";
-import type { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
+import type { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
 
 /** One run's executor options: what reaches the world, and where its rows and questions go. */
 export function automationStudioRunGraphOptions(input: {

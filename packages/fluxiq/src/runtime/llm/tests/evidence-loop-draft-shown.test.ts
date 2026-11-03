@@ -13,7 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 // is what `../../loop-limits/tests/` already does about it.
 import { runAutomationStudioLlmEvidenceLoop } from "../index.ts";
 import { resolveLimits } from "../loop-configuration.ts";
-import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../loop-limits/index.ts";
+import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../loop-limits/index.ts";
 
 const tools = [
   { toolId: "inspect", description: "Look at the target.", inputSchema: { type: "object" }, effect: "observe" as const },

@@ -57,12 +57,12 @@
 // **The judge's copy only.** As `summary-with-row-ids.ts`: the summary given is
 // never changed, and the verdict reads the rows as before.
 
-import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
-import type { AutomationStudioResultReadCondition } from "../../read-condition.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../../contracts/index.ts";
+import type { AutomationStudioResultReadCondition } from "../../../read-condition.ts";
 // The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory (`summary-reads.ts`).
-import { automationStudioResultConditionName } from "../../read-account/condition-name.ts";
-import { automationStudioRequestRowLabel, automationStudioRequestRowsReads, automationStudioRequestRowsStoredBy } from "./reads.ts";
-import type { AutomationStudioRequestRowsStoredMark } from "../types.ts";
+import { automationStudioResultConditionName } from "../../../read-account/condition-name.ts";
+import { automationStudioRequestRowLabel, automationStudioRequestRowsReads, automationStudioRequestRowsStoredBy } from "../reads.ts";
+import type { AutomationStudioRequestRowsStoredMark } from "../../types.ts";
 
 /** What a label that may not be said reads as (`../read-account/alone-rows.ts`). */
 const WITHHELD_LABEL = "(withheld)";

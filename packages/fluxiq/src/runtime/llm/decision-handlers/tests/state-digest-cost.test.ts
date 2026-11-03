@@ -16,7 +16,7 @@ import {
   type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../../index.ts";
-import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../loop-limits/index.ts";
+import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../loop-limits/index.ts";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 

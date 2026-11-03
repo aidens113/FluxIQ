@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-nodes/index.ts";
 import { automationStudioLlmPriorNodesRuntimeAuthority } from "../authority.ts";
 import { automationStudioLlmPriorNodesIdentity } from "../identity.ts";
 import type { AutomationStudioLlmRerunRecord, AutomationStudioLlmRerunScope } from "../../rerun-provenance/index.ts";

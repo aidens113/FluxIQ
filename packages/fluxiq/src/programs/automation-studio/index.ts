@@ -14,5 +14,5 @@ export * from "../../runtime/recording/normalization/index.ts";
 export * from "../../framework/automation-service/index.ts";
 export * from "../../framework/persistence/automation/index.ts";
 export * from "../../framework/automation-service/testing/index.ts";
-export * from "../../api-contracts/automation/document-types.ts";
+export * from "../../api-contracts/automation/document-types/index.ts";
 export * from "./ui/index.ts";

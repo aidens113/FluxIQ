@@ -7,7 +7,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 

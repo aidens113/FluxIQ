@@ -38,7 +38,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration, AutomationStudioActionPermissionCheck } from "../../../../../runtime/action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { AutomationStudioSiteResetLedger } from "../../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import type { AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";

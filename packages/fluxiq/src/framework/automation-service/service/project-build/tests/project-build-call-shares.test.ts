@@ -13,7 +13,7 @@ import { automationStudioLlmCurrentBuildPurse } from "../../../../../runtime/llm
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool } from "../../../../../runtime/llm/index.ts";
 import { automationStudioProjectSupervisorBriefSizing, type AutomationStudioProjectBuilderPorts, type AutomationStudioProjectSubflowBrief } from "../../../../../runtime/project-agents/index.ts";
 import { gardenBrief, gardenBuild, REF } from "../../../../../runtime/project-agents/dispatch/tests/dispatch-fixture.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../../runtime/llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../../runtime/loop-limits/index.ts";
 import { automationStudioProjectBuildBriefCalls } from "../brief-calls.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS, AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE } from "../reserve.ts";
 

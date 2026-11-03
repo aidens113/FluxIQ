@@ -8,7 +8,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../io/index.ts";
 import type { AppendRecordingEntryInput } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperImplementation, AutomationStudioRecordingMapperObservation } from "../../../nodes/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
 // `proposal-candidates.ts` as the service uses it: a recording mapper's expected

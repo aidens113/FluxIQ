@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 // The loop first: `runtime/loop-limits/` imports back into the llm directory.
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
 import { automationStudioLlmEvidenceAnsweredRequestNote } from "../../evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS } from "../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS } from "../../../loop-limits/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 
 type Shown = ReadonlyArray<{ callId: string; toolId: string; value: JsonObject }>;

@@ -1,4 +1,4 @@
-import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from "./document-types.ts";
+import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from "./document-types/index.ts";
 import type { LearnedTaskModel } from "../../framework/automation-service/learning/index.ts";
 import type { NormalizedTimeline } from "../../runtime/recording/normalization/index.ts";
 import type { PolicyGraph, RecordingSession, SignalRegistry } from "../../flows/authoring/model/index.ts";

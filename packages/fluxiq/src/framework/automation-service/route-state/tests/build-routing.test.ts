@@ -21,9 +21,9 @@ import {
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../../../../runtime/llm/index.ts";
 import { replayRecordedRun, type RecordedRunName } from "../../../../runtime/llm/decision-context/tests/recorded-runs.ts";
-import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../runtime/llm/loop-limits/index.ts";
+import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../runtime/loop-limits/index.ts";
 import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudioFlowBootstrapRoutingContext } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../../host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../../runtime/native-nodes/index.ts";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { observeAutomationStudioRouteState, startAutomationStudioBuildRouting } from "../index.ts";

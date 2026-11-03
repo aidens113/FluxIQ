@@ -34,8 +34,8 @@
 // only bound on a request is the model's context window, enforced loudly
 // before a request is sent (`runtime/llm/context-window.ts`).
 
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, resolveAutomationStudioLlmTokenLimits, type AutomationStudioLlmTokenLimits } from "../harness/index.ts";
-import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmEvidenceLoopBudget } from "../index.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, resolveAutomationStudioLlmTokenLimits, type AutomationStudioLlmTokenLimits } from "../llm/harness/index.ts";
+import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmEvidenceLoopBudget } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "./evidence-loop.ts";
 
 /**

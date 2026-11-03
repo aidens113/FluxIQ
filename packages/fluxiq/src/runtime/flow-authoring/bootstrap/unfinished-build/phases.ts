@@ -193,7 +193,7 @@ import { automationStudioResultUnconfirmedInspection } from "../../../result-ver
 import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../loop-limits/index.ts";
 import { automationStudioLlmStepLogScope } from "../../../llm/step-log/index.ts";
 import { automationStudioLlmBuildTrace } from "../../../llm/evidence-progress/index.ts";
 import { automationStudioFlowBootstrapBudgetExhausted, type AutomationStudioFlowBootstrapCostSpending, type AutomationStudioFlowBootstrapNextRoundHold } from "./budget-exhausted.ts";

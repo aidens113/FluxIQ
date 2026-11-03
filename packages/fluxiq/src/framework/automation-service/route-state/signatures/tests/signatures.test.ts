@@ -3,7 +3,7 @@
 // treats a host that misbehaves as one that said nothing.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../../../host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../../../runtime/native-nodes/index.ts";
 import {
   AUTOMATION_STUDIO_ROUTE_SIGNATURE_MAX_CHARACTERS,
   AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY,

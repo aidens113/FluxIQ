@@ -47,7 +47,7 @@ import { assembleAutomationStudioFlowDraftPlan, normalizeAutomationStudioFlowBui
 import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstrap/plan/tests/index.ts";
 import { authoringScopePartOf } from "../../../flow-authoring/bootstrap/record-defaults/index.ts";
 import { runAutomationStudioGraph } from "../../../../framework/automation-service/executor/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-nodes/index.ts";
 import { canonicalFlowDocument } from "../../../../framework/automation-service/service/flows/index.ts";
 
 const resolution = {

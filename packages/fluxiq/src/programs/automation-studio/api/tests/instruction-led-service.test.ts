@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 import { IoRegistry } from "../../../../io/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
 import { FluxIQ } from "../../../../framework/index.ts";
 import { createRunnableCanonicalFlow } from "../../../../framework/automation-service/tests/service-fixtures.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";

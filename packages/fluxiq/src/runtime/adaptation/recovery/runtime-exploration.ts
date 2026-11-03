@@ -82,7 +82,7 @@
 import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioActionPermissionRequest } from "../../action-permission-requests/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../../automation-activity/index.ts";
 import {
   AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,

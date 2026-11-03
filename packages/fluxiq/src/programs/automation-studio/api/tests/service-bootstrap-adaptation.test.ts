@@ -12,7 +12,7 @@ import {
   type AutomationStudioNodeDefinition
 } from "../../../../framework/automation-service/nodes/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan, type AutomationStudioFlowBootstrapPlan } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).

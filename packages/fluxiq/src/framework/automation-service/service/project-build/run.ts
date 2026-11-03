@@ -9,7 +9,7 @@ import {
   flowBootstrapPhaseFailure
 } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioCandidateTrialResult } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../../../runtime/llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS } from "../../../../runtime/loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK,
   automationStudioProjectActiveInstructionSources,

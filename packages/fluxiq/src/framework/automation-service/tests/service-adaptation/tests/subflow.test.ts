@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowAdaptation } from "../../../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import type { AutomationStudioGraphNodeRecord } from "../../../../persistence/automation/project/index.ts";
 

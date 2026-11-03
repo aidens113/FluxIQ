@@ -25,7 +25,7 @@ import { registerAutomationStudioApi } from "../handlers/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW, automationStudioConversationCommandPort } from "../../../../runtime/conversations/commands/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioRuntimeSessionLlm } from "../../../../runtime/llm/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../../runtime/result-verification/check-schedule/index.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 import { adaptiveTrainingMetadata } from "../../../../framework/automation-service/tests/service-fixtures.ts";

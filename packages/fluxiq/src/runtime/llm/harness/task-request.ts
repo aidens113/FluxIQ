@@ -10,7 +10,7 @@ import type {
 import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../adaptation/recovery/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
-import type { AutomationStudioReusableLlmContextPacket } from "../reusable-context.ts";
+import type { AutomationStudioReusableLlmContextPacket } from "../reusable-context/index.ts";
 import type { AutomationStudioLlmTaskDomainInstructions } from "../domain-instructions/index.ts";
 import type { AutomationStudioLlmProviderInvocationState } from "../provider-contract.ts";
 import type { AutomationStudioLlmProviderRetryAccount, AutomationStudioLlmProviderRetryLedger } from "../provider-retry/index.ts";

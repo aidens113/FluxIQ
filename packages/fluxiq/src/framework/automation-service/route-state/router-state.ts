@@ -13,8 +13,8 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowRouter } from "../../../flows/authoring/model/index.ts";
 import { automationStudioRouteConditionPaths } from "../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
-import { runAutomationStudioRouter, type AutomationStudioRouterExecutionInput, type AutomationStudioRouterExecutionResult } from "../router-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../runtime/native-nodes/index.ts";
+import { runAutomationStudioRouter, type AutomationStudioRouterExecutionInput, type AutomationStudioRouterExecutionResult } from "../../../runtime/router-runtime/index.ts";
 import { observeAutomationStudioRouteState } from "./observe.ts";
 
 /** The `state.*` paths the router's active rules read, each once, in rule order. */

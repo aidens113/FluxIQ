@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCallFlowNode } from "../../../../../flows/authoring/model/index.ts";
 import { generateFlowTypeScript } from "../../../../../flows/authoring/dsl/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { type AutomationStudioImporterSdkManifest } from "../../../nodes/index.ts";
 import { IoRegistry } from "../../../../../io/index.ts";
 import { installPrimaryRouter } from "../../service-fixtures.ts";

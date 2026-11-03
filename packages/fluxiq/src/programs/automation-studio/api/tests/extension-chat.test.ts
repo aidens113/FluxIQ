@@ -50,7 +50,7 @@ import { resolveAutomationStudioAuthoringMode } from "../../../../flows/authorin
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
 import { automationStudioActivityHub } from "../../../../runtime/automation-activity/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmTaskRequest } from "../../../../runtime/llm/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../../framework/automation-service/service.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 import { automationStudioReplayingBinding } from "../../../../framework/automation-service/tests/replaying-binding.ts";

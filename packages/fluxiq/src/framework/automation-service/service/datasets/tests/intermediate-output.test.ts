@@ -8,7 +8,7 @@ import { IoRegistry } from "../../../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION } from "../../../nodes/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../../../runtime/flow-authoring/bootstrap/plan/tests/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { summarizeAutomationStudioRunResult } from "../../../../../runtime/result-verification/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 

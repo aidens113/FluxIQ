@@ -3,7 +3,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../../../framework/automation-service/nodes/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioGraphExecutionOptions, type AutomationStudioNodeAttemptTrace, type AutomationStudioTransitionComparison } from "../../../../framework/automation-service/executor/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../../../../framework/automation-service/host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../native-nodes/index.ts";
 import { trialAutomationStudioFlowChange, type AutomationStudioFlowChangeTrialRequest } from "../index.ts";
 
 // One trial of one change: the candidate runs from the node the change starts

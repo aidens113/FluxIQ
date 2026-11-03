@@ -8,7 +8,7 @@
 // step that started on a page the build saw gets its expected pre-state.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../../host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../../runtime/native-nodes/index.ts";
 import { startAutomationStudioBuildRouting } from "../index.ts";
 
 type Call = { callId: string; toolId: string };

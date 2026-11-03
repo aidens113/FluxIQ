@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { persistAutomationStudioCompletedLlmEvidence, type AutomationStudioCompletedLlmEvidencePersistenceInput } from "../../../runtime/llm/completed-evidence.ts";
+import { persistAutomationStudioCompletedLlmEvidence, type AutomationStudioCompletedLlmEvidencePersistenceInput } from "../../../runtime/llm/completed-evidence/index.ts";
 
 const input: AutomationStudioCompletedLlmEvidencePersistenceInput = {
   projectId: "project.one", flowId: "flow.one", evidenceKind: "runtime_failure",

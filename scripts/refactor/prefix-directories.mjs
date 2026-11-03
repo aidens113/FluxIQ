@@ -48,7 +48,7 @@ function newGroups(root) {
     .filter((group) => group.directory.startsWith(`${SOURCE_ROOT}/`));
 }
 
-function writeBarrels(root, groups) {
+export function writeBarrels(root, groups) {
   const barrels = [];
   for (const { directory, prefix } of groups) {
     const folder = `${directory}/${prefix}`;
@@ -70,7 +70,7 @@ function resolveFile(from, specifier, present) {
 }
 
 // Imports and re-exports only. A `vi.mock` must keep naming the exact module it replaces.
-function retargetThroughBarrels(root, barrels) {
+export function retargetThroughBarrels(root, barrels) {
   const ctx = createContext({ root });
   const graph = buildRuntimeGraph(ctx);
   const files = repositoryFiles(root);

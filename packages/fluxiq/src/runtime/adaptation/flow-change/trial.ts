@@ -25,7 +25,7 @@ import {
   type AutomationStudioNodeAttemptTrace,
   type AutomationStudioTransitionComparison
 } from "../../../framework/automation-service/executor/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../../../framework/automation-service/host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../native-nodes/index.ts";
 import { automationStudioAttemptCapturedRecords, automationStudioAttemptDeclaredRoute, automationStudioAttemptSettled, automationStudioAttemptVerifiesState, automationStudioRetriedAttemptIds } from "./attempt-projection.ts";
 import type { AutomationStudioChangeTrialInput, AutomationStudioChangeTrialResult, AutomationStudioChangeVerdictAttempt } from "./contracts.ts";
 import { decideAutomationStudioChangeVerdict } from "./verdict.ts";

@@ -25,7 +25,7 @@ import type {
 } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioConversationTurn } from "../../../conversations/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../../llm/index.ts";
-import type { AutomationStudioReusableLlmContextPacket } from "../../../llm/reusable-context.ts";
+import type { AutomationStudioReusableLlmContextPacket } from "../../../llm/reusable-context/index.ts";
 import type { AutomationStudioUnattendedRepairAuthority } from "../../../../framework/automation-service/service/runtime-adaptation/index.ts";
 import type {
   AutomationStudioLlmProviderResolution,

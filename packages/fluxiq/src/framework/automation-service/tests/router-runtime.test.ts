@@ -4,7 +4,7 @@ import {
   compileAutomationStudioRouterPlan,
   defaultAutomationStudioSubflowForFlow,
   runAutomationStudioRouter
-} from "../router-runtime.ts";
+} from "../../../runtime/router-runtime/index.ts";
 
 describe("Automation Studio router runtime", () => {
   it("selects the first active matching rule in stable order", () => {

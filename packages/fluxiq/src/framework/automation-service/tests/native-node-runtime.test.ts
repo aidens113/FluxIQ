@@ -7,7 +7,7 @@ import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automa
 import type { AutomationStudioRecordBatch } from "../executor/index.ts";
 import { runAutomationStudioGraph } from "../executor/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../../runtime/flow-authoring/bootstrap/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../runtime/native-nodes/index.ts";
 import { automationStudioRunGraphOptions } from "../service/runtime-session/index.ts";
 
 import { createElementMatcher } from "../../../runtime/target-matching/index.ts";

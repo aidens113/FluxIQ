@@ -6,7 +6,7 @@
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import { resolveAutomationStudioBuildAuthoringMode } from "../../../../flows/authoring/model/authoring-mode/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../../runtime/llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../../../../api-contracts/automation.ts";
 // Values come from their owning modules, not the runtime barrel: through the barrel a load order
 // reached llm-generation before generation-failure finished loading, and its builders read undefined

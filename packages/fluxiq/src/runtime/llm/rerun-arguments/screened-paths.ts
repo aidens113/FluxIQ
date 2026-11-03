@@ -1,5 +1,5 @@
 import { automationStudioEvidenceKey, automationStudioExecutableTargetKey, automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../harness/index.ts";
-import { automationStudioSecretNamedKey } from "../loop-limits/index.ts";
+import { automationStudioSecretNamedKey } from "../../loop-limits/index.ts";
 
 /** Safe authored path identities; no declaration means no parameter-path authority. */
 export function automationStudioRerunScreenedPaths(paths: readonly (readonly string[])[], deniedKeys: readonly string[] | undefined): string[][] {

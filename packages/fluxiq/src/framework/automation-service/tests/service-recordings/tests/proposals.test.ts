@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stateValue } from "../../../../../flows/authoring/model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { type AutomationStudioImporterSdkManifest } from "../../../nodes/index.ts";
 import { IoRegistry, createEnvelope } from "../../../../../io/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";

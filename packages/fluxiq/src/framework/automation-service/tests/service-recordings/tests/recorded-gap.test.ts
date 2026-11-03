@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IoRegistry } from "../../../../../io/index.ts";
 import type { AppendRecordingEntryInput } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingMapperObservation } from "../../../nodes/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).

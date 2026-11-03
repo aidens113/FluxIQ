@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceTraceRow } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import {

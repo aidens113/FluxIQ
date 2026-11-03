@@ -1,4 +1,4 @@
-import type { DynamicPolicyArtifact } from "./document-types.ts";
+import type { DynamicPolicyArtifact } from "./document-types/index.ts";
 import type { RecordingProjectRequest } from "./recording.ts";
 
 export type GeneratePolicyRequest = {

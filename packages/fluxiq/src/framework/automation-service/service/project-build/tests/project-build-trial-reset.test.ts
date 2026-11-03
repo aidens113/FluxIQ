@@ -54,7 +54,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration } from "../../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestDeclaredStepResolution } from "./declared-step-resolution.ts";

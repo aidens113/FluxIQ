@@ -1,5 +1,5 @@
 import type { FrameworkResult, JsonObject } from "../../core/index.ts";
-import type { AutomationTask, DynamicPolicyArtifact, RecordingEvent } from "../../api-contracts/automation/document-types.ts";
+import type { AutomationTask, DynamicPolicyArtifact, RecordingEvent } from "../../api-contracts/automation/document-types/index.ts";
 
 export type AutomationStudioRuntimeContext = {
   domainId?: string | null;

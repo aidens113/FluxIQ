@@ -29,7 +29,7 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS,
   automationStudioFlowBootstrapEvidenceLoopLimits
-} from "../../loop-limits/index.ts";
+} from "../../../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID,
   automationStudioLlmEvidenceStallRedirect,

@@ -8,7 +8,7 @@ import type { AutomationStudioFlowArtifact } from "../../../../../flows/authorin
 // graph for each isolated host environment, as the session-key tests do.
 import "../../../index.ts";
 import "../../../service/flow-bootstrap-commands/index.ts";
-import "../../../../../runtime/llm/loop-limits/index.ts";
+import "../../../../../runtime/loop-limits/index.ts";
 import "../../../../../runtime/llm/build-purse/index.ts";
 
 async function runtime(value: string | undefined, scope = "test") {
@@ -16,7 +16,7 @@ async function runtime(value: string | undefined, scope = "test") {
   vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", value);
   vi.resetModules();
   const publicRuntime = await import("../../../index.ts");
-  const limits = await import("../../../../../runtime/llm/loop-limits/index.ts");
+  const limits = await import("../../../../../runtime/loop-limits/index.ts");
   const creation = await import("../../../service/flow-bootstrap-commands/index.ts");
   const purse = await import("../../../../../runtime/llm/build-purse/index.ts");
   const model = await import("../../../../../flows/authoring/model/index.ts");

@@ -1,10 +1,10 @@
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import { createElementMatcher, type ElementMatcher } from "../../runtime/target-matching/index.ts";
+import { createElementMatcher, type ElementMatcher } from "../target-matching/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../../flows/authoring/model/index.ts";
-import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "./nodes/index.ts";
-import type { AutomationNodeExecutionResult, AutomationNodePort } from "./nodes/index.ts";
-import { automationStudioReferenceNow } from "../../runtime/reference-time/index.ts";
-import { projectRuntimeTargetActionability } from "../../runtime/result-control/index.ts";
+import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "../../framework/automation-service/nodes/index.ts";
+import type { AutomationNodeExecutionResult, AutomationNodePort } from "../../framework/automation-service/nodes/index.ts";
+import { automationStudioReferenceNow } from "../reference-time/index.ts";
+import { projectRuntimeTargetActionability } from "../result-control/index.ts";
 import { automationStudioResolveTargetRefresh } from "../../engine/automation/parameter-refresh/index.ts";
 import type { AutomationStudioTargetRefreshResolution } from "../../engine/automation/parameter-refresh/index.ts";
 

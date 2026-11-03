@@ -77,7 +77,7 @@ import {
 import type { AutomationStudioActionPermissionGate } from "../../../action-permission-requests/index.ts";
 import { automationStudioActivityDecisionReason } from "../../../automation-activity/index.ts";
 import { automationStudioPersonNeededLookCallId, automationStudioToolResultNeedsPerson, type AutomationStudioPermissionAsk } from "../../../automation-parking/index.ts";
-import type { AutomationStudioReusableLlmContextPacket } from "../../../llm/reusable-context.ts";
+import type { AutomationStudioReusableLlmContextPacket } from "../../../llm/reusable-context/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { resolveAutomationStudioExplorationBudget, type AutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import { AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET } from "../exploration-outcome.ts";

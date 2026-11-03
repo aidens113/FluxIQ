@@ -7,7 +7,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { estimateAutomationStudioDeepSeekInputTokens } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../persistence/automation/index.ts";

@@ -8,7 +8,7 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_sha
 
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, parseAutomationStudioFlowBootstrapGenerationReadiness } from "../../../../../api-contracts/automation.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS } from "../../../../../framework/automation-service/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../../../runtime/llm/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../../../runtime/loop-limits/index.ts";
 import { readAutomationStudioFlowBootstrapGenerationRequest } from "../../../../../framework/automation-service/service/flow-bootstrap-commands/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 import { automationStudioConversationEffectiveCaller } from "../../../../../runtime/conversations/commands/index.ts";

@@ -21,7 +21,7 @@ import {
 import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../adaptation/recovery/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
-import type { AutomationStudioReusableLlmContextPacket } from "../reusable-context.ts";
+import type { AutomationStudioReusableLlmContextPacket } from "../reusable-context/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { automationStudioLoopStageInstructions, type AutomationStudioLoopStage } from "../stages/index.ts";
 import { packAutomationStudioLlmConversation, type AutomationStudioLlmConversationContext } from "./conversation.ts";

@@ -3,7 +3,7 @@ import { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import { IdentityAccessService } from "../../../identity-access/index.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import { recordAutomationStudioCreatedProjectOwner, registerAutomationStudioApi } from "../index.ts";
-import { AutomationStudioProjectOwnerships } from "../../../../framework/persistence/automation/ownership/ownerships.ts";
+import { AutomationStudioProjectOwnerships } from "../../../../framework/persistence/automation/ownership/index.ts";
 
 const services: AutomationStudioService[] = [];
 

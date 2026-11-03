@@ -39,7 +39,7 @@ import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 // The build's bound, shortened: its work stops 6 seconds after the supervisor starts, on the test's clock.
-vi.mock("../../../../../runtime/llm/loop-limits/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS: 8_000, AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS: 2_000 }));
+vi.mock("../../../../../runtime/loop-limits/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS: 8_000, AUTOMATION_STUDIO_PROJECT_BUILD_ENDING_MS: 2_000 }));
 // The clock the build passes to its supervisor, held by the test (header).
 const buildClock = vi.hoisted(() => heldClock());
 vi.mock("../../../../../runtime/project-agents/index.ts", async (original) => ({ ...(await original<object>()), AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK: buildClock.clock }));

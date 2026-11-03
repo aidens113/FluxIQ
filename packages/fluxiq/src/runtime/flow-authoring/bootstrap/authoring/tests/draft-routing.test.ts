@@ -12,7 +12,7 @@ import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../../../flows/authoring/model/index.ts";
 import { runAutomationStudioGraph } from "../../../../../framework/automation-service/executor/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../native-nodes/index.ts";
 import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowDraftWrittenStep } from "../assemble-draft.ts";
 import { routeAutomationStudioFlowDraftSteps } from "../draft-routing.ts";
 

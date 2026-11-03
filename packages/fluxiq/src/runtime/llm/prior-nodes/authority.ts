@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowScope } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioResolvedActionEffect } from "../../../framework/automation-service/nodes/index.ts";
-import type { AutomationStudioNativeNodeRuntime } from "../../../framework/automation-service/native-node-runtime.ts";
+import type { AutomationStudioNativeNodeRuntime } from "../../native-nodes/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmRerunScope } from "../rerun-provenance/index.ts";
 

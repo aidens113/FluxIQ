@@ -11,7 +11,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../../index.ts";
-import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../../runtime/llm/loop-limits/index.ts";
+import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../../runtime/loop-limits/index.ts";
 import { automationStudioConversationCallCause } from "../../../../../runtime/conversations/commands/index.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 

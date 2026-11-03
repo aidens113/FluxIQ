@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-nodes/index.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 import { blankFixture, caller, mockProvider } from "../../../../framework/automation-service/tests/service-bootstrap/tests/fixtures.ts";
 import * as loops from "../../evidence-loop.ts";

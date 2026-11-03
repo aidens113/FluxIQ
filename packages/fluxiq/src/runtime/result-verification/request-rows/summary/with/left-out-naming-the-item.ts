@@ -3,9 +3,9 @@
 // judge are shown it, a build test's and a finished run's (`../verify.ts`), and
 // the verdict holds a yes to it (`../verdict/`).
 
-import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
-import { automationStudioResultLeftOutNamingTheItem } from "../left-out-naming-the-item.ts";
+import type { AutomationStudioFlowInstruction } from "../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioRunResultSummary } from "../../../contracts/index.ts";
+import { automationStudioResultLeftOutNamingTheItem } from "../../left-out-naming-the-item.ts";
 
 /** The summary with `leftOutNamingTheItem` set when there are such rows, and without it otherwise. */
 export function automationStudioResultSummaryWithLeftOutNamingTheItem(

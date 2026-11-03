@@ -25,7 +25,7 @@ import { automationStudioActivityHub } from "../../../../../runtime/automation-a
 import { buildAutomationStudioFlowBootstrapContext } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, caller, copyDataDirSeed, expectNoTopology, isJudgeRequest, JUDGE_USAGE, judgeReply, mockProvider, permissionScopedNativeRuntime, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";

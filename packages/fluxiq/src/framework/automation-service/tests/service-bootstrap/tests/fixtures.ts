@@ -4,7 +4,7 @@ import { expect } from "vitest";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import type { AutomationStudioLlmModelCaller, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 
 export function plan() {

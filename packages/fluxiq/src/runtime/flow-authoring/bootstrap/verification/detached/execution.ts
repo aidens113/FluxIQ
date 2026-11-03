@@ -6,7 +6,7 @@ import { runCanonicalAutomationStudioFlow } from "../../../../../framework/autom
 import { automationStudioOptionalStepWayOn, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../../../../framework/automation-service/executor/index.ts";
 import { automationStudioReferenceNow } from "../../../../reference-time/index.ts";
 import { automationStudioRouterStatePaths, routeAutomationStudioRun } from "../../../../../framework/automation-service/route-state/index.ts";
-import type { AutomationStudioRouterExecutionResult } from "../../../../../framework/automation-service/router-runtime.ts";
+import type { AutomationStudioRouterExecutionResult } from "../../../../router-runtime/index.ts";
 import { normalizeAutomationStudioFlowBuildPlan } from "../../adaptation.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../../plan/index.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "../contracts.ts";

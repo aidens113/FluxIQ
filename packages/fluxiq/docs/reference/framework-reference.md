@@ -107,7 +107,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `applyAutomationStudioRuntimeRecoveryPatches` | Value | `packages/fluxiq/src/runtime/adaptation/recovery/annotation/patches.ts` | - |
 | `ApplyGraphPatchRequest` | Type | `packages/fluxiq/src/api-contracts/automation/graph.ts` | - |
 | `applyStateDeltas` | Value | `packages/fluxiq/src/flows/authoring/model/state-diff.ts` | - |
-| `ApprovalStatus` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
+| `ApprovalStatus` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
 | `ApprovePolicyProposalRequest` | Type | `packages/fluxiq/src/api-contracts/automation/policy.ts` | - |
 | `askToConfirmAutomationStudioConversationCommand` | Value | `packages/fluxiq/src/runtime/conversations/commands/confirmation.ts` | - |
 | `assembleAutomationStudioFlowDraftPlan` | Value | `packages/fluxiq/src/runtime/flow-authoring/bootstrap/authoring/assemble-draft.ts` | - |
@@ -367,10 +367,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION` | Object | `packages/fluxiq/src/runtime/llm/evidence-loop-decision.ts` | Provider-neutral decision policy for bounded evidence loops. Provider adapters should include this policy in their structured-decision instruction. The last two sentences were added after a live creation campaign in which every built Flow only read and none acted. The policy already said, rightly, never to mutate merely to perform a step that belongs in the generated result; nothing said the converse, that a refusal here is not a refusal there. Offered only tools that decline to act, and refused when it asked one to, the model read the whole exercise as "acting is unavailable" and wrote the only shape it had seen accepted. The "unless the result is a Flow built from the steps you run" clause was added 2026-09-30 (lane t195). A draft is the steps the build ran, so "never mutate to perform a workflow step" told a drafting model not to build its Flow, and "never repeat a successful mutation" read as "act on one row only": live run `run-munnop9n-5475d593` pressed one Confirm of four and never said repeat. t252 (user, 2026-10-02: "if the task is repetitive, it should be smart and make a flow that loops, takes params"): "run each step it needs once and add it" read as "a step must be run to be in the Flow", so repetitive work was performed item by item. The clause now says to run to learn, that a step may be written once what was seen is enough, that repetitive work is a loop, and that a value that changes is bound. Live run `run-mustzxhi-2e2cda87` read "a value that changes ... is bound" as covering a press's target and tried to bind one about 12 times: what is bound is a value a step typed, or a read's condition, and a press's control or option never is. The filter sentence is t606's (A8 towels `run-mv8p37k8-f1a90624`): a request clause no row prints was answerable only through the site's own filter, under a group heading that named it, and the builder read every row and then opened each item's page instead. The example is a library catalogue's format filter, a kind of site and an act no Lab scenario has. The sentence after it is t690's (t686, fix 2's last line): two filters whose options are each one word of one request phrase keep rows meeting each word apart, never shown to meet the phrase, so a row's own text is what the read tests. Its example is a venue listing, a kind of site no Lab scenario has. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID` | Object | `packages/fluxiq/src/runtime/llm/decision-context/history-tool-id.ts` | The entry a decision's history is shown under. It replaces the call list the context window used to publish under the same id, which listed only tool calls and none of Core's answers to a decision, and is re-exported from `../evidence-loop.ts` under the name it always had. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS` | Object | `packages/fluxiq/src/runtime/llm/loop-budget.ts` | Decisions left from which a candidate loop offers only finishing: submitting, testing and completing. Five: a submission, its trial and the completion, and one more submission and trial for a refusal or a failed trial. |
-| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS` | Object | `packages/fluxiq/src/runtime/llm/loop-limits/evidence-loop.ts` | The far backstop on steps in a row that give the loop nothing new, held in `runtime/loop-limits/` with the other numbers two directories read, and re-exported here so the loop's public surface names it. |
+| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS` | Object | `packages/fluxiq/src/runtime/loop-limits/evidence-loop.ts` | The far backstop on steps in a row that give the loop nothing new, held in `runtime/loop-limits/` with the other numbers two directories read, and re-exported here so the loop's public surface names it. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW` | Object | `packages/fluxiq/src/runtime/llm/unreadable-reply.ts` | Unreadable replies in a row after which a loop that asks again stops. The live record has runs of up to four followed by a good reply, so this leaves room past that; the budget binds underneath it either way. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW` | Object | `packages/fluxiq/src/runtime/llm/evidence-loop.ts` | Unusable decisions in a row, however much their issues differ, after which a loop that asks again stops: the far backstop under the no-progress guard. A model fixing one mistake at a time is progress, so this is set well past the handful of refusals a real correction takes; the cost, token and deadline guards still bind underneath it. Held to the loop's own iterations. |
-| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS` | Object | `packages/fluxiq/src/runtime/llm/loop-limits/evidence-loop.ts` | - |
+| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS` | Object | `packages/fluxiq/src/runtime/loop-limits/evidence-loop.ts` | - |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_PROVIDER_UNANSWERED_IN_A_ROW` | Object | `packages/fluxiq/src/runtime/llm/unanswered-calls.ts` | Unanswered decision calls in a row after which the loop ends. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_DESCRIPTION` | Object | `packages/fluxiq/src/runtime/llm/evidence-recall/description.ts` | - |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID` | Object | `packages/fluxiq/src/runtime/llm/evidence-recall/tool-id.ts` | `core.recall_result`: one earlier result's held views, whole (`./binding.ts`). |
@@ -450,7 +450,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_PROJECT_ADAPTATION_EVIDENCE_MIGRATION` | Object | `packages/fluxiq/src/framework/persistence/automation/project/schema/adaptations.ts` | - |
 | `AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION` | Object | `packages/fluxiq/src/framework/persistence/automation/project/schema/adaptation-matching.ts` | - |
 | `AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS` | Object | `packages/fluxiq/src/framework/persistence/automation/project/administration.ts` | - |
-| `AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS` | Object | `packages/fluxiq/src/runtime/llm/loop-limits/project-build-duration.ts` | The most one project build may take: thirty minutes. |
+| `AUTOMATION_STUDIO_PROJECT_BUILD_MAX_DURATION_MS` | Object | `packages/fluxiq/src/runtime/loop-limits/project-build-duration.ts` | The most one project build may take: thirty minutes. |
 | `AUTOMATION_STUDIO_PROJECT_COMPILED_RUNTIME_ISOLATION_MIGRATION` | Object | `packages/fluxiq/src/framework/persistence/automation/project/schema/compiled-plans.ts` | - |
 | `AUTOMATION_STUDIO_PROJECT_CONVERSATION_MIGRATION` | Object | `packages/fluxiq/src/framework/persistence/automation/project/schema/conversations.ts` | - |
 | `AUTOMATION_STUDIO_PROJECT_CONVERSATION_TURN_DECISION_MIGRATION` | Object | `packages/fluxiq/src/framework/persistence/automation/project/schema/conversation-turn-decision.ts` | - |
@@ -583,7 +583,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_V2_STORAGE_FEATURE` | Object | `packages/fluxiq/src/framework/persistence/automation/project/migration-cutover.ts` | - |
 | `AUTOMATION_STUDIO_WITHHELD_LOCATOR` | Object | `packages/fluxiq/src/runtime/llm/harness/locator-text.ts` | What replaces a locator. Short, and obviously not something to copy. |
 | `AUTOMATION_STUDIO_WITHHELD_VALUE` | Object | `packages/fluxiq/src/framework/automation-service/executor/trace-withholding.ts` | What a withheld value reads as in a persisted trace. A constant rather than a removed field, so a reader can tell a value that was withheld from one that was never there. It is the framework runtime's marker, so a trace and the command attempts saved for its dispatches withhold alike. |
-| `AutomationAction` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
+| `AutomationAction` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
 | `AutomationCondition` | Type | `packages/fluxiq/src/flows/authoring/model/conditions.ts` | - |
 | `AutomationConditionExpression` | Type | `packages/fluxiq/src/flows/authoring/model/conditions.ts` | - |
 | `AutomationConditionGroup` | Type | `packages/fluxiq/src/flows/authoring/model/conditions.ts` | - |
@@ -611,8 +611,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationNodeTargetResolution` | Type | `packages/fluxiq/src/framework/automation-service/nodes/contracts.ts` | How an output-dispatching node resolved its element target before dispatch. `unresolved_no_candidates` means Core was given nothing to score the target against: it resolved nothing, applied no confidence floor, and left resolving the element to the output's adapter. That status carries no `minimumConfidence`, because a number there reads as a floor that was enforced. |
 | `AutomationNodeValueType` | Type | `packages/fluxiq/src/framework/automation-service/nodes/contracts.ts` | - |
 | `AutomationPipelineArtifacts` | Type | `packages/fluxiq/src/framework/automation-service/service/recordings/types.ts` | - |
-| `AutomationRecording` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
-| `AutomationStage` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
+| `AutomationRecording` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
+| `AutomationStage` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
 | `AutomationStateStore` | Type | `packages/fluxiq/src/flows/authoring/model/state-store.ts` | - |
 | `automationStudioAbsentStepSkip` | Value | `packages/fluxiq/src/framework/automation-service/executor/step-skip/absent-step.ts` | - |
 | `AutomationStudioAcceptedProjectSnapshot` | Type | `packages/fluxiq/src/framework/persistence/automation/project/accepted-state/contracts.ts` | Explicit captured data. It is never an adopted authority over existing project data. |
@@ -909,7 +909,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioCompiledPlanInstruction` | Type | `packages/fluxiq/src/framework/automation-service/compiled-plan.ts` | - |
 | `AutomationStudioCompiledPlanNode` | Type | `packages/fluxiq/src/framework/automation-service/compiled-plan.ts` | - |
 | `AutomationStudioCompiledPlanStoreOptions` | Type | `packages/fluxiq/src/framework/persistence/automation/project/compiled-plan-store.ts` | - |
-| `AutomationStudioCompiledRouteRule` | Type | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
+| `AutomationStudioCompiledRouteRule` | Type | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
 | `AutomationStudioConfigArtifact` | Type | `packages/fluxiq/src/flows/authoring/model/artifacts.ts` | - |
 | `automationStudioConsequencesInOrder` | Value | `packages/fluxiq/src/runtime/action-permission-requests/consequences.ts` | - |
 | `AutomationStudioContentAddressDomain` | Type | `packages/fluxiq/src/framework/persistence/automation/project/content-address/keyring.ts` | The closed set of things a content address may name. |
@@ -1172,7 +1172,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioExploredPace` | Type | `packages/fluxiq/src/runtime/flow-authoring/bootstrap/learned-paces.ts` | One step a trial slowed down, by its identity, and the pace it was raised to (header). |
 | `AutomationStudioExploredPress` | Type | `packages/fluxiq/src/runtime/flow-authoring/bootstrap/explored-interruptions.ts` | One explored press that cleared a layer covering the page (header). |
 | `AutomationStudioExploredToggles` | Class | `packages/fluxiq/src/runtime/flow-authoring/bootstrap/explored-toggles.ts` | Every explored press the domain answered as a toggle, oldest first (header). |
-| `AutomationStudioFactEvaluationContext` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | What Core hands the host beside a batch of fact conditions (state-aware recovery plan, C9): the frame's bound inputs and the run's values a condition's `{ input }` or `{ value }` compares with, and the node and attempt the boundary is at. The host resolves those bindings from here and never looks a value up itself. |
+| `AutomationStudioFactEvaluationContext` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | What Core hands the host beside a batch of fact conditions (state-aware recovery plan, C9): the frame's bound inputs and the run's values a condition's `{ input }` or `{ value }` compares with, and the node and attempt the boundary is at. The host resolves those bindings from here and never looks a value up itself. |
 | `AutomationStudioFailedStepRepairPort` | Type | `packages/fluxiq/src/runtime/adaptation/recovery/refuted-result/step/failure-decision.ts` | The port the verification calls for a run that failed at a step. It answers the run with the attempt recorded and whether the Flow was changed, or nothing when the run was not routed -- in which case nothing was written and the failed run stands exactly as the ladder left it. |
 | `AutomationStudioFailureContinuation` | Type | `packages/fluxiq/src/framework/automation-service/executor/defensive/continuation.ts` | Whether the Flow carries on past a node that failed for good, and the reason either way. |
 | `AutomationStudioFailureRecord` | Type | `packages/contracts/src/failure/record.ts` | A structured failure. Core owns the category names; the producer owns `code`. Carried as `failure` on client-gateway action results, runtime command results, output dispatch results, node execution results, attempt traces, and run action records. Validate any value that crossed a process or storage boundary with `parseAutomationStudioFailureRecord`. |
@@ -1676,9 +1676,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioHierarchyNode` | Type | `packages/fluxiq/src/api-contracts/automation/hierarchy.ts` | - |
 | `AutomationStudioHierarchyPageEntry` | Type | `packages/fluxiq/src/api-contracts/automation/hierarchy.ts` | - |
 | `automationStudioHostActLanded` | Value | `packages/fluxiq/src/framework/automation-service/executor/defensive/host-act-landed.ts` | - |
-| `AutomationStudioHostActLandedInput` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | What the host is asked about an act whose answer was lost: the node that made it, the attempt, and how long it may wait. |
-| `AutomationStudioHostActLanding` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | The host's answer about an act whose answer was lost: the effect check's three values. |
-| `AutomationStudioHostFactResult` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | The host's answer for one fact condition, by position. `result` is the three-valued truth; `evidence` is the host's own bounded record of what it read, which Core never stores or shows -- it keeps only a reference derived from it (`executor/lifecycle-run/`) -- and `evidenceRef`, when the host keeps its evidence itself, names it. |
+| `AutomationStudioHostActLandedInput` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | What the host is asked about an act whose answer was lost: the node that made it, the attempt, and how long it may wait. |
+| `AutomationStudioHostActLanding` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | The host's answer about an act whose answer was lost: the effect check's three values. |
+| `AutomationStudioHostFactResult` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | The host's answer for one fact condition, by position. `result` is the three-valued truth; `evidence` is the host's own bounded record of what it read, which Core never stores or shows -- it keeps only a reference derived from it (`executor/lifecycle-run/`) -- and `evidenceRef`, when the host keeps its evidence itself, names it. |
 | `AutomationStudioHostLeaseScope` | Class | `packages/fluxiq/src/runtime/project-agents/host-resources/lease-scope.ts` | Runs an agent's work holding a host-resource lease, with the lease in an async-context scope for the whole of that work, so every host command the work issues carries it: Core's client gateway reads it from `AutomationStudioHostLeaseScope.gatewaySource` and stamps it, as it reads the run that sends a command (automation-project-agents-plan, `Host resources and concurrency`). A command issued under a lease that was released or reissued is refused unsent, so a holder's late command never reaches a resource someone else now holds. Strict (the default): while a lease is held under this scope, a command with no lease addressed to the gateway session the lease's grant names is refused, which is what makes "one execution owner per resource" enforced rather than assumed. Commands to other sessions -- another client, another project -- are not affected. A grant that names no session is strict for every session: the conservative reading when the host cannot say where its resource lives. |
 | `AutomationStudioHostResourceAcquireOptions` | Interface | `packages/fluxiq/src/runtime/project-agents/host-resources/scheduler.ts` | - |
 | `AutomationStudioHostResourceAcquireResult` | Type | `packages/fluxiq/src/runtime/project-agents/host-resources/types.ts` | The port's answer to `acquire`: a grant, or that it has no resource free right now. |
@@ -1690,11 +1690,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioHostResourceScheduler` | Class | `packages/fluxiq/src/runtime/project-agents/host-resources/scheduler.ts` | Grants host-resource leases through a domain's port: at most `capacity` at once, counting resources still being released, waiters served first in, first out. Callers enqueue in the order they want served (the dispatcher enqueues in dependency order). Waiting costs nothing but time. One acquisition is asked of the port at a time, so the head of the queue is always asked first. When the port answers `"at_capacity"` the head stays at the head and the queue waits for a release or `retryWaiting()`. A holder (`{ role, briefId }`) holds or waits for at most one lease; a second request while it holds or waits is refused, since with capacity 1 it would wait on itself forever. A waiter whose signal aborts while its acquisition is in flight is settled when the port answers: a late grant goes straight back to the port and the waiter rejects with the abort reason (or with the port's release failure). |
 | `AutomationStudioHostResourceSnapshot` | Interface | `packages/fluxiq/src/runtime/project-agents/host-resources/types.ts` | What the scheduler holds and who waits, for diagnostics and tests. |
 | `AutomationStudioHostResourceStaleLeaseError` | Class | `packages/fluxiq/src/runtime/project-agents/host-resources/stale-lease-error.ts` | A command carried a lease that was released or reissued; the holder no longer owns the resource. |
-| `AutomationStudioHostRouteStatePath` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | One `state.*` path a Router condition may test, and what it holds, in the host's own words. |
-| `AutomationStudioHostRuntimeActionContext` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | - |
-| `AutomationStudioHostRuntimeBoundary` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | - |
-| `AutomationStudioHostRuntimeCapability` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | - |
-| `AutomationStudioHostStateSnapshotRef` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | - |
+| `AutomationStudioHostRouteStatePath` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | One `state.*` path a Router condition may test, and what it holds, in the host's own words. |
+| `AutomationStudioHostRuntimeActionContext` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | - |
+| `AutomationStudioHostRuntimeBoundary` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | - |
+| `AutomationStudioHostRuntimeCapability` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | - |
+| `AutomationStudioHostStateSnapshotRef` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | - |
 | `AutomationStudioHybridReadComparison` | Type | `packages/fluxiq/src/framework/persistence/automation/project/migration-cutover.ts` | - |
 | `AutomationStudioIdempotentMutationResult` | Type | `packages/fluxiq/src/framework/persistence/automation/project/unit-of-work.ts` | - |
 | `AutomationStudioImporterImplementationBundle` | Type | `packages/fluxiq/src/framework/automation-service/nodes/importer-sdk.ts` | - |
@@ -2057,12 +2057,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioNameTokenOverlapResult` | Type | `packages/fluxiq/src/framework/automation-service/nodes/name-match/token-overlap.ts` | How much two normalised names share as tokens, from two angles. |
 | `AutomationStudioNameValueShape` | Type | `packages/fluxiq/src/framework/automation-service/nodes/name-match/value-shape.ts` | What a named thing accepts, at the coarseness a model's guess can be judged against. It is a tie-break signal, not a type system: `unknown` means the caller does not know, and carries no signal either way. |
 | `automationStudioNameWords` | Value | `packages/fluxiq/src/runtime/conversations/instructions/closest.ts` | - |
-| `AutomationStudioNativeExecution` | Type | `packages/fluxiq/src/framework/automation-service/native-node-runtime.ts` | What one native execution answered. `declaredOutputs` is the bound definition's output ports, given beside a result the implementation produced: the executor checks a route its dispatch answers against them (`executor/node-execution.ts`), and an importer definition lives only here, never in the builtin library the executor otherwise reads. |
+| `AutomationStudioNativeExecution` | Type | `packages/fluxiq/src/runtime/native-nodes/native-node-runtime.ts` | What one native execution answered. `declaredOutputs` is the bound definition's output ports, given beside a result the implementation produced: the executor checks a route its dispatch answers against them (`executor/node-execution.ts`), and an importer definition lives only here, never in the builtin library the executor otherwise reads. |
 | `AutomationStudioNativeLogEntry` | Type | `packages/fluxiq/src/framework/automation-service/nodes/importer-sdk.ts` | - |
 | `AutomationStudioNativeNodeContext` | Type | `packages/fluxiq/src/framework/automation-service/nodes/importer-sdk.ts` | - |
 | `AutomationStudioNativeNodeImplementation` | Type | `packages/fluxiq/src/framework/automation-service/nodes/importer-sdk.ts` | - |
-| `AutomationStudioNativeNodeRuntime` | Class | `packages/fluxiq/src/framework/automation-service/native-node-runtime.ts` | Explicit trusted-local implementation binder. This is an authorization and tracing boundary, not a security sandbox or containment mechanism. |
-| `AutomationStudioNativeRuntimeGrants` | Type | `packages/fluxiq/src/framework/automation-service/native-node-runtime.ts` | - |
+| `AutomationStudioNativeNodeRuntime` | Class | `packages/fluxiq/src/runtime/native-nodes/native-node-runtime.ts` | Explicit trusted-local implementation binder. This is an authorization and tracing boundary, not a security sandbox or containment mechanism. |
+| `AutomationStudioNativeRuntimeGrants` | Type | `packages/fluxiq/src/runtime/native-nodes/native-node-runtime.ts` | - |
 | `automationStudioNextResultCheckOrdinal` | Value | `packages/fluxiq/src/runtime/result-verification/check-schedule/ordinals.ts` | - |
 | `automationStudioNodeActLasts` | Value | `packages/fluxiq/src/framework/automation-service/executor/defensive/lasting-act.ts` | - |
 | `automationStudioNodeAdaptationIds` | Value | `packages/fluxiq/src/runtime/adaptation/flow-change/node-adaptation/ids.ts` | - |
@@ -2633,11 +2633,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioResultStandingNoTogether` | Type | `packages/fluxiq/src/runtime/result-verification/standing-no/types.ts` | One set of conditions of one read that left rows out only together (t655, t666): no one of them left those rows out by itself, so dropping one keeps them out and dropping every one brings them back. |
 | `automationStudioResultStepChanges` | Value | `packages/fluxiq/src/runtime/result-verification/step-changes.ts` | - |
 | `automationStudioResultStoredValueAgainst` | Value | `packages/fluxiq/src/runtime/result-verification/value-readings/settled-rows.ts` | - |
-| `automationStudioResultSummaryWithAlsoInResult` | Value | `packages/fluxiq/src/runtime/result-verification/request-rows/summary/with-also-in-result.ts` | - |
-| `automationStudioResultSummaryWithLeftOutNamingTheItem` | Value | `packages/fluxiq/src/runtime/result-verification/request-rows/summary/with-left-out-naming-the-item.ts` | - |
+| `automationStudioResultSummaryWithAlsoInResult` | Value | `packages/fluxiq/src/runtime/result-verification/request-rows/summary/with/also-in-result.ts` | - |
+| `automationStudioResultSummaryWithLeftOutNamingTheItem` | Value | `packages/fluxiq/src/runtime/result-verification/request-rows/summary/with/left-out-naming-the-item.ts` | - |
 | `automationStudioResultSummaryWithoutTestedLabel` | Value | `packages/fluxiq/src/runtime/result-verification/read-account/without-tested-label.ts` | - |
 | `automationStudioResultSummaryWithPagingWords` | Value | `packages/fluxiq/src/runtime/result-verification/read-account/judge-paging.ts` | - |
-| `automationStudioResultSummaryWithRowIds` | Value | `packages/fluxiq/src/runtime/result-verification/request-rows/summary/with-row-ids.ts` | - |
+| `automationStudioResultSummaryWithRowIds` | Value | `packages/fluxiq/src/runtime/result-verification/request-rows/summary/with/row-ids.ts` | - |
 | `automationStudioResultSummaryWithUnreadColumns` | Value | `packages/fluxiq/src/runtime/result-verification/read-account/unread-columns.ts` | - |
 | `AutomationStudioResultTaskChecklist` | Type | `packages/fluxiq/src/runtime/result-verification/contracts/task-checklist.ts` | The task checklist a project build's judge is sent (`taskChecklist`): first its own label, saying the instructions are the only authority and how the checklist is used, because the judge's standing instruction does not name it; then each part the instructions ask for, in their own words, and what they do not ask for; for a subflow trial, the parts other subflows do. A part whose task spec declares the answer it asks for carries it (`answer`, t757): the obligation a yes is held to (`../requested-output/`). |
 | `AutomationStudioResultTaskEffect` | Type | `packages/fluxiq/src/runtime/result-verification/contracts/task-checklist.ts` | The change a part asks for (t775): `change`, a number of `what` added or removed; `end_state`, the state that holds once it is done. |
@@ -2683,8 +2683,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioReusableLlmContextList` | Type | `packages/fluxiq/src/framework/persistence/automation/project/reusable-llm-context-store.ts` | - |
 | `AutomationStudioReusableLlmContextOption` | Type | `packages/fluxiq/src/framework/automation-service/service/reusable-context/contracts.ts` | - |
 | `AutomationStudioReusableLlmContextOutcome` | Type | `packages/fluxiq/src/framework/persistence/automation/project/reusable-llm-context-store.ts` | - |
-| `AutomationStudioReusableLlmContextPacket` | Type | `packages/fluxiq/src/runtime/llm/reusable-context.ts` | - |
-| `AutomationStudioReusableLlmContextPackingResult` | Type | `packages/fluxiq/src/runtime/llm/reusable-context.ts` | - |
+| `AutomationStudioReusableLlmContextPacket` | Type | `packages/fluxiq/src/runtime/llm/reusable-context/reusable-context.ts` | - |
+| `AutomationStudioReusableLlmContextPackingResult` | Type | `packages/fluxiq/src/runtime/llm/reusable-context/reusable-context.ts` | - |
 | `AutomationStudioReusableLlmContextRecord` | Type | `packages/fluxiq/src/framework/persistence/automation/project/reusable-llm-context-store.ts` | - |
 | `AutomationStudioReusableLlmContextReviewerState` | Type | `packages/fluxiq/src/framework/persistence/automation/project/reusable-llm-context-store.ts` | - |
 | `AutomationStudioReusableLlmContextSelection` | Type | `packages/fluxiq/src/framework/automation-service/service/reusable-context/contracts.ts` | - |
@@ -2697,16 +2697,16 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioRouteConditionKey` | Value | `packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/route-condition.ts` | - |
 | `automationStudioRouteConditionPaths` | Value | `packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/route-condition.ts` | - |
 | `AutomationStudioRouteDecisionRecord` | Type | `packages/fluxiq/src/flows/authoring/model/flow-adaptation.ts` | - |
-| `AutomationStudioRouteEffectSighting` | Type | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | The host's answer about whether a lasting step's recorded effect appeared after it answered success. |
-| `AutomationStudioRoutePlanDiagnostic` | Type | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
-| `AutomationStudioRouterExecutionInput` | Type | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
-| `AutomationStudioRouterExecutionPlan` | Type | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
-| `AutomationStudioRouterExecutionResult` | Type | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
+| `AutomationStudioRouteEffectSighting` | Type | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | The host's answer about whether a lasting step's recorded effect appeared after it answered success. |
+| `AutomationStudioRoutePlanDiagnostic` | Type | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
+| `AutomationStudioRouterExecutionInput` | Type | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
+| `AutomationStudioRouterExecutionPlan` | Type | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
+| `AutomationStudioRouterExecutionResult` | Type | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
 | `AutomationStudioRouterRouteCounts` | Type | `packages/fluxiq/src/framework/persistence/automation/project/flow-resource-repository.ts` | - |
 | `AutomationStudioRouterRoutePage` | Type | `packages/fluxiq/src/framework/automation-service/service/flow-map-routes/contracts.ts` | - |
 | `AutomationStudioRouterSummary` | Type | `packages/fluxiq/src/framework/automation-service/service/indexes/types.ts` | - |
 | `AutomationStudioRouterTargetReferenceBatch` | Type | `packages/fluxiq/src/framework/automation-service/service/flow-map-routes/contracts.ts` | - |
-| `AutomationStudioRouteRuleEvaluation` | Type | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
+| `AutomationStudioRouteRuleEvaluation` | Type | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
 | `AutomationStudioRouteTarget` | Type | `packages/fluxiq/src/flows/authoring/model/flow-adaptation.ts` | - |
 | `AutomationStudioRoutineArtifact` | Type | `packages/fluxiq/src/flows/authoring/model/artifacts.ts` | - |
 | `automationStudioRunCandidateAdaptationIds` | Value | `packages/fluxiq/src/runtime/adaptation/durable-behavior/judged-decision.ts` | - |
@@ -2850,7 +2850,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioScreenedAuthoredState` | Type | `packages/fluxiq/src/runtime/adaptation/recovery/repair-context/authored-state-screen.ts` | An authored document value as the repair is shown it, with what did not survive named. |
 | `automationStudioScreenedNodeParameters` | Value | `packages/fluxiq/src/runtime/adaptation/recovery/repair-context/parameter-screen.ts` | - |
 | `AutomationStudioScreenedParameters` | Type | `packages/fluxiq/src/runtime/adaptation/recovery/repair-context/parameter-screen.ts` | The parameters a step ran with, as the repair is shown them. |
-| `automationStudioSecretNamedKey` | Value | `packages/fluxiq/src/runtime/llm/loop-limits/secret-named-key.ts` | - |
+| `automationStudioSecretNamedKey` | Value | `packages/fluxiq/src/runtime/loop-limits/secret-named-key.ts` | - |
 | `AutomationStudioSecretsLockedError` | Class | `packages/fluxiq/src/runtime/llm/deepseek/secrets-locked-error.ts` | - |
 | `AutomationStudioService` | Class | `packages/fluxiq/src/framework/automation-service/service.ts` | - |
 | `AutomationStudioServiceOptions` | Type | `packages/fluxiq/src/framework/automation-service/service.ts` | - |
@@ -3052,7 +3052,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioWriteProjectObjectAssetInput` | Type | `packages/fluxiq/src/framework/automation-service/service/object-documents.ts` | - |
 | `AutomationStudioWriteProjectObjectAssetResult` | Type | `packages/fluxiq/src/framework/automation-service/service/object-documents.ts` | - |
 | `automationStudioZeroProviderGate` | Value | `packages/fluxiq/src/runtime/result-verification/zero-provider-run.ts` | - |
-| `AutomationTask` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
+| `AutomationTask` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
 | `backfillAutomationStudioContentObjectAddresses` | Value | `packages/fluxiq/src/framework/persistence/automation/project/content-address/object-address-backfill.ts` | - |
 | `BACKGROUND_TASKS_ENDPOINTS` | Object | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts` | - |
 | `BACKGROUND_TASKS_PROGRAM` | Object | `packages/fluxiq/src/programs/background-tasks/metadata.ts` | - |
@@ -3343,7 +3343,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `compileAutomationStudioPlan` | Value | `packages/fluxiq/src/framework/automation-service/compiled-plan.ts` | - |
 | `CompileAutomationStudioPlanInput` | Type | `packages/fluxiq/src/framework/automation-service/compiled-plan.ts` | - |
 | `compileAutomationStudioRegions` | Value | `packages/fluxiq/src/runtime/recording/region-compiler.ts` | - |
-| `compileAutomationStudioRouterPlan` | Value | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
+| `compileAutomationStudioRouterPlan` | Value | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
 | `compiledPlanToFlowDocument` | Value | `packages/fluxiq/src/framework/automation-service/compiled-plan.ts` | - |
 | `compileFlowDefinition` | Value | `packages/fluxiq/src/flows/authoring/dsl/compiler.ts` | - |
 | `compileFlowSource` | Value | `packages/fluxiq/src/flows/authoring/dsl/source.ts` | - |
@@ -3368,8 +3368,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ComputeLease` | Type | `packages/fluxiq/src/programs/compute-control/types.ts` | - |
 | `ComputeNode` | Type | `packages/fluxiq/src/programs/compute-control/types.ts` | - |
 | `ComputeStatus` | Type | `packages/fluxiq/src/programs/compute-control/types.ts` | - |
-| `Condition` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
-| `ConditionSet` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
+| `Condition` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
+| `ConditionSet` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
 | `ConservativeTimelineNormalizer` | Class | `packages/fluxiq/src/runtime/recording/normalization/default-normalizer.ts` | - |
 | `ContentAddressScrubDatabase` | Type | `packages/fluxiq/src/framework/persistence/automation/project/content-address/scrub-database.ts` | The database operations a scrub uses. |
 | `ContentAddressScrubStage` | Type | `packages/fluxiq/src/framework/persistence/automation/project/content-address/scrub-database.ts` | - |
@@ -3470,7 +3470,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `DEFAULT_ELEMENT_FINGERPRINT_WEIGHTS` | Object | `packages/fluxiq/src/runtime/target-matching/fingerprinting/element-fingerprint.ts` | - |
 | `DEFAULT_SESSION_TTL_MS` | Object | `packages/fluxiq/src/programs/identity-access/runtime/service.ts` | - |
 | `defaultAutomationStudioFlowSettingsMetadata` | Value | `packages/fluxiq/src/flows/authoring/model/flows.ts` | - |
-| `defaultAutomationStudioSubflowForFlow` | Value | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
+| `defaultAutomationStudioSubflowForFlow` | Value | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
 | `defaultGlobalProgramCatalog` | Value | `packages/fluxiq/src/programs/_shared/catalog.ts` | - |
 | `defaultProgramCatalog` | Object | `packages/fluxiq/src/programs/_shared/catalog.ts` | - |
 | `defaultRoles` | Object | `packages/fluxiq/src/programs/identity-access/runtime/roles.ts` | - |
@@ -3543,9 +3543,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `DomainSummaryContract` | Type | `packages/contracts/src/program-api.ts` | - |
 | `domainSummarySchema` | Object | `packages/contracts/src/program-api.ts` | - |
 | `DuplicateFlowSubflowRequest` | Type | `packages/fluxiq/src/api-contracts/automation/subflow.ts` | - |
-| `DynamicPolicyArtifact` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
-| `DynamicPolicyEdge` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
-| `DynamicPolicyNode` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
+| `DynamicPolicyArtifact` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
+| `DynamicPolicyEdge` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
+| `DynamicPolicyNode` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
 | `ElementFingerprint` | Type | `packages/fluxiq/src/runtime/target-matching/fingerprinting/element-fingerprint.ts` | - |
 | `ElementFingerprintCandidate` | Type | `packages/fluxiq/src/runtime/target-matching/fingerprinting/element-fingerprint.ts` | - |
 | `ElementFingerprintContribution` | Type | `packages/fluxiq/src/runtime/target-matching/fingerprinting/element-fingerprint.ts` | - |
@@ -3589,7 +3589,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `estimateAutomationStudioDeepSeekCostUsd` | Value | `packages/fluxiq/src/runtime/llm/deepseek/pricing.ts` | - |
 | `estimateAutomationStudioDeepSeekInputTokens` | Value | `packages/fluxiq/src/runtime/llm/deepseek/request-body.ts` | - |
 | `evaluateAutomationStudioCandidateRequirements` | Value | `packages/fluxiq/src/runtime/flow-authoring/bootstrap/verification/predicates.ts` | - |
-| `evaluateAutomationStudioRouteCondition` | Value | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
+| `evaluateAutomationStudioRouteCondition` | Value | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
 | `evaluateBootstrapAdaptationApplyGates` | Value | `packages/fluxiq/src/runtime/adaptation/recovery/adaptation-promotion.ts` | - |
 | `evaluateClientGatewayTraceCompleteness` | Value | `packages/fluxiq/src/client-gateway/trace/evaluate-completeness.ts` | - |
 | `evaluateClientGatewayTraceSessionReferences` | Value | `packages/fluxiq/src/client-gateway/trace-replay/session-references/evaluation.ts` | - |
@@ -3759,8 +3759,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `GraphViewportRequest` | Type | `packages/fluxiq/src/api-contracts/automation/graph.ts` | - |
 | `HeldKeys` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/held-keys.ts` | Custody of password-derived keys held after a successful check: session unlocks and one-use reveal authorizations. Invariant: every held key opens its record's current seal. Rotation, metadata edits, and deletion revoke a key's holders; a re-seal or credential change replaces their keys. Every buffer dropped or replaced is zeroed. A `SecretKeysService` creates its own, or is given one that outlives it (a workspace manager's, so evicting an idle instance does not lock its users' keys). Expiry timers come from here and hold only this custody and an id, never the service that asked for them or the password that unlocked them. |
 | `holdAutomationStudioRecoveryPatchReserve` | Value | `packages/fluxiq/src/runtime/adaptation/recovery/annotation/patch-reserve.ts` | - |
-| `hostExpectationEvaluator` | Value | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | - |
-| `hostRuntimeCapabilityIds` | Value | `packages/fluxiq/src/framework/automation-service/host-runtime.ts` | - |
+| `hostExpectationEvaluator` | Value | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | - |
+| `hostRuntimeCapabilityIds` | Value | `packages/fluxiq/src/runtime/native-nodes/host-runtime.ts` | - |
 | `IDENTITY_ACCESS_ENDPOINTS` | Object | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `IDENTITY_ACCESS_PROGRAM` | Object | `packages/fluxiq/src/programs/identity-access/metadata.ts` | - |
 | `IdentityAccessPanel` | Type | `packages/fluxiq/src/programs/identity-access/ui/contracts.ts` | - |
@@ -3904,7 +3904,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `OutputDispatchRequest` | Type | `packages/fluxiq/src/io/index.ts` | - |
 | `OutputDispatchResult` | Type | `packages/fluxiq/src/io/index.ts` | - |
 | `packAutomationStudioLlmContext` | Value | `packages/fluxiq/src/runtime/llm/harness/context-packet.ts` | - |
-| `packAutomationStudioReusableLlmContext` | Value | `packages/fluxiq/src/runtime/llm/reusable-context.ts` | - |
+| `packAutomationStudioReusableLlmContext` | Value | `packages/fluxiq/src/runtime/llm/reusable-context/reusable-context.ts` | - |
 | `ParameterDefinition` | Type | `packages/fluxiq/src/flows/authoring/model/actions.ts` | - |
 | `parseAutomationStudioActionPermissionRequest` | Value | `packages/fluxiq/src/runtime/action-permission-requests/request.ts` | - |
 | `parseAutomationStudioCandidateAuthoringResult` | Value | `packages/fluxiq/src/runtime/flow-authoring/bootstrap/authoring-result/parse.ts` | - |
@@ -4039,7 +4039,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `RecordingEntryIndexItem` | Type | `packages/fluxiq/src/framework/persistence/automation/state-index.ts` | - |
 | `RecordingEntryStateLookupInput` | Type | `packages/fluxiq/src/framework/automation-service/service/recording-state-index/contracts.ts` | - |
 | `RecordingEntryStateLookupResult` | Type | `packages/fluxiq/src/framework/automation-service/service/recording-state-index/contracts.ts` | - |
-| `RecordingEvent` | Type | `packages/fluxiq/src/api-contracts/automation/document-types.ts` | - |
+| `RecordingEvent` | Type | `packages/fluxiq/src/api-contracts/automation/document-types/document-types.ts` | - |
 | `RecordingEventJsonSchema` | Type | `packages/fluxiq/src/flows/authoring/model/recording-domain.ts` | - |
 | `RecordingFlowActionCandidate` | Type | `packages/fluxiq/src/runtime/recording/recording-flow-proposal.ts` | - |
 | `RecordingFlowProposalArtifact` | Type | `packages/fluxiq/src/runtime/recording/recording-flow-proposal.ts` | - |
@@ -4168,7 +4168,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `runAutomationStudioOfflineSubflowTrial` | Value | `packages/fluxiq/src/framework/automation-service/service/offline-trial/subflow-run.ts` | - |
 | `runAutomationStudioRecoveryExploration` | Value | `packages/fluxiq/src/runtime/adaptation/recovery/annotation/exploration.ts` | - |
 | `runAutomationStudioRecoveryLadder` | Value | `packages/fluxiq/src/framework/automation-service/executor/ladder-run.ts` | - |
-| `runAutomationStudioRouter` | Value | `packages/fluxiq/src/framework/automation-service/router-runtime.ts` | - |
+| `runAutomationStudioRouter` | Value | `packages/fluxiq/src/runtime/router-runtime/router-runtime.ts` | - |
 | `runAutomationStudioRuntimeExploration` | Value | `packages/fluxiq/src/runtime/adaptation/recovery/runtime-exploration.ts` | - |
 | `RunBackgroundTaskRequest` | Type | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts` | - |
 | `RunBackgroundTaskResponse` | Type | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts` | - |

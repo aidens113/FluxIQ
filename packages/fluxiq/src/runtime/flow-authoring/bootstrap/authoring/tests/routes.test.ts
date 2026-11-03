@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../../../framework/automation-service/nodes/index.ts";
-import { runAutomationStudioRouter } from "../../../../../framework/automation-service/router-runtime.ts";
+import { runAutomationStudioRouter } from "../../../../router-runtime/index.ts";
 import { normalizeAutomationStudioFlowBuildPlan } from "../../adaptation.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";

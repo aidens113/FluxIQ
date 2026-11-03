@@ -3,7 +3,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,

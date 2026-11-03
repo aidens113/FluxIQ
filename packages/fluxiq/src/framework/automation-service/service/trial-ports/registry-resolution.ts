@@ -1,6 +1,6 @@
 import type { AutomationStudioFlowScope } from "../../../../flows/authoring/model/index.ts";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeRegistryResolution } from "../../nodes/index.ts";
-import type { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
+import type { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
 
 /**
  * The node registry a build writes and tries its Flow against, and its

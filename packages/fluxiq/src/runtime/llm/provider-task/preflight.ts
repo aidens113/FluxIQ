@@ -3,7 +3,7 @@ import { automationStudioLlmRequestEvidenceRefusal } from "../harness/request-ev
 import { isAutomationStudioLlmRecentActionContext } from "../recent-actions/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderPreflightErrorCode } from "../provider-contract.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/evidence-loop.ts";
 import { automationStudioFlowBootstrapOutputSchema } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop-decision.ts";

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../runtime/native-nodes/index.ts";
 import { executeAutomationStudioRuntimePatch, preflightAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride } from "../../../runtime/adaptation/live-patch.ts";
 
 // A runtime target override, proposed or executed, and the domain check both

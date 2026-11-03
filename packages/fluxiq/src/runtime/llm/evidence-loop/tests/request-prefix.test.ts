@@ -43,7 +43,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNativeNodeImplementation } from "../../../../framework/automation-service/nodes/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstrap/plan/tests/index.ts";
 import { createAutomationStudioSessionKeyProviderResolver, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioSessionKeyPorts } from "../../index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../../../framework/automation-service/native-node-runtime.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-nodes/index.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 
 const KEY_ID = `secret:${randomUUID()}`;
