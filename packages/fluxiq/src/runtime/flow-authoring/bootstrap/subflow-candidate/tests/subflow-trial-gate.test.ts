@@ -88,6 +88,7 @@ describe("the subflow trial gate", () => {
     const gate = gateWith(async (request) => answer(request, { entryPrepared: false }));
     const ran = await gate.test(receipt);
     expect(ran.resultReason).toBe("retry_allowed");
+    expect(ran.ownRetestBound).toBe(true);
     expect(gate.completion(proposal)).toMatchObject({ ok: false, issueCodes: ["subflow.trial_yes"] });
   });
 

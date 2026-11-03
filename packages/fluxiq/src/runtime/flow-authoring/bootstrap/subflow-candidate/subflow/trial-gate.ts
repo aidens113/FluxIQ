@@ -14,7 +14,7 @@
 // the answer is bound to the revision and digest that ran; a no closes that
 // exact proposal; a transient verdict may be tried again up to
 // `AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION` trials in all, and says
-// `retry_allowed` so the loop's repeat guard leaves the bound to this gate. A
+// `ownRetestBound` so the loop's repeat guard leaves the bound to this gate. A
 // trial whose entry was not prepared (a predecessor did not run to its end)
 // says so: its verdict is about the predecessors, not this subflow.
 //
@@ -23,7 +23,7 @@
 // under `startedWith`, and its witnesses read just before it and again after its end view (`../trial-change/`, the
 // request's `siteChange`), with the brief's parts and their typed effects (`scope.parts[].effect`); the one refusal left
 // names just an act of this build that already shows a step's asked end state (`candidate.trial_starts_in_end_state`), as
-// the whole-candidate gate does (`../candidate/trial-gate.ts`): a refusal is not a trial and answers `retry_allowed`. A
+// the whole-candidate gate does (`../candidate/trial-gate.ts`): a refusal is not a trial and reports `retry_allowed`. A
 // lasting step with no witness never keeps a trial from running: the reset's admission notes it, said under `unwitnessed`
 // (t791 fix 4). A yes its own readings contradict is a no before any row check sees it (t787,
 // `../trial-change/contradicted.ts`). When the port can run the deployment's start hook ahead of
@@ -622,8 +622,7 @@ export class AutomationStudioSubflowTrialGate {
     if (TRANSIENT.has(answer.verdict) || !answer.entryPrepared || repeatedStep || offlineYes) evidence.retestsLeft = retestsLeft;
     // Whether Core's record contradicts what kept an unsure from a yes: the fact its instruction rests on (header, t641).
     if (answer.verdict === "unsure" && answer.entryPrepared && retestsLeft > 0 && typeof answer.feedback.contradictedByBuild !== "string") evidence.retestAdvised = automationStudioCandidateRetestAdvised(answer);
-    const answered: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: offlineYes ? "subflow.trial_offline_yes" : `subflow.trial_${answer.verdict}` };
-    if (retestsLeft > 0) answered.resultReason = RETEST_REASON;
+    const answered: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: offlineYes ? "subflow.trial_offline_yes" : `subflow.trial_${answer.verdict}`, ...(retestsLeft > 0 ? { resultReason: RETEST_REASON, ownRetestBound: true as const } : {}) };
     return answered;
   }
 

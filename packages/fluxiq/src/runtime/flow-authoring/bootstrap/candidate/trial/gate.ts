@@ -21,11 +21,11 @@
 // stopped on the page's first-press "Network busy" (`web.action.rate_limited`),
 // and the model's identical request to test it again was refused by the loop's
 // generic repeat guard (`../../llm/repeat-guard/outcomes.ts`) as "the same call
-// failed before", although nothing here forbade it. So a transient verdict
-// answers with the reason `retry_allowed`, which the repeat guard reads as "may
-// work if made again later" (`../../llm/repeat-guard/retry-later.ts`) and never
-// refuses; the bound on re-tests is this gate's, and a re-test past it is
-// refused here, by name, with what to do instead.
+// failed before", although nothing here forbade it. So a transient verdict with
+// a re-test left says `ownRetestBound` on its answer, the typed fact the repeat
+// guard reads (`../../llm/repeat-guard/outcomes.ts`; `retry_allowed` is only a
+// diagnostic since t826), and is never refused; the bound on re-tests is this
+// gate's, and a re-test past it is refused here, by name, with what to do instead.
 //
 // **The same failure twice ends re-testing (t368, F2).** Lane A round 6
 // (`run-muz2cj6p-80eb2179`, trials 1 and 2) re-tested revision 2 after its
@@ -47,8 +47,8 @@
 // stopping step's feedback says `targetOnPage`
 // (`../../service/candidate-trial/target-on-page.ts`), the instruction now
 // names the step, says the script need not change, and says to test the same
-// revision again first; the verdict stays transient, so that re-test carries
-// `retry_allowed` and is never refused as a repeat. If the re-test stops there
+// revision again first; the verdict stays transient, so its answer carries
+// `ownRetestBound` and that re-test is never refused as a repeat. If the re-test stops there
 // the same way, the same-failure rule above closes the revision, and the
 // instruction names the step and says to change it. Neither ever says how a
 // control is found, nor asks the model to find or re-address one: that is the
@@ -81,9 +81,9 @@
 // change it asks for, never a total that holds what was already there. The one
 // refusal left is targeted: a step whose asked end state another step of this
 // build already made is refused `candidate.trial_starts_in_end_state`, naming
-// just that act to undo. A refusal is not a trial: it answers `retry_allowed`,
-// so the identical request to test again reaches this gate rather than the
-// loop's memory or repeat guard. The answer of a trial that ran says under
+// just that act to undo. A refusal is not a trial: it reports `retry_allowed`
+// diagnostically, and any later call that ran lifts it (`PRECONDITIONS` in the
+// repeat guard), so the identical request to test again reaches this gate. The answer of a trial that ran says under
 // `leftOnSite` the acts now on the site, the trial's own among them. An offline
 // trial has no reset and no readings.
 // A yes the trial's own readings contradict is kept as a no (t787 fix 4,
@@ -296,7 +296,7 @@ export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
 /** Trials of one revision and digest, the first included; a transient verdict may be tested again until this many have run. */
 export const AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION = 3;
 
-/** The reason a transient verdict carries: the repeat guard never refuses an identical call whose reason says to try again (header). */
+/** The reason a transient verdict carries, a diagnostic: what keeps the repeat guard off a re-test is `ownRetestBound` (header). */
 const RETEST_REASON = "retry_allowed";
 
 const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
@@ -534,9 +534,9 @@ export class AutomationStudioFlowCandidateTrialGate {
       ...first?.evidence
     };
     // The trial ran on the target, so whatever it touched may have moved. A transient verdict with a re-test left says
-    // so in its reason, so the identical request to test again is never refused as a repeat (header).
+    // so on its answer, so the identical request to test again is never refused as a repeat (header).
     const resultCode = offlineYes ? "candidate.trial_offline_yes" : `candidate.trial_${answer.verdict}`;
-    return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode, ...(retestsLeft > 0 ? { resultReason: RETEST_REASON } : {}) };
+    return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode, ...(retestsLeft > 0 ? { resultReason: RETEST_REASON, ownRetestBound: true as const } : {}) };
   }
 
   /** The completion rule, asked only once the receipt names the latest valid submission. */

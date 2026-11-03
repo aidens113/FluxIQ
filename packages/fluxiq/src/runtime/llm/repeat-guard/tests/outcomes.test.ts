@@ -1,8 +1,10 @@
 // The loop's record of what each call did on the page it found (`../outcomes.ts`).
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation";
+import type { JsonValue } from "../../../../core/index.ts";
 import { automationStudioLlmEvidenceRepeatGuard, type AutomationStudioLlmEvidenceCallOutcome } from "../outcomes.ts";
 import { automationStudioLlmEvidenceRetriesLater } from "../retry-later.ts";
+import { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 
 const temporaryFailure: AutomationStudioFailureRecord = { category: "action_failed", code: "service.temporary", retryable: true, effect: "unacted", transient: true };
 
@@ -41,6 +43,33 @@ describe("what a call did on the page it found", () => {
     const unseen = automationStudioLlmEvidenceRepeatGuard();
     unseen.recorded(call({ stateBefore: undefined, stateAfter: undefined }));
     expect(unseen.blocks("core.run_node", call().input)).toBeUndefined();
+  });
+
+  it("leaves a trial that ran and may be tested again to the gate that answered it, even after a look on the same page", () => {
+    const trial = { toolId: "core.test_candidate", input: { revision: 1, digest: "d1" }, stateBefore: undefined, stateAfter: undefined, effectApplied: true, resultCode: "candidate.trial_execution_failed" };
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.seen("s1");
+    guard.recorded(call({ ...trial, ownRetestBound: true }));
+    expect(guard.blocks(trial.toolId, trial.input)).toBeUndefined();
+    guard.recorded(call({ callId: "look", input: { look: true }, effect: "observe", proposes: false, effectApplied: false, refused: false }));
+    expect(guard.blocks(trial.toolId, trial.input)).toBeUndefined();
+    // Nothing else lets it through: not the words, not the claim from a call that did nothing, and not a trial past the gate's bound.
+    const refused: Array<Partial<AutomationStudioLlmEvidenceCallOutcome>> = [{ resultReason: "retry_allowed" }, {}, { ownRetestBound: true, effectApplied: false }];
+    for (const over of refused) {
+      const other = automationStudioLlmEvidenceRepeatGuard();
+      other.seen("s1");
+      other.recorded(call({ ...trial, ...over }));
+      expect(other.blocks(trial.toolId, trial.input)?.outcome, JSON.stringify(over)).toBe("failed");
+    }
+  });
+
+  it("reads ownRetestBound only as the literal true, dropping anything else without refusing the result", () => {
+    const parsed = (ownRetestBound: JsonValue) => automationStudioLlmEvidenceParseToolExecutionResult({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, ownRetestBound }, "mutate");
+    expect(parsed(true)).toMatchObject({ ownRetestBound: true });
+    for (const value of ["true", 1, false]) {
+      expect(parsed(value)).toBeDefined();
+      expect(parsed(value)).not.toHaveProperty("ownRetestBound");
+    }
   });
 
   it("does not interpret result codes or reasons as temporary failure facts", () => {

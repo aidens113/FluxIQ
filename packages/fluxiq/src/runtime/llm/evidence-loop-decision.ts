@@ -123,10 +123,10 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
  * (live run `run-mup2u8o3-6697c4be`, call `search2`).
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS: readonly string[] = [
-  "kind", "evidence", "effectApplied", "failure", "actionability", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "draft"
+  "kind", "evidence", "effectApplied", "failure", "actionability", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "ownRetestBound", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "draft"
 ];
 
-type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
+type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; ownRetestBound?: true; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
 
 /** The result read from what a tool returned, or nothing when it is not one. */
 export function automationStudioLlmEvidenceParseToolExecutionResult(
@@ -184,6 +184,7 @@ function readToolExecution(
       ...(value.resultCode ? { resultCode: value.resultCode } : {}),
       ...(closedCode(value.resultReason) ? { resultReason: value.resultReason as string } : {}),
       ...(diagnostic ? { diagnostic } : {}),
+      ...(value.ownRetestBound === true ? { ownRetestBound: true as const } : {}),
       // A count, read as one and never as a code: the caller saying it has just
       // answered with what it already answered. Dropped rather than fatal for
       // the same reason the two beside it are, and held to two or more because

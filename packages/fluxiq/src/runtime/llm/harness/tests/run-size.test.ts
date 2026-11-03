@@ -282,7 +282,11 @@ describe("the harness's context-window check", () => {
 
   it("still refuses, with its size, a request whose sent messages are over the window", async () => {
     const provider = sendingDeepSeek();
-    const probe = await decide(provider, { maxInputTokens: 2_000_000, maxOutputTokens: 2_000, maxTotalTokens: 2_002_000 });
+    const rough = await decide(provider, { maxInputTokens: 2_000_000, maxOutputTokens: 2_000, maxTotalTokens: 2_002_000 });
+    // The limits are written into what is sent, so measure at limits of the window's own digits: one token below a size
+    // measured under a seven-digit limit is not below that request's size under a five-digit one.
+    const roughTokens = provider.measureInput!(rough.request).estimatedInputTokens;
+    const probe = await decide(provider, { maxInputTokens: roughTokens, maxOutputTokens: 2_000, maxTotalTokens: roughTokens + 2_000 });
     const sent = provider.measureInput!(probe.request);
     const window = { maxInputTokens: sent.estimatedInputTokens - 1, maxOutputTokens: 2_000, maxTotalTokens: sent.estimatedInputTokens + 1_999 };
     const refused = await decide(provider, window);

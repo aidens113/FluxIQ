@@ -50,8 +50,8 @@ describe("a candidate trial and a normal run gate declared consequences alike", 
     expect(trial).toEqual(normal);
     expect(trial).toHaveLength(1);
     // The trial handed the detached runner the run's own options: no permission, gate or dispatcher of its own.
-    expect(received).toBe(handed);
-    expect(Object.keys(received!).sort()).toEqual(Object.keys(handed!).sort());
+    // The one thing it adds is the date reference every part of the run shares, its session's start (t823).
+    expect(received).toStrictEqual({ ...handed, referenceNow: fixture.sessions.at(-1)!.startedAt });
     expect(received).not.toHaveProperty("permittedConsequences");
   });
 });

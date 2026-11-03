@@ -9,6 +9,7 @@ import { AutomationStudioService } from "../service.ts";
 import { AutomationStudioIoRecorder } from "../../../runtime/recording/io-bridge.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "../io-policy.ts";
 import { runAutomationStudioGraph } from "../executor/index.ts";
+import { createElementMatcher } from "../../../runtime/target-matching/index.ts";
 
 describe("Automation Studio IO bridge", () => {
   it("records a bound action input as an output-native policy action", async () => {
@@ -160,6 +161,7 @@ describe("Automation Studio IO bridge", () => {
     expect(trace.attempts[0]?.outputs).toMatchObject({ outputId: "activate-element", ok: true });
   });
 
+  // The domain's matcher does the matching since t842; with none, Core leaves the target to the output adapter (`./io-policy.test.ts`).
   it("matches canonical element targets before output dispatch", async () => {
     const io = new IoRegistry();
     let dispatchedTarget: any;
@@ -199,7 +201,7 @@ describe("Automation Studio IO bridge", () => {
       edges: []
     };
 
-    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(io, "example") });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(io, "example", createElementMatcher()) });
 
     expect(trace.status).toBe("succeeded");
     expect(dispatchedTarget?.selectedCandidate).toMatchObject({ candidateId: "save", matchedSignals: expect.arrayContaining(["visibleText", "testId"]) });

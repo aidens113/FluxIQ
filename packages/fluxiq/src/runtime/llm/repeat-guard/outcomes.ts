@@ -242,6 +242,11 @@
 //   an attempt. A look the domain refused is a failed call (above).
 // - A call with a validated temporary, retryable, unacted failure and actual
 //   execution facts that confirm it did not act (`./retry-later.ts`).
+// - A trial that ran and may be tested again: it acted, and the gate that
+//   answered it owns how often it runs (`ownRetestBound`, typed on its answer
+//   because t826 ended the reading of `retry_allowed`, which left every re-test
+//   on a page the loop had seen refused). A call that did nothing never gets
+//   this, whatever it claims. Past the gate's bound its answer no longer says so.
 // - A call that threw: nothing answered it, so it is not a repeat.
 // - A step written and not run (`core.run_node.written`): it was added, not
 //   tried (above).
@@ -355,6 +360,8 @@ export type AutomationStudioLlmEvidenceCallOutcome = {
   /** Validated control facts, independent of the actual execution fields. */
   failure?: AutomationStudioFailureRecord | undefined;
   personNeeded?: true | undefined;
+  /** The gate that answered this trial owns how often it runs again (see the header). Counts only with `effectApplied`. */
+  ownRetestBound?: true | undefined;
   /** What the call answered, as the model was shown it: compared for a look only. */
   answer?: string | undefined;
   /** A rerun sent as the dry run's check (`../node-tools/rerun-check.ts`): it acted on nothing, so it is no attempt of its input (see the header). */
@@ -504,7 +511,7 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       if (!call.refused) showed(state);
       const sameResult = !failed && !changedNothing && call.stateAfter !== undefined && endedOn.get(at) === call.stateAfter;
       if (!failed && !changedNothing && call.stateAfter !== undefined) endedOn.set(at, call.stateAfter);
-      if ((!failed && !changedNothing && !sameResult) || retryLater) {
+      if ((!failed && !changedNothing && !sameResult) || retryLater || (call.ownRetestBound === true && call.effectApplied)) {
         outcomes.delete(at);
         return;
       }

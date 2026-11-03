@@ -42,9 +42,12 @@ function scripted(): { provider: AutomationStudioLlmProvider; seen: AutomationSt
   };
 }
 
+// The summary carries its date reference to the judge (t823), so two summaries compared byte for byte share one.
+const REFERENCE_NOW = Date.UTC(2026, 9, 31, 12);
+
 const summary = () => automationStudioBuildTestResultSummary({
   steps: RUN_40_STEPS, report: report([...RUN_40_STEPS.slice(0, -1).map(replayed), verified(run40.towelsAdd)]), nodes: [],
-  instructionText: PICKUP_CART, result: { summary: "Added.", acts: RUN_40_CLAIMS }, startLocation: SITE, deniedEvidenceKeys: DENIED
+  instructionText: PICKUP_CART, result: { summary: "Added.", acts: RUN_40_CLAIMS }, startLocation: SITE, deniedEvidenceKeys: DENIED, referenceNow: REFERENCE_NOW
 });
 
 const judge = (provider: AutomationStudioLlmProvider, verify?: (request: AutomationStudioResultVerificationRequest) => ReturnType<typeof verifyAutomationStudioRunResult>) =>

@@ -18,8 +18,10 @@ function runtime(observe: Observe) {
 describe("passive domain result observation", () => {
   it("preserves the callback through checked binding and sends current evidence to actual trial and saved summaries", async () => {
     const observe = vi.fn(async (_request: Parameters<Observe>[0]) => ({ page: CURRENT, bookkeeping: "withheld" }));
-    const bound = automationStudioLlmEvidenceRuntimeBindingChecked(runtime(observe));
-    expect(bound.observeResult).toBe(observe);
+    const host = runtime(observe);
+    const bound = automationStudioLlmEvidenceRuntimeBindingChecked(host);
+    // The checked binding holds it bound to its host (`binding-snapshot.ts`, t831): it is this callback, on that receiver, proved by the calls below.
+    expect(bound.observeResult).toBeTypeOf("function");
     const read = automationStudioRunEndViewReader(bound)!;
     const fixture = trialFixture();
     fixture.ports.deniedEvidenceKeys = ["private"];
@@ -31,7 +33,8 @@ describe("passive domain result observation", () => {
     await verify(context, { ports: { ...context.ports, deniedEvidenceKeys: ["private"], readEndView: read } });
     expect(context.requests[0]?.context.resultSummary?.endView).toEqual({ view: { page: CURRENT } });
     expect(observe).toHaveBeenCalledTimes(2);
-    expect(bound.executeTool).not.toHaveBeenCalled();
+    expect(observe.mock.contexts.every((receiver) => receiver === host)).toBe(true);
+    expect(host.executeTool).not.toHaveBeenCalled();
     for (const [request] of observe.mock.calls) {
       expect(request.signal).toBeInstanceOf(AbortSignal);
       expect(await request.permission({ consequences: ["move_money"], verb: "press", control: { name: "Transfer", kind: "button" } })).toMatchObject({ permitted: false });

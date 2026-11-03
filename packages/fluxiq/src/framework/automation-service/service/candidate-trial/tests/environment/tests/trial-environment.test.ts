@@ -56,13 +56,13 @@ function watched() {
 }
 
 describe("a candidate trial's environment", () => {
-  it("is live by default: today's run id shape, the options exactly as built, and no channel scope", async () => {
+  it("is live by default: today's run id shape, the options as built plus the session's date reference (t823), and no channel scope", async () => {
     const { fixture, scopes, given } = watched();
     delete fixture.ports.newRunId;
     const { result, record } = await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
     expect(record.execution).toBe("succeeded");
     expect(result.trialRunId).toMatch(/^trial\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u);
-    expect(given.options).toBe(given.built);
+    expect(given.options).toStrictEqual({ ...given.built, referenceNow: fixture.sessions.at(-1)!.startedAt });
     expect(given.options?.random).toBeUndefined();
     expect(scopes.length).toBeGreaterThanOrEqual(4);
     expect(scopes.every(([, scope]) => scope === undefined)).toBe(true);

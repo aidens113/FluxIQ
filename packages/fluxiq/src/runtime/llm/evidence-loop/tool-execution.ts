@@ -36,6 +36,14 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
   /** Optional caller-screened diagnostic; Core transports it without domain interpretation. */
   diagnostic?: JsonObject;
   /**
+   * True on a trial that ran and may be tested again: the gate that answered
+   * owns how often this identical call runs (t356), so the repeat guard records
+   * no failure for it (`../repeat-guard/outcomes.ts`). Core's trial gates alone
+   * set it, and it counts only with `effectApplied`: a call that did nothing
+   * stays the guard's. Anything but the literal `true` is dropped.
+   */
+  ownRetestBound?: true;
+  /**
    * How many times in a row this caller has now answered this call with what it
    * had already answered, counting from 2 -- the caller's own statement that
    * the call it just made carried nothing the model did not hold.
