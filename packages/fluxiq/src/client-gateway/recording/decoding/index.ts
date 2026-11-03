@@ -6,3 +6,4 @@ export { decodeRecordingActionChannels } from "./action-channels.ts";
 export * from "./state/index.ts";
 export { isRecordingVisualTarget } from "./visual-target.ts";
 export { decodeRecordingEntry } from "./entry.ts";
+export { isOpaqueRecordingTarget } from "./opaque-target.ts";

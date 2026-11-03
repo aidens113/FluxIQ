@@ -1,3 +1,10 @@
+import type { AutomationStudioFlowBootstrapCurrentStructure } from "../../../../../flows/authoring/plan/index.ts";
+import type { AutomationStudioFlowBootstrapLastRoute } from "../../../../../flows/authoring/plan/index.ts";
+import type { AutomationStudioFlowBootstrapRoutingContext } from "../../../../../flows/authoring/plan/index.ts";
+import type { AutomationStudioFlowBootstrapRoutePath } from "../../../../../flows/authoring/plan/index.ts";
+import type { AutomationStudioFlowBootstrapRouteSituation } from "../../../../../flows/authoring/plan/index.ts";
+// Compatibility aliases; the framework owns the actual declarations and implementations.
+export type { AutomationStudioFlowBootstrapRoutePath, AutomationStudioFlowBootstrapRouteSituation, AutomationStudioFlowBootstrapCurrentRoute, AutomationStudioFlowBootstrapCurrentStructure, AutomationStudioFlowBootstrapLastRoute, AutomationStudioFlowBootstrapRoutingContext } from "../../../../../flows/authoring/plan/index.ts";
 // What a model is shown so it can decide how a Flow routes.
 //
 // A route is a promise about situations: "when the run starts here, do this".
@@ -19,65 +26,6 @@ import { AUTOMATION_STUDIO_ROUTE_SIGNAL_PATH } from "./route-condition.ts";
 
 /** How the router decides, in the words the model reads. */
 export const AUTOMATION_STUDIO_ROUTER_DECISION_TEXT = "The router picks one block before any step runs, with no model: it tests each block's `when:` condition, in the order the blocks are written, against the run's inputs and the state observed where the run starts. The first block whose condition holds runs; when none holds, the steps written outside every block run.";
-
-export type AutomationStudioFlowBootstrapRoutePath = {
-  /** `inputs.<id>` or `state.<...>`, exactly as a condition writes it. */
-  path: string;
-  /** What the value is, in the words of whoever declared it. */
-  description?: string;
-  /** For a declared input. */
-  type?: string;
-  required?: true;
-};
-
-export type AutomationStudioFlowBootstrapRouteSituation = {
-  /** Where it was seen: where the run starts, or after which exploration step. */
-  seen: string;
-  /** Each observed path and its value, whole. A path not listed was absent. */
-  state: Record<string, JsonValue>;
-};
-
-export type AutomationStudioFlowBootstrapCurrentRoute = {
-  /** The block the route runs, by the label a script writes. */
-  subflow: string;
-  /** Its condition, written the way a `when:` line writes one. */
-  when: string;
-};
-
-export type AutomationStudioFlowBootstrapCurrentStructure = {
-  routes: AutomationStudioFlowBootstrapCurrentRoute[];
-  /** What runs when no route holds: a block's label, or that the run fails. */
-  fallback: string;
-  subflows: Array<{ label: string; name: string; role: string; steps: number }>;
-};
-
-export type AutomationStudioFlowBootstrapLastRoute = {
-  /** Which block the run under review ran, or that it ran none. */
-  took: string;
-  fallbackUsed: boolean;
-  /** Each route the router checked, in order, and the reason it gave. */
-  checked: Array<{ subflow: string; held: boolean; why: string }>;
-};
-
-export type AutomationStudioFlowBootstrapRoutingContext = {
-  decides: string;
-  /** The Flow's structure as it stands, or a sentence saying it has none. */
-  current: string | AutomationStudioFlowBootstrapCurrentStructure;
-  /** Every path a condition can test. */
-  paths: AutomationStudioFlowBootstrapRoutePath[];
-  /** The distinct states observed, oldest first; the first is where a run starts. */
-  situations: AutomationStudioFlowBootstrapRouteSituation[];
-  /**
-   * Where the situations are instead, when they are not listed here: an
-   * evidence decision carries each in its window, after the call it followed,
-   * so a situation is written once and read from cache after (`route-state/build-routing.ts`).
-   */
-  situationsShown?: string;
-  /** Why no state could be observed, when none was. */
-  stateUnavailable?: string;
-  /** For a change to a Flow that ran: the route that run took, and why. */
-  lastRoute?: AutomationStudioFlowBootstrapLastRoute;
-};
 
 /** A recursion guard for walking an observed state, not a size bound. */
 const MAX_STATE_DEPTH = 64;

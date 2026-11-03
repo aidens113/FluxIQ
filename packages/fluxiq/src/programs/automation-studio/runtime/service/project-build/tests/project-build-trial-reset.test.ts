@@ -326,64 +326,160 @@ function shop() {
 async function twoBuilders() {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-trial-reset-"));
   const domain = shop();
+  const diagnosticStartedAt = Date.now();
+  let diagnosticCleaning = false;
+  let diagnosticCancelled = false;
+  const phase = (label: string, fields: Record<string, string | number | boolean> = {}): void => {
+    process.stderr.write(`${JSON.stringify({ diagnostic: "isolated_callback_phase", phase: label, elapsedMs: Date.now() - diagnosticStartedAt, cleanup: diagnosticCleaning, ...fields })}\n`);
+  };
+  const errorLabel = (error: unknown): string => {
+    const descriptor = error !== null && typeof error === "object" ? Object.getOwnPropertyDescriptor(error, "message") : undefined;
+    const message: unknown = descriptor && "value" in descriptor ? descriptor.value : undefined;
+    if (typeof message === "string" && /^execution_(?:admission|observation)\.[a-z0-9_]+$/u.test(message)) return message;
+    const codeDescriptor = error !== null && typeof error === "object" ? Object.getOwnPropertyDescriptor(error, "code") : undefined;
+    const code: unknown = codeDescriptor && "value" in codeDescriptor ? codeDescriptor.value : undefined;
+    return typeof code === "string" && /^SQLITE_[A-Z_]+$/u.test(code) ? code : "other_error";
+  };
   /** Each builder's evidence at its latest decision. */
   const seen: Record<string, Entry[]> = {};
-  const stopObserving = observeBuilderCalls((key, entry) => { (seen[key] ??= []).push(entry); });
+  const stopObserving = observeBuilderCalls((key, entry) => {
+    (seen[key] ??= []).push(entry);
+    const call = ["initial.shop.look", "go.product", "add.honey", "add.rye", "go.away", "submit", "test.1", "add.butter", "undo.entry", "undo.butter"].includes(entry.callId) ? entry.callId : "other";
+    phase("builder.result", { actor: key === "first" || key === "second" ? key : "other", call });
+  });
   cleanups.push(async () => stopObserving());
   let supervisorDecisions = 0;
   let resetCalls = 0;
-  const provider = mockProvider(async (request) => {
-    if (request.metadata?.source === "instructionAuthority") return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
-    if (request.taskKind === "loop_verification") return judgeReply("yes");
-    const loop = request.context.evidenceLoop!;
-    const evidence = loop.evidence as Entry[];
-    const tools = loop.tools.map((tool) => tool.toolId);
-    if (!tools.length) return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
-    if (tools.includes("project.write_plan")) {
-      supervisorDecisions += 1;
-      if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN });
-      if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch.first", toolId: "project.dispatch", input: { reason: "Build the first part.", briefs: [brief("first", ["p1"], [])] } });
-      if (supervisorDecisions === 3) return decision({ kind: "tool_call", callId: "reset", toolId: "project.dispatch", input: { reason: "Restore this build's effects before replaying its predecessor.", briefs: [{ kind: "reset", subflowKey: "main", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.03, maxIterations: 20 }] } });
-      if (supervisorDecisions === 4) return decision({ kind: "tool_call", callId: "dispatch.second", toolId: "project.dispatch", input: { reason: "Build the dependent part on the restored site.", briefs: [brief("second", ["p2"], ["first"])] } });
-      return decision({ kind: "complete", result: { ended: "partial", reason: "Only the builders were under test." } });
+  const providerReceipts = new WeakMap<Promise<unknown>, { value: unknown; completionDigest: string }>();
+  const provider = mockProvider((request) => {
+    try {
+      const value = (() => {
+        if (request.metadata?.source === "instructionAuthority") return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
+        if (request.taskKind === "loop_verification") return judgeReply("yes");
+        const loop = request.context.evidenceLoop!;
+        const evidence = loop.evidence as Entry[];
+        const tools = loop.tools.map((tool) => tool.toolId);
+        if (!tools.length) return decision({ kind: "tool_call", callId: "read", toolId: "none", input: {} });
+        if (tools.includes("project.write_plan")) {
+          supervisorDecisions += 1;
+          if (supervisorDecisions === 1) return decision({ kind: "tool_call", callId: "plan", toolId: "project.write_plan", input: PLAN });
+          if (supervisorDecisions === 2) return decision({ kind: "tool_call", callId: "dispatch.first", toolId: "project.dispatch", input: { reason: "Build the first part.", briefs: [brief("first", ["p1"], [])] } });
+          if (supervisorDecisions === 3) return decision({ kind: "tool_call", callId: "reset", toolId: "project.dispatch", input: { reason: "Restore this build's effects before replaying its predecessor.", briefs: [{ kind: "reset", subflowKey: "main", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.03, maxIterations: 20 }] } });
+          if (supervisorDecisions === 4) return decision({ kind: "tool_call", callId: "dispatch.second", toolId: "project.dispatch", input: { reason: "Build the dependent part on the restored site.", briefs: [brief("second", ["p2"], ["first"])] } });
+          return decision({ kind: "complete", result: { ended: "partial", reason: "Only the builders were under test." } });
+        }
+        const properties = (loop.completionSchema.properties ?? {}) as JsonObject;
+        if (properties.subflowKey === undefined) {
+          const reversals = [{ line: "honey", act: "act-1" }, { line: "oat-milk", act: "act-3" }, { line: "rye-bread", act: "act-2" }];
+          const reversal = reversals[resetCalls++];
+          if (reversal) return decision({ kind: "tool_call", callId: `reset.${reversal.act}`, toolId: "core.run_node", input: { node: REMOVE, parameters: { line: reversal.line }, consequences: ["delete"], undoes: reversal.act } });
+          return decision({ kind: "complete", result: { summary: "The build's cart additions were removed through their own controls." } });
+        }
+        const subflowKey = (properties.subflowKey as JsonObject).const as string;
+        seen[subflowKey] = evidence.map((entry) => structuredClone(entry));
+        return decision(builderDecision(subflowKey, evidence));
+      })();
+      // This fixture owns the complete synchronous script decision and counters;
+      // it starts no provider, timer, delegated callback or queued write.
+      const returned = Promise.resolve(value);
+      providerReceipts.set(returned, { value, completionDigest: createHash("sha256").update(JSON.stringify({ supervisorDecisions, resetCalls, value })).digest("hex") });
+      return returned;
+    } catch (error) {
+      return Promise.reject(error);
     }
-    const properties = (loop.completionSchema.properties ?? {}) as JsonObject;
-    if (properties.subflowKey === undefined) {
-      const reversals = [{ line: "honey", act: "act-1" }, { line: "oat-milk", act: "act-3" }, { line: "rye-bread", act: "act-2" }];
-      const reversal = reversals[resetCalls++];
-      if (reversal) return decision({ kind: "tool_call", callId: `reset.${reversal.act}`, toolId: "core.run_node", input: { node: REMOVE, parameters: { line: reversal.line }, consequences: ["delete"], undoes: reversal.act } });
-      return decision({ kind: "complete", result: { summary: "The build's cart additions were removed through their own controls." } });
-    }
-    const subflowKey = (properties.subflowKey as JsonObject).const as string;
-    seen[subflowKey] = evidence.map((entry) => structuredClone(entry));
-    return decision(builderDecision(subflowKey, evidence));
   });
   const unknown = ExecutionObservationSource.prototype.unknown;
+  let cancelUnsupported: (() => void) | undefined;
+  const originalConsoleError = console.error;
+  const coverageDiagnostic = vi.spyOn(console, "error").mockImplementation((message, ...details) => {
+    originalConsoleError.call(console, message, ...details);
+    if (message === "Isolated unsupported automation callback") cancelUnsupported?.();
+  });
+  const callbackFields = (identity: { receiver?: unknown; callback: unknown }): string[] => {
+    const receiver = identity.receiver;
+    if (receiver === null || typeof receiver !== "object" && typeof receiver !== "function") return [];
+    return Reflect.ownKeys(receiver).filter(key => Object.getOwnPropertyDescriptor(receiver, key)?.value === identity.callback).map(key => typeof key === "string" ? key : "symbol");
+  };
   let loggedUnknown = false;
   const unknownDiagnostic = vi.spyOn(ExecutionObservationSource.prototype, "unknown").mockImplementation(function (this: ExecutionObservationSource, handle) {
     if (!loggedUnknown) {
       loggedUnknown = true;
-      type Diagnostic = { identity: { callback: { name?: string } }; state: string; gap: boolean; children: Set<Diagnostic> };
+      type Diagnostic = { identity: { receiver?: unknown; callback: { name?: string } }; state: string; gap: boolean; children: Set<Diagnostic> };
       const source = this as unknown as { sourceKey: string; invocations: WeakMap<object, Diagnostic> };
       const actual = source.invocations.get(handle);
       console.error("Isolated first unknown callback", {
         source: source.sourceKey, callback: actual?.identity.callback.name, state: actual?.state, gap: actual?.gap,
+        receiverMethods: actual ? callbackFields(actual.identity) : [],
         children: [...actual?.children ?? []].map(child => ({ callback: child.identity.callback.name, state: child.state, gap: child.gap }))
       });
     }
     return unknown.call(this, handle);
   });
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 120, maxEstimatedCostUsd: 0.2 }), llmEvidenceRuntime: domain.binding, executionScopeAttestor: domain.scopeOwner, executionCallbackCompletions: domain.callbackCompletions });
+  type CompletionDiagnostic = { handle: object; identity: { receiver?: unknown; callback: { name?: string } }; state: string; gap: boolean; children: Set<CompletionDiagnostic>; contract?: { pure: boolean } };
+  const completionPrototype = ExecutionObservationSource.prototype as unknown as { complete(state: CompletionDiagnostic, outcome: { kind: string }, rechecking?: boolean): Promise<void> };
+  const complete = completionPrototype.complete;
+  let loggedIncomplete = false;
+  const completionDiagnostic = vi.spyOn(completionPrototype, "complete").mockImplementation(async function (this: ExecutionObservationSource, ...args: Parameters<typeof complete>) {
+    const [state, outcome] = args;
+    const claim = state.identity.callback.name === "claim";
+    let ready = "not_read";
+    if (claim) {
+      try { ready = this.frameCompletion(state.handle)?.disposition ?? "not_ready"; }
+      catch { ready = "unreadable"; }
+      phase("claim.complete.begin", { frame: ready, children: state.children.size, gap: state.gap, outcome: outcome.kind });
+    }
+    try {
+      await complete.apply(this, args);
+      if (claim) phase("claim.complete.end", { state: state.state });
+    } catch (error) {
+      phase("complete.reject", { role: claim ? "claim" : "other", code: errorLabel(error), error: error instanceof DOMException ? "DOMException" : error instanceof AggregateError ? "AggregateError" : error instanceof Error ? "Error" : "other" });
+      if (!diagnosticCleaning && !diagnosticCancelled) {
+        diagnosticCancelled = true;
+        phase("diagnostic.cancel_on_error");
+        cancelUnsupported?.();
+      }
+      throw error;
+    }
+    finally {
+      if (!loggedIncomplete && state.state !== "settled") {
+        loggedIncomplete = true;
+        console.error("Isolated first incomplete callback", {
+          source: (this as unknown as { sourceKey: string }).sourceKey,
+          callback: state.identity.callback.name, state: state.state, gap: state.gap,
+          receiverMethods: callbackFields(state.identity),
+          managed: Boolean(state.contract), pure: state.contract?.pure, outcome: outcome.kind,
+          children: [...state.children].map(child => ({ callback: child.identity.callback.name, state: child.state, gap: child.gap }))
+        });
+      }
+    }
+  });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 120, maxEstimatedCostUsd: 0.2 }), llmEvidenceRuntime: domain.binding, executionScopeAttestor: domain.scopeOwner, executionCallbackCompletions: {
+    configure(registrar) {
+      domain.callbackCompletions.configure(registrar);
+      registrar.manage({ receiver: provider, callback: provider.runTask, contract: "managed_direct_effects", consumeCompletion: ({ returned, outcome }) => {
+        if (!returned || outcome.kind !== "fulfilled") return null;
+        const receipt = providerReceipts.get(returned);
+        if (!receipt || receipt.value !== outcome.value) return null;
+        providerReceipts.delete(returned);
+        return { disposition: "settled", completionDigest: receipt.completionDigest, assessmentDigest: "isolated.script.decision.completed.no_queued_work" };
+      } });
+    }
+  } });
   service.bindNativeNodeRuntime(domain.runtime, undefined, domain.completions);
   const builds = automationStudioTestSettledBuilds(service, dataDir);
   cleanups.push(async () => {
+    diagnosticCleaning = true;
+    phase("test.cleanup.begin");
     try { await builds.cleanup(); }
     finally {
       unknownDiagnostic.mockRestore();
+      completionDiagnostic.mockRestore();
+      coverageDiagnostic.mockRestore();
       domain.scopeOwner.close();
     }
   });
   const { project, flow } = await blankFixture(service, "active", "example");
+  cancelUnsupported = () => { service.buildCancellation.cancel(project.id, flow.flowId); };
   // Each trial's and entry's session as it starts and ends, with the page the tab showed as it started.
   const internal = service as unknown as { writeRuntimeSession(projectId: string, session: { status: string; metadata?: JsonObject }, ...rest: unknown[]): Promise<unknown> };
   const write = internal.writeRuntimeSession.bind(service);

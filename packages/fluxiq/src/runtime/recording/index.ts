@@ -7,3 +7,5 @@ export * from "./indexing/index.ts";
 export * from "./mapping/index.ts";
 export * from "./sink/index.ts";
 export * from "./io/index.ts";
+export * from "./target-preparation/index.ts";
+export * from "./target-policy/index.ts";

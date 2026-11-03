@@ -1,0 +1,2 @@
+/** How a model is told to write a condition, used wherever one is refused. */
+export const AUTOMATION_STUDIO_ROUTE_CONDITION_FORM = "Write a condition as `<path> <test> [value]`: the path is one listed under routing.paths, and the test is exists, is missing, is, is not, contains, does not contain, matches, starts with, greater than, less than, is true or is false. Join tests with `and` or `or`, or write `when:` twice for both.";

@@ -2,12 +2,19 @@ import type { DomainOutputDefinition } from "../../domains/index.ts";
 import type { RegisteredOutputAction } from "./action.ts";
 import { compactJsonObject } from "./compact.ts";
 import type { PreparedOutputAction } from "./prepared-action.ts";
-import type { OutputTargetPreparer } from "./target-preparer.ts";
+import type { OutputTargetPreparationPort } from "./contracts/index.ts";
+import { outputDispatchFailure } from "./results/index.ts";
 import { invokeObservedOutputSync, type OutputExecutionObservation } from "./admission/internal/index.ts";
 /** Preparation changes only parameters; verified identity and confirmation stay original. */
-export function prepareOutputAction(action: RegisteredOutputAction, domainId: string | null, output: DomainOutputDefinition, preparer: OutputTargetPreparer | undefined, observation?: OutputExecutionObservation): PreparedOutputAction {
-  if (!preparer)
+export function prepareOutputAction(action: RegisteredOutputAction, domainId: string | null, output: DomainOutputDefinition, preparer: OutputTargetPreparationPort | undefined, observation?: OutputExecutionObservation): PreparedOutputAction {
+  if (!preparer) {
+    if (output.metadata?.outputTargetPreparationRequired === true) return {
+      ok: false,
+      error: `Output ${output.id} requires a registered domain target preparer.`,
+      failure: outputDispatchFailure("graph_validation_or_unknown_node", "output.target_preparer_missing", false, "target_resolution")
+    };
     return { ok: true, action };
+  }
   const view = Object.freeze({
     actionType: action.actionType,
     parameters: action.parameters,
@@ -16,7 +23,9 @@ export function prepareOutputAction(action: RegisteredOutputAction, domainId: st
     ...(action.confirmationTimeoutMs !== undefined ? { confirmationTimeoutMs: action.confirmationTimeoutMs } : {}),
     ...(action.metadata !== undefined ? { metadata: action.metadata } : {})
   });
-  const prepared = invokeObservedOutputSync(observation, { receiver: undefined, callback: preparer, args: [{ action: view, domainId, output }] });
+  const callback = typeof preparer === "function" ? preparer : preparer.callback;
+  const receiver = typeof preparer === "function" ? undefined : preparer.receiver;
+  const prepared = invokeObservedOutputSync(observation, { receiver, callback, args: [{ action: view, domainId, output }] });
   if (!prepared.ok)
     return prepared;
   return {

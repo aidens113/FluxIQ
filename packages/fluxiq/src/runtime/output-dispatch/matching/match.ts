@@ -1,4 +1,4 @@
-import { outputDispatchFailure } from "../results/index.ts";
+import { outputDispatchFailure } from "../contracts/index.ts";
 import type { ElementFingerprint, ElementFingerprintCandidate, ElementMatcher } from "../../target-matching/index.ts";
 import type { OutputTargetMatchResult } from "./result.ts";
 export function matchOutputTarget(fingerprint: ElementFingerprint, candidates: ElementFingerprintCandidate[] | undefined, minimumConfidence: number, elementMatcher: ElementMatcher | undefined): OutputTargetMatchResult {

@@ -7,6 +7,7 @@ export type FrameworkResult<TPayload = unknown> = {
 };
 
 export type { JsonPrimitive, JsonValue, JsonObject } from "@fluxiq/contracts/core";
+export { compactDefinedJsonObject } from "./json/index.ts";
 
 export type Clock = {
   now(): Date;

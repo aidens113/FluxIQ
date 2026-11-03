@@ -8,6 +8,7 @@ import { automationStudioRootInvocation } from "../../frames/index.ts";
 import { runAutomationStudioGraph } from "../../index.ts";
 import { dispatchAutomationStudioLifecycleEvent } from "../index.ts";
 import { dispatchInput, edge, fact, fakeHost, flowWith, HANDLER, HANDLER_END } from "./lifecycle-fixtures.ts";
+import { AutomationExpectationCollector, AutomationExpectationDiagnostics } from "../../expectation-observation/index.ts";
 
 /** About 1 MB of rows, as a read list's outputs hold them. */
 function bigRows(): JsonValue[] {
@@ -31,6 +32,7 @@ describe("a handler body's inputs", () => {
     const flow = readingFlow();
     const handed: Array<{ keys: string[]; ms: number }> = [];
     const invocation = automationStudioRootInvocation(flow, { currentSubflowId: "main", inputs: { who: "Amara" } }, async (target, options, onExecuted) => {
+      expect(AutomationExpectationDiagnostics.has(options)).toBe(true);
       const startedAt = performance.now();
       const trace = await runAutomationStudioGraph(target.graph, options, onExecuted);
       handed.push({ keys: Object.keys(options.inputs ?? {}).sort(), ms: performance.now() - startedAt });
@@ -39,8 +41,10 @@ describe("a handler body's inputs", () => {
     invocation.run.stack.push(invocation.frame);
     const values: Record<string, JsonValue> = { who: "Amara", "big.value": bigRows(), big: bigRows(), "tag.value": "friend requests", "other.value": "not read" };
     const host = fakeHost({ popup: "true", cleared: "true" });
+    const options = { invocation, hostRuntime: host.runtime };
+    AutomationExpectationDiagnostics.bind(options, new AutomationExpectationCollector());
 
-    const outcome = await dispatchAutomationStudioLifecycleEvent(dispatchInput(flow, { invocation, hostRuntime: host.runtime }, { event: "retry", values }));
+    const outcome = await dispatchAutomationStudioLifecycleEvent(dispatchInput(flow, options, { event: "retry", values }));
     // The before and after of t411 are read from this line: the body run's own time, withholding included.
     console.log(`t411 handler body run: ${handed[0]?.ms.toFixed(0)} ms, ${handed[0]?.keys.length} inputs`);
 

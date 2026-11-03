@@ -3,10 +3,12 @@ import type { ClientGatewaySession } from "../../contracts.ts";
 import type { RecordingBridgeState } from "../internal/index.ts";
 import { compactJsonObject } from "../values/index.ts";
 import { stringMetadataValue } from "../values/index.ts";
+import { matchesCaptureDomain, readCaptureRecording } from "./scoped/index.ts";
 
 export async function appendRecordingEvent<TTarget, TEvidence>(state: RecordingBridgeState<TTarget, TEvidence>, session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string): Promise<void> {
     const open = state.activeRecordings.get(state.recordingOwnerKey(session));
-    const active = event.recordingId === undefined || event.recordingId === open?.recordingId ? open : undefined;
+    const owned = event.recordingId === undefined || event.recordingId === open?.recordingId ? open : undefined;
+    const active = state.scopedIngress && owned ? { ...owned } : owned;
     // The recording this event belongs to is not open here: finalized, which is
     // immutable, or its start was refused. The event cannot be kept; the one thing
     // that must not happen is for it to disappear without anyone being told.
@@ -21,8 +23,13 @@ export async function appendRecordingEvent<TTarget, TEvidence>(state: RecordingB
       return;
     }
     await state.writeOrder.flush(state.recordingOwnerKey(session));
-    const domainId = event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
+    if (state.scopedIngress && !matchesCaptureDomain(active, event.domainId, event.metadata?.domainId)) {
+      await state.reportRejectedRecordingEvent(session, event, messageId, "Recording event domainId does not match its stored recording.");
+      return;
+    }
+    const domainId = state.scopedIngress ? active.domainId : event.domainId ?? active.domainId ?? stringMetadataValue(event.metadata, "domainId");
     const inputId = stringMetadataValue(event.metadata, "inputId");
+    if (state.scopedIngress && (!domainId || !inputId)) await readCaptureRecording(state, active);
     if (domainId && inputId && await state.recordGatewayInput({
       active,
       domainId,

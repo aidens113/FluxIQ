@@ -1,9 +1,10 @@
 import type { ExecutionObservationContext } from "../../execution-admission/index.ts";
-import type { ExecutionCallbackCompletion, ExecutionCallbackSettlement, ManagedExecutionCallbackRegistration, PreparedExecutionCallback } from "../contracts/index.ts";
+import type { ExecutionCallbackCompletion, ExecutionCallbackObservation, ExecutionCallbackSettlement, ManagedExecutionCallbackRegistration, PreparedExecutionCallback } from "../contracts/index.ts";
+import { ExecutionObservationBindings } from "../bindings.ts";
 import { ExecutionObservationSource } from "../source.ts";
 
 type Managed = Extract<ManagedExecutionCallbackRegistration<unknown, unknown[], unknown>, { contract: "managed_direct_effects" }>;
-type Issued = { source: ExecutionObservationSource; parent: ExecutionObservationContext; completion: ExecutionCallbackCompletion };
+type Issued = { source: ExecutionObservationSource; parent: ExecutionObservationContext; completion: ExecutionCallbackCompletion; rejected?: { readonly error: unknown } };
 
 // These are the canonical private-state readers, pinned before any producer awaits.
 const contextOf = ExecutionObservationSource.prototype.context;
@@ -15,13 +16,29 @@ export class OriginalExecutionPromiseReceipts {
   private readonly issued = new WeakMap<Promise<unknown>, Issued>();
   private readonly used = new WeakSet<Promise<unknown>>();
 
+  issueObserved(original: Promise<unknown>, observation: ExecutionCallbackObservation, completion: ExecutionCallbackCompletion): void {
+    const observed = ExecutionObservationBindings.read(observation);
+    this.issue(original, observed.source, observed.parent, completion);
+  }
+
+  /** Only an actual completed owner may attest its original rejected operation. */
+  issueRejectedObserved(original: Promise<unknown>, error: unknown, observation: ExecutionCallbackObservation, completion: ExecutionCallbackCompletion): void {
+    const observed = ExecutionObservationBindings.read(observation);
+    this.issueOutcome(original, observed.source, observed.parent, completion, { error });
+  }
+
   issue(original: Promise<unknown>, source: ExecutionObservationSource, parent: ExecutionObservationContext, completion: ExecutionCallbackCompletion): void {
+    this.issueOutcome(original, source, parent, completion);
+  }
+
+  private issueOutcome(original: Promise<unknown>, source: ExecutionObservationSource, parent: ExecutionObservationContext, completion: ExecutionCallbackCompletion, rejected?: { readonly error: unknown }): void {
     if (this.used.has(original)) throw new Error("execution.queue_receipt.reissued");
     this.used.add(original);
     this.issued.set(original, {
       source,
       parent: Object.freeze({ reservation: parent.reservation, parent: parent.parent }),
-      completion: Object.freeze({ disposition: completion.disposition, completionDigest: completion.completionDigest, assessmentDigest: completion.assessmentDigest })
+      completion: Object.freeze({ disposition: completion.disposition, completionDigest: completion.completionDigest, assessmentDigest: completion.assessmentDigest }),
+      ...(rejected ? { rejected: Object.freeze(rejected) } : {})
     });
   }
 
@@ -30,7 +47,8 @@ export class OriginalExecutionPromiseReceipts {
     const receipt = returned !== null && (typeof returned === "object" || typeof returned === "function")
       ? this.issued.get(returned as Promise<unknown>) : undefined;
     if (returned !== null && (typeof returned === "object" || typeof returned === "function")) this.issued.delete(returned as Promise<unknown>);
-    if (input.outcome.kind === "rejected") return { disposition: "pending", reason: "callback_threw" };
+    if (input.outcome.kind === "rejected" && (!receipt?.rejected || receipt.rejected.error !== input.outcome.error)) return { disposition: "pending", reason: "callback_threw" };
+    if (input.outcome.kind === "fulfilled" && receipt?.rejected) return { disposition: "unknown", code: "execution.queued_writer.outcome_mismatch" };
     if (receipt) {
       let actual: ExecutionObservationContext;
       try { actual = contextOf.call(receipt.source, input.invocation as PreparedExecutionCallback); }

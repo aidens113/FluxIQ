@@ -8,17 +8,16 @@
 //   for a repair is what the run has left: the trial is also the run's
 //   continuation, so no smaller cap applies.
 // - A declared expected state counts only when the host was asked about that
-//   attempt, answered, and judged every condition it was asked about. The host
-//   runtime is wrapped to observe its answers, and every other member of it is
-//   left as it was.
+//   attempt, answered, and judged every condition it was asked about. The engine
+//   records that original evaluator call without replacing the host or method.
 // - The executed trace, with real values, is returned for continuing the run
 //   and is never to be stored. The saved trace is the one to keep.
 // - Where the change came from, and what the failure it answers observed and
 //   expected, are returned as ids, codes and counts only, never values.
 import type { JsonObject } from "../../../../core/index.ts";
 import { copyAutomationExecutionOptions } from "../../../../engine/automation/execution-admission/index.ts";
+import { AutomationExpectationCollector, AutomationExpectationDiagnostics } from "../../../../engine/automation/expectation-observation/index.ts";
 import { parseAutomationStudioFlowChangeOrigin, type AutomationStudioFlowChangeOrigin, type AutomationStudioFlowDocument, type AutomationStudioFlowNode } from "../../model/index.ts";
-import type { AutomationNodeExpectationEvaluationContext, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
 import {
   runAutomationStudioGraph,
   type AutomationStudioGraphExecutionOptions,
@@ -26,7 +25,6 @@ import {
   type AutomationStudioNodeAttemptTrace,
   type AutomationStudioTransitionComparison
 } from "../executor/index.ts";
-import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
 import { automationStudioAttemptCapturedRecords, automationStudioAttemptDeclaredRoute, automationStudioAttemptSettled, automationStudioAttemptVerifiesState, automationStudioRetriedAttemptIds } from "./attempt-projection.ts";
 import type { AutomationStudioChangeTrialInput, AutomationStudioChangeTrialResult, AutomationStudioChangeVerdictAttempt } from "./contracts.ts";
 import { decideAutomationStudioChangeVerdict } from "./verdict.ts";
@@ -65,18 +63,14 @@ export type AutomationStudioFlowChangeTrialReport = AutomationStudioChangeTrialR
   expectedState?: JsonObject;
 };
 
-/** What the host answered for one attempt's expected state. */
-type HostEvaluation = "passed" | "failed" | "unknown";
-
 const FAILED_ROUTE = "failed";
 
 export async function trialAutomationStudioFlowChange(request: AutomationStudioFlowChangeTrialRequest): Promise<AutomationStudioFlowChangeTrialReport> {
-  const evaluations = new Map<string, HostEvaluation>();
+  const evaluations = new AutomationExpectationCollector();
   const options = copyAutomationExecutionOptions(copyAutomationExecutionOptions(request.options), { inputs: request.seedValues });
   if (request.startNodeId) options.startNodeId = request.startNodeId;
   else delete options.startNodeId;
-  const hostRuntime = observedHostRuntime(request.options.hostRuntime, evaluations);
-  if (hostRuntime) options.hostRuntime = hostRuntime;
+  AutomationExpectationDiagnostics.bind(options, evaluations);
   let executedTrace: AutomationStudioGraphExecutionTrace | undefined;
   const savedTrace = await runAutomationStudioGraph(request.candidate, options, (executed) => { executedTrace = executed; });
   if (!executedTrace) throw new Error("The trial run did not hand back the trace it executed.");
@@ -163,7 +157,7 @@ function verdictAttempt(
   request: AutomationStudioFlowChangeTrialRequest,
   comparison: AutomationStudioTransitionComparison | undefined,
   changed: ReadonlySet<string>,
-  evaluations: ReadonlyMap<string, HostEvaluation>,
+  evaluations: AutomationExpectationCollector,
   retried: ReadonlySet<string>
 ): AutomationStudioChangeVerdictAttempt {
   const node = candidate.nodes.find((candidateNode) => candidateNode.id === attempt.nodeId);
@@ -189,7 +183,7 @@ function verdictAttempt(
     outputIds,
     ...(expectedRoute !== undefined ? { expectedRoute } : {}),
     ...(expectedOutputIds.length ? { expectedOutputIds } : {}),
-    ...(declaresState ? { expectedState: evaluations.get(attempt.attemptId) ?? "unknown" } : {}),
+    ...(declaresState ? { expectedState: evaluations.outcome(attempt.attemptId) } : {}),
     ...(records ? { records } : {}),
     ...(verifiesState ? { verifiesState } : {}),
     ...(retried.has(attempt.attemptId) ? { retried: true as const } : {})
@@ -215,69 +209,4 @@ function declaredOutputIds(
   if (failed) return Object.keys(failed.expectedOutputs ?? {});
   const answeredOutputIds = Object.keys(answered?.expectedOutputs ?? {});
   return answeredOutputIds.every((outputId) => outputIds.includes(outputId)) ? answeredOutputIds : [];
-}
-
-
-/**
- * The host runtime with its expectation evaluator observed, keyed by the
- * attempt the host was asked about. An attempt asked twice, which only a Call
- * Flow child reusing an id can cause, is `unknown`. A throw is `unknown` and is
- * passed on unchanged. Every other member is read from the host itself, with
- * methods bound to it, so a host that keeps private state still works.
- *
- * A host's `passed` counts only once it has judged every condition it was
- * asked about, which is what `checkedConditionCount` reports. `passed: true` on
- * a short count is the host's documented answer for "nothing I could look at
- * said otherwise", not "the evidence held": a condition that names something
- * the page cannot be asked — the common case when a model authors them — comes
- * back unjudged and counted out. Reading `passed` alone turned that into
- * `expected_state: passed`, and a change nobody had evidence for into a
- * verified, resumable one. A short count is `unknown` here, which is never a
- * pass, so the change stays unproved and the run stays put.
- */
-function observedHostRuntime(
-  hostRuntime: AutomationStudioHostRuntimeBoundary | undefined,
-  evaluations: Map<string, HostEvaluation>
-): AutomationStudioHostRuntimeBoundary | undefined {
-  const evaluate = hostRuntime?.expectationEvaluator;
-  if (!hostRuntime || !evaluate) return hostRuntime;
-  const host: AutomationStudioHostRuntimeBoundary = hostRuntime;
-  const askedBy = new Map<string, string>();
-  const record = (context: AutomationNodeExpectationEvaluationContext, outcome: HostEvaluation) => {
-    if (!context.attemptId) return;
-    const previous = askedBy.get(context.attemptId);
-    askedBy.set(context.attemptId, context.source);
-    // The transition comparison re-checks a rejection before it builds the
-    // failure record, so a second answer from the same source is that re-check,
-    // is the one the run acted on, and replaces the first. Two answers from
-    // *different* sources are two different questions about one attempt, and
-    // nothing here can reconcile them, so that stays unknown.
-    evaluations.set(context.attemptId, previous !== undefined && previous !== context.source ? "unknown" : outcome);
-  };
-  const observed: AutomationNodeExpectationEvaluator = async (conditions, mode, timeoutMs, context) => {
-    let evaluation: Awaited<ReturnType<AutomationNodeExpectationEvaluator>>;
-    try {
-      evaluation = await evaluate.call(host, conditions, mode, timeoutMs, context);
-    } catch (error) {
-      record(context, "unknown");
-      throw error;
-    }
-    // Asked about nothing is judged nothing, so a `passed` over an empty list
-    // is unknown too rather than vacuously true.
-    const judged = conditions.length > 0 && (evaluation?.checkedConditionCount ?? 0) >= conditions.length;
-    record(context, evaluation?.passed === true && judged ? "passed" : evaluation?.passed === false ? "failed" : "unknown");
-    return evaluation;
-  };
-  // The proxy's own target is an empty object, so a frozen host cannot trip the
-  // invariants a proxy keeps for its target's fixed properties.
-  return new Proxy(Object.create(null) as AutomationStudioHostRuntimeBoundary, {
-    get(_empty, property) {
-      if (property === "expectationEvaluator") return observed;
-      const value: unknown = Reflect.get(host, property, host);
-      return typeof value === "function" ? value.bind(host) : value;
-    },
-    has(_empty, property) {
-      return Reflect.has(host, property);
-    }
-  });
 }

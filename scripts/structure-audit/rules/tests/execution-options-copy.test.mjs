@@ -50,6 +50,55 @@ function fixture(t, extra = {}, overrides = {}) {
 
 const paths = findings => findings.map(finding => finding.path);
 
+test("rejects rest stripping before a later canonical helper call", t => {
+  const ctx = fixture(t, {
+    "src/consumer.ts": `import type { ${TYPE} as O } from "./options.ts";
+import { copyAutomationExecutionOptions } from "./copy.ts";
+export function copy(options: O) {
+  const { label, ...baseOptions } = options;
+  return copyAutomationExecutionOptions(baseOptions);
+}`
+  });
+  const findings = run(ctx);
+  assert.deepEqual(paths(findings), ["src/consumer.ts"]);
+  assert.equal(findings[0].line, 4);
+  assert.match(findings[0].message, /object rest.*private companions/);
+  assert.match(findings[0].message, /copying the rest object cannot recover/);
+});
+
+test("rejects original option rest in parameters and assignment patterns", t => {
+  const ctx = fixture(t, {
+    "src/consumer.ts": `import type { ${TYPE} as O } from "./options.ts";
+export function parameter({ label, ...rest }: Readonly<O>) { return rest; }
+export function assignment(options: O) {
+  let label: string | undefined;
+  let rest: O;
+  ({ label, ...rest } = options);
+  return rest;
+}`
+  });
+  const findings = run(ctx);
+  assert.equal(findings.length, 2);
+  assert.ok(findings.every(finding => /object rest/.test(finding.message)));
+});
+
+test("allows original-source copying before deletion and unrelated JSON rest", t => {
+  const ctx = fixture(t, {
+    "src/consumer.ts": `import type { ${TYPE} as O } from "./options.ts";
+import { copyAutomationExecutionOptions } from "./copy.ts";
+export function copy(options: O) {
+  const next = copyAutomationExecutionOptions(options);
+  delete next.label;
+  return next;
+}
+export function json(data: { label?: string; maxSteps?: number }) {
+  const { label, ...rest } = data;
+  return rest;
+}`
+  });
+  assert.deepEqual(run(ctx), []);
+});
+
 test("uses the original type declaration and reports the exact expression and line", t => {
   const ctx = fixture(t, {
     "src/consumer.ts": `import type { ${TYPE} } from "./options.ts";

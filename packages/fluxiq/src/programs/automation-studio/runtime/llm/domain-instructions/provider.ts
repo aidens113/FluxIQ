@@ -1,5 +1,7 @@
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import type { AutomationStudioLlmTaskDomainInstructions } from "./task-domain-instructions.ts";
+import { invokeModelExecutionDelegate, modelExecutionFromCarrier, ModelExecutionReceiptOwner } from "../../../../../runtime/models/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/index.ts";
 
 /**
  * A provider that sends the bound domain's instructions with every request.
@@ -30,10 +32,22 @@ export function automationStudioLlmProviderWithDomainInstructions(
   const stamped = (request: AutomationStudioLlmTaskRequest): AutomationStudioLlmTaskRequest => ({ ...request, domainInstructions: request.domainInstructions ?? domainInstructions });
   const measureInput = provider.measureInput;
   const estimateCostUsd = provider.estimateCostUsd;
-  return {
-    metadata: provider.metadata,
-    runTask: async (request, execution) => await provider.runTask(stamped(request), execution),
-    ...(measureInput ? { measureInput: (request: AutomationStudioLlmTaskRequest) => measureInput.call(provider, stamped(request)) } : {}),
-    ...(estimateCostUsd ? { estimateCostUsd: (tokens: { inputTokens: number; outputTokens: number }) => estimateCostUsd.call(provider, tokens) } : {})
+  const originalRun = provider.runTask;
+  const completionOwner = new ModelExecutionReceiptOwner();
+  const runTask: AutomationStudioLlmProvider["runTask"] = (request, execution) => {
+    const observed = modelExecutionFromCarrier(execution, decorated, runTask);
+    return completionOwner.returning(invokeModelExecutionDelegate(observed, { receiver: provider, callback: originalRun, args: [stamped(request), execution] }, execution, execution?.signal), observed);
   };
+  const measured = measureInput ? (request: AutomationStudioLlmTaskRequest) => measureInput.call(provider, stamped(request)) : undefined;
+  const priced = estimateCostUsd ? (tokens: { inputTokens: number; outputTokens: number }) => estimateCostUsd.call(provider, tokens) : undefined;
+  const decorated: AutomationStudioLlmProvider = {
+    metadata: provider.metadata,
+    runTask,
+    ...(measured ? { measureInput: measured } : {}),
+    ...(priced ? { estimateCostUsd: priced } : {})
+  };
+  completionOwner.register({ receiver: decorated, callback: runTask });
+  if (measured && ExecutionCallbackPolicies.isPure(provider, measureInput!)) ExecutionCallbackPolicies.remember(decorated, measured, "pure");
+  if (priced && ExecutionCallbackPolicies.isPure(provider, estimateCostUsd!)) ExecutionCallbackPolicies.remember(decorated, priced, "pure");
+  return decorated;
 }

@@ -1,0 +1,40 @@
+# Actual domain target hooks
+
+Status: source/tests frozen. Root independently accepted 35 focused Core cases, 91 source-local Down cases and original-body/byte parity. Three owned fixture typing corrections are saved; final normal package checks, whole structure and guarded paired integration remain pending. Brief: `../briefs/domain-target-hooks.md`.
+
+Core native binding is instance-owned `runtime/native-execution/target-preparation/{reader,registry,index}.ts`, exposed as readonly `nativeRuntime.targetPreparation.output(domainId)` / `.recording(domainId)`. Both original callback/receiver pairs are validated together before SDK or native maps mutate, then committed only after SDK accepts. The exact original bundle remains receiver; no bound callback wrapper, cross-domain fallback or automatic custom-hook policy is installed. Collaborator registration is idempotent for the exact original pair; existing SDK duplicate-package refusal remains unchanged per Root instruction.
+
+Downstream now owns the actual old output-preparation algorithm at `domain/src/output-nodes/target-preparation/prepare.ts`. It uses Root's public browser-safe `fluxiq/runtime/output-dispatch/preparation` math/error seam and the actual web normalizer. `target-normalization/recording-entry.ts` projects ONLY parameters/target; null preserves the original entry. Existing target.elementTarget -> parameters.target -> raw target plus visualTarget precedence is retained. Original guard/validator and shared fingerprint/privacy helpers have one downstream authority; Core functions remain until Root completes its separate validator/ingress migration.
+
+The actual bundle installs both hooks. Its inspected default matcher bestCandidate function and original receiver are pinned before exposure. Only exact default callback+bundle pairs receive the existing browser-safe pure declaration. A supplied custom matcher/hook gets no automatic purity, and explicit missing hooks remain missing. Eight actual element-required IO definitions now carry registered metadata.outputTargetPreparationRequired:true; no action-copy or serialized manifest function grants anything.
+
+Recording and output compaction have different original bytes: output compaction drops empty arrays, while old ObjectDocuments drops undefined only. Root promoted the actual latter helper to public `compactDefinedJsonObject` in fluxiq/core (old exact alias); the recording projection consumes that owner. An explicit empty-array parameter/target-metadata regression preserves this difference. No local approximation or output-helper behavior change.
+
+Owned manifest: `.fluxiq/refactor/domain-target-hooks-owned.json` -> Core 4 source/2 changed tests; Down 13 source/19 changed tests; exact selectors 4 Core +21 Down. Thirteen existing domain/extension tests change ONLY the normalizer import to the actual public Down owner; all other original bytes are captured in `domain-target-hooks-import-retargets.json`.
+
+Original IO subject coverage is preserved by case: Core retains 4 generic cases (including two generic pre-dispatch refusals and generic saved-attempt privacy). Down legacy-policy has 6 actual preparer cases: four moved browser tests, the original missing-fingerprint assertion split from pre-dispatch, plus the entire original duplicate-target privacy path with an extra assertion proving the duplicate exists. All 8 original cases are accounted for; 26 literal oracle calls are preserved through strict node:test assertions. Map: `domain-target-hooks-legacy-case-map.json`. No Core-private import enters Down tests; they use public Core IO/runtime APIs and the real Down hook.
+
+Source captures for exact comparison: `domain-target-hooks-originals.json` (old native runtime, actual output preparer, ObjectDocuments, complete target model), `domain-target-hooks-down-originals.json`, `domain-target-hooks-io-original.ts`. These are ignored source-only captures, not package overlays or historical integration proof.
+
+Root-owned changes consumed, not edited: SDK hook/binding types, generic dispatch/required-hook behavior, pure public math/policy exports, actual Service/recording lock/ObjectDocuments/graph-options/validation/ingress composition, public Core parents/package/config and the undefined-only shared compactor. Accepted native SQL/performance source is unchanged.
+
+Validation observed:
+
+- Root exact three closed native-runtime subjects -> 30/30 passed; with Root's five actual recording-projection cases, 4 files/35 passed in 4.47s. The new registry subject has 10 cases and preserves SDK duplicate refusal, original callback/receiver/error identity and custom-hook non-purity.
+- Root exact ten closed Down subjects -> 91/91 passed, 512ms Node tests. This uses isolated current public-source aliases; it is not normal built/currency acceptance. Exact selectors/helpers are in `domain-target-hooks-owned.json`, `domain-target-hooks-node-tests.cjs` and `domain-target-hooks-public.cjs`.
+- `node .fluxiq/refactor/domain-target-hooks-parity.cjs` -> 27 actual target/output/recording function bodies, 17 retained native bodies, 13 exact import-only byte files and 4 retained generic IO oracle bodies, 0 mismatches. Root independently reran this parity.
+- `node .fluxiq/refactor/domain-target-hooks-bytes.cjs` -> 110 normalization, 72 recording projection (including empty arrays), 54 output preparation and 9 full validator comparisons: 245 actual-source JSON/error cases, 0 mismatches; public-source bundle 26 inputs. No package overlay or built guard bypass.
+- Closed-value metadata uses actual static and literal-dynamic erased imports: 3 Core +10 Down subjects exclude B's then-mutable source; 12 other selectors remained held. The first ignored walker had a Windows-path normalization bug and a broad artifact regex; those were corrected before any runtime acceptance. Initial probe output was discarded.
+- Root browser-bundled the two consumed public Core seams: preparation 7 inputs/3,820 bytes and policies 5 inputs/7,039 bytes, with zero Programs/framework/models/native-execution/Node imports. Root fixed the real failure-constructor aggregate edge; no polyfill or copied helper was used. The prepared whole Down browser-entry probe has not run.
+- The normal combined compiler found three new fixture errors: one replacement callback widened `ok:true` to boolean, and two actual callback uses shared an action fixture missing required actionType. Saved `true as const` and required fixture `actionType:"actual"`; no production or assertion change. Final normal package typing is Root-owned and pending.
+
+Owned whitespace/EOF was checked at first freeze; one relocation-only Core test EOF issue was tidied before runtime readers. No provider/paid/live-browser run or user data. Root owns normal builds, current-source guards and paired integration.
+
+Known next-phase gap, not implemented in this unit: registry.prepare currently directly reads the two bundle hook properties, so it does not yet reject accessors without executing them. Existing tests cover nonfunctions/replacements/receivers, not accessors. Root has frozen the new recordingTargetPolicy type seam and explicitly holds its registry/Down integration for the next brief. No claim that those future policy/accessor requirements are already satisfied.
+
+Outcome: Partial
+Changed: exact Core/Down owned manifest plus this report
+Validation: Root 35 Core +91 source-local Down cases passed; 27/17/13/4 AST/import/oracle groups and 245 JSON/error cases 0 mismatches; consumed public Core browser seams accepted
+Not verified: final normal package typing/whole structure, held compatibility/extension selectors, whole Down browser-source closure, current built/guarded paired integration, live browser/provider behavior; future policy/accessor unit
+Report: docs/working/runtime-ownership-refactor/reports/domain-target-hooks.md
+Notes: No git, agents, shared-doc, package/config/baseline, Source/receipt or accepted SQL edits. All own source/tests frozen; no active reader processes. Root owns integration.

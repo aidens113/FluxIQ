@@ -24,5 +24,5 @@ export async function automationObservationFixture() {
   const observation = engine.forParent(parent);
   const options: AutomationStudioGraphExecutionOptions = { retryPolicy: { maxAttempts: 4, backoffMs: [] } };
   bindAutomationExecutionObservation(options, observation);
-  return { store, authority, scope, root, rootPorts, origin, reserved, parent, observation, options, engine, output };
+  return { store, scopes, authority, scope, root, rootPorts, origin, reserved, parent, observation, options, engine, output };
 }

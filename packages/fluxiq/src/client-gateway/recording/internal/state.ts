@@ -19,7 +19,7 @@ import type { DiscardedClientMessage } from "./discarded.ts";
 import { compactJsonObject } from "../values/index.ts";
 import type { ClientGatewayRecordingBridgeOptions } from "../options.ts";
 import type { RecordingSink, RecordingReadOutcome } from "../../../runtime/recording/sink/index.ts";
-import type { RecordingStartPolicy, RecordingIngressPolicy, RecordingStartContext } from "../policies/index.ts";
+import type { RecordingStartPolicy, RecordingIngressPolicy, RecordingStartContext, RecordingScopedIngress } from "../policies/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
 import type { ClientGatewayService } from "../../service.ts";
 import { ClientRecordingWriteOrder } from "../writes/index.ts";
@@ -47,6 +47,9 @@ export class RecordingBridgeState<TTarget, TEvidence> {
   readonly sink: RecordingSink<TTarget, TEvidence>;
   readonly startPolicy: RecordingStartPolicy;
   readonly ingress: RecordingIngressPolicy<TTarget, TEvidence>;
+  readonly scopedIngress: RecordingScopedIngress<TTarget, TEvidence> | undefined;
+  readonly scopedIngressForRecording: RecordingScopedIngress<TTarget, TEvidence>["forRecording"] | undefined;
+  readonly scopedRecordingRead: RecordingSink<TTarget, TEvidence>["read"] | undefined;
   readonly stopDrainMs: number;
   io: IoRegistry | undefined;
   readonly activeRecordings = new Map<string, ClientRecordingRef>();
@@ -58,6 +61,9 @@ export class RecordingBridgeState<TTarget, TEvidence> {
     this.sink = options.sink;
     this.startPolicy = options.startPolicy;
     this.ingress = options.ingress;
+    this.scopedIngress = options.scopedIngress;
+    this.scopedIngressForRecording = this.scopedIngress?.forRecording;
+    this.scopedRecordingRead = this.scopedIngress ? this.sink.read : undefined;
     this.stopDrainMs = Math.max(0, options.stopDrainMs ?? 250);
     this.io = options.io;
     this.writeOrder = new ClientRecordingWriteOrder((recording, items) => this.appendOrDiscard(recording, items.map(item => item.sender), () => this.sink.appendBatch({ ...recording, entries: items.map(item => item.entry) })), failure => {
@@ -83,7 +89,7 @@ export class RecordingBridgeState<TTarget, TEvidence> {
   appendRecordingEvent(session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string): Promise<void> { return appendRecordingEvent(this, session, event, messageId); }
   reportRejectedRecordingEvent(session: ClientGatewaySession, event: ClientGatewayRecordingEvent, messageId: string, reason: string): Promise<void> { return reportRejectedRecordingEvent(this, session, event, messageId, reason); }
   rememberClosedRecording(ownerKey: string, closed: { recordingId: string; projectId?: string | null; domainId?: string | null }, finalized = true): void { return rememberClosedRecording(this, ownerKey, closed, finalized); }
-  noteDiscardedClientMessage(session: ClientGatewaySession, discarded: DiscardedClientMessage): void { return noteDiscardedClientMessage(this, session, discarded); }
+  noteDiscardedClientMessage(session: ClientGatewaySession, discarded: DiscardedClientMessage, originalClosed?: ClosedClientRecording): void { return originalClosed === undefined ? noteDiscardedClientMessage(this, session, discarded) : noteDiscardedClientMessage(this, session, discarded, originalClosed); }
   isExecutableActionInput(domainId: string | null | undefined, inputId: string | undefined): boolean { return isExecutableActionInput(this, domainId, inputId); }
   appendOrDiscard<T>(recording: ClientRecordingRef, senders: readonly ClientMessageSender[], append: () => Promise<T>): Promise<RecordingAppendResult<T>> { return appendOrDiscard(this, recording, senders, append); }
   readRecordingForFinalization(recording: ClientRecordingRef): Promise<RecordingReadOutcome<TTarget, TEvidence>> { return readRecordingForFinalization(this, recording); }

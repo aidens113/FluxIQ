@@ -37,4 +37,5 @@ export * from "./environment/index.ts";
 export * from "./compiled-plan/index.ts";
 export * from "./composite/index.ts";
 export * from "./integration/index.ts";
+export * from "./expectation-observation/index.ts";
 export { automationStudioExpectationSatisfiedAfterFailure, compareAutomationStudioTransition } from "./transitions/index.ts";

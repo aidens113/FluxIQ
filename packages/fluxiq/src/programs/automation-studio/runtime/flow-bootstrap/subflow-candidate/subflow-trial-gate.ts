@@ -376,7 +376,10 @@ export class AutomationStudioSubflowTrialGate {
     // The port is told the gate's verdict, even of a trial a stop then cuts short (header, t634).
     const stood = answer.verdict === "no" && answer.entryPrepared && asked.standingNo !== undefined;
     const advised = answer.entryPrepared ? this.earlierAdvice.remember({ revision: answer.revision, verdict: answer.verdict, feedback: answer.feedback, standingNo: asked.standingNo, plan: latest.subflows ? { subflows: latest.subflows } : undefined }) : undefined;
-    if (!readOnly && port.weighed) await observeAutomationStudioTrialResultPolicy(request, { receiver: port, callback: port.weighed, args: [{ answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}), ...(advised ? { advised } : {}) }] });
+    if (!readOnly && port.weighed) {
+      const weighed = { answer: structuredClone(answer), ...(stood ? { standingNo: structuredClone(asked.standingNo) } : {}), ...(advised ? { advised } : {}) };
+      await observeAutomationStudioTrialResultPolicy(request, { receiver: port, callback: port.weighed, args: [weighed] }, weighed);
+    }
     signal.throwIfAborted();
     const landed = answer.acts ?? [];
     const leftOnSite = siteless || recorded || !resetOwner ? undefined : await observeAutomationStudioTrialResultPolicy(request, { receiver: resetOwner, callback: resetOwner.trialRan, args: [landed, answer.trialRunId] }, landed);

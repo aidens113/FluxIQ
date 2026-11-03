@@ -1,5 +1,8 @@
+import type { AutomationStudioChangeProposalPatch as ChangeProposalPatch } from "../../../flows/executable/change/proposal/index.ts";
+import type { AutomationStudioFlowAdaptation as FlowAdaptationRecord } from "../../../flows/executable/adaptation/index.ts";
 import type { ExecutableChangeProposalMode, ExecutableChangeProposalStatus, ExecutableChangeProposalKind, ExecutableAdaptationRiskLevel, ExecutableAdaptationStatus, ExecutableChangeEntryPoint, ExecutableChangeOrigin, ExecutableChangeValidationKind, ExecutableAdaptationValidationResult } from "../../../flows/executable/change/index.ts";
 import type { ExecutableDefinitionStatus } from "../../../flows/executable/index.ts";
+import type { FlowInstruction, InstructionScope, InstructionTag, InstructionRequirement } from "../../../flows/authoring/index.ts";
 import type { ExecutableRouteTarget, ExecutableRouteRule, ExecutableRouter, ExecutableSubflowTarget, ExecutableRouteDecision } from "../../../flows/executable/routing/index.ts";
 import type { AutomationStudioFailureRecord, AutomationStudioRunDatasetSummary, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -85,46 +88,13 @@ export type AutomationStudioFlowSubflow = ExecutableSubflowTarget & {
   metadata?: JsonObject;
 };
 
-export type AutomationStudioInstructionScope =
-  | { kind: "global" }
-  | { kind: "project"; projectId: string }
-  | { kind: "flow"; projectId: string; flowId: string }
-  | { kind: "router"; projectId: string; flowId: string; routerId: string }
-  | { kind: "subflow"; projectId: string; flowId: string; subflowId: string }
-  | { kind: "node"; projectId: string; flowId: string; nodeId: string; subflowId?: string }
-  | { kind: "on_error"; projectId: string; flowId: string; subflowId?: string; nodeId?: string }
-  | { kind: "adaptation_review"; projectId: string; flowId: string; subflowId?: string };
+export type AutomationStudioInstructionScope = InstructionScope;
 
-export type AutomationStudioInstructionTag =
-  | "generation"
-  | "runtime"
-  | "error"
-  | "router"
-  | "subflow"
-  | "review"
-  | "safety";
+export type AutomationStudioInstructionTag = InstructionTag;
 
-export type AutomationStudioInstructionRequirement = "advisory" | "required";
+export type AutomationStudioInstructionRequirement = InstructionRequirement;
 
-export type AutomationStudioFlowInstruction = {
-  schemaVersion: "0.1";
-  instructionId: string;
-  title: string;
-  body: string;
-  scope: AutomationStudioInstructionScope;
-  priority: number;
-  status: AutomationStudioFlowExpansionStatus;
-  requirement: AutomationStudioInstructionRequirement;
-  tags?: AutomationStudioInstructionTag[];
-  sourceActorId?: string;
-  linkedRunIds?: string[];
-  linkedAdaptationIds?: string[];
-  linkedRecordingIds?: string[];
-  linkedSubflowIds?: string[];
-  createdAt: number;
-  updatedAt: number;
-  metadata?: JsonObject;
-};
+export type AutomationStudioFlowInstruction = FlowInstruction;
 
 export type AutomationStudioChangeProposalMode = ExecutableChangeProposalMode;
 
@@ -191,14 +161,7 @@ export type AutomationStudioDeterministicPath = {
   returnToNodeId?: string;
 };
 
-export type AutomationStudioChangeProposalPatch = {
-  kind: AutomationStudioChangeProposalKind;
-  targetId?: string;
-  summary: string;
-  before?: JsonValue;
-  after?: JsonValue;
-  metadata?: JsonObject;
-};
+export type AutomationStudioChangeProposalPatch = ChangeProposalPatch;
 
 export type AutomationStudioFlowChangeProposal = {
   schemaVersion: "0.1";
@@ -500,31 +463,7 @@ export type AutomationStudioFlowChangeValidationKind = ExecutableChangeValidatio
 /** One observed run of a change. */
 export type AutomationStudioFlowAdaptationValidationResult = ExecutableAdaptationValidationResult;
 
-export type AutomationStudioFlowAdaptation = {
-  schemaVersion: "0.1";
-  adaptationId: string;
-  flowId: string;
-  projectId: string;
-  subflowId?: string;
-  sourceRunId?: string;
-  sourceRecordingIds?: string[];
-  sourceInstructionIds?: string[];
-  trigger: string;
-  observedState?: JsonObject;
-  expectedState?: JsonObject;
-  failedAction?: JsonObject;
-  diagnosis?: string;
-  patch: AutomationStudioChangeProposalPatch[];
-  validationResults?: AutomationStudioFlowAdaptationValidationResult[];
-  appliedTo?: Array<{ kind: "router" | "subflow" | "expectation" | "action_target" | "instruction"; id: string }>;
-  status: AutomationStudioFlowAdaptationStatus;
-  author: "runtime" | "llm" | "user" | "system";
-  riskLevel: AutomationStudioAdaptationRiskLevel;
-  proposalId?: string;
-  createdAt: number;
-  updatedAt: number;
-  metadata?: JsonObject;
-};
+export type AutomationStudioFlowAdaptation = FlowAdaptationRecord;
 
 export type AutomationStudioAdaptationPolicyPreset =
   | "locked"

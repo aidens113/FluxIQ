@@ -63,6 +63,10 @@ import { automationStudioInstructedActs } from "../flow-bootstrap/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type runAutomationStudioLlmHarness } from "../llm/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 import { createActionInstructionAuthority } from "../../../../runtime/action-permissions/instruction/once/index.ts";
+import { createObservedActionInstructionAuthority, prepareInstructionModelRun, invokePreparedInstructionModelRun } from "../../../../runtime/flow-authoring/instruction-observation/index.ts";
+import { AuthoringExecutionScope } from "../../../../runtime/flow-authoring/execution/observation/index.ts";
+import { ExecutionCallbackPolicies, OriginalExecutionPromiseReceipts, type ExecutionObservationSource } from "../../../../runtime/execution-observation/index.ts";
+import type { ModelExecutionOptions } from "../../../../runtime/models/execution/index.ts";
 
 type HarnessInput = Parameters<typeof runAutomationStudioLlmHarness>[0];
 type HarnessResult = Awaited<ReturnType<typeof runAutomationStudioLlmHarness>>;
@@ -93,7 +97,9 @@ export type AutomationStudioInstructionAuthorityRoute = AutomationStudioInstruct
 const NON_COMPLETE: AutomationStudioInstructionRouteReading = Object.freeze({ state: "unavailable", reason: "non_complete" });
 
 export function automationStudioFlowBootstrapInstructionAuthority(input: {
-  run: (request: HarnessInput) => Promise<HarnessResult>;
+  run: (request: HarnessInput, execution?: ModelExecutionOptions) => Promise<HarnessResult>;
+  /** The original configured producer, supplied only for observed build invocation. */
+  observation?: ExecutionObservationSource | undefined;
   projectId: string;
   flowId: string;
   /** The Flow's instructions, as the build's other calls are given them. */
@@ -108,8 +114,14 @@ export function automationStudioFlowBootstrapInstructionAuthority(input: {
   const acts = automationStudioInstructedActs(input.active.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n")).map((act) => ({ id: act.id, quote: act.quote, ...(act.source ? { source: act.source } : {}) }));
   const completionSchema = automationStudioInstructionReadingSchema(acts);
   const decisionSchema: JsonObject = { description: READ_DECISION, ...buildAutomationStudioLlmEvidenceLoopDecisionSchema([], completionSchema, true) };
-  const ask = async (): Promise<AutomationStudioInstructionReading> => {
-    const answer = await input.run({
+  const originalRun = input.run;
+  const configured = input.observation;
+  const receipts = new OriginalExecutionPromiseReceipts();
+  const ask = (): Promise<AutomationStudioInstructionReading> => {
+    const current = AuthoringExecutionScope.of(reader);
+    if (configured && current?.context.callbacks !== configured) throw new Error("instruction_observation.current_scope_required");
+    const observation = current?.context.callbacks.forParent(current.context.parent);
+    const request: HarnessInput = {
       taskKind: "evidence_tool_decision",
       projectId: input.projectId,
       flowId: input.flowId,
@@ -121,21 +133,35 @@ export function automationStudioFlowBootstrapInstructionAuthority(input: {
       ...(input.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: input.maxEstimatedCostUsd } : {}),
       expectedOutput: "evidence_tool_decision",
       metadata: { source: "instructionAuthority" }
-    });
+    };
+    async function execute(): Promise<AutomationStudioInstructionReading> {
+      const invocation = observation ? await prepareInstructionModelRun(observation, input, originalRun, request, configured) : undefined;
+      try {
+        const answer = invocation ? await invokePreparedInstructionModelRun(invocation) : await originalRun.call(input, request);
     // A read refused before the provider was invoked -- the build's purse out of calls or money -- was never
     // sent, so it is no call and spent nothing. Counting it made a build that sent exactly its allowance
     // report one call over it (`run-mux6nxst-c9bca37c`: 48 sent, 49 published, a judged Flow failed).
-    if (answer.providerInvocation !== "not_attempted") {
-      usage.calls += 1;
-      usage.estimatedInputTokens += answer.request.estimatedInputTokens;
-      usage.inputTokens += answer.usage?.inputTokens ?? 0;
-      usage.outputTokens += answer.usage?.outputTokens ?? 0;
-      usage.totalTokens += answer.usage?.totalTokens ?? 0;
-      usage.estimatedCostUsd += answer.usage?.estimatedCostUsd ?? 0;
+        if (answer.providerInvocation !== "not_attempted") {
+          usage.calls += 1;
+          usage.estimatedInputTokens += answer.request.estimatedInputTokens;
+          usage.inputTokens += answer.usage?.inputTokens ?? 0;
+          usage.outputTokens += answer.usage?.outputTokens ?? 0;
+          usage.totalTokens += answer.usage?.totalTokens ?? 0;
+          usage.estimatedCostUsd += answer.usage?.estimatedCostUsd ?? 0;
+        }
+        const decision = answer.ok && answer.response?.kind === "evidence_tool_decision" ? answer.response.decision : undefined;
+        const reading = decision?.kind === "complete" ? readAutomationStudioInstructionReading({ result: decision.result, instructions: input.active, acts }) : { instructed: automationStudioInstructedReadUnanswered(acts), route: NON_COMPLETE };
+        if (observation && invocation?.completion() === "settled") receipts.issueObserved(returned, observation, { disposition: "settled", completionDigest: "instruction.read.original_runner_acknowledged", assessmentDigest: "instruction.read.usage_and_parsing_complete" });
+        return reading;
+      } catch (error) {
+        if (observation && invocation?.completion() === "settled") receipts.issueRejectedObserved(returned, error, observation, { disposition: "settled", completionDigest: "instruction.read.original_runner_rejection_acknowledged", assessmentDigest: "instruction.read.original_error_preserved" });
+        throw error;
+      }
     }
-    const decision = answer.ok && answer.response?.kind === "evidence_tool_decision" ? answer.response.decision : undefined;
-    if (decision?.kind !== "complete") return { instructed: automationStudioInstructedReadUnanswered(acts), route: NON_COMPLETE };
-    return readAutomationStudioInstructionReading({ result: decision.result, instructions: input.active, acts });
+    const returned = execute();
+    return returned;
   };
-  return { ...createActionInstructionAuthority({ read: ask }), usage };
+  const reader = { read: ask };
+  ExecutionCallbackPolicies.rememberManaged({ receiver: reader, callback: ask, contract: "managed_direct_effects", consumeCompletion: receipt => receipts.consume(receipt) });
+  return { ...(configured ? createObservedActionInstructionAuthority(reader, configured) : createActionInstructionAuthority(reader)), usage };
 }

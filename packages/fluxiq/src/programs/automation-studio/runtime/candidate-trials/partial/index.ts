@@ -5,6 +5,7 @@ export { inheritPartialTrialContext } from "./inherit.ts";
 export { observePartialTrialCallback } from "./observe.ts";
 export { observePartialTrialSync } from "./observe-sync.ts";
 export { managePartialTrialFrame } from "./frame.ts";
+export { managePartialTrialCallback } from "./manage-callback.ts";
 export { bindPartialTrialFrame } from "./bind-frame.ts";
 export type { PartialTrialReadOnlyOwner } from "./read-only-owner.ts";
 export { bindPartialTrialReadOnly } from "./bind-read-only.ts";

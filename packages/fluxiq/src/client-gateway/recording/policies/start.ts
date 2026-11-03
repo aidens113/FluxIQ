@@ -7,5 +7,6 @@ import type { RecordingStartContext } from "./start-context.ts";
 export interface RecordingStartPolicy {
   description(value: unknown, origin: "host" | "client"): RecordingDescriptionOutcome;
   context(input: { session: ClientGatewaySession; request: ClientGatewayStartRecordingRequest; origin: "host" | "client" }): RecordingStartContext | Promise<RecordingStartContext>;
+  recheck?(input: { session: ClientGatewaySession; request: ClientGatewayStartRecordingRequest; context: Extract<RecordingStartContext, { ok: true }> }): void | Promise<void>;
   readonly diagnosticMetadata: JsonObject;
 }

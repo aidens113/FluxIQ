@@ -51,7 +51,7 @@
 // The step is the one every phase of a project build arrives by, the
 // assembled Flow's first step included (`./arrival-node.ts`, t593).
 
-import { inheritAutomationExecutionObservation } from "../../../../../engine/automation/execution-admission/index.ts";
+import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../model/index.ts";
@@ -160,11 +160,11 @@ export async function runAutomationStudioDetachedSubflow(input: AutomationStudio
   const signal = input.signal ?? input.options?.signal;
   const now = input.options?.now ?? Date.now;
   const startedAt = now();
-  const { referenceNow: suppliedReferenceNow, ...baseOptions } = input.options ?? {};
-  if (input.options) inheritAutomationExecutionObservation(input.options, baseOptions);
+  const suppliedReferenceNow = input.options?.referenceNow;
+  const options = copyAutomationExecutionOptions(input.options);
+  delete options.referenceNow;
   const referenceNow = automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
-  const options = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
-  inheritAutomationExecutionObservation(baseOptions, options);
+  if (referenceNow !== undefined) options.referenceNow = referenceNow;
   const candidateIdentity = automationStudioDetachedSubflowCandidateIdentity(identity);
   const refused = (code: string, extra: Pick<AutomationStudioDetachedSubflowResult, "planIssues"> = {}): AutomationStudioDetachedSubflowResult => ({
     partial: true,

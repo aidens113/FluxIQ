@@ -1,4 +1,4 @@
-import type { OutputDispatchIo, OutputDispatchRuntime, OutputTargetPreparer } from "../../../runtime/output-dispatch/index.ts";
+import type { OutputDispatchIo, OutputDispatchRuntime, OutputTargetPreparationPort } from "../../../runtime/output-dispatch/index.ts";
 import type { AutomationStudioRunEnvironment } from "../../../runtime/environment/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../contracts/index.ts";
 import type { AutomationNativeExecutionPort } from "./native-runtime.ts";
@@ -25,5 +25,5 @@ export type AutomationGraphOptionsInput = {
   /** Where the run's clock, waits and randomness come from; absent, the live environment. */
   environment?: AutomationStudioRunEnvironment | undefined;
   /** Explicit trusted target adaptation; absence leaves parameters opaque. */
-  targetPreparer?: OutputTargetPreparer | undefined;
+  targetPreparer?: OutputTargetPreparationPort | undefined;
 };

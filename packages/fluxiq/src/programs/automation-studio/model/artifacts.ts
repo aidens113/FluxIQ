@@ -1,8 +1,9 @@
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioSchemaVersion } from "./evidence.ts";
+import type { ProjectArtifactKind } from "../../../framework/persistence/index.ts";
 
 /** `task`, `routine`, and owner-bound `flow` are legacy compatibility kinds. New executable work uses canonical Flow APIs. */
-export type AutomationStudioProjectArtifactKind = "task" | "routine" | "config" | "flow";
+export type AutomationStudioProjectArtifactKind = ProjectArtifactKind;
 
 /** @deprecated Ownership is retained only for legacy Flow-document compatibility. */
 export type AutomationStudioFlowOwnerKind = "task" | "routine" | "policy";

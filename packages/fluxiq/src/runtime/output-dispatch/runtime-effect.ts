@@ -4,7 +4,7 @@ import type { AutomationNodeExecutionResult } from "../../components/automation/
 import type { FluxIQRuntimeWithheldValues } from "../contracts.ts";
 import { automationStudioReferenceNow } from "../reference-time/index.ts";
 import type { OutputDispatchIo, OutputDispatchRuntime } from "./ports/index.ts";
-import type { OutputTargetPreparer } from "./target-preparer.ts";
+import type { OutputTargetPreparationPort } from "./contracts/index.ts";
 import { awaitConfirmation } from "./confirmation/index.ts";
 import { compactJsonObject } from "./compact.ts";
 import { prepareOutputAction } from "./prepare-action.ts";
@@ -12,7 +12,7 @@ import { registeredOutputActionFromPayload } from "./effect-action.ts";
 import { dispatchRegisteredOutput } from "./io.ts";
 import { dispatchedRoute, dispatchFailure, confirmationFailureMessage, missingOutputIdResult, unregisteredOutputResult, elementTargetRejectionResult, failedDispatchResult, targetResolutionField, clearedWaitField, actionabilityField } from "./results/index.ts";
 import { OutputObservationBindings, OutputOrchestrationCallbacks, invokeObservedOutputMethod, invokeObservedOutputSync, type OutputExecutionObservation } from "./admission/internal/index.ts";
-export function createRuntimeOutputEffectDispatcher(io: OutputDispatchIo, domainId: string | null | undefined, runtime: OutputDispatchRuntime, targetPreparer?: OutputTargetPreparer) {
+export function createRuntimeOutputEffectDispatcher(io: OutputDispatchIo, domainId: string | null | undefined, runtime: OutputDispatchRuntime, targetPreparer?: OutputTargetPreparationPort) {
   return async (effect: {
     type: string;
     payload?: JsonValue;

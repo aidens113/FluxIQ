@@ -5,7 +5,7 @@ it("retains generic synchronous gap behavior until the owning adapter explicitly
   const f = await observationFixture();
   const value = Object.freeze({ original: true });
   const owner = { read: () => value };
-  const callback = () => f.source.invokeSync(f.source.forParent(f.source.context(prepared)), { receiver: owner, callback: owner.read, args: [] });
+  const callback = (): typeof value => f.source.invokeSync(f.source.forParent(f.source.context(prepared)), { receiver: owner, callback: owner.read, args: [] });
   f.source.manage({ receiver: undefined, callback, contract: "managed_direct_effects", consumeCompletion: ({ invocation }) => f.source.frameCompletion(invocation) });
   const call = { receiver: undefined, callback, args: [] as [] };
   const prepared = await f.source.prepare(f.observation, call);

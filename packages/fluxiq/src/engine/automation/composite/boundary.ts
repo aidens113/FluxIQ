@@ -1,4 +1,4 @@
-import { copyAutomationExecutionOptions, inheritAutomationExecutionObservation } from "../execution-admission/index.ts";
+import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
 // The typed boundary every call crosses (state-aware recovery plan, C1): a Call
 // Flow node into a published, version-pinned Flow, and a Call Subflow node into
 // a sibling Subflow graph of the same automation. One implementation, so the
@@ -68,11 +68,14 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
   // "No start node is available in this flow." A partial run's stop node is the
   // root's too: a child node sharing its id runs on. And the parent's frame is
   // the parent's: the child runs as a frame of its own.
-  const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, invocation: _parentInvocation, ...childBase } = parentOptions;
+  const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, invocation: _parentInvocation } = parentOptions;
+  const childBase = copyAutomationExecutionOptions(parentOptions);
+  delete childBase.startNodeId;
+  delete childBase.stopAfterNodeId;
+  delete childBase.invocation;
   // The child's defaults come from its declared interface: authored, not supplied (`trace-withholding.ts`, `supply`).
   const overridden = copyAutomationExecutionOptions(childBase, request.childOverrides);
   const childOptions = copyAutomationExecutionOptions(overridden, { inputs: childInputs, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) });
-  inheritAutomationExecutionObservation(parentOptions, childOptions);
   let childTrace: AutomationStudioGraphExecutionTrace = { status: "failed", startedAt: now, finishedAt: now, attempts: [], values: {}, effects: [], message: "Child Flow did not execute." };
   let childFrame: AutomationStudioInvocationOptions | undefined;
   let childUncertain = false;

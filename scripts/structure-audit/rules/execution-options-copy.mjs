@@ -1,4 +1,4 @@
-// Execution option objects carry private companions that object spread cannot copy.
+// Execution option objects carry private companions that object spread/rest cannot copy.
 // Recognize the configured original declaration through the compiler, never by a
 // variable name, a matching property bag, or serialized execution metadata.
 import fs from "node:fs";
@@ -52,14 +52,25 @@ function compilerOptions(ts, filename) {
   return { ...parsed.options, noEmit: true, allowJs: true };
 }
 
-function spreadNodes(ts, source) {
-  const spreads = [];
+function copyNodes(ts, source) {
+  const copies = [];
   const visit = node => {
-    if (ts.isSpreadAssignment(node)) spreads.push(node);
+    if (ts.isSpreadAssignment(node)) {
+      const pattern = node.parent;
+      const assignment = pattern.parent;
+      const rest = ts.isObjectLiteralExpression(pattern) && ts.isBinaryExpression(assignment)
+        && assignment.left === pattern && assignment.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+      copies.push({ node, expression: rest ? assignment.right : node.expression, rest });
+    }
+    if (ts.isBindingElement(node) && node.dotDotDotToken && ts.isObjectBindingPattern(node.parent)) {
+      const declaration = node.parent.parent;
+      const expression = ts.isVariableDeclaration(declaration) && declaration.initializer ? declaration.initializer : declaration;
+      copies.push({ node, expression, rest: true });
+    }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  return spreads;
+  return copies;
 }
 
 function originalSymbol(ts, checker, symbol) {
@@ -161,7 +172,7 @@ function inspect(ctx, configured) {
   };
   const source = ctx.scriptFiles.filter(file => configured.from.some(prefix => under(slashes(file), prefix)) && !ctx.isTestFile(file) && !slashes(file).split("/").some(part => ctx.CONFIG.testRootDirNames.includes(part)));
   for (const prefix of configured.from) if (!source.some(file => under(slashes(file), prefix))) throw new Error(`executionOptionsCopy.from entry ${prefix} names no inspected production source.`);
-  const candidates = source.filter(file => ctx.read(file).includes("...") && spreadNodes(ts, ctx.parse(file)).length);
+  const candidates = source.filter(file => ctx.read(file).includes("...") && copyNodes(ts, ctx.parse(file)).length);
   const options = compilerOptions(ts, configured.tsconfig);
   const program = ts.createProgram({ rootNames: [...new Set([...candidates.map(file => path.resolve(configured.root, file)), configured.declaration, configured.copy])], options });
   const checker = program.getTypeChecker();
@@ -178,14 +189,15 @@ function inspect(ctx, configured) {
       findings.push(failure(`${file}:syntax`, "Execution-option spreads cannot be verified while this source has syntax errors.", file, 1));
       continue;
     }
-    for (const node of spreadNodes(ts, parsed)) {
+    for (const { node, expression: original, rest } of copyNodes(ts, parsed)) {
       if (key(parsed.fileName) === key(helper.fileName) && node.pos >= allowed.pos && node.end <= allowed.end) continue;
-      const kind = optionExpression(ts, checker, owner, node.expression);
+      const kind = optionExpression(ts, checker, owner, original);
       if (!kind) continue;
       const { line, character } = parsed.getLineAndCharacterOfPosition(node.getStart(parsed));
-      const expression = node.expression.getText(parsed);
-      const reason = kind === "unresolved" ? "cannot resolve this original execution-option alias" : "object spread loses the original execution-option private companions";
-      findings.push(failure(`${file}:${line + 1}:${character + 1}`, `${reason}: ...${expression}. Use ${COPY_EXPORT}(source, changes) instead.`, file, line + 1));
+      const expression = original.getText(parsed);
+      const reason = kind === "unresolved" ? "cannot resolve this original execution-option alias" : `object ${rest ? "rest" : "spread"} loses the original execution-option private companions`;
+      const remedy = rest ? `Copy the ORIGINAL options with ${COPY_EXPORT} first, then delete excluded fields; copying the rest object cannot recover companions.` : `Use ${COPY_EXPORT}(source, changes) instead.`;
+      findings.push(failure(`${file}:${line + 1}:${character + 1}`, `${reason}: ${rest ? expression : `...${expression}`}. ${remedy}`, file, line + 1));
     }
   }
   return findings;

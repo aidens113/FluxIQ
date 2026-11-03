@@ -15,7 +15,8 @@ import { automationStudioExpectationRequest, automationStudioReadinessCeilingMs,
 import type { AutomationStudioActualTransition, AutomationStudioExpectedTransition, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison, AutomationStudioTransitionComparisonStatus } from "../contracts.ts";
 import { expectedTransitionForNode } from "./expected.ts";
 
-import { invokeAutomationCallback, automationCallbackObservation } from "../execution-admission/kernel/index.ts";
+import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
+import { invokeAutomationExpectation } from "../expectation-observation/index.ts";
 
 // How a structured failure category reads as a transition comparison for a
 // failed attempt. Typed as exhaustive, so a new category cannot ship without
@@ -134,7 +135,8 @@ export async function attemptWithHostExpectationEvaluation(
   attempt: AutomationStudioNodeAttemptTrace,
   options: AutomationStudioGraphExecutionOptions
 ): Promise<AutomationStudioNodeAttemptTrace> {
-  const evaluate = options.hostRuntime?.expectationEvaluator;
+  const host = options.hostRuntime;
+  const evaluate = host?.expectationEvaluator;
   const expectedState = attempt.transitionComparison?.expected.expectedState;
   // A waiting attempt has not finished, and the expectation node already asked
   // the host itself, so neither is asked twice. An expected state with no keys
@@ -147,7 +149,7 @@ export async function attemptWithHostExpectationEvaluation(
   const stateRef = currentStateRef(attempt);
   const ask = (timeoutMs?: number): Promise<AutomationNodeExpectationEvaluation> => {
     const request = automationStudioExpectationRequest(expectedState, timeoutMs);
-    return invokeAutomationCallback(options, { receiver: options.hostRuntime, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
+    return invokeAutomationExpectation(options, { receiver: host, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
       source: "transition_comparison",
       nodeId: attempt.nodeId,
       attemptId: attempt.attemptId,
@@ -237,7 +239,7 @@ export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, 
     const windowMs = Math.max(declared.timeoutMs, automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs));
     const request = automationStudioExpectationRequest(expectedState, windowMs);
     const stateRef = currentStateRef(attempt);
-    const verdict = await invokeAutomationCallback(options, { receiver: host, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
+    const verdict = await invokeAutomationExpectation(options, { receiver: host, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
       source: "transition_comparison",
       nodeId: attempt.nodeId,
       attemptId: attempt.attemptId,

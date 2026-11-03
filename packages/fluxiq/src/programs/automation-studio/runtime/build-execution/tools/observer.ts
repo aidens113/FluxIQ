@@ -11,6 +11,7 @@ import { AutomationStudioBuildToolCallbackScope } from "./callback-scope.ts";
 import { withAutomationStudioBuildToolCallbackScope } from "./with-callback-scope.ts";
 import { AutomationStudioBuildToolAuxiliaryCalls } from "./auxiliary-calls.ts";
 import { AutomationStudioProjectBuildToolObservers } from "./project.ts";
+import { AutomationStudioBuildToolPermissions } from "./permission.ts";
 
 /** One configured cohort observes the original tools and their real backend callbacks. */
 export class AutomationStudioBuildToolObserver {
@@ -143,18 +144,21 @@ export class AutomationStudioBuildToolObserver {
     const original = AutomationStudioBuildToolRequests.of(request);
     if (!original || original.observer !== this || original.kind === "preparing") throw new Error("execution_observation.foreign_tool_request");
     const series = original.role === "scope" ? this.series.forInvocation(Object.freeze({})) : original.series;
-    const pending: AutomationStudioBuildToolRequestState = { observer: this, role: "invocation", series, kind: "preparing", ...(original.run ? { run: original.run } : {}) };
-    AutomationStudioBuildToolRequests.advance(request, original, pending);
     const factory = this.manage(pinned);
+    if (!factory) AutomationStudioBuildToolPermissions.validate(request, original, series);
+    const pending: AutomationStudioBuildToolRequestState = { observer: this, role: "invocation", series, kind: "preparing", ...(original.run ? { run: original.run } : {}), ...(original.permission ? { permission: original.permission } : {}) };
+    AutomationStudioBuildToolRequests.advance(request, original, pending);
     if (!factory) this.backends.begin(series);
     const invocation = await this.callbacks.prepare(this.callbacks.forParent(original.parent), pinned, signal);
     if (!factory) this.backends.entered(series, invocation);
     const parent = this.callbacks.context(invocation);
-    const active: AutomationStudioBuildToolRequestState = { observer: this, role: "invocation", series, kind: "active", parent, ...(original.run ? { run: original.run } : {}) };
+    const active: AutomationStudioBuildToolRequestState = { observer: this, role: "invocation", series, kind: "active", parent, ...(original.run ? { run: original.run } : {}), ...(original.permission ? { permission: original.permission } : {}) };
     AutomationStudioBuildToolRequests.advance(request, pending, active);
     let result: Awaited<TResult>;
     let primary: { error: unknown } | undefined;
+    let restorePermission: (() => void) | undefined;
     try {
+      if (!factory) restorePermission = AutomationStudioBuildToolPermissions.enter(request, active);
       result = factory || originalCoreCarrier
         ? await withAutomationStudioBuildToolCallbackScope(request, () => this.callbacks.invoke(invocation, pinned), factory ? pinned.receiver : originalCoreCarrier)
         : await this.callbacks.invoke(invocation, pinned);
@@ -165,6 +169,9 @@ export class AutomationStudioBuildToolObserver {
       this.lastCallbacks.set(request, invocation);
       const owner = this.descendantOwners.get(request);
       if (owner) this.lastCallbacks.set(owner, invocation);
+      const cleanupErrors: unknown[] = [];
+      try { restorePermission?.(); }
+      catch (cleanupError) { cleanupErrors.push(cleanupError); }
       try {
         const current = AutomationStudioBuildToolRequests.of(request);
         if (current !== active || current.observer !== this || current.role !== "invocation" || current.series !== series || current.run !== original.run || current.parent.reservation !== original.parent.reservation) {
@@ -175,9 +182,11 @@ export class AutomationStudioBuildToolObserver {
         const resumed: AutomationStudioBuildToolRequestState = original.role === "scope" ? { ...original, role: "invocation", series } : original;
         AutomationStudioBuildToolRequests.advance(request, current, resumed);
       } catch (cleanupError) {
-        if (primary) throw new AggregateError([primary.error, cleanupError], "Tool callback and parent restoration failed.");
-        throw cleanupError;
+        cleanupErrors.push(cleanupError);
       }
+      if (cleanupErrors.length && primary) throw new AggregateError([primary.error, ...cleanupErrors], "Tool callback and parent restoration failed.");
+      if (cleanupErrors.length === 1) throw cleanupErrors[0];
+      if (cleanupErrors.length > 1) throw new AggregateError(cleanupErrors, "Tool callback parent restoration failed.");
     }
     if (!factory && this.callbacks.completion(invocation) !== "settled") {
       this.callbacks.unknown(invocation);

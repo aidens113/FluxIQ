@@ -11,6 +11,8 @@ Use single canonical Source/AuthoringScope/OriginalExecutionPromiseReceipts; no 
 Preserve real queue order, rootless/file/SQL bytes, first-error identity when cleanup succeeds and unknown/reopen refusal. Drain all owned pending work; if run and write failures coexist, expose both without masking the primary or leaving writes unattended.
 Must not touch B runtime/models or llm/harness, C instruction/once/creation.reading, Root service.ts/fixture/parents/config/baselines, previous storage/metrics bodies or unrelated spending features.
 If shared generic budget contracts require a broader exact leaf, name it before editing. Keep dependency direction neutral; Studio spend owner is temporary until full canonical migration.
+Released canonical runtime/agents/ledger original ctor/reserve and minted complete/release; projected-cost original estimator and combine-holds drain. Only inspected original methods may acknowledge; overrides stay unsupported.
+Released exact Studio llm/run-budget.ts default policy declarations +constructor/forwarding reserve slice, to preserve separate execution context into the actual base ledger. No blanket subclass purity; arbitrary policy callbacks require genuine observation.
 Focused tests: actual held ProgramJsonStore write; original onSettled call binding; real write+lost ACK and independent reopen zero second IO; interleaved calls get their own prefix; cached/unsent reading no new charge; existing accounting/ceiling/refusal tests unchanged.
 No provider/live/paid/browser/panel/user-data operations or whole suites. Freeze before joint checks.
 Report docs/working/runtime-ownership-refactor/reports/spend-settlement-completion.md with standard return contract.

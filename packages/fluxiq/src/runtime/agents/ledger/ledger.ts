@@ -1,6 +1,9 @@
 import { modelRunCallRecord, type ModelRunCallDescription, type ModelRunCallRecord } from "./record.ts";
 import type { ModelRunBudgetAllowance, ModelRunBudgetLimits, ModelRunBudgetReservationInput, ModelRunBudgetReservation, ModelRunBudgetDiagnostic } from "./types.ts";
-import type { ModelRunLedgerPolicy } from "./policy.ts";
+import type { ModelReceiptPolicy, ModelRunLedgerPolicy } from "./policy.ts";
+import type { ModelExecutionOptions } from "../../models/execution/index.ts";
+import { ExecutionCallbackPolicies } from "../../execution-observation/policies/index.ts";
+import { invokeOwnedExecutionCallbackSync } from "../../execution-observation/owned/index.ts";
 
 type PendingReservation = {
   inputTokens: number;
@@ -43,6 +46,7 @@ export class ModelRunBudgetLedger {
     }
     if ((limits.maxEstimatedCostUsdPerRun ?? this.policy.defaultCostCeilingUsd) > 10) throw new Error("maxEstimatedCostUsdPerRun exceeds the server ceiling.");
     this.maxCallsPerRun = limits.maxCallsPerRun ?? this.policy.maxCallsPerRun;
+    ExecutionCallbackPolicies.remember(this, nativeReserve, "pure");
   }
 
   /** Restore only a complete settled receipt. A failed validation never changes the ledger. */
@@ -74,7 +78,8 @@ export class ModelRunBudgetLedger {
     return { ok: true, close: () => { state.costWindows.delete(key); } };
   }
 
-  reserve(input: ModelRunBudgetReservationInput): ModelRunBudgetReservation {
+  reserve(input: ModelRunBudgetReservationInput, execution?: ModelExecutionOptions): ModelRunBudgetReservation {
+    const observation = execution?.observation;
     const requestedCost = input.maxEstimatedCostUsd ?? this.policy.defaultCostCeilingUsd;
     if (!/^[a-z0-9_.:-]{1,200}$/i.test(input.runId) || !/^[a-z0-9_.:-]{1,200}$/i.test(input.requestId)
       || !Number.isSafeInteger(input.estimatedInputTokens) || input.estimatedInputTokens < 0
@@ -118,60 +123,68 @@ export class ModelRunBudgetLedger {
     this.states.set(input.runId, state);
     for (const window of state.costWindows.values()) window.pending.add(input.requestId);
     let completed = false;
-    return {
-      ok: true,
-      lease: {
-        requestId: input.requestId,
-        complete: (usage, outcome) => {
-          if (completed) return;
-          completed = true;
-          const reserved = state.pending.get(input.requestId);
-          if (!reserved) return;
-          state.pending.delete(input.requestId);
-          state.completedRequestIds.add(input.requestId);
-          state.calls += 1;
-          if (reserved.allowance === "exploration") state.explorationCalls += 1;
-          const suppliedInput = nonNegativeInteger(usage?.inputTokens);
-          const suppliedOutput = nonNegativeInteger(usage?.outputTokens);
-          const suppliedTotal = nonNegativeInteger(usage?.totalTokens);
-          const validUsage = suppliedInput !== undefined && suppliedOutput !== undefined && suppliedTotal === suppliedInput + suppliedOutput;
-          const tokenBreach = validUsage && (suppliedInput > reserved.inputTokens || suppliedOutput > reserved.outputTokens || suppliedTotal > reserved.totalTokens);
-          const inputTokens = validUsage ? suppliedInput : reserved.inputTokens;
-          const outputTokens = validUsage ? suppliedOutput : reserved.outputTokens;
-          const totalTokens = validUsage ? suppliedTotal : reserved.totalTokens;
-          state.inputTokens += inputTokens;
-          state.outputTokens += outputTokens;
-          state.totalTokens += totalTokens;
-          const suppliedCost = usage?.estimatedCostUsd;
-          const validCost = typeof suppliedCost === "number" && Number.isFinite(suppliedCost) && suppliedCost >= 0;
-          const costBreach = validCost && suppliedCost > reserved.estimatedCostUsd;
-          const estimatedCostUsd = validCost ? suppliedCost : reserved.estimatedCostUsd;
-          state.estimatedCostUsd += estimatedCostUsd;
-          for (const window of state.costWindows.values()) if (window.pending.delete(input.requestId)) window.spentUsd += estimatedCostUsd;
-          if (tokenBreach || costBreach) state.budgetBreaches += 1;
-          if (state.records.length >= this.policy.recordLimit) {
-            state.unrecordedCalls += 1;
-            return;
-          }
-          state.records.push(modelRunCallRecord({
-            sequence: state.calls,
-            requestId: input.requestId,
-            allowance: reserved.allowance,
-            description: reserved.call,
-            outcome,
-            usage,
-            charged: { inputTokens, outputTokens, totalTokens, estimatedCostUsd, tokens: validUsage ? "reported" : "reserved", cost: validCost ? "reported" : "reserved" },
-            budgetBreach: tokenBreach || costBreach
-          }, this.policy));
-        },
-        release: () => {
-          if (completed) return;
-          completed = true;
-          state.pending.delete(input.requestId);
-          for (const window of state.costWindows.values()) window.pending.delete(input.requestId);
+    const lease: Extract<ModelRunBudgetReservation, { ok: true }>["lease"] = {
+      requestId: input.requestId,
+      complete: (usage, outcome) => {
+        if (completed) return;
+        completed = true;
+        const reserved = state.pending.get(input.requestId);
+        if (!reserved) return;
+        state.pending.delete(input.requestId);
+        state.completedRequestIds.add(input.requestId);
+        state.calls += 1;
+        if (reserved.allowance === "exploration") state.explorationCalls += 1;
+        const suppliedInput = nonNegativeInteger(usage?.inputTokens);
+        const suppliedOutput = nonNegativeInteger(usage?.outputTokens);
+        const suppliedTotal = nonNegativeInteger(usage?.totalTokens);
+        const validUsage = suppliedInput !== undefined && suppliedOutput !== undefined && suppliedTotal === suppliedInput + suppliedOutput;
+        const tokenBreach = validUsage && (suppliedInput > reserved.inputTokens || suppliedOutput > reserved.outputTokens || suppliedTotal > reserved.totalTokens);
+        const inputTokens = validUsage ? suppliedInput : reserved.inputTokens;
+        const outputTokens = validUsage ? suppliedOutput : reserved.outputTokens;
+        const totalTokens = validUsage ? suppliedTotal : reserved.totalTokens;
+        state.inputTokens += inputTokens;
+        state.outputTokens += outputTokens;
+        state.totalTokens += totalTokens;
+        const suppliedCost = usage?.estimatedCostUsd;
+        const validCost = typeof suppliedCost === "number" && Number.isFinite(suppliedCost) && suppliedCost >= 0;
+        const costBreach = validCost && suppliedCost > reserved.estimatedCostUsd;
+        const estimatedCostUsd = validCost ? suppliedCost : reserved.estimatedCostUsd;
+        state.estimatedCostUsd += estimatedCostUsd;
+        for (const window of state.costWindows.values()) if (window.pending.delete(input.requestId)) window.spentUsd += estimatedCostUsd;
+        if (tokenBreach || costBreach) state.budgetBreaches += 1;
+        if (state.records.length >= this.policy.recordLimit) {
+          state.unrecordedCalls += 1;
+          return;
         }
+        const policy = this.policy;
+        const isTaskKind = policy.isTaskKind;
+        const isStage = policy.isStage;
+        const receiptPolicy: ModelReceiptPolicy = observation ? {
+          isTaskKind: (value: unknown): value is string => invokeOwnedExecutionCallbackSync(observation, { receiver: policy, callback: isTaskKind, args: [value] }),
+          isStage: (value: unknown): value is string => invokeOwnedExecutionCallbackSync(observation, { receiver: policy, callback: isStage, args: [value] })
+        } : policy;
+        state.records.push(modelRunCallRecord({
+          sequence: state.calls,
+          requestId: input.requestId,
+          allowance: reserved.allowance,
+          description: reserved.call,
+          outcome,
+          usage,
+          charged: { inputTokens, outputTokens, totalTokens, estimatedCostUsd, tokens: validUsage ? "reported" : "reserved", cost: validCost ? "reported" : "reserved" },
+          budgetBreach: tokenBreach || costBreach
+        }, receiptPolicy));
+      },
+      release: () => {
+        if (completed) return;
+        completed = true;
+        state.pending.delete(input.requestId);
+        for (const window of state.costWindows.values()) window.pending.delete(input.requestId);
       }
     };
+    // Only this originally observed lease carries the context needed to cover its supplied policy callbacks.
+    if (observation) ExecutionCallbackPolicies.remember(lease, lease.complete, "pure");
+    ExecutionCallbackPolicies.remember(lease, lease.release, "pure");
+    return { ok: true, lease };
   }
 
   /**
@@ -204,6 +217,8 @@ export class ModelRunBudgetLedger {
     return { calls: state.records.map((record) => structuredClone(record)), omitted: state.unrecordedCalls };
   }
 }
+
+const nativeReserve = ModelRunBudgetLedger.prototype.reserve;
 
 
 function createRunState(): RunState {

@@ -1,3 +1,7 @@
+import type { AutomationStudioCandidateTrialVerdict } from "../../../../../flows/authoring/plan/index.ts";
+// Compatibility aliases; the framework owns the actual declarations and implementations.
+export { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS } from "../../../../../flows/authoring/plan/index.ts";
+export type { AutomationStudioCandidateTrialVerdict } from "../../../../../flows/authoring/plan/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
@@ -96,9 +100,6 @@ export type AutomationStudioCandidateTrialRequest = {
    */
   siteChange?: (acts: readonly AutomationStudioTrialChangeAct[], signal?: AbortSignal) => Promise<AutomationStudioTrialChangeOutcome>;
 };
-
-export const AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS = Object.freeze(["yes", "no", "unsure", "not_judged", "execution_failed"] as const);
-export type AutomationStudioCandidateTrialVerdict = (typeof AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS)[number];
 
 /**
  * One lasting act a trial's run made that landed (t462): a step whose node

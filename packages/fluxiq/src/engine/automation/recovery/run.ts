@@ -11,7 +11,7 @@ import { automationStudioAttemptIsRetryable, automationStudioRetryBackoffMs, typ
 import { automationStudioExpectationSatisfiedAfterFailure } from "../transitions/index.ts";
 import { automationStudioObstructionWayOut } from "../node-execution/index.ts";
 import { emitAutomationStudioActivityStepInterference } from "../../../runtime/activity/index.ts";
-import { invokeAutomationCallback } from "../execution-admission/kernel/index.ts";
+import { invokeAutomationExpectation } from "../expectation-observation/index.ts";
 
 /** The node metadata that marks a Flow node as one whose job is to clear interference: an overlay, a consent wall, a timed prompt. */
 const CLEARS_INTERFERENCE_METADATA_KEY = "clearsInterference";
@@ -230,7 +230,7 @@ export async function automationStudioAwaitNodeReadiness(
   const now = options.now ?? Date.now;
   const startedAt = now();
   try {
-    const evaluation = await invokeAutomationCallback(options, { receiver: host, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
+    const evaluation = await invokeAutomationExpectation(options, { receiver: host, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
       source: "transition_comparison",
       nodeId: node.id,
       attemptId,

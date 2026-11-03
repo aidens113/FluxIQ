@@ -2,14 +2,18 @@ import { reserveClosedRecordingOwner } from "../values/index.ts";
 import type { ClientGatewaySession } from "../../contracts.ts";
 import type { DiscardedClientMessage } from "../internal/index.ts";
 import type { RecordingBridgeState } from "../internal/index.ts";
+import type { ClosedClientRecording } from "../internal/index.ts";
 import { compactJsonObject } from "../values/index.ts";
 import { discardedClientMessageSummary } from "./summary.ts";
 
-export function noteDiscardedClientMessage<TTarget, TEvidence>(state: RecordingBridgeState<TTarget, TEvidence>, session: ClientGatewaySession, discarded: DiscardedClientMessage): void {
+export function noteDiscardedClientMessage<TTarget, TEvidence>(state: RecordingBridgeState<TTarget, TEvidence>, session: ClientGatewaySession, discarded: DiscardedClientMessage, originalClosed?: ClosedClientRecording): void {
     const ownerKey = state.recordingOwnerKey(session);
-    const closed = state.closedRecordings.get(ownerKey) ?? { discardedEvents: 0, discardedActions: 0, reported: false };
-    reserveClosedRecordingOwner(state.closedRecordings, ownerKey);
-    state.closedRecordings.set(ownerKey, closed);
+    const closed = originalClosed ?? state.closedRecordings.get(ownerKey) ?? { discardedEvents: 0, discardedActions: 0, reported: false };
+    // An addressed older row can report its own loss without replacing the current owner's slot.
+    if (originalClosed === undefined) {
+      reserveClosedRecordingOwner(state.closedRecordings, ownerKey);
+      state.closedRecordings.set(ownerKey, closed);
+    }
     const executable = discarded.executable ?? state.isExecutableActionInput(discarded.domainId ?? closed.domainId, discarded.inputId);
     closed.discardedEvents += 1;
     if (executable) closed.discardedActions += 1;

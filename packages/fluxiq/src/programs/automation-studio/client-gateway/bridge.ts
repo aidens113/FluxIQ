@@ -1,4 +1,5 @@
 import { ClientGatewayRecordingBridge } from "../../../client-gateway/recording/index.ts";
+import { TrustedRecordingDomain } from "../../../client-gateway/recording/policies/index.ts";
 import type { ActionTarget, EvidenceReference } from "../model/index.ts";
 import { createAutomationStudioRecordingSink } from "../runtime/service/recording-sink/index.ts";
 import { studioRecordingIngress } from "./ingress/index.ts";
@@ -15,12 +16,14 @@ export class AutomationStudioClientGatewayBridge extends ClientGatewayRecordingB
   private readonly recordingPolicy: StudioRecordingStartPolicy;
 
   constructor(options: AutomationStudioClientGatewayBridgeOptions) {
-    const policy = new StudioRecordingStartPolicy(options.clientRecordingContextProvider);
+    const scope = new TrustedRecordingDomain(options.gateway, { receiver: options.automationStudio, assertDomain: options.automationStudio.assertProjectDomainAccess });
+    const policy = new StudioRecordingStartPolicy(options.clientRecordingContextProvider, scope);
     super({
       gateway: options.gateway,
       sink: createAutomationStudioRecordingSink(options.automationStudio),
       startPolicy: policy,
       ingress: studioRecordingIngress,
+      scopedIngress: options.automationStudio.recordingIngress,
       ...(options.io !== undefined ? { io: options.io } : {}),
       ...(options.stopDrainMs !== undefined ? { stopDrainMs: options.stopDrainMs } : {})
     });

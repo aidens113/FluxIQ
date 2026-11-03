@@ -12,3 +12,6 @@ export * from "./scope.ts";
 export * from "./host-lease.ts";
 // The reset brief's completion schema, which the build's reset ports send as its request's (F3).
 export * from "./reset-completion.ts";
+export { automationStudioProjectDispatchTrialPort } from "./trial-port.ts";
+export { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
+export { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.ts";

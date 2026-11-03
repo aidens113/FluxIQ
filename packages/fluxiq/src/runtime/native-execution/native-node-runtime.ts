@@ -14,12 +14,15 @@ import type { AutomationStudioNativeRuntimeGrants } from "./grants.ts";
 import type { AutomationStudioNativeExecution } from "./execution.ts";
 import { executeObservedNative, bindObservedNativeResult, type NativeExecutionObservation } from "./admission/index.ts";
 import type { AutomationStudioRecordingCandidateParameterNormalizer, AutomationStudioRecordingMapperBinding } from "../../components/automation/importer/recording-mapper/index.ts";
+import { NativeTargetPreparationRegistry, nativeTargetPreparationData } from "./target-preparation/index.ts";
 /**
  * Explicit trusted-local implementation binder. This is an authorization and
  * tracing boundary, not a security sandbox or containment mechanism.
  */
 export class AutomationStudioNativeNodeRuntime {
   readonly sdk = new AutomationStudioImporterSdkRegistry();
+  private readonly targetPreparers = new NativeTargetPreparationRegistry();
+  readonly targetPreparation = this.targetPreparers.reader;
   private readonly bindings = new Map<string, {
     manifest: AutomationStudioImporterSdkManifest;
     implementation: AutomationStudioNativeNodeImplementation;
@@ -65,7 +68,10 @@ export class AutomationStudioNativeNodeRuntime {
     const registeredNormalizer = this.recordingParameterNormalizers.get(manifest.domainId);
     if (parameterNormalizer && registeredNormalizer && registeredNormalizer.original !== parameterNormalizer)
       throw new Error(`A different recording candidate parameter normalizer is already registered for domain ${manifest.domainId}.`);
+    const recordingTargetPolicyRequired = nativeTargetPreparationData(manifest, "recordingTargetPolicyRequired");
+    const registerTargetPreparation = this.targetPreparers.prepare(manifest.domainId, bundle, recordingTargetPolicyRequired);
     this.sdk.register(manifest);
+    registerTargetPreparation();
     if (bundle.elementMatcher)
       this.elementMatchers.set(manifest.domainId, bundle.elementMatcher);
     if (parameterNormalizer && !registeredNormalizer) {

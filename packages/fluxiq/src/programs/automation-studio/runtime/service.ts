@@ -1,7 +1,10 @@
 import { summarizeNativeRuntime, type NativeRuntimeSummary } from "../../../runtime/native-execution/index.ts";
+import { domainRecordingIngress, type RecordingScopedIngress } from "../../../client-gateway/recording/policies/index.ts";
+import { studioRecordingIngress } from "../client-gateway/ingress/index.ts";
 import { pinNativeExecutionCompletions, type NativeManagedCompletionRegistration } from "../../../runtime/native-execution/admission/index.ts";
 import type { ExecutionScopeAttestor } from "../../../runtime/execution-admission/index.ts";
-import { captureExecutionCallbackCompletions, type ExecutionCallbackCompletionConfiguration, type ExecutionCallbackCompletionPolicy } from "../../../runtime/execution-observation/index.ts";
+import { captureExecutionCallbackCompletions, ExecutionCallbackPolicies, type ExecutionCallbackCompletionConfiguration, type ExecutionCallbackCompletionPolicy } from "../../../runtime/execution-observation/index.ts";
+import { invokeInstructionModelRun } from "../../../runtime/flow-authoring/index.ts";
 import { closeAutomationStudioRuntimeResources } from "./service/lifecycle/index.ts";
 import { createAutomationStudioBuildExecution, bindAutomationStudioObservedBuildTools, automationStudioExecutionGatewayTargets, AutomationStudioProjectBuildToolObservers } from "./build-execution/index.ts";
 import { bindTrialExecutionSource } from "./candidate-trials/observation/index.ts";
@@ -28,6 +31,7 @@ import {
   createPublishedFlowSnapshot,
   getCallFlowConfiguration,
   createRecordingSession,
+  validateRecordingSession,
   diffStateSnapshots,
   finalizeRecordingSession,
   type AutomationStudioFlowArtifact,
@@ -61,6 +65,8 @@ import {
   type AutomationStudioRuntimeSession,
   type AutomationStudioTaskArtifact,
   type AppendRecordingEntryInput,
+  type ActionTarget,
+  type EvidenceReference,
   type CreateRecordingSessionInput,
   type PolicyGraph,
   type PolicyNode,
@@ -403,6 +409,14 @@ export class AutomationStudioService {
   private readonly ready: Promise<void>;
   private ioRuntime?: { io: IoRegistry; domainId: string | null };
   private nativeNodeRuntime?: AutomationStudioNativeNodeRuntime;
+  readonly recordingIngress: RecordingScopedIngress<ActionTarget, EvidenceReference> = {
+    forRecording: recording => {
+      const domainId = recording.environment.domainId;
+      if (domainId !== null && (typeof domainId !== "string" || !domainId.trim() || domainId !== domainId.trim())) throw new Error("recording.domain_scope_refused");
+      const policies = this.nativeNodeRuntime?.targetPreparation;
+      return domainRecordingIngress(studioRecordingIngress, domainId ? policies?.policy(domainId) : undefined, Boolean(domainId && policies?.requiresRecordingPolicy(domainId)));
+    }
+  };
   private nativeExecutionCompletions: readonly NativeManagedCompletionRegistration[] = Object.freeze([]);
   private readonly executionCallbackCompletions: ExecutionCallbackCompletionPolicy | undefined;
   private hostExecutionCallbackCompletions: ExecutionCallbackCompletionPolicy | undefined;
@@ -735,7 +749,14 @@ export class AutomationStudioService {
     await this.ready;
     return await this.locks.withRecordingMutationLock(this.projectPaths.root ? input.projectId : undefined, input.recordingId, async () => {
       const description = requiredRecordingDescription(input.description);
-      const created = createRecordingSession({ ...input, description, environment: { ...input.environment, domainId: input.domainId ?? input.environment?.domainId ?? null } });
+      const initialState = studioRecordingIngress.initialState(input.initialState);
+      const projectDomain = input.projectId ? (await this.projects.findProjectSummary(input.projectId)).domainId ?? null : null;
+      const domainId = input.domainId !== undefined ? input.domainId : input.environment?.domainId !== undefined ? input.environment.domainId : projectDomain;
+      if (domainId !== null && (typeof domainId !== "string" || !domainId.trim() || domainId !== domainId.trim())) throw new Error("recording.domain_scope_refused");
+      if (input.domainId !== undefined && input.environment?.domainId !== undefined && input.domainId !== input.environment.domainId) throw new Error("recording.domain_scope_refused");
+      if (input.projectId && projectDomain !== domainId) throw new Error("recording.project_scope_refused");
+      const created = createRecordingSession({ ...input, description, initialState, environment: { ...input.environment, domainId } });
+      this.recordingIngress.forRecording(created);
       const recording = input.projectId
         ? { ...created, metadata: { ...(created.metadata ?? {}), projectId: input.projectId } }
         : created;
@@ -768,8 +789,16 @@ export class AutomationStudioService {
     return await this.locks.withRecordingMutationLock(input.projectId, input.recordingId, async () => {
       const recording = await this.recordings.getRawRecordingSession(input.recordingId, input.projectId);
       if (recording.endedAt !== undefined) throw new Error("Finalized recordings are immutable.");
-      const preparedEntries = await this.objectDocuments.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, input.entries);
+      const domainId = recording.environment.domainId;
+      const ingress = this.recordingIngress.forRecording(recording);
+      if (recording.recordingId !== input.recordingId || (recording.metadata?.projectId !== undefined && recording.metadata.projectId !== (input.projectId ?? null))) throw new Error("recording.address_mismatch");
+      const entries = input.entries.map(entry => ingress.entry.call(ingress, entry));
+      if (input.projectId) await this.assertProjectDomainAccess(input.projectId, domainId);
+      const preparedEntries = await this.objectDocuments.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, entries, {
+        domainId, binding: domainId ? this.nativeNodeRuntime?.targetPreparation.recording(domainId) : undefined
+      });
       const next = preparedEntries.reduce((current, entry) => appendRecordingEntry(current, entry), recording);
+      if (!validateRecordingSession(next).ok) throw new Error("recording.invalid_entry");
       const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(next, input.projectId);
       if (input.projectId && next.endedAt !== undefined) {
         await this.writeProjectRecordingSession(input.projectId, stored);
@@ -1459,8 +1488,9 @@ export class AutomationStudioService {
     }, projectId, flowId);
   }
 
-  private async runFlowBootstrapLlmHarness(input: Parameters<typeof runAutomationStudioLlmHarness>[0]): ReturnType<typeof runAutomationStudioLlmHarness> {
-    this.buildCancellation.checkpoint(); const signal = this.buildCancellation.signal(); const result = await runAutomationStudioLlmHarness(automationStudioHarnessInputWithDeniedEvidenceKeys({ ...input, ...(signal ? { signal: AbortSignal.any([signal, ...(input.signal ? [input.signal] : [])]) } : {}) }, this.llmEvidenceRuntime)); return result;
+  private async runFlowBootstrapLlmHarness(input: Parameters<typeof runAutomationStudioLlmHarness>[0], execution?: Parameters<typeof runAutomationStudioLlmHarness>[1]): ReturnType<typeof runAutomationStudioLlmHarness> {
+    this.buildCancellation.checkpoint(); const signal = this.buildCancellation.signal(); const request = automationStudioHarnessInputWithDeniedEvidenceKeys({ ...input, ...(signal ? { signal: AbortSignal.any([signal, ...(input.signal ? [input.signal] : [])]) } : {}) }, this.llmEvidenceRuntime);
+    return (await invokeInstructionModelRun(execution?.observation, undefined, runAutomationStudioLlmHarness, request)).answer;
   }
 
   async generateFlowBootstrapAdaptation<Input extends AutomationStudioGenerateFlowBootstrapAdaptationInput>(input: Input): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input>> { return await withAutomationStudioGatewayTraceBuildActivity(input, { instructions: () => this.getFlowInstructionSet({ projectId: input.projectId, flowId: input.flowId }), conversations: this.conversations }, () => this.buildCancellation.run(input.projectId, input.flowId, () => withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => automationStudioLlmBuildTrace.timed("build", () => this.generateFlowBootstrapAdaptationInternal(input), (built) => `status=${built.status}`)))) as AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input>; }
@@ -1520,7 +1550,12 @@ export class AutomationStudioService {
           throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_invalid");
         }
         failureStage = "pre_provider_validation"; failureCode = "flow_bootstrap.pre_provider_validation_failed";
-        const runHarness: typeof this.runFlowBootstrapLlmHarness = async (request) => { try { return await this.runFlowBootstrapLlmHarness({ ...request, ...(supplementaryRecordings.length && request.metadata?.source !== "instructionAuthority" ? { supplementaryRecordings } : {}) }); } catch (error) { throw new AutomationStudioFlowBootstrapGenerationError(automationStudioFlowBootstrapFailureDiagnosticOf(error, "provider_request")); } };
+        const runHarness: typeof this.runFlowBootstrapLlmHarness = async (request, execution) => { try { return (await invokeInstructionModelRun(execution?.observation, this, this.runFlowBootstrapLlmHarness, { ...request, ...(supplementaryRecordings.length && request.metadata?.source !== "instructionAuthority" ? { supplementaryRecordings } : {}) })).answer; } catch (error) { throw new AutomationStudioFlowBootstrapGenerationError(automationStudioFlowBootstrapFailureDiagnosticOf(error, "provider_request")); } };
+        if (buildExecution) {
+          const callbacks = buildExecution.callbacks;
+          if (this.runFlowBootstrapLlmHarness === AutomationStudioService.prototype.runFlowBootstrapLlmHarness) callbacks.manage({ receiver: this, callback: this.runFlowBootstrapLlmHarness, contract: "managed_direct_effects", consumeCompletion: ({ invocation }) => callbacks.frameCompletion(invocation, callbacks.owner) });
+          ExecutionCallbackPolicies.rememberManagedLexical({ receiver: undefined, callback: runHarness, contract: "managed_direct_effects", consumeCompletion: ({ invocation }) => callbacks.frameCompletion(invocation, callbacks.owner) });
+        }
         let generatedSummary: string;
         let buildPlan: AutomationStudioFlowBuildPlan;
         let evidenceTrace: AutomationStudioLlmEvidenceLoopTrace[] | undefined; let buildJudged: AutomationStudioFlowBootstrapFinishingVerdict | undefined; // The yes the build finished on, recorded on its proposal (`flow-bootstrap/unfinished-build/finishing-verdict.ts`, cause R2).
@@ -1546,7 +1581,7 @@ export class AutomationStudioService {
         const creation = await automationStudioFlowBootstrapCreationPurse({ store: this.creationSpends, projectId, flowId, repair: Boolean(repairBrief), interpretationCostUsd, interpretationCalls, ...(testCalls === undefined ? {} : { maxCalls: Math.min(testCalls, unresolvedProvider.maxCallsPerRun ?? testCalls) }), ceilingUsd: bootstrapLoopLimits.loop.budget.maxCostUsd ?? automationStudioLlmRunCostCeilingUsd() });
         buildProviderCharge = () => creation.purse.chargedReceipt();
         return await creation.run(async () => {
-        const authority = automationStudioFlowBootstrapInstructionAuthority({ run: creation.reading(runHarness), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider });
+        const authority = automationStudioFlowBootstrapInstructionAuthority({ run: creation.reading(runHarness, buildExecution?.callbacks), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider, ...(buildExecution ? { observation: buildExecution.callbacks } : {}) });
         const projectLedger = authoringMode === "project" ? new AutomationStudioSiteResetProjectLedger() : undefined, siteReset = projectLedger ? projectLedger.forBrief(AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER) : authoringMode === "candidate" ? new AutomationStudioSiteResetLedger() : undefined; // A candidate build's own lasting acts, which it undoes before each trial (`flow-bootstrap/site-reset/`, t462); a project build's ledger of every agent's acts, whose supervisor's own is the build-level gate's (`service/project-build/`). The gate below belongs to the build, not to the loop: a build that explored and one that wrote its Flow in a single call both put a step with a lasting consequence to the same person, through the Flow's own thread.
         const permissionGround = { permittedConsequences, instructionIds: resolvedInstructions.instructionIds, authoringMode, deriveInstructed: authority.derive, // The gate's input but its executor and ledger: a project build's briefs each make their own gate from it.
           ...(this.conversations.available ? { ask: { port: creation.askPort(this.conversations.parkingPort({ projectId, subject: { kind: "flow", id: flowId } })), timeoutMs: input.permissionAskTimeoutMs, signal: this.buildCancellation.signal() }, say: (text: string) => this.conversations.writerFor({ projectId, subject: { kind: "flow", id: flowId } }).say(text) } : {}) };

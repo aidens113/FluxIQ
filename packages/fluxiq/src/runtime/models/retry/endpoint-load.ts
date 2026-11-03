@@ -8,21 +8,29 @@
 // waiting out a backoff still tells another that the endpoint is shared.
 
 import type { AutomationStudioLlmProviderMetadata } from "../contracts/index.ts";
+import { ExecutionCallbackPolicies } from "../../execution-observation/index.ts";
 
 export class AutomationStudioLlmProviderEndpointLoad {
   private readonly inFlight = new Map<string, number>();
+
+  constructor() {
+    if (this.enter === AutomationStudioLlmProviderEndpointLoad.prototype.enter) ExecutionCallbackPolicies.remember(this, this.enter, "pure");
+    if (this.shared === AutomationStudioLlmProviderEndpointLoad.prototype.shared) ExecutionCallbackPolicies.remember(this, this.shared, "pure");
+  }
 
   /** Count a call in flight against `endpoint` until the returned function is called; calling it again does nothing. */
   enter(endpoint: string): () => void {
     this.inFlight.set(endpoint, (this.inFlight.get(endpoint) ?? 0) + 1);
     let left = false;
-    return () => {
+    const leave = () => {
       if (left) return;
       left = true;
       const remaining = (this.inFlight.get(endpoint) ?? 1) - 1;
       if (remaining > 0) this.inFlight.set(endpoint, remaining);
       else this.inFlight.delete(endpoint);
     };
+    ExecutionCallbackPolicies.rememberLexical(leave, "pure");
+    return leave;
   }
 
   /** Whether another call besides one's own is in flight against `endpoint`. */

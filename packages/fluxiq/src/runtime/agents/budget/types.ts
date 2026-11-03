@@ -3,6 +3,7 @@
 // (`./purse.ts`).
 
 import type { AutomationStudioLlmUsageSummary } from "../../models/contracts/index.ts";
+import type { ModelExecutionOptions } from "../../models/execution/index.ts";
 import type { AutomationStudioLlmBuildPurseAttribution } from "./allowance-book.ts";
 
 /** This purse's own canonical charges, excluding carried spend and external aggregate accounting. */
@@ -48,7 +49,7 @@ type AutomationStudioLlmBuildPurseCostRefusal = {
 };
 
 /** A request's worst case by the provider's own price, or `undefined` where it does not price (`./projected-cost.ts`). */
-export type AutomationStudioLlmBuildPursePrice = (inputTokens: number, outputTokens: number) => number | undefined;
+export type AutomationStudioLlmBuildPursePrice = (inputTokens: number, outputTokens: number, execution?: ModelExecutionOptions) => number | undefined;
 
 /** One call the purse is asked to hold. */
 export type AutomationStudioLlmBuildPurseCall = {
@@ -76,6 +77,8 @@ export type AutomationStudioLlmBuildPurseJudging = {
 export type AutomationStudioLlmBuildPurseHold = {
   /** The call was made: charge what it reported, or what it was held at when it reported nothing. */
   settle(usage?: AutomationStudioLlmUsageSummary): void;
+  /** The same one settlement, awaiting its original observed callbacks and their actual queued acknowledgements. */
+  settleObserved?(usage?: AutomationStudioLlmUsageSummary, execution?: ModelExecutionOptions): Promise<void>;
   /** The call was never sent: charge nothing. */
   release(): void;
 };
@@ -107,7 +110,7 @@ export type AutomationStudioLlmBuildPurseOptions = {
    * it reported (`null` when it reported none). A Flow's purse writes it to the
    * Flow's record (t438), itemised by phase and agent role (t728).
    */
-  onSettled?: (chargedUsd: number, call: { judge: boolean; inputTokens: number | null }) => void;
+  onSettled?: (chargedUsd: number, call: { judge: boolean; inputTokens: number | null }, execution?: ModelExecutionOptions) => void;
 };
 
 /** The outcome of asking a purse to hold a call. */

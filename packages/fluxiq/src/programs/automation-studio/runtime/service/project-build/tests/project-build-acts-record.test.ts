@@ -12,9 +12,25 @@ import { automationStudioProjectStructurePlan, automationStudioProjectTaskSpec, 
 import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "../acts-record.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER } from "../supervisor-ledger.ts";
+import { automationStudioProjectBuildRecords as legacyRecords } from "../records.ts";
+import { automationStudioProjectBuildRecords as frameworkRecords } from "../../../../../../runtime/flow-authoring/project/record/index.ts";
 
 const REF = { projectId: "project.pottery", flowId: "flow.pottery", buildId: "build.pottery" };
 const SOURCE = "Open the class list and sign me up for the Thursday wheel class.";
+
+it("keeps the one records cache keyed by the original project across legacy and framework callers", async () => {
+  const projects = new AutomationStudioProjectPaths(undefined);
+  const project = { paths: { projects, flows: new AutomationStudioFlowPaths(projects) } };
+  expect(legacyRecords).toBe(frameworkRecords);
+  const original = legacyRecords(project);
+  expect(frameworkRecords(project)).toBe(original);
+  const copy = { paths: project.paths };
+  const separate = frameworkRecords(copy);
+  expect(separate).not.toBe(original);
+  await original.create({ ...REF, instructionDigest: "d".repeat(64), sourceIds: ["instruction.original"] });
+  expect((await frameworkRecords(project).read(REF))?.record.buildId).toBe(REF.buildId);
+  expect(await separate.read(REF)).toBeUndefined();
+});
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });

@@ -9,6 +9,6 @@ export { AutomationOrchestrationCallbacks } from "./orchestration.ts";
 export { AutomationNativeObservationBindings } from "./native-bindings.ts";
 export { invokeAutomationNative } from "./native-call.ts";
 export { invokeAutomationEffect } from "./effect-call.ts";
-export { invokeAutomationCallback, invokeAutomationCallbackSync, automationCallbackObservation } from "./callback/index.ts";
+export { invokeAutomationCallback, invokeAutomationCallbackSync, automationCallbackObservation, markAutomationCallbackFrameUnknown } from "./callback/index.ts";
 export { AutomationRetrySeries } from "./series.ts";
 export { invokeAutomationBackend } from "./backend.ts";

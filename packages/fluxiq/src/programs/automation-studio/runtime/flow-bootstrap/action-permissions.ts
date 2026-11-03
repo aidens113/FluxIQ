@@ -148,7 +148,7 @@ import { AutomationStudioExploredInterruptions } from "./explored-interruptions.
 import { automationStudioExploredToggleTie } from "./script-statements/index.ts";
 import { automationStudioToggleStateChoice } from "../toggle-state/index.ts";
 import { automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetWitness, type AutomationStudioSiteResetWitnessStamp } from "./reset-admission/index.ts";
-import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolAuxiliary, invokeAutomationStudioBuildToolDelegate, observeAutomationStudioBuildToolParkingPort, withAutomationStudioBuildToolCallbackScope } from "../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioBuildToolPermissions, AutomationStudioProjectBuildToolObservers, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolAuxiliary, invokeAutomationStudioBuildToolDelegate, observeAutomationStudioBuildToolParkingPort, withAutomationStudioBuildToolCallbackScope } from "../build-execution/tools/index.ts";
 import { AuthoringExecutionScope, invokeAuthoringExecutionCallback, withAuthoringExecutionScope } from "../../../../runtime/flow-authoring/execution/observation/index.ts";
 import { ExecutionCallbackPolicies } from "../../../../runtime/execution-observation/policies/index.ts";
 import { observeExecutionParkingPort } from "../../../../runtime/parking/execution/index.ts";
@@ -374,13 +374,13 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         if (automationStudioFlowDraftDeclaresLasting(call.value.consequences)) await read();
         const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId }, call);
         let unproved = false;
-        const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
+        const permission: AutomationStudioActionPermissionCheck = async (declaration) => AutomationStudioBuildToolPermissions.withScope(permission, placed, input, call, async () => {
           if (input.authoringMode === "project" && reversibleLasting(permissionDeclaration(declaration))) {
             unproved = true;
             return { permitted: false, missing: [], requestId: null };
           }
           return await check(declaration);
-        };
+        });
         // Known toggles need a grounded choice; a first unknown press may reveal one.
         const toggled = heldToToggle(call.toolId, call.value, exploredToggles);
         if ("refusal" in toggled) return toggled.refusal;
@@ -388,6 +388,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         inheritAutomationStudioBuildToolRequest(call, held);
         const placed = { ...held, permission };
         inheritAutomationStudioBuildToolRequest(held, placed);
+        AutomationStudioBuildToolPermissions.bind(placed, permission);
         const execution = await invokeAutomationStudioBuildToolDelegate(placed, { receiver: input, callback: delegate, args: [placed] }, placed.signal);
         gate.observe(execution);
         exploredToggles.explored(held, execution);
@@ -417,7 +418,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       // For an undo, where the control the domain is about to act on sits, read before it acts (t475).
       let target: AutomationStudioSiteResetTarget | undefined;
       let createRefusal: { evidence: JsonObject & { code: string } } | undefined;
-      const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
+      const permission: AutomationStudioActionPermissionCheck = async (declaration) => AutomationStudioBuildToolPermissions.withScope(permission, placed, input, call, async () => {
         if (!undo) {
           const action = permissionDeclaration(declaration);
           const needsBaseline = action.effect === "mutate" && action.consequences.length === 1 && action.consequences[0] === "create_new" && (action.controlSubject !== null || (action.controlItem === null && action.controlPage !== null));
@@ -447,9 +448,10 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         const verdict = await asking({ kind: "exploration_step", id: call.toolId, ref: call.callId, undoes: { act: undo.act, allowed: target.allowed } }, call)(declaration);
         declared = declaredAs(gate, declaration, verdict.permitted);
         return verdict;
-      };
+      });
       const placed = { ...call, value, permission };
       inheritAutomationStudioBuildToolRequest(call, placed);
+      AutomationStudioBuildToolPermissions.bind(placed, permission);
       const execution = await invokeAutomationStudioBuildToolDelegate(placed, { receiver: input, callback: delegate, args: [placed] }, placed.signal);
       gate.observe(execution);
       // An undo puts a control back: its toggle answer is the reverse of the state a step asks for, so it never ties a step (t775).

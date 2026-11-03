@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../../nodes/index.ts";
+import { AutomationExpectationDiagnostics } from "../../../../../engine/automation/expectation-observation/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioGraphExecutionOptions, type AutomationStudioNodeAttemptTrace, type AutomationStudioTransitionComparison } from "../../executor/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../../host-runtime.ts";
 import { trialAutomationStudioFlowChange, type AutomationStudioFlowChangeTrialRequest } from "../index.ts";
@@ -205,6 +206,37 @@ describe("trialAutomationStudioFlowChange", () => {
       }
       const result = await trial({ candidate: candidate(), options: { hostRuntime: new Host(captured) } });
 
+      expect(captured).toContain("changed.attempt.1:before_action");
+      expect(result.verdict).toMatchObject({ outcome: "verified", basis: ["expected_state"] });
+    });
+
+    it("hands a composite the exact frozen host and original methods without a trial proxy", async () => {
+      const captured: string[] = [];
+      class Host implements AutomationStudioHostRuntimeBoundary {
+        readonly #points = captured;
+        readonly capabilities = ["state-snapshot"];
+        captureStateSnapshot(input: { attemptId: string; point: string }) {
+          this.#points.push(`${input.attemptId}:${input.point}`);
+          return { stateSnapshotId: `state.${this.#points.length}`, stateRef: `ref.${this.#points.length}`, capturedAt: 1 };
+        }
+        expectationEvaluator(conditions: JsonValue[]): AutomationNodeExpectationEvaluation { return { passed: true, checkedConditionCount: conditions.length }; }
+      }
+      const host = Object.freeze(new Host());
+      const evaluate = host.expectationEvaluator;
+      const capture = host.captureStateSnapshot;
+      let composites = 0;
+      const result = await trial({
+        candidate: flowOf([{ id: "changed", definitionId: "controlled.original-host", parameterValues: { expectedState: { conditions: [{ kind: "controlled.condition" }] } } }, END], [["changed", "end"]]),
+        options: { hostRuntime: host, compositeExecutor: async request => {
+          composites++;
+          expect(request.options.hostRuntime).toBe(host);
+          expect(request.options.hostRuntime?.expectationEvaluator).toBe(evaluate);
+          expect(request.options.hostRuntime?.captureStateSnapshot).toBe(capture);
+          expect(AutomationExpectationDiagnostics.has(request.options)).toBe(true);
+          return { result: { status: "success", route: "success", outputs: {} } };
+        } }
+      });
+      expect(composites).toBe(1);
       expect(captured).toContain("changed.attempt.1:before_action");
       expect(result.verdict).toMatchObject({ outcome: "verified", basis: ["expected_state"] });
     });

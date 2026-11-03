@@ -124,3 +124,42 @@ it("forwards original context, routing, deadline, reference and withholding thro
   expect(context?.signal).toBe(signal);
   expect(context?.withheldValues).toBe(withheldValues);
 });
+
+it("refuses a registered target-preparation requirement before dispatch even when the action copies a false flag", async () => {
+  const io = new IoRegistry();
+  const dispatch = vi.fn(() => ({ ok: true, outputId: "device.set" }));
+  io.registerOutput("device", defineOutput({
+    definition: { id: "device.set", title: "Set device", metadata: { outputTargetPreparationRequired: true } },
+    mode: "request",
+    dispatch
+  }));
+  const result = await dispatchRegisteredOutput(io, "device", {
+    outputId: "device.set", actionType: "device.set", parameters: {},
+    metadata: { outputTargetPreparationRequired: false }
+  });
+  expect(result).toMatchObject({ status: "failed", failure: { code: "output.target_preparer_missing" } });
+  expect(dispatch).not.toHaveBeenCalled();
+});
+
+it("invokes the original registered callback with its original domain receiver", async () => {
+  const { io, dispatch } = registry();
+  const parameters = { original: true };
+  const receiver = {
+    prefix: "domain-owned",
+    calls: 0,
+    prepare(input: Parameters<OutputTargetPreparer>[0]): ReturnType<OutputTargetPreparer> {
+      this.calls++;
+      expect(input.action.parameters).toBe(parameters);
+      expect(input.domainId).toBe("device");
+      return { ok: true, parameters: { preparedBy: this.prefix } };
+    }
+  };
+  const callback = receiver.prepare;
+  const result = await dispatchRegisteredOutput(io, "device", {
+    outputId: "device.set", actionType: "device.set", parameters
+  }, undefined, undefined, { receiver, callback });
+  expect(result.status).toBe("success");
+  expect(receiver.calls).toBe(1);
+  expect(receiver.prepare).toBe(callback);
+  expect(dispatch.mock.calls[0]?.[0].payload).toEqual({ preparedBy: "domain-owned" });
+});

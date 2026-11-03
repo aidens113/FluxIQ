@@ -3,20 +3,32 @@ import { automationStudioLiveRunEnvironment } from "../../../../runtime/environm
 import type { AutomationStudioGraphExecutionOptions } from "../../contracts/index.ts";
 import { AutomationPureCallbacks } from "../kernel/pure.ts";
 import { AutomationOrchestrationCallbacks } from "../kernel/orchestration.ts";
+import { assertAutomationRecordBatchData } from "../options/index.ts";
+
+let loggedUnsupported = false;
+
+function unsupported(receiver: "options" | "host", key: string): true {
+  if (!loggedUnsupported) {
+    loggedUnsupported = true;
+    console.error("Isolated unsupported automation callback", { receiver, key });
+  }
+  return true;
+}
 
 /** Missing callback coverage is never an empty frontier certificate. */
 export function hasUnsupportedAutomationCallbacks(options: AutomationStudioGraphExecutionOptions, source: ExecutionObservationSource): boolean {
+  assertAutomationRecordBatchData(options);
   const clocks = new Set<object>([automationStudioLiveRunEnvironment.now, automationStudioLiveRunEnvironment.delay, automationStudioLiveRunEnvironment.random, Date.now, Math.random]);
   const record = options as Readonly<Record<string, unknown>>;
-  for (const key of ["now", "delay", "random", "startTimer", "resolveActionEffect", "classifyLegacyStepAct", "resolveTargetRefresh", "effectDispatcher", "nativeNodeExecutor", "compositeExecutor", "onRecordBatch", "repairIncident", "learnInterruption"]) {
+  for (const key of ["now", "delay", "random", "startTimer", "resolveActionEffect", "classifyLegacyStepAct", "resolveTargetRefresh", "effectDispatcher", "nativeNodeExecutor", "compositeExecutor", "repairIncident", "learnInterruption"]) {
     const callback = record[key];
-    if (typeof callback === "function" && !clocks.has(callback) && !AutomationPureCallbacks.has(options, callback) && !AutomationOrchestrationCallbacks.has(callback) && !source.isManaged({ receiver: options, callback })) return true;
+    if (typeof callback === "function" && !clocks.has(callback) && !AutomationPureCallbacks.has(options, callback) && !AutomationOrchestrationCallbacks.has(callback) && !source.isManaged({ receiver: options, callback })) return unsupported("options", key);
   }
   const host = options.hostRuntime;
   if (!host) return false;
   for (const key of ["classifyLegacyStepAct", "observeRouteState", "signRouteState", "compareRouteSignatures", "signRouteEffect", "routeEffectHolds", "routeEffectSeen", "captureStateSnapshot", "observeRuntimeRepeat", "inspectStateDiff", "rollbackHint", "expectationEvaluator", "checkFacts", "factEvaluator", "actLanded", "checkActLanded", "waitForTarget", "reacquireTarget", "sourcePlace"]) {
     const callback = Reflect.get(host, key);
-    if (typeof callback === "function" && !AutomationPureCallbacks.has(host, callback) && !source.isManaged({ receiver: host, callback })) return true;
+    if (typeof callback === "function" && !AutomationPureCallbacks.has(host, callback) && !source.isManaged({ receiver: host, callback })) return unsupported("host", key);
   }
   return false;
 }

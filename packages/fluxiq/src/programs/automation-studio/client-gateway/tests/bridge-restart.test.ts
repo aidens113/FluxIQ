@@ -40,7 +40,7 @@ describe("AutomationStudioClientGatewayBridge, when a client restarts recording"
     const stopping = stopper === "client"
       ? client.gateway.receive(client.sessionId, clientMessage("client.stop_recording", { recordingId: client.recordingId }))
       : client.bridge.stopRecording(client.sessionId);
-    await finalizing.reached;
+    await originalBoundary(finalizing.reached, stopping, "finalize");
     await client.gateway.receive(client.sessionId, startMessage("recording.next"));
     finalizing.release();
     await stopping;
@@ -57,7 +57,7 @@ describe("AutomationStudioClientGatewayBridge, when a client restarts recording"
 
     // The held click keeps the client's messages busy, so the page state received after it waits its turn.
     const clicking = client.gateway.receive(client.sessionId, clickMessage());
-    await appending.reached;
+    await originalBoundary(appending.reached, clicking, "append");
     const updating = client.gateway.receive(client.sessionId, pageStateMessage());
     const stopping = client.gateway.receive(client.sessionId, clientMessage("client.stop_recording", { recordingId: client.recordingId }));
     const starting = starter === "client"
@@ -78,14 +78,24 @@ describe("AutomationStudioClientGatewayBridge, when a client restarts recording"
 async function clientWithOpenRecording(clientId: string) {
   const gateway = new ClientGatewayService();
   const automationStudio = closedAfterEach(new AutomationStudioService({ dataDir: path.join(tempRoot, clientId), seedFixture: false }));
-  const project = await automationStudio.createProject({ name: clientId });
+  const project = await automationStudio.createProject({ name: clientId, domainId: "extension.example" });
   const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: ioRegistry(), stopDrainMs: 0, clientRecordingContextProvider: () => ({ ok: true, projectId: project.id }) });
   const session = gateway.connect();
-  await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId, clientType: "extension", name: clientId }));
+  await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId, clientType: "extension", name: clientId, metadata: { domainId: "extension.example" } }));
   await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.test" });
   const recordingId = `recording.${clientId}`;
   await gateway.receive(session.sessionId, startMessage(recordingId));
+  const acknowledgement = gateway.outbound(session.sessionId).find(message => message.type === "server.start_recording" && message.payload.recordingId === recordingId);
+  if (!acknowledgement) throw new Error("test.recording_start_not_acknowledged");
+  const recording = await automationStudio.getRecordingSession(recordingId, project.id);
+  expect(recording.environment.domainId).toBe("extension.example");
+  expect(recording.endedAt).toBeUndefined();
   return { gateway, automationStudio, bridge, sessionId: session.sessionId, projectId: project.id, recordingId };
+}
+
+/** An early failure/return must fail this fixture, rather than wait for a gate it never entered. */
+async function originalBoundary(boundary: Promise<void>, operation: Promise<unknown>, label: string): Promise<void> {
+  await Promise.race([boundary, operation.then(() => { throw new Error(`test.recording_${label}_not_reached`); })]);
 }
 
 /** A promise that settles when `open` is called. */

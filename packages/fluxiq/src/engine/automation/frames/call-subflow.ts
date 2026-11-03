@@ -10,6 +10,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import { automationStudioNodeOutputReferences } from "../graph-navigation/index.ts";
 import { automationStudioChildInvocation } from "./child-frame.ts";
 import type { AutomationStudioSubflowGraph } from "./invocation-options.ts";
+import { AutomationPureCallbacks } from "../execution-admission/kernel/index.ts";
 
 /** What one Call Subflow attempt produced: the node's result, and the child it ran, when it ran one. */
 export type AutomationStudioCalledSubflow = {
@@ -62,6 +63,8 @@ export async function automationStudioCallSubflow(request: {
   const runSubflow = invocation?.run.runSubflow;
   if (!runSubflow) return refused("missing_router_or_subflow_target", "executor.call_subflow.no_runner", `Subflow ${call.subflowId} could not be run: this run has no way to run a Subflow.`);
   const executedTraces = new WeakMap<AutomationStudioGraphExecutionTrace, AutomationStudioGraphExecutionTrace>();
+  const capture = (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace): void => { executedTraces.set(saved, executed); };
+  AutomationPureCallbacks.register(undefined, capture);
   const crossed = await automationStudioCallAcrossBoundary({
     contract: target.artifact ?? UNDECLARED_CONTRACT,
     bindings: call.bindings,
@@ -70,7 +73,7 @@ export async function automationStudioCallSubflow(request: {
     childOverrides: { currentSubflowId: target.subflowId },
     maxAttempts: 1,
     frame: (childInputs) => automationStudioChildInvocation(invocation, { callNodeId: node.id, subflowId: target.subflowId, graph: target.graph, graphRevision: target.graphRevision, inputs: childInputs }),
-    runChild: (childOptions) => runSubflow(target, childOptions, (executed, saved) => { executedTraces.set(saved, executed); }),
+    runChild: (childOptions) => runSubflow(target, childOptions, capture),
     executedTrace: (saved) => withDeclaredOutputs(executedTraces.get(saved) ?? saved, target),
     failedMessage: `Subflow ${call.subflowId} failed.`
   });

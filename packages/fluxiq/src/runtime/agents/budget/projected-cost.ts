@@ -10,17 +10,21 @@
 // price one request two ways.
 
 import type { ModelProvider } from "../../models/contracts/index.ts";
+import type { ModelExecutionOptions } from "../../models/execution/index.ts";
+import { invokeOwnedExecutionCallbackSync } from "../../execution-observation/owned/index.ts";
 
 /**
  * The worst case for a request of `inputTokens` measured input and
  * `outputTokens` reply reserve, or `undefined` where the provider does not
  * price, or prices nonsense.
  */
-export function automationStudioLlmProjectedCallCostUsd(provider: Pick<ModelProvider, "estimateCostUsd">, inputTokens: number, outputTokens: number): number | undefined {
+export function automationStudioLlmProjectedCallCostUsd(provider: Pick<ModelProvider, "estimateCostUsd">, inputTokens: number, outputTokens: number, execution?: ModelExecutionOptions, original?: Pick<ModelProvider, "estimateCostUsd">): number | undefined {
   let priced: number | undefined;
   try {
-    priced = provider.estimateCostUsd?.({ inputTokens, outputTokens });
-  } catch {
+    const estimate = original ? original.estimateCostUsd : provider.estimateCostUsd;
+    priced = estimate ? invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: provider, callback: estimate, args: [{ inputTokens, outputTokens }] }) : undefined;
+  } catch (error) {
+    if (execution?.observation) throw error;
     priced = undefined;
   }
   return typeof priced === "number" && Number.isFinite(priced) && priced > 0 ? priced : undefined;

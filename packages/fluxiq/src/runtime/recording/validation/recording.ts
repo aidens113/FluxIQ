@@ -1,6 +1,7 @@
 import type { EvidenceReference, RecordingSession, TimelineEntry } from "@fluxiq/contracts/recording";
 import type { RecordingTargetValidationPolicy } from "./target-policy.ts";
 import { validateActionVisualEntityTarget } from "./visual-target.ts";
+import { isRecordingConfidence } from "./confidence/index.ts";
 import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../flows/executable/validation/index.ts";
 export function validateRecordingSession<TTarget = unknown, TEvidence = EvidenceReference>(recording: RecordingSession<TTarget, TEvidence>, targetPolicy: RecordingTargetValidationPolicy<TTarget>): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];
@@ -57,7 +58,7 @@ function validateTimelineEntry<TTarget, TEvidence>(
   noteIds: Set<string>,
   targetPolicy: RecordingTargetValidationPolicy<TTarget>
 ): void {
-  if (entry.confidence !== undefined && (entry.confidence < 0 || entry.confidence > 1)) {
+  if (!isRecordingConfidence(entry.confidence)) {
     addIssue(issues, "error", "timeline.invalid_confidence", "Timeline entry confidence must be between 0 and 1.", `${path}.confidence`);
   }
   if (entry.type === "note" && !noteIds.has(entry.noteId)) {

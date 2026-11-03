@@ -12,6 +12,7 @@ export * from "./model/index.ts";
 export * from "./nodes/index.ts";
 export * from "./normalization/index.ts";
 export * from "./runtime/index.ts";
+export { runtimeSessionToFlowRunDetail } from "./runtime/service/summaries/index.ts";
 export * from "./storage/index.ts";
 export * from "./testing/index.ts";
 export * from "./types.ts";

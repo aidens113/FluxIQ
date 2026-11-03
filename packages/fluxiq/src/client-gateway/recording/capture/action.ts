@@ -2,12 +2,16 @@ import type { ClientGatewayActionCommand } from "../../contracts.ts";
 import type { ClientGatewayActionResult } from "../../contracts.ts";
 import type { RecordingBridgeState } from "../internal/index.ts";
 import { compactJsonObject } from "../values/index.ts";
+import { captureRecordingIngress } from "./scoped/index.ts";
 
 export async function appendActionResult<TTarget, TEvidence>(state: RecordingBridgeState<TTarget, TEvidence>, sessionId: string, command: ClientGatewayActionCommand, result: ClientGatewayActionResult): Promise<void> {
     const session = state.session(sessionId);
-    const active = state.activeRecordings.get(state.recordingOwnerKey(session));
+    const open = state.activeRecordings.get(state.recordingOwnerKey(session));
+    const active = state.scopedIngress && open ? { ...open } : open;
     if (!active) return;
+    const capturedTarget = state.scopedIngress ? command.target : undefined;
     await state.writeOrder.flush(state.recordingOwnerKey(session));
+    const ingress = state.scopedIngress ? await captureRecordingIngress(state, active) : state.ingress;
     await state.sink.append({
       ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
       recordingId: active.recordingId,
@@ -15,7 +19,7 @@ export async function appendActionResult<TTarget, TEvidence>(state: RecordingBri
         type: "action",
         actionType: command.actionType,
         parameters: command.parameters ?? {},
-        ...(command.target ? { target: state.ingress.commandTarget(command.target) } : {}),
+        ...((state.scopedIngress ? capturedTarget : command.target) ? { target: ingress.commandTarget((state.scopedIngress ? capturedTarget : command.target)!) } : {}),
         origin: "runtime",
         startedAt: result.startedAt ?? Date.now(),
         ...(result.completedAt !== undefined ? { completedAt: result.completedAt } : {}),

@@ -26,3 +26,20 @@ it("retains rich observation signals and refuses malformed known fields or entry
   expect(() => decodeRecordingEntry({ type: "state_checkpoint", state: { timestamp: 1, namespaces: {} } }, guards)).toThrow("recording.invalid_entry");
   expect(() => decodeRecordingEntry({ type: "marker", label: "note", timestamp: Number.NaN }, guards)).toThrow("recording.invalid_entry");
 });
+
+it.each([undefined, 0, 0.5, 1])("preserves valid confidence without supplying IDs or times: %j", confidence => {
+  const entry = { type: "marker", label: "original", confidence };
+  expect(decodeRecordingEntry(entry, guards)).toBe(entry);
+  expect(entry).not.toHaveProperty("id");
+  expect(entry).not.toHaveProperty("timestamp");
+});
+
+it.each([-1, 2, Number.NaN, Number.POSITIVE_INFINITY, null, "0.5"])("refuses invalid confidence on every append variant before preparation: %j", confidence => {
+  const variants = [
+    { type: "action", actionType: "machine.change", parameters: {}, origin: "operator", startedAt: 1 },
+    { type: "observation", observationType: "machine.state" },
+    { type: "domain_event", eventType: "machine.changed" },
+    { type: "marker", label: "original" }
+  ];
+  for (const entry of variants) expect(() => decodeRecordingEntry({ ...entry, confidence }, guards)).toThrow("recording.invalid_entry");
+});

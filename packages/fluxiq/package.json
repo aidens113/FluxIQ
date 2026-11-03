@@ -136,6 +136,10 @@
       "types": "./dist/flows/index.d.ts",
       "import": "./dist/flows/index.js"
     },
+    "./flows/authoring": {
+      "types": "./dist/flows/authoring/index.d.ts",
+      "import": "./dist/flows/authoring/index.js"
+    },
     "./flows/executable": {
       "types": "./dist/flows/executable/index.d.ts",
       "import": "./dist/flows/executable/index.js"
@@ -155,6 +159,10 @@
     "./framework/observability/performance": {
       "types": "./dist/framework/observability/performance/index.d.ts",
       "import": "./dist/framework/observability/performance/index.js"
+    },
+    "./framework/observability/exchange-log": {
+      "types": "./dist/framework/observability/exchange-log/index.d.ts",
+      "import": "./dist/framework/observability/exchange-log/index.js"
     },
     "./identity-access": {
       "types": "./dist/programs/identity-access/index.d.ts",
@@ -191,6 +199,30 @@
     "./runtime/target-matching": {
       "types": "./dist/runtime/target-matching/index.d.ts",
       "import": "./dist/runtime/target-matching/index.js"
+    },
+    "./runtime/output-dispatch/preparation": {
+      "types": "./dist/runtime/output-dispatch/preparation/index.d.ts",
+      "import": "./dist/runtime/output-dispatch/preparation/index.js"
+    },
+    "./runtime/recording/target-preparation": {
+      "types": "./dist/runtime/recording/target-preparation/index.d.ts",
+      "import": "./dist/runtime/recording/target-preparation/index.js"
+    },
+    "./runtime/recording/target-policy": {
+      "types": "./dist/runtime/recording/target-policy/index.d.ts",
+      "import": "./dist/runtime/recording/target-policy/index.js"
+    },
+    "./runtime/recording/validation": {
+      "types": "./dist/runtime/recording/validation/index.d.ts",
+      "import": "./dist/runtime/recording/validation/index.js"
+    },
+    "./client-gateway/recording/decoding": {
+      "types": "./dist/client-gateway/recording/decoding/index.d.ts",
+      "import": "./dist/client-gateway/recording/decoding/index.js"
+    },
+    "./runtime/execution-observation/policies": {
+      "types": "./dist/runtime/execution-observation/policies/index.d.ts",
+      "import": "./dist/runtime/execution-observation/policies/index.js"
     },
     "./runtime/automation-host": {
       "types": "./dist/runtime/automation-host/index.d.ts",
@@ -259,6 +291,14 @@
     "./runtime/flow-authoring": {
       "types": "./dist/runtime/flow-authoring/index.d.ts",
       "import": "./dist/runtime/flow-authoring/index.js"
+    },
+    "./runtime/flow-authoring/project": {
+      "types": "./dist/runtime/flow-authoring/project/index.d.ts",
+      "import": "./dist/runtime/flow-authoring/project/index.js"
+    },
+    "./runtime/state-restoration": {
+      "types": "./dist/runtime/state-restoration/index.d.ts",
+      "import": "./dist/runtime/state-restoration/index.js"
     },
     "./runtime/flow-authoring/execution": {
       "types": "./dist/runtime/flow-authoring/execution/index.d.ts",

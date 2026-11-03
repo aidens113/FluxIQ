@@ -13,6 +13,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import type { AutomationStudioRunFrames, AutomationStudioInvocationFrame } from "../frames/index.ts";
 import type { AutomationStudioHandlerDisposition, AutomationStudioCoreStop } from "../lifecycle/index.ts";
 import type { AutomationStudioRegisteredLifecycleGraph } from "./run-state.ts";
+import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
 
 /**
  * How one body run ended: the disposition its Handler End wrote, or that it
@@ -61,16 +62,18 @@ export async function runAutomationStudioHandlerBody(input: {
     ...(input.incidentId ? { incidentId: input.incidentId } : {})
   };
   // A body is not a partial run and is never resumed: it starts at its own first node.
-  const { startNodeId: _start, stopAfterNodeId: _stop, invocation: _invocation, maxSteps: _maxSteps, ...shared } = input.options;
-  const bodyOptions: AutomationStudioGraphExecutionOptions = {
-    ...shared,
-    inputs: input.inputs,
-    startNodeId: bodyNodeId,
-    invocation: { run, frame },
-    ...(input.maxSteps !== undefined ? { maxSteps: Math.max(1, input.maxSteps) } : {}),
-    // Numbered after the run's own attempts, so a body run twice never repeats an attempt id.
-    ...(input.priorAttemptCount !== undefined ? { priorAttemptCount: input.priorAttemptCount } : {})
-  };
+  const { startNodeId: _start, stopAfterNodeId: _stop, invocation: _invocation, maxSteps: _maxSteps } = input.options;
+  const bodyOptions = copyAutomationExecutionOptions(input.options);
+  delete bodyOptions.startNodeId;
+  delete bodyOptions.stopAfterNodeId;
+  delete bodyOptions.invocation;
+  delete bodyOptions.maxSteps;
+  bodyOptions.inputs = input.inputs;
+  bodyOptions.startNodeId = bodyNodeId;
+  bodyOptions.invocation = { run, frame };
+  if (input.maxSteps !== undefined) bodyOptions.maxSteps = Math.max(1, input.maxSteps);
+  // Numbered after the run's own attempts, so a body run twice never repeats an attempt id.
+  if (input.priorAttemptCount !== undefined) bodyOptions.priorAttemptCount = input.priorAttemptCount;
   let executed: AutomationStudioGraphExecutionTrace | undefined;
   // Runners take a Subflow id they do not read; a root graph that is no Subflow is named by its graph.
   const target = { subflowId: graph.subflowId ?? graph.graph.flowId, graph: graph.graph, graphRevision: graph.graphRevision, ...(graph.artifact ? { artifact: graph.artifact } : {}) };

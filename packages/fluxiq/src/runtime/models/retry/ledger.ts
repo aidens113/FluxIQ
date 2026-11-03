@@ -21,9 +21,15 @@
 // than tightens: a run whose entry is gone may retry again, which is the safe
 // direction for a cache that exists to stop a hang, not to enforce a quota.
 import { AUTOMATION_STUDIO_LLM_PROVIDER_RETRY_LIMITS } from "./limits.ts";
+import { ExecutionCallbackPolicies } from "../../execution-observation/index.ts";
 
 export class AutomationStudioLlmProviderRetryLedger {
   private readonly runs = new Map<string, number>();
+
+  constructor() {
+    if (this.addedMs === AutomationStudioLlmProviderRetryLedger.prototype.addedMs) ExecutionCallbackPolicies.remember(this, this.addedMs, "pure");
+    if (this.spend === AutomationStudioLlmProviderRetryLedger.prototype.spend) ExecutionCallbackPolicies.remember(this, this.spend, "pure");
+  }
 
   /** The wall clock retrying has added to this run: every wait, and every attempt after a call's first. */
   addedMs(runId: string): number {

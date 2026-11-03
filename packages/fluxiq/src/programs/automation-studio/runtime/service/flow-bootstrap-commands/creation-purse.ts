@@ -39,6 +39,9 @@ import { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseRefused, au
 import { automationStudioLlmStepLogScope } from "../../llm/step-log/index.ts";
 import type { AutomationStudioParkingPort } from "../../parking/index.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../index.ts";
+import { prepareInstructionModelRun, invokePreparedInstructionModelRun } from "../../../../../runtime/flow-authoring/instruction-observation/index.ts";
+import { ExecutionCallbackPolicies, OriginalExecutionPromiseReceipts, type ExecutionObservationSource } from "../../../../../runtime/execution-observation/index.ts";
+import type { ModelExecutionOptions } from "../../../../../runtime/models/execution/index.ts";
 
 /** One build's share of its Flow creation's purse. */
 export type AutomationStudioFlowBootstrapCreationPurse = {
@@ -49,7 +52,7 @@ export type AutomationStudioFlowBootstrapCreationPurse = {
   /** Runs the build's whole body under the purse, then keeps or drops the creation's record however the body ended. */
   run<T>(body: () => Promise<T>): Promise<T>;
   /** The instruction authority's `run`, noting a reading the purse refused. */
-  reading<Request>(run: (request: Request) => Promise<AutomationStudioLlmTaskResult>): (request: Request) => Promise<AutomationStudioLlmTaskResult>;
+  reading<Request>(run: (request: Request, execution?: ModelExecutionOptions) => Promise<AutomationStudioLlmTaskResult>, observation?: ExecutionObservationSource): (request: Request, execution?: ModelExecutionOptions) => Promise<AutomationStudioLlmTaskResult>;
   /** The permission gate's ask port, which opens no question once the reading was refused. */
   askPort(port: AutomationStudioParkingPort): AutomationStudioParkingPort;
   /** The loop's signal from the permission gate's, which a refused reading does not abort. */
@@ -108,7 +111,28 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
       // The Flow's purse holds the Lab ceiling; the build's own may be lower. A repair's build is already under its run's.
       return flowPurse ? await store.withFlowPurse(projectId, flowId, automationStudioLlmRunCostCeilingUsd(), built) : await built();
     },
-    reading: (run) => async (request) => { const answer = await automationStudioLlmStepLogScope.within({ phase: "read" }, () => run(request)); readingRefused ??= purseRefusalOf(answer); return answer; },
+    reading: (run, observation) => {
+      const receipts = new OriginalExecutionPromiseReceipts();
+      const read = (request: Parameters<typeof run>[0], execution?: ModelExecutionOptions): Promise<AutomationStudioLlmTaskResult> => {
+        const originalObservation = execution?.observation;
+        const returned: Promise<AutomationStudioLlmTaskResult> = automationStudioLlmStepLogScope.within({ phase: "read" }, async () => {
+          if (observation && !originalObservation) throw new Error("instruction_observation.current_scope_required");
+          const invocation = originalObservation ? await prepareInstructionModelRun(originalObservation, undefined, run, request, observation) : undefined;
+          try {
+            const answer = invocation ? await invokePreparedInstructionModelRun(invocation) : await run(request);
+            readingRefused ??= purseRefusalOf(answer);
+            if (originalObservation && invocation?.completion() === "settled") receipts.issueObserved(returned, originalObservation, { disposition: "settled", completionDigest: "creation.read.original_runner_acknowledged", assessmentDigest: "creation.read.refusal_accounting_complete" });
+            return answer;
+          } catch (error) {
+            if (originalObservation && invocation?.completion() === "settled") receipts.issueRejectedObserved(returned, error, originalObservation, { disposition: "settled", completionDigest: "creation.read.original_rejection_acknowledged", assessmentDigest: "creation.read.original_error_preserved" });
+            throw error;
+          }
+        });
+        return returned;
+      };
+      ExecutionCallbackPolicies.rememberManagedLexical({ receiver: undefined, callback: read, contract: "managed_direct_effects", consumeCompletion: receipt => receipts.consume(receipt) });
+      return read;
+    },
     askPort: (port) => ({ open: (ask) => { if (readingRefused) throw new AutomationStudioLlmBuildPurseRefused(readingRefused); return port.open(ask); }, ...(port.awaitAnswer ? { awaitAnswer: port.awaitAnswer.bind(port) } : {}) }),
     signal: (permissions) => {
       // A plan step refused only because the reading was not paid for does not stop the loop: its next decision ends it on cost.

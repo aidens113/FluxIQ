@@ -14,3 +14,4 @@ export * from "./settlement-ledger.ts";
 export * from "./top-up.ts";
 export * from "./types.ts";
 export * from "./call-hold.ts";
+export * from "./combine-holds.ts";

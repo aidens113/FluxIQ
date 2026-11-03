@@ -1,9 +1,8 @@
-// Studio supplies its legacy target adapter; the engine owns option assembly.
+// Domain bundles supply target interpretation; the engine owns option assembly.
 import type { IoRegistry } from "../../../../../io/index.ts";
 import type { RuntimeService } from "../../../../../runtime/index.ts";
 import type { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-execution/index.ts";
 import { createAutomationGraphOptions, type AutomationGraphOptionsInput } from "../../../../../engine/automation/integration/index.ts";
-import { createAutomationStudioOutputTargetPreparer } from "../../output-target/index.ts";
 type StudioGraphOptionsInput = Omit<AutomationGraphOptionsInput, "targetPreparer" | "io" | "runtimeService" | "nativeNodeRuntime"> & {
   io?: {
     io: IoRegistry;
@@ -13,6 +12,6 @@ type StudioGraphOptionsInput = Omit<AutomationGraphOptionsInput, "targetPreparer
   nativeNodeRuntime?: AutomationStudioNativeNodeRuntime | undefined;
 };
 export function automationStudioRunGraphOptions(input: StudioGraphOptionsInput) {
-  const targetPreparer = input.io ? createAutomationStudioOutputTargetPreparer(input.nativeNodeRuntime?.getElementMatcher(input.io.domainId)) : undefined;
+  const targetPreparer = input.io?.domainId ? input.nativeNodeRuntime?.targetPreparation.output(input.io.domainId) : undefined;
   return createAutomationGraphOptions({ ...input, ...(targetPreparer ? { targetPreparer } : {}) });
 }

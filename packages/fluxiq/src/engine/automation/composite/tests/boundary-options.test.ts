@@ -5,6 +5,7 @@ import { hasAutomationExecutionObservation } from "../../execution-admission/ind
 import { AutomationRetrySeries } from "../../execution-admission/kernel/index.ts";
 import { automationObservationFixture } from "../../execution-admission/tests/fixture.ts";
 import { automationStudioCallAcrossBoundary } from "../boundary.ts";
+import { AutomationExpectationCollector, AutomationExpectationDiagnostics } from "../../expectation-observation/index.ts";
 
 it("preserves stripped cursor getter order and parent authority despite observed child overrides", async () => {
   const parent = await automationObservationFixture();
@@ -17,6 +18,7 @@ it("preserves stripped cursor getter order and parent authority despite observed
   const invocation = automationStudioRootInvocation({ flowId: "flow.parent", nodes: [], edges: [] }, {});
   const parentSeries = Object.freeze({});
   AutomationRetrySeries.bind(parent.options, parentSeries);
+  AutomationExpectationDiagnostics.bind(parent.options, new AutomationExpectationCollector());
   AutomationRetrySeries.bind(foreign.options, Object.freeze({}));
   Object.defineProperties(parent.options, {
     startNodeId: { enumerable: true, get: () => {
@@ -47,6 +49,7 @@ it("preserves stripped cursor getter order and parent authority despite observed
         expect(Object.getOwnPropertyDescriptor(child, marker)?.value).toBe(original);
         expect(Object.getOwnPropertyDescriptor(child, "overrideExtra")?.value).toBe(overrideExtra);
         expect(hasAutomationExecutionObservation(child)).toBe(true);
+        expect(AutomationExpectationDiagnostics.has(child)).toBe(true);
         expect(AutomationRetrySeries.original(child)).toBe(parentSeries);
         return await runAutomationStudioGraph({ flowId: "flow.child", nodes: [{ id: "start", definitionId: "builtin.control.start" }], edges: [] }, child);
       },

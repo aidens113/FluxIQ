@@ -32,7 +32,7 @@ import { automationStudioRuntimeRepeatGuard } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatStoppedTrace } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatTraceProvenance } from "./repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "./repeat/index.ts";
-import { copyAutomationExecutionOptions, inheritAutomationExecutionObservation } from "./execution-admission/index.ts";
+import { copyAutomationExecutionOptions } from "./execution-admission/index.ts";
 import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync, AutomationRetrySeries, hasAutomationExecutionObservation } from "./execution-admission/kernel/index.ts";
 
 /**
@@ -139,10 +139,11 @@ async function runGraphFromSeed(
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
-  const { referenceNow: suppliedReferenceNow, ...baseOptions } = options;
+  const suppliedReferenceNow = options.referenceNow;
+  const executionOptions = copyAutomationExecutionOptions(options);
+  delete executionOptions.referenceNow;
   const referenceNow = automationStudioReferenceNow(seed?.referenceNow) ?? automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
-  const executionOptions = copyAutomationExecutionOptions(baseOptions, { ...(referenceNow !== undefined ? { referenceNow } : {}) });
-  inheritAutomationExecutionObservation(options, executionOptions);
+  if (referenceNow !== undefined) executionOptions.referenceNow = referenceNow;
   try {
     await options.commandRun?.checkpoint();
     // The run executes as its frame, pushed for exactly as long as it runs (`frames/graph-frame.ts`).

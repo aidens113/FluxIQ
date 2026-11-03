@@ -3,9 +3,34 @@
 // down to $0.1 per flow max".
 import { describe, expect, it } from "vitest";
 import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseHoldCall, automationStudioLlmBuildPurseScope, automationStudioLlmFlowPurseScope } from "../index.ts";
+import { observationFixture } from "../../../../../../runtime/execution-observation/tests/fixture.ts";
+import { ExecutionCallbackPolicies, prepareObservedExecutionCallback } from "../../../../../../runtime/execution-observation/index.ts";
+import type { ModelExecutionOptions } from "../../../../../../runtime/models/execution/index.ts";
 
 const provider = (costUsd: number) => ({ estimateCostUsd: () => costUsd });
 const hold = (costUsd: number) => automationStudioLlmBuildPurseHoldCall({ provider: provider(costUsd), estimatedInputTokens: 1000, maxOutputTokens: 100 });
+
+it("forwards the original internal observation through the legacy facade into native settlement and retained pricing", async () => {
+  const f = await observationFixture();
+  const execution: ModelExecutionOptions = {};
+  const flow = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+  flow.keepBackForJudging({ calls: 2, unpriced: { inputTokens: 500, outputTokens: 200 } });
+  const provider = { estimateCostUsd() { return 0.001; } };
+  ExecutionCallbackPolicies.remember(provider, provider.estimateCostUsd, "pure");
+  const core = { run() { return automationStudioLlmFlowPurseScope(flow, async () => {
+    const held = automationStudioLlmBuildPurseHoldCall({ provider, estimatedInputTokens: 100, maxOutputTokens: 20 }, execution);
+    if (!held?.ok || !held.hold.settleObserved) throw new Error("The actual native hold must support acknowledgment.");
+    await held.hold.settleObserved({ estimatedCostUsd: 0.0005 }, execution);
+  }); } };
+  f.source.manage({ receiver: core, callback: core.run, contract: "managed_direct_effects", consumeCompletion: ({ invocation }) => f.source.frameCompletion(invocation) });
+  const owned = await prepareObservedExecutionCallback(f.observation, { receiver: core, callback: core.run, args: [] });
+  if (!owned.observation) throw new Error("The actual model-call frame is required.");
+  Object.defineProperty(execution, "observation", { value: owned.observation, enumerable: true });
+  Object.freeze(execution);
+  await owned.invoke();
+  expect(owned.completion()).toBe("settled");
+  expect(flow.chargedReceipt()).toMatchObject({ calls: 1, chargedCostUsd: 0.0005, pendingCalls: 0 });
+});
 
 describe("a call under the build's purse and the Flow's", () => {
   it("counts a nested allowance's call once in its owning root's charged receipt", async () => {

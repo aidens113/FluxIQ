@@ -1,3 +1,5 @@
+// Compatibility aliases; the framework owns the actual declarations and implementations.
+export type { AutomationStudioSiteResetWitnessStamp } from "../../../../../flows/authoring/plan/index.ts";
 // What a reversible lasting act is witnessed by (t751, R3): something Core
 // reads whose reading from before the act it holds, so that a later fresh read
 // can show the act put back. The one admission (`./admission.ts`) answers one
@@ -26,13 +28,5 @@ export type AutomationStudioSiteResetWitness =
   | { via: "destination"; ref: string; scope: string; group: string }
   | { via: "own_list"; scope: string; group: string }
   | { via: "control"; place: string }
-  | { via: "repeats"; act: string }
-  | { via: "legacy" };
-
-/** A witness as a plan node carries it: `via`, and a Core receipt ref or act id, never a domain identity. Projects require a control receipt; bare forms are standalone compatibility only. */
-export type AutomationStudioSiteResetWitnessStamp =
-  | { via: "destination"; ref: string }
-  | { via: "own_list" }
-  | { via: "control"; ref?: string }
   | { via: "repeats"; act: string }
   | { via: "legacy" };

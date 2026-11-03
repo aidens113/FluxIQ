@@ -48,6 +48,34 @@ Host contracts do not import the engine. The engine and framework-owned contract
 
 ## Public API migration
 
+Domain target preparation is supplied by trusted implementation-bundle code:
+`outputTargetPreparer` and `recordingEntryTargetPreparer`. Native registration
+pins each original callback and bundle receiver per domain. Output dispatch uses
+the registered output definition's `outputTargetPreparationRequired` declaration
+to refuse a missing adapter before IO. Parameters and action copies cannot supply
+that prerequisite or choose a different domain. Legacy output-policy wrappers now
+require an explicit preparer instead of installing Core browser interpretation;
+consumers must migrate together with the reserved pre-1.0 minor release.
+
+Browser consumers use `fluxiq/runtime/output-dispatch/preparation` and
+`fluxiq/runtime/recording/target-preparation` for these narrow contracts and neutral
+helpers. `fluxiq/runtime/execution-observation/policies` exposes existing explicit
+callback declarations; registration alone does not declare an arbitrary hook pure.
+The recording projection accepts only projected parameters and target, preserving
+the original recording entry's identity and execution eligibility.
+
+The trusted `recordingTargetPolicy` bundle field and deny-only
+`recordingTargetPolicyRequired` manifest declaration use the same native registry.
+Recording start selects from the actual approved gateway trust and project domain,
+then rechecks after awaited approval/storage and before acknowledgement. Capture
+selects from its original addressed recording. Direct storage validates the whole
+raw batch under its existing mutation lock before normalization or object writes.
+Stored scope, client wire metadata and the project must agree; request metadata
+cannot select a policy. Core retains opaque structural validation and passive
+legacy target types. Executable browser target validation lives downstream.
+Focused real gateway/storage tests pass; rebuilt public-package integration and
+the remaining backend ownership migration are separate acceptance requirements.
+
 New consumers use:
 
 - `fluxiq/components/automation` and `fluxiq/components/automation/action-effect`;

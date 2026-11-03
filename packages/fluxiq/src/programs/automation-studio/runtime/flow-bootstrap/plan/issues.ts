@@ -1,12 +1,11 @@
+import { error } from "../../../../../runtime/flow-authoring/plan/index.ts";
+// Compatibility aliases; the framework owns the actual declarations and implementations.
+export { error } from "../../../../../runtime/flow-authoring/plan/index.ts";
 // Issue construction and the field-level checks that emit them. Every
 // Bootstrap parse and validation failure is reported through this module, so
 // codes, messages, and paths stay uniform.
 import type { AutomationStudioFlowBootstrapIssue } from "./contracts.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
-
-export function error(code: string, message: string, path?: string): AutomationStudioFlowBootstrapIssue {
-  return { severity: "error", code, message, ...(path ? { path } : {}) };
-}
 
 export function rejectFields(value: Record<string, unknown>, allowed: string[], path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
   const fields = new Set(allowed);

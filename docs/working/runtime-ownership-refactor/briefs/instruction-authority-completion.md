@@ -9,6 +9,8 @@ Own service/instruction-authority.ts, canonical runtime/action-permissions/instr
 Keep the existing generic once cache independent of Studio/model/engine dependencies. Prefer an actual source-aware producer adapter rather than copying a seven-field context or adding framework->Studio edges.
 Root owns service.ts composition; report exact required wiring. Must not touch B action-permissions/plan resolution/tools/parking helpers, Root's Service fixture, storage/metrics, public parents/config/baselines.
 Use the ONE canonical AuthoringExecutionScope/OriginalExecutionPromiseReceipts/policies and actual entered parent. No orphan root, ambient scope or captured-parent revival.
+Approved policy extension: rememberManagedLexical pins an inspected original Core lexical function and completion reader, substituting only its actual incoming receiver. Existing rememberManaged behavior stays unchanged.
+Own cohesive configuration/registration.ts extraction of the EXISTING typed capture algorithm and its internal barrel; no duplicate snapshot algorithm, casts, callback wrappers or new registry. Root handles public composition.
 Retain once-only success/rejection/sync-throw/reentrance, original route/cache behavior, all usage/billed-call accounting and unchanged prompt/wire/schema bytes.
 Own-produced known Core reads may provide completion only after real acknowledgement; unsupported supplied read/run/counter callbacks remain unknown and refuse second IO/reopen.
 Add narrow positive/held-ack/throw-forged/original-Promise/cached-data-with-no-second-call cases; keep existing authority/once/creation-purse oracles unchanged.

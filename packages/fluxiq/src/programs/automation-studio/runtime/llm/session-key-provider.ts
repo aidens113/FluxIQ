@@ -34,9 +34,12 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "./model-limits/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "./harness/index.ts";
 import { createAutomationStudioDeepSeekProvider, createAutomationStudioAnthropicProvider } from "./provider-factories.ts";
-import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS } from "./provider-contract.ts";
+import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, type AutomationStudioLlmOpaqueSecretResolver } from "./provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmRunCostCeilingUsd } from "./flow-execution-limits/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./resolver-contract.ts";
+import { invokeModelExecutionDelegate, modelExecutionFromCarrier, ModelExecutionReceiptOwner } from "../../../../runtime/models/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../runtime/execution-observation/index.ts";
+import type { SessionProviderKeyExecutionPorts } from "../../../../runtime/models/secrets/execution/index.ts";
 
 /** What one call reserves for the model's reply: the harness's own reply reserve, so the two cannot drift. */
 const AUTOMATION_STUDIO_SESSION_KEY_REPLY_TOKENS = AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS;
@@ -81,6 +84,8 @@ export const AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS = Object.freeze({
 export function createAutomationStudioSessionKeyProviderResolver(options: {
   /** Secret Keys' own service in the host; its `unlockedSessionFor` is what every call falls back to. */
   ports: AutomationStudioSessionKeyPorts;
+  /** Trusted native completion ports for this exact Secret Keys service. */
+  keyExecutionPorts?: SessionProviderKeyExecutionPorts;
   fetchImpl?: typeof fetch;
   instanceHost?: string;
   flowSecretKeyId?: (scope: { projectId: string; flowId: string }) => Promise<string | undefined> | string | undefined;
@@ -100,21 +105,23 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     // The adapter reports any failed secret resolution as `llm.provider_secret_unavailable`;
     // a locked key is remembered per request so the call fails with the typed error instead.
     const locked = new Map<string, AutomationStudioSecretsLockedError>();
-    const adapter = factory({
-      secretReference: { kind: "secret_reference", id: `secret:session-${providerId}-key` },
-      model,
-      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
-      resolveSecret: async (request) => {
+    const keyOwner = new ModelExecutionReceiptOwner();
+    const flowSecretKeyId = options.flowSecretKeyId;
+    const ports = options.ports;
+    const keyExecutionPorts = options.keyExecutionPorts;
+    const resolveSecret: AutomationStudioLlmOpaqueSecretResolver = function(this: unknown, request) {
+      const observed = modelExecutionFromCarrier(request, this, resolveSecret);
+      const actual = (async () => {
         if (request.projectId !== input.projectId || request.flowId !== input.flowId) throw new Error("LLM request scope mismatch.");
         // Resolved now, for this call: the started-from session if it still holds the key, else the person's live unlock, else `secrets.locked`.
-        const flowKeyId = (await options.flowSecretKeyId?.({ projectId: input.projectId, flowId: input.flowId })) ?? metadataKeyId(input.metadata);
+        const flowKeyId = (flowSecretKeyId ? await invokeModelExecutionDelegate(observed, { receiver: options, callback: flowSecretKeyId, args: [{ projectId: input.projectId, flowId: input.flowId }] }) : undefined) ?? metadataKeyId(input.metadata);
         let secret: string;
         try {
-          secret = await releaseAutomationStudioSessionProviderKey(options.ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
+          secret = await releaseAutomationStudioSessionProviderKey(ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
             provider: providerId, model,
             ...(flowKeyId ? { flowKeyId } : {}),
             ...(options.instanceHost ? { instanceHost: options.instanceHost } : {})
-          });
+          }, observed, keyExecutionPorts);
         } catch (error) {
           if (error instanceof AutomationStudioSecretsLockedError) locked.set(request.requestId, error);
           throw error;
@@ -122,20 +129,32 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
         locked.delete(request.requestId);
         if (request.outboundBody.includes(secret)) throw new Error("LLM request contains the configured credential.");
         return secret;
-      }
+      })();
+      return keyOwner.returning(actual, observed);
+    };
+    keyOwner.registerLexical(resolveSecret);
+    const adapter = factory({
+      secretReference: { kind: "secret_reference", id: `secret:session-${providerId}-key` },
+      model,
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+      resolveSecret
     });
+    const originalRun = adapter.runTask;
+    const completionOwner = new ModelExecutionReceiptOwner();
+    const runTask: AutomationStudioLlmProvider["runTask"] = (request, execution) => {
+      const observed = modelExecutionFromCarrier(execution, provider, runTask);
+      const actual = invokeModelExecutionDelegate(observed, { receiver: adapter, callback: originalRun, args: [request, execution] }, execution, execution?.signal)
+        .catch(error => { throw locked.get(request.requestId) ?? error; })
+        .finally(() => { locked.delete(request.requestId); });
+      return completionOwner.returning(actual, observed);
+    };
     const provider: AutomationStudioLlmProvider = {
       ...adapter,
-      runTask: async (request, execution) => {
-        try {
-          return await adapter.runTask(request, execution);
-        } catch (error) {
-          throw locked.get(request.requestId) ?? error;
-        } finally {
-          locked.delete(request.requestId);
-        }
-      }
+      runTask
     };
+    completionOwner.register({ receiver: provider, callback: runTask });
+    if (provider.measureInput && ExecutionCallbackPolicies.isPure(adapter, provider.measureInput)) ExecutionCallbackPolicies.remember(provider, provider.measureInput, "pure");
+    if (provider.estimateCostUsd && ExecutionCallbackPolicies.isPure(adapter, provider.estimateCostUsd)) ExecutionCallbackPolicies.remember(provider, provider.estimateCostUsd, "pure");
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     const policy = input.metadata?.adaptationPolicySettings;
     const policyCost = policy && typeof policy === "object" && !Array.isArray(policy) ? policy.maxEstimatedCostUsdPerRun : undefined;

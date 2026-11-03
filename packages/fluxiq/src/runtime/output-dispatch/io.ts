@@ -3,14 +3,14 @@ import type { ClientGatewayCommandContext } from "../../client-gateway/service/c
 import type { AutomationNodeExecutionResult } from "../../components/automation/index.ts";
 import type { OutputDispatchIo } from "./ports/index.ts";
 import type { RegisteredOutputAction } from "./action.ts";
-import type { OutputTargetPreparer } from "./target-preparer.ts";
+import type { OutputTargetPreparationPort } from "./contracts/index.ts";
 import { awaitConfirmation } from "./confirmation/index.ts";
 import { compactJsonObject } from "./compact.ts";
 import { prepareOutputAction } from "./prepare-action.ts";
 import { dispatchedRoute, dispatchFailure, confirmationFailureMessage, missingOutputIdResult, unregisteredOutputResult, elementTargetRejectionResult, failedDispatchResult, targetResolutionField, clearedWaitField, actionabilityField } from "./results/index.ts";
 import { invokeObservedOutputMethod, invokeObservedOutputSync, type OutputExecutionObservation } from "./admission/internal/index.ts";
 /** Dispatches an output-native policy action through an importer-registered adapter. */
-export async function dispatchRegisteredOutput(io: OutputDispatchIo, domainId: string | null | undefined, action: RegisteredOutputAction, signal?: AbortSignal, commandContext?: ClientGatewayCommandContext, targetPreparer?: OutputTargetPreparer, observation?: OutputExecutionObservation): Promise<AutomationNodeExecutionResult> {
+export async function dispatchRegisteredOutput(io: OutputDispatchIo, domainId: string | null | undefined, action: RegisteredOutputAction, signal?: AbortSignal, commandContext?: ClientGatewayCommandContext, targetPreparer?: OutputTargetPreparationPort, observation?: OutputExecutionObservation): Promise<AutomationNodeExecutionResult> {
   const outputId = action.outputId?.trim();
   if (!outputId)
     return missingOutputIdResult("IO runtime");

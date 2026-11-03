@@ -46,6 +46,14 @@ have a consumer?* If yes, it is not program-owned. Promote a file to
 `_shared` or a global area only when a second consumer actually exists. Do
 not generalize ahead of a real second use.
 
+Automation Studio has an explicit user-required boundary: it is a panel
+controlling the framework. Its execution, authoring, verification, persistence,
+project/policy/recording ownership and orchestration belong to framework areas,
+even while Studio is their only current client. A second client is not a
+prerequisite for completing that migration. Remaining backend implementations
+under Studio are temporary; the generic program layer examples below do not
+authorize keeping them there.
+
 ### 2. Layer — which responsibility inside a program
 
 | Layer | Owns | Must not own |
@@ -107,8 +115,9 @@ sits in needs splitting, not the kind folder.
 
 Ownership, program, layer, feature, kind, file:
 `packages/fluxiq/src/programs/automation-studio/storage/project/hierarchy/repository.ts`
-is seven path segments. Cap source files at eight segments from the
-repository root. A ninth means a layer or feature was assigned wrongly. A
+is nine path segments including the filename. The existing audit caps source
+files at nine segments from the repository root. A tenth means a layer or
+feature was assigned wrongly. A
 test sits one segment deeper than its subject and is not counted. The one
 exemption is `apps/web/src/app/`, where the Next.js file-system router
 dictates depth; it is listed in the audit's `depthExemptPrefixes`.

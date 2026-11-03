@@ -15,6 +15,11 @@ import { HeldKeys, type HeldRevealAuthorization, type HeldSessionUnlock, type Se
 import { SecretKeyStore } from "./key-store.ts";
 import { SealUpgrades } from "./seal-upgrades.ts";
 import { SecretValueSealer } from "./value-sealer.ts";
+import type { RepositoryExecutionPorts } from "../../../framework/persistence/sqlite/execution/index.ts";
+import type { SessionProviderKeyExecutionPorts } from "../../../runtime/models/secrets/execution/index.ts";
+import { SecretKeysExecutionOwner, type SecretKeysOperationContext } from "./execution/owner/index.ts";
+import { MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS, snapshotSecretKeys, createSessionSecretAuthorization, revealSessionSecret, revokeSessionSecretAuthorization, unlockedSecretSession } from "./execution/operations/index.ts";
+import { secretKeySummary as toSummary, secretRevealAuthorizationMetadata as publicRevealAuthorization } from "./execution/metadata/index.ts";
 
 export type { SecretKeyCredentialChange, SecretKeyCredentialChangeInput } from "./credential-changes.ts";
 export type { SecretRevealAuthorizationMetadata } from "./held-keys.ts";
@@ -90,8 +95,6 @@ type RevealSecretKeyInput = {
  */
 export type SecretKeysCloseMode = "shutdown" | "evict";
 
-const MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS = 300_000;
-
 /**
  * Secret Keys: values sealed under account passwords. This class is the public
  * surface; records and their writes live in `SecretKeyStore`, held derived keys
@@ -109,29 +112,32 @@ export class SecretKeysService {
   private readonly upgrades: SealUpgrades;
   private readonly credentialChanges: CredentialChanges;
   private readonly now: () => number;
+  readonly #executionOwner: SecretKeysExecutionOwner;
+
+  static executionPorts(original: SecretKeysService): SessionProviderKeyExecutionPorts {
+    const owner = original.#executionOwner;
+    if (Object.getPrototypeOf(original) !== SecretKeysService.prototype) throw new Error("secret.execution.unsupported_service");
+    return owner.ports();
+  }
 
   /**
    * `heldKeys`, when given, is custody that outlives this service (a workspace
    * manager's): the service uses it and does not own it. Without it the service
    * holds its keys itself, and they end with it.
    */
-  constructor(options: { repository?: Repository; now?: () => number; passwordKdf?: PasswordKdfOptions; heldKeys?: HeldKeys | undefined } = {}) {
+  constructor(options: { repository?: Repository; repositoryExecution?: RepositoryExecutionPorts<JsonObject> | undefined; now?: () => number; passwordKdf?: PasswordKdfOptions; heldKeys?: HeldKeys | undefined } = {}) {
     this.heldKeys = options.heldKeys ?? new HeldKeys();
     this.ownsHeldKeys = options.heldKeys === undefined;
     this.now = options.now ?? Date.now;
     this.sealer = new SecretValueSealer(options.passwordKdf);
-    this.store = new SecretKeyStore({ repository: options.repository, kind: SecretKeysService.storeKind, sealer: this.sealer });
+    this.store = new SecretKeyStore({ repository: options.repository, repositoryExecution: options.repositoryExecution, kind: SecretKeysService.storeKind, sealer: this.sealer });
     this.upgrades = new SealUpgrades({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys });
     this.credentialChanges = new CredentialChanges({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, upgrades: this.upgrades });
+    this.#executionOwner = new SecretKeysExecutionOwner({ original: this, store: this.store, heldKeys: this.heldKeys, sealer: this.sealer, now: this.now }, nativeServiceMethods);
   }
 
   async snapshot(): Promise<SecretKeysSnapshot> {
-    await this.store.load();
-    return {
-      keys: this.store.list()
-        .map(toSummary)
-        .sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.name.localeCompare(right.name))
-    };
+    return snapshotSecretKeys(this.operationContext());
   }
 
   async getKeySummary(id: string): Promise<SecretKeySummary | null> {
@@ -319,70 +325,11 @@ export class SecretKeysService {
   }
 
   async createSessionRevealAuthorization(input: { sessionId: string; userId: string; id: string; ttlMs?: number; nowMs?: number }): Promise<SecretRevealAuthorizationMetadata> {
-    await this.store.load();
-    const nowMs = input.nowMs ?? this.now();
-    const unlock = this.heldKeys.session(input.sessionId);
-    if (!unlock || unlock.userId !== input.userId || unlock.expiresAtMs <= nowMs) {
-      // Only the caller's own expired unlock is dropped here: naming another
-      // user's session id must not lock that user's keys.
-      if (unlock && unlock.userId === input.userId) this.heldKeys.revokeSession(input.sessionId);
-      throw new Error("Secret key session unlock is unavailable");
-    }
-    const existing = this.store.require(input.id);
-    const unlockedKey = unlock.decryptionKeys.get(existing.id);
-    if (!unlockedKey || unlockedKey.keyUpdatedAtMs !== existing.updatedAtMs) throw new Error("Secret key session unlock is unavailable");
-    const requestedTtlMs = input.ttlMs ?? 60_000;
-    const ttlMs = Math.min(requestedTtlMs, unlock.expiresAtMs - nowMs);
-    if (!Number.isInteger(requestedTtlMs) || requestedTtlMs < 1000 || requestedTtlMs > MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS || ttlMs < 1) {
-      throw new Error("Secret reveal authorization TTL is invalid");
-    }
-    const authorizationId = `secret-reveal:${randomUUID()}`;
-    const expiryTimer = this.heldKeys.authorizationExpiryTimer(authorizationId, ttlMs);
-    const authorization: HeldRevealAuthorization = {
-      authorizationId,
-      keyId: existing.id,
-      keyUpdatedAtMs: existing.updatedAtMs,
-      expiresAtMs: nowMs + ttlMs,
-      remainingUses: 1,
-      decryptionKey: Buffer.from(unlockedKey.decryptionKey),
-      sessionId: input.sessionId,
-      state: "available",
-      expiryTimer
-    };
-    this.heldKeys.holdAuthorization(authorization);
-    return publicRevealAuthorization(authorization);
+    return createSessionSecretAuthorization(this.operationContext(), input);
   }
 
   async revealKeyWithAuthorization(input: { authorizationId: string; id: string; nowMs?: number }): Promise<{ key: SecretKeySummary; value: string }> {
-    const authorization = this.heldKeys.authorization(input.authorizationId);
-    const nowMs = input.nowMs ?? this.now();
-    if (!authorization || authorization.state !== "available" || authorization.keyId !== input.id) throw new Error("Secret reveal authorization is unavailable");
-    if (authorization.expiresAtMs <= nowMs) {
-      this.heldKeys.revokeAuthorization(input.authorizationId);
-      throw new Error("Secret reveal authorization is unavailable");
-    }
-    authorization.state = "claimed";
-    try {
-      await this.store.load();
-      const existing = this.store.require(input.id);
-      if (existing.updatedAtMs !== authorization.keyUpdatedAtMs) throw new Error("Secret reveal authorization is no longer valid");
-      const secret = this.sealer.openRecordWithKey(existing, authorization.decryptionKey);
-      if (!secret) throw new Error("Invalid secret key payload");
-      const next: SecretKeyRecord = { ...existing, lastRevealedAtMs: nowMs };
-      this.store.set(next);
-      await this.store.persist(existing.id);
-      const active = this.heldKeys.authorization(input.authorizationId);
-      if (active !== authorization || authorization.state !== "claimed" || authorization.expiresAtMs <= this.now()) {
-        secret.value = "";
-        throw new Error("Secret reveal authorization is unavailable");
-      }
-      const value = secret.value;
-      this.heldKeys.revokeAuthorization(input.authorizationId);
-      return { key: toSummary(next), value };
-    } catch (error) {
-      this.heldKeys.revokeAuthorization(input.authorizationId);
-      throw error;
-    }
+    return revealSessionSecret(this.operationContext(), input);
   }
 
   /**
@@ -405,7 +352,7 @@ export class SecretKeysService {
   }
 
   revokeRevealAuthorization(authorizationId: string): void {
-    this.heldKeys.revokeAuthorization(authorizationId);
+    revokeSessionSecretAuthorization(this.operationContext(), authorizationId);
   }
 
   activeRevealAuthorizationCount(): number {
@@ -424,14 +371,7 @@ export class SecretKeysService {
    * never another user's session, and creates, extends or revokes nothing.
    */
   unlockedSessionFor(userId: string, nowMs: number = this.now()): string | null {
-    if (!userId) return null;
-    let best: { sessionId: string; expiresAtMs: number } | null = null;
-    // An unlock that opens no key (a wrong password still holds a session) cannot pay for anything.
-    for (const held of this.heldKeys.sessionsFor(userId)) {
-      if (held.expiresAtMs <= nowMs || held.keyCount === 0) continue;
-      if (!best || held.expiresAtMs > best.expiresAtMs) best = held;
-    }
-    return best?.sessionId ?? null;
+    return unlockedSecretSession(this.operationContext(), userId, nowMs);
   }
 
   /**
@@ -458,6 +398,11 @@ export class SecretKeysService {
   close(options: { mode?: SecretKeysCloseMode | undefined } = {}): void {
     if (options.mode !== "evict" || this.ownsHeldKeys) this.heldKeys.revokeAll();
     this.credentialChanges.forgetAll();
+  }
+
+  /** Legacy ports may inherit a Service receiver; native execution still requires its private owner. */
+  private operationContext(): SecretKeysOperationContext {
+    return { original: this, store: this.store, heldKeys: this.heldKeys, sealer: this.sealer, now: this.now };
   }
 
   /**
@@ -538,25 +483,6 @@ function sameSeals(current: SecretKeyRecord | undefined, record: SecretKeyRecord
   return current !== undefined && current.sealed === record.sealed && current.pendingSealed === record.pendingSealed;
 }
 
-function toSummary(record: SecretKeyRecord): SecretKeySummary {
-  return {
-    id: record.id,
-    name: record.name,
-    kind: record.kind,
-    ...(record.provider ? { provider: record.provider } : {}),
-    scope: record.scope,
-    ...(record.scopeRef ? { scopeRef: record.scopeRef } : {}),
-    ...(record.description ? { description: record.description } : {}),
-    enabled: record.enabled,
-    ...(record.createdBy ? { createdBy: record.createdBy } : {}),
-    createdAtMs: record.createdAtMs,
-    updatedAtMs: record.updatedAtMs,
-    lastRotatedAtMs: record.lastRotatedAtMs,
-    ...(record.lastRevealedAtMs ? { lastRevealedAtMs: record.lastRevealedAtMs } : {}),
-    ...(record.metadata ? { metadata: record.metadata } : {})
-  };
-}
-
 function requirePassword(value: string | undefined): string {
   if (!value) throw new Error("authorizationPassword is required");
   return value;
@@ -586,12 +512,4 @@ function normalizeScope(value: SecretKeyScope | undefined): SecretKeyScope {
   return value === "domain" || value === "flow" || value === "custom" ? value : "global";
 }
 
-function publicRevealAuthorization(authorization: HeldRevealAuthorization): SecretRevealAuthorizationMetadata {
-  return {
-    authorizationId: authorization.authorizationId,
-    keyId: authorization.keyId,
-    keyUpdatedAtMs: authorization.keyUpdatedAtMs,
-    expiresAtMs: authorization.expiresAtMs,
-    remainingUses: 1
-  };
-}
+const nativeServiceMethods: readonly object[] = [SecretKeysService.prototype.snapshot, SecretKeysService.prototype.createSessionRevealAuthorization, SecretKeysService.prototype.revealKeyWithAuthorization, SecretKeysService.prototype.revokeRevealAuthorization, SecretKeysService.prototype.unlockedSessionFor];

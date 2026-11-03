@@ -1,9 +1,13 @@
 import { automationStudioLlmBuildPurseHoldCall as holdCall, type AutomationStudioLlmBuildPurseRefusal } from "../../../../../runtime/agents/budget/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "../../../../../runtime/models/limits/index.ts";
+import type { ModelExecutionOptions } from "../../../../../runtime/models/execution/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/policies/index.ts";
 
 /** Studio retains its exact user-facing refusal wording; the framework owns multi-scope reservation and settlement. */
-export function automationStudioLlmBuildPurseHoldCall(input: Omit<Parameters<typeof holdCall>[0], "diagnostic">): ReturnType<typeof holdCall> {
-  return holdCall({ ...input, diagnostic: (refusal, scope) => refusalDiagnostic(refusal, scope === "active" ? "build" : "Flow") });
+export function automationStudioLlmBuildPurseHoldCall(input: Omit<Parameters<typeof holdCall>[0], "diagnostic">, execution?: ModelExecutionOptions): ReturnType<typeof holdCall> {
+  const diagnostic = (refusal: AutomationStudioLlmBuildPurseRefusal, scope: "active" | "owner"): AutomationStudioLlmDiagnostic => refusalDiagnostic(refusal, scope === "active" ? "build" : "Flow");
+  ExecutionCallbackPolicies.rememberLexical(diagnostic, "pure");
+  return holdCall({ ...input, diagnostic }, execution);
 }
 
 function refusalDiagnostic(refusal: AutomationStudioLlmBuildPurseRefusal, purseWhose: "build" | "Flow"): AutomationStudioLlmDiagnostic {

@@ -1,5 +1,6 @@
 import type { FrameworkResult, JsonObject } from "../core/index.ts";
 import type { RuntimeInputs, RuntimeOutputs } from "../io/index.ts";
+export * from "./authoring/index.ts";
 
 export type FlowNode = {
   id: string;

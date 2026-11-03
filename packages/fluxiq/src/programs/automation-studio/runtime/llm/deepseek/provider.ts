@@ -1,4 +1,6 @@
-import { automationStudioDeepSeekCompletion } from "../../../../../runtime/models/providers/deepseek/index.ts";
+import { automationStudioDeepSeekCompletion, type DeepSeekCompletionInput } from "../../../../../runtime/models/providers/deepseek/index.ts";
+import { invokeModelExecutionDelegate, modelExecutionClock, modelExecutionFromCarrier, ModelExecutionReceiptOwner, type ModelExecutionOptions } from "../../../../../runtime/models/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/index.ts";
 import { automationStudioProviderRefusalMessageScreen } from "../provider-transport/index.ts";
 import type {
   AutomationStudioLlmProvider,
@@ -69,27 +71,37 @@ export function createAutomationStudioDeepSeekProvider(options: AutomationStudio
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0 || maxResponseBytes > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) {
     throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "DeepSeek response-byte limit is invalid.");
   }
-  const now = options.now ?? Date.now;
-  return {
+  const now = options.now;
+  const completionOwner = new ModelExecutionReceiptOwner();
+  const runTask: AutomationStudioLlmProvider["runTask"] = (request, execution) => {
+    const resolveSecret = options.resolveSecret;
+    const observed = modelExecutionFromCarrier(execution, provider, runTask);
+    const actual = (async () => {
+      try {
+        return await runDeepSeekTask({ request, ...(execution?.signal ? { signal: execution.signal } : {}), secretReference, resolveSecret, fetchImpl, model, maxResponseBytes, now: modelExecutionClock(observed, now) }, observed);
+      } catch (error) {
+        if (error instanceof AutomationStudioLlmProviderError) throw error;
+        throw new AutomationStudioLlmProviderError("llm.provider_request_setup_failed", "DeepSeek request setup failed.");
+      }
+    })();
+    return completionOwner.returning(actual, observed);
+  };
+  const measureInput: NonNullable<AutomationStudioLlmProvider["measureInput"]> = request => measureAutomationStudioDeepSeekInput(request);
+  const estimateCostUsd: NonNullable<AutomationStudioLlmProvider["estimateCostUsd"]> = ({ inputTokens, outputTokens }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, model, (now ?? Date.now)());
+  const provider: AutomationStudioLlmProvider = {
     metadata: { provider: "deepseek", model },
     // The same measure `runDeepSeekTask` refuses on, so the harness refuses an
     // oversize request first and with its size (`../harness/run.ts`).
-    measureInput: (request) => measureAutomationStudioDeepSeekInput(request),
+    measureInput,
     // All input a cache miss -- what is cached is not known before the call --
     // at the model's rates in force now, peak or off-peak (t254): what the
     // harness holds for a call of this size against the ledger and the purse.
-    estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, model, now()),
-    runTask: async (request, execution) => {
-      try {
-        return await runDeepSeekTask({ request, ...(execution?.signal ? { signal: execution.signal } : {}), secretReference, resolveSecret: options.resolveSecret, fetchImpl, model, maxResponseBytes, now });
-      } catch (error) {
-        if (error instanceof AutomationStudioLlmProviderError) throw error;
-        // Transport and response work is normalized inside runDeepSeekTask. Any
-        // other escape happened while establishing the local request boundary.
-        throw new AutomationStudioLlmProviderError("llm.provider_request_setup_failed", "DeepSeek request setup failed.");
-      }
-    }
+    estimateCostUsd, runTask
   };
+  completionOwner.register({ receiver: provider, callback: runTask });
+  ExecutionCallbackPolicies.remember(provider, measureInput, "pure");
+  if (!now || ExecutionCallbackPolicies.isPure(undefined, now)) ExecutionCallbackPolicies.remember(provider, estimateCostUsd, "pure");
+  return provider;
 }
 
 async function runDeepSeekTask(input: {
@@ -101,7 +113,7 @@ async function runDeepSeekTask(input: {
   model: AutomationStudioDeepSeekModel;
   maxResponseBytes: number;
   now: () => number;
-}): Promise<{ response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary }> {
+}, execution?: ModelExecutionOptions): Promise<{ response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary }> {
   let body: string;
   try {
     validateAutomationStudioDeepSeekRequest(input.request);
@@ -136,7 +148,16 @@ async function runDeepSeekTask(input: {
     const kind = error instanceof Error && typeof error.name === "string" && /^[A-Za-z]{1,40}$/.test(error.name) ? error.name : "non_error";
     throw new AutomationStudioLlmProviderError("llm.provider_request_construction_failed", `DeepSeek request construction failed (${kind}).`);
   }
-  return automationStudioDeepSeekCompletion({
+  const keyOwner = new ModelExecutionReceiptOwner();
+  const originalResolve = input.resolveSecret;
+  const resolveKey = (signal: AbortSignal): Promise<string> => {
+    const child = modelExecutionFromCarrier(signal, transport, resolveKey);
+    const secretRequest: Parameters<typeof originalResolve>[0] = { provider: "deepseek", secretReference: input.secretReference, projectId: input.request.context.projectId, flowId: input.request.context.flowId, requestId: input.request.requestId, purpose: "llm_provider_request", outboundBody: body, signal };
+    return keyOwner.returning(invokeModelExecutionDelegate(child, { receiver: input, callback: originalResolve, args: [secretRequest] }, secretRequest, signal), child);
+  };
+  const requestShape = () => automationStudioDeepSeekRequestShape({ request: input.request, model: input.model, body });
+  const readEnvelope = (value: unknown, sentAtMs: number) => parseAutomationStudioDeepSeekEnvelope(value, input.request, input.model, sentAtMs);
+  const transport: DeepSeekCompletionInput<AutomationStudioLlmStructuredResponse> = {
     body, model: input.model, fetchImpl: input.fetchImpl, maxResponseBytes: input.maxResponseBytes, timeoutMs: input.request.timeoutMs, now: input.now,
     ...(input.signal ? { signal: input.signal } : {}),
     requestId: input.request.requestId, idempotencyKey: input.request.idempotencyKey, taskKind: input.request.taskKind,
@@ -144,8 +165,11 @@ async function runDeepSeekTask(input: {
     ...(input.request.context.evidenceLoop?.iteration ? { iteration: input.request.context.evidenceLoop.iteration } : {}),
     observe: automationStudioLlmStepLogModelStep,
     screenMessage: automationStudioProviderRefusalMessageScreen,
-    requestShape: () => automationStudioDeepSeekRequestShape({ request: input.request, model: input.model, body }),
-    resolveKey: (signal) => input.resolveSecret({ provider: "deepseek", secretReference: input.secretReference, projectId: input.request.context.projectId, flowId: input.request.context.flowId, requestId: input.request.requestId, purpose: "llm_provider_request", outboundBody: body, signal }),
-    readEnvelope: (value, sentAtMs) => parseAutomationStudioDeepSeekEnvelope(value, input.request, input.model, sentAtMs)
-  });
+    requestShape, resolveKey, readEnvelope
+  };
+  keyOwner.register({ receiver: transport, callback: resolveKey });
+  ExecutionCallbackPolicies.remember(transport, requestShape, "pure");
+  ExecutionCallbackPolicies.remember(transport, readEnvelope, "pure");
+  ExecutionCallbackPolicies.rememberLexical(automationStudioProviderRefusalMessageScreen, "pure");
+  return automationStudioDeepSeekCompletion(transport, execution);
 }

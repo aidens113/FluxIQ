@@ -16,15 +16,19 @@ export async function startRecording<TTarget, TEvidence>(state: RecordingBridgeS
   const context = await state.startPolicy.context({ session, request, origin: "host" });
   if (!context.ok) throw new Error(context.code);
   const projectId = context.projectId;
-  const domainId = input.domainId ?? stringMetadataValue(session.metadata, "domainId") ?? null;
+  const domainId = context.domainId !== undefined ? context.domainId : input.domainId ?? stringMetadataValue(session.metadata, "domainId") ?? null;
   await received;
+  await state.startPolicy.recheck?.({ session, request, context });
   const recording = await state.sink.create({
     ...(projectId !== undefined ? { projectId } : {}), recordingId,
     ...(description.description !== undefined ? { description: description.description } : {}), ...(context.taskId !== undefined ? { taskId: context.taskId } : {}),
     ...clientRecordingDefaults(session, domainId, true), initialState: emptyClientStateSnapshot(session),
     metadata: compactJsonObject({ createdFrom: "client-gateway", sessionId: session.sessionId, clientId: session.clientId, clientName: session.name, ...(input.metadata ?? {}) })
   });
-  state.activeRecordings.set(ownerKey, { ...(projectId !== undefined ? { projectId } : {}), recordingId: recording.recordingId, domainId });
-  await state.gateway.startRecording(session.sessionId, { recordingId: recording.recordingId, ...(projectId !== undefined ? { projectId } : {}), ...(context.taskId !== undefined ? { taskId: context.taskId } : {}), ...(domainId ? { domainId } : {}) });
+  await state.startPolicy.recheck?.({ session, request, context });
+  const storedDomain = recording.environment.domainId;
+  if (context.domainId !== undefined && storedDomain !== context.domainId) throw new Error("recording.domain_scope_refused");
+  state.activeRecordings.set(ownerKey, { ...(projectId !== undefined ? { projectId } : {}), recordingId: recording.recordingId, ...(storedDomain !== undefined ? { domainId: storedDomain } : {}) });
+  await state.gateway.startRecording(session.sessionId, { recordingId: recording.recordingId, ...(projectId !== undefined ? { projectId } : {}), ...(context.taskId !== undefined ? { taskId: context.taskId } : {}), ...(storedDomain ? { domainId: storedDomain } : {}) });
   return recording;
 }

@@ -8,3 +8,4 @@ export { withAutomationStudioBuildToolCallbackScope } from "../tools/with-callba
 export { AutomationStudioBuildToolAuxiliaryCalls } from "../tools/auxiliary-calls.ts";
 export { invokeAutomationStudioBuildToolAuxiliary } from "../tools/auxiliary.ts";
 export { observeAutomationStudioBuildToolParkingPort } from "../tools/parking-port.ts";
+export { AutomationStudioBuildToolPermissions } from "../tools/permission.ts";

@@ -2,6 +2,7 @@ import type { ManagedExecutionCallbackRegistration } from "../contracts/index.ts
 import type { ExecutionCallbackCompletionConfiguration } from "./configuration.ts";
 import type { ExecutionCallbackCompletionPolicy } from "./policy.ts";
 import type { ExecutionCallbackRegistrar } from "./registrar.ts";
+import { captureExecutionCallbackRegistration } from "./registration.ts";
 
 /** Captures original declarations; it grants no completion or resource baseline. */
 export function captureExecutionCallbackCompletions(configuration: ExecutionCallbackCompletionConfiguration): ExecutionCallbackCompletionPolicy {
@@ -11,18 +12,7 @@ export function captureExecutionCallbackCompletions(configuration: ExecutionCall
   const registrar: ExecutionCallbackRegistrar = Object.freeze({
     manage<TReceiver, TArguments extends unknown[], TResult>(registration: ManagedExecutionCallbackRegistration<TReceiver, TArguments, TResult>): void {
       if (!capturing) throw new Error("execution_observation.configuration_closed");
-      const receiver = registration.receiver;
-      const callback = registration.callback;
-      const binding = registration.binding;
-      const contract = registration.contract;
-      if (typeof callback !== "function") throw new Error("execution_observation.invalid_callback");
-      const identity = { receiver, callback, ...(binding !== undefined ? { binding } : {}) };
-      let pinned: ManagedExecutionCallbackRegistration<TReceiver, TArguments, TResult>;
-      if (contract === "no_direct_effects") pinned = Object.freeze({ ...identity, contract });
-      else if (contract === "managed_direct_effects") {
-        const consumeCompletion = registration.consumeCompletion.bind(registration);
-        pinned = Object.freeze({ ...identity, contract, consumeCompletion });
-      } else throw new Error("execution_observation.invalid_completion_contract");
+      const pinned = captureExecutionCallbackRegistration(registration);
       actions.push(Object.freeze((target: ExecutionCallbackRegistrar) => target.manage(pinned)));
     }
   });

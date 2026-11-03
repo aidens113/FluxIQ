@@ -8,6 +8,8 @@ import { isRecord } from "../../transport/index.ts";
 import { automationStudioAnthropicUsage } from "./pricing.ts";
 import { readAutomationStudioAnthropicStream } from "./stream.ts";
 import type { JsonObject } from "../../../../core/index.ts";
+import type { ModelExecutionOptions } from "../../execution/index.ts";
+import { ModelTransportExecution } from "../../transport/index.ts";
 
 export const AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 export const AUTOMATION_STUDIO_ANTHROPIC_API_VERSION = "2026-10-21";
@@ -31,7 +33,14 @@ export type AutomationStudioAnthropicMessageInput<T> = {
 };
 
 /** Native Messages transport shared by Flow tasks and chat; no key is retained across calls. */
-export async function automationStudioAnthropicMessage<T>(input: AutomationStudioAnthropicMessageInput<T>): Promise<{ response: T; usage: AutomationStudioLlmUsageSummary }> {
+export async function automationStudioAnthropicMessage<T>(input: AutomationStudioAnthropicMessageInput<T>, execution?: ModelExecutionOptions): Promise<{ response: T; usage: AutomationStudioLlmUsageSummary }> {
+  const observed = new ModelTransportExecution(execution);
+  const resolveKey = input.resolveKey;
+  const fetchImpl = input.fetchImpl;
+  const observe = input.observe;
+  const readAnswer = input.readAnswer;
+  const originalScreen = input.screenMessage;
+  const screenMessage = (value: string) => observed.sync({ receiver: undefined, callback: originalScreen, args: [value] });
   if (!Number.isInteger(input.timeoutMs) || input.timeoutMs <= 0 || input.timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS) throw new AutomationStudioLlmProviderError("llm.provider_request_timeout_invalid", "Anthropic request timeout is invalid.");
   const controller = new AbortController();
   let timedOut = false;
@@ -45,8 +54,11 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     controller.abort();
   }, input.timeoutMs);
   let step: ModelTransportObservation | undefined;
+  let reply: ModelTransportObservation["reply"] | undefined;
+  let succeeded: ModelTransportObservation["succeeded"] | undefined;
+  let failed: ModelTransportObservation["failed"] | undefined;
   try {
-    try { key = await raceAutomationStudioProviderSignal(Promise.resolve().then(() => input.resolveKey(controller.signal)), controller.signal); }
+    try { key = await raceAutomationStudioProviderSignal(Promise.resolve().then(() => observed.invoke({ receiver: input, callback: resolveKey, args: [controller.signal] }, controller.signal, controller.signal)), controller.signal); }
     catch (error) {
       if (controller.signal.aborted) throw signalFailure(input.signal, timedOut);
       throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured Anthropic key could not be released.");
@@ -54,11 +66,16 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     if (!key || typeof key !== "string" || !key.trim()) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured Anthropic key could not be released.");
     if (input.body.includes(key)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The outbound request contains the configured credential.");
     if (controller.signal.aborted) throw signalFailure(input.signal, timedOut);
-    step = input.observe?.({ provider: "anthropic", model: input.model, url: AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, body: input.body, taskKind: input.taskKind, ...(input.taskKind === "panel_command" ? { kind: "chat" } : {}), ...(input.requestId ? { requestId: input.requestId } : {}), ...(input.stage ? { stage: input.stage } : {}), ...(input.iteration ? { iteration: input.iteration } : {}) });
-    const sent = input.fetchImpl(AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, {
+    if (observe) step = await observed.invoke({ receiver: input, callback: observe, args: [{ provider: "anthropic", model: input.model, url: AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, body: input.body, taskKind: input.taskKind, ...(input.taskKind === "panel_command" ? { kind: "chat" } : {}), ...(input.requestId ? { requestId: input.requestId } : {}), ...(input.stage ? { stage: input.stage } : {}), ...(input.iteration ? { iteration: input.iteration } : {}) }] }, controller.signal);
+    if (step) {
+      reply = step.reply;
+      succeeded = step.succeeded;
+      failed = step.failed;
+    }
+    const sent = observed.fetch(input, fetchImpl, [AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, {
       method: "POST", redirect: "manual", signal: controller.signal,
       headers: { authorization: `Bearer ${key}`, "anthropic-version": AUTOMATION_STUDIO_ANTHROPIC_API_VERSION, "content-type": "application/json", accept: "text/event-stream", ...(input.requestId ? { "x-request-id": input.requestId } : {}) }, body: input.body
-    });
+    }], controller.signal);
     let response: Response;
     try { response = await raceAutomationStudioProviderSignal(sent, controller.signal); }
     catch (error) {
@@ -73,7 +90,8 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     }
     if (!response.ok) {
       // Shared refusal screening drops credentials and locator-shaped text.
-      const screened = await readAutomationStudioProviderRefusal({ response, maxResponseBytes: input.maxResponseBytes, request: input.requestShape ?? null, credential: key, screenMessage: input.screenMessage, signal: controller.signal });
+      const screened = await readAutomationStudioProviderRefusal({ response, maxResponseBytes: input.maxResponseBytes, request: input.requestShape ?? null, credential: key, screenMessage, signal: controller.signal });
+      if (screened.bodyBytes !== null) await observed.drained();
       const balance = automationStudioProviderBalanceExhausted(response.status, screened.error);
       const refusal = automationStudioAnthropicReplyContainsCredential(screened, key)
         ? { ...screened, contentType: null, error: null, withheld: [...screened.withheld, "message_credential_shaped"] }
@@ -90,11 +108,13 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
         // ends generation, the bill is unknown and Core keeps its conservative
         // reservation on failure instead of charging that initial 0/1 token.
         if (typeof partial.stop_reason === "string") paid = automationStudioAnthropicUsage(partial.usage, input.model) ?? paid;
-      });
+      }, execution);
       raw = streamed.raw;
       envelope = streamed.envelope;
+      await observed.drained();
     } else if (/^application\/json(?:\s*;|$)/i.test(mediaType)) {
       const bytes = await readAutomationStudioProviderBoundedResponse(response, input.maxResponseBytes, controller.signal);
+      await observed.drained();
       raw = bytes;
       try { envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
       catch { throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned malformed JSON."); }
@@ -115,23 +135,29 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     if (!text.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned no answer.");
     if (!paid) throw new AutomationStudioLlmProviderError("llm.provider_usage_invalid", "Anthropic returned invalid token usage.");
     // The paid account exists before schema validation can refuse the answer.
-    const answer = input.readAnswer(text, paid);
+    const answer = observed.sync({ receiver: input, callback: readAnswer, args: [text, paid] });
     if (automationStudioAnthropicReplyContainsCredential(answer, key)) throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic answer contained the configured credential.");
     // Logging comes last: JSON-text transport can reveal a credential only
     // after its inner answer is decoded, and an unusable answer stays unlogged.
-    step?.reply(raw, response.status);
-    step?.succeeded(answer, paid);
+    if (step) {
+      await observed.invoke({ receiver: step, callback: reply!, args: [raw, response.status] });
+      await observed.invoke({ receiver: step, callback: succeeded!, args: [answer, paid] });
+    }
     return { response: answer, usage: paid };
   } catch (error) {
     const failure = controller.signal.aborted ? signalFailure(input.signal, timedOut)
       : error instanceof AutomationStudioLlmProviderError ? error : new AutomationStudioLlmProviderError("llm.provider_network_error", "Anthropic request failed at the network boundary.", true);
     const accounted = paid ? withPaid(failure, paid) : failure;
-    step?.failed(accounted);
+    if (step) {
+      try { await observed.invoke({ receiver: step, callback: failed!, args: [accounted] }); }
+      catch (cleanup) { throw new AggregateError([accounted, cleanup], "model.transport.failure_observer_failed"); }
+    }
     throw accounted;
   } finally {
     clearTimeout(timer);
     input.signal?.removeEventListener("abort", parentAbort);
     key = "";
+    observed.dispose();
   }
 }
 

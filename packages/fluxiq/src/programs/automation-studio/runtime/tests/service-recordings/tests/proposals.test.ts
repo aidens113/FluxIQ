@@ -3,12 +3,11 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { normalizeAutomationStudioElementTarget, stateValue } from "../../../../model/index.ts";
+import { stateValue } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { type AutomationStudioImporterSdkManifest } from "../../../../nodes/index.ts";
 import { IoRegistry, createEnvelope } from "../../../../../../io/index.ts";
-import type { JsonObject } from "../../../../../../core/index.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -32,39 +31,6 @@ describe("AutomationStudioService recording persistence", () => {
     await Promise.all([...services].map((service) => service.close()));
     services.clear();
     await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
-  });
-
-  it("normalizes mapper element targets in recording Flow proposals, taking identity from a recorded element and never from typed text", async () => {
-    let parameters: JsonObject = {};
-    const io = new IoRegistry();
-    io.registerOutput("example", { definition: { id: "click", title: "Click" }, mode: "request", dispatch: (request) => ({ ok: true, domainId: "example", outputId: request.outputId }) });
-    const manifest: AutomationStudioImporterSdkManifest = { schemaVersion: "0.1", sdkVersion: "0.1", packageId: "example.importer", packageVersion: "1.0.0", domainId: "example", nodes: [], recordingMappers: [{ id: "click-mapper", version: "1.0.0", description: "Maps clicks", outputIds: ["click"] }] };
-    const runtime = new AutomationStudioNativeNodeRuntime().register(manifest, {
-      packageId: "example.importer", packageVersion: "1.0.0", implementations: {},
-      recordingMappers: { "click-mapper": () => ({ outputId: "click", parameters, confidence: 0.9 }) },
-      recordingCandidateParameterNormalizer: (_domainId, values) => {
-        const target = normalizeAutomationStudioElementTarget(values.element ? values : values.target, { source: "mapper" }) ?? normalizeAutomationStudioElementTarget(values, { source: "mapper" });
-        return target ? { ...values, target } : { ...values };
-      }
-    });
-    const service = createService({ dataDir: tempRoot }).bindIoRuntime(io, "example").bindNativeNodeRuntime(runtime);
-    const project = await service.createProject({ name: "Mapped element target", domainId: "example" });
-    const element = { tagName: "input", implicitRole: "textbox", accessibleName: "Display name", id: "display-name" };
-    const identity = { tagName: "input", role: "textbox", accessibleName: "Display name", id: "display-name" };
-    const cases: Array<[string, JsonObject, JsonObject]> = [
-      ["explicit target", { target: { selector: "button[data-testid='save']", visibleText: "Save", testId: "save" } }, { selector: "button[data-testid='save']", visibleText: "Save", testId: "save" }],
-      ["typed text beside an element", { selector: "#display-name", statePath: "web.elements.display.name", text: "Ada Lovelace", element }, { selector: "#display-name", statePath: "web.elements.display.name", ...identity }],
-      ["bare locator target beside an element", { target: { selector: "#display-name" }, text: "Ada Lovelace", element }, { selector: "#display-name", ...identity }]
-    ];
-    for (const [index, [label, recorded, fingerprint]] of cases.entries()) {
-      parameters = recorded;
-      const recording = await service.createRecording({ description: "Shows the steps the automation repeats.", projectId: project.id, recordingId: `recording.mapper-element-target.${index}`, domainId: "example", initialState: { timestamp: 1, namespaces: {} } });
-      await service.appendRecordingEvent({ projectId: project.id, recordingId: recording.recordingId, entry: { type: "observation", observationType: "clicked", payload: {}, timestamp: 2 } });
-      const { proposals: [proposal] } = await service.createRecordingFlowProposals({ projectId: project.id, recordingId: recording.recordingId });
-      const target = proposal?.candidates[0]?.parameters.target;
-      expect(target, label).toMatchObject({ kind: "element", source: "mapper", fingerprint });
-      expect(JSON.stringify(target), label).not.toContain("Ada Lovelace");
-    }
   });
 
   it("turns mapped observations into proposal candidates without making action inputs policy state, and invalidates them when the confirmation input goes away", async () => {

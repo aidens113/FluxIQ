@@ -20,6 +20,7 @@ import type { AutomationStudioRunState } from "../index.ts";
 import type { AutomationStudioTraceWithholding } from "../trace/index.ts";
 import { emitAutomationStudioActivity, emitAutomationStudioActivityClearedWait, emitAutomationStudioActivityStepInterference } from "../../../runtime/activity/index.ts";
 import { attemptWithHostExpectationEvaluation } from "../transitions/index.ts";
+import { invokeAutomationExpectation } from "../expectation-observation/index.ts";
 
 import { automationStudioClearedLayersOf } from "./cleared-layers.ts";
 import { automationStudioObstructionOf } from "./obstruction/index.ts";
@@ -40,8 +41,9 @@ import { automationStudioApplyParameterRefresh } from "../parameter-refresh/inde
 import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refresh/index.ts";
 import { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP, automationStudioRuntimeRepeatExecutionKind } from "../../../runtime/repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "../repeat/index.ts";
-import { inheritAutomationExecutionObservation } from "../execution-admission/index.ts";
-import { invokeAutomationNative, invokeAutomationEffect, invokeAutomationCallback, invokeAutomationCallbackSync, AutomationPureCallbacks } from "../execution-admission/kernel/index.ts";
+import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
+import { invokeAutomationNative, invokeAutomationEffect, invokeAutomationCallback, invokeAutomationCallbackSync, AutomationPureCallbacks, hasAutomationExecutionObservation, markAutomationCallbackFrameUnknown } from "../execution-admission/kernel/index.ts";
+import { assertAutomationRecordBatchData } from "../execution-admission/options/index.ts";
 
 // `cleared` collects the layers each dispatch of the attempt says the client
 // closed over the page (`./cleared-layers.ts`), in dispatch order;
@@ -227,9 +229,10 @@ export class AutomationStudioNodeAttemptExecution {
     }
     // The node asks the host whether expected state holds; Core names which node
     // and attempt asked, and which snapshot the question is about.
-    const boundEvaluator = options.hostRuntime?.expectationEvaluator;
+    const expectationHost = options.hostRuntime;
+    const boundEvaluator = expectationHost?.expectationEvaluator;
     const expectationEvaluator: AutomationNodeExpectationEvaluator | undefined = boundEvaluator
-      ? (conditions, mode, timeoutMs, evaluationContext) => invokeAutomationCallback(options, { receiver: options.hostRuntime, callback: boundEvaluator, args: [conditions, mode, timeoutMs, { ...evaluationContext, nodeId: node.id, attemptId, ...(beforeAction ? { stateRef: beforeAction.stateRef } : {}) }] })
+      ? (conditions, mode, timeoutMs, evaluationContext) => invokeAutomationExpectation(options, { receiver: expectationHost, callback: boundEvaluator, args: [conditions, mode, timeoutMs, { ...evaluationContext, nodeId: node.id, attemptId, ...(beforeAction ? { stateRef: beforeAction.stateRef } : {}) }] })
       : undefined;
     try {
       const context = {
@@ -500,6 +503,13 @@ export class AutomationStudioNodeAttemptExecution {
     if (!batch) return result;
     let stored: AutomationStudioRunDatasetSummary | undefined;
     try {
+      if (hasAutomationExecutionObservation(options)) {
+        try { assertAutomationRecordBatchData(options); }
+        catch (error) {
+          await markAutomationCallbackFrameUnknown(options);
+          throw error;
+        }
+      }
       const persist = options.onRecordBatch;
       stored = persist ? await invokeAutomationCallback(options, { receiver: options, callback: persist, args: [batch] }) : undefined;
     } catch {
@@ -528,9 +538,10 @@ export class AutomationStudioNodeAttemptExecution {
   // invocation's.
   /** A child Flow numbers its own attempts from one: the parent's prior count describes the parent's run, not the child's. */
   private static callFlowChildOptions(options: AutomationStudioGraphExecutionOptions, attemptId: string): AutomationStudioGraphExecutionOptions {
-    const { priorAttemptCount: _parentPriorAttemptCount, ...childBase } = options;
-    const child = { ...childBase, callFlowAttemptPath: [...(options.callFlowAttemptPath ?? []), attemptId] };
-    inheritAutomationExecutionObservation(options, child);
+    const { priorAttemptCount: _parentPriorAttemptCount } = options;
+    const child = copyAutomationExecutionOptions(options);
+    delete child.priorAttemptCount;
+    child.callFlowAttemptPath = [...(options.callFlowAttemptPath ?? []), attemptId];
     return child;
   }
 

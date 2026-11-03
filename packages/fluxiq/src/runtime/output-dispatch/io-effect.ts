@@ -2,11 +2,11 @@ import type { JsonObject, JsonValue } from "../../core/index.ts";
 import type { ClientGatewayCommandContext } from "../../client-gateway/service/command-ledger/index.ts";
 import type { AutomationNodeExecutionResult } from "../../components/automation/index.ts";
 import type { OutputDispatchIo } from "./ports/index.ts";
-import type { OutputTargetPreparer } from "./target-preparer.ts";
+import type { OutputTargetPreparationPort } from "./contracts/index.ts";
 import { registeredOutputActionFromPayload } from "./effect-action.ts";
 import { dispatchRegisteredOutput } from "./io.ts";
 import { OutputObservationBindings } from "./admission/internal/index.ts";
-export function createIoOutputEffectDispatcher(io: OutputDispatchIo, domainId: string | null | undefined, targetPreparer?: OutputTargetPreparer) {
+export function createIoOutputEffectDispatcher(io: OutputDispatchIo, domainId: string | null | undefined, targetPreparer?: OutputTargetPreparationPort) {
   return async (effect: {
     type: string;
     payload?: JsonValue;

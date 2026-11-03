@@ -6,19 +6,19 @@ export async function stopRecording<TTarget, TEvidence>(state: RecordingBridgeSt
     const session = state.session(sessionId);
     const ownerKey = state.recordingOwnerKey(session);
     const active = state.activeRecordings.get(ownerKey);
-    await state.gateway.stopRecording(sessionId, active?.recordingId);
-    if (!active) return null;
+    const closing = active ? { recordingId: active.recordingId, ...(active.projectId !== undefined ? { projectId: active.projectId } : {}), ...(active.domainId !== undefined ? { domainId: active.domainId } : {}) } : undefined;
+    await state.gateway.stopRecording(sessionId, closing?.recordingId);
+    if (!active || !closing) return null;
     await delay(state.stopDrainMs);
     await state.writeOrder.settled(ownerKey);
     await state.writeOrder.flush(ownerKey);
-    const recording = await state.sink.finalize({ ...(active.projectId !== undefined ? { projectId: active.projectId } : {}), recordingId: active.recordingId });
-    // Only the recording this Stop stopped: one started while it drained stays open.
-    if (state.activeRecordings.get(ownerKey)?.recordingId === active.recordingId) state.activeRecordings.delete(ownerKey);
-    state.rememberClosedRecording(ownerKey, {
-      recordingId: active.recordingId,
-      ...(active.projectId !== undefined ? { projectId: active.projectId } : {}),
-      ...(active.domainId !== undefined ? { domainId: active.domainId } : {})
-    });
+    const recording = await state.sink.finalize({ ...(closing.projectId !== undefined ? { projectId: closing.projectId } : {}), recordingId: closing.recordingId });
+    // A newer ref stays current even when it reuses the original address.
+    const current = state.activeRecordings.get(ownerKey);
+    if (current === active && current.recordingId === closing.recordingId && (current.projectId ?? null) === (closing.projectId ?? null) && current.domainId === closing.domainId) {
+      state.activeRecordings.delete(ownerKey);
+      state.rememberClosedRecording(ownerKey, closing);
+    }
 
     return recording;
   }

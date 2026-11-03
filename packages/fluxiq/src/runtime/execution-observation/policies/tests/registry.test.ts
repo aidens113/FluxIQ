@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import type { ManagedExecutionCallbackRegistration } from "../../contracts/index.ts";
+import type { ExecutionCallbackObservation, ManagedExecutionCallbackRegistration } from "../../contracts/index.ts";
+import { OriginalExecutionPromiseReceipts } from "../../queue-completion/index.ts";
 import { observationFixture } from "../../tests/fixture.ts";
 import { ExecutionCallbackPolicies as Policies } from "../index.ts";
 
@@ -93,4 +94,99 @@ it("retains an original lexical callback's undefined receiver", async () => {
   expect(await f.source.invoke(prepared, call)).toBeUndefined();
   expect(commits).toBe(1);
   expect(f.source.completion(prepared)).toBe("settled");
+});
+
+it("specializes only the actual receiver of an original Core lexical producer and pins its private completion reader", async () => {
+  const f = await observationFixture();
+  const receipts = new OriginalExecutionPromiseReceipts();
+  const value = Object.freeze({ retained: "original" });
+  let calls = 0;
+  const operation = (execution: { observation?: ExecutionCallbackObservation }): Promise<typeof value> => {
+    const returned: Promise<typeof value> = Promise.resolve().then(() => {
+      calls++;
+      if (execution.observation) receipts.issueObserved(returned, execution.observation, { disposition: "settled", completionDigest: "lexical.original_operation", assessmentDigest: "lexical.original_parent" });
+      return value;
+    });
+    return returned;
+  };
+  class Declaration {
+    readonly receiver = undefined;
+    readonly callback = operation;
+    readonly contract = "managed_direct_effects";
+    #reads = 0;
+    get reads() { return this.#reads; }
+    consumeCompletion(input: Parameters<OriginalExecutionPromiseReceipts["consume"]>[0]) {
+      this.#reads++;
+      return receipts.consume(input);
+    }
+  }
+  const declaration = new Declaration();
+  Policies.rememberManagedLexical(declaration);
+  declaration.consumeCompletion = () => { throw new Error("The replacement completion reader must not run."); };
+  for (const receiver of [{ owner: "first" }, { owner: "second" }, undefined]) {
+    const execution: { observation?: ExecutionCallbackObservation } = {};
+    const args: Parameters<typeof operation> = [execution];
+    const call = { receiver, callback: operation, args };
+    Policies.manage(f.source, call);
+    Policies.manage(f.source, call);
+    const prepared = await f.source.prepare(f.observation, call);
+    execution.observation = f.source.forParent(f.source.context(prepared));
+    Object.freeze(execution);
+    expect(await f.source.invoke(prepared, call)).toBe(value);
+    expect(f.source.completion(prepared)).toBe("settled");
+  }
+  expect(calls).toBe(3);
+  expect(declaration.reads).toBe(3);
+  await f.rootPorts.producer.finish(f.reserved.root, f.root.complete(f.origin));
+  await f.authority.consumer.release(f.reserved.reservation);
+  expect((await f.authority.consumer.inspect(f.scope)).state).toBe("clear");
+});
+
+it.each(["replacement_promise", "stale_parent", "foreign_source"] as const)("refuses a lexical producer's %s receipt without clearing the actual invocation", async kind => {
+  const f = await observationFixture();
+  const foreign = await observationFixture();
+  const receipts = new OriginalExecutionPromiseReceipts();
+  const value = Object.freeze({ retained: "original" });
+  let calls = 0;
+  const operation = (execution: { observation?: ExecutionCallbackObservation }): Promise<typeof value> => {
+    const returned: Promise<typeof value> = Promise.resolve().then(() => {
+      calls++;
+      const original = kind === "replacement_promise" ? Promise.resolve(value) : returned;
+      const observation = kind === "foreign_source" ? foreign.observation : kind === "stale_parent" ? f.observation : execution.observation;
+      if (!observation) throw new Error("The actual child observation was not bound.");
+      receipts.issueObserved(original, observation, { disposition: "settled", completionDigest: "lexical.wrong_receipt", assessmentDigest: "lexical.wrong_owner_or_parent" });
+      return value;
+    });
+    return returned;
+  };
+  Policies.rememberManagedLexical({ receiver: undefined, callback: operation, contract: "managed_direct_effects", consumeCompletion: input => receipts.consume(input) });
+  const execution: { observation?: ExecutionCallbackObservation } = {};
+  const args: Parameters<typeof operation> = [execution];
+  const call = { receiver: { owner: "actual" }, callback: operation, args };
+  Policies.manage(f.source, call);
+  const prepared = await f.source.prepare(f.observation, call);
+  execution.observation = f.source.forParent(f.source.context(prepared));
+  Object.freeze(execution);
+  expect(await f.source.invoke(prepared, call)).toBe(value);
+  expect(calls).toBe(1);
+  expect(f.source.completion(prepared)).toBe("unknown");
+  await f.authority.consumer.release(f.reserved.reservation);
+  await foreign.authority.consumer.release(foreign.reserved.reservation);
+  expect((await f.authority.consumer.inspect(f.scope)).state).toBe("pending");
+});
+
+it("keeps lexical binding and duplicate declaration refusals while an unbound return supplies no receipt", async () => {
+  const f = await observationFixture();
+  const receipts = new OriginalExecutionPromiseReceipts();
+  const binding = Object.freeze({});
+  const operation = () => Promise.resolve("no original completion");
+  const declaration = { receiver: undefined, callback: operation, binding, contract: "managed_direct_effects" as const, consumeCompletion: (input: Parameters<OriginalExecutionPromiseReceipts["consume"]>[0]) => receipts.consume(input) };
+  Policies.rememberManagedLexical(declaration);
+  expect(() => Policies.rememberManagedLexical(declaration)).toThrow("site_reset.managed_callback_already_bound");
+  expect(() => Policies.manage(f.source, { receiver: {}, callback: operation, binding: {} })).toThrow("site_reset.managed_binding_mismatch");
+  const call = { receiver: {}, callback: operation, binding, args: [] as [] };
+  Policies.manage(f.source, call);
+  const prepared = await f.source.prepare(f.observation, call);
+  expect(await f.source.invoke(prepared, call)).toBe("no original completion");
+  expect(f.source.completion(prepared)).toBe("unknown");
 });

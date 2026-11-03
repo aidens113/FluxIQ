@@ -1,0 +1,12 @@
+# Prove actual approved recording scope through the bridge
+Role: Heavy worker, gpt-6.1-sol Max; tests ONLY, no agents/git/shared docs.
+Repo: t843 Core. Root fixed your confidence/initialState findings in production; B owns all four same-address race sites and tests. No production edits here.
+Own new programs/automation-studio/client-gateway/tests/trusted-scope.test.ts and narrow private test support only; must not touch existing context tests, Root new runtime/tests/recording-domain.test.ts, production/start/capture, B/C source or shared docs.
+Read Root TrustedRecordingDomain/start-policy/start/open/bridge and existing context.test.ts (original receiver/request/host precedence). Fixture must use actual ClientGatewayService pairing approval, actual temporary AutomationStudioService/project stores, real bridge; generic device domain, no browser/private user data/providers.
+Prove approved domain+project persists and real entry/Stop/reopen uses same original stored address; missing wire domain uses approved trust, caller metadata never chooses it.
+Conflicting top-level/environment/metadata domains refuse before create/ACK. Revoked/expired/legacy missing trust domain refuses. Use configured fake clock for expiry, no real waits.
+Hold original context provider/project read or create at meaningful boundary; revoke/reconnect/change active context, release, assert no stale create or start ACK/activation. Preserve stop-during-start suppression and original provider receiver/SAME request object.
+Explicit null approved scope remains passive; a client cannot choose a wire-domain action projector. Required policy missing refuses actual create/start, not only registry lookup. Use original pinned domain callbacks/receiver, no fake rights/receipt/purity.
+Spy/wrap actual original callbacks for barriers, retain exact tuple/receiver and await/drain every Promise. No unhandled errors, fabricated success, easier oracle, fake snapshot auth port or new test permission flag. Keep test helpers local and no secret/token logging.
+Source/tests freeze before readers. Broad Service value graph overlaps B/C active sources: HOLD runtime/compiler until Root common OPEN. You may prepare exact selectors and source-only metadata proof. Root owns final independent runtime/package/type/structure/build integration.
+Write own reports/trusted-recording-integration-tests.md <=80lines with actual case count, run/held distinction and remaining limits; standard return contract. SQL foundation implementation remains held.

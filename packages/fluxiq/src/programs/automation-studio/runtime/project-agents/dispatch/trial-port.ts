@@ -3,8 +3,8 @@ import type { AutomationStudioProjectTrialRef } from "../contracts/index.ts";
 import type { AutomationStudioProjectDispatchSpend } from "./ending.ts";
 import type { AutomationStudioProjectDispatchReceipts } from "./receipts.ts";
 import type { AutomationStudioProjectDispatchStandingNos } from "./standing-nos.ts";
-import { bindPartialTrialFrame, inheritPartialTrialContext } from "../../candidate-trials/partial/index.ts";
-import { AutomationStudioSiteResetCallbackPolicies, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../../flow-bootstrap/reset-observation/index.ts";
+import { bindPartialTrialFrame, inheritPartialTrialContext, managePartialTrialCallback } from "../../candidate-trials/partial/index.ts";
+import { AutomationStudioSiteResetObservation, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../../flow-bootstrap/reset-observation/index.ts";
 
 // The partial-trial port one build or repair brief's gate is given
 // (`./run-brief.ts`): the brief's own port, each trial it answers listed as a
@@ -87,21 +87,29 @@ export function automationStudioProjectDispatchTrialPort(input: {
   if (advised.length) asked.earlierTrials = structuredClone(advised);
   asked.weighed = async function (this: AutomationStudioSubflowTrialPreparingPort, trial) {
     const { answer } = trial;
+    const invocation = AutomationStudioSiteResetObservation.of(trial) ? trial : this;
     const heardFromPort = answered !== undefined && answered.identity?.briefId === answer.identity.briefId && answered.revision === answer.revision && answered.digest === answer.digest;
     answered = undefined;
     // An answer the port did not give is a trial the gate kept from the recording.
     const ref = heardFromPort
-      ? invokeAutomationStudioSiteResetSync(this, { receiver: receipts, callback: receipts.weighed, args: [answer] })
-      : invokeAutomationStudioSiteResetSync(this, { receiver: receipts, callback: receipts.kept, args: [answer] });
-    if (ref) await invokeAutomationStudioSiteResetCallback(this, { receiver: input, callback: input.remember, args: [ref, answer] });
+      ? await invokeAutomationStudioSiteResetCallback(invocation, { receiver: receipts, callback: receipts.weighed, args: [answer] })
+      : await invokeAutomationStudioSiteResetCallback(invocation, { receiver: receipts, callback: receipts.kept, args: [answer] });
+    if (ref) await invokeAutomationStudioSiteResetCallback(invocation, { receiver: input, callback: input.remember, args: [ref, answer] });
     if (!heardFromPort) spend.trial = structuredClone(answer);
     const heard = spend.trial;
     if (heard && heard.identity?.briefId === answer.identity.briefId && heard.revision === answer.revision && heard.digest === answer.digest) spend.trial = structuredClone(answer);
-    if (trial.standingNo !== undefined) invokeAutomationStudioSiteResetSync(this, { receiver: standingNos, callback: standingNos.stood, args: [scope, trial.standingNo] });
+    if (trial.standingNo !== undefined) invokeAutomationStudioSiteResetSync(invocation, { receiver: standingNos, callback: standingNos.stood, args: [scope, trial.standingNo] });
     if (trial.advised && input.advised) input.advised.set(plan, [...(input.advised.get(plan) ?? []), structuredClone(trial.advised)].slice(-3));
-    if (port.weighed) await invokeAutomationStudioSiteResetCallback(this, { receiver: port, callback: port.weighed, args: [structuredClone(trial)] }, undefined, port);
+    if (port.weighed) {
+      const kept = structuredClone(trial);
+      const args: [typeof kept] = [kept];
+      const call = { receiver: port, callback: port.weighed, args };
+      const original = AutomationStudioSiteResetObservation.of(invocation);
+      if (original) managePartialTrialCallback(original.context, call);
+      await invokeAutomationStudioSiteResetCallback(invocation, call, undefined, kept);
+    }
   };
-  AutomationStudioSiteResetCallbackPolicies.remember(asked, asked.weighed, "frame");
+  bindPartialTrialFrame(asked.weighed, "callbacks");
   inheritPartialTrialContext(port, asked);
   bindPartialTrialFrame(asked, true);
   return asked;

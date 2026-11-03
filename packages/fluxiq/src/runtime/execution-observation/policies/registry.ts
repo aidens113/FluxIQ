@@ -1,17 +1,21 @@
 import {
   captureExecutionCallbackCompletions,
+  captureExecutionCallbackRegistration,
   type ExecutionCallbackCompletionPolicy,
   type ExecutionCallbackRegistrar,
 } from "../configuration/index.ts";
 import type { ExecutionCallbackIdentity, ManagedExecutionCallbackRegistration } from "../contracts/index.ts";
 import type { ExecutionObservationSource } from "../source.ts";
 
+type ManagedDeclaration = { readonly binding?: object; readonly policy: ExecutionCallbackCompletionPolicy };
+type LexicalDeclaration = ManagedDeclaration | { readonly binding?: object; readonly register: <TReceiver>(source: ExecutionObservationSource, receiver: TReceiver) => void };
+
 /** Only original Core factories register their actual callback identities here. */
 export class ExecutionCallbackPolicies {
   private static readonly receivers = new WeakMap<object, Map<object, "pure" | "frame">>();
   private static readonly lexical = new WeakMap<object, "pure" | "frame">();
   private static readonly completions = new WeakMap<object, Map<object, { readonly binding?: object; readonly policy: ExecutionCallbackCompletionPolicy }>>();
-  private static readonly lexicalCompletions = new WeakMap<object, { readonly binding?: object; readonly policy: ExecutionCallbackCompletionPolicy }>();
+  private static readonly lexicalCompletions = new WeakMap<object, LexicalDeclaration>();
 
   /** Original producer declarations are captured once; fulfillment alone is never a receipt. */
   static rememberManaged<TReceiver, TArguments extends unknown[], TResult>(registration: ManagedExecutionCallbackRegistration<TReceiver, TArguments, TResult>): void {
@@ -31,6 +35,18 @@ export class ExecutionCallbackPolicies {
       methods.set(pinned.callback, entry);
       ExecutionCallbackPolicies.completions.set(receiver, methods);
     } });
+  }
+
+  /** A Core lexical factory's original body ignores this; its receipt still authenticates each actual entered call. */
+  static rememberManagedLexical<TArguments extends unknown[], TResult>(registration: Extract<ManagedExecutionCallbackRegistration<unknown, TArguments, TResult>, { contract: "managed_direct_effects" }> & { readonly receiver: undefined }): void {
+    const pinned = captureExecutionCallbackRegistration<unknown, TArguments, TResult>(registration);
+    if (pinned.receiver !== undefined || pinned.contract !== "managed_direct_effects") throw new Error("site_reset.lexical_managed_contract_invalid");
+    const { callback, binding, consumeCompletion } = pinned;
+    if (this.lexicalCompletions.has(callback)) throw new Error("site_reset.managed_callback_already_bound");
+    const register = <TReceiver>(source: ExecutionObservationSource, receiver: TReceiver): void => {
+      source.manage<TReceiver, TArguments, TResult>({ receiver, callback, ...(binding !== undefined ? { binding } : {}), contract: "managed_direct_effects", consumeCompletion });
+    };
+    this.lexicalCompletions.set(callback, Object.freeze({ ...(binding !== undefined ? { binding } : {}), register }));
   }
 
   static remember(receiver: object, callback: object, contract: "pure" | "frame"): void {
@@ -60,11 +76,15 @@ export class ExecutionCallbackPolicies {
   static manage<TReceiver, TArguments extends unknown[], TResult>(source: ExecutionObservationSource, identity: ExecutionCallbackIdentity<TReceiver, TArguments, TResult>): void {
     if (source.isManaged(identity)) return;
     const receiver = identity.receiver;
-    const managed = receiver === undefined ? this.lexicalCompletions.get(identity.callback) : receiver !== null && (typeof receiver === "object" || typeof receiver === "function") ? this.completions.get(receiver)?.get(identity.callback) : undefined;
+    const lexical = this.lexicalCompletions.get(identity.callback);
+    const managed = receiver === undefined ? lexical : (receiver !== null && (typeof receiver === "object" || typeof receiver === "function") ? this.completions.get(receiver)?.get(identity.callback) : undefined) ?? (lexical && "register" in lexical ? lexical : undefined);
     if (managed) {
       if (managed.binding !== identity.binding) throw new Error("site_reset.managed_binding_mismatch");
-      const registrar: ExecutionCallbackRegistrar = { manage: registration => source.manage(registration) };
-      managed.policy.apply(Object.freeze(registrar));
+      if ("register" in managed) managed.register(source, receiver);
+      else {
+        const registrar: ExecutionCallbackRegistrar = { manage: registration => source.manage(registration) };
+        managed.policy.apply(Object.freeze(registrar));
+      }
       return;
     }
     const contract = (receiver !== null && (typeof receiver === "object" || typeof receiver === "function") ? this.receivers.get(receiver)?.get(identity.callback) : undefined) ?? this.lexical.get(identity.callback);

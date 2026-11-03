@@ -50,6 +50,7 @@ import { runAutomationStudioSubflowTrial } from "./run.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import type { AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
 import { PartialTrialAdmission, bindPartialTrialFrame, inheritPartialTrialContext, invokePartialTrialPort, isPartialTrialReadOnly, partialTrialContext } from "../../candidate-trials/partial/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/policies/index.ts";
 import { trialExecutionSource } from "../../candidate-trials/observation/index.ts";
 import type { ExecutionReservation } from "../../../../../runtime/execution-admission/index.ts";
 
@@ -111,6 +112,7 @@ export function automationStudioSubflowTrialPort(buildId: string, ports: Automat
   bindPartialTrialFrame(fromStep, true);
   // The gate's row check, answered from the converse of this build's own trials (header, t692).
   port.checkRows = async ({ scope, trialRunId }) => (scope.buildId === buildId && trialRunId ? converse.get(trialRunId) : undefined);
+  ExecutionCallbackPolicies.rememberLexical(port.checkRows, "pure");
   // An offline trial runs no start hook, so only a live port offers one (header, Decision 6).
   if (ports.prepareStart && environmentKind === "live") {
     port.prepareStart = async (input) => {

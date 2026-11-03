@@ -43,6 +43,16 @@ export const CONFIG = {
       reason: "Executable graph contracts and compilation must be usable without Studio."
     },
     {
+      from: "packages/fluxiq/src/flows/authoring",
+      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation-studio(?:\/|$)/,
+      reason: "Shared authoring data must not depend on Studio contracts, including erased types."
+    },
+    {
+      from: "packages/fluxiq/src/runtime/flow-authoring",
+      pattern: /^(?:@fluxiq\/contracts|fluxiq)\/automation-studio(?:\/|$)/,
+      reason: "Framework authoring capabilities must not import Studio implementation or contracts."
+    },
+    {
       pattern: /fluxiq-web-extension|FluxIQWebExtension/i,
       reason: "FluxIQ Core must never import a downstream domain repository."
     },
@@ -74,14 +84,24 @@ export const CONFIG = {
   // `import "..."` for effect, or a dynamic `import()`.
   importBoundaries: [
     {
+      from: "packages/fluxiq/src/runtime/flow-authoring",
+      to: "packages/fluxiq/src/programs",
+      reason: "Framework authoring owns its real mechanisms and dependencies; programs retain only compatibility aliases and panel control adapters."
+    },
+    {
+      from: "packages/fluxiq/src/flows/authoring",
+      to: "packages/fluxiq/src/programs",
+      reason: "Authoring contracts belong to the framework; programs consume them through exact compatibility aliases."
+    },
+    {
       from: "packages/fluxiq/src/framework/persistence",
       to: "packages/fluxiq/src/programs",
       reason: "Framework persistence owns the original storage implementations; programs consume them through public contracts and compatibility aliases."
     },
     {
-      from: "packages/fluxiq/src/framework/observability/performance",
+      from: "packages/fluxiq/src/framework/observability",
       to: "packages/fluxiq/src/programs",
-      reason: "Shared performance instrumentation is a framework capability and must not depend on program implementation or DTO ownership."
+      reason: "Shared instrumentation and exchange-log infrastructure belong to the framework and must not depend on program implementation or DTO ownership."
     },
     {
       from: "packages/fluxiq/src/components/automation",
@@ -126,9 +146,16 @@ export const CONFIG = {
   browserBundles: {
     consumer: "the web extension's browser bundles",
     entries: [
+      "packages/fluxiq/src/core/index.ts",
       "packages/fluxiq/src/components/automation/index.ts",
       "packages/fluxiq/src/components/automation/action-effect/index.ts",
       "packages/fluxiq/src/runtime/target-matching/index.ts",
+      "packages/fluxiq/src/runtime/output-dispatch/preparation/index.ts",
+      "packages/fluxiq/src/runtime/recording/target-preparation/index.ts",
+      "packages/fluxiq/src/runtime/recording/target-policy/index.ts",
+      "packages/fluxiq/src/runtime/recording/validation/index.ts",
+      "packages/fluxiq/src/client-gateway/recording/decoding/index.ts",
+      "packages/fluxiq/src/runtime/execution-observation/policies/index.ts",
       "packages/fluxiq/src/runtime/result-verification/index.ts",
       "packages/fluxiq/src/flows/executable/verification/index.ts",
       "packages/fluxiq/src/flows/executable/validation/index.ts",
@@ -243,6 +270,9 @@ export const CONFIG = {
     {
       name: "program-independent execution capabilities",
       from: [
+        "packages/fluxiq/src/framework/persistence/",
+        "packages/fluxiq/src/framework/observability/",
+        "packages/fluxiq/src/flows/authoring/",
         "packages/fluxiq/src/components/automation/",
         "packages/fluxiq/src/flows/executable/",
         "packages/fluxiq/src/engine/automation/",

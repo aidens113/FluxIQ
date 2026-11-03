@@ -23,6 +23,10 @@ import { AutomationStudioLlmRunBudgetLedger } from "../../run-budget.ts";
 import type { AutomationStudioLlmProvider } from "../provider.ts";
 import { runAutomationStudioLlmHarness } from "../run.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskResult } from "../task-request.ts";
+import { observationFixture } from "../../../../../../runtime/execution-observation/tests/fixture.ts";
+import { ExecutionCallbackPolicies, OriginalExecutionPromiseReceipts, prepareObservedExecutionCallback } from "../../../../../../runtime/execution-observation/index.ts";
+import type { ModelExecutionOptions } from "../../../../../../runtime/models/index.ts";
+import type { AutomationStudioLlmBuildPurseOptions } from "../../build-purse/index.ts";
 
 const ANSWER = { response: { kind: "diagnosis", summary: "The control moved." } };
 /** An instruction whose body must never appear in anything a refusal carries. */
@@ -45,7 +49,10 @@ describe("what the harness claims about reaching the provider", () => {
     let asked = 0;
     const provider: AutomationStudioLlmProvider = {
       metadata: { provider: "deepseek", model: "deepseek-flash" },
-      runTask: async () => { asked += 1; return ANSWER; }
+      runTask: async () => {
+        asked += 1;
+        return ANSWER;
+      }
     };
     const answered = await harness({ provider, runBudget: budget, requestId: "request.first" });
     const refused = await harness({ provider, runBudget: budget, requestId: "request.second" });
@@ -197,7 +204,10 @@ describe("what the harness claims about retrying a temporary fault", () => {
     const result = await harness({
       provider: {
         metadata: { provider: "deepseek", model: "deepseek-flash" },
-        runTask: async () => { asked += 1; throw new AutomationStudioLlmProviderError("llm.provider_http_error", "private upstream body", true, 503); }
+        runTask: async () => {
+          asked += 1;
+          throw new AutomationStudioLlmProviderError("llm.provider_http_error", "private upstream body", true, 503);
+        }
       },
       runBudget: budget,
       requestId: "request.exhausted"
@@ -346,6 +356,63 @@ function rateLimitedUntil(failures: number): { provider: AutomationStudioLlmProv
   };
   return { provider, get asked() { return asked; } };
 }
+
+it("awaits the original observed settlement ACK before completing the real harness", async () => {
+  const f = await observationFixture();
+  const receipts = new OriginalExecutionPromiseReceipts();
+  let release!: () => void;
+  let entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const settling = new Promise<void>(resolve => { entered = resolve; });
+  let writes = 0;
+  const onSettled = (...[_charged, _call, execution]: Parameters<NonNullable<AutomationStudioLlmBuildPurseOptions["onSettled"]>>) => {
+    entered();
+    const original = held.then(() => {
+      writes++;
+      receipts.issueObserved(original, execution!.observation!, { disposition: "settled", completionDigest: "test.actual.spend.ack", assessmentDigest: "test.actual.original.settlement" });
+    });
+    return original;
+  };
+  ExecutionCallbackPolicies.rememberManagedLexical({ receiver: undefined, callback: onSettled, contract: "managed_direct_effects", consumeCompletion: input => receipts.consume(input) });
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, onSettled });
+  const provider: AutomationStudioLlmProvider = {
+    metadata: { provider: "controlled-script", model: "controlled" },
+    async runTask() { return { ...ANSWER, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } }; }
+  };
+  f.source.manage({ receiver: provider, callback: provider.runTask, contract: "no_direct_effects" });
+  const input: AutomationStudioLlmHarnessInput = { taskKind: "runtime_diagnosis", projectId: "project.isolated", flowId: "flow.isolated", instructions: [], provider };
+  const execution: { observation?: ModelExecutionOptions["observation"] } = {};
+  const owned = await prepareObservedExecutionCallback(f.observation, { receiver: undefined, callback: runAutomationStudioLlmHarness, args: [input, execution] });
+  execution.observation = owned.observation;
+  Object.freeze(execution);
+  const running = automationStudioLlmBuildPurseScope(purse, () => owned.invoke());
+  await settling;
+  expect(writes).toBe(0);
+  expect(owned.completion()).toBe("pending");
+  release();
+  await expect(running).resolves.toMatchObject({ ok: true, providerInvocation: "attempted" });
+  expect(writes).toBe(1);
+  expect(owned.completion()).toBe("settled");
+});
+
+it("preserves the first legacy result while refusing observed completion when execution options were dropped", async () => {
+  const f = await observationFixture();
+  let sends = 0;
+  const provider: AutomationStudioLlmProvider = {
+    metadata: { provider: "controlled-script", model: "controlled" },
+    async runTask() {
+      sends++;
+      return ANSWER;
+    }
+  };
+  const input: AutomationStudioLlmHarnessInput = { taskKind: "runtime_diagnosis", projectId: "project.isolated", flowId: "flow.isolated", instructions: [], provider };
+  const owned = await prepareObservedExecutionCallback(f.observation, { receiver: undefined, callback: runAutomationStudioLlmHarness, args: [input] });
+  await expect(owned.invoke()).resolves.toMatchObject({ ok: true, providerInvocation: "attempted" });
+  expect(sends).toBe(1);
+  expect(owned.completion()).toBe("unknown");
+  await expect(prepareObservedExecutionCallback(f.observation, { receiver: undefined, callback: runAutomationStudioLlmHarness, args: [input] })).rejects.toThrow("reservation_not_active");
+  expect(sends).toBe(1);
+});
 
 /** The real adapter, answering from a stub: what it screens is what the harness carries. */
 function deepSeek(response: () => Response): AutomationStudioLlmProvider {

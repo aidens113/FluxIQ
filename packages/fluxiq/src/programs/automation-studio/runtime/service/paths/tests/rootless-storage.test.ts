@@ -4,6 +4,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioProjectPaths } from "../project.ts";
+import { AutomationStudioFlowPaths, projectArtifactDocumentFileName } from "../index.ts";
+import { AutomationStudioProjectPaths as FrameworkProjectPaths, AutomationStudioFlowPaths as FrameworkFlowPaths, projectArtifactDocumentFileName as frameworkArtifactDocumentFileName } from "../../../../../../framework/persistence/index.ts";
+
+it("keeps legacy path exports identical to their actual framework owners", () => {
+  expect(AutomationStudioProjectPaths).toBe(FrameworkProjectPaths);
+  expect(AutomationStudioFlowPaths).toBe(FrameworkFlowPaths);
+  expect(projectArtifactDocumentFileName).toBe(frameworkArtifactDocumentFileName);
+});
 
 // A service constructed with no storage root -- `new AutomationStudioService()`,
 // the public default -- is an in-memory service. It must remember what it was

@@ -1,0 +1,35 @@
+# Actual spend settlement completion
+
+Status: owned source/tests frozen; all worker readers ended. Owned spend completion accepted by lead's independent targeted runtime/type checks; successful whole Service remains unproven.
+
+The instruction/model path can await its actual call's spend prefix. Canonical holds retain one original in-flight Promise before any getter/delegate can reenter, book synchronously once, and drain every actual settlement. `onSettled` receives the actual entered child's opaque observation through the single canonical `ModelExecutionOptions` internal argument. Creation spend returns its original non-async `add` Promise and issues its private receipt only after the native owning storage ACK, with all observed child callbacks complete. Replaced/unsupported callbacks cannot certify from fulfillment. Exit drains every queued prefix; one error retains identity, distinct run/write failures are exposed together.
+
+Changed production (11 files): canonical budget `{types,call-hold,combine-holds,judging-reserve,projected-cost,purse,settlement-ledger}.ts`; canonical `agents/ledger/ledger.ts`; Studio `llm/run-budget.ts`, `llm/build-purse/harness-hold.ts`, and `service/creation-spend.ts`. The existing `flow-scope.ts` is an unchanged validation root. Root owns public/parent exports and common service wiring.
+
+Changed tests: 8 new subjects (budget `combine-holds`, `settlement-observation`, `projected-cost`, `judging-reserve`, `call-observation`; ledger `observation`; Studio service `spend-completion`, `spend-drain`) and additive legacy `llm/build-purse/tests/harness-hold.test.ts`. Existing assertions remain unchanged. Full exact source/test selectors are in ignored `.fluxiq/refactor/spend-owned.json` (12 source + 22 test roots; 20 actual changed files).
+
+Authority and compatibility:
+
+- Reuses the existing single Policies, Bindings, Source and original-Promise receipt authorities. No new scope/receipt registry, environment switch, observer metadata, Host receiver mutation, SQL migration, path/wire/schema change, or provider argument field.
+- Native ledger/hold/composite callbacks are declared only for their inspected original function/receiver identities. Supplied callbacks are observed and fenced. Composite release captures the actual original child pairs; native pre-send release remains synchronous, once-only bookkeeping with no charge.
+- Real legacy hold facade forwards the original separate execution option; its exact literal diagnostic is declared, while arbitrary formatter invocation preserves the original undefined receiver and is observed.
+- Retained native prices accept an optional final INTERNAL execution option through the existing price type. Only an authenticated Core owning-frame price receives it. Arbitrary price functions retain their exact two-token arguments and reserve receiver. Native prices retain provider/original estimator only, never an old observation; each use supplies current context. An observed quote pins its original estimator; ordinary unobserved quotes keep dynamic legacy provider pricing. Later unobserved allowances use no prior child.
+- Rootless memory, file and SQL behavior remain supported. These are acknowledgments of actual owned operations, never completion inferred from a memory total or amount. Studio persistence placement remains temporary under the UI-only Studio criterion.
+
+Observed worker validation:
+
+- `node .fluxiq/refactor/spend-types.cjs` -> 34 strict NodeNext roots / 4,928 source modules / 0 diagnostics.
+- `node .fluxiq/refactor/spend-structure.mjs` -> 34 scoped files / 21 official rules / 0 failures / 7 advisories / 0 baseline findings; all 20 changed files pass whitespace/EOF. No audit/baseline/config changes. Log `.fluxiq/refactor/spend-structure-final.log`.
+- `node .fluxiq/refactor/spend-closure.cjs` -> value+type closure 166 modules / 0 forbidden edges; erased runtime closure 88 modules / 0 model/Studio/built/unresolved edges; 2 intentional externals.
+- Initial exact 11 canonical subjects -> 50 pass / 5 fail of 55, 2.64s. The 5 new sync-fixture failures stopped before the actual callbacks (`durable_frame_missing`); they incorrectly supplied a root observation without entering a Source frame. Test-only fix entered real Source frames. Exact two affected subjects then passed 6/6 in 1.25s; unchanged other 9 subjects had 49 passes. Logs `spend-canonical-tests.log`, `spend-sync-fixtures.log`.
+- `pnpm.cmd --filter fluxiq exec vitest run src/runtime/agents/budget/tests/call-observation.test.ts -t 'uses a distinct current price frame'` -> genuine pre-fix failure: Source2's price query invoked original Source1 once. This reached the actual retained-price/estimator path; the call-through spy manufactured no receipt. Log `.fluxiq/refactor/spend-stale-price-before.log`. Fixed by the current-invocation native price seam above, without retaining the prior proof.
+- First EOF probe mistakenly checked two unchanged acceptance consumers and reported their existing extra EOF. Only the ignored probe's EOF ownership filter was corrected; all official rules still cover all 34 roots. No source/test bytes changed for that correction. Initial log `.fluxiq/refactor/spend-structure.log`.
+
+Lead verification already reported separately:
+
+- Independently reran all 11 canonical subjects: 55 pass / exit 0 / 3.66s, `.fluxiq/refactor/lead-spend-canonical.log`.
+- Prior combined Studio selection: all 7 new real-spend cases and 2 new drain cases passed, with old budget/purse cases. Those include native held SQL ACK, per-call interleaved prefixes, a real committed write followed by the identical lost-ACK Error, independent-pool reopen refusing second IO, unsupported callback before native IO, and complete error drain. The combined selection was 90 pass / 2 actual Service failures; full Service was not claimed. Store/add source did not change afterward.
+- Final `.fluxiq/refactor/spend-affected-tests.ps1` six subjects independently passed 23/23: combine-holds 7, judging-reserve 3, call-observation 4, projected-cost 3, legacy harness-hold 5, allowance-wording 1. Lead's combined selection was 8 files / 53 pass / 65.09s including 30 other-owner instruction consumer cases; log `.fluxiq/refactor/lead-ack-followup-integration.log`. This includes the genuine stale-price regression passing after its recorded failure. No unchanged 55-case sweep was repeated.
+- Lead's combined strict check independently passed 104 roots / 5,245 modules / 0 diagnostics. Its actual Service test still stops at the first lasting `add.honey` admission with `child_blocked`; the underlying incomplete-child cause is pending lead's test-only Source diagnostic. No claim that this unit makes whole Service pass.
+
+Not verified: a new normal library/declaration build, downstream packages, full suites, live/provider/paid/browser/panel behavior, or successful whole composed Service. The checkpoint build predates this unit; lead owns integration and subsequent build. All tests use isolated synthetic state and temporary databases. No git/shared working-document edits or user real data.

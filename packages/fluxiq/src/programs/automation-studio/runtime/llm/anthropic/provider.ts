@@ -4,11 +4,15 @@ import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES, AUTOMATION_STUDIO_LL
 import { AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL, AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS, automationStudioAnthropicModelRefusal, isAutomationStudioAnthropicModel, type AutomationStudioAnthropicModel } from "../models/index.ts";
 import { validateAutomationStudioLlmTaskRequest, automationStudioLlmTaskOutputSchema } from "../provider-task/index.ts";
 import type { AutomationStudioLlmSecretReference } from "../deepseek/index.ts";
-import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
+import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "../../../../../runtime/models/providers/anthropic/index.ts";
 import { automationStudioAnthropicRequest } from "./request.ts";
 import { automationStudioAnthropicMatchesSchema } from "./schema.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
 import { isRecord } from "../provider-transport/index.ts";
+import { invokeModelExecutionDelegate, modelExecutionFromCarrier, ModelExecutionReceiptOwner } from "../../../../../runtime/models/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/index.ts";
+import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
+import { automationStudioProviderRefusalMessageScreen } from "../provider-transport/index.ts";
 
 export type AutomationStudioAnthropicProviderOptions = {
   secretReference: AutomationStudioLlmSecretReference;
@@ -25,29 +29,54 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
   if (!isAutomationStudioAnthropicModel(model)) throw new AutomationStudioLlmProviderError("llm.provider_model_unsupported", automationStudioAnthropicModelRefusal(model));
   const maxResponseBytes = options.maxResponseBytes ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES;
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0 || maxResponseBytes > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "Anthropic response-byte limit is invalid.");
-  return {
-    metadata: { provider: "anthropic", model },
-    measureInput: (request) => {
-      const { estimatedInputTokens, estimatedInputBytes } = automationStudioAnthropicRequest(request, model);
-      return { estimatedInputTokens, estimatedInputBytes };
-    },
-    // Cache writes can cost more than a cold input; hold the all-write case,
-    // then charge the actual read/write split. Output is the harness reserve.
-    estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioAnthropicCostUsd(inputTokens, outputTokens, 0, model, inputTokens),
-    runTask: async (request, execution) => {
+  const completionOwner = new ModelExecutionReceiptOwner();
+  const runTask: AutomationStudioLlmProvider["runTask"] = (request, execution) => {
+    const resolveSecret = options.resolveSecret;
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const observed = modelExecutionFromCarrier(execution, provider, runTask);
+    const actual = (async () => {
       const prepared = prepare(request, model);
-      return await automationStudioAnthropicMessage({
-        body: prepared.body, model, fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes,
+      const keyOwner = new ModelExecutionReceiptOwner();
+      const resolveKey = (signal: AbortSignal): Promise<string> => {
+        const child = modelExecutionFromCarrier(signal, transport, resolveKey);
+        const secretRequest: Parameters<typeof resolveSecret>[0] = { provider: "anthropic", secretReference: reference, projectId: request.context.projectId, flowId: request.context.flowId, requestId: request.requestId, purpose: "llm_provider_request", outboundBody: prepared.body, signal };
+        return keyOwner.returning(invokeModelExecutionDelegate(child, { receiver: options, callback: resolveSecret, args: [secretRequest] }, secretRequest, signal), child);
+      };
+      const readAnswer = (text: string, usage: AutomationStudioLlmUsageSummary) => parseAnswer(text, usage, request, prepared.format.jsonText);
+      const transport = {
+        body: prepared.body, model, fetchImpl, maxResponseBytes,
         timeoutMs: request.timeoutMs, ...(execution?.signal ? { signal: execution.signal } : {}),
         requestId: request.requestId, taskKind: request.taskKind,
         ...(request.context.stage ? { stage: request.context.stage } : {}),
         ...(request.context.evidenceLoop?.iteration ? { iteration: request.context.evidenceLoop.iteration } : {}),
         requestShape: { model, taskKind: request.taskKind, requestId: request.requestId, bodyBytes: Buffer.byteLength(prepared.body, "utf8"), responseFormat: prepared.format.jsonText ? "json_text" : "json_schema", measuredInput: prepared.estimatedInputTokens, maxOutput: AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].maxOutputTokens },
-        resolveKey: async (signal) => await options.resolveSecret({ provider: "anthropic", secretReference: reference, projectId: request.context.projectId, flowId: request.context.flowId, requestId: request.requestId, purpose: "llm_provider_request", outboundBody: prepared.body, signal }),
-        readAnswer: (text, usage) => parseAnswer(text, usage, request, prepared.format.jsonText)
-      });
-    }
+        resolveKey, readAnswer,
+        screenMessage: automationStudioProviderRefusalMessageScreen,
+        observe: automationStudioLlmStepLogModelStep
+      };
+      keyOwner.register({ receiver: transport, callback: resolveKey });
+      ExecutionCallbackPolicies.remember(transport, readAnswer, "pure");
+      ExecutionCallbackPolicies.rememberLexical(automationStudioProviderRefusalMessageScreen, "pure");
+      return await automationStudioAnthropicMessage(transport, observed);
+    })();
+    return completionOwner.returning(actual, observed);
   };
+  const measureInput: NonNullable<AutomationStudioLlmProvider["measureInput"]> = request => {
+    const { estimatedInputTokens, estimatedInputBytes } = automationStudioAnthropicRequest(request, model);
+    return { estimatedInputTokens, estimatedInputBytes };
+  };
+  const estimateCostUsd: NonNullable<AutomationStudioLlmProvider["estimateCostUsd"]> = ({ inputTokens, outputTokens }) => estimateAutomationStudioAnthropicCostUsd(inputTokens, outputTokens, 0, model, inputTokens);
+  const provider: AutomationStudioLlmProvider = {
+    metadata: { provider: "anthropic", model },
+    measureInput,
+    // Cache writes can cost more than a cold input; hold the all-write case,
+    // then charge the actual read/write split. Output is the harness reserve.
+    estimateCostUsd, runTask
+  };
+  completionOwner.register({ receiver: provider, callback: runTask });
+  ExecutionCallbackPolicies.remember(provider, measureInput, "pure");
+  ExecutionCallbackPolicies.remember(provider, estimateCostUsd, "pure");
+  return provider;
 }
 
 function prepare(request: AutomationStudioLlmTaskRequest, model: AutomationStudioAnthropicModel): ReturnType<typeof automationStudioAnthropicRequest> {

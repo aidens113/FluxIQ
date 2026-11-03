@@ -13,6 +13,7 @@ import { executeAutomationStudioNode } from "../node-execution/index.ts";
 import { automationStudioRecordTraceSummary } from "../records/index.ts";
 import type { AutomationStudioRunState } from "../index.ts";
 import type { AutomationStudioStepLoopContext } from "../step-loop/index.ts";
+import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
 
 /**
  * The source's fresh outputs, or nothing when its re-run did not succeed. The
@@ -21,7 +22,9 @@ import type { AutomationStudioStepLoopContext } from "../step-loop/index.ts";
  * the page the next attempt starts from, as after any dispatch.
  */
 export async function automationStudioReacquireSourceRerun(ctx: AutomationStudioStepLoopContext, source: AutomationStudioFlowNode): Promise<Readonly<Record<string, JsonValue>> | undefined> {
-  const { onRecordBatch: _notSaved, ...options } = ctx.options;
+  const { onRecordBatch: _notSaved } = ctx.options;
+  const options = copyAutomationExecutionOptions(ctx.options);
+  delete options.onRecordBatch;
   const runState: AutomationStudioRunState = {
     ...ctx.runState,
     records: automationStudioRecordTraceSummary(),

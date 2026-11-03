@@ -204,7 +204,7 @@ and fails the build. It checks every rule above that a machine can check:
 file length (800 lines), directory size (25 source files), class size (40
 methods), exported values per file (one class, one component, at most 15
 values), test placement (a test file must sit directly in a `tests/` or
-`e2e/` directory), path depth (8 segments), banned names, shared-prefix
+`e2e/` directory), path depth (9 segments including the filename), banned names, shared-prefix
 groups of three or more files, imports that reach past a directory's barrel,
 imports that cross a declared boundary, and the working-document header,
 `Current State`, size, and index rules. Beyond placement it also holds

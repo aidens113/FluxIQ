@@ -2,6 +2,7 @@ export type { RegisteredOutputAction } from "./action.ts";
 export * from "./admission/index.ts";
 export type { OutputTargetPreparation } from "./target-preparation.ts";
 export type { OutputTargetPreparer } from "./target-preparer.ts";
+export type { OutputTargetPreparerBinding, OutputTargetPreparationPort } from "./contracts/index.ts";
 export type { OutputDispatchIo, OutputDispatchRuntime } from "./ports/index.ts";
 export type { OutputTargetSelection } from "./matching/index.ts";
 export type { OutputTargetMatchResult } from "./matching/index.ts";

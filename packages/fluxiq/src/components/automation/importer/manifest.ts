@@ -12,6 +12,8 @@ export type AutomationStudioImporterSdkManifest = {
   packageId: string;
   packageVersion: string;
   domainId: string;
+  /** Denies recording capture when this registered domain's policy is absent. */
+  recordingTargetPolicyRequired?: true;
   nodes: AutomationStudioNodeDefinition[];
   recordingMappers?: AutomationStudioRecordingMapperDefinition[];
   targetResolvers?: AutomationStudioTargetResolverDefinition[];

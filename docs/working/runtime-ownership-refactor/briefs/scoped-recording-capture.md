@@ -1,0 +1,16 @@
+# Original stored-domain scoped capture
+Role: Heavy worker, gpt-6.1-sol Max; no agents/git/shared docs.
+Repo: t843 Core. Read Current State and reports/scoped-recording-validation-plan.md capture sections; SQL foundation implementation stays held.
+Stable Root interface: policies/index exports RecordingScopedIngress<TTarget,TEvidence>.forRecording(ORIGINAL RecordingSession<TTarget,TEvidence>):RecordingIngressPolicy<TTarget,TEvidence>. Original ingress callbacks retain one argument and original receiver; no added hidden tuples.
+Own client-gateway/recording/options.ts, internal/{state,ref}.ts, capture/{store,action,event,state,input}.ts plus immediate scoped-capture tests and necessary capture internal helpers/barrels. Discover exact recordGatewayInput path before edits.
+Must not touch Root trusted-domain/start-context/start-policy/lifecycle start/open, Service/Studio ingress/bridge/public package, B native registry/Down, C partial trials/coverage, SQL/performance, shared docs/baselines/git.
+Add optional constructor scopedIngress code port. Legacy constructor with only ingress preserves existing behavior/tuples. Actual Studio composition will install scoped port (Root).
+Select policy only from recording read via ORIGINAL sink/address, matching captured ref projectId/recordingId and its stored environment domain. Never select from target/wire/session metadata/current UI context. No replacement maps/registry/rights/receipt or cached Source.
+Use existing read outcomes/error/discard behavior; unavailable/corrupt/mismatched original recording is refusal, not empty data or legacy fallback in scoped mode. Preserve write-order/batching and capture active ref BEFORE awaits.
+Raw client entry decodes via selected original policy. Unknown/unowned ID retains strict legacy generic decode/discard without invoking guessed domain code; never adopts another active recording.
+Command recording after flush uses same captured original address/stored domain policy even if current active/UI context changes. Invoke original commandTarget(receiver,[originalcommand.target]), keep full result/evidence/envelope bytes and first error.
+For event/state/gateway input projection in scoped mode, wire domain must match original stored/active domain BEFORE actual IO projector; foreign domain gets existing rejected/discard diagnostic0IO calls. Passive state evidence must not become an executable action.
+Root stores active domain from returned original recording and validates raw batches under mutation lock; do not independently recompute start domain or duplicate storage validation.
+Acceptance: legacy one-arg tuple/receiver unchanged; correct/foreign/unowned/corrupt/missing recording domain; same ID different project; active context switches during flush/read; command originaltarget identity; no guessed policy on wrong ID; batching/error/restart selectors. No weakened positive/negative assertions.
+No broad suites/compiler/build while other lanes mutable. Notify source+tests frozen before own closed runtime readers; Root common gates and normal built integration remain required.
+Write own reports/scoped-recording-capture.md <=100lines; standard return contract. This is generic Core capture, no browser/DOM interpretation.

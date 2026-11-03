@@ -17,6 +17,8 @@ import { IdentityAccessService, registerIdentityAccessApi, type IdentityCredenti
 import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner/index.ts";
 import { registerRuntimeApi } from "../runtime-control/index.ts";
 import { type HeldKeys, registerSecretKeysApi, SecretKeysService } from "../secret-keys/index.ts";
+import { createSecretKeysExecutionPorts } from "../secret-keys/runtime/execution/index.ts";
+import { createSQLiteRepositoryExecutionPorts } from "../../framework/persistence/sqlite/execution/index.ts";
 import { resolveFluxIQProfile } from "../../platform/profile/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
@@ -95,7 +97,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   const secretKeysRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.storeKind, layoutVersion: storageLayoutVersion }) : undefined;
   // Built before Automation Studio, which takes the standing result-check
   // provider at construction.
-  const secretKeys = new SecretKeysService({ ...(secretKeysRepository ? { repository: secretKeysRepository } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}) });
+  const repositoryExecution = modelProvidersEnabled && secretKeysRepository ? createSQLiteRepositoryExecutionPorts(secretKeysRepository) : undefined;
+  const secretKeys = new SecretKeysService({ ...(secretKeysRepository ? { repository: secretKeysRepository } : {}), ...(repositoryExecution ? { repositoryExecution } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}) });
   // What a Flow's standing authorization buys, for a run nobody is watching:
   // the model that judges its result, and -- since the repair clause -- the
   // model that repairs it when it fails. One resolver serves both, because
@@ -217,6 +220,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   const instanceHost = publicInstanceHost(process.env.FLUXIQ_PUBLIC_ORIGIN);
   const resolveSessionProvider = modelProvidersEnabled ? createAutomationStudioSessionKeyProviderResolver({
     ports: secretKeys,
+    keyExecutionPorts: createSecretKeysExecutionPorts(secretKeys),
     flowSecretKeyId: ({ projectId, flowId }) => flowSecretKeyId(automationStudio, projectId, flowId),
     ...(instanceHost ? { instanceHost } : {})
   }) : undefined;

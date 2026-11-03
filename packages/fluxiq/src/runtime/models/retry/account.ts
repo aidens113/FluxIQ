@@ -45,6 +45,7 @@ export type AutomationStudioLlmProviderRetryStop =
   | "attempts_exhausted"
   | "call_deadline"
   | "run_allowance"
+  | "outcome_unknown"
   | "cancelled";
 
 /** The whole account of one provider call's attempts. */

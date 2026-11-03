@@ -1,3 +1,5 @@
+// Compatibility aliases; the framework owns the actual declarations and implementations.
+
 // The hard ceilings on a bounded evidence loop.
 //
 // These numbers are Core's, not the harness's and not recovery's. Two

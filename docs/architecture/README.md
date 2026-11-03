@@ -57,8 +57,8 @@ runtime keeps clear folders rather than many tiny workspace packages.
 | `src/domains` | domain manifest and registry contracts | built-in domain packages |
 | `src/programs` | global framework programs, program catalog, scope model, and global program API registry | domain program implementations |
 | `src/api-contracts` | shared API schemas | private domain payloads |
-| `src/flows` | flow graph model, executable graph contracts and validation | runtime side effects or editor/project persistence |
-| `src/framework` | host-project bootstrap and top-level FluxIQ class | domain implementation code |
+| `src/flows` | flow graph model, executable graph contracts/validation and shared authoring data | runtime side effects or editor/project persistence |
+| `src/framework` | host-project bootstrap, top-level FluxIQ class, shared persistence/path layout and performance instrumentation | domain implementation code |
 | `src/components` | component metadata and neutral node packs | domain actions |
 | `src/engine` | session lifecycle, node dispatch and automation graph execution | domain decision logic or editor/project persistence |
 | `src/runtime` | runtime services, host ports, execution support and domain adapter boundaries | concrete browser/DOM interpretation or program persistence |
@@ -67,6 +67,9 @@ runtime keeps clear folders rather than many tiny workspace packages.
 
 Global program internals use the layout described in
 [`program-layout.md`](./program-layout.md).
+Automation Studio's required boundary is a panel with thin framework controls.
+Its remaining backend implementations are temporary migration locations; see
+[runtime ownership](./runtime-ownership.md) for actual owners and compatibility.
 
 ## Authored Architecture Docs
 

@@ -14,7 +14,7 @@ import { BuildToolTestHost } from "../build-execution/tools/tests/host.ts";
 import type { ExecutionCallbackOutcome, ExecutionCallbackSettlement } from "../../../../runtime/execution-observation/index.ts";
 import { OriginalExecutionPromiseReceipts } from "../../../../runtime/execution-observation/queue-completion/index.ts";
 import { AuthoringExecutionScope } from "../../../../runtime/flow-authoring/execution/observation/index.ts";
-import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers } from "../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolDelegate } from "../build-execution/tools/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../action-permissions/index.ts";
 
@@ -112,6 +112,8 @@ class PermissionHost implements AutomationStudioLlmEvidenceRuntimeBinding {
   writes = 0;
   needsPerson = false;
   requirePermission = false;
+  beforePermission: ((call: Request) => void | Promise<void>) | undefined;
+  afterPermission: ((call: Request) => void | Promise<void>) | undefined;
 
   executeTool(call: Request): Promise<Result> {
     this.requests.push(call);
@@ -124,10 +126,12 @@ class PermissionHost implements AutomationStudioLlmEvidenceRuntimeBinding {
 
   private async run(call: Request): Promise<Result> {
     if (this.requirePermission) {
+      await this.beforePermission?.(call);
       const verdict = await call.permission({
         effect: "mutate", consequences: ["modify_existing"], verb: "press",
         control: { name: "Star", kind: "button", subject: "s:card", resource: "r:card", place: "pl:star", state: "st:off" }
       });
+      await this.afterPermission?.(call);
       if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { refused: true }, effectApplied: false };
     }
     this.writes += 1;
@@ -150,6 +154,25 @@ it("observes real Core ledger permission callbacks during an active raw backend 
   host.requirePermission = true;
   const ledger = new AutomationStudioSiteResetLedger({ owner: "builder" });
   const f = await buildToolFixture(undefined, callbacks => callbacks.manage({ receiver: host, callback: host.executeTool, contract: "managed_direct_effects", consumeCompletion: input => host.completion(input) }));
+  let rawEntry: string | undefined;
+  let earlier = new Set<string>();
+  host.beforePermission = call => {
+    expect(AuthoringExecutionScope.of(host)).toBeUndefined();
+    const context = f.observer.callbackContext(call);
+    if (!context) throw new Error("test.actual_raw_parent_required");
+    rawEntry = f.assembly.entryBridge.read(context.parent.parent).row.entryId;
+    earlier = new Set(f.store.rows.keys());
+  };
+  host.afterPermission = () => {
+    const added = [...f.store.rows.values()].filter(value => !earlier.has(value.row.entryId));
+    expect(added.length).toBeGreaterThan(0);
+    expect(added.every(value => {
+      let parent = value.row.parentId;
+      while (parent && parent !== rawEntry) parent = f.store.rows.get(parent)?.row.parentId;
+      return parent === rawEntry;
+    })).toBe(true);
+    expect(AuthoringExecutionScope.of(host)).toBeUndefined();
+  };
   const loop = await composed(f, host, { siteReset: ledger, project: true });
   expect(await loop.executeTool({ callId: "press", toolId: "core.run_node", value: { node: "example.action" } })).toMatchObject({ effectApplied: true });
   expect(host.writes).toBe(1);
@@ -158,6 +181,119 @@ it("observes real Core ledger permission callbacks during an active raw backend 
   expect(loop.permissionRecords()).toMatchObject([{ action: { ref: "press", effect: "mutate" }, consequences: ["modify_existing"], permitted: true }]);
   expect(f.issued).toHaveLength(1);
   expect((await f.assembly.consumer.inspect(f.scope)).state).toBe("clear");
+});
+
+it("separates concurrent original permission callbacks on the same raw receiver across cohorts", async () => {
+  const host = new PermissionHost();
+  host.requirePermission = true;
+  const configure = (callbacks: Fixture["callbacks"]) => callbacks.manage({ receiver: host, callback: host.executeTool, contract: "managed_direct_effects", consumeCompletion: input => host.completion(input) });
+  const first = await buildToolFixture(undefined, configure);
+  const second = await buildToolFixture(undefined, configure);
+  const one = await composed(first, host, { project: true, siteReset: new AutomationStudioSiteResetLedger({ owner: "builder.one" }) });
+  const two = await composed(second, host, { project: true, siteReset: new AutomationStudioSiteResetLedger({ owner: "builder.two" }) });
+  let release!: () => void;
+  let reached!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { reached = resolve; });
+  let entered = 0;
+  host.beforePermission = async () => {
+    entered++;
+    if (entered === 2) reached();
+    await hold;
+    expect(AuthoringExecutionScope.of(host)).toBeUndefined();
+  };
+  const running = Promise.all([
+    one.executeTool({ callId: "one", toolId: "core.run_node", value: { node: "example.action" } }),
+    two.executeTool({ callId: "two", toolId: "core.run_node", value: { node: "example.action" } })
+  ]);
+  await Promise.race([ready, running.then(() => { throw new Error("test.calls_finished_before_permissions"); })]);
+  expect(host.writes).toBe(0);
+  expect(host.requests[0]!.permission).not.toBe(host.requests[1]!.permission);
+  release();
+  await expect(running).resolves.toMatchObject([{ effectApplied: true }, { effectApplied: true }]);
+  expect(host.writes).toBe(2);
+  expect((await first.assembly.consumer.inspect(first.scope)).state).toBe("clear");
+  expect((await second.assembly.consumer.inspect(second.scope)).state).toBe("clear");
+});
+
+it("refuses a retained raw permission after its child retires while the outer Core frame remains open", async () => {
+  const host = new PermissionHost();
+  host.requirePermission = true;
+  let baselines = 0;
+  let lateRefused = false;
+  let rawEntry: string | undefined;
+  const completed = new WeakSet<Promise<void>>();
+  const explored = (): Promise<void> => {
+    const original = Promise.resolve().then(async () => {
+      const call = host.requests[0];
+      if (!call) throw new Error("test.actual_raw_request_required");
+      const raw = rawEntry ? f.store.rows.get(rawEntry) : undefined;
+      expect(raw?.closed).toBe(true);
+      let ancestor = raw?.row.parentId;
+      let openAncestor = false;
+      while (ancestor) {
+        const row = f.store.rows.get(ancestor);
+        if (row && !row.closed) openAncestor = true;
+        ancestor = row?.row.parentId;
+      }
+      expect(openAncestor).toBe(true);
+      await expect(call.permission({ effect: "mutate", consequences: ["modify_existing"], verb: "press", control: { name: "Star", kind: "button" } })).rejects.toThrow("execution_observation.raw_permission_scope_required");
+      lateRefused = true;
+      completed.add(original);
+    });
+    return original;
+  };
+  const ledger: AutomationStudioSiteResetCalls = {
+    claim() { return { kind: "none" }; },
+    target() { throw new Error("no undo is requested"); },
+    createBaseline() {
+      baselines++;
+      return { kind: "admit" };
+    },
+    explored
+  };
+  const f = await buildToolFixture(undefined, callbacks => {
+    callbacks.manage({ receiver: host, callback: host.executeTool, contract: "managed_direct_effects", consumeCompletion: input => host.completion(input) });
+    callbacks.manage({ receiver: ledger, callback: ledger.claim, contract: "no_direct_effects" });
+    if (ledger.createBaseline) callbacks.manage({ receiver: ledger, callback: ledger.createBaseline, contract: "no_direct_effects" });
+    callbacks.manage({ receiver: ledger, callback: explored, contract: "managed_direct_effects", consumeCompletion: input => input.returned instanceof Promise && completed.delete(input.returned) && input.outcome.kind === "fulfilled"
+      ? { disposition: "settled", completionDigest: "test.late_permission.refused", assessmentDigest: "test.original_explored.finished" } : null });
+  });
+  host.beforePermission = call => {
+    const current = f.observer.callbackContext(call);
+    if (!current) throw new Error("test.actual_raw_parent_required");
+    rawEntry = f.assembly.entryBridge.read(current.parent.parent).row.entryId;
+  };
+  const loop = await composed(f, host, { project: true, siteReset: ledger });
+  await expect(loop.executeTool({ callId: "one", toolId: "core.run_node", value: { node: "example.action" } })).resolves.toMatchObject({ effectApplied: true });
+  expect(lateRefused).toBe(true);
+  expect(baselines).toBe(1);
+  expect(host.writes).toBe(1);
+  expect((await f.assembly.consumer.inspect(f.scope)).state).toBe("clear");
+});
+
+it("rejects a changed permission on an authentic request copy before invoking the raw actor", async () => {
+  const host = new PermissionHost();
+  host.requirePermission = true;
+  let substitutions = 0;
+  const replaced: AutomationStudioLlmEvidenceRuntimeBinding = {
+    domainId: host.domainId, deniedEvidenceKeys: host.deniedEvidenceKeys, runsNodes: host.runsNodes, tools: host.tools,
+    executeTool(call) {
+      const copied = { ...call, permission: async () => {
+        substitutions++;
+        return { permitted: true as const };
+      } };
+      inheritAutomationStudioBuildToolRequest(call, copied);
+      return invokeAutomationStudioBuildToolDelegate(copied, { receiver: host, callback: host.executeTool, args: [copied] });
+    }
+  };
+  AutomationStudioBuildToolFactories.remember(replaced.executeTool, "frame");
+  const f = await buildToolFixture();
+  const loop = await composed(f, replaced);
+  await expect(loop.executeTool({ callId: "changed", toolId: "core.run_node", value: { node: "example.action" } })).rejects.toThrow("execution_observation.foreign_raw_permission");
+  expect(substitutions).toBe(0);
+  expect(host.requests).toEqual([]);
+  expect(host.writes).toBe(0);
 });
 
 it.each(["throw", "forged"] as const)("observes an injected ledger callback's actual %s outcome rather than trusting its Core wrapper", async mode => {

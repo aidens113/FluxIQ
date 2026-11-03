@@ -3,12 +3,15 @@ import type { ClientRecordingMessageEvent } from "../internal/index.ts";
 import type { DiscardedClientMessage } from "../internal/index.ts";
 import type { RecordingBridgeState } from "../internal/index.ts";
 import { compactJsonObject } from "../values/index.ts";
+import { captureRecordingIngress } from "./scoped/index.ts";
 
 export async function storeClientMessage<TTarget, TEvidence>(state: RecordingBridgeState<TTarget, TEvidence>, event: ClientRecordingMessageEvent): Promise<void> {
     if (event.type === "client.recording_entry") {
       const open = state.activeRecordings.get(state.recordingOwnerKey(event.session));
-      const active = open?.recordingId === event.message.payload.recordingId ? open : undefined;
-      const entry = state.ingress.entry(event.message.payload.entry);
+      const owned = open?.recordingId === event.message.payload.recordingId ? open : undefined;
+      const active = state.scopedIngress && owned ? { ...owned } : owned;
+      const ingress = active && state.scopedIngress ? await captureRecordingIngress(state, active) : state.ingress;
+      const entry = ingress.entry(event.message.payload.entry);
       const message: DiscardedClientMessage = {
         kind: "recording entry",
         label: entry.type,

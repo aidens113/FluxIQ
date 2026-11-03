@@ -41,6 +41,8 @@ import { automationStudioProjectBuildSupervisorProvider } from "./supervisor-pro
 import { AutomationStudioProjectBuildTaskChecklist } from "./task-checklist.ts";
 import { AutomationStudioProjectBuildTogglesRecord } from "../project-build-toggles/index.ts";
 import type { AutomationStudioProjectBuildPorts } from "./types.ts";
+import { AuthoringExecutionScope, invokeAuthoringExecutionCallback } from "../../../../../runtime/flow-authoring/execution/index.ts";
+import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/policies/index.ts";
 
 // A project build (automation-project-agents-plan, unit A5c): the project
 // supervisor (`project-agents/supervisor/`) plans the Flow's subflows, the
@@ -249,12 +251,27 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   });
   // Each subflow's trials, by its key, as the subflow trial port reports them: what a time limit's words say was tested (header, t601).
   const trials = new Map<string, AutomationStudioActivityTimeLimitTried>();
-  const trialled = proposals.trialled.bind(proposals);
-  proposals.trialled = (scope, proposal, verdict) => {
-    trialled(scope, proposal, verdict);
-    const seen = trials.get(scope.subflowKey);
-    trials.set(scope.subflowKey, { count: (seen?.count ?? 0) + 1, last: verdict, passed: seen?.passed === true || verdict === "yes" });
+  const trialled = proposals.trialled;
+  proposals.trialled = (...args: Parameters<typeof trialled>) => {
+    const [scope, , verdict] = args;
+    const counted = () => {
+      const seen = trials.get(scope.subflowKey);
+      trials.set(scope.subflowKey, { count: (seen?.count ?? 0) + 1, last: verdict, passed: seen?.passed === true || verdict === "yes" });
+    };
+    if (!AuthoringExecutionScope.of(proposals)) {
+      trialled.apply(proposals, args);
+      counted();
+      return;
+    }
+    return invokeAuthoringExecutionCallback(proposals, { receiver: proposals, callback: trialled, args }).then(counted);
   };
+  ExecutionCallbackPolicies.rememberManaged({
+    receiver: proposals, callback: proposals.trialled, contract: "managed_direct_effects",
+    consumeCompletion: ({ invocation }) => {
+      const callbacks = AuthoringExecutionScope.of(proposals)?.context.callbacks;
+      return callbacks ? callbacks.frameCompletion(invocation, callbacks.owner) : null;
+    }
+  });
   const { binding } = project;
   let running = true;
   const judge = { provider: draft.harness.provider, timeoutMs: draft.harness.timeoutMs, signal: draft.loop.signal };

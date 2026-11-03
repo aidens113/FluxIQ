@@ -1,11 +1,12 @@
 import { AutomationStudioLlmProviderError } from "../../failures/index.ts";
 import { raceAutomationStudioProviderSignal } from "../../transport/index.ts";
 import { isRecord } from "../../transport/index.ts";
+import type { ModelExecutionOptions } from "../../execution/index.ts";
 
 export type AutomationStudioAnthropicStreamReply = { envelope: Record<string, unknown>; raw: Uint8Array };
 
 /** Bounded SSE assembly. Delta usage is cumulative, and a message_stop is mandatory. */
-export async function readAutomationStudioAnthropicStream(response: Response, maxBytes: number, signal: AbortSignal, progress: (envelope: Record<string, unknown>) => void): Promise<AutomationStudioAnthropicStreamReply> {
+export async function readAutomationStudioAnthropicStream(response: Response, maxBytes: number, signal: AbortSignal, progress: (envelope: Record<string, unknown>) => void, execution?: ModelExecutionOptions): Promise<AutomationStudioAnthropicStreamReply> {
   if (Number(response.headers.get("content-length")) > maxBytes) throw oversize();
   if (!response.body) throw malformed();
   const reader = response.body.getReader();
@@ -58,6 +59,8 @@ export async function readAutomationStudioAnthropicStream(response: Response, ma
     }
     if (envelope) progress(envelope);
   };
+  let failed = false;
+  let failure: unknown;
   try {
     while (!stopped) {
       const next = await raceAutomationStudioProviderSignal(reader.read(), signal, cancel);
@@ -86,9 +89,21 @@ export async function readAutomationStudioAnthropicStream(response: Response, ma
       offset += chunk.byteLength;
     }
     return { envelope, raw };
+  } catch (error) {
+    failed = true;
+    failure = error;
+    throw error;
   } finally {
-    void reader.cancel().catch(/* best-effort: the stream outcome is already known */ () => undefined);
-    reader.releaseLock();
+    if (execution?.observation) {
+      try { await reader.cancel(); }
+      catch (cleanup) {
+        if (failed) throw new AggregateError([failure, cleanup], "model.stream.cleanup_failed");
+        throw cleanup;
+      } finally { reader.releaseLock(); }
+    } else {
+      void reader.cancel().catch(/* best-effort: the stream outcome is already known */ () => undefined);
+      reader.releaseLock();
+    }
   }
 }
 

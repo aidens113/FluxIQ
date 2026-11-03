@@ -56,6 +56,9 @@ import { AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD } from "./epsilon.ts";
 import { AutomationStudioLlmBuildPurseJudgingReserve } from "./judging-reserve.ts";
 import { automationStudioLlmBuildPurseFramesOf, automationStudioLlmBuildPurseJudgeBackstopOf } from "./run-frame.ts";
 import { AutomationStudioLlmBuildPurseLedger } from "./settlement-ledger.ts";
+import { combineAutomationStudioLlmBuildPurseHolds } from "./combine-holds.ts";
+import type { ModelExecutionOptions } from "../../models/execution/index.ts";
+import { invokeOwnedExecutionCallbackSync } from "../../execution-observation/owned/index.ts";
 import { AutomationStudioLlmBuildPurseTopUps, type AutomationStudioLlmBuildPurseTopUp } from "./top-up.ts";
 import type { AutomationStudioLlmBuildPurseCall, AutomationStudioLlmBuildPurseCharged, AutomationStudioLlmBuildPurseHeld, AutomationStudioLlmBuildPurseJudging, AutomationStudioLlmBuildPurseOptions, AutomationStudioLlmBuildPurseRefusal } from "./types.ts";
 
@@ -140,8 +143,9 @@ export class AutomationStudioLlmBuildPurse {
   }
 
   /** What the Flow's creation has spent: what earlier builds carried, plus this build's accounting or settled calls, whichever is larger. */
-  spentUsd(): number {
-    const reported = this.options.spentUsd?.() ?? 0;
+  spentUsd(execution?: ModelExecutionOptions): number {
+    const callback = this.options.spentUsd;
+    const reported = callback ? invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: this.options, callback, args: [] }) : 0;
     return this.carriedUsd + Math.max(this.ledger.settledUsd(), Number.isFinite(reported) ? reported : 0);
   }
 
@@ -176,13 +180,13 @@ export class AutomationStudioLlmBuildPurse {
    * for the reserve's standing allowance. `undefined` where nothing is kept
    * back or nothing can be priced.
    */
-  judgingHoldUsd(): number | undefined {
-    return this.judgingReserve.holdUsd();
+  judgingHoldUsd(execution?: ModelExecutionOptions): number | undefined {
+    return this.judgingReserve.holdUsd(execution);
   }
 
   /** What a call that is not a judge's must leave for judging: `judgingHoldUsd`, or nothing. */
-  keptBackUsd(): number {
-    return this.judgingHoldUsd() ?? 0;
+  keptBackUsd(execution?: ModelExecutionOptions): number {
+    return this.judgingHoldUsd(execution) ?? 0;
   }
 
   /**
@@ -267,13 +271,13 @@ export class AutomationStudioLlmBuildPurse {
   }
 
   /** The provider's price, at the rate in force now, for a request of `inputTokens` and a reply of `outputTokens`, all uncached; `undefined` before any call brought a price, or where it prices nonsense. */
-  priceUsd(inputTokens: number, outputTokens: number): number | undefined {
-    return this.judgingReserve.priceUsd(inputTokens, outputTokens);
+  priceUsd(inputTokens: number, outputTokens: number, execution?: ModelExecutionOptions): number | undefined {
+    return this.judgingReserve.priceUsd(inputTokens, outputTokens, execution);
   }
 
   /** What an allowance could still be carved at: the ceiling less what is spent, in flight, kept back for judging and still held by open allowances; never below nothing. */
-  allocatableUsd(): number {
-    return Math.max(0, this.ceilingUsd - this.spentUsd() - this.pendingUsd() - this.keptBackUsd() - this.allowances.outstandingUsd());
+  allocatableUsd(execution?: ModelExecutionOptions): number {
+    return Math.max(0, this.ceilingUsd - this.spentUsd(execution) - this.pendingUsd() - this.keptBackUsd(execution) - this.allowances.outstandingUsd());
   }
 
   /**
@@ -324,14 +328,14 @@ export class AutomationStudioLlmBuildPurse {
    * back when the backstop pays; when neither can, the backstop's refusal is the
    * answer.
    */
-  hold(call: AutomationStudioLlmBuildPurseCall): AutomationStudioLlmBuildPurseHeld {
+  hold(call: AutomationStudioLlmBuildPurseCall, execution?: ModelExecutionOptions): AutomationStudioLlmBuildPurseHeld {
     const backstop = call.judge ? automationStudioLlmBuildPurseJudgeBackstopOf(this) : undefined;
-    if (!backstop || backstop === this) return this.holdFor(call, undefined);
+    if (!backstop || backstop === this) return this.holdFor(call, undefined, execution);
     const before: Array<[AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseRefusal | undefined]> = [];
     for (let owner: AutomationStudioLlmBuildPurse | undefined = this; owner; owner = owner.parent) before.push([owner, owner.refusal]);
-    const own = this.holdFor(call, undefined);
+    const own = this.holdFor(call, undefined, execution);
     if (own.ok) return own;
-    const backed = backstop.holdFor(call, undefined);
+    const backed = backstop.holdFor(call, undefined, execution);
     if (!backed.ok) return backed;
     // The backstop paid, so the refusal met first refused no call.
     for (const [owner, was] of before) owner.refusal = was;
@@ -339,9 +343,9 @@ export class AutomationStudioLlmBuildPurse {
   }
 
   /** Hold `call`, made under `via` when it is one of this purse's allowances: what the other open allowances still hold is left alone, `via`'s own is not. */
-  private holdFor(call: AutomationStudioLlmBuildPurseCall, via: AutomationStudioLlmBuildPurse | undefined): AutomationStudioLlmBuildPurseHeld {
+  private holdFor(call: AutomationStudioLlmBuildPurseCall, via: AutomationStudioLlmBuildPurse | undefined, execution?: ModelExecutionOptions): AutomationStudioLlmBuildPurseHeld {
     this.judgingReserve.note(call);
-    const spentUsd = this.spentUsd();
+    const spentUsd = this.spentUsd(execution);
     const pendingUsd = this.pendingUsd();
     const projected = call.projectedCostUsd;
     if (projected !== undefined) this.lastProjectedCostUsd = projected;
@@ -353,13 +357,13 @@ export class AutomationStudioLlmBuildPurse {
       const allowance = this.attribution ? { allowance: { ...this.attribution } } : {};
       return this.refuse({ code: "llm_budget.run_call_limit", maxCalls: calls.maxCalls!, spentCalls: calls.spentCalls(), pendingCalls: calls.pendingCalls(), keptBackCalls, ...(allottedCalls > 0 ? { allottedCalls } : {}), ...allowance });
     }
-    const keptBackUsd = call.judge ? 0 : this.keptBackUsd();
+    const keptBackUsd = call.judge ? 0 : this.keptBackUsd(execution);
     const allottedUsd = this.allowances.outstandingUsd(via);
     const heldUsd = projected ?? this.ledger.largestReportedUsd();
     const overBy = () => spentUsd + pendingUsd + keptBackUsd + allottedUsd + heldUsd - this.ceilingUsd;
     let over = heldUsd > 0 ? overBy() > AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD : spentUsd + pendingUsd + keptBackUsd + allottedUsd >= this.ceilingUsd;
     // An allowance short of its next call asks the purse it was carved from for the difference before it refuses (t627).
-    const grant = over && !this.closed && heldUsd > 0 ? this.parent?.topUp(this, overBy(), heldUsd) : undefined;
+    const grant = over && !this.closed && heldUsd > 0 ? this.parent?.topUp(this, overBy(), heldUsd, execution) : undefined;
     if (grant) over = overBy() > AUTOMATION_STUDIO_LLM_BUILD_PURSE_EPSILON_USD;
     if (this.closed || over) {
       if (grant) this.topUps.withdraw(grant);
@@ -377,35 +381,26 @@ export class AutomationStudioLlmBuildPurse {
         closed: this.closed
       }));
     }
-    const above = this.parent?.holdFor(call, this);
+    const above = this.parent?.holdFor(call, this, execution);
     if (above && !above.ok) {
       // A grant for a call a purse above then refused paid for nothing, so it is not kept.
       if (grant) this.topUps.withdraw(grant);
       return this.refuse(above.refusal);
     }
-    const own = this.ledger.hold(heldUsd, projected, call.judge === true);
+    const own = this.ledger.hold(heldUsd, projected, call.judge === true, execution);
     return {
       ok: true,
-      hold: {
-        settle: (usage) => {
-          own.settle(usage);
-          if (above) above.hold.settle(usage);
-        },
-        release: () => {
-          own.release();
-          if (above) above.hold.release();
-        }
-      }
+      hold: combineAutomationStudioLlmBuildPurseHolds(above ? [own, above.hold] : [own], execution)
     };
   }
 
   /** Top up `allowance`, one of this purse's, whose next call held at `heldUsd` is `shortfallUsd` short, from what this purse could carve beyond its own finishing (`./top-up.ts`); the grant, if any. */
-  private topUp(allowance: AutomationStudioLlmBuildPurse, shortfallUsd: number, heldUsd: number): AutomationStudioLlmBuildPurseTopUp | undefined {
+  private topUp(allowance: AutomationStudioLlmBuildPurse, shortfallUsd: number, heldUsd: number, execution?: ModelExecutionOptions): AutomationStudioLlmBuildPurseTopUp | undefined {
     if (this.closed) return undefined;
     const settledCalls = this.ledger.calls.spentCalls();
     const averageUsd = settledCalls > 0 ? this.ledger.settledUsd() / settledCalls : undefined;
     const finishing = { calls: this.allowanceKeptBackCalls, worstUsd: Math.max(heldUsd, this.lastProjectedCostUsd ?? 0), averageUsd };
-    return allowance.topUps.grant({ shortfallUsd, heldUsd, allocatableUsd: this.allocatableUsd(), finishing });
+    return allowance.topUps.grant({ shortfallUsd, heldUsd, allocatableUsd: this.allocatableUsd(execution), finishing });
   }
 
   private refuse(refusal: AutomationStudioLlmBuildPurseRefusal): { ok: false; refusal: AutomationStudioLlmBuildPurseRefusal } {

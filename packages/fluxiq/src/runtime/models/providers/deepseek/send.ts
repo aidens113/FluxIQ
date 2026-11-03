@@ -1,17 +1,19 @@
 import { AutomationStudioLlmProviderError } from "../../failures/index.ts";
 import { raceAutomationStudioProviderSignal as raceAutomationStudioDeepSeekSignal } from "../../transport/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./endpoints.ts";
+import type { ModelTransportExecution } from "../../transport/index.ts";
 
-export async function sendDeepSeekRequest(fetchImpl: typeof fetch, body: string, key: string, signal: AbortSignal, options: { redirect?: RequestRedirect; headers?: Record<string, string>; raceSignal?: boolean; classifyFailure?: boolean } = {}): Promise<Response> {
+export async function sendDeepSeekRequest(fetchImpl: typeof fetch, body: string, key: string, signal: AbortSignal, options: { redirect?: RequestRedirect; headers?: Record<string, string>; raceSignal?: boolean; classifyFailure?: boolean } = {}, observed?: ModelTransportExecution): Promise<Response> {
   let sent: Promise<Response> | undefined;
   try {
-    sent = fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
+    const args: [RequestInfo | URL, RequestInit] = [AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json", ...options.headers },
       body,
       redirect: options.redirect ?? "error",
       signal
-    });
+    }];
+    sent = observed ? observed.fetch(undefined, fetchImpl, args, signal) : fetchImpl(...args);
     return options.raceSignal === false ? await sent : await raceAutomationStudioDeepSeekSignal(sent, signal);
   } catch (error) {
     if (options.classifyFailure === false) throw error;

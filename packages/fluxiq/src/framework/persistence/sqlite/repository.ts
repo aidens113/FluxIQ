@@ -3,7 +3,7 @@ import { open as openFile, stat } from "node:fs/promises";
 import path from "node:path";
 import sqlite3 from "sqlite3";
 import type { JsonObject } from "../../../core/index.ts";
-import { recordSqlPerformance, withSqlPerformanceContext } from "../../observability/performance/sql/index.ts";
+import { withSqlPerformanceContext } from "../../observability/performance/sql/index.ts";
 import type { RecordEnvelope, Repository, RepositoryScope } from "../contracts/index.ts";
 import type { SQLiteConnectionPool } from "./connection-pool.ts";
 import type { SQLiteConnector } from "./connector.ts";
@@ -14,6 +14,9 @@ import type { SQLiteListPage } from "./list-page.ts";
 import { enqueueDatabaseOperation } from "./operation-queue.ts";
 import { normalizeScope } from "./scope.ts";
 import { safeKind } from "./kind.ts";
+import type { RepositoryExecutionPorts } from "./execution/index.ts";
+import { createRepositoryExecutionPorts } from "./execution/operation/index.ts";
+import { openDatabase, run, all, get, exec, close, sqliteNativeDriver, type SQLiteNativeObservation } from "./execution/native/index.ts";
 
 export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repository<T> {
   readonly rootDir: string;
@@ -21,6 +24,7 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   readonly tableName: string;
   readonly layoutVersion: 1 | 2;
   private readonly connections: SQLiteConnectionPool | undefined;
+  readonly #native: Readonly<{ rootDir: string; kind: string; tableName: string; layoutVersion: 1 | 2 }>;
 
   constructor(options: SQLiteRepositoryOptions) {
     this.connections = options.connections;
@@ -29,13 +33,43 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     this.layoutVersion = options.layoutVersion ?? 1;
     if (!this.kind) throw new Error("Repository kind is required");
     this.tableName = quoteIdentifier(this.kind);
+    this.#native = Object.freeze({ rootDir: this.rootDir, kind: this.kind, tableName: this.tableName, layoutVersion: this.layoutVersion });
+  }
+
+  /** Internal capability creation authenticates the actual constructor and native body. */
+  static executionPorts<T extends JsonObject>(original: SQLiteRepository<T>): RepositoryExecutionPorts<T> {
+    if (!original || typeof original !== "object" || !(#native in original)) throw new Error("repository.execution.foreign_repository");
+    const assert = (): void => {
+      const connection = Object.getOwnPropertyDescriptor(original, "connections");
+      if (Object.getPrototypeOf(original) !== repositoryPrototype || !connection || !("value" in connection) || connection.value !== undefined) throw new Error("repository.execution.unsupported_repository");
+      for (const [key, value] of Object.entries(original.#native)) {
+        if (Object.getOwnPropertyDescriptor(original, key)?.value !== value) throw new Error("repository.execution.repository_changed");
+      }
+      for (const [key, callback] of Object.entries(repositoryMethods)) {
+        const descriptor = Object.getOwnPropertyDescriptor(original, key) ?? Object.getOwnPropertyDescriptor(repositoryPrototype, key);
+        if (descriptor?.value !== callback) throw new Error("repository.execution.repository_changed");
+      }
+      sqliteNativeDriver.assert();
+    };
+    assert();
+    const list = original.listRecords;
+    const put = original.putRecord;
+    return createRepositoryExecutionPorts(original, {
+      assert,
+      list: (scope, native) => list.call(original, scope, native),
+      put: (record, native) => put.call(original, record, native)
+    });
   }
 
   async list(scope: RepositoryScope = {}): Promise<Array<RecordEnvelope<T>>> {
+    return this.listRecords(scope);
+  }
+
+  private async listRecords(scope: RepositoryScope, native?: SQLiteNativeObservation): Promise<Array<RecordEnvelope<T>>> {
     return this.withDatabase(scope, async (db, normalizedScope) => {
-      const rows = await all<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} order by id`);
+      const rows = await all<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} order by id`, [], native);
       return rows.map((row) => rowToRecord<T>(row, normalizedScope));
-    });
+    }, native);
   }
 
   /**
@@ -160,9 +194,13 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   }
 
   async put(record: RecordEnvelope<T>): Promise<RecordEnvelope<T>> {
+    return this.putRecord(record);
+  }
+
+  private async putRecord(record: RecordEnvelope<T>, native?: SQLiteNativeObservation): Promise<RecordEnvelope<T>> {
     return this.withDatabase(record.scope, async (db, scope) => {
-      const existing = await get<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} where id = ?`, [record.id]);
-      const now = Date.now();
+      const existing = await get<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} where id = ?`, [record.id], native);
+      const now = native ? native.now() : Date.now();
       const next: RecordEnvelope<T> = {
         ...record,
         kind: this.kind,
@@ -177,9 +215,9 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
           kind = excluded.kind,
           data = excluded.data,
           updated_at_ms = excluded.updated_at_ms
-      `, [next.id, next.kind, JSON.stringify(next.data), next.createdAtMs, next.updatedAtMs]);
+      `, [next.id, next.kind, JSON.stringify(next.data), next.createdAtMs, next.updatedAtMs], native);
       return next;
-    });
+    }, native);
   }
 
   async delete(id: string, scope: RepositoryScope = {}): Promise<boolean> {
@@ -210,14 +248,20 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     return [...values].sort((left, right) => left.localeCompare(right));
   }
 
-  private async open(scope: RepositoryScope): Promise<sqlite3.Database> {
+  private async open(scope: RepositoryScope, native?: SQLiteNativeObservation): Promise<sqlite3.Database> {
     const filePath = this.databasePath(scope);
-    mkdirSync(path.dirname(filePath), { recursive: true });
-    const db = await openDatabase(filePath);
+    if (!native) mkdirSync(path.dirname(filePath), { recursive: true });
+    const db = await openDatabase(filePath, native);
     try {
-      await this.prepare(db);
+      native?.assertOriginal();
+      await this.prepare(db, native);
     } catch (error) {
-      await close(db).catch(/* best-effort: the setup error is the one reported */ () => undefined);
+      if (native) {
+        try { await close(db, native); }
+        catch (cleanup) { throw new AggregateError([error, cleanup], "SQLite setup and close failed.", { cause: error }); }
+      } else {
+        await close(db).catch(/* best-effort: the setup error is the one reported */ () => undefined);
+      }
       throw error;
     }
     return db;
@@ -227,7 +271,7 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   // every call; a pooled connection runs it once per table. One script, in the
   // same order and stopping at the first error as the separate statements did:
   // one round trip per open instead of four.
-  private async prepare(db: sqlite3.Database): Promise<void> {
+  private async prepare(db: sqlite3.Database, native?: SQLiteNativeObservation): Promise<void> {
     await exec(db, [
       "pragma foreign_keys = ON",
       "pragma journal_mode = WAL",
@@ -239,7 +283,7 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
         updated_at_ms integer not null
       )`,
       `create index if not exists ${quoteIdentifier(`${this.kind}_updated_idx`)} on ${this.tableName} (updated_at_ms)`
-    ].join(";\n"));
+    ].join(";\n"), native);
   }
 
   /** How the pool opens, readies and closes this repository's connections to `filePath`. */
@@ -256,9 +300,10 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   }
 
   /** `operation` on a connection to `filePath`: the pool's kept one when this repository has a pool, else its own, closed after. */
-  private async connected<TResult>(scope: RepositoryScope, filePath: string, operation: (db: sqlite3.Database) => Promise<TResult>): Promise<TResult> {
+  private async connected<TResult>(scope: RepositoryScope, filePath: string, operation: (db: sqlite3.Database) => Promise<TResult>, native?: SQLiteNativeObservation): Promise<TResult> {
     if (this.connections) return await this.connections.use(filePath, this.connector(filePath), operation);
-    const db = await this.open(scope);
+    native?.assertOriginal();
+    const db = await this.open(scope, native);
     let failure: { error: unknown } | undefined;
     try {
       return await operation(db);
@@ -267,7 +312,7 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
       throw error;
     } finally {
       try {
-        await close(db);
+        await close(db, native);
       } catch (closeError) {
         if (failure) throw new AggregateError([failure.error, closeError], "SQLite operation and close failed.", { cause: failure.error });
         throw closeError;
@@ -275,12 +320,13 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     }
   }
 
-  private async withDatabase<TResult>(scope: RepositoryScope, operation: (db: sqlite3.Database, normalizedScope: RepositoryScope) => Promise<TResult>): Promise<TResult> {
+  private async withDatabase<TResult>(scope: RepositoryScope, operation: (db: sqlite3.Database, normalizedScope: RepositoryScope) => Promise<TResult>, native?: SQLiteNativeObservation): Promise<TResult> {
     const normalizedScope = normalizeScope(scope);
     const filePath = this.databasePath(normalizedScope);
     return enqueueDatabaseOperation(filePath, async () => {
+      native?.assertOriginal();
       return withSqlPerformanceContext({ repositoryKind: this.kind, databaseName: path.basename(filePath) }, async () => {
-        return await this.connected(normalizedScope, filePath, (db) => operation(db, normalizedScope));
+        return await this.connected(normalizedScope, filePath, (db) => operation(db, normalizedScope), native);
       });
     });
   }
@@ -324,17 +370,25 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   }
 }
 
+const repositoryPrototype = SQLiteRepository.prototype;
+const repositoryMethods = Object.freeze({
+  list: repositoryPrototype.list,
+  put: repositoryPrototype.put,
+  listRecords: repositoryPrototype["listRecords"],
+  putRecord: repositoryPrototype["putRecord"],
+  open: repositoryPrototype["open"],
+  prepare: repositoryPrototype["prepare"],
+  connected: repositoryPrototype["connected"],
+  withDatabase: repositoryPrototype["withDatabase"],
+  databasePath: repositoryPrototype["databasePath"]
+});
+
 type SQLiteRecordRow = {
   id: string;
   kind: string;
   data: string;
   createdAtMs: number;
   updatedAtMs: number;
-};
-
-type RunResult = {
-  changes: number;
-  lastID: number;
 };
 
 // Far below SQLite's bound-parameter limit on every supported build.
@@ -364,71 +418,6 @@ function prefixUpperBound(prefix: string): string | null {
     if (next <= 0x10ffff) return points.join("") + String.fromCodePoint(next);
   }
   return null;
-}
-
-function openDatabase(filePath: string): Promise<sqlite3.Database> {
-  return new Promise((resolve, reject) => {
-    // Native SQLite needs Windows' extended path form for nested workspace storage.
-    // Keep the ordinary path as the repository/pool identity and on other platforms.
-    const db = new sqlite3.Database(path.toNamespacedPath(filePath), sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE | sqlite3.OPEN_FULLMUTEX, (error) => {
-      if (error) reject(error);
-      else resolve(db);
-    });
-    db.configure("busyTimeout", 10_000);
-  });
-}
-
-function run(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<RunResult> {
-  const startedAt = performance.now();
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function onRun(error) {
-      recordSqlPerformance({ operation: "run", sql, elapsedMs: performance.now() - startedAt, rowsChanged: error ? 0 : this.changes, ok: !error });
-      if (error) reject(error);
-      else resolve({ changes: this.changes, lastID: this.lastID });
-    });
-  });
-}
-
-function all<T>(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<T[]> {
-  const startedAt = performance.now();
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (error, rows: T[]) => {
-      recordSqlPerformance({ operation: "all", sql, elapsedMs: performance.now() - startedAt, rowsReturned: error ? 0 : rows.length, ok: !error });
-      if (error) reject(error);
-      else resolve(rows);
-    });
-  });
-}
-
-function get<T>(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<T | undefined> {
-  const startedAt = performance.now();
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (error, row: T | undefined) => {
-      recordSqlPerformance({ operation: "get", sql, elapsedMs: performance.now() - startedAt, rowsReturned: error || row === undefined ? 0 : 1, ok: !error });
-      if (error) reject(error);
-      else resolve(row);
-    });
-  });
-}
-
-function exec(db: sqlite3.Database, script: string): Promise<void> {
-  const startedAt = performance.now();
-  return new Promise((resolve, reject) => {
-    db.exec(script, (error) => {
-      recordSqlPerformance({ operation: "run", sql: script, elapsedMs: performance.now() - startedAt, rowsChanged: 0, ok: !error });
-      if (error) reject(error);
-      else resolve();
-    });
-  });
-}
-
-function close(db: sqlite3.Database): Promise<void> {
-  return new Promise((resolve, reject) => {
-    db.close((error) => {
-      if (error) reject(error);
-      else resolve();
-    });
-  });
 }
 
 function sqliteLikePattern(value: string): string {

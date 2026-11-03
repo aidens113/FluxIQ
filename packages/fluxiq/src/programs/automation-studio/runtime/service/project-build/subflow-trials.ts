@@ -19,7 +19,7 @@ import { bindPartialTrialFrame, inheritPartialTrialContext } from "../../candida
 import { observeCandidateTrialChoice } from "../../candidate-trials/authority/index.ts";
 import { candidateTrialSuppressesWrites } from "../../candidate-trials/index.ts";
 import { trialExecutionSource } from "../../candidate-trials/observation/index.ts";
-import { AutomationStudioSiteResetCallbackPolicies, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../../flow-bootstrap/reset-observation/index.ts";
+import { AutomationStudioSiteResetCallbackPolicies, AutomationStudioSiteResetObservation, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../../flow-bootstrap/reset-observation/index.ts";
 import { withAutomationStudioBuildToolCallbackScope } from "../../build-execution/tools/index.ts";
 
 // A project build's partial trials (unit A5c over A4b's runner): one port for
@@ -120,6 +120,8 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   const offline = automationStudioOfflineFirstSubflow({ buildId: ref.buildId, ports, installation: AutomationStudioOfflineTrialInstallation.current(), phase: input.phase ?? "test", liveRecords: () => trials.records() });
   // Each trial this port answered, until its gate tells the verdict it kept (header, t634).
   const answered = new Map<string, Pick<AutomationStudioSubflowTrialRequest, "scope" | "proposal">>();
+  const answeredAt = (at: string) => answered.get(at);
+  AutomationStudioSiteResetCallbackPolicies.rememberLexical(answeredAt, "pure");
   const answer = (request: Pick<AutomationStudioSubflowTrialRequest, "scope" | "proposal">): void => {
     const at = trialKey(request.scope.briefId, request.proposal.revision, request.proposal.digest);
     answered.delete(at);
@@ -156,6 +158,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   AutomationStudioSiteResetCallbackPolicies.rememberLexical(chooseOffline, "frame");
   const offlineFirst: AutomationStudioSubflowTrialPreparingPort["offlineFirst"] = request => observeCandidateTrialChoice(trialExecutionSource(ports), request,
     JSON.stringify(["partial.offline_choice", request.scope, request.proposal.revision, request.proposal.digest]), { receiver: undefined, callback: chooseOffline, args: [request] }, request.signal);
+  bindPartialTrialFrame(offlineFirst, "callbacks");
   // A run from the failing step is also the inner port's (`../subflow-trial/from-step.ts`, t804): without it the gate
   // cannot offer a repair its from-step check, and keeps refusing nothing.
   const fromStep = trials.port.fromStep ? { fromStep: trials.port.fromStep } : {};
@@ -164,19 +167,33 @@ export function automationStudioProjectBuildSubflowTrials(input: {
   bindPartialTrialFrame(run, true);
   // The start hook, ahead of the gate's reset check, is the inner port's (`../subflow-trial/port.ts`).
   if (trials.port.prepareStart) port.prepareStart = trials.port.prepareStart;
+  if (trials.port.checkRows) port.checkRows = trials.port.checkRows;
   port.admissionPredecessors = function (this: AutomationStudioSubflowTrialPreparingPort, scope) {
-    return invokeAutomationStudioSiteResetSync(this, { receiver: input.proposals, callback: input.proposals.predecessors, args: [scope] }).flatMap(proposal => proposal.subflows);
+    const proposals = input.proposals;
+    const predecessors = proposals.predecessors;
+    if (!AutomationStudioSiteResetObservation.of(scope)) return invokeAutomationStudioSiteResetSync(scope, { receiver: proposals, callback: predecessors, args: [scope] }).flatMap(proposal => proposal.subflows);
+    return invokeAutomationStudioSiteResetCallback(scope, { receiver: proposals, callback: predecessors, args: [scope] }, undefined, scope).then(earlier => earlier.flatMap(proposal => proposal.subflows));
   };
-  AutomationStudioSiteResetCallbackPolicies.remember(port, port.admissionPredecessors, "frame");
+  bindPartialTrialFrame(port.admissionPredecessors, "callbacks");
   // The gate's verdict of a trial this port answered is the one the proposals keep (header, t634).
-  port.weighed = function (this: AutomationStudioSubflowTrialPreparingPort, { answer }) {
+  port.weighed = function (this: AutomationStudioSubflowTrialPreparingPort, trial) {
+    const { answer } = trial;
+    const invocation = AutomationStudioSiteResetObservation.of(trial) ? trial : this;
     const at = trialKey(answer.identity.briefId, answer.revision, answer.digest);
-    const asked = answered.get(at);
-    if (!asked) return;
-    answered.delete(at);
-    invokeAutomationStudioSiteResetSync(this, { receiver: input.proposals, callback: input.proposals.trialled, args: [asked.scope, asked.proposal, answer.verdict] });
+    const proposals = input.proposals;
+    const trialled = proposals.trialled;
+    const keep = (asked: Pick<AutomationStudioSubflowTrialRequest, "scope" | "proposal"> | undefined) => {
+      if (!asked) return;
+      answered.delete(at);
+      return AutomationStudioSiteResetObservation.of(invocation)
+        ? invokeAutomationStudioSiteResetCallback(invocation, { receiver: proposals, callback: trialled, args: [asked.scope, asked.proposal, answer.verdict] })
+        : invokeAutomationStudioSiteResetSync(invocation, { receiver: proposals, callback: trialled, args: [asked.scope, asked.proposal, answer.verdict] });
+    };
+    return AutomationStudioSiteResetObservation.of(invocation)
+      ? invokeAutomationStudioSiteResetCallback(invocation, { receiver: undefined, callback: answeredAt, args: [at] }).then(keep)
+      : keep(answeredAt(at));
   };
-  AutomationStudioSiteResetCallbackPolicies.remember(port, port.weighed, "frame");
+  bindPartialTrialFrame(port.weighed, "callbacks");
   // The offline judge's spend counts with the live trials' (header, P6); `records` stays the live port's.
   const spent = (): ReturnType<typeof trials.spent> => sumSpend(trials.spent(), offline.spent());
   return { ...trials, port, spent };

@@ -1,5 +1,9 @@
 import { automationStudioLlmProviderLabel, type AutomationStudioLlmProviderId } from "../catalog/index.ts";
 import { AutomationStudioSecretsLockedError } from "./locked-error.ts";
+import type { ModelExecutionOptions } from "../execution/index.ts";
+import { invokeOwnedExecutionCallbackSync } from "../../execution-observation/index.ts";
+import type { SessionProviderKeyExecutionPorts } from "./execution/index.ts";
+import { SessionProviderKeyExecution } from "./execution/dispatch/index.ts";
 
 /** One key as Secret Keys lists it: metadata only, never a value. */
 export type AutomationStudioSessionKeySummary = { id: string; kind: string; provider?: string | undefined; enabled: boolean; updatedAtMs: number; createdBy?: string | undefined; metadata?: { model?: unknown } | undefined };
@@ -41,35 +45,63 @@ const REVEAL_TTL_MS = 10_000;
 export async function releaseAutomationStudioSessionProviderKey(
   ports: AutomationStudioSessionKeyPorts,
   caller: { userId: string; sessionId: string | null },
-  options: AutomationStudioSessionKeyOptions & { provider: AutomationStudioLlmProviderId; model?: string }
+  options: AutomationStudioSessionKeyOptions & { provider: AutomationStudioLlmProviderId; model?: string },
+  execution?: ModelExecutionOptions,
+  native?: SessionProviderKeyExecutionPorts
 ): Promise<string> {
-  const { keys } = await ports.snapshot();
+  const observed = new SessionProviderKeyExecution(ports, native, execution);
+  const snapshot = observed.pin("snapshot");
+  const unlockedSessionFor = observed.pin("unlockedSessionFor");
+  const authorizeUseKey = observed.pin("authorizeUseKey");
+  const createAuthorization = observed.pin("createSessionRevealAuthorization");
+  const revokeAuthorization = observed.pin("revokeRevealAuthorization");
+  const reveal = observed.pin("revealKeyWithAuthorization");
+  const nativeSnapshot = observed.snapshot;
+  const nativeCreate = observed.create;
+  const nativeReveal = observed.reveal;
+  const nativeRevoke = observed.revoke;
+  const nativeUnlocked = observed.unlocked;
+  const { keys } = nativeSnapshot && observed.matches(snapshot, nativeSnapshot)
+    ? await observed.invoke({ receiver: observed.native, callback: nativeSnapshot, args: [observed.observation] })
+    : await observed.originalCall({ receiver: ports, callback: snapshot, args: [] });
   const label = automationStudioLlmProviderLabel(options.provider);
   const candidates = options.flowKeyId ? [flowKey(keys, options.flowKeyId, caller.userId, options.provider, options.model)] : callerKeys(keys, caller.userId, options.provider, options.model);
   if (!candidates.length) throw new Error(`There is no enabled ${label} key of yours in Secret Keys.`);
-  const fallback = ports.unlockedSessionFor?.(caller.userId) ?? null;
+  const fallback = !unlockedSessionFor ? null : nativeUnlocked && observed.matches(unlockedSessionFor, nativeUnlocked)
+    ? await observed.invoke({ receiver: observed.native, callback: nativeUnlocked, args: [caller.userId, observed.observation] })
+    : invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: ports, callback: unlockedSessionFor, args: [caller.userId] });
   const sessions = [...new Set([caller.sessionId, fallback].filter((sessionId): sessionId is string => Boolean(sessionId)))];
   let denied = 0;
   let refusal: unknown;
   for (const key of candidates) {
-    if (ports.authorizeUseKey && !(await ports.authorizeUseKey(caller.userId, key.id))) {
+    if (authorizeUseKey && !(await observed.originalCall({ receiver: ports, callback: authorizeUseKey, args: [caller.userId, key.id] }))) {
       denied += 1;
       continue;
     }
     for (const sessionId of sessions) {
       let authorization: { authorizationId: string; keyId: string; keyUpdatedAtMs: number };
+      let originalNative: Promise<{ authorizationId: string; keyId: string; keyUpdatedAtMs: number }> | undefined;
       // Any refusal here means this unlock cannot open this key (absent, expired, another user's, or not holding it); the next one is tried.
       try {
-        authorization = await ports.createSessionRevealAuthorization({ id: key.id, sessionId, userId: caller.userId, ttlMs: REVEAL_TTL_MS });
+        const input = { id: key.id, sessionId, userId: caller.userId, ttlMs: REVEAL_TTL_MS };
+        if (nativeCreate && observed.matches(createAuthorization, nativeCreate)) {
+          originalNative = observed.start({ receiver: observed.native, callback: nativeCreate, args: [input, observed.observation] });
+          authorization = await observed.awaited(originalNative);
+        } else authorization = await observed.originalCall({ receiver: ports, callback: createAuthorization, args: [input] });
       } catch (error) {
+        if (execution?.observation && (!originalNative || !observed.completedRefusal(error, originalNative))) throw error;
         refusal = error;
         continue;
       }
       if (authorization.keyId !== key.id || authorization.keyUpdatedAtMs !== key.updatedAtMs) {
-        ports.revokeRevealAuthorization(authorization.authorizationId);
+        if (nativeRevoke && observed.matches(revokeAuthorization, nativeRevoke)) await observed.invoke({ receiver: observed.native, callback: nativeRevoke, args: [authorization.authorizationId, observed.observation] });
+        else invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: ports, callback: revokeAuthorization, args: [authorization.authorizationId] });
         throw new Error(`The ${label} key changed while it was being released.`);
       }
-      return (await ports.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id: key.id })).value;
+      const input = { authorizationId: authorization.authorizationId, id: key.id };
+      return (nativeReveal && observed.matches(reveal, nativeReveal)
+        ? await observed.invoke({ receiver: observed.native, callback: nativeReveal, args: [input, observed.observation] })
+        : await observed.originalCall({ receiver: ports, callback: reveal, args: [input] })).value;
     }
   }
   if (denied === candidates.length) throw new Error("Your permissions do not allow your model key to be used here (secrets:UseKey).");

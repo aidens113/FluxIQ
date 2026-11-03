@@ -25,13 +25,16 @@
 // making the newest error in the diagnostics a budget refusal -- so a provider
 // fault would be recorded as the run running out of money, which is the exact
 // misreading that cost a day on `run-muhs8hx3-6fd929e6`.
-import { AutomationStudioLlmProviderError, automationStudioLlmSignalTimedOut, normalizedAutomationStudioLlmProviderFailure } from "../failures/index.ts";
+import { normalizedAutomationStudioLlmProviderFailure } from "../failures/index.ts";
 import type { ModelProvider, ModelRequest } from "../contracts/index.ts";
+import { ModelExecutionDefaults, type ModelExecutionOptions } from "../execution/index.ts";
+import { ExecutionCallbackPolicies, flushObservedExecutionCallbacks, invokeOwnedExecutionCallbackSync, prepareObservedExecutionCallback } from "../../execution-observation/index.ts";
 import type { AutomationStudioLlmProviderRetryAccount, AutomationStudioLlmProviderRetryAttempt, AutomationStudioLlmProviderRetryStop } from "./account.ts";
 import { automationStudioLlmProviderRetryDecision } from "./decision.ts";
 import { AutomationStudioLlmProviderEndpointLoad, automationStudioLlmProviderEndpointLoad } from "./endpoint-load.ts";
 import { automationStudioLlmProviderRetryHintMs } from "./hint.ts";
 import { AutomationStudioLlmProviderRetryLedger, automationStudioLlmProviderRetryRunLedger } from "./ledger.ts";
+import { ModelProviderAttempt } from "./attempt.ts";
 
 export type AutomationStudioLlmProviderCallOutcome = {
   /** Every attempt this call made, and why it stopped. Always present, answered or not. */
@@ -61,23 +64,44 @@ type AutomationStudioLlmProviderCallInput<Request extends ModelRequest> = {
   random?: () => number;
 };
 
-export async function automationStudioLlmProviderCall<Request extends ModelRequest>(input: AutomationStudioLlmProviderCallInput<Request>): Promise<AutomationStudioLlmProviderCallOutcome> {
+export async function automationStudioLlmProviderCall<Request extends ModelRequest>(input: AutomationStudioLlmProviderCallInput<Request>, execution?: ModelExecutionOptions): Promise<AutomationStudioLlmProviderCallOutcome> {
   const endpoints = input.endpoints ?? automationStudioLlmProviderEndpointLoad;
   const endpoint = AutomationStudioLlmProviderEndpointLoad.key(input.provider.metadata ?? { provider: "" });
-  const leave = endpoints.enter(endpoint);
+  const enter = endpoints.enter;
+  const sharing = endpoints.shared;
+  const leave = invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: endpoints, callback: enter, args: [endpoint] });
+  const shared = () => invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: endpoints, callback: sharing, args: [endpoint] });
   try {
-    return await callWithRetries(input, () => endpoints.shared(endpoint));
+    return await callWithRetries(input, shared, execution);
   } finally {
-    leave();
+    try {
+      if (ExecutionCallbackPolicies.isPure(undefined, leave)) leave();
+      else invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: undefined, callback: leave, args: [] });
+    }
+    finally { await flushObservedExecutionCallbacks(execution?.observation); }
   }
 }
 
 /** The call's attempts; `shared` says, at each decision, whether another call is in flight against the same endpoint. */
-async function callWithRetries<Request extends ModelRequest>(input: AutomationStudioLlmProviderCallInput<Request>, shared: () => boolean): Promise<AutomationStudioLlmProviderCallOutcome> {
-  const random = input.random ?? Math.random;
+async function callWithRetries<Request extends ModelRequest>(input: AutomationStudioLlmProviderCallInput<Request>, shared: () => boolean, execution?: ModelExecutionOptions): Promise<AutomationStudioLlmProviderCallOutcome> {
+  const originalNow = input.now;
+  const now = () => invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: input, callback: originalNow, args: [] });
+  ExecutionCallbackPolicies.rememberLexical(now, "pure");
+  const originalRandom = input.random ?? ModelExecutionDefaults.random;
+  const random = () => invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: undefined, callback: originalRandom, args: [] });
   const ledger = input.ledger ?? automationStudioLlmProviderRetryRunLedger;
-  const wait = input.wait ?? waitForMilliseconds;
-  const startedAt = input.now();
+  const originalAdded = ledger.addedMs;
+  const originalSpend = ledger.spend;
+  const spent = (runId: string) => invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: ledger, callback: originalAdded, args: [runId] });
+  const charge = (milliseconds: number) => {
+    if (input.runId !== undefined) invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: ledger, callback: originalSpend, args: [input.runId, milliseconds] });
+    return Math.max(0, Math.round(milliseconds));
+  };
+  const originalWait = input.wait ?? ModelExecutionDefaults.wait;
+  const callback = input.provider.runTask;
+  const provider = input.provider;
+  const request = input.request;
+  const startedAt = now();
   const maxAttempts = input.maxAttempts ?? Number.POSITIVE_INFINITY;
   const attempts: AutomationStudioLlmProviderRetryAttempt[] = [];
   let waitedMs = 0;
@@ -90,27 +114,32 @@ async function callWithRetries<Request extends ModelRequest>(input: AutomationSt
     stop
   });
   for (let attempt = 1; ; attempt += 1) {
-    const attemptStartedAt = input.now();
+    const attemptStartedAt = now();
+    const actual = new ModelProviderAttempt(provider, callback, request, input.signal, execution);
     try {
-      const result = await runProviderWithEnforcedDeadline(input.provider, input.request, input.signal);
+      const result = await actual.run();
       // A retried attempt's own duration is part of what retrying added, whether
       // it answered or not: it is time the call would not have spent had the
       // first attempt succeeded.
-      if (attempt > 1) addedMs += charge(ledger, input.runId, elapsedSince(attemptStartedAt, input.now));
+      if (attempt > 1) addedMs += charge(elapsedSince(attemptStartedAt, now));
       return { ok: true, result, retry: account("answered") };
     } catch (error) {
       const failure = normalizedAutomationStudioLlmProviderFailure(error);
-      const elapsedMs = elapsedSince(attemptStartedAt, input.now);
-      if (attempt > 1) addedMs += charge(ledger, input.runId, elapsedMs);
-      const hintedWaitMs = automationStudioLlmProviderRetryHintMs(error, input.now());
+      const elapsedMs = elapsedSince(attemptStartedAt, now);
+      if (attempt > 1) addedMs += charge(elapsedMs);
+      if (!actual.retryAllowed()) {
+        attempts.push(failedAttempt({ attempt, failure, elapsedMs, waitMs: 0 }));
+        return { ok: false, failure, retry: account("outcome_unknown") };
+      }
+      const hintedWaitMs = automationStudioLlmProviderRetryHintMs(error, now());
       const decision = automationStudioLlmProviderRetryDecision({
         retryable: failure.retryable,
         code: failure.code,
         cancelled: input.signal?.aborted === true,
         attempt,
-        elapsedMs: elapsedSince(startedAt, input.now),
+        elapsedMs: elapsedSince(startedAt, now),
         timeoutMs: input.request.timeoutMs,
-        runAddedMs: input.runId ? ledger.addedMs(input.runId) : 0,
+        runAddedMs: input.runId ? spent(input.runId) : 0,
         ...(Number.isFinite(maxAttempts) ? { maxAttempts } : {}),
         ...(hintedWaitMs !== undefined ? { hintedWaitMs } : {}),
         // Spread only when other calls share the endpoint; alone, the table's wait exactly (`./limits.ts`).
@@ -122,8 +151,14 @@ async function callWithRetries<Request extends ModelRequest>(input: AutomationSt
       }
       attempts.push(failedAttempt({ attempt, failure, elapsedMs, waitMs: decision.waitMs, waitSource: decision.waitSource }));
       waitedMs += decision.waitMs;
-      addedMs += charge(ledger, input.runId, decision.waitMs);
-      await wait(decision.waitMs, input.signal);
+      addedMs += charge(decision.waitMs);
+      const waiting = await prepareObservedExecutionCallback(execution?.observation, { receiver: undefined, callback: originalWait, args: [decision.waitMs, input.signal] });
+      await waiting.invoke();
+      if (execution?.observation && waiting.completion() !== "settled") {
+        waiting.unknown();
+        await waiting.flush();
+        return { ok: false, failure, retry: account("outcome_unknown") };
+      }
       // The signal may have been aborted while the loop was waiting. Reported as
       // the fault that was actually met, with the cancellation as the reason no
       // further attempt was made: the alternative sends a request Core already
@@ -152,63 +187,6 @@ function failedAttempt(input: {
   };
 }
 
-function charge(ledger: AutomationStudioLlmProviderRetryLedger, runId: string | undefined, milliseconds: number): number {
-  if (runId !== undefined) ledger.spend(runId, milliseconds);
-  return Math.max(0, Math.round(milliseconds));
-}
-
 function elapsedSince(from: number, now: () => number): number {
   return Math.max(0, now() - from);
-}
-
-/**
- * Wait, and stop waiting if the caller's signal is aborted.
- *
- * A retry that sleeps through a cancellation is the shape of a hang: the run has
- * been told to stop and is holding a timer. Resolving on abort rather than
- * rejecting keeps the caller's own account of the failure -- the provider's
- * answer, not the timer's.
- */
-function waitForMilliseconds(milliseconds: number, signal?: AbortSignal): Promise<void> {
-  if (milliseconds <= 0 || signal?.aborted === true) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    const settle = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", settle);
-      resolve();
-    };
-    const timer = setTimeout(settle, milliseconds);
-    signal?.addEventListener("abort", settle, { once: true });
-  });
-}
-
-/**
- * One attempt, under its own deadline.
- *
- * Moved here from the harness with its behaviour unchanged: the deadline aborts
- * as a timeout rather than as a bare abort, because a provider holding an
- * authorization reads the difference -- a call that ran out of time is a spent
- * call, and a cancellation ends the authorization with it.
- */
-async function runProviderWithEnforcedDeadline<Request extends ModelRequest>(provider: ModelProvider<Request>, request: Request, parentSignal?: AbortSignal): Promise<unknown> {
-  const controller = new AbortController();
-  const parentAbort = () => controller.abort(parentSignal?.reason);
-  if (parentSignal?.aborted) parentAbort();
-  else parentSignal?.addEventListener("abort", parentAbort, { once: true });
-  const timer = setTimeout(() => controller.abort(new DOMException("LLM provider call reached its deadline.", "TimeoutError")), request.timeoutMs);
-  try {
-    if (controller.signal.aborted) throw providerAbortFailure(parentSignal);
-    return await Promise.race([
-      provider.runTask(request, { signal: controller.signal }),
-      new Promise<never>((_resolve, reject) => controller.signal.addEventListener("abort", () => reject(providerAbortFailure(parentSignal)), { once: true }))
-    ]);
-  } finally {
-    clearTimeout(timer);
-    parentSignal?.removeEventListener("abort", parentAbort);
-  }
-}
-
-function providerAbortFailure(parentSignal?: AbortSignal): AutomationStudioLlmProviderError {
-  const timedOut = !parentSignal?.aborted || automationStudioLlmSignalTimedOut(parentSignal);
-  return new AutomationStudioLlmProviderError(timedOut ? "llm.provider_timeout" : "llm.provider_aborted", "Provider request ended.", timedOut);
 }

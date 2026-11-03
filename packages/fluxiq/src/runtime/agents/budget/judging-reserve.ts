@@ -16,6 +16,9 @@
 // `keptBackUsd`.
 
 import type { AutomationStudioLlmBuildPurseCall, AutomationStudioLlmBuildPurseJudging, AutomationStudioLlmBuildPursePrice } from "./types.ts";
+import type { ModelExecutionOptions } from "../../models/execution/index.ts";
+import { invokeOwnedExecutionCallbackSync } from "../../execution-observation/owned/index.ts";
+import { ExecutionCallbackPolicies } from "../../execution-observation/policies/index.ts";
 
 export class AutomationStudioLlmBuildPurseJudgingReserve {
   /** Judging kept back from every other call, once the build's phases ask for it. */
@@ -48,20 +51,26 @@ export class AutomationStudioLlmBuildPurseJudgingReserve {
   }
 
   /** The provider's price, at the rate in force now, for a request of `inputTokens` and a reply of `outputTokens`, all uncached; `undefined` before any call brought a price, or where it prices nonsense. */
-  priceUsd(inputTokens: number, outputTokens: number): number | undefined {
+  priceUsd(inputTokens: number, outputTokens: number, execution?: ModelExecutionOptions): number | undefined {
     let priced: number | undefined;
     try {
-      priced = this.price?.(inputTokens, outputTokens);
-    } catch {
+      const callback = this.price;
+      priced = callback
+        ? ExecutionCallbackPolicies.isOwningFrame(this, callback)
+          ? callback.call(this, inputTokens, outputTokens, execution)
+          : invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: this, callback, args: [inputTokens, outputTokens] })
+        : undefined;
+    } catch (error) {
+      if (execution?.observation) throw error;
       priced = undefined;
     }
     return typeof priced === "number" && Number.isFinite(priced) && priced > 0 ? priced : undefined;
   }
 
   /** What judging is held at; `undefined` where nothing is kept back or nothing can be priced. */
-  holdUsd(): number | undefined {
+  holdUsd(execution?: ModelExecutionOptions): number | undefined {
     if (!this.judging) return undefined;
-    const each = this.largestJudgeHoldUsd ?? this.priceUsd(this.judging.unpriced.inputTokens, this.judging.unpriced.outputTokens);
+    const each = this.largestJudgeHoldUsd ?? this.priceUsd(this.judging.unpriced.inputTokens, this.judging.unpriced.outputTokens, execution);
     return each === undefined ? undefined : this.judging.calls * each;
   }
 }

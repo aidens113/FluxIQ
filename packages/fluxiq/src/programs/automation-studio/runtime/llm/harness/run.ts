@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { flushModelExecution, modelExecutionClock, ModelExecutionReceiptOwner, type ModelExecutionOptions } from "../../../../../runtime/models/index.ts";
+import { ExecutionCallbackPolicies, invokeOwnedExecutionCallbackSync, prepareObservedExecutionCallback } from "../../../../../runtime/execution-observation/index.ts";
 import type { AutomationStudioLlmRunCallOutcome } from "../run-call-record.ts";
 import {
   AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS,
@@ -25,8 +27,17 @@ import {
   validateAutomationStudioLlmUsage
 } from "./token-limits.ts";
 
-export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHarnessInput): Promise<AutomationStudioLlmTaskResult> {
-  const now = input.now ?? Date.now;
+const completionOwner = new ModelExecutionReceiptOwner();
+
+export function runAutomationStudioLlmHarness(input: AutomationStudioLlmHarnessInput, execution?: ModelExecutionOptions): Promise<AutomationStudioLlmTaskResult> {
+  const actual = flushModelExecution(run(input, execution), execution);
+  return completionOwner.returning(actual, execution);
+}
+
+completionOwner.registerLexical(runAutomationStudioLlmHarness);
+
+async function run(input: AutomationStudioLlmHarnessInput, execution?: ModelExecutionOptions): Promise<AutomationStudioLlmTaskResult> {
+  const now = modelExecutionClock(execution, input.now);
   const tokenLimitResolution = resolveAutomationStudioLlmTokenLimits(input.tokenLimits);
   // The instructions are carried whole whatever the task (`./instruction.ts`):
   // the budget they are reported against is the request's own input limit,
@@ -68,7 +79,7 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   // sent or billed: it was the larger measure here until t748, so the window
   // counted a catalog the model never reads, and pricing it (until t254) held
   // each build decision about 12,800 tokens over what the provider would read.
-  const { estimatedInputTokens, estimatedInputBytes, pricedInputTokens } = measuredInput(request, input.provider);
+  const { estimatedInputTokens, estimatedInputBytes, pricedInputTokens } = measuredInput(request, input.provider, execution);
   // The declaration travels beside the context so a provider can re-check every
   // evidence slot before sending. Added after the estimate because it is never
   // sent, and only when one was made: absent stays absent, never an empty list.
@@ -131,7 +142,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     };
   }
   const reservation = input.runBudget && input.runId
-    ? input.runBudget.reserve({
+    ? invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: input.runBudget, callback: input.runBudget.reserve, args: [{
       runId: input.runId,
       requestId,
       // The request's own measured size, not its limit: the limit is now the
@@ -143,7 +154,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       // The request's own worst case, under its ceiling: a small call is not
       // held at the price of a full window, which at the window profile is
       // the whole run purse (then $0.25) and refused every call after the first.
-      , maxEstimatedCostUsd: reservedCostUsd(input.provider, pricedInputTokens, replyReserveTokens, request.maxEstimatedCostUsd)
+      , maxEstimatedCostUsd: reservedCostUsd(input.provider, pricedInputTokens, replyReserveTokens, request.maxEstimatedCostUsd, execution)
       , ...(input.runBudgetAllowance ? { allowance: input.runBudgetAllowance } : {})
       // What the call is, for its own line on the run's receipt.
       , call: {
@@ -153,7 +164,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
         provider: input.provider.metadata.provider,
         model: input.provider.metadata.model
       }
-    })
+    }, execution] })
     : null;
   // The build's purse, when the call is made under one (`../build-purse/`):
   // this request's hold -- the input it sends all uncached, at the rate in
@@ -162,8 +173,33 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   // when that would cross the build's ceiling. A judge's call
   // (`loop_verification`, made only by `../../result-verification/verify.ts`)
   // draws on the judging reserve the purse keeps back from every other call.
-  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: input.provider, estimatedInputTokens: pricedInputTokens, maxOutputTokens: replyReserveTokens, judge: input.taskKind === "loop_verification" });
-  if (held && !held.ok && reservation?.ok) reservation.lease.release();
+  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: input.provider, estimatedInputTokens: pricedInputTokens, maxOutputTokens: replyReserveTokens, judge: input.taskKind === "loop_verification" }, execution);
+  const lease = reservation?.ok ? reservation.lease : undefined;
+  const leaseRelease = lease?.release;
+  const leaseComplete = lease?.complete;
+  const settle = held?.ok ? held.hold.settle : undefined;
+  const settleObserved = held?.ok ? held.hold.settleObserved : undefined;
+  const release = held?.ok ? held.hold.release : undefined;
+  const charge = async (usage?: AutomationStudioLlmUsageSummary): Promise<void> => {
+    if (!held?.ok || !settle) return;
+    if (execution?.observation) {
+      if (!settleObserved) throw new Error("model.execution.settlement_acknowledgement_missing");
+      if (ExecutionCallbackPolicies.isOwningFrame(held.hold, settleObserved)) await settleObserved.call(held.hold, usage, execution);
+      else {
+        const internal: { observation?: ModelExecutionOptions["observation"] } = {};
+        const actual = await prepareObservedExecutionCallback(execution.observation, { receiver: held.hold, callback: settleObserved, args: [usage, internal] });
+        internal.observation = actual.observation;
+        Object.freeze(internal);
+        await actual.invoke();
+        if (actual.completion() !== "settled") actual.unknown();
+        await actual.flush();
+      }
+    } else settle.call(held.hold, usage);
+  };
+  const completeLease = (usage: AutomationStudioLlmUsageSummary | undefined, outcome: AutomationStudioLlmRunCallOutcome): void => {
+    if (lease && leaseComplete) invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: lease, callback: leaseComplete, args: [usage, outcome] });
+  };
+  if (held && !held.ok && lease && leaseRelease) invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: lease, callback: leaseRelease, args: [] });
   // A reservation the run's budget or the build's purse refused ends the call
   // here, before the provider is invoked. Nothing about a provider may be
   // claimed from here on:
@@ -202,7 +238,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     ...(input.providerRetry?.maxAttempts !== undefined ? { maxAttempts: input.providerRetry.maxAttempts } : {}),
     ...(input.providerRetry?.ledger ? { ledger: input.providerRetry.ledger } : {}),
     ...(input.providerRetry?.wait ? { wait: input.providerRetry.wait } : {})
-  });
+  }, execution);
   // One predicate for both channels: the field on the result and the code on the
   // receipt say the same thing or neither says anything. An ordinary
   // single-attempt failure -- the 400 that ended two live builds -- is not a
@@ -247,9 +283,12 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     // reply that arrived. Without it both ledgers charged the hold, and
     // `run-muqiojz4-04a7a8fc` step 0108 cost $0.0041 and was charged $0.0144.
     const paid = failure.reply?.usage ?? failure.paid;
-    if (reservation?.ok) reservation.lease.complete(paid, callOutcome(diagnostics));
+    completeLease(paid, callOutcome(diagnostics));
     // A request the adapter refused before sending cost nothing; one that may have gone out is charged as held, or as reported.
-    if (held?.ok) { if (failure.provenance.providerInvocation === "not_attempted") held.hold.release(); else held.hold.settle(paid); }
+    if (held?.ok) {
+      if (failure.provenance.providerInvocation === "not_attempted" && release) invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: held.hold, callback: release, args: [] });
+      else await charge(paid);
+    }
     return {
       ok: false,
       request,
@@ -274,8 +313,8 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     providerResult = parseAutomationStudioLlmProviderResult(call.result, expectedOutput, input.flowBootstrap, input.evidenceLoop?.tools, input.taskKind === "loop_verification");
   } catch {
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }, ...retryDiagnostics];
-    if (reservation?.ok) reservation.lease.complete(reported, callOutcome(diagnostics));
-    if (held?.ok) held.hold.settle(reported);
+    completeLease(reported, callOutcome(diagnostics));
+    await charge(reported);
     return { ok: false, request, provider: input.provider.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata) };
   }
   const usageDiagnostics = validateAutomationStudioLlmUsage(providerResult.usage, request.tokenLimits);
@@ -285,8 +324,8 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   // request's limits or not. Withholding an overage made the ledger charge the
   // smaller reservation instead and never count the breach, so a run that
   // overspent read as a run that spent exactly what it reserved.
-  if (reservation?.ok) reservation.lease.complete(providerResult.usage, callOutcome(diagnostics));
-  if (held?.ok) held.hold.settle(providerResult.usage);
+  completeLease(providerResult.usage, callOutcome(diagnostics));
+  await charge(providerResult.usage);
   return {
     ok,
     request,
@@ -379,12 +418,13 @@ function providerRetryDiagnostics(retry: AutomationStudioLlmProviderRetryAccount
  * packed request stands for both and the provider refuses the request by its
  * own code.
  */
-function measuredInput(request: AutomationStudioLlmTaskRequest, provider: AutomationStudioLlmProvider | undefined): { estimatedInputTokens: number; estimatedInputBytes: number; pricedInputTokens: number } {
+function measuredInput(request: AutomationStudioLlmTaskRequest, provider: AutomationStudioLlmProvider | undefined, execution?: ModelExecutionOptions): { estimatedInputTokens: number; estimatedInputBytes: number; pricedInputTokens: number } {
   const packedBytes = Buffer.byteLength(JSON.stringify(request), "utf8");
   const packed = { estimatedInputTokens: estimateAutomationStudioLlmTokensFromUtf8Bytes(packedBytes), estimatedInputBytes: packedBytes };
   let sent: { estimatedInputTokens: number; estimatedInputBytes: number } | undefined;
   try {
-    sent = provider?.measureInput?.(request);
+    const measure = provider?.measureInput;
+    if (provider && measure) sent = invokeOwnedExecutionCallbackSync(execution?.observation, { receiver: provider, callback: measure, args: [request] });
   } catch {
     sent = undefined;
   }
@@ -413,7 +453,7 @@ function replyReserveFor(taskKind: AutomationStudioLlmHarnessInput["taskKind"], 
  * cost ceiling. A provider that does not price, or prices nonsense, is held at
  * the ceiling, as every call was before.
  */
-function reservedCostUsd(provider: AutomationStudioLlmProvider, inputTokens: number, outputTokens: number, ceilingUsd: number): number {
-  const priced = automationStudioLlmProjectedCallCostUsd(provider, inputTokens, outputTokens);
+function reservedCostUsd(provider: AutomationStudioLlmProvider, inputTokens: number, outputTokens: number, ceilingUsd: number, execution?: ModelExecutionOptions): number {
+  const priced = automationStudioLlmProjectedCallCostUsd(provider, inputTokens, outputTokens, execution);
   return priced !== undefined ? Math.min(ceilingUsd, priced) : ceilingUsd;
 }
