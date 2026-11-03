@@ -11,6 +11,14 @@
 // way: the step by node and definition, its `where` as its items only where
 // the screen lost none (a lost condition would shift every number after it),
 // and the condition at that number, counting from 1.
+//
+// **A read the screen took apart names no column.** What addresses the page is
+// what tells two reads apart, and the screen takes it out of the summary's copy:
+// run `run-mw0jw263-0251c104` kept rows whose Ad tag was absent, that read and the
+// `title` column both read `{ kind: "text" }`, and every row with a title failed
+// the condition as a row the request does not ask for. So a condition named by a
+// read of its own is given no columns once the screen took anything from that
+// read or from a column. A condition named by `field` says its column itself.
 
 import type { JsonObject } from "../../../core/index.ts";
 import { automationStudioStoredListItems } from "../stored-list/index.ts";
@@ -21,6 +29,7 @@ import { automationStudioResultReadParameters } from "../read-account/index.ts";
  * Condition `number` of `read`'s step as authored, with the columns the step
  * declares; `undefined` where the summary does not hold the step as authored,
  * the `where` lost an item to the screen, or that condition is not an object.
+ * A condition named by a read the screen took apart comes with no columns (header).
  */
 export function automationStudioResultReadAuthoredCondition(
   flowShape: readonly AutomationStudioResultFlowStepSummary[],
@@ -32,7 +41,14 @@ export function automationStudioResultReadAuthoredCondition(
   const written = automationStudioStoredListItems(authored?.where) ?? [];
   const condition = Number.isSafeInteger(number) && number >= 1 ? written[number - 1] : undefined;
   if (!isRecord(condition)) return undefined;
-  return { condition, fields: isRecord(authored?.fields) ? authored.fields : undefined };
+  const fields = isRecord(authored?.fields) ? authored.fields : undefined;
+  return { condition, fields: isRecord(condition.read) && readsTakenApart(step?.parametersWithheld, number) ? undefined : fields };
+}
+
+/** Whether the screen took anything from condition `number`'s own read or from any column the step declares. */
+function readsTakenApart(withheld: readonly string[] | undefined, number: number): boolean {
+  const ownRead = new RegExp(`(?:^|\\.)where\\.${number - 1}\\.read(?:\\.|$)`, "u");
+  return withheld?.some((path) => ownRead.test(path) || /(?:^|\.)fields\./u.test(path)) === true;
 }
 
 function isRecord(value: unknown): value is JsonObject {

@@ -6,6 +6,7 @@
 // is left to the judge.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
+import { automationStudioScreenedNodeParameters } from "../../../adaptation/recovery/repair-context/index.ts";
 import { automationStudioResultKeptBoundsFact } from "../kept-bounds.ts";
 import { BOOKS, bookSet, catalogueRead, catalogueStep, libraryInput, librarySummary } from "./library-fixture.ts";
 
@@ -54,6 +55,28 @@ describe("the kept-bounds fact", () => {
     expect(automationStudioResultKeptBoundsFact(libraryInput(summary([{ field: "price", cheaperThan: 15 }])))).toEqual([]);
     const partial = librarySummary({ recordSets: [bookSet(BOOKS, { recordCount: 7 })], reads: [catalogueRead({ conditions: conditions("price atMost 15") })], flowShape: [catalogueStep([PRICE])] });
     expect(automationStudioResultKeptBoundsFact(libraryInput(partial))).toEqual([]);
+  });
+
+  // Run `run-mw0jw263-0251c104`: "leave out the ads" was a read of the Ad tag, absent. The summary's
+  // copy of a step has its selectors taken out, so that read and the `title` column both read
+  // `{ kind: "text" }`, and every row with a title failed the condition as a row nobody asked for.
+  it("matches no column to a condition whose read the screen took the address out of, and still reads the rest", () => {
+    const text = (selector: string) => ({ kind: "text", selector });
+    const authored = {
+      extractList: {
+        fields: { title: text(":scope .title"), author: text(":scope .author"), price: text(":scope .price"), format: text(":scope .format") },
+        where: [{ read: { ...text(":scope .ad"), required: false }, is: "absent" }, PRICE],
+        output: { datasetId: "books" }
+      }
+    };
+    const screened = automationStudioScreenedNodeParameters(authored, ["selector"]);
+    const flowShape = [{ ...catalogueStep(), parameters: screened.values, parametersWithheld: screened.withheld }];
+    const read = catalogueRead({ conditions: conditions("the item's text is absent", "price atMost 15") });
+    const asked = "List the books cheaper than $15, leaving out the ads, with columns title, author and price.";
+    expect(automationStudioResultKeptBoundsFact(libraryInput(librarySummary({ recordSets: [bookSet()], reads: [read], flowShape }), asked))).toEqual([]);
+    const dear = [...BOOKS, { title: "Iron Tide", author: "Bo Reyes", price: "$18.00", format: "Paperback" }];
+    const [fact] = automationStudioResultKeptBoundsFact(libraryInput(librarySummary({ recordSets: [bookSet(dear)], reads: [read], flowShape }), asked));
+    expect(fact).toMatchObject({ status: "fails", defects: [{ kind: "kept_not_asked", row: "Iron Tide", column: "price" }] });
   });
 
   it("says nothing of a set another read also wrote, whose rows are not all this read's", () => {
