@@ -1,4 +1,5 @@
 # Runtime Ownership Refactor: Reset Plan
+
 Status: Active
 Status detail: Planning only after the user's explicit stop; implementation is frozen pending review.
 Created: 2026-11-02
@@ -9,6 +10,8 @@ Paired document: ../!FluxIQWebExtension/docs/working/runtime-ownership-reset-pla
 Related: [existing record](runtime-ownership-refactor.md), [remaining owner inventory](runtime-ownership-refactor/reports/remaining-backend-owner-map.md)
 
 ## Current State
+
+The user authorized a salvage-versus-restart audit on 2026-11-02; implementation remains frozen. See `Restart Audit` below and the three reports under `runtime-ownership-reset-plan/reports/`. The audit recommends selective retention, not a wholesale restart. It does not authorize restoring or discarding source.
 
 All three workers stopped. No implementation, tests, builds, providers or browser runs are active. Further source work is not authorized while this plan is reviewed.
 Authoring pair: C:/Users/osrs_/FluxStuff/fxwork/t843/!FluxIQ and sibling !FluxIQWebExtension, task/t843-runtime-foundations. The IDE's t842 document is an older checkout.
@@ -76,6 +79,56 @@ At most three workers plus Root. Workers must not be kept idle behind a single c
 
 These are finite named issues, not proof that additional mechanisms are already required everywhere. No discovered relevant weakness is silently called complete or omitted from release review.
 
+## Restart Audit
+
+### Decision and baseline
+
+Preserve both task snapshots and the local source WIP. Retain proven mechanical migrations; finish them as bounded batches. Isolate additional admission/completion behavior and incomplete descriptor/clock integration for separate review. No source restoration was performed.
+
+Today's `dev` is NOT the pre-refactor baseline. Core `dev` is `ff8eb0be8`, the t842 merge; downstream `dev` is `d6e5448c`, the paired t842 merge. Returning to those branches would discard t843 but retain t842. The immediate pre-t842 parents are Core `16b5043c5` and downstream `c9056f1a`. These identify the start of this ownership-refactor unit, not a claim that no earlier architectural refactoring existed.
+
+Core t842 changed 1,401 files; t843 adds a 2,681-file delta against dev. Downstream t842 changed 112 files; t843 adds a 105-file delta. These are git changed-path counts including tests, docs and aliases, not independent features, completeness percentages or time estimates.
+
+### Evidence checked by the lead
+
+- `git status --short`, `git log --first-parent`, `git merge-base dev HEAD`, and diffs against dev and the t842 first parents establish the two rollback choices. Downstream source was clean; Core contained 49 modified tracked source files plus untracked source WIP.
+- A read-only TypeScript declaration comparison found the WIP `AutomationStudioProjectDatabase`, `AutomationStudioProjectDatabasePool`, `AutomationStudioProjectUnitOfWork` and default migration-array declaration identical to their HEAD originals after line-ending normalization. The SQL lifecycle coupling is inherited; the move has not rewritten those bodies.
+- Two committed migrations, `runtime/environment/virtual-clock.ts` and `runtime/run-control/run-controller.ts`, are byte-identical to the originals at dev. They are tangible reusable work, not merely forwarding wrappers.
+- Nineteen functions in downstream `target-normalization/normalize.ts` have identical bodies to Core dev's original `model/action-element-target.ts` after whitespace/public-name normalization. The lead also inspected the real native-runtime bundle registration, target preparer and recording policy changes; these introduce paired public-hook integration that must be tested separately from body preservation.
+- The lead inspected the new execution-admission lifecycle and engine driver. Their private capability state, persistence transitions and callback completion integration are behavior to review, not a mechanical file move. A stalled composed test does not by itself identify which of these changes caused the wait, or prove it worked on dev.
+
+### Disposition and next acceptance
+
+Supporting audits: [committed Core](runtime-ownership-reset-plan/reports/core-salvage.md), [local Core WIP](runtime-ownership-reset-plan/reports/wip-salvage.md), and [downstream](runtime-ownership-reset-plan/reports/downstream-salvage.md). The lead independently checked the representative findings listed above; broader worker findings remain source-audit evidence, not runtime acceptance.
+
+| Group | Disposition | Next finite check before release |
+| --- | --- | --- |
+| Merged t842 foundations | Retain as reference/base; no evidence supporting wholesale removal. | Recheck touched consumers when completing dependent batches; do not claim the entire dev runtime is certified. |
+| Committed t843 mechanical owners and aliases | Retain; split coherent moves from added behavior. | Canonical dependency/type closure, exact alias identity and owning-directory tests. |
+| Local project SQL/schema/migrations/UOW move | Retain and finish, not restore merely because it is unvalidated. | Close exports/imports, preserve SQL/default/state identity, run database/schema/migration/UOW cases plus structure. |
+| Downstream normalization, matching and recording/output preparation | Retain implementation bodies and original regression oracles. | Validate paired hook registration, custom matcher/override behavior and normal rebuilt public packages. |
+| New admission/observation/completion mechanisms | Review as a separate integrated behavior unit, including all SQL and service consumers. | First isolate the actual stalled operation with a bounded witness, then require original composed positive and negative completion/replay cases. No piecemeal deletion of connected authority. |
+| Partial descriptor/native-clock WIP | Preserve but keep out of a move-only release until completed and checked. | Inventory every read/copy/invocation and confirm getter/replacement/receiver compatibility with bounded regressions. |
+| Five model-log contract scaffolds | Preserve as incomplete design artifacts; do not count as migrated lifecycle. | Decide the required lifecycle contract and demonstrate an actual connected consumer before release. |
+| Budget move, frame helper and log exports | Retain subject to their own closure/identity checks; keep clock-dependent log edits with the clock review. | Original budget/alias tests, frame helper tests and public-export closure. |
+
+### Observed failures and limits
+
+The read-only full structure audit (`node scripts/structure-audit.mjs --json`) exited 1 on the frozen tree. Source blockers were: a barrel-bypassing import in `framework/persistence/project/migrations/contracts/runner-options.ts`; one statement-packing finding in `mutations/serialization.ts`; three packed lines in `mutations/unit-of-work.ts`; and two swallowed-failure findings in `sql/database.ts`. The last group is inherited unchanged cleanup behavior, not a new SQL rewrite. It requires a separately specified correction and error-identity acceptance; do not relax the audit. The audit also found this plan's missing blank after its H1, corrected as documentation during the audit.
+
+No runtime tests, compiler checks, package builds, browsers, paid providers, database migrations or resets ran for this audit. Historical passing results remain historical. Source comparisons establish preservation of sampled bodies, not complete behavior or safe import initialization. This is a focused salvage audit, not an exhaustive proof for every changed module. The composed stall remains unlocalized; neither a clean-baseline pass nor a refactor regression is established.
+
+The lead also confirmed concrete unfinished connections: `kernel/native-call.ts` still reads `options.nativeNodeExecutor` directly, while the new descriptor helpers aim to avoid accessors; `internal/coverage.ts` trusts the live-environment clock callbacks whose bodies still call mutable `Date.now()`/`Math.random()`; and the project persistence subtree lacks its parent barrel/public export integration. These are source-level gaps to close with targeted tests, not observed exploit/runtime verdicts or grounds to discard unchanged SQL bodies.
+
+### Recommended execution order after review
+
+1. Keep t843 preserved and inventory exact manifests for retained migrations and the separate behavior unit. Do not reset either repository to dev or pre-t842 wholesale.
+2. Finish SQL's public seam, canonical closure and named structure blockers; validate with existing focused SQL/schema/UOW cases. Keep error-handling corrections explicit rather than silently bundling them into a move.
+3. In parallel on disjoint paths, validate retained owner migrations and downstream paired hook contracts. Isolate the composed waiting operation in the behavior lane before any broad rerun.
+4. Close the remaining A-N ownership batches and enforce actual Studio/browser boundaries; extract shared chat only afterward.
+
+No measured finish date follows from this audit. Earlier 1-3 day and conversational 2-4 day ranges were unsupported by a frozen batch schedule. A one-day commitment for the whole scope is not established either. Build a replacement schedule from exact batches and the localized stall; do not turn changed-file counts into an ETA.
+
 ## Work Ledger
 
 ### 2026-11-02 - Explicit implementation stop and planning reset
@@ -83,6 +136,15 @@ These are finite named issues, not proof that additional mechanisms are already 
 - Changed: requested immediate worker freeze and recorded this proposed finite plan. No source changes after the user's stop.
 - Validation: read worker stop reports and current git status; no tests/builds or runtime checks authorized or run during this planning step.
 - Outcome: planning only; source WIP preserved locally and remains unvalidated in aggregate. No further implementation release.
+
+### 2026-11-02 - User-authorized restart-versus-salvage audit
+- Agent: Codex senior supervisor, with three read-only audit workers.
+- Changed: audit briefs/reports and paired planning documentation only. All existing source WIP preserved.
+- Validation: `git merge-base dev HEAD` -> Core `ff8eb0be8`, downstream `d6e5448c`; both are t842 merges. TypeScript source comparisons -> four SQL declarations, two committed runtime files and nineteen downstream function bodies preserved as described above.
+- Validation: `node scripts/structure-audit.mjs --json` -> exit 1; four source-path blockers and the existing plan header violation recorded above. No source fix attempted.
+- Outcome: selective-retention recommendation; implementation remains paused and runtime correctness remains unverified.
+- Validation: `node scripts/structure-audit.mjs --rule working-docs --update` and `node scripts/structure-audit.mjs --rule working-docs` -> exit 0 in both repositories; generated indexes refreshed without changing either structural baseline. `git diff --check` on owned documentation -> exit 0. No full test/build sweep consumed.
+- Git disposition: audit documentation is committed locally on the existing t843 task branches. Push/integration held because Core's preserved source WIP has the observed structure failures; no source changes are staged and neither dev nor main advances.
 
 ## Open Questions
 
