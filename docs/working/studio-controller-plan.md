@@ -1,9 +1,9 @@
 # Automation Studio As A Controller Of Core
 
-Status: Active
-Status detail: Replaces the t843 reset plan. Backend moves restart from dev with a path-only tool on t845; chat package on t846 and web boundary on t847 run in parallel.
+Status: Complete
+Status detail: Delivered on dev and main in both repositories on 2026-11-03. Replaced the t843 reset plan. Items left out on purpose are listed in Current State.
 Created: 2026-11-02
-Last updated: 2026-11-02
+Last updated: 2026-11-03
 Owner: Senior supervisor
 Scope: Move backend logic out of programs/automation-studio, leave Studio as a thin controller of Core, and put the extension's chat UI in its own reusable package.
 Paired document: ../!FluxIQWebExtension/docs/working/studio-controller-plan.md
@@ -13,40 +13,30 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 
 **The goals, in the user's words (2026-11-02):** "move logic of runtime and most other stuff out of the programs/automation-studio where it didnt belong, make programs/automation-studio just a controller of core, and put the UI from the extension into its own package so otehr clients can use it and we can update that chat UI centrally".
 
-**Done means:** nothing outside Studio imports Studio, tests included; Studio holds only endpoint registration and thin handlers, view state, metadata and its entry; the extension and a second real client both render chat from one package; both `dev` branches and `main` carry it after the full suites pass.
+**Done.** Core `main` and `dev` carry it at `1ae3240d3`, the extension's at `186c028b`.
 
-**Progress measure:** implementation lines under `programs/automation-studio`. 120,705 on dev at the start; 2,928 now, across 30 files, with no function over 20 lines.
-
-**Lanes**
-
-| Lane | Task | Owner | State |
-| --- | --- | --- | --- |
-| Backend moves and controller | t845 | Lead | Done and pushed; integrates t846 and t847 |
-| Chat package and second client | t846 | Sub-supervisor | Merged into t845 |
-| Web semantics downstream | t847 | Worker | Merged into t845 |
-| Final validation | t845 | Lead | Live tests and the final full sweep passed |
-
-**Next steps**
-
-1. Merge both repositories to `dev` through `pnpm task finish`, Core-paired task first downstream, then fast-forward `main`.
-2. Close t846 and t847 through `pnpm task abandon` once their commits are on `dev`.
+- **Studio is a controller.** Implementation lines under `programs/automation-studio` went from 120,705 to 2,928, across 30 files, with no function over 20 lines. It holds only `api`, `ui`, `index.ts` and `metadata.ts`.
+- **It stays that way.** The audit's `program-controllers` rule and import boundaries fail the build if logic or an import comes back.
+- **The runtime has its own public entry:** `fluxiq/automation` and `@fluxiq/contracts/automation`. `fluxiq/automation-studio/dsl` keeps its name because saved Flow source contains that import. `fluxiq` is 0.27.0, `@fluxiq/contracts` 0.7.0, and `docs/architecture/package-boundaries.md` has the migration note.
+- **Chat is one package.** `@fluxiq/ui-components` renders the extension's chat and Core's panel route `/programs/automation-studio/chat`.
+- **Validated.** Full sweep: Core 21,940 tests passed, extension repository 9,954 passed, checks and builds passing. Live from the extension chat: both tasks passed, $6.31 across all the runs. The ledger has each one.
 
 **Left out of this unit on purpose, for the user to decide:**
 
-- **Five small browser-field readers remain in Core:** `recording-steps.ts`, `activity/wording/action.ts`, `evidence/state-elements.ts`, `rerun-check.ts`, `locator-text.ts`. They read fields of stored targets for wording and screening. Moving them needs a design per reader and adds risk before a live test.
+- **Five small browser-field readers remain in Core:** `recording-steps.ts`, `activity/wording/action.ts`, `evidence/state-elements.ts`, `rerun-check.ts`, `locator-text.ts`. They read fields of stored targets for wording and screening. Moving them needs a design per reader.
 - **Framework code still imports `programs/_shared/storage.ts` and `database-manager`.** These are shared helpers rather than Studio, so the goals do not reach them.
 - **The step log's page reader is a process-wide registry.** It only writes the diagnostic `page.txt`, and replacing it means threading an option through the evidence loop.
 - **Core's panel has two chat UIs,** its own and the shared widget at `/programs/automation-studio/chat`, which nothing links to yet. Replacing its own needs six port additions; see `reports/chat-package.md`.
 - **t841** is saved and pushed, unmerged: an unfinished fix for correct results being held as unsure.
 - **Other `retry_allowed` refusals** may have the same gap the re-test fix closed; see `reports/dev-failures.md`.
 - **A repaired run's rows came out neither deduped nor sorted.** In `run-mw0jw263-0251c104` the 3 rows of the failed attempt stayed in front of the 10 of the repaired read, duplicates included, though `processEndedRunDatasets` is called after a repair. Why is not established: either the rows were not reprocessed or their stored keys differ. The run was honestly reported as failed, and it needs a failure and a repair to appear.
-- **A check met while exploring is proven by tests only.** The fix for a call stopped by a person-only check ran live only where its condition did not apply; `run-mw0l0e9y-a7d8ae51` met its checks in test steps and playback, which carry no draft.
+- **A ceiling above $5 without the flag is refused for chat-started builds.** That is an agent's reading from t843, not a user rule.
 
-**Blockers:** none. Everything is pushed on `task/t845-studio-controller` in both repositories.
+**Not exercised:** no Firefox run. No real-browser test of the panel's chat route. A call stopped by a person-only check while exploring is proven by tests only: `run-mw0l0e9y-a7d8ae51` met its checks in test steps and playback, which carry no draft.
 
-**Failures dev already had,** 15 tests in 9 files, are fixed: `reports/dev-failures.md` has each cause. One was a real regression: since t826, re-tests after a transient trial verdict were refused as repeats. The other eight groups were stale tests. `apps/extension/src/runtime/tests` also has 8 failures on dev, found by the web lane.
+**Branches.** t845, t846 and t847 are closed locally; their remote branches remain, because deleting one needs the user's approval. t843 stays parked and unmerged: see "What Happens To t843 And The Other Branches".
 
-**Handlers are thin.** All ten flagged functions moved to `framework/automation-service/service`, and the rule's baseline is empty. The same 246 endpoint tests pass before and after.
+**Blockers:** none.
 
 ## Why The Plan Changed
 
@@ -182,6 +172,16 @@ Older parked work from before this refactor was left alone: unmerged branches t7
 - Validation: Extension `pnpm check` -> exit 1: the new spec read `validation.actual`, which not every variant of that type has. Playwright does not typecheck, and the earlier typecheck predated the spec. Fixed to `nextPage.outcome` and rerun -> exit 0, 739 passed; the spec, headed -> 1 passed.
 - The two scenario tests that failed beside a concurrent production build pass here, alone with the suite: load was the cause.
 - Outcome: the tree is ready to merge. It differs from the swept commits only by that spec line and this ledger.
+
+### 2026-11-03 - Merged to dev and promoted to main
+
+- Agent: lead.
+- Changed: both task branches merged into `dev`, and `main` fast-forwarded in both repositories. t846 and t847 closed.
+- Validation: `pnpm task finish t845`, extension -> `Merge task t845`, audit passed, `186c028b`. Core -> contract tests 70 passed, `pnpm check` passed, `1ae3240d3`. The merged trees differ from the swept commits only by this document and its index in Core, and by the one spec line in the extension repository.
+- Validation: `git push origin 1ae3240d3:main` -> `bcbcfa971..1ae3240d3`. `git push origin 186c028b:main` -> `ee5768d5..186c028b`. Both fast-forwards.
+- Validation: `pnpm task abandon t846` and `t847` -> exit 0, 0 unmerged commits on either side.
+- Notes: Core's finish failed twice before it passed, and no gate was skipped. The first run loaded `dev`'s tool, whose contract list held the pre-move paths; the checkout had moved to the task branch, so the rerun used the new list. The second failed because the main checkout had no install for `packages/ui-components`: `pnpm install --frozen-lockfile` fixed it. An amend of an unpushed commit was refused by the permission system, so that fix is its own commit.
+- Outcome: delivered. Items left out on purpose are in Current State.
 
 ## Open Questions
 
