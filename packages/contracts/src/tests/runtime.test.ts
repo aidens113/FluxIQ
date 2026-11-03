@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import * as runtime from "../runtime.ts";
-import * as studio from "../automation-studio.ts";
+import * as studio from "../automation.ts";
 
 describe("neutral runtime contracts", () => {
   it("preserves the Studio API as identical aliases and assignable records", () => {

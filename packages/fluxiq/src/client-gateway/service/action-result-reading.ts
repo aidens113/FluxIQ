@@ -1,4 +1,4 @@
-import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation";
 import type { ClientGatewayActionResult, ClientGatewayReportedActionResult, ClientGatewayReportedActionStatus } from "@fluxiq/contracts/client-gateway";
 
 // How Core reads the action result a client sends, before anything waits on it

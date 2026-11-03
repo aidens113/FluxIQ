@@ -29,9 +29,9 @@
 // field in one line.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../../../../api-contracts/automation.ts";
 import type { GlobalProgramApiRegistry, ProgramApiRequest } from "../../../_shared/api.ts";
-import { automationStudioPageLimit } from "../../storage/index.ts";
+import { automationStudioPageLimit } from "../../../../framework/persistence/automation/index.ts";
 import {
   automationStudioConversationCommandPort,
   automationStudioConversationPageShown,
@@ -45,7 +45,7 @@ import {
   type AutomationStudioConversationCommandExecution,
   type AutomationStudioConversationFlowReference,
   type AutomationStudioConversationOnScreen
-} from "../../runtime/index.ts";
+} from "../../../../framework/automation-service/index.ts";
 import {
   AUTOMATION_STUDIO_CONVERSATION_ANSWER_KINDS,
   isAutomationStudioConversationStatus,
@@ -55,7 +55,7 @@ import {
   type AutomationStudioConversations,
   type AutomationStudioConversationStatus,
   type AutomationStudioConversationSubject
-} from "../../runtime/index.ts";
+} from "../../../../framework/automation-service/index.ts";
 
 /**
  * What the conversation endpoints need: the registry, the domain-scope check,

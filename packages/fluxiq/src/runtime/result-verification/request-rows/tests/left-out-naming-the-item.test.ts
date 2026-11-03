@@ -1,0 +1,135 @@
+// Which left-out rows name the asked item, from live run `run-muw60j7c-bb7c9a62`
+// (debug C-2): both build-test judges said yes though the name condition alone
+// left out three pairs of earbuds sold with a charging case, beside two real
+// accessories. The pairs are flagged; the accessories, which name their excluded
+// phrase first, are not.
+import { describe, expect, it, vi } from "vitest";
+import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../agents/llm/index.ts";
+import { verifyAutomationStudioRunResult } from "../../verify.ts";
+import { automationStudioResultLeftOutNamingTheItem, automationStudioResultSummaryWithLeftOutNamingTheItem } from "../index.ts";
+import {
+  RUN_MUW60J7C_FILTERED_READ, RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_REQUEST,
+  runMuw60j7cRunSummary, runMuw60j7cTestSummary
+} from "./run-muw60j7c.ts";
+import { RUN_MV6BG8D8_ACCESSORIES, RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT, RUN_MV6BG8D8_READ, runMv6bg8d8RunSummary } from "./run-mv6bg8d8.ts";
+
+// These tests are about how the judge is asked, and their trimmed live-run summaries store rows a computed fact would
+// rightly fail before any judge is asked (run muw60j7c appended an unfiltered read beside its filtered one), so Core
+// settles no fact first here (`../../computed-facts/`, framework plan P5, t795).
+vi.mock("../../computed-facts/index.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../computed-facts/index.ts")>()),
+  automationStudioResultComputedFacts: () => []
+}));
+
+describe("rows a condition alone left out that name the asked item", () => {
+  it("flags the build test's three pairs and not its two accessories (step 0031)", () => {
+    expect(automationStudioResultLeftOutNamingTheItem(runMuw60j7cTestSummary(), RUN_MUW60J7C_REQUEST)).toEqual([
+      { step: 10, condition: "condition \"name\"", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
+    ]);
+  });
+
+  it("flags the same pairs on the finished run's read, by its node (step 0039)", () => {
+    expect(automationStudioResultLeftOutNamingTheItem(runMuw60j7cRunSummary(), RUN_MUW60J7C_REQUEST)).toEqual([
+      { nodeId: RUN_MUW60J7C_FILTERED_READ, condition: "condition 5 (name not contains [\"ear tips\", \"charging case\", \"eartips\"])", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
+    ]);
+  });
+
+  // Live run `run-mux6naez-6c20f26e` (lane C, round 3): the Flow stored name, price, rating and url, so
+  // the playback's `plus is present` condition, its column not stored, sent its rows by label alone. Taken
+  // as a condition on the label, two non-Plus pairs naming a charging case were flagged as the item asked
+  // for, and both result judges refuted a correct result over the Plus condition.
+  it("run mux6naez: rows the plus condition alone left out are not flagged, though they name the item first and a charging case after", () => {
+    const summary = runMuw60j7cRunSummary();
+    const conditions = summary.reads!.find((read) => read.nodeId === RUN_MUW60J7C_FILTERED_READ)!.conditions!;
+    const plus = conditions.find((entry) => entry.condition === "plus is present")!;
+    plus.leftOutOnlyByThis = [
+      ...plus.leftOutOnlyByThis!,
+      "Zephyrline Z1 Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Ear Hooks for Running, Midnight Blue",
+      "Pulsebud Mini Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Deep Bass, Wireless Charging Case, Ivory"
+    ];
+    const name = conditions.find((entry) => entry.condition?.startsWith("name not contains"))!;
+    name.leftOutOnlyByThis = name.leftOutOnlyByThis!.filter((row) => !RUN_MUW60J7C_PAIRS_LEFT_OUT.includes(row));
+    expect(name.leftOutOnlyByThis).toHaveLength(2);
+    expect(automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST)).toEqual([]);
+  });
+
+  it("never flags a condition that tested another column, though its rows name the item first", () => {
+    const flagged = automationStudioResultLeftOutNamingTheItem(runMuw60j7cTestSummary(), RUN_MUW60J7C_REQUEST);
+    expect(flagged.map((entry) => entry.condition)).toEqual(["condition \"name\""]);
+  });
+
+  it("flags nothing where the kept rows do not all name one request phrase first", () => {
+    const summary = runMuw60j7cTestSummary();
+    const step = summary.buildTest!.steps.find((candidate) => candidate.step === 10)!;
+    const readRows = (step.observed as { readRows: { rows: string[] } }).readRows;
+    readRows.rows = [...readRows.rows, "Replacement Ear Tips for Wireless Earbuds, Memory Foam Eartips, 3 Pairs (S/M/L), Black"];
+    expect(automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST)).toEqual([]);
+  });
+
+  it("sets the summary member only when there are rows to flag", () => {
+    const instruction = { title: "Evidence-guided generation goal", body: RUN_MUW60J7C_REQUEST };
+    expect(automationStudioResultSummaryWithLeftOutNamingTheItem(runMuw60j7cTestSummary(), [instruction]).leftOutNamingTheItem).toHaveLength(1);
+    const { buildTest: _test, ...plain } = runMuw60j7cTestSummary();
+    expect("leftOutNamingTheItem" in automationStudioResultSummaryWithLeftOutNamingTheItem(plain, [instruction])).toBe(false);
+  });
+
+  // Run `run-mux6naez-6c20f26e`: `testedLabel` decides which rows are flagged,
+  // but no judge instruction describes it, so the judge's request carries none.
+  it("run mux6naez: the judge's request carries no testedLabel, and flags exactly the name condition's pairs", async () => {
+    const summary = runMuw60j7cRunSummary();
+    const plus = summary.reads!.find((read) => read.nodeId === RUN_MUW60J7C_FILTERED_READ)!.conditions!.find((entry) => entry.condition === "plus is present")!;
+    plus.leftOutOnlyByThis = [...plus.leftOutOnlyByThis!, "Zephyrline Z1 Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Ear Hooks for Running, Midnight Blue"];
+    const expected = automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST);
+    expect(expected).toEqual([
+      { nodeId: RUN_MUW60J7C_FILTERED_READ, condition: "condition 5 (name not contains [\"ear tips\", \"charging case\", \"eartips\"])", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
+    ]);
+    const instruction: AutomationStudioFlowInstruction = {
+      schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Evidence-guided generation goal", body: RUN_MUW60J7C_REQUEST,
+      scope: { kind: "flow", projectId: "project-1", flowId: "flow-1" }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1
+    };
+    const seen: AutomationStudioLlmTaskRequest[] = [];
+    const provider: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "debug-model" },
+      runTask: async (request: AutomationStudioLlmTaskRequest) => {
+        seen.push(request);
+        const diagnosis = { answersRequest: "no", observed: "The Plus condition left out rows.", expected: "Plus pairs only." };
+        return { response: { kind: "diagnosis", summary: "no", diagnosis }, usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 } } as never;
+      }
+    };
+    const before = structuredClone(summary);
+    await verifyAutomationStudioRunResult({ projectId: "project-1", flowId: "flow-1", runId: "run-1", summary, instructions: [instruction], deniedEvidenceKeys: [], provider });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const request of seen) {
+      expect(JSON.stringify(request)).not.toContain("testedLabel");
+      expect(request.context.resultSummary?.leftOutNamingTheItem).toEqual(expected);
+    }
+    // The run's own summary keeps it for every later reader.
+    expect(summary).toEqual(before);
+  });
+});
+
+// t493, live run `run-mv6bg8d8-1a461436` (round 14): the same three pairs were
+// left out by the saved answer's `process.where`, not by the read, and the guard
+// read only the read's conditions. Four judges said yes over `filteredOut: 5`.
+describe("rows the saved answer's processing alone left out", () => {
+  it("flags the three pairs a `not contains` processing condition left out, under the read that collected them, and not the two accessories", () => {
+    const flagged = automationStudioResultLeftOutNamingTheItem(runMv6bg8d8RunSummary(), RUN_MUW60J7C_REQUEST);
+    expect(flagged).toEqual([
+      { nodeId: RUN_MV6BG8D8_READ, condition: "recordOutput.process.where condition 2 (name not contains \"Charging Case\")", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT }
+    ]);
+    const said = JSON.stringify(flagged);
+    for (const accessory of Object.values(RUN_MV6BG8D8_ACCESSORIES)) expect(said).not.toContain(accessory);
+  });
+
+  it("still flags them where no read account names the node that collected the set", () => {
+    const { reads: _reads, ...summary } = runMv6bg8d8RunSummary();
+    expect(automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST).flatMap((entry) => entry.rows)).toEqual(RUN_MV6BG8D8_EARBUDS_PROCESSED_OUT);
+  });
+
+  it("flags nothing for a processing condition that tested another column", () => {
+    const summary = runMv6bg8d8RunSummary();
+    for (const condition of summary.recordSets[0]!.processing!.conditions!) delete condition.testedLabel;
+    expect(automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST)).toEqual([]);
+  });
+});

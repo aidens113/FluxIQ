@@ -1,0 +1,664 @@
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConsequence } from "../../../action-permissions/automation/index.ts";
+import { parseAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSizeLimits } from "../../../flow-authoring/bootstrap/index.ts";
+import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
+import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
+import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
+import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
+import { AUTOMATION_STUDIO_FACT_CONDITION_OPS } from "../../../../framework/automation-service/executor/lifecycle/index.ts";
+import {
+  AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
+  AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_BOUNDS as BOUNDS,
+  AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS,
+  AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH,
+  isAutomationStudioModelAuthoredTargetOverrideTarget,
+  isAutomationStudioNoRepairReason,
+  stripAutomationStudioLlmResponseMetadata,
+  type AutomationStudioLlmStructuredResponse
+} from "./structured-response.ts";
+import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } from "./task-request.ts";
+import { AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS } from "./runtime-patch-schema.ts";
+import { automationStudioLlmToolCallKeysFolded } from "../tool-call-keys/index.ts";
+import { automationStudioLlmWellFormedVerificationDefects } from "../verification-defects/index.ts";
+import { automationStudioLlmWellFormedVerificationChecked } from "../verification-checked/index.ts";
+
+/** Every runtime patch kind a model may answer with; the in-run repair's two are offered only when a request declares them. */
+const RUNTIME_PATCH_KINDS: readonly string[] = ["temporary_action_sequence", "temporary_wait_retry", "temporary_target_override", "temporary_recovery_subflow_call", "temporary_reroute", "add_handler", "replace_unit"];
+
+export function parseAutomationStudioLlmProviderResult(
+  value: unknown,
+  expectedOutput: AutomationStudioLlmTaskRequest["expectedOutput"],
+  flowBootstrap?: AutomationStudioLlmHarnessInput["flowBootstrap"],
+  /**
+   * The tools the evidence decision was offered, so a key of a tool's input
+   * written beside `input` is moved into it before the decision is checked
+   * (`../tool-call-keys/folded.ts`, run-mvcwp3wh-bcea2115). Absent, nothing moves.
+   */
+  evidenceTools?: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"],
+  /** Current verification replies must account for every negative verdict; persisted reads omit this flag. */
+  currentVerification = false
+): {
+  response?: AutomationStudioLlmStructuredResponse;
+  usage?: AutomationStudioLlmUsageSummary;
+  diagnostics: AutomationStudioLlmDiagnostic[];
+} {
+  if (!boundedProviderResult(value)) return { diagnostics: [{ severity: "error", code: "llm_output.provider_result_too_large", message: "LLM provider result exceeded structural limits." }] };
+  const diagnostics: AutomationStudioLlmDiagnostic[] = [];
+  if (!isRecord(value)) {
+    return { diagnostics: [{ severity: "error", code: "llm_output.invalid_provider_result", message: "LLM provider result must be an object." }] };
+  }
+  rejectUnexpectedFields(value, ["response", "usage", "diagnostics"], "providerResult", diagnostics);
+  const responseDiagnostics: AutomationStudioLlmDiagnostic[] = [];
+  const response = parseAutomationStudioLlmStructuredResponse(value.response, responseDiagnostics, flowBootstrap?.size, evidenceTools);
+  diagnostics.push(...parseProviderDiagnostics(value.diagnostics), ...responseDiagnostics);
+  if (currentVerification && isRecord(value.response) && isRecord(value.response.diagnosis) && value.response.diagnosis.answersRequest === "no") {
+    const listed = value.response.diagnosis.defects;
+    if (!Array.isArray(listed) || automationStudioLlmWellFormedVerificationDefects(listed).dropped.length) diagnostics.push({ severity: "error", code: "llm_output.verification_defects_required", message: "A current negative verification must list well-formed defects, or an explicit empty list when it finds none.", path: "response.diagnosis.defects" });
+  }
+  if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap));
+  const usage = parseAutomationStudioLlmUsage(value.usage, diagnostics);
+  // Every finding (2026-09-30): past 200 the rest were suppressed under `llm_output.finding_limit`.
+  return {
+    ...(response ? { response: stripAutomationStudioLlmResponseMetadata(response) } : {}),
+    ...(usage ? { usage } : {}),
+    diagnostics
+  };
+}
+
+function parseAutomationStudioLlmStructuredResponse(
+  value: unknown,
+  diagnostics: AutomationStudioLlmDiagnostic[],
+  size?: AutomationStudioFlowBootstrapSizeLimits,
+  evidenceTools?: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"]
+): AutomationStudioLlmStructuredResponse | undefined {
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_response", message: "LLM response must be an object.", path: "response" });
+    return undefined;
+  }
+  const kind = value.kind;
+  if (kind !== "flow_bootstrap" && kind !== "evidence_tool_decision" && kind !== "diagnosis" && kind !== "runtime_patch" && kind !== "no_repair" && kind !== "change_proposal" && kind !== "instruction_suggestion") {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_kind", message: "LLM response kind is missing or unsupported.", path: "response.kind" });
+    return undefined;
+  }
+  const commonFields = ["kind", "summary", "metadata"];
+  // An evidence decision as read: the one sent, or the tool call it can only be
+  // (`inferredEvidenceToolCall`), with any key of its tool's input written
+  // beside `input` moved into it (`foldedEvidenceToolCall`).
+  let decision: unknown = value.decision;
+  rejectUnexpectedFields(value, kind === "flow_bootstrap"
+    ? [...commonFields, "plan"]
+    : kind === "evidence_tool_decision"
+      ? [...commonFields, "decision"]
+    : kind === "diagnosis"
+      ? [...commonFields, "confidence", "diagnosis", "truncatedAfterVerdict"]
+    : kind === "instruction_suggestion"
+      ? [...commonFields, "instructions"]
+    : kind === "no_repair"
+      ? [...commonFields, "reason"]
+      : [...commonFields, "patches", "riskLevel"], "response", diagnostics);
+  if (!isBoundedString(value.summary)) diagnostics.push({ severity: "error", code: "llm_output.invalid_summary", message: "LLM response summary must be a bounded string.", path: "response.summary" });
+  if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "LLM response metadata must be a JSON object.", path: "response.metadata" });
+  if (kind === "flow_bootstrap") {
+    const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan, size);
+    diagnostics.push(...parsed.issues.map((issue) => ({ ...issue, severity: issue.severity, path: issue.path ? `response.${issue.path}` : "response.plan" })));
+  } else if (kind === "evidence_tool_decision") {
+    // Folded before the check, so the unexpected-field refusal below and every
+    // later reader -- the tool's input checks, permissions, the repeat guard --
+    // see the input the call meant.
+    decision = foldedEvidenceToolCall(inferredEvidenceToolCall(value.decision, diagnostics), evidenceTools, diagnostics);
+    validateUnknownEvidenceToolDecision(decision, diagnostics);
+  } else if (kind === "diagnosis") {
+    if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
+    validateUnknownDiagnosisFields(value.diagnosis, diagnostics);
+    // An adapter's mark that the reply was cut after its verdict (t653): `true` or absent, nothing else.
+    if (value.truncatedAfterVerdict !== undefined && value.truncatedAfterVerdict !== true) diagnostics.push({ severity: "error", code: "llm_output.invalid_truncated_after_verdict", message: "A diagnosis cut after its verdict is marked true or not at all.", path: "response.truncatedAfterVerdict" });
+  } else if (kind === "runtime_patch") {
+    if (!Array.isArray(value.patches)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patches", message: "Runtime patches must be an array.", path: "response.patches" });
+    else {
+      if (value.patches.length > 100) diagnostics.push({ severity: "error", code: "llm_output.too_many_patches", message: "Runtime patch response cannot contain more than 100 patches.", path: "response.patches" });
+      else value.patches.forEach((patch, index) => validateUnknownRuntimePatch(patch, index, diagnostics));
+    }
+    if (!isRiskLevel(value.riskLevel)) diagnostics.push({ severity: "error", code: "llm_output.invalid_risk", message: "Runtime patch riskLevel is invalid.", path: "response.riskLevel" });
+  } else if (kind === "no_repair") {
+    // A declined repair says which of the five ways the page said no. Free
+    // prose is not one of them: a run's reason is read by a person and matched
+    // on by the Lab.
+    if (!isAutomationStudioNoRepairReason(value.reason)) diagnostics.push({ severity: "error", code: "llm_output.invalid_no_repair_reason", message: "A declined repair must name one of Core's no-repair reasons.", path: "response.reason" });
+  } else if (kind === "change_proposal") {
+    if (!Array.isArray(value.patches)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patches", message: "Change proposal patches must be an array.", path: "response.patches" });
+    else {
+      if (value.patches.length > 100) diagnostics.push({ severity: "error", code: "llm_output.too_many_patches", message: "Change proposal response cannot contain more than 100 patches.", path: "response.patches" });
+      else value.patches.forEach((patch, index) => validateUnknownChangePatch(patch, index, diagnostics));
+    }
+    if (!isRiskLevel(value.riskLevel)) diagnostics.push({ severity: "error", code: "llm_output.invalid_risk", message: "Change proposal riskLevel is invalid.", path: "response.riskLevel" });
+  } else {
+    if (!Array.isArray(value.instructions)) diagnostics.push({ severity: "error", code: "llm_output.invalid_instructions", message: "Instruction suggestions must be an array.", path: "response.instructions" });
+    else {
+      if (value.instructions.length > 100) diagnostics.push({ severity: "error", code: "llm_output.too_many_instructions", message: "Instruction response cannot contain more than 100 suggestions.", path: "response.instructions" });
+      else value.instructions.forEach((instruction, index) => validateUnknownInstructionSuggestion(instruction, index, diagnostics));
+    }
+  }
+  if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return undefined;
+  if (kind === "diagnosis" && isRecord(value.diagnosis)) return { ...value, diagnosis: readDiagnosisText(value.diagnosis) } as unknown as AutomationStudioLlmStructuredResponse;
+  if (kind === "evidence_tool_decision" && decision !== value.decision) return { ...value, decision } as unknown as AutomationStudioLlmStructuredResponse;
+  return value as unknown as AutomationStudioLlmStructuredResponse;
+}
+
+const DIAGNOSIS_TEXT_FIELDS = ["expected", "observed", "changed"] as const;
+
+function isBlankText(value: unknown): boolean {
+  return typeof value === "string" && !value.trim();
+}
+
+/** Whether a diagnosis text runs past its bound once its surrounding whitespace is set aside. */
+function isOverLongText(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH;
+}
+
+/**
+ * The parsed diagnosis as every consumer reads it: without the texts the model
+ * left blank, and every other text whole.
+ *
+ * A blank text is a field it did not answer -- a judge that finds nothing to
+ * change says so with `changed: ""` -- so it is dropped rather than refused, and
+ * no consumer is handed an empty description.
+ *
+ * A text past the bound is read whole, trimmed, with a warning naming the field
+ * (`validateUnknownDiagnosisFields`). It used to void the whole reply: live run
+ * murwcmx2's judge answered a clear `no` with a 581-character `changed`, verify
+ * read the refused reply as a call that never came back, and the refutation
+ * both calls gave was recorded as unconfirmed. It was then read cut to the
+ * bound, and that cut what Core weighed (t665, A8 frozen pair 8 candidate towels
+ * `run-mvam0lys-2d3eb090` step 0063): a judge's true reason, that a stored row
+ * is the wrong kind of thing, ran past the 500th character, so Core refuted the
+ * half it was handed and labelled the whole reading contradicted -- text it never
+ * read. Core never caps what a model wrote. The bound stays 500 in the
+ * instruction and the output schema. A copy: the reply stays as it came.
+ *
+ * Legacy or non-verification `defects` (t752) retain their well-formed entries,
+ * each rebuilt key by key; none well-formed is no field at all
+ * (`../verification-defects/well-formed.ts`).
+ */
+function readDiagnosisText(diagnosis: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...diagnosis };
+  for (const field of DIAGNOSIS_TEXT_FIELDS) {
+    const text = copy[field];
+    if (isBlankText(text)) delete copy[field];
+    else if (typeof text === "string" && text.length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) copy[field] = text.trim();
+  }
+  if (copy.defects !== undefined) {
+    const { kept } = automationStudioLlmWellFormedVerificationDefects(copy.defects);
+    copy.defects = kept;
+  }
+  if (copy.checked !== undefined) copy.checked = automationStudioLlmWellFormedVerificationChecked(copy.checked).kept;
+  return copy;
+}
+
+/**
+ * The model's contribution to a diagnosis, checked key by key.
+ *
+ * Every key is named, every description is bounded, and every verdict is one of
+ * three words. That is what makes this a channel rather than the `metadata`
+ * opening it replaces: a field Core cannot check is not carried, so nothing
+ * arbitrary can ride in beside the answer.
+ */
+function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+  if (value === undefined) return;
+  const path = "response.diagnosis";
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_fields", message: "Diagnosis fields must be an object.", path });
+    return;
+  }
+  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "checked", "explorationNeeded", "patchNeeded"], path, diagnostics);
+  // A malformed defect is dropped with a warning naming its place, never the
+  // reply (t752): the verdict and every other defect stand. The warning says
+  // nothing the model wrote.
+  if (value.defects !== undefined) {
+    for (const index of automationStudioLlmWellFormedVerificationDefects(value.defects).dropped) {
+      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_defect_dropped", message: index === undefined ? "Diagnosis defects must be a list, and were dropped." : "A diagnosis defect was not a kind Core knows with its row and the request's words as bounded text, or came past the twelfth, and was dropped.", path: index === undefined ? `${path}.defects` : `${path}.defects[${index}]` });
+    }
+  }
+  // Likewise a malformed cited cell (t810): dropped with a warning naming its place.
+  if (value.checked !== undefined) {
+    for (const index of automationStudioLlmWellFormedVerificationChecked(value.checked).dropped) {
+      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_checked_dropped", message: index === undefined ? "Diagnosis checked cells must be a list, and were dropped." : "A cited cell was not a row, a column and a value as bounded text, or came past the twelfth, and was dropped.", path: index === undefined ? `${path}.checked` : `${path}.checked[${index}]` });
+    }
+  }
+  for (const field of DIAGNOSIS_TEXT_FIELDS) {
+    // Blank is omitted, not invalid: the instruction asks for an unanswerable field to be left out.
+    const text = value[field];
+    if (text === undefined || isBlankText(text)) continue;
+    if (typeof text !== "string") {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_text", message: `Diagnosis ${field} must be a string.`, path: `${path}.${field}` });
+    } else if (isOverLongText(text)) {
+      // Too long is read whole, not refused or cut (`readDiagnosisText`, t665): the verdict and the other fields stand.
+      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_text_past_bound", message: `Diagnosis ${field} ran to ${text.trim().length} characters, past the ${AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH}-character bound, and was read whole.`, path: `${path}.${field}` });
+    }
+  }
+  for (const field of ["stillAchievable", "deterministicRecoveryPossible", "answersRequest"] as const) {
+    if (value[field] !== undefined && value[field] !== "yes" && value[field] !== "no" && value[field] !== "unknown") {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_verdict", message: `Diagnosis ${field} must be "yes", "no", or "unknown".`, path: `${path}.${field}` });
+    }
+  }
+  for (const field of ["explorationNeeded", "patchNeeded"] as const) {
+    if (value[field] !== undefined && typeof value[field] !== "boolean") {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_flag", message: `Diagnosis ${field} must be a boolean.`, path: `${path}.${field}` });
+    }
+  }
+}
+
+/** The kinds an evidence decision may name; the feedback for a refused kind lists the same three. */
+const EVIDENCE_DECISION_KINDS: readonly string[] = ["tool_call", "complete", "amend_draft"];
+
+/**
+ * A decision that can only be a tool call, read as one when its `kind` says
+ * nothing Core knows.
+ *
+ * **Every refused decision of 81 logged runs was this shape** (R4,
+ * 2,728 decisions, 9 refused in 7 runs): `kind` held `"callId"` -- the key's
+ * name written as the value -- and 6 of the 9 left the id out, while each named
+ * an offered tool with a valid input object. Each refusal cost a paid call and
+ * the next decision re-sent the same call, which ran.
+ *
+ * A `toolId` string and an `input` object, with no `result` and no
+ * `amendments`, can be nothing but a tool call: `complete` needs `result` and
+ * `amend_draft` needs `amendments`. So the kind is filled in, and where the
+ * `callId` is missing or not a valid id one is derived from the tool and its
+ * input -- an identical call gets the same id, which the loop already makes
+ * unique (`../evidence-loop/call-id.ts`). Nothing else is relaxed: the tool
+ * call's keys, the tool being offered and its input schema are checked exactly
+ * as for a decision that named its kind. A known kind is never relabelled, so a
+ * `complete` carrying a `toolId` is still refused.
+ *
+ * The repair is a warning, `llm_output.decision_kind_inferred`, so the step
+ * log shows that a reply was read rather than taken as written.
+ */
+function inferredEvidenceToolCall(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): unknown {
+  if (!isRecord(value)) return value;
+  if (typeof value.kind === "string" && EVIDENCE_DECISION_KINDS.includes(value.kind)) return value;
+  if (typeof value.toolId !== "string" || !isJsonObject(value.input) || value.result !== undefined || value.amendments !== undefined) return value;
+  const callIdFilled = !validRequestIdentity(value.callId as string);
+  const callId = callIdFilled ? derivedCallId(value.toolId, value.input) : value.callId;
+  diagnostics.push({
+    severity: "warning",
+    code: "llm_output.decision_kind_inferred",
+    message: `The decision named no known kind but carried a toolId and an input object, so it was read as tool_call${callIdFilled ? ", with a callId derived from the tool and its input" : ""}.`,
+    path: "response.decision.kind",
+    metadata: { kindWritten: value.kind === undefined ? "absent" : typeof value.kind === "string" ? "unknown" : "not_a_string", callIdFilled }
+  });
+  return { ...value, kind: "tool_call", callId };
+}
+
+/**
+ * A tool call with every key of its tool's input written beside `input` moved
+ * into it (`../tool-call-keys/folded.ts`, run-mvcwp3wh-bcea2115), said as an
+ * `info` diagnostic that names the keys from the tool's schema, never the
+ * reply's words; the decision as it came when nothing moved.
+ */
+function foldedEvidenceToolCall(
+  value: unknown,
+  tools: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"] | undefined,
+  diagnostics: AutomationStudioLlmDiagnostic[]
+): unknown {
+  const folded = automationStudioLlmToolCallKeysFolded(value, tools);
+  if (!folded) return value;
+  diagnostics.push({
+    severity: "info",
+    code: "llm_output.key_moved_into_input",
+    message: "A key the tool's input schema declares was written beside the tool call's input and was moved into it.",
+    path: "response.decision",
+    metadata: { toolId: folded.toolId, movedKeys: folded.movedKeys }
+  });
+  return folded.decision;
+}
+
+/** `call.` and the FNV-1a hash of the tool and its input: the same call, the same id. */
+function derivedCallId(toolId: string, input: JsonObject): string {
+  let hash = 0x811c9dc5;
+  for (const char of `${toolId}\u0000${JSON.stringify(input)}`) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `call.${hash.toString(16).padStart(8, "0")}`;
+}
+
+function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+  const path = "response.decision";
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision must be an object.", path });
+    return;
+  }
+  if (value.kind === "tool_call") {
+    // `add`, `act` and `place` author the draft as the step is taken (`../evidence-loop-decision.ts`); the loop reads them strictly.
+    rejectUnexpectedFields(value, ["kind", "callId", "toolId", "input", "add", "act", "place"], path, diagnostics);
+    if (!validRequestIdentity(value.callId as string) || !validRequestIdentity(value.toolId as string) || !isJsonObject(value.input)) {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool_call", message: "Evidence tool call fields are invalid.", path });
+    }
+    return;
+  }
+  if (value.kind === "complete") {
+    rejectUnexpectedFields(value, ["kind", "result"], path, diagnostics);
+    if (!isJsonObject(value.result)) diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_completion", message: "Evidence completion requires a JSON object result.", path });
+    return;
+  }
+  // An edit to the draft the loop is accruing. Only the outer shape is checked
+  // here; which steps exist and what may be said about them is the loop's, and
+  // `runtime/flow-draft/` is where an edit that names no step is refused.
+  if (value.kind === "amend_draft") {
+    rejectUnexpectedFields(value, ["kind", "amendments"], path, diagnostics);
+    if (!Array.isArray(value.amendments) || !value.amendments.length || value.amendments.length > 16 || !value.amendments.every(isRecord)) {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_amendment", message: "A draft amendment decision must carry between one and sixteen amendments.", path });
+    }
+    return;
+  }
+  diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: `Evidence decision kind is unsupported: decision.kind must be one of ${EVIDENCE_DECISION_KINDS.join(", ")}.`, path: `${path}.kind` });
+}
+
+function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+  const path = `response.patches.${index}`;
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_patch", message: "Runtime patch must be an object.", path });
+    return;
+  }
+  const kind = value.kind;
+  const common = ["kind", "reason", "metadata"];
+  const fields = kind === "temporary_action_sequence" ? [...common, "targetNodeId", "steps", "consequences"]
+    : kind === "temporary_wait_retry" ? [...common, "targetNodeId", "timeoutMs", "retryCount"]
+      : kind === "temporary_target_override" ? [...common, "targetNodeId", "target", "consequences"]
+        : kind === "temporary_recovery_subflow_call" ? [...common, "subflowId"]
+          : kind === "temporary_reroute" ? [...common, "fromNodeId", "toNodeId"]
+            : kind === "add_handler" || kind === "replace_unit" ? [...common, ...UNIT_REPAIR_PATCH_FIELDS[kind]]
+              : common;
+  rejectUnexpectedFields(value, fields, path, diagnostics);
+  if (!RUNTIME_PATCH_KINDS.includes(String(kind))) diagnostics.push({ severity: "error", code: "llm_output.unsupported_runtime_patch", message: "Runtime patch kind is unsupported.", path: `${path}.kind` });
+  if (!isBoundedString(value.reason)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_reason", message: "Runtime patch reason must be a bounded string.", path: `${path}.reason` });
+  if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "Runtime patch metadata must be a JSON object.", path: `${path}.metadata` });
+  // What an acting patch says it would lastingly do: Core's classes only, since
+  // a class Core does not know is one it cannot ask a person about. Absent is
+  // read, not refused -- the patch stage records it as undeclared and does not
+  // run it -- and a repeated class is harmless, so only the list is bounded.
+  if (value.consequences !== undefined && (!Array.isArray(value.consequences) || value.consequences.length > AUTOMATION_STUDIO_ACTION_CONSEQUENCES.length * 2 || !value.consequences.every(isAutomationStudioActionConsequence))) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_consequences", message: "Runtime patch consequences must be a list of Core's consequence classes.", path: `${path}.consequences` });
+  }
+  if (kind === "temporary_action_sequence") {
+    if (!isBoundedString(value.targetNodeId) || !Array.isArray(value.steps) || !value.steps.length || value.steps.length > AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS || !value.steps.every(isRuntimePatchStep)) {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_action_sequence", message: "Temporary action sequence requires the node to insert before and between one and eight steps, each naming a definition and carrying only bounded parameters.", path });
+    }
+  } else if (kind === "temporary_wait_retry") {
+    if (!isBoundedString(value.targetNodeId) || !isOptionalNonNegativeInteger(value.timeoutMs) || !isOptionalNonNegativeInteger(value.retryCount)) diagnostics.push({ severity: "error", code: "llm_output.invalid_wait_retry", message: "Temporary wait/retry fields are invalid.", path });
+  } else if (kind === "temporary_target_override") {
+    if (!isBoundedString(value.targetNodeId) || !isAutomationStudioModelAuthoredTargetOverrideTarget(value.target)) diagnostics.push({ severity: "error", code: "llm_output.invalid_target_override", message: "Temporary target override requires a target node and a target naming only opaque evidence handles.", path });
+  } else if (kind === "temporary_recovery_subflow_call" && !isBoundedString(value.subflowId)) diagnostics.push({ severity: "error", code: "llm_output.invalid_recovery_subflow", message: "Recovery Subflow call requires a bounded subflowId.", path });
+  else if (kind === "temporary_reroute" && (!isBoundedString(value.fromNodeId) || !isBoundedString(value.toNodeId))) diagnostics.push({ severity: "error", code: "llm_output.invalid_reroute", message: "Temporary reroute requires bounded from/to node IDs.", path });
+  // A handler and a unit replacement are checked whole: every field bounded,
+  // every fact condition well formed, and a target naming handles only.
+  else if (kind === "add_handler" || kind === "replace_unit") {
+    for (const message of unitRepairPatchProblems(value)) diagnostics.push({ severity: "error", code: `llm_output.invalid_${kind}`, message, path });
+  }
+}
+
+function validateUnknownChangePatch(value: unknown, index: number, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+  const path = `response.patches.${index}`;
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_patch", message: "Change proposal patch must be an object.", path });
+    return;
+  }
+  rejectUnexpectedFields(value, ["kind", "targetId", "summary", "before", "after", "metadata"], path, diagnostics);
+  if (!["create_subflow", "edit_subflow", "edit_router", "edit_expectation", "edit_action_target", "edit_recovery", "promote_adaptation", "edit_instruction"].includes(String(value.kind))) diagnostics.push({ severity: "error", code: "llm_output.unsupported_patch_kind", message: "Change proposal patch kind is unsupported.", path: `${path}.kind` });
+  if (value.targetId !== undefined && !isBoundedString(value.targetId)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_target", message: "Change proposal targetId must be a bounded string.", path: `${path}.targetId` });
+  if (!isBoundedString(value.summary)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_summary", message: "Change proposal summary must be a bounded string.", path: `${path}.summary` });
+  if (value.before !== undefined && !isJsonValue(value.before)) diagnostics.push({ severity: "error", code: "llm_output.invalid_before", message: "Change proposal before value must be JSON.", path: `${path}.before` });
+  if (value.after !== undefined && !isJsonValue(value.after)) diagnostics.push({ severity: "error", code: "llm_output.invalid_after", message: "Change proposal after value must be JSON.", path: `${path}.after` });
+  if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "Change proposal metadata must be a JSON object.", path: `${path}.metadata` });
+}
+
+function validateUnknownInstructionSuggestion(value: unknown, index: number, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+  const path = `response.instructions.${index}`;
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction", message: "Instruction suggestion must be an object.", path });
+    return;
+  }
+  rejectUnexpectedFields(value, ["title", "body", "scope", "tags"], path, diagnostics);
+  if (!isBoundedString(value.title) || !isBoundedString(value.body)) diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction", message: "Instruction title and body must be bounded strings.", path });
+  if (value.scope !== undefined && !isJsonObject(value.scope)) diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction_scope", message: "Instruction scope must be a JSON object.", path: `${path}.scope` });
+  if (value.tags !== undefined && (!Array.isArray(value.tags) || value.tags.length > 100 || !value.tags.every(isBoundedString))) diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction_tags", message: "Instruction tags must be bounded strings.", path: `${path}.tags` });
+}
+
+function parseAutomationStudioLlmUsage(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): AutomationStudioLlmUsageSummary | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    diagnostics.push({ severity: "error", code: "llm_usage.invalid", message: "Provider usage must be an object.", path: "providerResult.usage" });
+    return undefined;
+  }
+  rejectUnexpectedFields(value, ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens", "estimatedCostUsd"], "providerResult.usage", diagnostics);
+  for (const key of ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const) {
+    if (value[key] !== undefined && (!Number.isInteger(value[key]) || (value[key] as number) < 0)) diagnostics.push({ severity: "error", code: "llm_usage.invalid_token_count", message: `${key} must be a non-negative integer.`, path: `providerResult.usage.${key}` });
+  }
+  if (value.estimatedCostUsd !== undefined && (!isFiniteNumber(value.estimatedCostUsd) || value.estimatedCostUsd < 0)) diagnostics.push({ severity: "error", code: "llm_usage.invalid_cost", message: "estimatedCostUsd must be a non-negative finite number.", path: "providerResult.usage.estimatedCostUsd" });
+  if (Number.isInteger(value.inputTokens) && Number.isInteger(value.outputTokens) && Number.isInteger(value.totalTokens)
+    && value.totalTokens !== (value.inputTokens as number) + (value.outputTokens as number)) {
+    diagnostics.push({ severity: "error", code: "llm_usage.inconsistent_total", message: "Provider totalTokens must equal inputTokens plus outputTokens.", path: "providerResult.usage.totalTokens" });
+  }
+  // The cache split divides the input rather than adding to it, so a report
+  // whose halves do not make up the whole is not a report of this call.
+  if (Number.isInteger(value.inputTokens) && Number.isInteger(value.cacheHitInputTokens) && Number.isInteger(value.cacheMissInputTokens)
+    && (value.cacheHitInputTokens as number) + (value.cacheMissInputTokens as number) !== (value.inputTokens as number)) {
+    diagnostics.push({ severity: "error", code: "llm_usage.inconsistent_cache_split", message: "Provider cacheHitInputTokens plus cacheMissInputTokens must equal inputTokens.", path: "providerResult.usage.cacheHitInputTokens" });
+  }
+  return diagnostics.some((diagnostic) => diagnostic.code.startsWith("llm_usage.")) ? undefined : value as AutomationStudioLlmUsageSummary;
+}
+
+function parseProviderDiagnostics(value: unknown): AutomationStudioLlmDiagnostic[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 100) return [{ severity: "error", code: "llm_output.invalid_diagnostics", message: "Provider diagnostics must be a bounded array.", path: "providerResult.diagnostics" }];
+  const parsed: AutomationStudioLlmDiagnostic[] = [];
+  for (const [index, diagnostic] of value.entries()) {
+    if (!isRecord(diagnostic)) {
+      parsed.push({ severity: "error", code: "llm_output.invalid_diagnostic", message: "Provider diagnostic must be an object.", path: `providerResult.diagnostics.${index}` });
+      continue;
+    }
+    if (!["info", "warning", "error"].includes(String(diagnostic.severity)) || typeof diagnostic.code !== "string" || !/^[a-z0-9_.-]{1,100}$/i.test(diagnostic.code) || !isBoundedString(diagnostic.message)) {
+      parsed.push({ severity: "error", code: "llm_output.invalid_diagnostic", message: "Provider diagnostic fields are invalid.", path: `providerResult.diagnostics.${index}` });
+      continue;
+    }
+    const severity = diagnostic.severity as AutomationStudioLlmDiagnostic["severity"];
+    parsed.push({ severity, code: "llm.provider_diagnostic", message: `Provider reported a ${severity} diagnostic.` });
+  }
+  return parsed;
+}
+
+function rejectUnexpectedFields(value: Record<string, unknown>, allowed: string[], path: string, diagnostics: AutomationStudioLlmDiagnostic[]): void {
+  const allowedFields = new Set(allowed);
+  const besideToolCallInput = path === "response.decision" && value.kind === "tool_call";
+  for (const key of Object.keys(value)) {
+    if (!allowedFields.has(key)) diagnostics.push({
+      severity: "error", code: "llm_output.unexpected_field", message: "Provider output contained an unexpected field.",
+      // Only a known grammar key can refine this path. Reflecting arbitrary
+      // provider keys would carry private text through the diagnostic channel.
+      path: besideToolCallInput && key === "write" ? "response.decision.write" : path,
+      // Any other key beside a tool call's input belongs inside it, or nowhere
+      // (run-mvcwp3wh-bcea2115): said by Core's constant, never by the key.
+      ...(besideToolCallInput && key !== "write" ? { metadata: { expectedPath: "response.decision.input" } } : {})
+    });
+  }
+}
+
+function boundedProviderResult(root: unknown): boolean {
+  const stack: Array<{ value: unknown; depth: number }> = [{ value: root, depth: 0 }];
+  const seen = new Set<object>();
+  let visited = 0;
+  while (stack.length) {
+    const { value, depth } = stack.pop()!;
+    if (++visited > 10_000 || depth > 20) return false;
+    if (value === null || typeof value !== "object") continue;
+    if (seen.has(value)) return false;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      if (value.length > 1000) return false;
+      for (let index = 0; index < value.length; index += 1) stack.push({ value: value[index], depth: depth + 1 });
+    } else {
+      const keys = Object.keys(value);
+      if (keys.length > 1000) return false;
+      for (const key of keys) stack.push({ value: (value as Record<string, unknown>)[key], depth: depth + 1 });
+    }
+  }
+  return true;
+}
+
+function isOptionalNonNegativeInteger(value: unknown): boolean {
+  return value === undefined || (Number.isInteger(value) && (value as number) >= 0);
+}
+
+/**
+ * One step a repair runs -- inserted before a node, a handler's body, or a
+ * unit's replacement -- checked at the boundary: a definition id, an optional
+ * label, and parameters that are JSON and small.
+ *
+ * The parameters are not read here and must not be. They are the node
+ * definition's own declared parameters, in the vocabulary of whichever domain
+ * owns the definition, and Core has never known what any of them mean -- the
+ * authoring path writes the same values for a node it creates. What Core owes
+ * them is a bound, so a page's text cannot arrive inside one and become a graph
+ * write; the registry the executor dispatches through refuses a definition or a
+ * parameter it does not know, long before the step runs.
+ */
+function isRuntimePatchStep(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  for (const key of Object.keys(value)) if (!["definitionId", "label", "parameters"].includes(key)) return false;
+  if (!isBoundedString(value.definitionId)) return false;
+  if (value.label !== undefined && !isBoundedString(value.label)) return false;
+  if (value.parameters !== undefined && !isJsonObject(value.parameters)) return false;
+  return JSON.stringify(value).length <= AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH;
+}
+
+// The boundary check of a model's `add_handler` and `replace_unit` patch: the
+// shape, each field bounded, and nothing the shapes do not name. What depends
+// on the event or the unit -- a completion check a `before` handler must
+// carry, a disposition its event may not take -- is the output validation's
+// (`./output-validation.ts`), which reads the typed patch.
+
+/** The fields a handler is written with, in `add_handler` itself and in a `replace_unit`'s `handler`. */
+const HANDLER_FIELDS = ["event", "scope", "when", "completionCheck", "steps", "then"] as const;
+
+/** The fields each unit-repair kind may carry, beside the ones every patch carries. */
+const UNIT_REPAIR_PATCH_FIELDS: Readonly<Record<"add_handler" | "replace_unit", readonly string[]>> = Object.freeze({
+  add_handler: [...HANDLER_FIELDS, "consequences"],
+  replace_unit: ["unit", "steps", "handler", "failedEdgeTo", "consequences"]
+});
+
+const EVENTS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS);
+/** The words a handler's `then` may use. */
+const HANDLER_THEN_KINDS = ["resume", "route", "resolve", "give_up"] as const;
+const THEN_KINDS: ReadonlySet<string> = new Set(HANDLER_THEN_KINDS);
+const OPS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_FACT_CONDITION_OPS);
+
+/**
+ * What is wrong with a raw unit-repair patch, in plain sentences; empty when
+ * nothing is. `value.kind` is `add_handler` or `replace_unit`.
+ */
+function unitRepairPatchProblems(value: Record<string, unknown>): string[] {
+  if (value.kind === "add_handler") return handlerProblems(value, "The handler");
+  if (value.kind !== "replace_unit") return [];
+  const problems: string[] = [];
+  const unit = value.unit;
+  if (!isRecord(unit) || !["node", "handler", "part"].includes(String(unit.kind))) {
+    return ["The unit must be { kind: \"node\", nodeId }, { kind: \"handler\", nodeId } or { kind: \"part\", subflowId }."];
+  }
+  const idKey = unit.kind === "part" ? "subflowId" : "nodeId";
+  if (Object.keys(unit).some((key) => key !== "kind" && key !== idKey) || !isRepairId(unit[idKey])) problems.push(`A ${String(unit.kind)} unit is named by ${idKey} alone, a bounded identifier.`);
+  if (unit.kind === "handler") {
+    if (value.steps !== undefined) problems.push("A handler is replaced by a handler, not by steps.");
+    if (!isRecord(value.handler)) problems.push("A handler unit's replacement must be a handler.");
+    else {
+      if (Object.keys(value.handler).some((key) => !(HANDLER_FIELDS as readonly string[]).includes(key))) problems.push("The replacement handler carries a field a handler does not have.");
+      problems.push(...handlerProblems(value.handler, "The replacement handler"));
+    }
+  } else {
+    if (value.handler !== undefined) problems.push(`A ${String(unit.kind)} is replaced by steps, not by a handler.`);
+    problems.push(...stepsProblems(value.steps, "The replacement"));
+  }
+  if (value.failedEdgeTo !== undefined && (unit.kind !== "node" || !isRepairId(value.failedEdgeTo))) {
+    problems.push("Only a node's replacement may name where its failure goes, by a bounded node id.");
+  }
+  return problems;
+}
+
+function handlerProblems(value: Record<string, unknown>, subject: string): string[] {
+  const problems: string[] = [];
+  if (!EVENTS.has(String(value.event))) problems.push(`${subject} must run at one of ${AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS.join(", ")}.`);
+  const scopeProblem = handlerScopeProblem(value.scope);
+  if (scopeProblem) problems.push(`${subject}'s scope ${scopeProblem}`);
+  problems.push(...conditionListProblems(value.when, `${subject}'s when`));
+  if (value.completionCheck !== undefined) problems.push(...conditionListProblems(value.completionCheck, `${subject}'s completionCheck`));
+  problems.push(...stepsProblems(value.steps, `${subject}'s body`));
+  const thenProblem = handlerThenProblem(value.then);
+  if (thenProblem) problems.push(`${subject}'s then ${thenProblem}`);
+  return problems;
+}
+
+function handlerScopeProblem(value: unknown): string | undefined {
+  if (!isRecord(value)) return "must be { kind: \"nodes\", nodeIds } or { kind: \"subflow\" }.";
+  if (value.kind === "nodes") {
+    const ids = value.nodeIds;
+    if (Object.keys(value).some((key) => key !== "kind" && key !== "nodeIds")) return "names nodes by nodeIds alone.";
+    if (!Array.isArray(ids) || !ids.length || ids.length > BOUNDS.maxScopeNodeIds || !ids.every(isRepairId)) return `must name between one and ${BOUNDS.maxScopeNodeIds} node ids.`;
+    return undefined;
+  }
+  if (value.kind === "subflow") {
+    if (Object.keys(value).some((key) => key !== "kind" && key !== "inherit")) return "for a part carries only inherit.";
+    if (value.inherit !== undefined && typeof value.inherit !== "boolean") return "inherit must be true or false.";
+    return undefined;
+  }
+  return "must be nodes or this part; a repair never registers a handler for the whole automation.";
+}
+
+function handlerThenProblem(value: unknown): string | undefined {
+  if (!isRecord(value) || !THEN_KINDS.has(String(value.kind))) return `must be one of ${HANDLER_THEN_KINDS.join(", ")}.`;
+  const extra = (allowed: string[]) => Object.keys(value).some((key) => key !== "kind" && !allowed.includes(key));
+  if (value.kind === "route") return extra(["checkpointId"]) || !isRepairId(value.checkpointId) ? "route names its checkpoint by checkpointId alone." : undefined;
+  if (value.kind === "resolve") {
+    if (extra(["outputs"]) || !isJsonObject(value.outputs)) return "resolve carries its outputs as one JSON object.";
+    return JSON.stringify(value.outputs).length > BOUNDS.maxResolveOutputsLength ? `resolve's outputs exceed ${BOUNDS.maxResolveOutputsLength} characters.` : undefined;
+  }
+  return extra([]) ? `${String(value.kind)} carries nothing else.` : undefined;
+}
+
+function stepsProblems(value: unknown, subject: string): string[] {
+  if (!Array.isArray(value) || !value.length || value.length > AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS) return [`${subject} must be between one and ${AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS} steps.`];
+  return value.every(isRuntimePatchStep) ? [] : [`${subject} has a step that does not name a definition or carries more than bounded parameters.`];
+}
+
+function conditionListProblems(value: unknown, subject: string): string[] {
+  if (!Array.isArray(value) || value.length > BOUNDS.maxConditions) return [`${subject} must be a list of at most ${BOUNDS.maxConditions} fact conditions.`];
+  return value.flatMap((condition, index) => (isModelFactCondition(condition) ? [] : [`${subject} entry ${index + 1} is not a fact condition: a non-empty fact of at most ${BOUNDS.maxFactLength} characters, an op of ${AUTOMATION_STUDIO_FACT_CONDITION_OPS.join(", ")}, an optional bounded value, and an optional target naming only evidence handles.`]));
+}
+
+/**
+ * A fact condition as a model may write one. Its `target`, when there is one,
+ * names evidence handles and nothing else, the rule a target override keeps:
+ * a locator never enters a graph through a model.
+ */
+function isModelFactCondition(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (Object.keys(value).some((key) => !["fact", "op", "value", "target"].includes(key))) return false;
+  if (typeof value.fact !== "string" || !value.fact.trim() || value.fact.length > BOUNDS.maxFactLength) return false;
+  if (!OPS.has(String(value.op))) return false;
+  if (value.value !== undefined && !isConditionValue(value.value)) return false;
+  return value.target === undefined || isAutomationStudioModelAuthoredTargetOverrideTarget(value.target);
+}
+
+function isConditionValue(value: unknown): boolean {
+  if (value === null || typeof value === "boolean" || isFiniteNumber(value)) return true;
+  if (typeof value === "string") return value.length <= BOUNDS.maxValueLength;
+  if (!isRecord(value) || Object.keys(value).length !== 1) return false;
+  const name = value.input ?? value.value;
+  return typeof name === "string" && name.trim().length > 0 && name.length <= BOUNDS.maxValueLength;
+}
+
+function isRepairId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= BOUNDS.maxIdLength;
+}
+
+function isRiskLevel(value: unknown): value is "low" | "medium" | "high" | "destructive" {
+  return value === "low" || value === "medium" || value === "high" || value === "destructive";
+}

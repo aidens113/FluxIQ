@@ -66,7 +66,7 @@ The legacy `fluxiq/automation-studio/fingerprinting` subpath remains a browser-s
 
 `fluxiq/components/automation` is the browser-safe node seam (the legacy `fluxiq/automation-studio/nodes` export remains compatible) for contract
 logic a browser host must not restate. Since t728 it re-exports by name, from
-`@fluxiq/contracts/automation-studio`, record processing
+`@fluxiq/contracts/automation`, record processing
 (`nodes/record-process.ts`): the condition, sort and presence vocabularies,
 `automationStudioRecordConditionHolds` (which takes an
 `AutomationStudioRecordConditionTest`, every key optional, `field` included, and
@@ -79,7 +79,7 @@ value is missing, blank or not of the key's kind) and the shared
 `AUTOMATION_STUDIO_RECORD_VALUE_READING_CASES` parity table; and the
 recording-capture policy and its clamp (`nodes/recording-capture.ts`,
 [client gateway](automation-studio/client-gateway.md)). Both re-export files
-import only `@fluxiq/contracts/automation-studio`, and
+import only `@fluxiq/contracts/automation`, and
 `contracts/src/record-sets/process/` imports only relative paths; the tests
 beside them fail otherwise. `fluxiq/ui` likewise carries the activity status a
 browser and `apps/web` share (`ui/activity-status/`).
@@ -197,7 +197,7 @@ activity, or a tool reads build failures or Flow spend.
   `fluxiq/automation-studio/nodes` (above), and `get-recording-capture-policy`
   on the paired-client allowlist.
 - `automationStudioWithoutCardNumbers`; `AUTOMATION_STUDIO_REPEATED_ANSWER_REASON`
-  in `@fluxiq/contracts/automation-studio`.
+  in `@fluxiq/contracts/automation`.
 - `automationStudioEvidenceBuildScope()` and
   `automationStudioDomainBuildState(fluxiq, domainId)`
   ([build scope and durable state](automation-studio/llm-flow-bootstrap.md#a-domain-tool-calls-build-scope-and-durable-state)).
@@ -329,7 +329,7 @@ draft routing, or registers a node that should end a loop.
   `processAutomationStudioRecordRows`, `AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS`,
   the value readers and their parity table
   `AUTOMATION_STUDIO_RECORD_VALUE_READING_CASES`, from
-  `@fluxiq/contracts/automation-studio`.
+  `@fluxiq/contracts/automation`.
 - `AutomationStudioRunDatasetSummary.processing?:
   AutomationStudioRecordProcessingAccount`, set once a dataset is processed.
 - Project migration `0024_run_dataset_answers`: table
@@ -1487,7 +1487,7 @@ change under a minor increment.
 ### 0.2.0: one failure taxonomy (`@fluxiq/contracts`, `fluxiq`)
 
 `AutomationStudioAdaptiveFailureClass` now lives in `@fluxiq/contracts`
-(`@fluxiq/contracts/automation-studio`, with the frozen list
+(`@fluxiq/contracts/automation`, with the frozen list
 `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`) and `fluxiq/automation-studio`
 re-exports it under the same name. It gains seven members: `target_not_found`,
 `target_ambiguous`, `navigation_unexpected`, `output_not_observed`,

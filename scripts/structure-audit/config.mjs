@@ -84,8 +84,8 @@ export const CONFIG = {
       reason: "Host ports own the contracts consumed by the engine; they cannot depend back on the executor."
     },
     {
-      from: "packages/fluxiq/src/programs/automation-studio/runtime/llm",
-      to: "packages/fluxiq/src/programs/automation-studio/runtime/recovery",
+      from: "packages/fluxiq/src/runtime/agents/llm",
+      to: "packages/fluxiq/src/runtime/adaptation/recovery",
       valueOnly: true,
       reason: "runtime/llm must not import a value out of runtime/recovery: recovery drives the evidence loop out of runtime/llm, so the return edge closes a module cycle and a constant read at module-evaluation time arrives undefined with a clean type check. Import the type if that is what you need, call the value from the coordinator that already owns both sides, or move the shared value into runtime/loop-limits/, which neither directory owns."
     }
@@ -109,13 +109,13 @@ export const CONFIG = {
       "packages/fluxiq/src/components/automation/index.ts",
       "packages/fluxiq/src/components/automation/action-effect/index.ts",
       "packages/fluxiq/src/runtime/target-matching/index.ts",
-      "packages/fluxiq/src/programs/automation-studio/nodes/index.ts",
-      "packages/fluxiq/src/programs/automation-studio/nodes/action-effect/index.ts",
-      "packages/fluxiq/src/programs/automation-studio/runtime/actionability/index.ts",
-      "packages/fluxiq/src/programs/automation-studio/fingerprinting/index.ts",
-      "packages/fluxiq/src/programs/automation-studio/runtime/llm/models/index.ts",
-      "packages/fluxiq/src/programs/automation-studio/runtime/action-permissions/client/index.ts",
-      "packages/fluxiq/src/programs/automation-studio/runtime/panel-capabilities/client/index.ts",
+      "packages/fluxiq/src/framework/automation-service/nodes/index.ts",
+      "packages/fluxiq/src/framework/automation-service/nodes/action-effect/index.ts",
+      "packages/fluxiq/src/framework/automation-service/actionability/index.ts",
+      "packages/fluxiq/src/runtime/target-matching/fingerprinting/index.ts",
+      "packages/fluxiq/src/runtime/agents/llm/models/index.ts",
+      "packages/fluxiq/src/runtime/action-permissions/automation/client/index.ts",
+      "packages/fluxiq/src/framework/automation-service/panel-capabilities/client/index.ts",
       "packages/fluxiq/src/client-gateway/contracts.ts",
       "packages/client-gateway-websocket/src/index.ts",
       "packages/fluxiq/src/ui/index.ts"
@@ -143,7 +143,7 @@ export const CONFIG = {
   // `<path>/` itself.
   contractSpreadPaths: [
     {
-      path: "packages/fluxiq/src/programs/automation-studio/runtime/service/datasets",
+      path: "packages/fluxiq/src/framework/automation-service/service/datasets",
       reason: "the run datasets collaborator builds the store batches, audit events, and export answers that dataset endpoints return",
       remedy: "Write each field by name, passing an absent optional field as `undefined`."
     },
@@ -152,7 +152,7 @@ export const CONFIG = {
       // the gate is the one place it is built. A field that stopped arriving --
       // the consequence, the control's name -- would ask a person a question
       // they cannot answer, with every gate green.
-      path: "packages/fluxiq/src/programs/automation-studio/runtime/action-permissions",
+      path: "packages/fluxiq/src/runtime/action-permissions/automation",
       reason: "the action-permission gate builds the request a run carries out to a person, and the grant's permission set",
       remedy: "Write each field by name, passing an absent value as `null`."
     }
@@ -235,35 +235,35 @@ export const CONFIG = {
     {
       name: "trace-free model guidance",
       from: [
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/model-facing/",
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/system-prompt.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-task/system-prompt.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/provider-task/request-messages.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/anthropic/request.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/domain-instructions/",
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/diagnosis-instructions.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/instructions.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/node-descriptions.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog-names.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/flow-script-format.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/offline-first/",
-        "packages/fluxiq/src/programs/automation-studio/runtime/project-agents/supervisor/system-instructions.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/project-agents/supervisor/guidance.ts",
-        "packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/prompt.ts"
+        "packages/fluxiq/src/runtime/agents/llm/model-facing/",
+        "packages/fluxiq/src/runtime/agents/llm/deepseek/system-prompt.ts",
+        "packages/fluxiq/src/runtime/agents/llm/provider-task/system-prompt.ts",
+        "packages/fluxiq/src/runtime/agents/llm/provider-task/request-messages.ts",
+        "packages/fluxiq/src/runtime/agents/llm/anthropic/request.ts",
+        "packages/fluxiq/src/runtime/agents/llm/domain-instructions/",
+        "packages/fluxiq/src/runtime/agents/llm/diagnosis-instructions.ts",
+        "packages/fluxiq/src/runtime/agents/llm/stages/instructions.ts",
+        "packages/fluxiq/src/runtime/agents/llm/node-tools/node-descriptions.ts",
+        "packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/catalog.ts",
+        "packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/catalog-names.ts",
+        "packages/fluxiq/src/runtime/flow-authoring/bootstrap/plan/flow-script-format.ts",
+        "packages/fluxiq/src/runtime/flow-authoring/bootstrap/offline-first/",
+        "packages/fluxiq/src/runtime/project-agents/supervisor/system-instructions.ts",
+        "packages/fluxiq/src/runtime/project-agents/supervisor/guidance.ts",
+        "packages/fluxiq/src/runtime/interaction/conversations/instructions/prompt.ts"
       ],
       to: [
         "packages/fluxiq/src/client-gateway/trace/",
         "packages/fluxiq/src/client-gateway/trace-replay/",
         "packages/fluxiq/src/client-gateway/trace-matcher/",
-        "packages/fluxiq/src/programs/automation-studio/runtime/gateway-trace/",
-        "packages/fluxiq/src/programs/automation-studio/runtime/service/offline-trial/",
-        "packages/fluxiq/src/programs/automation-studio/model/offline-trial/",
-        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace/",
-        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-chunk-codec/",
-        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-chunk-rows/",
-        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-rekey/",
-        "packages/fluxiq/src/programs/automation-studio/storage/project/gateway-trace-schema/"
+        "packages/fluxiq/src/runtime/recording/gateway-trace/",
+        "packages/fluxiq/src/framework/automation-service/service/offline-trial/",
+        "packages/fluxiq/src/flows/authoring/model/offline-trial/",
+        "packages/fluxiq/src/framework/persistence/automation/project/gateway-trace/",
+        "packages/fluxiq/src/framework/persistence/automation/project/gateway-trace-chunk-codec/",
+        "packages/fluxiq/src/framework/persistence/automation/project/gateway-trace-chunk-rows/",
+        "packages/fluxiq/src/framework/persistence/automation/project/gateway-trace-rekey/",
+        "packages/fluxiq/src/framework/persistence/automation/project/gateway-trace-schema/"
       ],
       reason: "A recorded trace holds what one site showed during one build. Once it can flow into the text a model reads, that text can start describing a test site, and a Lab pass stops measuring whether FluxIQ generalises",
       remedy: "Keep guidance built from generic words and the current call's own inputs. If a trace-derived fact must reach the model, pass it as the call's evidence, not through a guidance module's imports."

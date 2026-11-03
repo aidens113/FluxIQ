@@ -1,0 +1,363 @@
+// The registry of harness options: what the exploration loop is allowed to do,
+// and who is allowed to add to it.
+//
+// This is the scoping the loop never had. Before it, one mutable slot held one
+// domain's tools, with no domain id, no merge and no gate, and the whole slot
+// was handed to the loop unfiltered. The node registry one directory away
+// already solves the same problem, so this follows it rather than inventing a
+// second pattern: the same availability vocabulary, the same capability and
+// permission checks, and the same rule that a duplicate id throws -- which is
+// what makes "a domain extends the core set" mechanical rather than a promise.
+//
+// Two things the node registry does not need are added here. Declarations and
+// implementations are kept apart, so listing the options never hands out host
+// code. And the list the model is shown is a projection of the declarations,
+// because a provider rejects a tool carrying any key it does not know, so the
+// gate metadata has to be dropped at the boundary rather than travel with it.
+
+import { randomUUID } from "node:crypto";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../../action-permissions/automation/index.ts";
+import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowScope } from "../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioNodeAvailability } from "../../../../framework/automation-service/nodes/index.ts";
+import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
+import { automationStudioLlmEvidenceIsOpeningCallId, automationStudioLlmEvidenceOpeningCallScope } from "../evidence-loop/call-id.ts";
+import { automationStudioLlmEvidenceRecallBinding } from "../evidence-recall/index.ts";
+import { builtinAutomationStudioHarnessOptions } from "./builtin.ts";
+import { automationStudioCoreMoveRunning } from "./core-move.ts";
+import { automationStudioEvidenceBuildId } from "./evidence-build.ts";
+import { runWithAutomationStudioEvidenceBuildScope, type AutomationStudioEvidenceBuildScope } from "./evidence-build-scope.ts";
+import type { AutomationStudioHarnessOptionHost } from "./host.ts";
+import {
+  AUTOMATION_STUDIO_HARNESS_OPTION_LIMIT,
+  automationStudioHarnessOptionIssues,
+  automationStudioHarnessOptionTool,
+  type AutomationStudioHarnessOption,
+  type AutomationStudioHarnessOptionBundle,
+  type AutomationStudioHarnessOptionExecution,
+  type AutomationStudioHarnessOptionImplementation,
+  type AutomationStudioHarnessOptionStage
+} from "./option.ts";
+
+const DOMAIN_ID = /^[A-Za-z0-9._:-]{1,200}$/;
+/**
+ * A key a bundle may declare as part of a view: a plain property name, or
+ * `holder.member`, a member of the object a result holds under `holder` -- a
+ * read's rows inside its read (`../decision-context/view-groups.ts`, t194 w48).
+ */
+const OBSERVED_STATE_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,63}(?:\.[A-Za-z_][A-Za-z0-9_]{0,63})?$/;
+/** How many such keys one bundle may declare. */
+const OBSERVED_STATE_KEY_LIMIT = 32;
+
+/**
+ * Everything that decides which options this call may be offered. `scope`,
+ * `runtimeCapabilities` and `permissions` are the node registry's resolution
+ * unchanged; `stage`, `policy` and `approvedOptionIds` are the dimensions an
+ * exploration call adds.
+ */
+export type AutomationStudioHarnessOptionResolution = {
+  scope: AutomationStudioFlowScope;
+  runtimeCapabilities?: Iterable<string>;
+  permissions?: Iterable<string>;
+  stage?: AutomationStudioHarnessOptionStage;
+  /** The adaptation policy governing this call, when one does. Where it is
+   * present, and mutations are not governed by permission, it is
+   * authoritative over side effects. */
+  policy?: AutomationStudioAdaptationPolicy;
+  /**
+   * Whether every action this call takes is answered by a run's permission
+   * gate -- each one handed the gate's check, which the domain asks before
+   * anything with a lasting consequence. Then a mutating option is offered,
+   * and the gate, not a policy flag or the caller's opt-in, decides each
+   * action it would take: permitted, or a request a person answers. A
+   * destructive option is still never offered.
+   */
+  mutationsGovernedByPermission?: boolean;
+  /** Whether a call no adaptation policy governs -- authoring a new Flow, for
+   * one -- may still take a mutating option. Absent means no: the caller has
+   * to say so, rather than a missing policy quietly meaning permission. It
+   * never overrides a policy that is present. */
+  allowSideEffectsWithoutPolicy?: boolean;
+  /** Options whose `requiresOperatorApproval` a person has already answered. */
+  approvedOptionIds?: Iterable<string>;
+};
+
+export type AutomationStudioHarnessOptionLoopBinding = {
+  tools: AutomationStudioLlmEvidenceTool[];
+  executeTool(input: {
+    callId: string;
+    toolId: string;
+    value: JsonObject;
+    signal?: AbortSignal;
+    /** Fixed execution date reference, never part of model-authored tool values. */
+    referenceNow?: number;
+    /**
+     * The run's permission check for this one action, from the run's
+     * `AutomationStudioActionPermissionGate`. Both of Core's callers -- Flow
+     * authoring and the recovery exploration -- always pass one. Absent, the
+     * option is handed `automationStudioActionPermissionDenied`: an action
+     * driven with no run behind it has nobody to ask, so nothing with a
+     * lasting consequence is permitted.
+     */
+    permission?: AutomationStudioActionPermissionCheck;
+  }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /**
+   * The keys of a result that are a view of the target, declared by the
+   * bundles with an option offered here; absent when none declared any. The
+   * loop shows the newest view whole and replaces every earlier one
+   * (`../context-window.ts`).
+   */
+  observedStateKeys?: readonly string[];
+};
+
+export class AutomationStudioHarnessOptionRegistry {
+  private readonly options = new Map<string, AutomationStudioHarnessOption>();
+  private readonly implementations = new Map<string, AutomationStudioHarnessOptionImplementation>();
+  private readonly domains = new Set<string>();
+  /** Each bundle's declared view keys, by the ids of the options it registered. */
+  private readonly observedStateKeysByOption = new Map<string, readonly string[]>();
+
+  /** Seeded with Core's own options for the given host, so a domain always
+   * registers into a non-empty set and there is something to extend. */
+  constructor(input: { host?: AutomationStudioHarnessOptionHost } = {}) {
+    if (input.host) this.register(builtinAutomationStudioHarnessOptions(input.host));
+  }
+
+  register(bundle: AutomationStudioHarnessOptionBundle): this {
+    if (bundle.schemaVersion !== "0.1") throw new Error("Automation Studio harness option bundle schema version is unsupported.");
+    const domainId = bundle.domainId;
+    if (domainId !== undefined) {
+      if (!DOMAIN_ID.test(domainId)) throw new Error("Automation Studio harness option bundle domain id is invalid.");
+      // One bundle per domain, matching the importer SDK: a second bundle would
+      // make what the loop may do depend on registration order.
+      if (this.domains.has(domainId)) throw new Error(`Automation Studio harness options for domain "${domainId}" are already registered. Build a new host runtime instead of registering twice.`);
+    }
+    if (!Array.isArray(bundle.options) || !bundle.options.length) throw new Error("Automation Studio harness option bundle declares no options.");
+    if (this.options.size + bundle.options.length > AUTOMATION_STUDIO_HARNESS_OPTION_LIMIT) {
+      throw new Error(`Automation Studio harness options exceed the limit of ${AUTOMATION_STUDIO_HARNESS_OPTION_LIMIT}.`);
+    }
+    for (const option of bundle.options) {
+      const issues = automationStudioHarnessOptionIssues(option);
+      if (issues.length) throw new Error(`Invalid Automation Studio harness option "${option.toolId}": ${issues.join(", ")}`);
+      assertBundleScope(option, domainId);
+      // Extend, never replace. A domain that wants different behaviour
+      // registers a different id; it can never take over a Core option, and
+      // two domains can never silently fight over one.
+      if (this.options.has(option.toolId)) throw new Error(`Automation Studio harness option "${option.toolId}" is already registered.`);
+      if (typeof bundle.implementations[option.toolId] !== "function") throw new Error(`Automation Studio harness option "${option.toolId}" has no implementation.`);
+    }
+    for (const key of Object.keys(bundle.implementations)) {
+      if (!bundle.options.some((option) => option.toolId === key)) throw new Error(`Automation Studio harness option implementation "${key}" declares no option.`);
+    }
+    const observed = bundle.observedStateKeys;
+    if (observed !== undefined && (!Array.isArray(observed) || observed.length > OBSERVED_STATE_KEY_LIMIT || !observed.every((key) => typeof key === "string" && OBSERVED_STATE_KEY.test(key)))) {
+      throw new Error("Automation Studio harness option bundle observed state keys are invalid.");
+    }
+    for (const option of bundle.options) {
+      this.options.set(option.toolId, option);
+      this.implementations.set(option.toolId, bundle.implementations[option.toolId]!);
+      if (observed?.length) this.observedStateKeysByOption.set(option.toolId, [...observed]);
+    }
+    if (domainId !== undefined) this.domains.add(domainId);
+    return this;
+  }
+
+  get(optionId: string, resolution?: AutomationStudioHarnessOptionResolution): AutomationStudioHarnessOption | undefined {
+    const option = this.options.get(optionId);
+    return option && (!resolution || isOffered(option, resolution)) ? option : undefined;
+  }
+
+  list(resolution: AutomationStudioHarnessOptionResolution): AutomationStudioHarnessOption[] {
+    return [...this.options.values()].filter((option) => isOffered(option, resolution));
+  }
+
+  /**
+   * The offered options as evidence-loop tools: the six fields the loop and the
+   * provider accept, and nothing else.
+   *
+   * One repair happens here. The loop rejects its whole configuration when a
+   * tool says `repeatPolicy: "after_mutation"` and no tool in the same list can
+   * mutate, which is reachable whenever a Core observation is offered without a
+   * domain's mutating option beside it. The policy is dropped in that case: it
+   * only ever meant "not again until something changes", and with nothing able
+   * to change anything the loop's duplicate-request check already says the same.
+   *
+   * An `initialObservation` is deliberately *not* dropped with it. The loop
+   * reads one as the same rule stated implicitly, so dropping the policy here
+   * and leaving the free first look in place used to shut the option anyway --
+   * a repair under a policy that denies side effects looked once, before it was
+   * asked anything, and never again. The loop now applies that rule only where
+   * a mutation is reachable, so the free look survives the refusal and the
+   * model may still ask for another. `sideEffectAllows` is unchanged by it:
+   * what a mutating option needs is still permission -- the run's gate, or
+   * the policy's -- never whatever a tool list happens to hold.
+   */
+  tools(resolution: AutomationStudioHarnessOptionResolution): AutomationStudioLlmEvidenceTool[] {
+    const offered = this.list(resolution);
+    const mutable = offered.some((option) => option.effect === "mutate");
+    return offered.map((option) => {
+      const tool = automationStudioHarnessOptionTool(option);
+      if (!mutable && tool.repeatPolicy !== undefined) delete tool.repeatPolicy;
+      return tool;
+    });
+  }
+
+  /**
+   * Runs one option, re-checking the same resolution that built the tool list.
+   * The model chooses the id, so the check has to happen again at dispatch and
+   * not only in the grammar it was given.
+   */
+  async execute(
+    input: Omit<AutomationStudioHarnessOptionExecution, "permission"> & { permission?: AutomationStudioActionPermissionCheck },
+    resolution: AutomationStudioHarnessOptionResolution
+  ): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult> {
+    if (!this.get(input.optionId, resolution)) throw new Error(`Automation Studio harness option "${input.optionId}" is not offered in this scope.`);
+    const implementation = this.implementations.get(input.optionId);
+    if (!implementation) throw new Error(`Automation Studio harness option "${input.optionId}" has no implementation.`);
+    // An option always has a check to call. One driven with no run behind it
+    // has nobody to ask, so its check permits nothing lasting.
+    return implementation({ ...input, permission: input.permission ?? automationStudioActionPermissionDenied });
+  }
+
+  /**
+   * The pair the evidence loop needs, built from one resolution so the grammar
+   * the model is given and the gate its call passes through can never drift.
+   *
+   * Every call runs inside the evidence build scope (`./evidence-build-scope.ts`,
+   * t728): which build it belongs to and how it stands to it, said by Core so
+   * the domain never parses Core's call ids. `buildId` is the build record's id
+   * the caller has in scope, when it has one. A call made inside
+   * `runAsAutomationStudioCoreMove` is framed `move: "core"` (`./core-move.ts`).
+   */
+  evidenceLoopBinding(
+    context: { projectId: string; flowId: string; runId?: string; buildId?: string },
+    resolution: AutomationStudioHarnessOptionResolution
+  ): AutomationStudioHarnessOptionLoopBinding {
+    const tools = this.tools(resolution);
+    // Only the declarations of bundles the model is offered something from: a
+    // key means "a view of the target" only in results of the bundle that said so.
+    const observedStateKeys = [...new Set(tools.flatMap((tool) => this.observedStateKeysByOption.get(tool.toolId) ?? []))];
+    const scopeOf = evidenceBuildScopes(context);
+    // A held view (`holder.member`) is replaced in what a decision is shown, so
+    // the binding offers `core.recall_result` to give it back (`../evidence-recall/`).
+    return automationStudioLlmEvidenceRecallBinding<AutomationStudioHarnessOptionLoopBinding>({
+      tools,
+      ...(observedStateKeys.length ? { observedStateKeys } : {}),
+      executeTool: ({ callId, toolId, value, signal, permission, referenceNow }) => runWithAutomationStudioEvidenceBuildScope(scopeOf({ callId, toolId, value }), () => this.execute({
+        projectId: context.projectId,
+        flowId: context.flowId,
+        ...(context.runId !== undefined ? { runId: context.runId } : {}),
+        callId,
+        optionId: toolId,
+        value,
+        ...(signal !== undefined ? { signal } : {}),
+        ...(referenceNow !== undefined ? { referenceNow } : {}),
+        ...(permission !== undefined ? { permission } : {})
+      }, resolution))
+    });
+  }
+}
+
+/**
+ * The key under which Core's opening look of a round whose draft already holds
+ * the Flow carries that Flow's calls (`../evidence-loop.ts`, run 38 C3).
+ */
+const HELD_KEY = "held";
+
+/**
+ * The scope of each call one binding runs (`./evidence-build-scope.ts`). The
+ * call scope is read off the binding's latest opening call, because only the
+ * opening id carries it; a binding serves one loop at a time, so the latest
+ * opening is this round's.
+ */
+function evidenceBuildScopes(context: { projectId: string; flowId: string; runId?: string; buildId?: string }): (call: { callId: string; toolId: string; value: JsonObject }) => AutomationStudioEvidenceBuildScope {
+  let callScope: string | undefined;
+  let minted: string | undefined;
+  return ({ callId, toolId, value }) => {
+    const opening = automationStudioLlmEvidenceIsOpeningCallId(callId) ? (Array.isArray(value[HELD_KEY]) ? "continuing" : "fresh") : undefined;
+    if (opening !== undefined) callScope = automationStudioLlmEvidenceOpeningCallScope(callId, toolId);
+    const buildId = context.runId ?? context.buildId ?? automationStudioEvidenceBuildId() ?? (minted ??= `build.${randomUUID()}`);
+    const scope: { -readonly [K in keyof AutomationStudioEvidenceBuildScope]: AutomationStudioEvidenceBuildScope[K] } = { projectId: context.projectId, flowId: context.flowId, buildId };
+    if (callScope !== undefined) scope.callScope = callScope;
+    if (opening !== undefined) scope.opening = opening;
+    // A move Core makes itself, said by the marker its move code runs inside, never by the call's id (`./core-move.ts`, t743).
+    if (automationStudioCoreMoveRunning()) scope.move = "core";
+    return scope;
+  };
+}
+
+function assertBundleScope(option: AutomationStudioHarnessOption, domainId: string | undefined): void {
+  if (domainId === undefined) {
+    if (option.availability.kind === "domain") throw new Error(`Automation Studio harness option "${option.toolId}" is domain-scoped but was registered as a Core option.`);
+    return;
+  }
+  if (option.availability.kind !== "domain" || option.availability.domainId !== domainId) {
+    throw new Error(`Automation Studio harness option "${option.toolId}" must be scoped to domain "${domainId}".`);
+  }
+}
+
+function isOffered(option: AutomationStudioHarnessOption, resolution: AutomationStudioHarnessOptionResolution): boolean {
+  if (!scopeAllows(option.availability, resolution.scope)) return false;
+  const runtimeCapabilities = new Set(resolution.runtimeCapabilities ?? []);
+  if (option.requiredRuntimeCapabilities?.some((capability) => !runtimeCapabilities.has(capability))) return false;
+  const permissions = new Set(resolution.permissions ?? []);
+  if (option.safety?.requiredPermissions?.some((permission) => !permissions.has(permission))) return false;
+  if (!stageAllows(option, resolution.stage)) return false;
+  if (!sideEffectAllows(option, resolution)) return false;
+  return true;
+}
+
+/**
+ * Which Flows an option is offered to.
+ *
+ * This is the node registry's rule with one deliberate difference, and the
+ * difference is the point of the whole file. A node is a thing the Flow is made
+ * of, so a domain's node belongs only to that domain's Flows. A harness option
+ * gathers evidence about the environment the Flow *runs in*, and that
+ * environment belongs to whichever host is bound, not to the Flow's authoring
+ * scope. A Flow whose project names no domain still runs somewhere, and what it
+ * can observe there is exactly what the bound host offers.
+ *
+ * So a domain-scoped option reaches its own domain's Flows and Flows that named
+ * no domain, and still never reaches a Flow that named a different one.
+ * Narrowing it to domain-scoped Flows alone left an unscoped Flow with no tools
+ * at all, which the evidence loop refuses outright -- evidence-guided Flow
+ * bootstrap died with `llm_evidence_loop.invalid_configuration` for every
+ * project nobody had given a domain id.
+ */
+function scopeAllows(availability: AutomationStudioNodeAvailability, scope: AutomationStudioFlowScope): boolean {
+  if (availability.kind === "both") return true;
+  if (availability.kind === "global") return scope.kind === "global";
+  return scope.kind === "global" || (scope.kind === "domain" && scope.domainId === availability.domainId);
+}
+
+/** An option pinned to stages is offered only inside one of them. A call that
+ * names no stage is not a wildcard: offering the pinned option there would
+ * widen it, so it is withheld until the caller says where it is. */
+function stageAllows(option: AutomationStudioHarnessOption, stage: AutomationStudioHarnessOptionStage | undefined): boolean {
+  if (option.stages === undefined) return true;
+  return stage !== undefined && option.stages.includes(stage);
+}
+
+/**
+ * Destructive is never offered: gathering information never requires
+ * destroying anything.
+ *
+ * Mutating needs permission. Where a run's permission gate answers every
+ * action, that gate is the permission: the option is offered, and each action
+ * it would take with a lasting consequence is permitted or becomes a request a
+ * person answers. Capable by default, asked rather than refused -- a policy
+ * flag that withheld the option outright left the run nothing to ask about.
+ * Otherwise, where a policy governs the call that policy decides, and only
+ * where none governs it does the caller's own opt-in apply, so a call that
+ * forgets to say anything withholds the option rather than inheriting it from
+ * silence.
+ */
+function sideEffectAllows(option: AutomationStudioHarnessOption, resolution: AutomationStudioHarnessOptionResolution): boolean {
+  const sideEffect = option.safety?.sideEffect ?? (option.effect === "mutate" ? "mutate" : "observe");
+  if (sideEffect === "destructive") return false;
+  if (sideEffect !== "mutate") return true;
+  if (resolution.mutationsGovernedByPermission === true) return true;
+  if (resolution.policy) return resolution.policy.allowExternalSideEffects === true;
+  return resolution.allowSideEffectsWithoutPolicy === true;
+}

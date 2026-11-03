@@ -1,7 +1,7 @@
 // The instruction scope a save request addresses, derived from its payload.
 
-import type { SaveFlowInstructionRequest } from "../contracts.ts";
-import type { AutomationStudioInstructionScope } from "../../model/index.ts";
+import type { SaveFlowInstructionRequest } from "../../../../api-contracts/automation.ts";
+import type { AutomationStudioInstructionScope } from "../../../../flows/authoring/model/index.ts";
 
 export function flowInstructionScopeFromPayload(projectId: string, flowId: string, payload: SaveFlowInstructionRequest): AutomationStudioInstructionScope {
   if (payload.scopeKind === "global") return { kind: "global" };

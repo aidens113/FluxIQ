@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
 import { FluxIQ } from "../index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../../programs/automation-studio/index.ts";
-import type { AutomationStudioNodeDefinition } from "../../programs/automation-studio/nodes/index.ts";
-import { installPrimaryRouter } from "../../programs/automation-studio/runtime/tests/service-fixtures.ts";
+import { AutomationStudioNativeNodeRuntime } from "../automation-service/index.ts";
+import type { AutomationStudioNodeDefinition } from "../automation-service/nodes/index.ts";
+import { installPrimaryRouter } from "../automation-service/tests/service-fixtures.ts";
 import { SecretKeysService } from "../../programs/secret-keys/index.ts";
 
 it("executes an ordinary saved native Flow without releasing a retained key or dispatching a model when construction disables providers", async () => {

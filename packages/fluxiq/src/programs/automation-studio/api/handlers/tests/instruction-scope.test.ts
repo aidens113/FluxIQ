@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_NORMAL_EDITOR_GRAPH_WRITE_ENDPOINT, assertAutomationStudioNormalEditorGraphEndpoint } from "../../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_NORMAL_EDITOR_GRAPH_WRITE_ENDPOINT, assertAutomationStudioNormalEditorGraphEndpoint } from "../../../../../api-contracts/automation.ts";
 import { flowInstructionScopeFromPayload } from "../index.ts";
 
 const base = { projectId: "project.one", flowId: "flow.one", title: "Rule", body: "Apply it" };

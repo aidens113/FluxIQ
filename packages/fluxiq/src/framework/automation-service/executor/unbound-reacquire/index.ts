@@ -1,0 +1,2 @@
+// Compatibility export; implementation belongs to the framework.
+export { type AutomationStudioUnboundTargetReacquireRequest, type AutomationStudioUnboundTargetReacquireAnswer, type AutomationStudioIdentityReacquireRecord, type AutomationStudioIdentityReacquireReason, automationStudioUnboundReacquireAnswer, automationStudioUnboundReacquire } from "../../../../engine/automation/unbound-reacquire/index.ts";

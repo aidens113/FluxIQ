@@ -29,52 +29,52 @@
       "import": "./dist/programs/automation-studio/index.js"
     },
     "./automation-studio/testing": {
-      "types": "./dist/programs/automation-studio/testing/index.d.ts",
-      "import": "./dist/programs/automation-studio/testing/index.js"
+      "types": "./dist/framework/automation-service/testing/index.d.ts",
+      "import": "./dist/framework/automation-service/testing/index.js"
     },
     "./automation-studio/evidence-build-scope": {
-      "types": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.d.ts",
-      "import": "./dist/programs/automation-studio/runtime/llm/harness-options/evidence-build-scope.js"
+      "types": "./dist/runtime/agents/llm/harness-options/evidence-build-scope.d.ts",
+      "import": "./dist/runtime/agents/llm/harness-options/evidence-build-scope.js"
     },
     "./automation-studio/candidate-authoring": {
-      "types": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.d.ts",
-      "import": "./dist/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.js"
+      "types": "./dist/runtime/flow-authoring/bootstrap/authoring-result/index.d.ts",
+      "import": "./dist/runtime/flow-authoring/bootstrap/authoring-result/index.js"
     },
     "./automation-studio/llm-models": {
-      "types": "./dist/programs/automation-studio/runtime/llm/models/index.d.ts",
-      "import": "./dist/programs/automation-studio/runtime/llm/models/index.js"
+      "types": "./dist/runtime/agents/llm/models/index.d.ts",
+      "import": "./dist/runtime/agents/llm/models/index.js"
     },
     "./automation-studio/action-permissions": {
-      "types": "./dist/programs/automation-studio/runtime/action-permissions/client/index.d.ts",
-      "import": "./dist/programs/automation-studio/runtime/action-permissions/client/index.js"
+      "types": "./dist/runtime/action-permissions/automation/client/index.d.ts",
+      "import": "./dist/runtime/action-permissions/automation/client/index.js"
     },
     "./automation-studio/panel-capabilities": {
-      "types": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.d.ts",
-      "import": "./dist/programs/automation-studio/runtime/panel-capabilities/client/index.js"
+      "types": "./dist/framework/automation-service/panel-capabilities/client/index.d.ts",
+      "import": "./dist/framework/automation-service/panel-capabilities/client/index.js"
     },
     "./automation-studio/nodes": {
-      "types": "./dist/programs/automation-studio/nodes/index.d.ts",
-      "import": "./dist/programs/automation-studio/nodes/index.js"
+      "types": "./dist/framework/automation-service/nodes/index.d.ts",
+      "import": "./dist/framework/automation-service/nodes/index.js"
     },
     "./automation-studio/action-effect": {
-      "types": "./dist/programs/automation-studio/nodes/action-effect/index.d.ts",
-      "import": "./dist/programs/automation-studio/nodes/action-effect/index.js"
+      "types": "./dist/framework/automation-service/nodes/action-effect/index.d.ts",
+      "import": "./dist/framework/automation-service/nodes/action-effect/index.js"
     },
     "./automation-studio/actionability": {
-      "types": "./dist/programs/automation-studio/runtime/actionability/index.d.ts",
-      "import": "./dist/programs/automation-studio/runtime/actionability/index.js"
+      "types": "./dist/framework/automation-service/actionability/index.d.ts",
+      "import": "./dist/framework/automation-service/actionability/index.js"
     },
     "./automation-studio/dsl": {
-      "types": "./dist/programs/automation-studio/dsl/index.d.ts",
-      "import": "./dist/programs/automation-studio/dsl/index.js"
+      "types": "./dist/flows/authoring/dsl/index.d.ts",
+      "import": "./dist/flows/authoring/dsl/index.js"
     },
     "./automation-studio/dsl/generator": {
-      "types": "./dist/programs/automation-studio/dsl/generator.d.ts",
-      "import": "./dist/programs/automation-studio/dsl/generator.js"
+      "types": "./dist/flows/authoring/dsl/generator.d.ts",
+      "import": "./dist/flows/authoring/dsl/generator.js"
     },
     "./automation-studio/fingerprinting": {
-      "types": "./dist/programs/automation-studio/fingerprinting/index.d.ts",
-      "import": "./dist/programs/automation-studio/fingerprinting/index.js"
+      "types": "./dist/runtime/target-matching/fingerprinting/index.d.ts",
+      "import": "./dist/runtime/target-matching/fingerprinting/index.js"
     },
     "./background-tasks": {
       "types": "./dist/programs/background-tasks/index.d.ts",

@@ -1,0 +1,709 @@
+import type { AutomationStudioRuntimeRunSummaryPage } from "../../../persistence/automation/index.ts";
+import type { AutomationStudioBootstrapAdaptationStore } from "../bootstrap-adaptations.ts";
+import { compareFlowAdaptationSummaries, compareFlowRunSummaries } from "./ordering.ts";
+import { bootstrapAdaptationSummary } from "./conversions.ts";
+import { adaptationSummaryFromTypedStore } from "./sql-conversions.ts";
+import type { AutomationStudioSqlInstructionSummary, AutomationStudioSqlSubflow } from "../../../persistence/automation/index.ts";
+import { clampInteger } from "../numbers.ts";
+import { AUTOMATION_STUDIO_RUNTIME_SUMMARY_VERSION, automationStudioRuntimeSessionListingFilter, listAutomationStudioRuntimeSummaryMemoryPage, listAutomationStudioRuntimeSummarySqlPage, listStaleAutomationStudioRuntimeSummaries, type AutomationStudioRuntimeSessionListingOptions } from "../session-listing/index.ts";
+import { sqlInstructionRequirement, sqlInstructionStatus } from "../flows/index.ts";
+import { instructionSummaryFromSql, sqlInstructionScopeKind, subflowSummaryFromSql } from "./sql-conversions.ts";
+import type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./types.ts";
+import type { JsonObject } from "../../../../core/index.ts";
+import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { createRecord, SQLiteRepository } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import type {
+  AutomationStudioFlowInstruction,
+  AutomationStudioFlowRunDetail,
+  AutomationStudioFlowRunSummary,
+  AutomationStudioFlowSubflow,
+  AutomationStudioRuntimeSession
+} from "../../../../flows/authoring/model/index.ts";
+import {
+  AutomationStudioProjectAdaptationStore,
+  AutomationStudioProjectDatabasePool,
+  AutomationStudioProjectRuntimeStreamStore
+} from "../../../persistence/automation/index.ts";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../paths/index.ts";
+import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseHeld } from "../projects/index.ts";
+import type { AutomationStudioServiceIndexes } from "../indexes/index.ts";
+import type { AutomationStudioFlowMutations, AutomationStudioFlowStore } from "../flows/index.ts";
+import { AutomationStudioSqlSummaryPaging } from "./sql-paging.ts";
+import { automationStudioInstructionListingScopeKind as listingKind } from "./instruction-scope-kind.ts";
+import { SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY, instructionSummaryFromInstruction, runtimeSessionToFlowRunDetail, runtimeSummaryFromSession } from "./conversions.ts";
+import type { AutomationStudioAdaptationSummary, AutomationStudioInstructionSummary, AutomationStudioRouterSummary, AutomationStudioSubflowSummary } from "../indexes/index.ts";
+import { mapWithConcurrency, uniqueStrings } from "../collections.ts";
+import type { FlowAdaptationIndex, FlowInstructionIndex, FlowRunIndex, FlowSubflowIndex, RuntimeIndex } from "../indexes/index.ts";
+import { subflowSummaryFromSubflow } from "../flows/index.ts";
+import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
+import { AutomationStudioRunDetailWriter } from "./run-detail-writer.ts";
+
+// The summary indexes every list view reads, their SQL-backed repositories and
+// paging, and the JSONL stream store that run details are appended to. The four
+// public methods here are the readers those writers call; they keep their names
+// on the facade.
+export type AutomationStudioFlowRunSummaryPage = {
+  runs: AutomationStudioFlowRunSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AutomationStudioAdaptationSummaryPage = {
+  adaptations: AutomationStudioAdaptationSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export class AutomationStudioSummaryStore {
+  constructor(
+    private readonly paths: AutomationStudioProjectPaths,
+    private readonly flowPaths: AutomationStudioFlowPaths,
+    private readonly projects: AutomationStudioProjectStore,
+    private readonly indexes: AutomationStudioServiceIndexes,
+    private readonly flows: AutomationStudioFlowStore,
+    private readonly flowMutations: AutomationStudioFlowMutations,
+    private readonly bootstrapAdaptations: AutomationStudioBootstrapAdaptationStore,
+    // Calls into the service's public surface go through this port, never
+    // through the collaborator that owns the method, so an override or a stub
+    // on the public method is still honoured. See service/facade-ports.ts.
+    private readonly facade: AutomationStudioFacadePorts,
+    private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool
+  ) {
+    this.runDetails = new AutomationStudioRunDetailWriter(paths, flowPaths, projects, indexes, this, runtimeProjectDatabasePool);
+  }
+
+  private readonly paging = new AutomationStudioSqlSummaryPaging();
+  private readonly runDetails: AutomationStudioRunDetailWriter;
+
+  private async withProjectDatabaseHeld<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, projectId, operation);
+  }
+
+  async listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]> {
+    const index = await this.indexes.readRuntimeIndex(projectId);
+    const sessions: AutomationStudioRuntimeSession[] = [];
+    for (const item of index.sessions ?? []) {
+      const session = await this.getRuntimeSession(projectId, item.runId);
+      if (session) sessions.push(session);
+    }
+    return sessions.sort((left, right) => (right.startedAt ?? right.queuedAt) - (left.startedAt ?? left.queuedAt));
+  }
+
+  async getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null> {
+    await this.projects.requireProject(projectId);
+    const stored = await new ProgramJsonStore<JsonObject>(this.paths.projectFile(projectId, "runtime", "sessions", `${safeSegment(runId)}.json`), () => ({})).read();
+    return stored.session as unknown as AutomationStudioRuntimeSession | undefined ?? null;
+  }
+
+  // Merged onto the detail already stored for the run; see run-detail-writer.ts.
+  async saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail> {
+    return await this.runDetails.save(detail);
+  }
+
+  async getFlowInstruction(projectId: string, instructionId: string): Promise<AutomationStudioFlowInstruction | null> {
+    const index = await this.indexes.readFlowInstructionIndex(projectId);
+    const summary = (index.instructions ?? []).find((item) => item.instructionId === instructionId);
+    if (!summary) return null;
+    const stored = await new ProgramJsonStore<JsonObject>(summary.flowId ? this.flowPaths.flowInstructionFile(projectId, summary.flowId, instructionId) : this.paths.projectInstructionFile(projectId, instructionId), () => ({})).read();
+    return typeof stored.instructionId === "string" ? stored as unknown as AutomationStudioFlowInstruction : null;
+  }
+
+  async ensureFlowAdaptationSummaryIndex(projectId: string): Promise<void> {
+    await this.projects.requireProject(projectId);
+    if (!this.paths.root) return;
+    // A missing index reads as empty. One that is present but unreadable throws
+    // here, in every ensure method below: it is an error for an operator to see,
+    // never a reason to rebuild as though nothing had been stored.
+    const index = await this.indexes.readFlowAdaptationIndex(projectId);
+    if (!(index.adaptations ?? []).length) {
+      await this.flowAdaptationSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
+      return;
+    }
+    const repository = this.flowAdaptationSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    if (page.total >= (index.adaptations ?? []).length) return;
+    for (const summary of index.adaptations ?? []) await this.writeFlowAdaptationSummary(projectId, summary);
+  }
+
+  async ensureFlowInstructionSummaryIndex(projectId: string): Promise<void> {
+    await this.projects.requireProject(projectId);
+    if (!this.paths.root) return;
+    let index: FlowInstructionIndex = await this.indexes.readFlowInstructionIndex(projectId);
+    if (index.summaryVersion !== 2 || (index.instructions ?? []).some((summary) => summary.summaryVersion !== 2)) {
+      const details = (await Promise.all((index.instructions ?? []).map((summary) => this.getFlowInstruction(projectId, summary.instructionId))))
+        .filter((instruction): instruction is AutomationStudioFlowInstruction => Boolean(instruction));
+      index = await this.indexes.writeFlowInstructionIndex(projectId, () => ({ schemaVersion: "0.1", summaryVersion: 2, instructions: details.map(instructionSummaryFromInstruction) }));
+    }
+    const repository = this.flowInstructionSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
+      "select count(*) as total from " + repository.tableName + " where json_extract(data, '$.summaryVersion') is null"
+    ));
+    if (page.total >= (index.instructions ?? []).length && (legacyRow?.total ?? 0) === 0) return;
+    for (const summary of index.instructions ?? []) await this.writeFlowInstructionSummary(projectId, summary);
+  }
+
+  async ensureFlowRunSummaryIndex(projectId: string): Promise<void> {
+    await this.projects.requireProject(projectId);
+    if (!this.paths.root) return;
+    const index = await this.indexes.readFlowRunIndex(projectId);
+    if (!(index.runs ?? []).length) {
+      // With the typed runtime store in use this index is never written, so an
+      // empty one is the normal state rather than a sign of an unindexed project.
+      // Only a session with no stored detail at all is rebuilt; a run that has
+      // one keeps it, whatever it holds beyond the session.
+      for (const session of await this.listRuntimeSessions(projectId)) {
+        if (await this.runDetails.hasStored(projectId, session.runId)) continue;
+        await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(session, projectId));
+      }
+      await this.flowRunSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
+      return;
+    }
+    const repository = this.flowRunSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    if (page.total >= (index.runs ?? []).length) return;
+    for (const summary of index.runs ?? []) await this.writeFlowRunSummary(projectId, summary);
+  }
+
+  async ensureFlowSubflowSummaryIndex(projectId: string): Promise<void> {
+    await this.projects.requireProject(projectId);
+    if (!this.paths.root) return;
+    let index: FlowSubflowIndex = await this.indexes.readFlowSubflowIndex(projectId);
+    const repository = this.flowMutations.flowSubflowSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    const legacyRow = await repository.transaction({}, (transaction) => transaction.get<{ total: number }>(
+      "select count(*) as total from " + repository.tableName + " where json_extract(data, '$.summaryVersion') is null"
+    ));
+    if (page.total >= (index.subflows ?? []).length && (legacyRow?.total ?? 0) === 0) return;
+    if (index.summaryVersion !== 2 || (index.subflows ?? []).some((summary) => summary.summaryVersion !== 2)) {
+      const summaries = await mapWithConcurrency(index.subflows ?? [], SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY, async (summary) => {
+        const detail = await this.facade.getFlowSubflow(projectId, summary.flowId, summary.subflowId);
+        return detail ? subflowSummaryFromSubflow(detail) : summary;
+      });
+      const fullyMigrated = summaries.every((summary) => summary.summaryVersion === 2);
+      index = await this.indexes.writeFlowSubflowIndex(projectId, () => ({
+        schemaVersion: "0.1",
+        ...(fullyMigrated ? { summaryVersion: 2 as const } : {}),
+        subflows: summaries
+      }));
+    }
+    for (const summary of index.subflows ?? []) await this.flowMutations.writeFlowSubflowSummary(projectId, summary);
+  }
+
+  async ensureRuntimeSummaryIndex(projectId: string): Promise<void> {
+    await this.projects.requireProject(projectId);
+    if (!this.paths.root) return;
+    const index = await this.indexes.readRuntimeIndex(projectId);
+    if (!(index.sessions ?? []).length) {
+      await this.runtimeSummaryRepository(projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => undefined);
+      return;
+    }
+    const repository = this.runtimeSummaryRepository(projectId);
+    const page = await repository.listPage({}, { limit: 1, offset: 0 });
+    if (page.total < (index.sessions ?? []).length) {
+      for (const item of index.sessions ?? []) {
+        const session = await this.getRuntimeSession(projectId, item.runId);
+        if (session) await this.writeRuntimeSummary(projectId, session);
+      }
+    }
+    await this.rewriteStaleRuntimeSummaries(projectId, repository);
+  }
+
+  // A row written in an older summary shape is rewritten from its session, one
+  // session read at a time; a row whose session is gone keeps what it holds and
+  // is marked current, so it is not looked at again (t604).
+  private async rewriteStaleRuntimeSummaries(projectId: string, repository: SQLiteRepository<JsonObject>): Promise<void> {
+    for (const stale of await listStaleAutomationStudioRuntimeSummaries(repository, AUTOMATION_STUDIO_RUNTIME_SUMMARY_VERSION)) {
+      const session = await this.getRuntimeSession(projectId, stale.runId);
+      if (session) await this.writeRuntimeSummary(projectId, session);
+      else await repository.put(createRecord({ id: stale.runId, kind: "runtime.sessions", data: { ...stale, summaryVersion: AUTOMATION_STUDIO_RUNTIME_SUMMARY_VERSION } as unknown as JsonObject, nowMs: stale.updatedAt }));
+    }
+  }
+
+  flowAdaptationSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.paths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.adaptations", layoutVersion: 1 });
+  }
+
+  flowInstructionSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.paths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.instructions", layoutVersion: 1 });
+  }
+
+  flowRunSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.paths.projectFile(projectId, "runtime", "sqlite"), kind: "flow.runs", layoutVersion: 1 });
+  }
+
+  async listSqlFlowAdaptationSummaryPage(
+    repository: SQLiteRepository<JsonObject>,
+    input: { flowId?: string; subflowId?: string; status?: string; risk?: string; search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc"; limit: number; offset: number }
+  ): Promise<AutomationStudioAdaptationSummaryPage> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (input.flowId) {
+      clauses.push("json_extract(data, '$.flowId') = ?");
+      params.push(input.flowId);
+    }
+    if (input.subflowId) {
+      clauses.push("json_extract(data, '$.subflowId') = ?");
+      params.push(input.subflowId);
+    }
+    if (input.status) {
+      clauses.push("json_extract(data, '$.status') = ?");
+      params.push(input.status);
+    }
+    if (input.risk) {
+      clauses.push("json_extract(data, '$.riskLevel') = ?");
+      params.push(input.risk);
+    }
+    if (input.search) {
+      clauses.push("(lower(id) like ? or lower(coalesce(json_extract(data, '$.trigger'), '')) like ?)");
+      params.push('%' + input.search + '%', '%' + input.search + '%');
+    }
+    const sortExpressions = {
+      updated: "updated_at_ms",
+      status: "lower(coalesce(json_extract(data, '$.status'), ''))",
+      risk: "case lower(coalesce(json_extract(data, '$.riskLevel'), '')) when 'destructive' then 4 when 'high' then 3 when 'medium' then 2 else 1 end",
+      trigger: "lower(coalesce(json_extract(data, '$.trigger'), ''))"
+    } as const;
+    const where = clauses.length ? 'where ' + clauses.join(' and ') : '';
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>('select count(*) as total from ' + repository.tableName + ' ' + where, params);
+      const rows = await transaction.all<{ data: string }>(
+        'select data from ' + repository.tableName + ' ' + where + ' order by ' + sortExpressions[input.sort] + ' ' + input.direction + ', id ' + input.direction + ' limit ? offset ?',
+        [...params, input.limit, input.offset]
+      );
+      return { total: totalRow?.total ?? 0, adaptations: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioAdaptationSummary) };
+    });
+    return { adaptations: result.adaptations, total: result.total, limit: input.limit, offset: input.offset };
+  }
+
+  async listSqlFlowRunSummaryPage(
+    repository: SQLiteRepository<JsonObject>,
+    input: { flowId?: string; status?: string; search?: string; sort: "updated" | "started" | "duration" | "actions" | "status"; direction: "asc" | "desc"; limit: number; offset: number }
+  ): Promise<AutomationStudioFlowRunSummaryPage> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (input.flowId) {
+      clauses.push("json_extract(data, '$.flowId') = ?");
+      params.push(input.flowId);
+    }
+    if (input.status) {
+      clauses.push("json_extract(data, '$.status') = ?");
+      params.push(input.status);
+    }
+    if (input.search) {
+      clauses.push("(lower(id) like ? or lower(json_extract(data, '$.flowId')) like ?)");
+      params.push(`%${input.search}%`, `%${input.search}%`);
+    }
+    const sortExpressions = {
+      updated: "updated_at_ms",
+      started: "coalesce(cast(json_extract(data, '$.startedAt') as integer), 0)",
+      duration: "coalesce(cast(json_extract(data, '$.finishedAt') as integer), updated_at_ms) - coalesce(cast(json_extract(data, '$.startedAt') as integer), updated_at_ms)",
+      actions: "coalesce(cast(json_extract(data, '$.actionAttemptCount') as integer), 0)",
+      status: "lower(coalesce(json_extract(data, '$.status'), ''))"
+    } as const;
+    const where = clauses.length ? `where ${clauses.join(" and ")}` : "";
+    const orderBy = sortExpressions[input.sort];
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>(`select count(*) as total from ${repository.tableName} ${where}`, params);
+      const rows = await transaction.all<{ data: string }>(
+        `select data from ${repository.tableName} ${where} order by ${orderBy} ${input.direction}, id ${input.direction} limit ? offset ?`,
+        [...params, input.limit, input.offset]
+      );
+      return { total: totalRow?.total ?? 0, runs: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioFlowRunSummary) };
+    });
+    return { runs: result.runs, total: result.total, limit: input.limit, offset: input.offset };
+  }
+
+  runtimeSummaryRepository(projectId: string): SQLiteRepository<JsonObject> {
+    return new SQLiteRepository<JsonObject>({ rootDir: this.paths.projectFile(projectId, "runtime", "sqlite"), kind: "runtime.sessions", layoutVersion: 1 });
+  }
+
+  async tryWithAdaptationStore<T>(projectId: string, operation: (store: AutomationStudioProjectAdaptationStore) => Promise<T>): Promise<T | null> {
+    if (!this.runtimeProjectDatabasePool || !this.paths.root) return null;
+    try {
+      await this.projects.requireProject(projectId);
+      const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+      try {
+        return await operation(store);
+      } finally {
+        await store.close();
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  async tryWithRuntimeStreamStore<T>(projectId: string, operation: (store: AutomationStudioProjectRuntimeStreamStore) => Promise<T>): Promise<T | null> {
+    if (!this.runtimeProjectDatabasePool || !this.paths.root) return null;
+    try {
+      await this.projects.requireProject(projectId);
+      const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+      try {
+        return await operation(store);
+      } finally {
+        await store.close();
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  /** Recording durability errors must reach the caller; only absent typed storage permits file mode. */
+  async withRecordingRuntimeStreamStore<T>(projectId: string, operation: (store: AutomationStudioProjectRuntimeStreamStore) => Promise<T>): Promise<T | null> {
+    if (!this.runtimeProjectDatabasePool || !this.paths.root) return null;
+    await this.projects.requireProject(projectId);
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+    try { return await operation(store); }
+    finally { await store.close(); }
+  }
+
+  async writeFlowAdaptationSummary(projectId: string, summary: AutomationStudioAdaptationSummary): Promise<void> {
+    if (!this.paths.root) return;
+    await this.flowAdaptationSummaryRepository(projectId).put(createRecord({
+      id: summary.adaptationId,
+      kind: "flow.adaptations",
+      data: summary as unknown as JsonObject,
+      nowMs: summary.updatedAt
+    }));
+  }
+
+  async writeFlowInstructionSummary(projectId: string, summary: AutomationStudioInstructionSummary): Promise<void> {
+    if (!this.paths.root) return;
+    await this.flowInstructionSummaryRepository(projectId).put(createRecord({ id: summary.instructionId, kind: "flow.instructions", data: summary as unknown as JsonObject, nowMs: summary.updatedAt }));
+  }
+
+  async writeFlowRunSummary(projectId: string, summary: AutomationStudioFlowRunSummary): Promise<void> {
+    if (!this.paths.root) return;
+    await this.flowRunSummaryRepository(projectId).put(createRecord({
+      id: summary.runId,
+      kind: "flow.runs",
+      data: summary as unknown as JsonObject,
+      nowMs: summary.updatedAt
+    }));
+  }
+
+  async writeJsonLines(filePath: string, rows: unknown[]): Promise<void> {
+    if (!this.paths.root) return;
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, rows.map((row) => JSON.stringify(row)).join("\n"), "utf8");
+  }
+
+  async writeRuntimeSummary(projectId: string, session: AutomationStudioRuntimeSession): Promise<void> {
+    if (!this.paths.root) return;
+    const summary = runtimeSummaryFromSession(session);
+    await this.runtimeSummaryRepository(projectId).put(createRecord({
+      id: session.runId,
+      kind: "runtime.sessions",
+      data: summary as unknown as JsonObject,
+      nowMs: summary.updatedAt
+    }));
+  }
+
+  // A listing reaches the project database through the typed projection, its
+  // inventory check and, on fallback, the summary index; held here, they share
+  // one open database instead of reopening it for each. See
+  // ../projects/database-hold.ts.
+  async listFlowSubflowSummaries(input: { projectId: string; flowId?: string; status?: string; role?: string; search?: string; sort?: "updated" | "name" | "status" | "role"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage> {
+    return await this.withProjectDatabaseHeld(input.projectId, () => this.listFlowSubflowSummariesUnheld(input));
+  }
+
+  private async listFlowSubflowSummariesUnheld(input: { projectId: string; flowId?: string; status?: string; role?: string; search?: string; sort?: "updated" | "name" | "status" | "role"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioSubflowSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const search = input.search?.trim().toLowerCase();
+    if (!this.paths.root) {
+      const index = await this.indexes.readFlowSubflowIndex(input.projectId);
+      const scoped = (index.subflows ?? []).filter((item) =>
+        (!input.flowId || item.flowId === input.flowId)
+        && (!input.status || item.status === input.status)
+        && (!input.role || item.role === input.role)
+        && (!search || item.name.toLowerCase().includes(search) || item.subflowId.toLowerCase().includes(search))
+      );
+      return { subflows: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+    }
+    const typedPage = await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listSubflowSummariesPage({
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.role ? { role: input.role } : {}),
+      ...(search ? { search } : {}),
+      ...(input.sort ? { sort: input.sort } : {}),
+      ...(input.direction ? { direction: input.direction } : {}),
+      limit,
+      offset
+    }));
+    if (typedPage) {
+      const hasFilter = Boolean(input.flowId || input.status || input.role || search);
+      const typedInventory = hasFilter
+        ? await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listSubflowSummariesPage({ limit: 1, offset: 0 }))
+        : typedPage;
+      const summaryInventory = await this.flowMutations.flowSubflowSummaryRepository(input.projectId).listPage({}, { limit: 1, offset: 0 }).catch(() => null);
+      const typedProjectionIsComplete = Boolean(
+        typedInventory
+        && summaryInventory
+        && summaryInventory.total > 0
+        && typedInventory.total >= summaryInventory.total
+      );
+      if (typedProjectionIsComplete) {
+        return {
+          subflows: typedPage.items.map((item) => subflowSummaryFromSql(item, input.projectId)),
+          total: typedPage.total,
+          limit: typedPage.limit,
+          offset: typedPage.offset
+        };
+      }
+    }
+    await this.ensureFlowSubflowSummaryIndex(input.projectId);
+    const repository = this.flowMutations.flowSubflowSummaryRepository(input.projectId);
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (input.flowId) { clauses.push("json_extract(data, '$.flowId') = ?"); params.push(input.flowId); }
+    if (input.status) { clauses.push("json_extract(data, '$.status') = ?"); params.push(input.status); }
+    if (input.role) { clauses.push("json_extract(data, '$.role') = ?"); params.push(input.role); }
+    if (search) {
+      clauses.push("(lower(json_extract(data, '$.name')) like ? or lower(json_extract(data, '$.subflowId')) like ?)");
+      params.push("%" + search + "%", "%" + search + "%");
+    }
+    const where = clauses.length ? "where " + clauses.join(" and ") : "";
+    const sortColumn = input.sort === "name" ? "lower(json_extract(data, '$.name'))" : input.sort === "status" ? "json_extract(data, '$.status')" : input.sort === "role" ? "json_extract(data, '$.role')" : "updated_at_ms";
+    const direction = input.direction === "asc" ? "asc" : "desc";
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>("select count(*) as total from " + repository.tableName + " " + where, params);
+      const rows = await transaction.all<{ data: string }>("select data from " + repository.tableName + " " + where + " order by " + sortColumn + " " + direction + ", id asc limit ? offset ?", [...params, limit, offset]);
+      return { total: totalRow?.total ?? 0, items: rows.map((row) => JSON.parse(row.data) as unknown as AutomationStudioSubflowSummary) };
+    });
+    return { subflows: result.items, total: result.total, limit, offset };
+  }
+
+  /** The Flow a Subflow belongs to, or null when no store knows it. */
+  private async subflowOwnerFlowId(projectId: string, subflowId: string): Promise<string | null> {
+    if (!this.paths.root) return (await this.indexes.readFlowSubflowIndex(projectId)).subflows?.find((item) => item.subflowId === subflowId)?.flowId ?? null;
+    const owner = await this.flows.tryWithFlowResourceRepository(projectId, async (repository) => (await repository.getSubflow(subflowId))?.parentFlowId ?? null);
+    if (owner) return owner;
+    const summary = await this.flowMutations.flowSubflowSummaryRepository(projectId).get(subflowId);
+    return typeof summary?.data.flowId === "string" ? summary.data.flowId : null;
+  }
+
+  async listFlowInstructionSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; scopeKind?: string; requirement?: string; search?: string; sort?: "updated" | "title" | "status" | "scope" | "priority"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
+    return await this.withProjectDatabaseHeld(input.projectId, () => this.listFlowInstructionSummariesUnheld(input));
+  }
+
+  private async listFlowInstructionSummariesUnheld(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; scopeKind?: string; requirement?: string; search?: string; sort?: "updated" | "title" | "status" | "scope" | "priority"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioInstructionSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const search = input.search?.trim().toLowerCase();
+    // A Subflow reads its own Flow's flow-scoped instructions and no other Flow's, as project SQL does (t544).
+    const subflowOwner = input.subflowId ? await this.subflowOwnerFlowId(input.projectId, input.subflowId) : null;
+    // Kinds compare, scope and sort as project SQL stores them, on every path (`./instruction-scope-kind.ts`).
+    const scopeKind = input.scopeKind ? listingKind.key(input.scopeKind) : undefined;
+    const matchesScope = (item: AutomationStudioInstructionSummary, kind = listingKind.key(item.scopeKind)) =>
+      (!input.flowId || item.flowId === input.flowId || kind === "global" || kind === "project")
+      && (!input.subflowId || item.subflowId === input.subflowId || kind === "project" || kind === "global" || (kind === "flow" && subflowOwner !== null && item.flowId === subflowOwner));
+    const reported = (item: AutomationStudioInstructionSummary): AutomationStudioInstructionSummary => ({ ...item, scopeKind: listingKind.reported(item.scopeKind) });
+    if (!this.paths.root) {
+      const index = await this.indexes.readFlowInstructionIndex(input.projectId);
+      const scoped = (index.instructions ?? []).filter((item) => matchesScope(item)
+        && (!input.status || item.status === input.status)
+        && (!scopeKind || listingKind.key(item.scopeKind) === scopeKind)
+        && (!input.requirement || item.requirement === input.requirement)
+        && (!search || item.title.toLowerCase().includes(search) || item.instructionId.toLowerCase().includes(search)));
+      const direction = input.direction === "asc" ? 1 : -1;
+      scoped.sort((left, right) => {
+        const comparison = input.sort === "title" ? left.title.localeCompare(right.title)
+          : input.sort === "status" ? left.status.localeCompare(right.status)
+          : input.sort === "scope" ? listingKind.key(left.scopeKind).localeCompare(listingKind.key(right.scopeKind))
+          : input.sort === "priority" ? left.priority - right.priority
+          : left.updatedAt - right.updatedAt;
+        return comparison * direction || left.instructionId.localeCompare(right.instructionId);
+      });
+      return { instructions: scoped.slice(offset, offset + limit).map(reported), total: scoped.length, limit, offset };
+    }
+    const typedPage = await this.flows.tryWithFlowResourceRepository(input.projectId, async (repository) => await repository.listInstructionSummariesPage({
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+      ...(scopeKind ? { scopeKind: sqlInstructionScopeKind(scopeKind) } : {}),
+      ...(input.status ? { status: sqlInstructionStatus(input.status) } : {}),
+      ...(input.requirement ? { requirement: sqlInstructionRequirement(input.requirement) } : {}),
+      ...(search ? { search } : {}),
+      ...(input.sort ? { sort: input.sort } : {}),
+      ...(input.direction ? { direction: input.direction } : {}),
+      limit,
+      offset
+    }));
+    if (typedPage && typedPage.total > 0) return { instructions: typedPage.items.map((item) => instructionSummaryFromSql(item, input.projectId)), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
+    await this.ensureFlowInstructionSummaryIndex(input.projectId);
+    const repository = this.flowInstructionSummaryRepository(input.projectId);
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    const kind = listingKind.sqlKey("json_extract(data, '$.scopeKind')");
+    if (input.flowId) { clauses.push(`(json_extract(data, '$.flowId') = ? or ${kind} in ('global', 'project'))`); params.push(input.flowId); }
+    if (input.subflowId) { clauses.push(`(json_extract(data, '$.subflowId') = ? or ${kind} in ('global', 'project') or (${kind} = 'flow' and json_extract(data, '$.flowId') = ?))`); params.push(input.subflowId, subflowOwner); }
+    if (input.status) { clauses.push("json_extract(data, '$.status') = ?"); params.push(input.status); }
+    if (scopeKind) { clauses.push(`${kind} = ?`); params.push(scopeKind); }
+    if (input.requirement) { clauses.push("json_extract(data, '$.requirement') = ?"); params.push(input.requirement); }
+    if (search) { clauses.push("(lower(json_extract(data, '$.title')) like ? or lower(json_extract(data, '$.instructionId')) like ?)"); params.push("%" + search + "%", "%" + search + "%"); }
+    const where = clauses.length ? "where " + clauses.join(" and ") : "";
+    const sortColumn = input.sort === "title" ? "lower(json_extract(data, '$.title'))" : input.sort === "status" ? "json_extract(data, '$.status')" : input.sort === "scope" ? kind : input.sort === "priority" ? "cast(json_extract(data, '$.priority') as integer)" : "updated_at_ms";
+    const direction = input.direction === "asc" ? "asc" : "desc";
+    const result = await repository.transaction({}, async (transaction) => {
+      const totalRow = await transaction.get<{ total: number }>("select count(*) as total from " + repository.tableName + " " + where, params);
+      const rows = await transaction.all<{ data: string }>("select data from " + repository.tableName + " " + where + " order by " + sortColumn + " " + direction + ", id asc limit ? offset ?", [...params, limit, offset]);
+      return { total: totalRow?.total ?? 0, items: rows.map((row) => reported(JSON.parse(row.data) as unknown as AutomationStudioInstructionSummary)) };
+    });
+    return { instructions: result.items, total: result.total, limit, offset };
+  }
+
+  // One bounded page of summaries, filtered and newest queued first; a session's
+  // content is read by id (`getRuntimeSession`), never through a listing (t604).
+  async listRuntimeSessionSummaries(projectId: string, options: AutomationStudioRuntimeSessionListingOptions = {}): Promise<AutomationStudioRuntimeRunSummaryPage> {
+    const filter = automationStudioRuntimeSessionListingFilter(options);
+    await this.ensureRuntimeSummaryIndex(projectId);
+    if (!this.paths.root) {
+      const sessions = await this.facade.listRuntimeSessions(projectId);
+      return listAutomationStudioRuntimeSummaryMemoryPage(sessions.map((session) => runtimeSummaryFromSession(session)), filter);
+    }
+    return await listAutomationStudioRuntimeSummarySqlPage(this.runtimeSummaryRepository(projectId), filter);
+  }
+
+  async listFlowRunSummaries(input: { projectId: string; flowId?: string; status?: string; search?: string; sort?: "updated" | "started" | "duration" | "actions" | "status"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioFlowRunSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const search = input.search?.trim().toLowerCase();
+    const direction = input.direction === "asc" ? "asc" : "desc";
+    const sort = input.sort ?? "updated";
+    if (!this.paths.root) {
+      const index = await this.indexes.readFlowRunIndex(input.projectId);
+      const scoped = (index.runs ?? []).filter((item) =>
+        (!input.flowId || item.flowId === input.flowId)
+        && (!input.status || item.status === input.status)
+        && (!search || item.runId.toLowerCase().includes(search) || item.flowId.toLowerCase().includes(search))
+      ).sort((left, right) => compareFlowRunSummaries(left, right, sort, direction));
+      return { runs: scoped.slice(offset, offset + limit), total: scoped.length, limit, offset };
+    }
+    const typed = await this.tryWithRuntimeStreamStore(input.projectId, async (store) => {
+      const page = await store.listRunSummaries({
+        ...(input.flowId ? { flowId: input.flowId } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(search ? { search } : {}),
+        sort,
+        direction,
+        limit,
+        offset
+      });
+      // Once the typed store holds any run, it is the project's run record, and a
+      // filter that matches none of its runs is an answer, not a reason to fall
+      // back to the legacy index -- that fallback re-saved every run.
+      const holdsRuns = page.total > 0 || (await store.listRunSummaries({ limit: 1, offset: 0 })).total > 0;
+      return { page, holdsRuns };
+    });
+    if (typed?.holdsRuns) return typed.page;
+    await this.ensureFlowRunSummaryIndex(input.projectId);
+    return await this.listSqlFlowRunSummaryPage(this.flowRunSummaryRepository(input.projectId), {
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(search ? { search } : {}),
+      sort,
+      direction,
+      limit,
+      offset
+    });
+  }
+
+  async listFlowAdaptationSummaries(input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string; search?: string; sort?: "updated" | "status" | "risk" | "trigger"; direction?: "asc" | "desc"; limit?: unknown; offset?: unknown }): Promise<AutomationStudioAdaptationSummaryPage> {
+    const limit = clampInteger(input.limit, 1, 100, 25);
+    const offset = clampInteger(input.offset, 0, 1_000_000, 0);
+    const search = input.search?.trim().toLowerCase();
+    const sort = input.sort ?? "updated";
+    const direction = input.direction === "asc" ? "asc" : "desc";
+    const bootstrap = (await this.bootstrapAdaptations.listProjectFlowBootstrapAdaptations(input.projectId, input.flowId))
+      .map(bootstrapAdaptationSummary)
+      .filter((item) =>
+        (!input.subflowId || item.subflowId === input.subflowId)
+        && (!input.status || item.status === input.status)
+        && (!input.risk || item.riskLevel === input.risk)
+        && (!search || item.adaptationId.toLowerCase().includes(search) || item.trigger.toLowerCase().includes(search))
+      );
+    if (!bootstrap.length) return await this.listOrdinaryFlowAdaptationSummaries(input, { limit, offset, ...(search ? { search } : {}), sort, direction });
+
+    const ordinary = await this.listAllOrdinaryFlowAdaptationSummaries(input, { ...(search ? { search } : {}), sort, direction });
+    const merged = new Map<string, AutomationStudioAdaptationSummary>();
+    for (const item of ordinary) merged.set(item.adaptationId, item);
+    for (const item of bootstrap) merged.set(item.adaptationId, item);
+    const adaptations = [...merged.values()].sort((left, right) => compareFlowAdaptationSummaries(left, right, sort, direction));
+    return { adaptations: adaptations.slice(offset, offset + limit), total: adaptations.length, limit, offset };
+  }
+
+  private async listOrdinaryFlowAdaptationSummaries(
+    input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string },
+    page: { limit: number; offset: number; search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc" }
+  ): Promise<AutomationStudioAdaptationSummaryPage> {
+    let typedPage: Awaited<ReturnType<AutomationStudioProjectAdaptationStore["listAdaptationsPage"]>> | null = null;
+    if (this.runtimeProjectDatabasePool && this.paths.root) {
+      const store = await AutomationStudioProjectAdaptationStore.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
+      try {
+        typedPage = await store.listAdaptationsPage({
+          ...(input.flowId ? { flowId: input.flowId } : {}),
+          ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.risk ? { risk: input.risk } : {}),
+          ...(page.search ? { search: page.search } : {}),
+          sort: page.sort,
+          direction: page.direction,
+          limit: page.limit,
+          offset: page.offset
+        });
+        if (typedPage.total === 0 && (input.status || input.risk || page.search)) {
+          const canonicalScope = await store.listAdaptationsPage({
+            ...(input.flowId ? { flowId: input.flowId } : {}),
+            ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+            limit: 1,
+            offset: 0
+          });
+          if (canonicalScope.total > 0) return { adaptations: [], total: 0, limit: typedPage.limit, offset: typedPage.offset };
+        }
+      } finally {
+        await store.close();
+      }
+    }
+    if (typedPage && typedPage.total > 0) return { adaptations: typedPage.adaptations.map(adaptationSummaryFromTypedStore), total: typedPage.total, limit: typedPage.limit, offset: typedPage.offset };
+    if (!this.paths.root) {
+      const index = await this.indexes.readFlowAdaptationIndex(input.projectId);
+      const scoped = (index.adaptations ?? []).filter((item) =>
+        (!input.flowId || item.flowId === input.flowId)
+        && (!input.subflowId || item.subflowId === input.subflowId)
+        && (!input.status || item.status === input.status)
+        && (!input.risk || item.riskLevel === input.risk)
+        && (!page.search || item.adaptationId.toLowerCase().includes(page.search) || item.trigger.toLowerCase().includes(page.search))
+      ).sort((left, right) => compareFlowAdaptationSummaries(left, right, page.sort, page.direction));
+      return { adaptations: scoped.slice(page.offset, page.offset + page.limit), total: scoped.length, limit: page.limit, offset: page.offset };
+    }
+    await this.ensureFlowAdaptationSummaryIndex(input.projectId);
+    return await this.listSqlFlowAdaptationSummaryPage(this.flowAdaptationSummaryRepository(input.projectId), {
+      ...(input.flowId ? { flowId: input.flowId } : {}),
+      ...(input.subflowId ? { subflowId: input.subflowId } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.risk ? { risk: input.risk } : {}),
+      ...(page.search ? { search: page.search } : {}),
+      sort: page.sort,
+      direction: page.direction,
+      limit: page.limit,
+      offset: page.offset
+    });
+  }
+
+  private async listAllOrdinaryFlowAdaptationSummaries(
+    input: { projectId: string; flowId?: string; subflowId?: string; status?: string; risk?: string },
+    options: { search?: string; sort: "updated" | "status" | "risk" | "trigger"; direction: "asc" | "desc" }
+  ): Promise<AutomationStudioAdaptationSummary[]> {
+    const result: AutomationStudioAdaptationSummary[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const page = await this.listOrdinaryFlowAdaptationSummaries(input, { ...options, limit: 100, offset });
+      result.push(...page.adaptations);
+      if (offset + page.adaptations.length >= page.total || page.adaptations.length === 0) break;
+    }
+    return result;
+  }
+}

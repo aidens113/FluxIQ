@@ -5,13 +5,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import { automationStudioActivityHub } from "../../../runtime/activity/index.ts";
-import { AutomationStudioRunControlRegistry, runAutomationStudioGraph } from "../../../runtime/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
+import { automationStudioActivityHub } from "../../../../../runtime/activity/automation/index.ts";
+import { AutomationStudioRunControlRegistry, runAutomationStudioGraph } from "../../../../../framework/automation-service/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import { registerAutomationStudioApi } from "../index.ts";
-import { createRunnableCanonicalFlow } from "../../../runtime/tests/service-fixtures.ts";
+import { createRunnableCanonicalFlow } from "../../../../../framework/automation-service/tests/service-fixtures.ts";
 import { createCacheApiTestService } from "./test-service.ts";
 
 const actor: ProgramApiActor = { sessionId: "session.hold", userId: "user.hold", roleId: "admin", permissions: ["programs.read", "runtime.control"] };

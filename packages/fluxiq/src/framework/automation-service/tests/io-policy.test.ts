@@ -1,0 +1,437 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../core/index.ts";
+import { defineDomainIo, defineInput, defineOutput, IoRegistry, type OutputDispatchResult } from "../../../io/index.ts";
+import { FileRuntimeStore, FLUXIQ_RUNTIME_WITHHELD_VALUE, RuntimeService, type FluxIQRuntimeCommandAttempt, type FluxIQRuntimeCommandResult } from "../../../runtime/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../flows/authoring/model/index.ts";
+import { classifyAutomationStudioAdaptiveFailure } from "../../../runtime/adaptation/adaptive-orchestrator.ts";
+import { runAutomationStudioGraph } from "../executor.ts";
+import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher, dispatchPolicyOutput } from "../io-policy.ts";
+import { packAutomationStudioLlmContext } from "../../../runtime/agents/llm/index.ts";
+import { runtimeSessionToFlowRunDetail } from "../service/index.ts";
+
+import { createElementMatcher } from "../../../runtime/target-matching/index.ts";
+
+const matcher = createElementMatcher();
+const effect = { type: "policy.output.dispatch", payload: { outputId: "activate-element", parameters: { elementId: "confirm" } } };
+const action = { actionType: "activate-element", outputId: "activate-element", parameters: { elementId: "confirm" } };
+// Every candidate scores below zero against this fingerprint, so the matcher returns none.
+const unmatchedTarget = { kind: "element", fingerprint: { visibleText: "Save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel" }] };
+
+describe("explicit domain target matching", () => {
+  it("delegates opaque candidates without claiming confidence when no matcher was supplied", async () => {
+    const target = { kind: "element", fingerprint: { selector: "#save", visibleText: "Save" }, candidates: [{ candidateId: "unrelated", selector: "#cancel", visibleText: "Cancel" }] };
+    const actionWithTarget = { ...action, parameters: { target } };
+    const direct = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 1 }), "example", actionWithTarget);
+    const throughRuntime = await createRuntimePolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example", runtimeReturning({ status: "succeeded" }))({ type: effect.type, payload: { ...effect.payload, parameters: { target } } });
+    for (const result of [direct, throughRuntime]) {
+      expect(result).toMatchObject({ status: "success", targetResolution: { status: "unresolved_no_matcher", candidateCount: 1 } });
+      expect(result?.targetResolution).not.toHaveProperty("minimumConfidence");
+      expect(result?.targetResolution).not.toHaveProperty("confidence");
+      expect(result?.outputs?.elementTargetResolution).toMatchObject({ status: "unresolved_no_matcher" });
+    }
+  });
+});
+
+describe("policy output dispatch failures", () => {
+  it("retains measured target facts independently of IO/runtime success and failure", async () => {
+    const actionability = { actionable: false, cause: "covered" } as const;
+    for (const ok of [false, true]) {
+      const result = await dispatchPolicyOutput(ioWith(() => ({ ok, outputId: "activate-element", actionability, payload: { actual: 1 } })), "example", action);
+      expect(result).toMatchObject({ status: ok ? "success" : "failed", actionability, outputs: { ok, result: { actual: 1 } } });
+      const runtimeResult = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: ok ? "succeeded" : "failed", actionability, payload: { actual: 2 } }))(effect);
+      expect(runtimeResult).toMatchObject({ status: ok ? "success" : "failed", actionability, outputs: { ok, result: { actual: 2 } } });
+    }
+  });
+
+  it("drops malformed/accessor target metadata alone and never invokes its getter", async () => {
+    let reads = 0;
+    const supplied = Object.defineProperty({ ok: true, outputId: "activate-element", payload: { actual: 1 } }, "actionability", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return { actionable: true };
+      }
+    });
+    const result = await dispatchPolicyOutput(ioWith(() => supplied), "example", action);
+    expect(reads).toBe(0);
+    expect(result).toMatchObject({ status: "success", outputs: { result: { actual: 1 } } });
+    expect(result).not.toHaveProperty("actionability");
+    const malformed = { actionable: true, geometry: "PRIVATE_GEOMETRY" } as const;
+    const runtimeResult = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded", actionability: malformed }))(effect);
+    expect(runtimeResult).toMatchObject({ status: "success" });
+    expect(runtimeResult).not.toHaveProperty("actionability");
+  });
+
+  it("passes the run reference to a runtime adapter while command timestamps stay live", async () => {
+    const referenceNow = Date.UTC(2026, 9, 30, 23, 59, 59);
+    const contexts: Array<{ referenceNow?: number; now?: () => number }> = [];
+    let live = referenceNow + 2_000;
+    const runtime = new RuntimeService({ now: () => live++ });
+    runtime.registerAdapter({
+      adapterId: "reference.runtime", label: "Reference", transport: "direct", domainId: "example",
+      capabilities: () => [{ id: "reference.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+      execute: (command, context) => {
+        contexts.push(context);
+        return { commandId: command.commandId!, status: "succeeded" };
+      }
+    });
+    const dispatcher = createRuntimePolicyEffectDispatcher(ioWith(), "example", runtime);
+    expect((await dispatcher(effect, { referenceNow }))?.status).toBe("success");
+    expect((await dispatcher(effect, { referenceNow: NaN }))?.status).toBe("success");
+    expect(contexts.map((context) => context.referenceNow)).toEqual([referenceNow, undefined]);
+    const attempts = runtime.commandAttemptsList();
+    expect(attempts[0]!.dispatchedAt).toBeGreaterThan(referenceNow);
+    expect(attempts[1]!.dispatchedAt).toBeGreaterThan(attempts[0]!.dispatchedAt);
+  });
+
+  it("names a timed-out runtime command a timeout without relying on its message", async () => {
+    const result = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "timed_out", message: "The client did not answer." }))(effect);
+
+    expect(result).toMatchObject({
+      status: "failed",
+      route: "failed",
+      message: "The client did not answer.",
+      failure: { category: "timeout", code: "output_dispatch.timed_out", retryable: true },
+      outputs: { ok: false, runtimeStatus: "timed_out" }
+    });
+  });
+
+  it("names a rejected runtime command a capability or policy block", async () => {
+    const result = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "rejected", message: "Unsupported page." }))(effect);
+
+    expect(result?.failure).toEqual({ category: "blocked_by_capability_or_policy", code: "output_dispatch.rejected", retryable: false, stage: "dispatch" });
+  });
+
+  it("keeps a valid host-reported failure and drops a malformed one", async () => {
+    const hostFailure = { category: "target_ambiguous", code: "web.target.multiple_matches", retryable: true, stage: "target_resolution", expected: "1 match", actual: "3 matches" } as const;
+    const reported = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "failed", message: "3 elements matched.", failure: hostFailure }))(effect);
+    expect(reported?.failure).toEqual(hostFailure);
+
+    const malformedTimeout = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "timed_out", failure: { ...hostFailure, stage: "execution" } }))(effect);
+    expect(malformedTimeout?.failure).toMatchObject({ category: "timeout", code: "output_dispatch.timed_out" });
+
+    const malformedFailure = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "failed", error: "boom", failure: { ...hostFailure, stage: "execution" } }))(effect);
+    expect(malformedFailure).not.toHaveProperty("failure");
+    expect(malformedFailure?.message).toBe("boom");
+  });
+
+  it("reads status and failure from IO output adapters", async () => {
+    const timedOut = await dispatchPolicyOutput(ioWith(() => ({ ok: false, outputId: "activate-element", status: "timed_out", error: "No answer." })), "example", action);
+    expect(timedOut).toMatchObject({ status: "failed", message: "No answer.", failure: { category: "timeout" } });
+
+    const authFailure = { category: "auth_required", code: "web.auth.login_page", retryable: false } as const;
+    const loginPage = await dispatchPolicyOutput(ioWith(() => ({ ok: false, outputId: "activate-element", error: "Login page.", failure: authFailure })), "example", action);
+    expect(loginPage.failure).toEqual(authFailure);
+
+    const plain = await dispatchPolicyOutput(ioWith(() => ({ ok: false, outputId: "activate-element", error: "Nope." })), "example", action);
+    expect(plain).toMatchObject({ status: "failed", message: "Nope." });
+    expect(plain).not.toHaveProperty("failure");
+  });
+
+  it("names Core's own pre-dispatch rejections", async () => {
+    expect((await dispatchPolicyOutput(ioWith(), "example", { actionType: "", parameters: {} })).failure).toMatchObject({ category: "graph_validation_or_unknown_node", code: "output_dispatch.missing_output_id" });
+    expect((await dispatchPolicyOutput(ioWith(), "example", { ...action, outputId: "missing" })).failure).toMatchObject({ category: "blocked_by_capability_or_policy", code: "output_dispatch.output_not_registered" });
+    expect((await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", { ...action, parameters: {} })).failure).toMatchObject({ category: "graph_validation_or_unknown_node", code: "element_target.missing_fingerprint", stage: "target_resolution" });
+  });
+
+  it("reports a dispatched output whose confirmation never arrived as not observed", async () => {
+    const io = new IoRegistry();
+    io.register(defineDomainIo({
+      domainId: "example",
+      inputs: [defineInput({
+        definition: { id: "element-activated", title: "Element activated", role: "action", outputId: "activate-element" },
+        mode: "stream",
+        outputBinding: { outputId: "activate-element", toPayload: () => ({}) },
+        subscribe: () => () => undefined
+      })],
+      outputs: [defineOutput({
+        definition: { id: "activate-element", title: "Activate element" },
+        mode: "request",
+        dispatch: (request) => ({ ok: true, outputId: request.outputId, actionability: { actionable: true } })
+      })]
+    }));
+
+    const result = await dispatchPolicyOutput(io, "example", { ...action, confirmationInputId: "element-activated", confirmationTimeoutMs: 5 });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      failure: { category: "output_not_observed", code: "output_confirmation.not_received", retryable: true, stage: "confirmation" },
+      outputs: { confirmation: false }
+    });
+    expect(result.message).toContain("element-activated");
+    expect(result.actionability).toEqual({ actionable: true });
+    const runtimeResult = await createRuntimePolicyEffectDispatcher(io, "example", runtimeReturning({ status: "succeeded", actionability: { actionable: false, cause: "disabled" } }))({ type: effect.type, payload: { ...effect.payload, confirmationInputId: "element-activated", confirmationTimeoutMs: 5 } });
+    expect(runtimeResult).toMatchObject({ status: "failed", actionability: { actionable: false, cause: "disabled" }, failure: { code: "output_confirmation.not_received", stage: "confirmation" } });
+    expect(runtimeResult?.failure).not.toHaveProperty("effect");
+    expect(runtimeResult?.failure).not.toHaveProperty("transient");
+  });
+
+  it("records a typed target resolution for no match, a weak match, and a confident match", async () => {
+    const unmatched = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", { ...action, parameters: { target: unmatchedTarget } }, undefined, undefined, matcher);
+    expect(unmatched).toMatchObject({
+      status: "failed",
+      failure: { category: "target_not_found", code: "element_target.no_match", retryable: true, stage: "target_resolution" },
+      targetResolution: { status: "no_match", candidateCount: 1, minimumConfidence: 0.5 }
+    });
+
+    const weak = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 0.99 }), "example", {
+      ...action,
+      parameters: { target: { kind: "element", fingerprint: { visibleText: "Save", testId: "save" }, candidates: [{ candidateId: "save-text", visibleText: "Save" }] } }
+    }, undefined, undefined, matcher);
+    expect(weak).toMatchObject({
+      status: "failed",
+      failure: { category: "target_not_found", code: "element_target.below_confidence", retryable: true, stage: "target_resolution" },
+      targetResolution: { status: "below_confidence", candidateCount: 1, minimumConfidence: 0.99, candidateId: "save-text" }
+    });
+    expect(weak.failure?.expected).toContain("99%");
+    expect(weak.failure?.actual).toMatch(/^best candidate confidence \d+%$/);
+
+    const strong = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", {
+      ...action,
+      parameters: { target: { kind: "element", fingerprint: { visibleText: "Save", testId: "save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel", testId: "cancel" }, { candidateId: "save", visibleText: "Save", testId: "save" }] } }
+    }, undefined, undefined, matcher);
+    expect(strong).toMatchObject({ status: "success", targetResolution: { status: "matched", candidateId: "save", candidateCount: 2 } });
+    expect(strong).not.toHaveProperty("failure");
+  });
+});
+
+describe("a wait the target reports clearing by itself", () => {
+  it("is carried from an IO output result onto the node result, whether the dispatch succeeded or failed", async () => {
+    const succeeded = await dispatchPolicyOutput(ioWith(() => ({ ok: true, outputId: "activate-element", clearedWait: { waitedMs: 2_000 } })), "example", action);
+    expect(succeeded).toMatchObject({ status: "success", clearedWait: { waitedMs: 2_000 } });
+    const failed = await dispatchPolicyOutput(ioWith(() => ({ ok: false, outputId: "activate-element", error: "Gone.", clearedWait: { waitedMs: 9 } })), "example", action);
+    expect(failed).toMatchObject({ status: "failed", message: "Gone.", clearedWait: { waitedMs: 9 } });
+  });
+
+  it("is carried from a runtime command result onto the node result", async () => {
+    const result = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded", clearedWait: { waitedMs: 5_000 } }))(effect);
+    expect(result).toMatchObject({ status: "success", clearedWait: { waitedMs: 5_000 } });
+  });
+
+  it("stays absent when neither result reports one", async () => {
+    expect(await dispatchPolicyOutput(ioWith(), "example", action)).not.toHaveProperty("clearedWait");
+    expect(await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded" }))(effect)).not.toHaveProperty("clearedWait");
+  });
+});
+
+describe("failure propagation from dispatch to diagnosis", () => {
+  it("records the runtime observation on the actual attempt and public run record without using authored metadata", async () => {
+    const actionability = { actionable: false, cause: "disabled" } as const;
+    const flow = actionFlow({ elementId: "confirm" });
+    flow.nodes[0]!.metadata = { actionability: { actionable: true } };
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "failed", actionability, failure: { category: "action_failed", code: "client.refused", retryable: false } })) });
+    expect(trace.attempts[0]).toMatchObject({ status: "failed", actionability, failure: { code: "client.refused", retryable: false } });
+    const detail = runtimeSessionToFlowRunDetail(session(flow, trace), "project.failure");
+    expect(detail.actionAttempts?.[0]).toMatchObject({ status: "failed", actionability, failure: { code: "client.refused" } });
+    const unobserved = await runAutomationStudioGraph(flow, { effectDispatcher: createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded" })) });
+    expect(unobserved.attempts[0]).not.toHaveProperty("actionability");
+  });
+
+  it("carries a timed-out runtime action to classification, the run record, and the LLM context", async () => {
+    const flow = actionFlow({ elementId: "confirm" });
+    const trace = await runAutomationStudioGraph(flow, {
+      effectDispatcher: createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "timed_out", message: "The client did not answer." }))
+    });
+    const attempt = trace.attempts[0]!;
+
+    expect(attempt).toMatchObject({ status: "failed", message: "The client did not answer.", failure: { category: "timeout", code: "output_dispatch.timed_out" } });
+    expect(attempt.transitionComparison?.status).toBe("timeout");
+    expect(classifyAutomationStudioAdaptiveFailure({ projectId: "project.failure", flowId: flow.flowId, runId: "run.timeout", attempt })).toMatchObject({ failureClass: "timeout", candidateKind: "expectation_wait_retry" });
+
+    const detail = runtimeSessionToFlowRunDetail(session(flow, trace), "project.failure");
+    expect(detail.actionAttempts?.[0]).toMatchObject({
+      comparisonStatus: "timeout",
+      failure: { category: "timeout", code: "output_dispatch.timed_out" },
+      metadata: { adaptiveFailure: { failureClass: "timeout" } }
+    });
+
+    const context = packAutomationStudioLlmContext({ taskKind: "runtime_diagnosis", projectId: "project.failure", flowId: flow.flowId, runId: "run.timeout", instructions: [], runDetail: detail });
+    expect(context.recentActions?.[0]).toMatchObject({ comparisonStatus: "timeout", failureCategory: "timeout" });
+  });
+
+  it("carries an element target miss to the attempt trace and a target override candidate", async () => {
+    const flow = actionFlow({ target: unmatchedTarget });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example", matcher) });
+    const attempt = trace.attempts[0]!;
+
+    expect(attempt).toMatchObject({ failure: { category: "target_not_found" }, targetResolution: { status: "no_match", candidateCount: 1 } });
+    expect(attempt.transitionComparison?.status).toBe("target_not_found");
+    expect(classifyAutomationStudioAdaptiveFailure({ projectId: "project.failure", flowId: flow.flowId, runId: "run.target", attempt })).toMatchObject({ failureClass: "target_not_found", candidateKind: "action_target_override" });
+
+    const detail = runtimeSessionToFlowRunDetail(session(flow, trace), "project.failure");
+    expect(detail.actionAttempts?.[0]?.metadata).toMatchObject({ targetResolution: { status: "no_match" } });
+  });
+
+  it("claims no confidence floor on the trace or the run record when no candidates were supplied for one to apply to", async () => {
+    const flow = actionFlow({ selector: "#save-settings", target: { kind: "element", fingerprint: { visibleText: "Save changes", testId: "save-settings" } } });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 0.68 }), "example") });
+    const attempt = trace.attempts[0]!;
+
+    expect(attempt.status).toBe("succeeded");
+    expect(attempt.targetResolution).toEqual({ status: "unresolved_no_candidates", candidateCount: 0 });
+    expect(attempt.outputs?.elementTargetResolution).toMatchObject({ status: "unresolved_no_candidates" });
+    expect(attempt.outputs?.elementTargetResolution).not.toHaveProperty("minimumConfidence");
+    const detail = runtimeSessionToFlowRunDetail(session(flow, trace), "project.failure");
+    expect(detail.actionAttempts?.[0]?.metadata?.targetResolution).toEqual({ status: "unresolved_no_candidates", candidateCount: 0 });
+  });
+});
+
+describe("a runtime-dispatched output's saved command attempt", () => {
+  // Obviously synthetic: every assertion about it is where it must not appear.
+  const SUPPLIED = "synthetic-policy-value-that-must-never-be-persisted";
+
+  it("withholds a value the run resolved out of state, while the adapter executes the real one", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-io-policy-withheld-"));
+    try {
+      const runtime = new RuntimeService({ store: new FileRuntimeStore({ rootDir: root }) });
+      const executed: JsonObject[] = [];
+      runtime.registerAdapter({
+        adapterId: "example.runtime",
+        label: "Example Runtime",
+        transport: "direct",
+        domainId: "example",
+        capabilities: () => [{ id: "example.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+        execute: (command) => {
+          executed.push(command.parameters ?? {});
+          return { commandId: command.commandId ?? "command.runtime", status: "succeeded" };
+        }
+      });
+
+      const trace = await runAutomationStudioGraph(actionFlow({ selector: "#field", text: { $state: { path: "run.supplied.text" } } }), {
+        inputs: { "run.supplied.text": SUPPLIED },
+        effectDispatcher: createRuntimePolicyEffectDispatcher(ioWith(), "example", runtime)
+      });
+      await runtime.ready();
+
+      expect(trace.status).toBe("succeeded");
+      expect(executed).toHaveLength(1);
+      expect(executed[0]).toMatchObject({ selector: "#field", text: SUPPLIED });
+      const [attempt] = runtime.commandAttemptsList();
+      const saved = await readFile(path.join(root, "command-attempts", attempt!.attemptId, "attempt.json"), "utf8");
+      // The element-target normalizer also reads `text` into the command's target
+      // fingerprint, so the value travels twice; neither copy may be saved.
+      expect(saved).not.toContain(SUPPLIED);
+      expect((JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt.command.parameters).toMatchObject({ selector: "#field", text: FLUXIQ_RUNTIME_WITHHELD_VALUE });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds the result payload of a dispatch that carries recordOutput, while the node's outputs keep the rows", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-io-policy-record-output-"));
+    try {
+      const rows = [{ name: SUPPLIED }];
+      // Only the presence of recordOutput is read here; its shape is the policy action's to validate.
+      const { result, saved } = await dispatchSavedRecords(root, rows, { recordOutput: { recordsPath: "rows" } });
+
+      expect(result).toMatchObject({ status: "success", outputs: { ok: true, result: { rows } } });
+      expect(saved).not.toContain(SUPPLIED);
+      expect((JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt.result).toMatchObject({ status: "succeeded", payload: FLUXIQ_RUNTIME_WITHHELD_VALUE });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { carried: "no recordOutput", extra: {} },
+    { carried: "a null recordOutput", extra: { recordOutput: null } }
+  ])("keeps the result payload of a dispatch with $carried as the adapter returned it", async ({ extra }) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-io-policy-no-record-output-"));
+    try {
+      const rows = [{ name: "Synthetic catalog item" }];
+      const { result, saved } = await dispatchSavedRecords(root, rows, extra);
+
+      expect(result).toMatchObject({ status: "success", outputs: { ok: true, result: { rows } } });
+      expect((JSON.parse(saved) as { attempt: FluxIQRuntimeCommandAttempt }).attempt.result?.payload).toEqual({ rows });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/** Dispatches the shared effect, with `extra` merged into its payload, through a runtime that saves attempts under `root` and answers with `rows`. */
+async function dispatchSavedRecords(root: string, rows: JsonObject[], extra: JsonObject) {
+  const runtime = new RuntimeService({ store: new FileRuntimeStore({ rootDir: root }) });
+  runtime.registerAdapter({
+    adapterId: "example.runtime",
+    label: "Example Runtime",
+    transport: "direct",
+    domainId: "example",
+    capabilities: () => [{ id: "example.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+    execute: (command) => ({ commandId: command.commandId ?? "command.runtime", status: "succeeded", payload: { rows } })
+  });
+  const result = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtime)({ type: effect.type, payload: { ...effect.payload, ...extra } });
+  await runtime.ready();
+  const [attempt] = runtime.commandAttemptsList();
+  return { result, saved: await readFile(path.join(root, "command-attempts", attempt!.attemptId, "attempt.json"), "utf8") };
+}
+
+describe("a route an output answers in its result payload", () => {
+  it("is lifted onto a succeeded IO dispatch's route, with the outputs unchanged", async () => {
+    const result = await dispatchPolicyOutput(ioWith(() => ({ ok: true, outputId: "activate-element", payload: { route: "ended" } })), "example", action);
+    expect(result).toMatchObject({ status: "success", route: "ended", outputs: { ok: true, result: { route: "ended" } } });
+  });
+
+  it("is lifted onto a succeeded runtime dispatch's route", async () => {
+    const result = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded", payload: { route: "ended" } }))(effect);
+    expect(result).toMatchObject({ status: "success", route: "ended", outputs: { ok: true, result: { route: "ended" } } });
+  });
+
+  it("leaves a failed dispatch failed whatever its payload says", async () => {
+    const io = await dispatchPolicyOutput(ioWith(() => ({ ok: false, outputId: "activate-element", error: "No.", payload: { route: "ended" } })), "example", action);
+    const runtime = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "failed", error: "No.", payload: { route: "ended" } }))(effect);
+    expect(io).toMatchObject({ status: "failed", route: "failed" });
+    expect(runtime).toMatchObject({ status: "failed", route: "failed" });
+  });
+
+  it("ignores an empty, non-string, success or failed route", async () => {
+    for (const route of ["", 3, "success", "failed", null]) {
+      const result = await dispatchPolicyOutput(ioWith(() => ({ ok: true, outputId: "activate-element", payload: { route } })), "example", action);
+      expect(result.route).toBe("success");
+    }
+  });
+});
+
+function ioWith(dispatch?: () => OutputDispatchResult, metadata?: JsonObject): IoRegistry {
+  const io = new IoRegistry();
+  io.registerOutput("example", defineOutput({
+    definition: { id: "activate-element", title: "Activate element", ...(metadata ? { metadata } : {}) },
+    mode: "request",
+    dispatch: dispatch ?? ((request) => ({ ok: true, outputId: request.outputId }))
+  }));
+  return io;
+}
+
+function runtimeReturning(result: Omit<FluxIQRuntimeCommandResult, "commandId">): RuntimeService {
+  const runtime = new RuntimeService();
+  runtime.registerAdapter({
+    adapterId: "example.runtime",
+    label: "Example Runtime",
+    transport: "direct",
+    domainId: "example",
+    capabilities: () => [{ id: "example.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+    execute: (command) => ({ commandId: command.commandId ?? "command.runtime", ...result })
+  });
+  return runtime;
+}
+
+function actionFlow(parameters: JsonObject): AutomationStudioFlowDocument {
+  return {
+    schemaVersion: "0.1",
+    flowId: "flow.failure-propagation",
+    ownerKind: "task",
+    ownerId: "task.failure-propagation",
+    name: "Failure propagation",
+    createdAt: 1,
+    updatedAt: 1,
+    nodes: [{ id: "output", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters } }],
+    edges: []
+  };
+}
+
+function session(flow: AutomationStudioFlowDocument, trace: Awaited<ReturnType<typeof runAutomationStudioGraph>>): AutomationStudioRuntimeSession {
+  return { schemaVersion: "0.1", runId: "run.failure", projectId: "project.failure", targetKind: "flow", targetId: flow.flowId, flowId: flow.flowId, status: "failed", queuedAt: 1, flow, trace };
+}

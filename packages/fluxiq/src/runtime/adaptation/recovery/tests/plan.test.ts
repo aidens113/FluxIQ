@@ -1,0 +1,365 @@
+// A diagnosis Core never got is not a diagnosis saying "give up". Before
+// 2026-09-17 a failed, malformed or absent diagnosis planned `stop`, and three
+// of thirteen live repair tasks were scored as correctly refusing on exactly
+// that path -- the system failing to get an answer read the same as the system
+// deciding there was nothing to do. Core now plans `explore`, bounded by the
+// run's cost, tokens and deadline.
+import { describe, expect, it } from "vitest";
+import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument } from "../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioLlmTaskResult, AutomationStudioRuntimePatch } from "../../../agents/llm/index.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor.ts";
+import { preflightAutomationStudioRuntimePatch } from "../../live-patch.ts";
+import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";
+import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
+
+// Stage B. There was no plan stage: diagnosis was followed straight by an
+// attempt to patch, so the only thing between a failed run and a model-authored
+// change was whether a provider happened to be configured.
+describe("planAutomationStudioRuntimeRecovery", () => {
+  it("asks for a patch when the diagnosis calls for one and the policy permits a kind that serves it", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(), policy: policy() });
+
+    // No deterministic recovery is available on this fixture, so Core asks to look.
+    expect(plan).toMatchObject({ loopStage: "plan", source: "deterministic", candidateKind: "action_target_override", explorationRequested: true });
+    expect(plan.allowedPatchKinds).toEqual(["temporary_target_override", "temporary_wait_retry"]);
+    expect(plan.patchRequest.request).toBe(true);
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore", "request_patch"]);
+  });
+
+  // Phase D's rule, reused rather than restated: the patch is a continuation of
+  // the diagnosis, so a diagnosis that failed has nothing to continue from.
+  it.each([
+    ["a failed diagnosis call", { ...diagnosisResult(), ok: false }, "The diagnosis call failed"],
+    ["a response that is not a diagnosis", { ...diagnosisResult(), response: { kind: "instruction_suggestion" as const, summary: "Write it down.", instructions: [] } } as unknown as AutomationStudioLlmTaskResult, "so no patch was requested"],
+    ["no diagnosis at all", undefined, "No diagnosis was requested."]
+  ])("asks for no patch after %s", (_label, result, reason) => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), ...(result ? { result } : {}), policy: policy() });
+
+    expect(plan.patchRequest).toMatchObject({ request: false, reason: expect.stringContaining(reason) });
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore"]);
+  });
+
+  // L5's second clause. A diagnosis that asks for neither is a report, and a
+  // report is not a reason to change the Flow.
+  it("asks for no patch when the diagnosis asks for neither a patch nor exploration", () => {
+    const plan = planAutomationStudioRuntimeRecovery({
+      deterministic: deterministic(),
+      result: diagnosisResult({ patchNeeded: false, explorationNeeded: false }),
+      policy: policy()
+    });
+
+    expect(plan.patchRequest).toMatchObject({ request: false, reason: "The diagnosis asked for neither a patch nor exploration, so no patch was requested." });
+  });
+
+  // The model's way of saying "the page refuses this on purpose": the step's
+  // intended result can no longer be had. A patch requested after that answer
+  // can only be a substitute, and on a proposal-only run the model must name
+  // one -- which is how a deleted item's click was re-pointed at another button
+  // (live repair campaign, 2026-09-17). An omitted `patchNeeded` defaults to
+  // the classifier's "yes", so the verdict has to stop the request by itself.
+  it.each([
+    ["with patchNeeded omitted", { stillAchievable: "no" }],
+    ["even beside a patchNeeded of true", { stillAchievable: "no", patchNeeded: true }],
+    ["even beside a request to explore", { stillAchievable: "no", explorationNeeded: true }]
+  ])("asks for no patch when the diagnosis says the result can no longer be achieved, %s", (_label, reported) => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(reported), policy: policy() });
+
+    expect(plan.diagnosis.stillAchievable).toBe("no");
+    expect(plan.patchRequest).toEqual({ request: false, reason: "The diagnosis says the step's intended result can no longer be achieved, so no patch was requested.", code: "llm.runtime_patch_goal_unachievable", rung: "plan" });
+    expect(plan.steps.map((step) => step.action)).not.toContain("request_patch");
+  });
+
+  // Live run `run-muesyox4-930bef98` (2026-09-23) failed on a stale selector,
+  // its recovery engaged, its second diagnosis validated -- and the evaluation
+  // recorded no patch attempt, no adaptation, no proposal and no refusal code.
+  // The one thing Core did record was `llm.runtime_patch_not_requested`, which
+  // was the code for all five of the clauses below, so the run could not say
+  // which of them had stopped it. Each clause now has its own code and names
+  // the rung that decided, and no two of them are the same word.
+  //
+  // The mutation this is written against: collapsing any two clauses onto one
+  // code, or dropping a clause's `rung`, so a reader that keeps codes and
+  // discards sentences is back to a single undifferentiated refusal.
+  it("gives every reason for not requesting a patch its own code and names the rung that decided", () => {
+    const clauses = [
+      ["no diagnosis at all", planFor(undefined), "llm.runtime_patch_no_diagnosis_requested", "diagnosis"],
+      ["a failed diagnosis call", planFor({ ...diagnosisResult(), ok: false }), "llm.runtime_patch_diagnosis_call_failed", "diagnosis"],
+      ["a response that is not a diagnosis", planFor({ ...diagnosisResult(), response: { kind: "instruction_suggestion" as const, summary: "Write it down.", instructions: [] } } as unknown as AutomationStudioLlmTaskResult), "llm.runtime_patch_diagnosis_not_returned", "diagnosis"],
+      ["a failure Core resolved without the model", planAutomationStudioRuntimeRecovery({ deterministic: deterministic({ resolution: "manual_intervention", modelNeeded: false }), result: diagnosisResult(), policy: policy() }), "llm.runtime_patch_resolved_without_model", "diagnosis"],
+      ["a goal the diagnosis says is gone", planFor(diagnosisResult({ stillAchievable: "no" })), "llm.runtime_patch_goal_unachievable", "plan"],
+      ["a diagnosis that asked for nothing", planFor(diagnosisResult({ patchNeeded: false, explorationNeeded: false })), "llm.runtime_patch_diagnosis_asked_for_none", "plan"],
+      ["a policy that permits no kind", planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(), policy: policy({ allowRuntimeRecovery: false }) }), "llm.runtime_patch_policy_allows_no_kind", "plan"]
+    ] as const;
+
+    for (const [label, plan, code, rung] of clauses) {
+      expect(plan.patchRequest.request, label).toBe(false);
+      expect(plan.patchRequest.code, label).toBe(code);
+      expect(plan.patchRequest.rung, label).toBe(rung);
+    }
+    expect(new Set(clauses.map(([, , code]) => code)).size).toBe(clauses.length);
+    // A plan that asks for a patch refuses nothing, so it names neither.
+    const asking = planFor(diagnosisResult());
+    expect(asking.patchRequest).toEqual({ request: true, reason: "The diagnosis calls for a runtime patch and the policy permits temporary_target_override, temporary_wait_retry." });
+  });
+
+  // A refusal is allowed to follow a look. Cancelling the exploration as well
+  // would make "let me see the page first, then say there is nothing to do"
+  // impossible, and that is the answer four of the six live refusal tasks
+  // needed (w2-model-context-audit).
+  it("still explores when the diagnosis says the result is unachievable but asks to look first", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ stillAchievable: "no", explorationNeeded: true }), policy: policy() });
+
+    expect(plan.explorationRequested).toBe(true);
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore"]);
+    expect(plan.patchRequest.request).toBe(false);
+  });
+
+  // The model does not get to both make a claim about the page and decide the
+  // page need not be looked at. Thirteen live repair-lane runs on 2026-09-17
+  // answered `explorationNeeded: false` every time, so without this clause the
+  // re-plan added in t114 would fire almost never: the refusal it exists to
+  // check would cancel the look that checks it. The mutation this is written
+  // against: dropping the second clause of `explorationRequested`, which makes
+  // a single model boolean close the door again.
+  it("explores a refusal the page could overturn even when the model said not to look", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ stillAchievable: "no", explorationNeeded: false }), policy: policy() });
+
+    expect(plan.diagnosis.explorationNeeded).toBe(false);
+    expect(plan.explorationRequested).toBe(true);
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore"]);
+    expect(plan.patchRequest.code).toBe("llm.runtime_patch_goal_unachievable");
+  });
+
+  // A refusal no page can speak to is still not explored, whatever the model
+  // said, so the clause above buys exactly one look and not a look per dead end.
+  it("does not explore a refusal the policy decided, when the model said not to look", () => {
+    const plan = planAutomationStudioRuntimeRecovery({
+      deterministic: deterministic(),
+      result: diagnosisResult({ patchNeeded: true, explorationNeeded: false }),
+      policy: { ...policy(), allowRuntimeRecovery: false }
+    });
+
+    expect(plan.patchRequest.code).toBe("llm.runtime_patch_policy_allows_no_kind");
+    expect(plan.explorationRequested).toBe(false);
+    expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
+  });
+
+  it("still asks for a patch when the diagnosis cannot tell whether the result is achievable", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ stillAchievable: "unknown" }), policy: policy() });
+
+    expect(plan.patchRequest.request).toBe(true);
+  });
+
+  it("still asks for a patch when the diagnosis asks for exploration, and says exploration was asked for", () => {
+    const plan = planAutomationStudioRuntimeRecovery({
+      deterministic: deterministic(),
+      result: diagnosisResult({ patchNeeded: false, explorationNeeded: true }),
+      policy: policy()
+    });
+
+    expect(plan.explorationRequested).toBe(true);
+    expect(plan.patchRequest.request).toBe(true);
+    expect(plan.steps.map((step) => step.action)).toEqual(["explore", "request_patch"]);
+  });
+
+  it.each([
+    ["deterministic_recovery" as const, "apply_known_recovery" as const],
+    ["known_adaptation" as const, "apply_known_adaptation" as const],
+    ["manual_intervention" as const, "request_manual_intervention" as const]
+  ])("plans the deterministic answer, and no patch, when the diagnosis resolved as %s", (resolution, action) => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic({ resolution, modelNeeded: false }), result: diagnosisResult(), policy: policy() });
+
+    expect(plan.steps.map((step) => step.action)).toEqual([action]);
+    expect(plan.patchRequest).toMatchObject({ request: false, reason: expect.stringContaining(resolution.replace(/_/g, " ")) });
+  });
+
+  it("plans no patch kind at all, and asks for none, when runtime recovery is switched off", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult(), policy: policy({ allowRuntimeRecovery: false }) });
+
+    expect(plan.allowedPatchKinds).toEqual([]);
+    expect(plan.policyRefusals).toEqual(["Runtime recovery is disabled by adaptation policy."]);
+    expect(plan.patchRequest).toMatchObject({ request: false, reason: expect.stringContaining("permits no runtime patch kind") });
+  });
+
+  it("asks for no patch when every kind that could serve the failure is switched off", () => {
+    const plan = planAutomationStudioRuntimeRecovery({
+      deterministic: deterministic({ candidateKind: "router_rule_edit" }),
+      result: diagnosisResult(),
+      policy: policy({ allowModifyRouter: false })
+    });
+
+    expect(plan.allowedPatchKinds).toEqual([]);
+    expect(plan.patchRequest.request).toBe(false);
+  });
+
+  // The mutation this is written against: a plan that asks the model for a kind
+  // the preflight will refuse has told it to do work that cannot land. The
+  // refusal sentences are asserted to be the preflight's own, so the two cannot
+  // drift into disagreeing about what the policy says.
+  it.each([
+    ["temporary_target_override" as const, "action_target_override" as const, { allowModifyActionTargets: false }],
+    ["temporary_reroute" as const, "router_rule_edit" as const, { allowModifyRouter: false }],
+    ["temporary_recovery_subflow_call" as const, "subflow_edit_or_create" as const, { allowCreateRecoveryPaths: false }]
+  ])("never allows %s when the policy forbids it, in the preflight's own words", (kind, candidateKind, overrides) => {
+    const forbidding = policy(overrides);
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic({ candidateKind }), result: diagnosisResult(), policy: forbidding });
+    const preflight = preflightAutomationStudioRuntimePatch({
+      projectId: "project.plan",
+      flowId: "flow.plan",
+      runId: "run.plan",
+      flow: flowDocument(),
+      patch: patchOfKind(kind),
+      failedAttempt: failedAttempt(),
+      policy: forbidding
+    });
+
+    expect(plan.allowedPatchKinds).not.toContain(kind);
+    expect(plan.policyRefusals.length).toBeGreaterThan(0);
+    for (const refusal of plan.policyRefusals) expect(preflight.issues).toContain(refusal);
+    expect(planAutomationStudioRuntimeRecovery({ deterministic: deterministic({ candidateKind }), result: diagnosisResult(), policy: policy() }).allowedPatchKinds).toContain(kind);
+  });
+
+  it("plans nothing, and asks for nothing, when no failed attempt was classified", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ result: diagnosisResult(), policy: policy() });
+
+    // Still `stop`, and deliberately so. The raised `explorationNeeded` default
+    // is Core's answer for a diagnosis it *did* make; with no failed attempt
+    // there is nothing classified to explore from, so `plan.ts` answers on its
+    // own unclassified path and never reads the flag.
+    expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
+    expect(plan.diagnosis.refusals).toEqual(["No failed attempt reached the diagnosis, so nothing was classified."]);
+  });
+});
+
+// t193 wK, C6 and C9: two ends of the ladder that stopped with the wrong word.
+describe("planAutomationStudioRuntimeRecovery after the model rung was selected", () => {
+  // Live run munzl2eh answered yes/yes/false/false. `model_required` already
+  // means the deterministic rungs ran and failed, so the deterministic recovery
+  // the model names can only be carried out as a patch. It ended
+  // `llm.runtime_patch_diagnosis_asked_for_none` instead.
+  it("asks for a patch when the diagnosis names a deterministic recovery and asks for neither patch nor look", () => {
+    const plan = planFor(diagnosisResult({ stillAchievable: "yes", deterministicRecoveryPossible: "yes", patchNeeded: false, explorationNeeded: false }));
+
+    expect(plan.patchRequest.request).toBe(true);
+    expect(plan.patchRequest.code).toBeUndefined();
+    expect(plan.steps.map((step) => step.action)).toEqual(["request_patch"]);
+  });
+
+  it("still stops on a diagnosis that asked for nothing and named no deterministic recovery", () => {
+    const plan = planFor(diagnosisResult({ stillAchievable: "yes", deterministicRecoveryPossible: "no", patchNeeded: false, explorationNeeded: false }));
+
+    expect(plan.patchRequest).toMatchObject({ request: false, code: "llm.runtime_patch_diagnosis_asked_for_none", rung: "plan" });
+  });
+
+  it("still stops when the diagnosis says the goal is gone, whatever it says of a deterministic recovery", () => {
+    const plan = planFor(diagnosisResult({ stillAchievable: "no", deterministicRecoveryPossible: "yes", patchNeeded: false, explorationNeeded: false }));
+
+    expect(plan.patchRequest).toMatchObject({ request: false, code: "llm.runtime_patch_goal_unachievable" });
+  });
+
+  it("does not turn a named deterministic recovery into a patch request when the policy permits no kind", () => {
+    const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ deterministicRecoveryPossible: "yes", patchNeeded: false, explorationNeeded: false }), policy: policy({ allowRuntimeRecovery: false }) });
+
+    expect(plan.patchRequest).toMatchObject({ request: false, code: "llm.runtime_patch_diagnosis_asked_for_none" });
+    expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
+  });
+
+  // Live run munyzo8z: no failed attempt, a validated diagnosis, and a plan that
+  // passed the diagnosis chain's `request: true` straight through, so the run
+  // ended `llm.runtime_patch_unavailable` at `resolution`.
+  it("refuses under its own code at the diagnosis rung when no failed attempt was classified, even after a validated diagnosis", () => {
+    for (const result of [diagnosisResult(), undefined]) {
+      const plan = planAutomationStudioRuntimeRecovery({ ...(result ? { result } : {}), policy: policy() });
+
+      expect(plan.patchRequest).toEqual({ request: false, reason: "No failed attempt reached the diagnosis, so no patch was requested.", code: "llm.runtime_patch_no_failed_attempt", rung: "diagnosis" });
+      expect(plan.steps.map((step) => step.action)).toEqual(["stop"]);
+    }
+  });
+});
+
+/** The default plan -- a `target_not_found` under a permissive policy -- for one diagnosis result. */
+function planFor(result: AutomationStudioLlmTaskResult | undefined) {
+  return planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), ...(result ? { result } : {}), policy: policy() });
+}
+
+function deterministic(overrides: Partial<AutomationStudioRuntimeDeterministicDiagnosis> = {}): AutomationStudioRuntimeDeterministicDiagnosis {
+  return {
+    schemaVersion: "automation-studio.deterministic-diagnosis.v1",
+    failureClass: "target_not_found",
+    candidateKind: "action_target_override",
+    signature: "signature.one",
+    resolution: "model_required",
+    modelNeeded: true,
+    reason: "Failure is unresolved after deterministic recovery lookup.",
+    requiredPriorAction: "none",
+    stillAchievable: "unknown",
+    deterministicRecoveryAvailable: false,
+    rerouteAvailable: false,
+    knownAdaptationAvailable: false,
+    knownAdaptationIds: [],
+    ...overrides
+  };
+}
+
+/** Only `ok` and `response` are read; the rest of the result is not consulted. */
+function diagnosisResult(diagnosis: Record<string, unknown> = {}): AutomationStudioLlmTaskResult {
+  return {
+    ok: true,
+    diagnostics: [],
+    response: { kind: "diagnosis", summary: "The action could not find its control.", diagnosis }
+  } as unknown as AutomationStudioLlmTaskResult;
+}
+
+function patchOfKind(kind: "temporary_target_override" | "temporary_reroute" | "temporary_recovery_subflow_call"): AutomationStudioRuntimePatch {
+  if (kind === "temporary_target_override") return { kind, targetNodeId: "node.action", target: { handles: { control: "target.1" } }, reason: "Re-point the control." };
+  if (kind === "temporary_reroute") return { kind, fromNodeId: "node.action", toNodeId: "node.end", reason: "Route around the step." };
+  return { kind, subflowId: "subflow.recovery", reason: "Run the recovery path." };
+}
+
+/** Only `nodes` and `subflows` are read by the preflight's target check. */
+function flowDocument(): AutomationStudioFlowDocument {
+  return {
+    nodes: [{ id: "node.action" }, { id: "node.end" }],
+    edges: [],
+    subflows: [{ subflowId: "subflow.recovery" }]
+  } as unknown as AutomationStudioFlowDocument;
+}
+
+function failedAttempt(): AutomationStudioNodeAttemptTrace {
+  return {
+    attemptId: "node.action.attempt.1",
+    nodeId: "node.action",
+    definitionId: "builtin.policy.action",
+    startedAt: 1,
+    finishedAt: 2,
+    status: "failed",
+    route: "failed",
+    inputs: {},
+    outputs: {},
+    effects: []
+  };
+}
+
+function policy(overrides: Partial<AutomationStudioAdaptationPolicy> = {}): AutomationStudioAdaptationPolicy {
+  return {
+    schemaVersion: "0.1",
+    policyId: "policy.plan",
+    scope: { kind: "flow", flowId: "flow.plan" },
+    preset: "adaptive",
+    proposalMode: "auto",
+    allowRuntimeRecovery: true,
+    allowCreateRecoveryPaths: true,
+    allowModifySubflows: true,
+    allowCreateSubflows: true,
+    allowModifyRouter: true,
+    allowModifyExpectations: true,
+    allowModifyActionTargets: true,
+    allowDeleteOrDisableBehavior: false,
+    allowExternalSideEffects: false,
+    requireApprovalForDestructiveChanges: true,
+    requireApprovalForExternalSideEffects: true,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides
+  };
+}

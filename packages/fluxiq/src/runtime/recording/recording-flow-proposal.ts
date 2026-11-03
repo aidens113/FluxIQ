@@ -1,0 +1,85 @@
+import type { AutomationStudioRecordOutput } from "@fluxiq/contracts/automation";
+import type { JsonObject } from "../../core/index.ts";
+import type { AutomationStudioNodeDefinition } from "../../framework/automation-service/nodes/index.ts";
+import type { ProposalNodeStateLink } from "../../framework/persistence/automation/state-index.ts";
+
+export type RecordingProposalEvidenceReference = {
+  layer: "recording" | "normalized_timeline" | "evidence";
+  artifactId: string;
+  entryId?: string;
+  observationId?: string;
+};
+
+export type RecordingFlowActionCandidate = {
+  candidateId: string;
+  actionEntryId: string;
+  sourceObservationIds: string[];
+  sourceInputIds: string[];
+  outputId: string;
+  parameters: JsonObject;
+  expectedConfirmation?: { inputId: string; timeoutMs?: number; description?: string };
+  /** What the host should find true after the action, as the mapper proposed it: a plain object Core owns a clone of and never reads. */
+  expectedState?: JsonObject;
+  /**
+   * The parsed record output, its `recordsPath` resolved. Carried into node
+   * definitions, unlike `expectedState`: without it a definition's run would
+   * hand the fields the schema excludes to the node's outputs.
+   */
+  recordOutput?: AutomationStudioRecordOutput;
+  /** The recorded action's timeout in milliseconds, written to `parameterValues.timeoutMs`. Carried into node definitions. */
+  timeoutMs?: number;
+  /**
+   * How long the recording waited between the entry the previous candidate was
+   * mapped from and this one, on the monotonic clock. Written onto the node as
+   * its wait ceiling, which the executor reads
+   * (`runtime/executor/recorded-state.ts`): a recorded delay is the longest the
+   * run will wait for the node's expected state before attempting it anyway,
+   * never a sleep. Absent on the first candidate, which has nothing to wait
+   * after.
+   */
+  recordedGapMs?: number;
+  confidence: number;
+  evidence: RecordingProposalEvidenceReference[];
+  stateLink?: ProposalNodeStateLink;
+  /** Action-mapped input events remain observable confirmation, never policy state. */
+  policyStateEligible: false;
+  label?: string;
+  description?: string;
+};
+
+export type RecordingFlowProposalDestination =
+  | { kind: "flow"; flowId: string; created: boolean; writeMode?: "append" | "replace_recording_derived" }
+  | { kind: "node"; visibility: "private" | "public"; definitionIds: string[] };
+
+export type RecordingFlowProposalReview = {
+  decision: "approved" | "rejected";
+  reviewedAt: number;
+  reviewerId?: string;
+  notes?: string;
+  destination?: RecordingFlowProposalDestination;
+};
+
+export type RecordingFlowProposalArtifact = {
+  schemaVersion: "0.1";
+  proposalId: string;
+  projectId: string;
+  recordingId: string;
+  domainId: string | null;
+  mapper: { id: string; version: string; packageId: string; packageVersion: string };
+  status: "proposed" | "approved" | "rejected" | "invalidated";
+  candidates: RecordingFlowActionCandidate[];
+  review?: RecordingFlowProposalReview;
+  approvedDefinitions?: AutomationStudioNodeDefinition[];
+  invalidation?: { invalidatedAt: number; reasons: string[]; affectedFlowIds: string[] };
+  generatedAt: number;
+  updatedAt: number;
+  metadata?: JsonObject;
+};
+
+export function recordingProposalDefinitionId(proposalId: string, candidateId: string): string {
+  return `recording.${safeId(proposalId)}.${safeId(candidateId)}`;
+}
+
+function safeId(value: string): string {
+  return value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "item";
+}

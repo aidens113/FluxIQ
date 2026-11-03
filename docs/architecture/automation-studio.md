@@ -120,7 +120,7 @@ when that boundary can remain single-owner.
 ## First Core Contracts
 
 The initial canonical contracts live under
-`packages/fluxiq/src/programs/automation-studio/model`:
+`packages/fluxiq/src/flows/authoring/model`:
 
 - `RecordingSession` stores an append-only timeline with an initial state
   snapshot, timeline entries, notes, source descriptors, action channels, and

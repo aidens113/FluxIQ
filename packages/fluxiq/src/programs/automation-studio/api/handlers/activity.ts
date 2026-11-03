@@ -17,9 +17,9 @@
 // is the default.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type ActivityReadRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type ActivityReadRequest } from "../../../../api-contracts/automation.ts";
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
-import { automationStudioActivityHub, type AutomationStudioActivitySnapshot } from "../../runtime/activity/index.ts";
+import { automationStudioActivityHub, type AutomationStudioActivitySnapshot } from "../../../../runtime/activity/automation/index.ts";
 
 export type AutomationStudioActivityApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;

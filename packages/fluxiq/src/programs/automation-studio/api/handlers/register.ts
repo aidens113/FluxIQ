@@ -4,9 +4,9 @@
 
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
-import type { AutomationStudioService } from "../../runtime/index.ts";
+import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import type { IdentityAccessService } from "../../../identity-access/index.ts";
-import type { AutomationStudioClientGatewayBridge } from "../../client-gateway/index.ts";
+import type { AutomationStudioClientGatewayBridge } from "../../../../runtime/recording/client-gateway/index.ts";
 import type { ClientGatewayService } from "../../../../client-gateway/index.ts";
 import { registerProjectEndpoints } from "./projects.ts";
 import { registerCacheEndpoints } from "./caches.ts";
@@ -28,7 +28,7 @@ import { registerRuntimeExecutionEndpoints } from "./runtime-execution.ts";
 import { registerRunControlEndpoints } from "./run-control.ts";
 import { registerClientGatewayEndpoints } from "./client-gateway.ts";
 import { registerRuntimeIdentityEndpoint } from "./diagnostics/index.ts";
-import { AutomationStudioProjectOwnerships } from "../ownership/index.ts";
+import { AutomationStudioProjectOwnerships } from "../../../../framework/persistence/automation/ownership/index.ts";
 
 export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService): void {
   const dependencies: AutomationStudioApiDependencies = { registry, service, identityAccess, clientGatewayBridge, clientGateway };

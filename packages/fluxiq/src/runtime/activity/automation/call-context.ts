@@ -1,0 +1,250 @@
+// What the observer knows about a call beyond the call itself, gathered from
+// what the loop showed it before (`./observer.ts`):
+//
+// - **Where the work starts.** A page served from this machine read "the start
+//   page" wherever it was: run D's build opened `/friends/` as "Opening the
+//   start page" (U10, `run-muw6144a-e56f945d`). The start is what Core itself
+//   says it is: the address Core's opening call goes to, the address a test of
+//   the Flow puts the page back to before its first step (`replay: "reset"`,
+//   `from.location`), and the address the draft's first step opens.
+// - **Which row a pass of a repeat is on.** A test runs a repeated step once
+//   per row of the list before it (`../llm/node-tools/replay-span.ts`), and
+//   its three passes over Amara, Jonas and Lin read as three identical
+//   "Testing: Click · Confirm" cards (U1). A pass's call carries its row under
+//   `item`; the row's name is its value under the column the list read named
+//   its rows by (`readRows.rows`, one cell per row: the domain's own label,
+//   already screened of denied columns). Nothing is named when no read named
+//   its rows, or the row has no such value.
+// - **How many rows a read kept.** A test's list read answers its rows as the
+//   node's array output (`outputs`), or names them (`readRows`): "Read list ·
+//   Done" said nothing of a read the chat claimed covered every page (U-1,
+//   `run-muw60j7c-bb7c9a62`). A build's own list read sends neither, but its
+//   evidence says what it kept (`read.extraction.recordCount`, and
+//   `pagesRead`): its card read a bare "Read list · Done" while the read said
+//   "20 records from 1 page" (F2, live-C round 3, `run-mux6naez-6c20f26e`),
+//   so that count, and its pages, are read when the answer gives no rows.
+// - **What the page calls a list a detection found.** A detection's answer
+//   names the list when the page does -- a heading or an accessible name, as
+//   `list` on its evidence (the web domain's `structure/list-name.ts`) -- so its
+//   card says "Look · the “Search results” list" rather than "the repeating
+//   list on the page" (R2-U-9, `run-muwansvz-a2b4a987`). Read by shape, kept
+//   only as a short plain label.
+// - **What control a handle names.** A call that acts on a handle the page
+//   view printed (`t12 link "Friends"`) names that control by the words the
+//   view printed for it, the latest view first. Lane D's exploration "Click"
+//   cards named no control (t378, `run-mv0fuual-f9e6f089`): the call carries
+//   only `target: { handle }`, never the `element` a resolved node keeps, and
+//   the candidate build's loop then had no domain `describeCall` (it has one
+//   since t378 W15, `../service.ts`). Only a name the evidence printed in quotes
+//   is used; the domain's own words, when it gives them, still come first
+//   (`./observer.ts`).
+// - **What the view said a control is.** The word a view printed between the
+//   handle and its name (`t940 clickable "Space Grey"`, `t12 checkbox "Gift
+//   wrap"`), kept as the role the wording reads a "check" by
+//   (`./wording/action.ts`): a box (`checkbox`, `switch`) is ticked, one
+//   option of several (`radio`, `option`, `tab`) is chosen, and any other
+//   word, or none, says neither, as an element a resolved node keeps with no
+//   role or input type does. A model's exploration calls carry only the
+//   handle, so its colour swatches read "Ticking “Spain”" while the same steps
+//   in a test of the Flow, which carry the saved element, read "Choose" (R4a
+//   attempt 2, `run-mv2pgqkj-f3552c70`, steps 0020-0024, moment 04). The
+//   word itself is kept as the control's kind, which names a control the view
+//   printed no words for ("Clicking a button", t753).
+// - **Only the words in the name's place.** A view line prints a control's
+//   words right after its handle, its heading tag and its kind; a wordless
+//   icon control prints its class later, after `icon` (`t50 button icon
+//   class="css-0732x7m"`), and taking the first quoted text on the line read
+//   "Reading the details of “css-0732x7m”" (t753, round-5 UI review).
+//
+// Reads only: a call and its result pass through the observer unchanged.
+
+import type { JsonValue } from "../../../core/index.ts";
+import { automationStudioActivityHumanLabel } from "./wording/index.ts";
+
+type Call = { callId: string; toolId: string; value?: unknown };
+type Evidence = ReadonlyArray<{ callId: string; toolId: string; value: JsonValue }>;
+
+/** The draft's entry the model is shown (`../flow-draft/entry.ts`), read as a plain string so this module does not reach into the draft. */
+const DRAFT_ENTRY = "core.flow_draft";
+/** The prefix of Core's own call before the first decision (`../llm/evidence-loop.ts`), and of a test's calls (`../llm/node-tools/replay-draft.ts`). */
+const OPENING_PREFIX = "initial.";
+const DRY_RUN_PREFIX = "dryrun.";
+/** The call id a pass of a repeat is sent under, `<step>.pass.<n>` (`../llm/node-tools/replay-span.ts`). */
+const PASS = /\.pass\.\d+$/u;
+/** The member a replayed read names its rows in, as the domain writes it (`../result-verification/build-test/read-rows.ts`). */
+const READ_ROWS = "readRows";
+/** The most of a row's name a title carries. */
+const MAX_ROW_NAME = 40;
+/** The member a detection's answer names its list in, as the domain writes it (the web domain's `structure/packet.ts`). */
+const LIST = "list";
+/** The most of a list's name a title carries. */
+const MAX_LIST_NAME = 60;
+/** The most of a control's name a title carries, as `./wording/action.ts` holds a target. */
+const MAX_TARGET_NAME = 60;
+/**
+ * A line of a page view as the web domain writes it, `<handle> [<heading
+ * tag>] [<kind>] ["<words>"] ...`: the handle (a lower-case letter, then
+ * digits), the word it prints for what the element is when it prints one
+ * (`t940 clickable "Space Grey"`, `t872 field[search] ...`; `t880 "Welcome
+ * back"` prints none), and the words in double quotes right after it, an
+ * inner quote written `\"` (`t12 link "Friends" ~/friends/`). A quoted value
+ * after an attribute's name (`class="..."`, `use="..."`) is never the words.
+ */
+const VIEW_LINE = /^([a-z]\d{1,7})(?: h[1-6])?(?: ([a-z][a-z0-9]*)(?:\[[^\]\n]*\])?)?(?: "((?:[^"\\\n]|\\.){1,300})")?(?=[\s:]|$)/gmu;
+/** The words a view prints for a role the wording reads a "check" by; any other word says neither. */
+const ROLE_WORDS: ReadonlySet<string> = new Set(["checkbox", "switch", "radio", "option", "tab"]);
+/** How deep into an evidence value its printed text is looked for. */
+const MAX_DEPTH = 4;
+/** A handle as a call names it. */
+const HANDLE = /^[a-z]\d{1,7}$/u;
+
+const record = (value: unknown): Record<string, unknown> | undefined => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined);
+const address = (value: unknown): string | undefined => (typeof value === "string" && /^https?:\/\//iu.test(value.trim()) ? value.trim() : undefined);
+
+/** The address a navigate call opens: a node's `url` parameter, when the node it runs is a navigate. */
+function opens(value: Record<string, unknown> | undefined, actionId?: unknown): string | undefined {
+  const node = typeof actionId === "string" ? actionId : value?.node;
+  if (typeof node !== "string" || !/navigate/iu.test(node)) return undefined;
+  return address(record(value?.parameters)?.url);
+}
+
+/** The address the draft's first step opens, from the draft's entry, when it is a navigate. */
+function draftStart(evidence: Evidence): string | undefined {
+  const entry = evidence.find((candidate) => candidate.callId === DRAFT_ENTRY && candidate.toolId === DRAFT_ENTRY);
+  const steps = record(entry?.value)?.steps;
+  const first = Array.isArray(steps) ? steps.map(record).find((step) => step?.step === 1) : undefined;
+  return first ? opens(record(first.input), first.actionId) : undefined;
+}
+
+/** The rows a call's answer kept: its first array output of records, else the rows its read named, else the count its read's extraction gives. */
+function rowsOf(result: unknown): number | undefined {
+  const answer = record(result);
+  const outputs = record(answer?.outputs);
+  for (const value of Object.values(outputs ?? {})) {
+    if (Array.isArray(value) && value.every((row) => record(row) !== undefined)) return value.length;
+  }
+  const named = record(record(answer?.evidence)?.[READ_ROWS]);
+  if (!Array.isArray(named?.rows)) return extractionCount(result, "recordCount");
+  const more = typeof named.rowsNotShown === "number" && Number.isSafeInteger(named.rowsNotShown) && named.rowsNotShown > 0 ? named.rowsNotShown : 0;
+  return named.rows.length + more;
+}
+
+/** The member of a list read's evidence that says what it kept (the web domain's `read.extraction`). */
+const READ = "read";
+const EXTRACTION = "extraction";
+
+/** A count a list read's extraction gives (`recordCount`, `pagesRead`), when it is a whole number. */
+function extractionCount(result: unknown, key: "recordCount" | "pagesRead"): number | undefined {
+  const value = record(record(record(record(result)?.evidence)?.[READ])?.[EXTRACTION])?.[key];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+/** The page's own name for the list a call's answer found (`evidence.list`), as a short plain label. */
+function listOf(result: unknown): string | undefined {
+  return automationStudioActivityHumanLabel(record(record(result)?.evidence)?.[LIST], MAX_LIST_NAME);
+}
+
+/** The column a read named its rows by: the one cell of its first row. */
+function labelColumn(result: unknown): string | undefined {
+  const rows = record(record(record(result)?.evidence)?.[READ_ROWS])?.rows;
+  const first = Array.isArray(rows) ? record(rows[0]) : undefined;
+  const keys = first ? Object.keys(first) : [];
+  return keys.length === 1 ? keys[0] : undefined;
+}
+
+/** What views printed of each handle, the latest print winning: its name, the role its kind word says (`ROLE_WORDS`, else ""), and that word. */
+type Printed = { names: Map<string, string>; roles: Map<string, string>; kinds: Map<string, string> };
+
+const nothingPrinted = (): Printed => ({ names: new Map(), roles: new Map(), kinds: new Map() });
+
+/**
+ * Each handle a value's text printed, in the order printed, into `into`: the
+ * words in its name's place when they read as a name, the role its kind word
+ * says, and that word. A later line that prints no name, or no kind, for a
+ * handle leaves what an earlier one said, as the name always was.
+ */
+function printedNames(value: unknown, into: Printed, depth = 0): void {
+  if (typeof value === "string") {
+    if (!value.includes("\n") && !HANDLE.test(value.split(" ")[0] ?? "")) return;
+    for (const found of value.matchAll(VIEW_LINE)) {
+      const handle = found[1]!;
+      const word = found[2] ?? "";
+      const name = found[3] === undefined ? undefined : automationStudioActivityHumanLabel(found[3].replace(/\\(.)/gu, "$1"), MAX_TARGET_NAME);
+      if (name) into.names.set(handle, name);
+      into.roles.set(handle, ROLE_WORDS.has(word) ? word : "");
+      if (word) into.kinds.set(handle, word);
+    }
+    return;
+  }
+  if (depth >= MAX_DEPTH || !value || typeof value !== "object") return;
+  for (const member of Array.isArray(value) ? value : Object.values(value)) printedNames(member, into, depth + 1);
+}
+
+/** The handle a call acts on: its parameters' `target` (a handle, or `{ handle }`), else its own. */
+function handleOf(value: Record<string, unknown> | undefined): string | undefined {
+  for (const holder of [record(value?.parameters), value]) {
+    const target = holder?.target;
+    const handle = typeof target === "string" ? target : record(target)?.handle ?? holder?.handle;
+    if (typeof handle === "string" && HANDLE.test(handle)) return handle;
+  }
+  return undefined;
+}
+
+/**
+ * The observer's memory of one round: `decided` with each decision's evidence,
+ * `sent` before a call goes out (it answers what the call's words need), and
+ * `answered` with its result (it answers the rows it kept). `target` is the
+ * name the evidence printed for the control a call acts on.
+ */
+export function automationStudioActivityCallContext(): {
+  decided(evidence: Evidence): void;
+  sent(call: Call): { start?: string; row?: string };
+  answered(call: Call, result: unknown): { rows?: number; pages?: number; list?: string };
+  /** The address the work starts at, where it is known yet. */
+  start(): string | undefined;
+  /** What the latest page view that printed the call's handle named it, or nothing. */
+  target(call: { value?: unknown }): string | undefined;
+  /** The role the latest view that printed the call's handle said it has ("" for none a "check" is read by), or nothing when no view printed it. */
+  role(call: { value?: unknown }): string | undefined;
+  /** The word the latest view that printed the call's handle printed for what it is ("button", "link"), or nothing. */
+  kind(call: { value?: unknown }): string | undefined;
+} {
+  let start: string | undefined;
+  let column: string | undefined;
+  /** Each handle's name, role and kind, as the evidence last printed them. */
+  let printed = nothingPrinted();
+  const of = (call: { value?: unknown }, member: keyof Printed): string | undefined => {
+    const handle = handleOf(record(call.value));
+    return handle === undefined ? undefined : printed[member].get(handle);
+  };
+  return {
+    decided: (evidence) => {
+      start = draftStart(evidence) ?? start;
+      // Read afresh from what this decision was shown, in order, so the latest view of a handle wins.
+      const next = nothingPrinted();
+      for (const entry of evidence) printedNames(entry.value, next);
+      printed = next;
+    },
+    sent: (call) => {
+      const value = record(call.value);
+      if (call.callId.startsWith(OPENING_PREFIX)) start = opens(value) ?? start;
+      else if (call.callId.startsWith(DRY_RUN_PREFIX) && value?.replay === "reset") start = address(record(value.from)?.location) ?? start;
+      const cell = PASS.test(call.callId) && column !== undefined ? record(value?.item)?.[column] : undefined;
+      const row = typeof cell === "string" ? automationStudioActivityHumanLabel(cell.replace(/[“”]/gu, ""), MAX_ROW_NAME) : undefined;
+      return { ...(start !== undefined ? { start } : {}), ...(row !== undefined ? { row } : {}) };
+    },
+    answered: (call, result) => {
+      // A read inside a pass names the pass's rows, never the list the repeat walks.
+      if (!PASS.test(call.callId)) column = labelColumn(result) ?? column;
+      const rows = rowsOf(result);
+      // Pages only beside rows, and only as the read's own extraction counted them.
+      const pages = rows === undefined ? undefined : extractionCount(result, "pagesRead");
+      const list = listOf(result);
+      return { ...(rows !== undefined ? { rows } : {}), ...(pages !== undefined ? { pages } : {}), ...(list !== undefined ? { list } : {}) };
+    },
+    start: () => start,
+    target: (call) => of(call, "names"),
+    role: (call) => of(call, "roles"),
+    kind: (call) => of(call, "kinds")
+  };
+}

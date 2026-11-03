@@ -3208,7 +3208,7 @@ completions until its 64-decision bound.
 A dry run moves the page without the loop seeing it, so the last state is
 forgotten until a call reports one. The domain's `answered_the_same_again`
 mark (one constant for Core and domains since t728,
-`AUTOMATION_STUDIO_REPEATED_ANSWER_REASON` in `@fluxiq/contracts/automation-studio`,
+`AUTOMATION_STUDIO_REPEATED_ANSWER_REASON` in `@fluxiq/contracts/automation`,
 republished from `fluxiq/automation-studio`; Core's activity wording, the
 unfinished-build last fix and `fluxiq/ui`'s failure reason all read it)
 and `repeatedAnswer` stay as what they were, a marking, and the

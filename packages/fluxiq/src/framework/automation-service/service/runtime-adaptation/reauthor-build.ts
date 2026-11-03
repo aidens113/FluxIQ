@@ -1,0 +1,309 @@
+// One re-author build, held to the repair's purse: build, approve, hold, and
+// once more only after a named transient provider request failure.
+//
+// **Held, not applied (t267).** The approved edit is left unapplied: the re-run
+// from the start runs it as a candidate (`./repair-rerun.ts`) and it is applied
+// only once that whole run is judged to answer (`./judged-reauthor.ts`).
+//
+// Two routes re-author a Flow from the run: a result the check refuted
+// (`refuted-result-port.ts`) and a step the patch ladder could not repair
+// (`step-failure-port.ts`). They differ in what the build is told and in what
+// happens when it builds nothing; the build itself -- whose key pays, what the
+// purse hands it, how a failure is read, when it is tried again, and how each
+// attempt is charged -- is the same, and is written once here so the two cannot
+// come to disagree about it.
+
+import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioLlmBuildPurseCharged } from "../../../../runtime/agents/llm/build-purse/index.ts";
+import type { AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
+import { automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permissions/automation/index.ts";
+import { automationStudioRunNodeStartPages, type AutomationStudioLlmModelCaller } from "../../../../runtime/agents/llm/index.ts";
+import {
+  AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
+  automationStudioReauthorEndingWatch,
+  automationStudioReauthorRefutedResult,
+  automationStudioRefutedResultReauthorMarked,
+  automationStudioRefutedResultWaitingReauthors,
+  automationStudioResultRepairPurseAllowsPart,
+  automationStudioResultRepairPurseCharged,
+  automationStudioResultRepairPurseLeftUsd,
+  automationStudioResultRepairPurseRefused,
+  type AutomationStudioReauthorEndingWatch,
+  type AutomationStudioRefutedResultFailure,
+  type AutomationStudioResultRepairPurse
+} from "../../../../runtime/adaptation/recovery/refuted-result/index.ts";
+import { AutomationStudioProjectStoreUnavailableError } from "../../../persistence/automation/index.ts";
+import type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../flow-bootstrap-commands/index.ts";
+
+/** What a re-author build borrows from the service: the run's caller, and the build and its review. */
+export type AutomationStudioReauthorBuildDependencies = {
+  /** The person the run was made for, whose key the build pays with too. Absent for a run nobody asked the model into. */
+  caller?: AutomationStudioLlmModelCaller | undefined;
+  /** The lasting consequences the run's caller already allowed, carried into the build. */
+  permittedConsequences?: readonly AutomationStudioActionConsequence[] | undefined;
+  /**
+   * The build, run-owned, with the brief beside the Flow's own instructions.
+   * `costLeftUsd` is what is left of the repair's purse, always above zero: the
+   * build's total, which its loop budget holds it to.
+   *
+   * `startPages` is where each node's first attempt started in the run being
+   * repaired, by node id, as the host stated it (`llm/node-tools/run-start-pages.ts`):
+   * a rerun of a step carried from the Flow is put back there before it runs,
+   * not run wherever the run left the target (t194 cause C-D, `run-murwcmx2`).
+   * Empty when the run's host recorded none.
+   *
+   * `ending`, handed only by the wrong-answer route, is asked by the build's
+   * completion check before anything is checked or tested, and the check
+   * throws what it answers: a completion of the seeded draft unchanged ends
+   * the build as "nothing to change" (`recovery/refuted-result/nothing-to-change.ts`).
+   */
+  generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number, startPages: Readonly<Record<string, JsonObject>>, ending?: AutomationStudioReauthorEndingWatch, onCharged?: (receipt: AutomationStudioLlmBuildPurseCharged | undefined) => void): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
+  /** Approves the adaptation. Nothing here applies it: the judged re-run does (`./judged-reauthor.ts`). */
+  approve(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
+  /** Rejects a held edit an earlier attempt of this run left waiting, which this attempt replaces. */
+  reject(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
+};
+
+/** What one build answered: its adaptation and that it is held, or the failure it ended under. */
+export type AutomationStudioReauthorBuilt = Awaited<ReturnType<typeof automationStudioReauthorRefutedResult>>;
+
+/** The actor every re-author is reviewed and applied as. */
+const REPAIR_ACTOR = "runtime.result_repair";
+
+/**
+ * A build the purse had nothing left for. It was never started, so no request
+ * went out, and another attempt would meet the same empty purse.
+ */
+const COST_BOUND_FAILURE: AutomationStudioRefutedResultFailure = Object.freeze({
+  code: AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
+  retryable: false,
+  providerInvocation: "not_attempted",
+  providerResponse: "not_received",
+  calls: 0
+});
+
+/**
+ * Builds the extend-mode edit from `brief`, approves and holds it, and
+ * records each attempt on the run through `record`. A build that failed for a
+ * transient provider request reason is built again once, handed only what the first left.
+ * A build the purse has nothing left for is not started: it asks no model and
+ * is recorded under the cost bound.
+ */
+export async function automationStudioReauthorBuild(input: {
+  deps: AutomationStudioReauthorBuildDependencies;
+  projectId: string;
+  flowId: string;
+  brief: AutomationStudioFlowInstruction;
+  purse: AutomationStudioResultRepairPurse;
+  detail: AutomationStudioFlowRunDetail;
+  /** The run, carrying this attempt. */
+  record(detail: AutomationStudioFlowRunDetail, built: AutomationStudioReauthorBuilt): AutomationStudioFlowRunDetail;
+  /** Whether the build may end saying the Flow needs no change: the wrong-answer route only. */
+  nothingToChange?: true | undefined;
+  now: () => number;
+}): Promise<{ detail: AutomationStudioFlowRunDetail; built: AutomationStudioReauthorBuilt; purse: AutomationStudioResultRepairPurse }> {
+  const { deps, projectId, flowId, brief, now } = input;
+  // Read once, off the run as it was refuted: a retry of the build starts from the same run.
+  const startPages = automationStudioRunNodeStartPages(input.detail);
+  let purse = input.purse;
+  const build = async (): Promise<AutomationStudioReauthorBuilt> => {
+    if (!automationStudioResultRepairPurseAllowsPart(purse)) {
+      purse = automationStudioResultRepairPurseRefused(purse, "reauthor");
+      return { failure: COST_BOUND_FAILURE, durationMs: 0 };
+    }
+    const costLeftUsd = automationStudioResultRepairPurseLeftUsd(purse);
+    let charged: AutomationStudioLlmBuildPurseCharged | undefined;
+    let observed = false, inconsistent = false;
+    const reauthored = await automationStudioReauthorRefutedResult({
+      now,
+      generate: async () => {
+        // Repairing is the automation's own work, so the build needs nothing
+        // but somebody's key to pay with: the run's own caller's. A run nobody
+        // asked the model into has none, and that is named rather than thrown
+        // plainly.
+        const caller = deps.caller;
+        if (!caller) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_failed");
+        // A fresh watch per build: a retried build has said nothing yet.
+        const ending = input.nothingToChange ? automationStudioReauthorEndingWatch() : undefined;
+        let generated: AutomationStudioGenerateFlowBootstrapAdaptationResult;
+        try {
+          generated = await deps.generate({
+            projectId, flowId, mode: "extend", evidenceGuided: true,
+            caller: { actorUserId: caller.actorUserId, actorSessionId: caller.actorSessionId },
+            ...(deps.permittedConsequences?.length ? { permittedConsequences: [...deps.permittedConsequences] } : {})
+          }, brief, costLeftUsd, startPages, ending, (receipt) => {
+            if (observed && ["calls", "chargedCostUsd", "pendingCalls", "pendingCostUsd", "unreportedZeroChargeCalls"].some((key) => charged?.[key as keyof AutomationStudioLlmBuildPurseCharged] !== receipt?.[key as keyof AutomationStudioLlmBuildPurseCharged])) inconsistent = true;
+            observed = true;
+            charged = receipt;
+          });
+        } catch (error) {
+          // The build ended where its completion check threw for the watch: not
+          // a failure, the re-author's conclusion. What the build's catch kept
+          // of its spend travels with it.
+          const said = ending?.said();
+          if (!said) throw error;
+          const spent = automationStudioRefutedResultFailureOf(automationStudioFlowBootstrapFailureDiagnosticOf(error, "provider_output_validation")).accounting;
+          return { nothingToChange: said, ...(spent ? { accounting: spent } : {}) };
+        }
+        if (generated.status !== "proposed") throw flowBootstrapPhaseFailure("post_provider_validation", generated.accounting, "flow_bootstrap.post_provider_validation_failed");
+        return { adaptationId: generated.adaptationId, accounting: { ...generated.accounting } };
+      },
+      approve: (adaptationId) => deps.approve({ projectId, flowId, adaptationId, actorId: REPAIR_ACTOR }),
+      hold: true,
+      failureCode: (error) => automationStudioRefutedResultFailureOf(automationStudioFlowBootstrapFailureDiagnosticOf(error, "pre_provider_validation"))
+    });
+    // A failed build whose diagnostic did not count its calls is counted by its purse's receipt.
+    const built = withReceiptCalls(reauthored, observed && !inconsistent ? charged : undefined);
+    // A build that made an edit called the model; a failed one says whether
+    // its request went out, and its loop how many decisions it made. Either
+    // is charged what it reported.
+    const measured = observed ? settledCharge(charged, inconsistent, built) : undefined;
+    purse = automationStudioResultRepairPurseCharged(purse, measured ?? {
+      costUsd: (built.accounting ?? built.failure?.accounting)?.estimatedCostUsd,
+      calls: built.failure?.evidenceLoop?.decisionCount,
+      // A build that ended "nothing to change" was ended by a decision, so it asked the model.
+      reachedProvider: built.adaptationId !== undefined || built.nothingToChange !== undefined || (built.failure?.providerInvocation !== undefined && built.failure.providerInvocation !== "not_attempted")
+    });
+    return built;
+  };
+  // A held edit an earlier attempt of this run left waiting was run and not
+  // judged to answer, or this attempt would not be starting. It is never
+  // applied: it is rejected -- a pending adaptation refuses every new build of
+  // the Flow (`flow_bootstrap.pending_adaptation_exists`) -- and marked
+  // superseded, before this attempt builds (`./judged-reauthor.ts`).
+  let detail = await supersedeWaitingReauthors(deps, projectId, flowId, input.detail);
+  let built = await build();
+  detail = input.record(detail, built);
+  // Public retryability also covers continuing a kept draft after an unfinished
+  // or budget ending. Only a named transient request failure merits immediately
+  // rebuilding the unchanged brief. Both attempts remain on the same purse.
+  if (!built.adaptationId && automaticRequestRetry(built.failure)) {
+    built = await build();
+    detail = input.record(detail, built);
+  }
+  return { detail, built, purse };
+}
+
+/** A failed build's call count from its purse's receipt, where its diagnostic gave none and the receipt is a whole number. */
+function withReceiptCalls(built: AutomationStudioReauthorBuilt, receipt: AutomationStudioLlmBuildPurseCharged | undefined): AutomationStudioReauthorBuilt {
+  if (!built.failure || built.failure.calls !== undefined || !receipt || !Number.isSafeInteger(receipt.calls) || receipt.calls < 0) return built;
+  return { ...built, failure: { ...built.failure, calls: receipt.calls } };
+}
+
+/** Only this invocation's completed owning receipt can replace the older reported-cost reader. */
+function settledCharge(receipt: AutomationStudioLlmBuildPurseCharged | undefined, inconsistent: boolean, built: AutomationStudioReauthorBuilt): { costUsd?: number; calls?: number; reachedProvider: boolean } {
+  if (!receipt || inconsistent || ![receipt.calls, receipt.pendingCalls, receipt.unreportedZeroChargeCalls].every((value) => Number.isSafeInteger(value) && value >= 0)
+    || ![receipt.chargedCostUsd, receipt.pendingCostUsd].every((value) => Number.isFinite(value) && value >= 0)
+    || receipt.pendingCalls !== 0 || receipt.pendingCostUsd !== 0 || receipt.unreportedZeroChargeCalls > receipt.calls || receipt.unreportedZeroChargeCalls > 0) return { reachedProvider: true };
+  if (receipt.calls === 0 && (receipt.chargedCostUsd !== 0 || built.adaptationId !== undefined || built.nothingToChange !== undefined || built.failure?.providerInvocation !== "not_attempted")) return { reachedProvider: true };
+  return { costUsd: receipt.chargedCostUsd, calls: receipt.calls, reachedProvider: receipt.calls > 0 };
+}
+
+/**
+ * The run with every held edit an earlier attempt left waiting rejected and
+ * marked `superseded`. A rejection that is refused is said on the marker, in a
+ * code, and the build that follows meets the pending edit and says so too.
+ */
+async function supersedeWaitingReauthors(
+  deps: AutomationStudioReauthorBuildDependencies,
+  projectId: string,
+  flowId: string,
+  detail: AutomationStudioFlowRunDetail
+): Promise<AutomationStudioFlowRunDetail> {
+  let next = detail;
+  for (const adaptationId of automationStudioRefutedResultWaitingReauthors(detail)) {
+    let rejectRefused: "store_unavailable" | "refused" | undefined;
+    try {
+      await deps.reject({ projectId, flowId, adaptationId, actorId: REPAIR_ACTOR });
+    } catch (error) {
+      rejectRefused = AutomationStudioProjectStoreUnavailableError.is(error) ? "store_unavailable" : "refused";
+    }
+    next = automationStudioRefutedResultReauthorMarked(next, adaptationId, { notAppliedReason: "superseded", settledAt: Date.now(), ...(rejectRefused ? { rejectRefused } : {}) });
+  }
+  return next;
+}
+
+function automaticRequestRetry(failure: AutomationStudioRefutedResultFailure | undefined): boolean {
+  if (failure?.retryable !== true || failure.stage !== "provider_request") return false;
+  switch (failure.code) {
+    case "flow_bootstrap.provider_timeout":
+      // An explicit timeout has canonical unknown/attempted invocation authority;
+      // unknown transport without that typed cause never enters this branch.
+      return (failure.providerInvocation === "unknown" || failure.providerInvocation === "attempted")
+        && failure.providerResponse === "not_received";
+    case "flow_bootstrap.provider_network_error":
+      return failure.providerInvocation === "attempted" && failure.providerResponse === "unknown";
+    case "flow_bootstrap.provider_rate_limited":
+      return failure.providerInvocation === "attempted" && failure.providerResponse === "received";
+    case "flow_bootstrap.provider_http_error":
+      return failure.providerInvocation === "attempted" && failure.providerResponse === "received"
+        && typeof failure.providerStatus === "number" && Number.isInteger(failure.providerStatus)
+        && failure.providerStatus >= 500 && failure.providerStatus <= 599;
+    default:
+      return false;
+  }
+}
+
+/**
+ * A failed build, as the run records it: the code and its closed facts, the
+ * build's accounting without the provider's own words, and the loop's decision
+ * rows, so a re-author that failed part way can be walked decision by decision.
+ */
+function automationStudioRefutedResultFailureOf(diagnostic: AutomationStudioFlowBootstrapFailureDiagnostic): AutomationStudioRefutedResultFailure {
+  const accounting = diagnostic.accounting;
+  return {
+    code: diagnostic.code,
+    stage: diagnostic.stage,
+    retryable: diagnostic.retryable,
+    providerInvocation: diagnostic.providerInvocation,
+    providerResponse: diagnostic.providerResponse,
+    ...(accounting?.providerStatus === undefined ? {} : { providerStatus: accounting.providerStatus }),
+    // Numbers and identifiers only. `providerRefusal` carries the provider's
+    // own sentence, which a run record never holds.
+    ...(accounting ? { accounting: numericAccounting(accounting) } : {}),
+    ...(diagnostic.evidenceLoop ? { evidenceLoop: JSON.parse(JSON.stringify(diagnostic.evidenceLoop)) as JsonObject } : {}),
+    ...(diagnostic.ending ? { ending: closedEnding(diagnostic.ending) } : {}),
+    // How many calls the build made, which the purse charged it for (`totalProviderCallCount`), and what its gate read the instruction to ask for.
+    ...(diagnostic.totalProviderCallCount === undefined ? {} : { calls: diagnostic.totalProviderCallCount }),
+    ...(diagnostic.instructedConsequences?.length ? { instructedConsequences: [...diagnostic.instructedConsequences] } : {})
+  };
+}
+
+/**
+ * A build's ending without its words: the message is Core's sentences around
+ * the person's own words for what they asked, and each act's quote is those
+ * words, so neither is written to the run. What is kept is closed -- the kind,
+ * the budget, act ids and codes, counts, and each round's stop and the
+ * no-route case -- which is what says why each round stopped (live run
+ * muqk713g).
+ */
+function closedEnding(ending: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["ending"]>): JsonObject {
+  const { tried } = ending;
+  return {
+    kind: ending.kind,
+    ...(ending.bound ? { bound: ending.bound } : {}),
+    notDone: ending.notDone.map(({ id, todo }) => ({ id, todo })),
+    tried: {
+      rounds: tried.rounds,
+      decisions: tried.decisions,
+      stepsInFlow: tried.stepsInFlow,
+      tested: tried.tested,
+      ...(tried.stops ? { stops: tried.stops.map(({ round, stopped }) => ({ round, stopped })) } : {}),
+      ...(tried.noRoute ? { noRoute: { kind: tried.noRoute.kind } } : {})
+    }
+  };
+}
+
+function numericAccounting(accounting: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>): JsonObject {
+  return {
+    requestId: accounting.requestId,
+    estimatedInputTokens: accounting.estimatedInputTokens,
+    ...(accounting.provider ? { provider: accounting.provider } : {}),
+    ...(accounting.model ? { model: accounting.model } : {}),
+    ...(accounting.inputTokens === undefined ? {} : { inputTokens: accounting.inputTokens }),
+    ...(accounting.outputTokens === undefined ? {} : { outputTokens: accounting.outputTokens }),
+    ...(accounting.totalTokens === undefined ? {} : { totalTokens: accounting.totalTokens }),
+    ...(accounting.estimatedCostUsd === undefined ? {} : { estimatedCostUsd: accounting.estimatedCostUsd })
+  };
+}

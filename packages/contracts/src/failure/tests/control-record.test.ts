@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAutomationStudioFailureRecord, projectAutomationStudioFailureControlRecord } from "../../automation-studio.ts";
+import { parseAutomationStudioFailureRecord, projectAutomationStudioFailureControlRecord } from "../../automation.ts";
 
 const comparison = { expected: "PRIVATE_EXPECTED_MARKER", actual: "PRIVATE_ACTUAL_MARKER", evidenceDigest: "a".repeat(64) };
 

@@ -5,10 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
-import { automationStudioConversationEffectiveCaller } from "../../../runtime/conversations/commands/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
+import { automationStudioConversationEffectiveCaller } from "../../../../../runtime/interaction/conversations/commands/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
-import { AutomationStudioRunRequirementError } from "../../../runtime/service/runtime-session/index.ts";
+import { AutomationStudioRunRequirementError } from "../../../../../framework/automation-service/service/runtime-session/index.ts";
 
 const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
 

@@ -3,7 +3,7 @@
 //
 // A domain-neutral copy of the reason codes the matcher can produce, spelled
 // exactly as the Automation Studio trial evidence vocabulary spells them
-// (`programs/automation-studio/model/offline-trial/vocabulary.ts`, U5). The
+// (`flows/authoring/model/offline-trial/vocabulary.ts`, U5). The
 // gateway never imports a program, so the codes are repeated here rather than
 // read from there; a program that maps a gap into its own result contract reads
 // the same strings. Frozen and complete: a new reason is a deliberate edit here.
@@ -11,7 +11,7 @@
 // not live: `offline_not_allowed_in_phase`, `assertion_failure`,
 // `judgement_unavailable`, `source_not_live`, ...) are not the matcher's and
 // are not copied; the program's drift test pins which those are
-// (`programs/automation-studio/runtime/service/offline-trial/tests/gap-vocabulary.test.ts`).
+// (`framework/automation-service/service/offline-trial/tests/gap-vocabulary.test.ts`).
 //
 // - `missing_transition`: the trace holds no recorded operation for this
 //   command at this point (a new operation, one past the recorded end, or any

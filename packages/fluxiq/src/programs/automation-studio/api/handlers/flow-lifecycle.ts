@@ -1,7 +1,7 @@
 // What happens to a flow after it is authored: compilation, conversion,
 // deletion, publication, node catalogues, migration, and legacy retirement.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type FlowIdProjectRequest, type FlowProjectRequest, type PublishFlowRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type FlowIdProjectRequest, type FlowProjectRequest, type PublishFlowRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 

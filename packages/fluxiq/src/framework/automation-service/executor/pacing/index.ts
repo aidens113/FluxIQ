@@ -1,0 +1,2 @@
+// Compatibility export; implementation belongs to the framework.
+export { AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, type AutomationStudioPaceKeeper, automationStudioPaceKeeper, AUTOMATION_STUDIO_PACE_METADATA_KEY, automationStudioAuthoredPaceMs, automationStudioPaceAfterRateLimit, automationStudioRunWait, automationStudioSustainablePaceMs, automationStudioTimedPause } from "../../../../engine/automation/pacing/index.ts";

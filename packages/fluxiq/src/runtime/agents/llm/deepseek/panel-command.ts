@@ -1,0 +1,165 @@
+import { sendDeepSeekRequest as send, automationStudioDeepSeekHttpFailure as httpFailure, automationStudioDeepSeekEnvelopeCostUsd as panelCommandCostUsd } from "../../../models/providers/deepseek/index.ts";
+// DeepSeek reading a person's message in the chat window.
+//
+// The adapter beside this (`provider.ts`) answers Core's structured Flow tasks
+// -- bootstrap, repair, diagnosis -- each with a fixed schema, a system prompt
+// written for that task and pre-flight checks over evidence packets. A message
+// typed into the chat window is none of those: it is a sentence, the panel's
+// capability vocabulary and the end of a thread, and the answer is one small
+// JSON object naming what to do. So this is its own call, sharing the adapter's
+// endpoint, default model, bounded read and error vocabulary, and nothing else.
+//
+// What it keeps from the adapter's discipline:
+//
+// - The key is resolved per call, for the person who sent the message, and is
+//   never held: `resolveKey` is asked each time and the value lives only in
+//   this function's scope.
+// - The outbound body is checked for the key before it is sent, so a key that
+//   somehow reached the thread is refused rather than echoed back to DeepSeek.
+// - A reply is read under the adapter's byte ceiling, and the send and the
+//   read both end when the call's signal does, with `llm.provider_timeout`,
+//   rather than when `fetch` lets go (`signal-race.ts`, t613).
+// - What a reply cost, priced from its usage, is told to the conversation
+//   (`execution.paid`), which carries it into the purse of a Flow the chat
+//   then builds: the call that decides to build a Flow is that Flow's spend.
+// - Every failure is an `AutomationStudioLlmProviderError` with a code and a
+//   `retryable` flag, which is what the conversation's retry and its plain
+//   English account of the failure both read (`conversations/instructions/`).
+
+import type {
+  AutomationStudioConversationCaller,
+  AutomationStudioConversationModel,
+  AutomationStudioConversationModelRequest,
+  AutomationStudioConversationModelTurn
+} from "../../../interaction/conversations/index.ts";
+import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
+import { automationStudioLlmProviderReplyAccount } from "../reply-account.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES, readAutomationStudioDeepSeekBoundedResponse } from "./bounded-read.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekModel, type AutomationStudioDeepSeekModel } from "./models.ts";
+import { isRecord } from "./json-record.ts";
+import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
+import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
+
+export type AutomationStudioDeepSeekPanelCommandOptions = {
+  /** The key for this caller, released for one call. Throw when there is none to release. */
+  resolveKey(caller: AutomationStudioConversationCaller | null): Promise<string>;
+  fetchImpl?: typeof fetch;
+  model?: AutomationStudioDeepSeekModel;
+  maxResponseBytes?: number;
+  /** The clock a reply is priced by, peak or off-peak (`./pricing.ts`); `Date.now` when absent. */
+  now?: () => number;
+};
+
+export function createAutomationStudioDeepSeekPanelCommandModel(options: AutomationStudioDeepSeekPanelCommandOptions): AutomationStudioConversationModel {
+  const model = options.model ?? AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL;
+  if (!isAutomationStudioDeepSeekModel(model)) throw new AutomationStudioLlmProviderError("llm.provider_model_unsupported", `DeepSeek model ${String(model)} is not one Core sends to.`);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const maxResponseBytes = options.maxResponseBytes ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES;
+  const now = options.now ?? Date.now;
+  return {
+    name: `deepseek:${model}`,
+    decide: async (request, execution) => {
+      const body = JSON.stringify(automationStudioDeepSeekPanelCommandBody(request, model));
+      let key: string;
+      try {
+        key = await options.resolveKey(execution.caller);
+      } catch (error) {
+        // No key for this person right now: not a fault a retry fixes.
+        throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", error instanceof Error ? error.message : "No model key could be released.", false);
+      }
+      if (!key) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "No model key could be released.", false);
+      if (body.includes(key)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The message would have carried the model key to the model.", false);
+      // When it is sent: what it is billed at, peak or off-peak (t254). Its cost is carried into the Flow creation's purse.
+      const sentAtMs = now();
+      // The step log's `NNNN-chat` folder (`../step-log/`): the exact body and reply, never the key. Undefined when off.
+      const step = automationStudioLlmStepLogModelStep({
+        provider: "deepseek", model, url: AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, body, taskKind: "panel_command", kind: "chat",
+        price: (usage) => estimateAutomationStudioDeepSeekCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheHitInputTokens, model, sentAtMs)
+      });
+      try {
+        const response = await send(fetchImpl, body, key, execution.signal);
+        const bytes = await readAutomationStudioDeepSeekBoundedResponse(response, maxResponseBytes, execution.signal);
+        step?.reply(bytes, response.status);
+        const envelope = panelCommandEnvelope(new TextDecoder().decode(bytes));
+        // What the reply cost, told before anything can refuse it: a reply Core cannot use was still paid for.
+        const costUsd = "value" in envelope ? panelCommandCostUsd(envelope.value, model, sentAtMs) : undefined;
+        if (costUsd !== undefined) execution.paid?.(costUsd);
+        if (!response.ok) throw httpFailure(response.status, envelope);
+        const content = panelCommandContent(envelope);
+        step?.succeeded({ content });
+        return content;
+      } catch (error) {
+        step?.failed(error);
+        throw error;
+      }
+    }
+  };
+}
+
+/**
+ * The request as DeepSeek receives it: the instructions as the system message,
+ * the thread as alternating turns, and the new message last. JSON mode, no
+ * thinking, temperature zero -- the answer is a choice, not prose. No
+ * output cap is sent: no request sends max_tokens (t254, user 2026-10-03).
+ */
+export function automationStudioDeepSeekPanelCommandBody(request: AutomationStudioConversationModelRequest, model: AutomationStudioDeepSeekModel): Record<string, unknown> {
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [{ role: "system", content: request.instructions }];
+  for (const turn of request.transcript) messages.push(transcriptMessage(turn));
+  messages.push({ role: "user", content: request.message });
+  if (request.correction) messages.push({ role: "user", content: request.correction });
+  return {
+    model,
+    messages,
+    temperature: 0,
+    thinking: { type: "disabled" },
+    response_format: { type: "json_object" },
+    stream: false
+  };
+}
+
+function transcriptMessage(turn: AutomationStudioConversationModelTurn): { role: "user" | "assistant"; content: string } {
+  if (turn.author === "person") return { role: "user", content: turn.text };
+  // What the panel did is said by FluxIQ's side of the conversation, marked so
+  // the model does not read "Ran the Flow." as its own earlier words.
+  return { role: "assistant", content: turn.author === "panel" ? `[The panel reported] ${turn.text}` : turn.text };
+}
+
+
+
+/** Cancels the body of a reply that came after its call gave up. Nothing waits on it, so a failed cancel is only a connection the server will close. */
+
+
+
+
+/** DeepSeek's envelope, read once: its value, or the error that refused it as JSON, which `panelCommandContent` reports. */
+function panelCommandEnvelope(text: string): { value: unknown } | { notJson: unknown } {
+  try {
+    return { value: JSON.parse(text) };
+  } catch (error) {
+    return { notJson: error };
+  }
+}
+
+/**
+ * What one reply cost in US dollars, priced from its envelope's `usage` as the
+ * step log prices it (`../step-log/model-step.ts`). Undefined when the reply
+ * carries no usage, or counts the pricing refuses.
+ */
+
+
+/** The model's own words out of DeepSeek's envelope. The conversation parses them; an empty answer is a malformed one. */
+function panelCommandContent(read: { value: unknown } | { notJson: unknown }): string {
+  if (!("value" in read)) {
+    throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek's reply was not JSON.", true, undefined, undefined, undefined, undefined, { case: "envelope_not_json" });
+  }
+  const envelope = read.value;
+  const choice = (envelope as { choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown } }> } | null)?.choices?.[0];
+  const content = choice?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    // Which of the two it was, and why the provider stopped: never the reply (`../reply-account.ts`).
+    const reply = automationStudioLlmProviderReplyAccount({ case: typeof content === "string" ? "content_empty" : "content_missing", finishReason: choice?.finish_reason, ...(typeof content === "string" ? { contentChars: content.length } : {}) });
+    throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "DeepSeek's reply carried no answer.", true, undefined, undefined, undefined, undefined, reply);
+  }
+  return content;
+}

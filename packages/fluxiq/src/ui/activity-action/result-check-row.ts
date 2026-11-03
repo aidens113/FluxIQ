@@ -1,7 +1,7 @@
 /**
  * The title a result check's rows carry: "Result check started" as it starts
  * and "Result check" with the verdict
- * (`programs/automation-studio/runtime/result-verification/verify.ts`).
+ * (`runtime/result-verification/verify.ts`).
  */
 const RESULT_CHECK_TITLE = /^Result check\b/u;
 

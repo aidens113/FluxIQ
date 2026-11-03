@@ -10,7 +10,7 @@ import type {
   AppendRecordingEntryRequest,
   CreateRecordingRequest,
   FinalizeRecordingRequest
-} from "@fluxiq/contracts/automation-studio";
+} from "@fluxiq/contracts/automation";
 import type { JsonObject } from "@fluxiq/contracts/core";
 import { FluxIQClientGatewayWebSocketClient } from "./transport.ts";
 import type { FluxIQClientGatewayWebSocketOptions } from "./types.ts";

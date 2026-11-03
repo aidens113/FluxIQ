@@ -5,17 +5,17 @@
 // (`permittedConsequences`).
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { resolveAutomationStudioBuildAuthoringMode } from "../../model/authoring-mode/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
+import { resolveAutomationStudioBuildAuthoringMode } from "../../../../flows/authoring/model/authoring-mode/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../../runtime/agents/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../../../../api-contracts/automation.ts";
 // Values come from their owning modules, not the runtime barrel: through the barrel a load order
 // reached llm-generation before generation-failure finished loading, and its builders read undefined
 // (sweep-1008: twelve runtime-execution tests). Types erase, so they may stay on the barrel.
-import { parseAutomationStudioPermittedConsequences } from "../../runtime/action-permissions/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation } from "../../runtime/flow-bootstrap/index.ts";
-import { automationStudioFlowBootstrapFailedBuilds, parseAutomationStudioFlowBootstrapGenerationError } from "../../runtime/flow-bootstrap/generation-failure/index.ts";
-import type { AutomationStudioActionConsequence, AutomationStudioCandidateDraftTrial, AutomationStudioGeneratedCandidateTrial, AutomationStudioService } from "../../runtime/index.ts";
-import { AutomationStudioGatewayTraceInstallation } from "../../runtime/gateway-trace/index.ts";
+import { parseAutomationStudioPermittedConsequences } from "../../../../runtime/action-permissions/automation/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
+import { automationStudioFlowBootstrapFailedBuilds, parseAutomationStudioFlowBootstrapGenerationError } from "../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioCandidateDraftTrial, AutomationStudioGeneratedCandidateTrial, AutomationStudioService } from "../../../../framework/automation-service/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../../../runtime/recording/gateway-trace/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 

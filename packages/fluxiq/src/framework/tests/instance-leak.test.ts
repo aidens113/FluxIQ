@@ -6,7 +6,7 @@ import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
 import { HeldKeys } from "../../programs/secret-keys/index.ts";
-import { automationStudioActivityHub } from "../../programs/automation-studio/runtime/activity/index.ts";
+import { automationStudioActivityHub } from "../../runtime/activity/automation/index.ts";
 import { programStateConnections } from "../../programs/_shared/storage.ts";
 import { heldSessionKey } from "../../programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { FluxIQ } from "../index.ts";

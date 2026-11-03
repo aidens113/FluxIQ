@@ -146,7 +146,7 @@ export type ActivityActionEvent = {
 
 /**
  * The generic verbs an id, a label or a result code can name. Each belongs to
- * one kind; the activity wording (`programs/automation-studio/runtime/activity/wording`)
+ * one kind; the activity wording (`runtime/activity/automation/wording`)
  * says each in a person's words.
  */
 export type ActivityActionVerb =

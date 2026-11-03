@@ -1,0 +1,142 @@
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../../runtime/action-permissions/automation/index.ts";
+import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
+import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
+import type { AutomationStudioLlmModelCaller } from "../../../../runtime/agents/llm/index.ts";
+
+// What a caller asks for when it generates a Flow Bootstrap adaptation, and
+// what it gets back.
+
+export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
+  projectId: string;
+  flowId: string;
+  /** The person the build is made for, whose unlocked key pays for its model calls. Not an authorization. */
+  caller: AutomationStudioLlmModelCaller;
+  /** The lasting consequences the person has already allowed this build's actions to have. Absent, none: each is asked about. */
+  permittedConsequences?: AutomationStudioActionConsequence[];
+  evidenceGuided?: true;
+  /**
+   * Opt-in explicit complete candidate submission; static validity remains
+   * unverified. `project` builds that candidate through the project supervisor
+   * and its builders (`../project-build/`); its result is a candidate's.
+   */
+  authoringMode?: "candidate" | "project";
+  useReusableContext?: true;
+  /**
+   * What this build does to the Flow. Absent, `create`: a blank Flow, written
+   * from the instruction, which is every build there has ever been.
+   *
+   * `extend` starts from the Flow that is already there -- read back as the
+   * draft the model amends (`llm/node-tools/draft-from-flow.ts`) -- and keeps
+   * its Router, Subflow, graph Flow and node ids, so the result is an edit
+   * rather than a second Flow that happens to contain most of the same nodes.
+   * It is the door a run that answered the wrong question comes back through.
+   */
+  mode?: AutomationStudioBootstrapAdaptationMode;
+  /**
+   * Where the Flow this build writes starts, in the bound domain's own
+   * spelling. Core carries it and never parses it
+   * (`runtime/flow-bootstrap/start-location.ts`).
+   *
+   * Given, the model is shown it and the bound domain is told it on every tool
+   * call, so the domain can refuse everything until the Flow has reached it and
+   * the step that reaches it ends up in the draft the plan is assembled from.
+   * Omitted, the build explores whatever the caller put in front of it, as it
+   * always has.
+   */
+  startLocation?: string;
+  /**
+   * How long the build waits for a person to answer a permission question
+   * before carrying on without an answer.
+   *
+   * Absent, or not a positive number, means it does not wait: the question is
+   * still opened in the Flow's thread, and the build proposes what it could
+   * build while carrying the request, which nothing may approve or apply until
+   * the person grants it. A caller with somebody in front of it -- the API
+   * handler, where a person has just pressed build -- passes a wait, and the
+   * build carries straight on with permission the moment they answer.
+   */
+  permissionAskTimeoutMs?: number;
+  /**
+   * What the chat's reading of the message that asked for this build cost, in
+   * US dollars. A build that is not a refuted-result repair opens the Flow's
+   * creation purse with it carried on top of what earlier builds spent, so it
+   * is saved into the creation's record with the rest (`./creation-purse.ts`).
+   * A repair ignores it. Absent, nothing is carried.
+   */
+  interpretationCostUsd?: number;
+  /** How many priced model calls `interpretationCostUsd` sums, recorded as the Flow spend's "chat" calls. */
+  interpretationCalls?: number;
+};
+
+export type AutomationStudioGenerateFlowBootstrapAdaptationProposal = {
+  projectId: string;
+  flowId: string;
+  adaptationId: string;
+  status: "proposed";
+  riskLevel: AutomationStudioBootstrapAdaptation["riskLevel"];
+  sourceInstructionIds: string[];
+  baseDependencyDigest: string;
+  baseSettingsRevision: number;
+  accounting: {
+    requestId: string;
+    estimatedInputTokens: number;
+    provider?: string;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    estimatedCostUsd?: number;
+  };
+  /**
+   * Present when the build met an action whose consequence the person had not
+   * permitted and finished anyway. The proposal is real and is stored, and
+   * nothing may be approved or applied until the person has answered this: send
+   * the next build with the classes it lists as `missing` permitted.
+   */
+  permissionRequest?: AutomationStudioActionPermissionRequest;
+  /**
+   * Candidate mode only: the candidate and the trial whose confirmed yes made
+   * this proposal (t340). A legacy build's proposal never carries it.
+   */
+  candidate?: AutomationStudioGeneratedCandidateTrial;
+};
+
+/** Which candidate, at which revision and digest, and which trial run's confirmed yes produced a proposal. */
+export type AutomationStudioGeneratedCandidateTrial = {
+  candidateId: string;
+  revision: number;
+  digest: string;
+  trial: { runId: string; verdict: "yes"; calls: number };
+};
+
+/**
+ * Why a candidate stayed a draft: the standing trial verdict for its latest
+ * revision (`not_tested` when none ran), the trial run behind it, and Core's
+ * codes (`candidate.trial_judged_no`, `FLOW_BOOTSTRAP_STALE`, ...).
+ */
+export type AutomationStudioCandidateDraftTrial = {
+  verdict: AutomationStudioCandidateTrialVerdict | "not_tested";
+  runId?: string;
+  codes: string[];
+};
+
+export type AutomationStudioGenerateFlowBootstrapAdaptationResult = AutomationStudioGenerateFlowBootstrapAdaptationProposal | (
+  Omit<AutomationStudioGenerateFlowBootstrapAdaptationProposal, "status" | "adaptationId" | "riskLevel" | "permissionRequest" | "candidate"> & {
+    status: "draft";
+    candidateId: string;
+    revision: number;
+    digest: string;
+    verification: "not_performed";
+    promotionAllowed: false;
+    /** Present when a trial runner was available: why nothing was promoted. */
+    trial?: AutomationStudioCandidateDraftTrial;
+  }
+);
+
+/**
+ * Only an absent flag is statically legacy. Candidate mode ends as a draft or,
+ * after a confirmed trial yes, as a proposal carrying `candidate` (t340).
+ */
+export type AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input extends AutomationStudioGenerateFlowBootstrapAdaptationInput> =
+  "authoringMode" extends keyof Input ? AutomationStudioGenerateFlowBootstrapAdaptationResult
+  : AutomationStudioGenerateFlowBootstrapAdaptationProposal;

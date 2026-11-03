@@ -18,8 +18,8 @@
 // 50 (C11), never the Design's 1-500.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type DatasetRunListRequest, type ProjectDatasetListRequest, type RunDatasetDeleteRequest, type RunDatasetExportRequest, type RunDatasetListRequest, type RunDatasetPageRequest } from "../contracts.ts";
-import { automationStudioPageLimit } from "../../storage/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type DatasetRunListRequest, type ProjectDatasetListRequest, type RunDatasetDeleteRequest, type RunDatasetExportRequest, type RunDatasetListRequest, type RunDatasetPageRequest } from "../../../../api-contracts/automation.ts";
+import { automationStudioPageLimit } from "../../../../framework/persistence/automation/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDependencies): void {

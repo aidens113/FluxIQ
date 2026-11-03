@@ -106,7 +106,7 @@ sits in needs splitting, not the kind folder.
 ### Depth
 
 Ownership, program, layer, feature, kind, file:
-`packages/fluxiq/src/programs/automation-studio/storage/project/hierarchy/repository.ts`
+`packages/fluxiq/src/framework/persistence/automation/project/hierarchy/repository.ts`
 is seven path segments. Cap source files at eight segments from the
 repository root. A ninth means a layer or feature was assigned wrongly. A
 test sits one segment deeper than its subject and is not counted. The one
@@ -137,7 +137,7 @@ storage/project/hierarchy/
   may hold support alongside.
 - **Test support that ships is source, not a test.** Anything exported from a
   public subpath or imported by non-test code stays in `src/<area>/testing/`.
-  `programs/automation-studio/testing/` and `client-gateway/testing/` are
+  `framework/automation-service/testing/` and `client-gateway/testing/` are
   this kind: both are re-exported from public barrels.
 - A `tests/` folder is a directory, so it does not count toward its parent's
   25-file cap. It carries the cap itself, and that holds automatically: a

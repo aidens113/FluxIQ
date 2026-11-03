@@ -170,7 +170,7 @@ describe("Flow settings round trip", () => {
     // only the resolver, so the copy is pinned to Core's source here: changing
     // Core's values without changing the panel's fails this test rather than
     // quietly making the settings screen describe a Flow that does not exist.
-    const core = readFileSync(new URL("../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/service/flow-settings/adaptation-policy.ts", import.meta.url), "utf8");
+    const core = readFileSync(new URL("../../../../../../../packages/fluxiq/src/framework/automation-service/service/flow-settings/adaptation-policy.ts", import.meta.url), "utf8");
     const coreDefault = (field: string) => {
       const found = core.match(new RegExp(`${field}:\\s*booleanSetting\\(settings\\.${field},\\s*(true|false)\\)`));
       expect(found, `Core no longer resolves ${field} with a boolean default; re-read adaptation-policy.ts`).toBeTruthy();

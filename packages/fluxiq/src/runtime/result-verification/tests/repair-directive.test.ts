@@ -1,0 +1,332 @@
+import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../core/index.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
+import {
+  AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES,
+  automationStudioResultRepairDirective,
+  automationStudioResultRepairFindings
+} from "../repair-directive.ts";
+
+// What a refutation tells the repair to fix.
+//
+// Every finding here is arithmetic over a summary Core already holds, so each
+// test states a result and asserts the instruction that follows from it. The
+// judgement's own words are read forgivingly: nothing about them may refuse a
+// verdict, and the screens that apply to them are the two every request passes.
+
+const codes = AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES;
+
+const recordSet = (fields: Partial<AutomationStudioResultRecordSetSummary> = {}): AutomationStudioResultRecordSetSummary => ({
+  datasetId: "members",
+  recordCount: 4,
+  refusedCount: 0,
+  truncated: false,
+  columns: ["name", "role"],
+  columnsWithheld: false,
+  rowsChecked: 4,
+  rowsMissingRequired: 0,
+  missingRequiredColumns: [],
+  ...fields
+});
+
+const result = (fields: Partial<AutomationStudioRunResultSummary> = {}): AutomationStudioRunResultSummary => ({
+  schemaVersion: "automation-studio.run-result-summary.v1",
+  totalRecordCount: 4,
+  totalRefusedCount: 0,
+  totalRowsMissingRequired: 0,
+  recordSetCount: 1,
+  recordSets: [recordSet()],
+  flowShape: [{ nodeId: "n1", definitionId: "builtin.navigate" }, { nodeId: "n2", definitionId: "web.extract.list" }],
+  withheld: false,
+  ...fields
+});
+
+const codesOf = (summary: AutomationStudioRunResultSummary): string[] =>
+  automationStudioResultRepairFindings(summary).map((finding) => finding.code);
+
+describe("what Core's own arithmetic finds wrong with a result", () => {
+  it("names a run that kept no record set at all, and says to add the step that stores", () => {
+    const directive = automationStudioResultRepairDirective({ summary: result({ recordSetCount: 0, recordSets: [], totalRecordCount: 0 }) });
+    expect(directive.findings.map((finding) => finding.code)).toEqual([codes.noRecordSet]);
+    expect(directive.fix[0]).toContain("stores what the Flow read");
+  });
+
+  it("tells a run whose every row was refused to make a found row storable", () => {
+    const directive = automationStudioResultRepairDirective({
+      summary: result({ totalRecordCount: 0, totalRefusedCount: 8, recordSets: [recordSet({ recordCount: 0, refusedCount: 8 })] })
+    });
+    expect(directive.findings[0]?.code).toBe(codes.everyRowRefused);
+    expect(directive.findings[0]?.detail).toContain("8 rows were found");
+    expect(directive.fix[0]).toContain("thrown away by validation");
+  });
+
+  it("tells an empty result to loosen before narrowing, which is the opposite of the tempting advice", () => {
+    // Mutation: advise narrowing. A Flow that found nothing cannot be repaired by
+    // filtering harder, and a permissive first pass is the rule the whole loop
+    // runs on: too much rather than nothing.
+    const directive = automationStudioResultRepairDirective({
+      summary: result({ totalRecordCount: 0, recordSets: [recordSet({ recordCount: 0, rowsChecked: 0 })] })
+    });
+    expect(directive.findings[0]?.code).toBe(codes.noRecordsStored);
+    expect(directive.fix[0]).toContain("loosen every condition");
+  });
+
+  it("names the required columns that were stored empty, and never a value", () => {
+    const directive = automationStudioResultRepairDirective({
+      summary: result({
+        totalRowsMissingRequired: 3,
+        recordSets: [recordSet({ rowsMissingRequired: 3, missingRequiredColumns: ["price", "address"], sampleRows: [{ name: "4 Kelford Row", price: "" }] })]
+      })
+    });
+    const finding = directive.findings.find((item) => item.code === codes.requiredValuesMissing);
+    expect(finding?.columns).toEqual(["price", "address"]);
+    expect(directive.fix.some((line) => line.includes("price, address"))).toBe(true);
+    expect(JSON.stringify(directive)).not.toContain("4 Kelford Row");
+  });
+
+  it("names a column the sample shows empty in every row, and leaves the required ones to their own finding", () => {
+    const directive = automationStudioResultRepairDirective({
+      summary: result({
+        totalRowsMissingRequired: 1,
+        recordSets: [recordSet({
+          columns: ["name", "role", "price"],
+          rowsMissingRequired: 1,
+          missingRequiredColumns: ["price"],
+          sampleRows: [{ name: "Hollis", role: "", price: "" }, { name: "Vane", role: "   ", price: "" }]
+        })]
+      })
+    });
+    const finding = directive.findings.find((item) => item.code === codes.columnAlwaysEmpty);
+    expect(finding?.columns).toEqual(["role"]);
+    expect(finding?.datasetId).toBe("members");
+  });
+
+  // `run-muq66ff9-cb3767a1`: the read kept `ad` and filtered on `ad is absent`, and all three re-authors were told to re-point it.
+  it("does not call a column empty when a read's own condition keeps it empty, and still names one empty for no stated reason", () => {
+    const summary = result({
+      recordSets: [recordSet({
+        columns: ["name", "role", "ad"],
+        sampleRows: [{ name: "Hollis", role: "", ad: "" }, { name: "Vane", role: "", ad: null }]
+      })],
+      reads: [{ nodeId: "s8", definitionId: "web.output.dom-extract_list", pagesRead: 5, stop: "control_disabled", truncated: false, kept: 2, conditions: [{ condition: "ad is absent", rejected: 20 }] }]
+    });
+    const directive = automationStudioResultRepairDirective({ summary });
+    expect(directive.findings.find((item) => item.code === codes.columnAlwaysEmpty)?.columns).toEqual(["role"]);
+    expect(directive.fix.some((line) => line.includes("(role)"))).toBe(true);
+    expect(directive.fix.some((line) => line.includes("(role, ad)") || line.includes("(ad)"))).toBe(false);
+    // Only that column, and only while a read says so: alone, it leaves no finding at all.
+    expect(codesOf(result({ ...summary, recordSets: [recordSet({ columns: ["name", "ad"], sampleRows: [{ name: "Hollis", ad: "" }] })] })))
+      .toEqual([codes.countsLookRight]);
+    expect(codesOf(result({ recordSets: [recordSet({ columns: ["name", "ad"], sampleRows: [{ name: "Hollis", ad: "" }] })] })))
+      .toContain(codes.columnAlwaysEmpty);
+  });
+
+  it("says nothing about a set's columns when no row was sampled, because the bound is not a finding", () => {
+    expect(codesOf(result({ recordSets: [recordSet()] }))).toEqual([codes.countsLookRight]);
+  });
+
+  it("names a sample whose every row is the same row", () => {
+    const same: JsonObject = { name: "Hollis", role: "admin" };
+    const directive = automationStudioResultRepairDirective({
+      summary: result({ recordSets: [recordSet({ sampleRows: [same, { role: "admin", name: "Hollis" }, same] })] })
+    });
+    const finding = directive.findings.find((item) => item.code === codes.rowsIdentical);
+    expect(finding?.detail).toContain("3 rows sampled");
+    expect(directive.fix.some((line) => line.includes("row container"))).toBe(true);
+  });
+
+  it("does not call one sampled row identical to itself", () => {
+    expect(codesOf(result({ recordSets: [recordSet({ sampleRows: [{ name: "Hollis", role: "admin" }] })] })))
+      .not.toContain(codes.rowsIdentical);
+  });
+
+  it("names a truncated set, so a prefix is not mistaken for the answer", () => {
+    const directive = automationStudioResultRepairDirective({ summary: result({ recordSets: [recordSet({ truncated: true })] }) });
+    expect(directive.findings.some((finding) => finding.code === codes.recordsTruncated)).toBe(true);
+    expect(directive.fix.some((line) => line.includes("Raise what the record output keeps"))).toBe(true);
+  });
+
+  it("records that the account was cut without inventing an instruction for it", () => {
+    const findings = automationStudioResultRepairFindings(result({ withheld: true }));
+    expect(findings.map((finding) => finding.code)).toEqual([codes.countsLookRight, codes.summaryWithheld]);
+    const directive = automationStudioResultRepairDirective({ summary: result({ withheld: true }) });
+    // Two findings, one instruction: "part of this was cut" is a fact about the
+    // account, and a fix line for it would be a change to the Flow that nothing
+    // observed.
+    expect(directive.fix.length).toBe(1);
+  });
+
+  it("says what to compare when no count is wrong, and names the Flow's last step as that", () => {
+    const directive = automationStudioResultRepairDirective({ summary: result() });
+    expect(directive.findings.map((finding) => finding.code)).toEqual([codes.countsLookRight]);
+    expect(directive.fix[0]).toContain("n2 (web.extract.list)");
+  });
+
+  // t176, measured provider-free: a Flow as a person or a build saves it ends in
+  // its end node, and the fix told the re-author "the Flow's last step is end
+  // (builtin.control.end)" -- a node no build authors or edits, named as the
+  // place to look. The step named is the last one a build could have written.
+  it("never names the Flow's derived start or end node as its last step", () => {
+    const directive = automationStudioResultRepairDirective({ summary: result({ flowShape: [
+      { nodeId: "start", definitionId: "builtin.control.start" },
+      { nodeId: "n2", definitionId: "web.extract.list" },
+      { nodeId: "end", definitionId: "builtin.control.end" }
+    ] }) });
+    expect(directive.fix[0]).toContain("the Flow's last step is n2 (web.extract.list)");
+    expect(directive.fix[0]).not.toContain("builtin.control");
+    const onlyControl = automationStudioResultRepairDirective({ summary: result({ flowShape: [{ nodeId: "end", definitionId: "builtin.control.end" }] }) });
+    expect(onlyControl.fix[0]).not.toContain("last step");
+  });
+
+  // Whole since 2026-09-30: it was held to 8 findings, 8 fix lines and 8 columns a finding.
+  it("carries every finding, every fix line and every column", () => {
+    const directive = automationStudioResultRepairDirective({
+      summary: result({
+        totalRecordCount: 0,
+        totalRefusedCount: 2,
+        totalRowsMissingRequired: 2,
+        recordSets: Array.from({ length: 4 }, (_set, index) => recordSet({
+          datasetId: `set${index}`,
+          recordCount: 0,
+          refusedCount: 2,
+          truncated: true,
+          rowsMissingRequired: 2,
+          missingRequiredColumns: Array.from({ length: 12 }, (_column, column) => `field${column}`),
+          sampleRows: [{ name: "" }, { name: "" }]
+        })),
+        withheld: true
+      })
+    });
+    // Every-row-refused, required-missing, then per set an empty column and truncation (4 x 2), then withheld.
+    expect(directive.findings.length).toBeGreaterThan(8);
+    expect(directive.fix.length).toBeGreaterThan(8);
+    const required = directive.findings.find((finding) => finding.code === AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.requiredValuesMissing);
+    expect(required?.columns).toHaveLength(12);
+  });
+});
+
+describe("the judgement's own words, read forgivingly", () => {
+  it("is absent, not empty, when no model was asked", () => {
+    expect(automationStudioResultRepairDirective({ summary: result() }).judgement).toBeUndefined();
+  });
+
+  it("carries what the judgement said, whole", () => {
+    const directive = automationStudioResultRepairDirective({
+      summary: result(),
+      judgement: { expected: "  two members  ", observed: "every member", advice: "y".repeat(800) }
+    });
+    expect(directive.judgement).toEqual({
+      expected: "two members",
+      observed: "every member",
+      advice: "y".repeat(800)
+    });
+    expect(directive.withheld).toBeUndefined();
+  });
+
+  it("ignores anything that is not a usable string without refusing the directive", () => {
+    const directive = automationStudioResultRepairDirective({
+      summary: result(),
+      judgement: { expected: { clause: "two" }, observed: 4, advice: "\n \t " }
+    });
+    expect(directive.judgement).toBeUndefined();
+    expect(directive.withheld).toBeUndefined();
+    expect(directive.findings.length).toBeGreaterThan(0);
+    expect(directive.fix.length).toBeGreaterThan(0);
+  });
+
+  it("drops a credential-shaped sentence whole and says so", () => {
+    const directive = automationStudioResultRepairDirective({
+      summary: result(),
+      judgement: { advice: "use sk-abcd1234efgh5678ijkl9012mnop to sign in", observed: "every member" }
+    });
+    expect(directive.judgement).toEqual({ observed: "every member" });
+    expect(directive.withheld).toBe(true);
+    expect(JSON.stringify(directive)).not.toContain("sk-abcd");
+  });
+
+  it("redacts a locator inside a sentence and keeps the sentence", () => {
+    const directive = automationStudioResultRepairDirective({
+      summary: result(),
+      judgement: { advice: "filter the rows in .product-card before storing them" }
+    });
+    expect(directive.judgement?.advice).toBe("filter the rows in [locator withheld] before storing them");
+    expect(directive.withheld).toBe(true);
+  });
+});
+
+// Read-list design 5.3 (C5): a filtered read in a Flow run answers the rows it
+// kept, even none, so a run can store nothing because its conditions rejected
+// every row it saw. "Found none" is then false: the list was read, and held rows.
+describe("a result that kept nothing while its reads' conditions rejected rows", () => {
+  const read = (overrides: Partial<AutomationStudioResultReadAccount> = {}): AutomationStudioResultReadAccount => ({
+    nodeId: "read", definitionId: "opaque.read", pagesRead: 5, stop: "ended", truncated: false, itemsSeen: 40, kept: 0, paginates: true,
+    conditions: [{ condition: "rating atLeast 4", rejected: 31 }, { condition: "price lessThan 50", rejected: 22 }], keptPerPage: [0, 0, 0, 0, 0], ...overrides
+  });
+  const keptNothing = (reads: AutomationStudioResultReadAccount[]) =>
+    result({ totalRecordCount: 0, recordSets: [recordSet({ recordCount: 0, rowsChecked: 0 })], reads });
+
+  it("says the conditions left every row out, with the counts, instead of saying the read found none", () => {
+    const directive = automationStudioResultRepairDirective({ summary: keptNothing([read(), read({ nodeId: "other", pagesRead: 1, itemsSeen: 6, conditions: [{ rejected: 6 }], keptPerPage: [0] })]) });
+    expect(directive.findings.map((finding) => finding.code)).toEqual([codes.keptNoneRowsRejected]);
+    expect(codes.keptNoneRowsRejected).toBe("result.kept_none_rows_rejected");
+    const detail = directive.findings[0]!.detail;
+    expect(detail).toContain("at least 37 rows over 6 pages");
+    expect(detail).toContain("46 items seen");
+    expect(detail).not.toContain("found none");
+    expect(directive.fix[0]).toContain("a condition leaves out what the request asks for, or the list holds none of it");
+    expect(directive.fix.join(" ")).not.toContain("loosen every condition");
+  });
+
+  it("keeps the found-none finding where no condition rejected a row", () => {
+    expect(codesOf(keptNothing([read({ itemsSeen: 0, conditions: [{ condition: "rating atLeast 4", rejected: 0 }] })]))).toEqual([codes.noRecordsStored]);
+    const { conditions: _conditions, ...unconditioned } = read();
+    expect(codesOf(keptNothing([unconditioned]))).toEqual([codes.noRecordsStored]);
+  });
+
+  it("says it of a set whose processing kept none while another set stored rows, from the reads that collected it", () => {
+    const empty = recordSet({
+      datasetId: "answer", recordCount: 0, rowsChecked: 0,
+      processing: { collected: 0, duplicates: 0, filteredOut: 0, cut: 0, kept: 0, keptNone: true, passes: [{ node: "read", pass: 1, rows: 0, newRows: 0 }] }
+    });
+    const findings = automationStudioResultRepairFindings(result({
+      totalRecordCount: 4, recordSetCount: 2, recordSets: [recordSet(), empty],
+      reads: [read({ pagesRead: 2, keptPerPage: [0, 0] }), read({ nodeId: "unrelated", conditions: [{ rejected: 99 }] })]
+    }));
+    const kept = findings.filter((finding) => finding.code === codes.keptNoneRowsRejected);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({ datasetId: "answer" });
+    expect(kept[0]!.detail).toContain("at least 31 rows over 2 pages");
+    // A set that kept none from reads that rejected nothing is not this finding.
+    const quiet = automationStudioResultRepairFindings(result({ totalRecordCount: 4, recordSetCount: 2, recordSets: [recordSet(), empty], reads: [read({ conditions: [] })] }));
+    expect(quiet.map((finding) => finding.code)).not.toContain(codes.keptNoneRowsRejected);
+  });
+});
+
+// A read of one part of a list that goes on is a finding of its own, in place
+// of `result.counts_look_right` (F8). Live run `run-mveaaqxn-d0be9888`: a read
+// saw 5 items of a longer list and kept 1, and the bare "the counts look right"
+// steered three repairs toward the read's conditions while the rest of the list
+// was never read. The lists are made up.
+const recipesRead = (fields: Partial<AutomationStudioResultReadAccount> = {}): AutomationStudioResultReadAccount =>
+  ({ nodeId: "read.recipes", definitionId: "web.output.dom-extract_list", pagesRead: 1, truncated: false, itemsSeen: 5, kept: 1, ...fields });
+const recipesResult = (read: AutomationStudioResultReadAccount): AutomationStudioRunResultSummary =>
+  result({ totalRecordCount: 1, recordSets: [recordSet({ datasetId: "recipes", recordCount: 1, columns: ["title"], rowsChecked: 1 })], flowShape: [{ nodeId: "read.recipes", definitionId: "web.output.dom-extract_list" }], reads: [read] });
+
+describe("a read of one part of a list that goes on", () => {
+  it("is found as such, naming its step, with a fix line, and the counts are no longer said to look right", () => {
+    const directive = automationStudioResultRepairDirective({ summary: recipesResult(recipesRead({ listContinues: { kind: "next_page", evidence: "next_control" } })) });
+    expect(directive.findings.map((finding) => finding.code)).toEqual([codes.readListContinues]);
+    expect(directive.findings[0]!.detail).toBe("Step read.recipes read one part of a list that goes on past it (the page shows a control to its next page): it saw 5 items and kept 1, and no item after those was read.");
+    expect(directive.fix).toHaveLength(1);
+    expect(directive.fix[0]).toContain("To read past what step read.recipes read, move that same list on to its next part (its next page)");
+  });
+
+  it("leaves a read whose list ended as it was: the counts look right", () => {
+    expect(codesOf(recipesResult(recipesRead()))).toEqual([codes.countsLookRight]);
+  });
+
+  it("finds nothing new for a read that pages, whose paging account says how its list ended", () => {
+    const paged = recipesRead({ pagesRead: 4, paginates: true, stop: "page_limit", listContinues: { kind: "next_page", evidence: "next_control" } });
+    expect(codesOf(recipesResult(paged))).toEqual([codes.countsLookRight]);
+  });
+});

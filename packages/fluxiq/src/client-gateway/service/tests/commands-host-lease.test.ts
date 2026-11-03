@@ -1,7 +1,7 @@
 // The host lease on non-durable action commands (automation-project-agents-plan,
 // `Host resources and concurrency`): stamped from the dispatching scope, and a
 // stale, foreign or missing one refused before anything is sent.
-import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation";
 import { describe, expect, it } from "vitest";
 import { ClientGatewayService, CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayActionCommand, type ClientGatewayHostLease, type ClientGatewayServiceOptions } from "../../index.ts";
 import type { ClientGatewayHostLeaseSource } from "../host-lease/index.ts";

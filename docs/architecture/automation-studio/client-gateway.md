@@ -33,7 +33,7 @@ The reusable gateway lives under `packages/fluxiq/src/client-gateway/`:
   rather than the implementation.
 
 Automation Studio consumes the gateway through
-`packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts`.
+`packages/fluxiq/src/runtime/recording/client-gateway/bridge.ts`.
 The bridge converts client messages into canonical Studio artifacts:
 
 Recording start carries an explicit demonstration description, persisted as
@@ -387,7 +387,7 @@ stop a run, and use its automation and recording controls:
 - Secret Keys: `snapshot`, projected (below)
 
 **The recording-capture policy is Core's (t728).** What a recording may capture
-is defined once in `@fluxiq/contracts/automation-studio`
+is defined once in `@fluxiq/contracts/automation`
 (`packages/contracts/src/recording-capture/`), re-exported for browser code by
 name from `fluxiq/automation-studio/nodes`, never the Node barrel. A policy is
 `{ captureInputValues, captureSnapshots, captureMutations: { allowed, default },
@@ -1165,7 +1165,7 @@ holds `missing_transition`, `argument_mismatch`, `ambiguous_context`,
 `missing_artifact`, `incomplete_capture`, `incompatible_contract`,
 `redacted_input`, and the reevaluator's `snapshot_unavailable` and
 `dynamic_content`, spelled as the Automation Studio trial evidence vocabulary
-(U5, `programs/automation-studio/model/offline-trial/vocabulary.ts`) spells
+(U5, `flows/authoring/model/offline-trial/vocabulary.ts`) spells
 them. A trial in which a reevaluator answered any operation carries the
 evidence origin `snapshot_evaluation` beside `recorded` and `pure_computation`,
 so it never reads as purely recorded, and lists those operations in
@@ -1177,7 +1177,7 @@ trial `inconclusive`.
 exact candidate revision, digest and goal contract, so the judged whole run
 stays live.
 
-**Seams a host uses** (exported from `programs/automation-studio/runtime/index.ts`
+**Seams a host uses** (exported from `framework/automation-service/index.ts`
 and the client-gateway barrel): `runAutomationStudioOfflineCandidateTrial` (the
 candidate trial runner on a trace environment, with an optional `reevaluator`;
 refused in exploration and on a derived trace);

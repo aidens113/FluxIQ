@@ -1,9 +1,9 @@
 // Flow listings, metadata, create/read/save, settings, and graph editing.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../../../../api-contracts/automation.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION, automationStudioFlowMaxNodesPerSubflow, automationStudioFlowSizeSettingIssue, withAutomationStudioInterventionMode, type AutomationStudioFlowArtifact } from "../../model/index.ts";
-import type { AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION, automationStudioFlowMaxNodesPerSubflow, automationStudioFlowSizeSettingIssue, withAutomationStudioInterventionMode, type AutomationStudioFlowArtifact } from "../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import { assertFlowLlmExecutionSettings } from "./llm-execution-settings.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource, type ProgramResourceRef } from "../../../_shared/iam/index.ts";

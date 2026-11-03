@@ -17,15 +17,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry } from "../../../../_shared/api.ts";
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import {
   automationStudioConversationCommandWork,
   automationStudioConversationEffectiveCaller,
   AutomationStudioConversations,
   AUTOMATION_STUDIO_CONVERSATION_COMMAND_ATTACHMENT,
   AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT
-} from "../../../runtime/index.ts";
-import { AutomationStudioProjectDatabasePool } from "../../../storage/index.ts";
+} from "../../../../../framework/automation-service/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../../../framework/persistence/automation/index.ts";
 import { cacheActor } from "./test-actor.ts";
 import { registerAutomationStudioConversationEndpoints } from "../conversations.ts";
 

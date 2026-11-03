@@ -7,7 +7,7 @@ type Entry = { verb: ActivityActionVerb; kind: ActivityActionKind; word: RegExp;
  * one is, and the "-ing" word the activity wording opens its sentence with
  * ("Clicking “Get a free quote”"). Generic verbs only -- no domain's id is
  * written here -- so a node registered later is read by the same words. The
- * wording (`programs/automation-studio/runtime/activity/wording/action.ts`)
+ * wording (`runtime/activity/automation/wording/action.ts`)
  * recognizes verbs through this table, so each verb is written once.
  */
 const VERBS: readonly Entry[] = [

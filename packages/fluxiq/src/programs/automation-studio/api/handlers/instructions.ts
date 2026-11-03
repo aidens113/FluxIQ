@@ -1,9 +1,9 @@
 // Flow instructions, their instruction sets, and the change proposals raised
 // against them.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type FlowChangeProposalRequest, type FlowExpansionSummaryRequest, type FlowInstructionRequest, type FlowInstructionSetRequest, type SaveFlowInstructionRequest } from "../contracts.ts";
-import type { AutomationStudioFlowInstruction, AutomationStudioInstructionTag } from "../../model/index.ts";
-import type { AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type FlowChangeProposalRequest, type FlowExpansionSummaryRequest, type FlowInstructionRequest, type FlowInstructionSetRequest, type SaveFlowInstructionRequest } from "../../../../api-contracts/automation.ts";
+import type { AutomationStudioFlowInstruction, AutomationStudioInstructionTag } from "../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import { flowInstructionScopeFromPayload } from "./instruction-scope.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";

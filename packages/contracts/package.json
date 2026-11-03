@@ -14,7 +14,7 @@
     "./core": { "types": "./dist/core.d.ts", "import": "./dist/core.js" },
     "./client-gateway": { "types": "./dist/client-gateway.d.ts", "import": "./dist/client-gateway.js" },
     "./program-api": { "types": "./dist/program-api.d.ts", "import": "./dist/program-api.js" },
-    "./automation-studio": { "types": "./dist/automation-studio.d.ts", "import": "./dist/automation-studio.js" },
+    "./automation": { "types": "./dist/automation.d.ts", "import": "./dist/automation.js" },
     "./iam": { "types": "./dist/iam.d.ts", "import": "./dist/iam.js" },
     "./platform": { "types": "./dist/platform.d.ts", "import": "./dist/platform.js" }
   },

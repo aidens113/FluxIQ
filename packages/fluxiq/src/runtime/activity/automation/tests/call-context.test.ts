@@ -1,0 +1,255 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../agents/llm/index.ts";
+import { activityActionOf } from "../../../../ui/index.ts";
+import { automationStudioActivityHub } from "../index.ts";
+import { observeAutomationStudioEvidenceLoop } from "../index.ts";
+import { runWithAutomationStudioActivity } from "../index.ts";
+
+let seen: ClientGatewayActivity[] = [];
+let unsubscribe: () => void = () => undefined;
+beforeEach(() => {
+  seen = [];
+  unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+});
+afterEach(() => unsubscribe());
+
+const inScope = <T>(fn: () => Promise<T>) => runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, fn);
+const START = "http://127.0.0.1:60766/scenarios/social-network-feed/";
+const ROWS = [
+  { name: "Amara Osei", mutualFriends: "23 mutual friends" },
+  { name: "Jonas Weber", mutualFriends: "7 mutual friends" },
+  { name: "Lin Zhao", mutualFriends: "9 mutual friends" },
+  { name: "Freya Holm", mutualFriends: "5 mutual friends" }
+];
+const CONFIRM = { node: "web.output.dom-click", parameters: { element: { role: "button", accessibleName: "Confirm" } }, consequences: ["modify_existing"], replay: "verify" };
+
+/** What the host answers each call with, by call id: a replay's code, and for the list read its rows. */
+function answer(call: { callId: string }): AutomationStudioLlmEvidenceToolExecutionResult {
+  if (call.callId === "dryrun.1.13") {
+    return {
+      kind: "llm_evidence_tool_execution",
+      evidence: { ok: true, code: "core.replay.replayed", said: "the step ran again", readRows: { rows: ROWS.map((row) => ({ name: row.name })) } },
+      effectApplied: true,
+      resultCode: "core.replay.replayed",
+      outputs: { records: ROWS }
+    };
+  }
+  const code = call.callId.endsWith(".pass.1") ? "core.replay.present" : call.callId.includes(".pass.") ? "core.replay.verified" : call.callId.startsWith("dryrun.") ? "core.replay.replayed" : "web.action.succeeded";
+  return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: code };
+}
+
+function loopInput(): AutomationStudioLlmEvidenceLoopInput {
+  return { tools: [], decide: async () => ({ kind: "complete", result: {} }), executeTool: async (call) => answer(call) };
+}
+
+const ended = () => seen.filter((event) => event.detail?.kind === "tool" && event.detail.status !== "started");
+const cardOf = (callTitle: RegExp) => activityActionOf(ended().find((event) => callTitle.test(event.detail?.title ?? ""))!);
+
+// U10, live run `run-muw6144a-e56f945d`: the build's navigate to `/friends/`
+// read "Opening the start page" / "Open page · the start page".
+describe("the start page is the address the work starts at", () => {
+  it("names a navigate there the start page, and a navigate elsewhere on this machine another page, never by its path (t753)", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput());
+    await inScope(async () => {
+      await observed.executeTool({ callId: "initial.core.run_node", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: START } } });
+      await observed.executeTool({ callId: "nav-friends-1", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: "http://127.0.0.1:60766/friends/" } } });
+      await observed.executeTool({ callId: "back-1", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: START } } });
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Opening where the Flow starts", "Opening another page", "Opening the start page"]);
+    expect(activityActionOf(ended()[1]!)?.target).toBe("another page");
+    expect(activityActionOf(ended()[2]!)?.target).toBe("the start page");
+  });
+
+  it("learns the start from a test's reset, and from the draft's first step, in a round that did not open it", async () => {
+    const reset = observeAutomationStudioEvidenceLoop(loopInput());
+    await inScope(async () => {
+      await reset.executeTool({ callId: "dryrun.1.reset", toolId: "core.run_node", value: { replay: "reset", from: { location: START } } });
+      await reset.executeTool({ callId: "dryrun.1.1", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: START }, replay: "step" } });
+    });
+    expect(ended().at(-1)?.detail?.title).toBe("Opening the start page");
+
+    seen = [];
+    const drafted = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => ({ kind: "tool_call", callId: "go-1", toolId: "core.run_node", input: { node: "web.output.browser-navigate", parameters: { url: START } } }) });
+    const draft = { callId: "core.flow_draft", toolId: "core.flow_draft", value: { steps: [{ step: 1, actionId: "web.output.browser-navigate", input: { node: "web.output.browser-navigate", parameters: { url: START } }, inResult: true }] } };
+    await inScope(async () => {
+      await drafted.decide({ iteration: 1, tools: [], evidence: [draft], decisionSchema: {}, canComplete: true });
+      await drafted.executeTool({ callId: "go-1", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: START } } });
+    });
+    expect(ended().at(-1)?.detail?.title).toBe("Opening the start page");
+  });
+});
+
+// U1 (`run-muw6144a-e56f945d`): three passes of a repeated Confirm read
+// "Testing: Click · Confirm — Checked, not pressed" three times, identical.
+// U-1 (`run-muw60j7c-bb7c9a62`): a test's list read said "Read list · Done" with no count.
+describe("a test's repeated step names its row, and its list read its rows", () => {
+  it("says which row each pass is on, from the list read before it, and how many rows that read kept", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput());
+    await inScope(async () => {
+      await observed.executeTool({ callId: "dryrun.1.13", toolId: "core.run_node", value: { node: "web.output.dom-extract_list", parameters: { extractList: { fields: { name: "a" } } }, replay: "step" } });
+      for (const [index, row] of ROWS.slice(0, 3).entries()) {
+        await observed.executeTool({ callId: `dryrun.1.14.pass.${index + 1}`, toolId: "core.run_node", value: { ...CONFIRM, item: row } });
+      }
+    });
+    const read = cardOf(/^Reading/u);
+    expect(read).toMatchObject({ kind: "read", outcome: "done", testing: true, result: "4 rows" });
+    expect(ended()[0]!.detail?.text).toBe("Result: core.replay.replayed · Rows: 4 · Node: web.output.dom-extract_list");
+    const passes = ended().slice(1).map((event) => activityActionOf(event));
+    expect(passes.map((pass) => [pass?.target, pass?.tested])).toEqual([
+      ["Confirm · Amara Osei", "Already done on the site"],
+      ["Confirm · Jonas Weber", "Checked, not pressed"],
+      ["Confirm · Lin Zhao", "Checked, not pressed"]
+    ]);
+    expect(ended()[2]!.label).toBe("Trying the Flow from the start: clicking “Confirm” for “Jonas Weber” — checked, not pressed");
+    // Only the row's name, never its other values.
+    expect(JSON.stringify(seen)).not.toContain("mutual friends");
+  });
+
+  it("names no row when no read named its rows, or the pass carries none", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput());
+    await inScope(async () => {
+      await observed.executeTool({ callId: "dryrun.1.14.pass.1", toolId: "core.run_node", value: { ...CONFIRM, item: ROWS[0]! } });
+      await observed.executeTool({ callId: "dryrun.1.13", toolId: "core.run_node", value: { node: "web.output.dom-extract_list", replay: "step" } });
+      await observed.executeTool({ callId: "dryrun.1.16.pass.2", toolId: "core.run_node", value: CONFIRM });
+    });
+    expect([activityActionOf(ended()[0]!)?.target, activityActionOf(ended()[2]!)?.target]).toEqual(["Confirm", "Confirm"]);
+    expect(ended()[0]!.detail?.title).toBe("Clicking “Confirm”");
+    expect(ended()[2]!.detail?.title).toBe("Clicking “Confirm”");
+  });
+});
+
+// F2 of the week review (live-C-r3 U-read, run-mux6naez-6c20f26e moments 04, 08-12; step 0016): a
+// build's own list read answered "20 records from 1 page" in its evidence
+// (`read.extraction.recordCount`, `pagesRead`), and its card still read a bare "Read list · Done".
+describe("a build's own list read says how many rows it kept, and from how many pages", () => {
+  it("reads the count the read's evidence gives when it sends no rows", async () => {
+    const read = { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.2" } } };
+    const observed = observeAutomationStudioEvidenceLoop({
+      ...loopInput(),
+      executeTool: async () => ({
+        kind: "llm_evidence_tool_execution",
+        evidence: { ok: true, node: "web.output.dom-extract_list", status: "succeeded", read: { status: "succeeded", extraction: { recordCount: 20, pagesRead: 1, truncated: true } } },
+        effectApplied: false,
+        resultCode: "web.inspect.succeeded"
+      }) satisfies AutomationStudioLlmEvidenceToolExecutionResult
+    });
+    await inScope(() => observed.executeTool({ callId: "extract-results-page1", toolId: "core.run_node", value: read }));
+    expect(ended()[0]!.detail?.text).toBe("Result: web.inspect.succeeded · Rows: 20 · Pages: 1 · Node: web.output.dom-extract_list");
+    expect(activityActionOf(ended()[0]!)).toMatchObject({ kind: "read", outcome: "done", result: "20 rows from 1 page" });
+  });
+});
+
+// Lane D (t378, `run-mv0fuual-f9e6f089`): the candidate build's exploration
+// "Click" cards named no control. Its calls carry only `target: { handle }`,
+// and its loop has no domain `describeCall`; the page view it was shown named
+// each handle.
+describe("an exploration press names the control the page view printed for its handle", () => {
+  const view = (lines: string[]) => ({ callId: "initial.core.run_node", toolId: "core.run_node", value: { evidence: { page: `PAGE "Circleway"\nURL ~/\n\n[banner]\n${lines.join("\n")}` } } });
+  const click = (callId: string, handle: string) => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node: "web.output.dom-click", parameters: { target: { handle } }, consequences: [] } });
+
+  it("names it by the latest view, and says the plain words for a handle no view printed", async () => {
+    let next = click("nav-friends-2", "t12");
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => next });
+    const first = view(["t9 link \"Home\" current marked ~/", "t12 link \"Friends\" ~/friends/", "t857 button \"Close chat\"", "t106 \"Privacy · Terms\""]);
+    await inScope(async () => {
+      await observed.decide({ iteration: 1, tools: [], evidence: [first], decisionSchema: {}, canComplete: false });
+      await observed.executeTool({ callId: next.callId, toolId: next.toolId, value: next.input });
+      next = click("close-chat-1", "t857");
+      const later = { ...view(["t857 button \"Close the chat\""]), callId: "nav-friends-2" };
+      await observed.decide({ iteration: 2, tools: [], evidence: [first, later], decisionSchema: {}, canComplete: false });
+      await observed.executeTool({ callId: next.callId, toolId: next.toolId, value: next.input });
+      next = click("nav-requests-1", "t542");
+      await observed.decide({ iteration: 3, tools: [], evidence: [first], decisionSchema: {}, canComplete: false });
+      await observed.executeTool({ callId: next.callId, toolId: next.toolId, value: next.input });
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Clicking “Friends”", "Clicking “Close the chat”", "Clicking on the page"]);
+    expect(activityActionOf(ended()[0]!)?.target).toBe("Friends");
+  });
+
+  it("keeps the domain's own words first", async () => {
+    const call = click("nav-friends-2", "t12");
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => call, describeCall: () => ({ target: "Friends tab" }) });
+    await inScope(async () => {
+      await observed.decide({ iteration: 1, tools: [], evidence: [view(["t12 link \"Friends\" ~/friends/"])], decisionSchema: {}, canComplete: false });
+      await observed.executeTool({ callId: call.callId, toolId: call.toolId, value: call.input });
+    });
+    expect(ended().at(-1)?.detail?.title).toBe("Clicking “Friends tab”");
+  });
+});
+
+// R4a attempt 2, `run-mv2pgqkj-f3552c70`, steps 0020-0024 and moment 04: the
+// model's own exploration calls carry only a handle, and its colour, version
+// and ship-from swatches read "Tick · Space Grey" and "Ticking “Spain”" while
+// the same steps in a test, which carry the saved element, read "Choose".
+// The view lines and calls below are that run's.
+describe("an exploration check is read by what the page view printed its control as", () => {
+  const VIEW = [
+    "t940 clickable \"Space Grey\" marked",
+    "t942 clickable \"Silver\"",
+    "t951 clickable \"7-in-1\"",
+    "t957 clickable \"China\" marked",
+    "t958 clickable \"Spain\"",
+    "t961 \"Quantity\"",
+    "t964 field \"Quantity\" =\"1\""
+  ];
+  const view = (lines: string[]) => ({ callId: "get.coupons", toolId: "core.run_node", value: { page: `PAGE "Voltbay USB C Hub - Farbazaar"\nURL ~/item/1005008123450\n\n[main]\n${lines.join("\n")}` } });
+  const check = (callId: string, handle: string) => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node: "web.output.dom-check", parameters: { target: { handle }, checked: true }, consequences: [] } });
+  const names: Record<string, string> = { t940: "Space Grey", t951: "7-in-1", t958: "Spain", t970: "Gift wrap" };
+
+  it("says a swatch the view printed as clickable as Choosing, which its card reads as Choose, with the domain's words kept", async () => {
+    const calls = [check("pick.spacegrey", "t940"), check("pick.7in1", "t951"), check("pick.spain", "t958")];
+    let next = calls[0]!;
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => next, describeCall: (call) => ({ target: names[String((call.value.parameters as { target: { handle: string } }).target.handle)] }) });
+    await inScope(async () => {
+      for (const [index, call] of calls.entries()) {
+        next = call;
+        await observed.decide({ iteration: index + 1, tools: [], evidence: [view(VIEW)], decisionSchema: {}, canComplete: false });
+        await observed.executeTool({ callId: call.callId, toolId: call.toolId, value: call.input });
+      }
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Choosing “Space Grey”", "Choosing “7-in-1”", "Choosing “Spain”"]);
+    expect(ended().map((event) => activityActionOf(event)?.name)).toEqual(["Choose", "Choose", "Choose"]);
+  });
+
+  it("still says a box the view printed as a checkbox, or a handle no view printed, as Ticking", async () => {
+    const calls = [check("gift.wrap", "t970"), check("unseen", "t999")];
+    let next = calls[0]!;
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => next });
+    await inScope(async () => {
+      for (const [index, call] of calls.entries()) {
+        next = call;
+        await observed.decide({ iteration: index + 1, tools: [], evidence: [view([...VIEW, "t970 checkbox \"Gift wrap\""])], decisionSchema: {}, canComplete: false });
+        await observed.executeTool({ callId: call.callId, toolId: call.toolId, value: call.input });
+      }
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Ticking “Gift wrap”", "Ticking a box"]);
+    expect(activityActionOf(ended()[0]!)?.name).toBe("Tick");
+  });
+});
+
+// t753 (round-5 UI review): a wordless icon control's view line prints its
+// class after its kind (`t50 button icon class="css-0732x7m"`), and that class
+// was read as its name: "Reading the details of “css-0732x7m”". Only the words
+// in the name's place name a control; one with none is said by its kind.
+describe("a control the page view printed with no words is said by its kind", () => {
+  const view = (lines: string[]) => ({ callId: "initial.core.run_node", toolId: "core.run_node", value: { evidence: { page: `PAGE "Example"\nURL ~/\n\n[main]\n${lines.join("\n")}` } } });
+  const call = (callId: string, node: string, handle: string) => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node, parameters: { target: { handle } }, consequences: [] } });
+  const VIEW = ["t50 button icon class=\"css-0732x7m\"", "t51 link icon class=\"css-1q2w3e4\" use=\"#arrow\"", "t52 h2 button \"Say \\\"hi\\\" now\"", "t53 clickable icon class=\"sc-AxjAm\""];
+
+  it("never reads a class as the name, says the kind, and still reads the words in the name's place", async () => {
+    const calls = [call("c1", "web.output.dom-click", "t50"), call("c2", "web.describe_element", "t50"), call("c3", "web.output.dom-click", "t51"), call("c4", "web.output.dom-click", "t52"), call("c5", "web.output.dom-click", "t53")];
+    let next = calls[0]!;
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => next });
+    await inScope(async () => {
+      for (const [index, each] of calls.entries()) {
+        next = each;
+        await observed.decide({ iteration: index + 1, tools: [], evidence: [view(VIEW)], decisionSchema: {}, canComplete: false });
+        await observed.executeTool({ callId: each.callId, toolId: each.toolId, value: each.input });
+      }
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Clicking a button", "Reading the details of a button", "Clicking a link", "Clicking “Say \"hi\" now”", "Clicking a control"]);
+    expect(ended().map((event) => activityActionOf(event)?.target)).toEqual(["a button", "a button's details", "a link", "Say \"hi\" now", "a control"]);
+    for (const event of seen) expect(JSON.stringify([event.label, event.detail?.title])).not.toMatch(/css-|sc-/u);
+  });
+});

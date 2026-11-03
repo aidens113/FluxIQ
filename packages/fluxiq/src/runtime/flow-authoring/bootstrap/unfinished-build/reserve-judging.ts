@@ -1,0 +1,104 @@
+// A round that stopped before its Flow was judged: the Flow as it stands is put
+// to the build's judge before the build ends, never left with money unspent on
+// judging it (user, t254 stage 2, decision 4; t254's aim, t195-w42).
+//
+// **What was wrong: a round the judging reserve stopped.** From a build's start its purse keeps a judging pair back
+// from every call that is not a judge's (`./round-funding.ts`,
+// `../../llm/build-purse/purse.ts`), so a round's judging is always paid for.
+// A round whose next decision would have eaten into that reserve was refused
+// the decision and ended as any cost stop does: the build ended
+// `budget_exhausted` with the reserve unspent and the Flow so far never judged.
+// Live run murzln6g's repair at peak rates was refused its first decision
+// beside $0.0068 kept back, and ended with its draft untested.
+//
+// **What was wrong: a round that stopped short (t195-w42).** Live run
+// `run-musp474o-e0ed7432`: round 1 finished and was judged no, still
+// achievable, with the fix named (widen the listing's where so Jonas Weber is
+// kept). Round 2 applied exactly that, then stopped on refused repeats without
+// saying the Flow was ready. Its Flow -- a different one -- was tested whole and
+// ran clean, but was judged from the checklist alone: no progress was found
+// against round 1's judged judgement and the build ended `not_finished`, about
+// $0.05 of its $0.10 purse unspent and that Flow never judged.
+//
+// **What happens now.** A round the reserve stopped -- a cost refusal with
+// `keptBackUsd`, or a call refusal with `keptBackCalls` (t262) -- and a round
+// that stopped short each have their Flow tested from its start
+// (`./judgement.ts`), with the test handed to the judge, and a clean test is
+// put to the build's judge, whose calls draw on the judging reserve. A yes
+// about that very Flow (its `flowSignature`, the rule of 2026-10-02) finishes
+// the build with it. Anything else is the round's judgement with the judge's
+// account: a reserve-stopped round then ends the build at its budget with it
+// (`./budget-exhausted.ts`) -- never "not doable", even on a judge's
+// `stillAchievable: "no"`: money or calls stopped that build, not a judged dead
+// end -- and a round that stopped short goes on to phase 3's rules unchanged
+// (`./phases.ts`): a judge who says it can no longer be had ends it not
+// doable, progress is measured against the judgement before, and a judge who
+// named the fix buys one more round the purse can fund.
+//
+// Nothing is judged where there is nothing to judge: an empty Flow, one no
+// replay can run, or one whose test did not run clean (the judge reads a passing
+// test). The caller checks whether the stopped draft can be built before its
+// whole test and retains that accepted snapshot: refusing after replay was too
+// late to prevent a known-unresolved draft from running. No second resolution
+// against the page the test left is needed. Which Flows are not judged again -- the one a judge of
+// this build last said no to, unchanged -- is the caller's (`./phases.ts`).
+//
+// **Nor where the judging can no longer be paid for whole.** A judgement is a
+// pair of calls, and a yes finishes the build only once the second confirms it
+// (`../../result-verification/agreement/`). The purse keeps that pair back only
+// from calls that are not a judge's, so a round can open with too little left
+// for the pair itself. Live run `run-mux6nxst-c9bca37c` (D3-5) opened its next
+// round with 47 of 48 calls spent; the reserve judgement got its first call,
+// which said yes, the purse refused the confirming one, and that one
+// unconfirmed yes finished the build. So where the build's purse cannot hold
+// the whole judging now (`judgingFits`), nothing is started: neither `accept`
+// nor the judge is asked, and a reserve-stopped round ends at its budget
+// unjudged (`./phases.ts`).
+import { automationStudioFlowDraftFlowSignature } from "../../draft/index.ts";
+import { automationStudioLlmCurrentBuildPurse } from "../../../agents/llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopResult } from "../../../agents/llm/index.ts";
+import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapTestVerdict } from "./contracts.ts";
+import { automationStudioFlowBootstrapWithJudgeAccount, automationStudioFlowBootstrapYesNotAboutThisFlow } from "./judgement.ts";
+
+type FinishedLoop = Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>;
+
+/** How judging the Flow a stopped round left went. */
+export type AutomationStudioFlowBootstrapReserveJudging =
+  /** Nothing was judged (see the module comment): the build goes on as it would have. */
+  | { kind: "not_judged" }
+  /** The build was cancelled while it was judged. */
+  | { kind: "cancelled" }
+  /** Judged yes about the Flow as it stands: the build's result, as a finished round's. */
+  | { kind: "finished"; loop: FinishedLoop; verdict: Extract<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }> }
+  /**
+   * Judged, and not found to do what was asked: the judgement with the judge's
+   * account, what judging cost, and the verdict as this Flow's (a yes about
+   * another Flow is `not_judged` here).
+   */
+  | { kind: "judged"; judgement: AutomationStudioFlowBootstrapJudgement; judgingUsd: number; verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }> };
+
+/**
+ * Judges the Flow a round left when it stopped before its Flow was judged:
+ * `judgement` and `loop` are that round's tested judgement and its accepted
+ * completion snapshot, with the Flow the test ran
+ * (`automationStudioFlowBootstrapJudgeUnfinished`); `judge` is the build's,
+ * with its spend already accounted by the caller.
+ */
+export async function automationStudioFlowBootstrapJudgeAtReserve(input: {
+  judgement: AutomationStudioFlowBootstrapJudgement;
+  /** Already accepted before its whole test; only the test's replay evidence was added since. */
+  loop: FinishedLoop;
+  judge(loop: FinishedLoop): Promise<AutomationStudioFlowBootstrapTestVerdict | "cancelled">;
+}): Promise<AutomationStudioFlowBootstrapReserveJudging> {
+  if (!input.judgement.stepsInFlow || input.judgement.tested !== "replayed_clean") return { kind: "not_judged" };
+  // A judgement the purse cannot pay for whole is not started: one unconfirmed yes would finish the build (run-mux6nxst-c9bca37c).
+  const purse = automationStudioLlmCurrentBuildPurse();
+  if (purse && !purse.judgingFits()) return { kind: "not_judged" };
+  // The round's own record, and the Flow as its test ran it: the judge's test report numbers steps as the seed does.
+  const loop = input.loop;
+  const verdict = await input.judge(loop);
+  if (verdict === "cancelled") return { kind: "cancelled" };
+  if (verdict.verdict === "yes" && verdict.flowSignature === automationStudioFlowDraftFlowSignature(loop.steps)) return { kind: "finished", loop, verdict };
+  const wrong = verdict.verdict === "yes" ? automationStudioFlowBootstrapYesNotAboutThisFlow(verdict) : verdict;
+  return { kind: "judged", judgement: automationStudioFlowBootstrapWithJudgeAccount(input.judgement, wrong), judgingUsd: verdict.spent.estimatedCostUsd, verdict: wrong };
+}

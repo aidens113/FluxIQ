@@ -6,9 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry } from "../../../../_shared/api.ts";
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
-import type { AutomationStudioService } from "../../../runtime/index.ts";
-import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../../runtime/service/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
+import type { AutomationStudioService } from "../../../../../framework/automation-service/index.ts";
+import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../../../../framework/automation-service/service/index.ts";
 import { cacheActor } from "./test-actor.ts";
 import { createCacheApiTestService } from "./test-service.ts";
 import { registerAutomationStudioApi } from "../index.ts";

@@ -21,8 +21,8 @@ import type { ApiResponse, JsonObject } from "../../../../programs/program-api";
 import type { ProgramCommandTransport } from "../../../data/program-transport";
 import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramEndpointClassification } from "../../../../../../../../packages/fluxiq/src/programs/_shared/api.ts";
 import { registerAutomationStudioApi } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/api/handlers/index.ts";
-import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, AutomationStudioNativeNodeRuntime, AutomationStudioService } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/runtime/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../../../../../packages/fluxiq/src/programs/automation-studio/nodes/index.ts";
+import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, AutomationStudioNativeNodeRuntime, AutomationStudioService } from "../../../../../../../../packages/fluxiq/src/framework/automation-service/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../../../../../packages/fluxiq/src/framework/automation-service/nodes/index.ts";
 
 export const CONTRACT_PIN = "482915";
 const SESSION_ID = "session.contract";

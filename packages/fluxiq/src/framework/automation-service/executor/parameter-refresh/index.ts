@@ -1,0 +1,2 @@
+// Compatibility export; implementation belongs to the framework.
+export { type AutomationStudioTargetRefresh, type AutomationStudioTargetRefreshResolution, type AutomationStudioTargetRefreshPatch, type AutomationStudioParameterRefreshOverlay, automationStudioRefreshSnapshot, automationStudioRefreshInputs, automationStudioResolveTargetRefresh, automationStudioRefreshScope, automationStudioRefreshPatches, automationStudioApplyParameterRefresh, automationStudioRefreshFloor } from "../../../../engine/automation/parameter-refresh/index.ts";

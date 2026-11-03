@@ -2,12 +2,12 @@
  * The raw record a tool row carries in `detail.text`: "Result: <code> ·
  * Reason: <reason> · Excused: <why> · Applied: <count> · Rows: <count> ·
  * Pages: <count> · Node: <node id> · Changed: <words>", each part optional
- * (`programs/automation-studio/runtime/activity/observer.ts`).
+ * (`runtime/activity/automation/observer.ts`).
  * The reason is the caller's own code for why a call came to its result (an
  * edit Core refused names each of its reasons, comma-separated); `Excused` is
  * set on a test's step that did not hold and that the Flow passes over, naming
  * why (`./tested.ts`); `Applied` is how many of an edit's changes landed
- * (`programs/automation-studio/runtime/activity/decision-answer/draft-edit.ts`).
+ * (`runtime/activity/automation/decision-answer/draft-edit.ts`).
  * `Rows` and `Pages` are how many rows a list read kept and from how many
  * pages, where the call's answer said. Codes and counts are read only to
  * classify the row and say how it went, and no code is ever shown.

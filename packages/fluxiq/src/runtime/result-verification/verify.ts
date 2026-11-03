@@ -1,0 +1,553 @@
+// One question, asked after a run has finished: does what came back answer
+// what was asked for?
+//
+// **At most two checks, never a loop.** A verification is not an investigation.
+// It is shown the request, the shape of the Flow that ran, and a bounded account
+// of the result, and it answers in one field: `yes`, `no` or `unknown`.
+//
+// **Anything but `yes` is asked once more, with the same evidence.** A `no`
+// or an `unknown` fails a run whose every step succeeded, and at temperature 0
+// both were measured to flip on identical rows (2026-09-18, 2026-09-21). The
+// second call is the first one repeated, not a new question; `agreement.ts`
+// says what the two answers come to. Only two agreeing `no`s fail the run;
+// every other pair that is not a `yes` first leaves it `unverified`. A first
+// check that gave no answer at all is not followed by a second and fails closed.
+//
+// **A check that did not come back for a temporary reason is asked again
+// (t473).** A call that ran past its deadline, or met a fault the adapter
+// calls temporary that the provider retry policy could not get past, gave no
+// answer, not a wrong one. That policy deliberately leaves a timeout to "the
+// loop above" (`../llm/provider-retry/decision.ts`, `NEVER_ASKED_AGAIN`), and
+// for a verification this is that loop: each check is asked up to
+// `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK` times with the same
+// evidence, each ask a call of its own under the run's budget or the build's
+// purse. Live run `run-mv5q4j5c-49bfb5e2` cut a judge off at 19,985 ms, never
+// asked it again, and re-ran a whole 84-second trial for a 5-second answer. A
+// fault that is not temporary -- a refusal by the purse, a refused key, a
+// cancellation -- is not asked again.
+//
+// **A reply that arrived and could not be read is asked again too (t515).**
+// Live run `run-mv6v2kzn-d593231f` step 0088: the result check's one reply
+// looped a sentence until it was cut off at 8,192 tokens
+// (`llm.provider_output_truncated`), was read as no verdict, and failed the
+// run as refuted. Core's own LLM policy calls such a reply a spent call -- the
+// next may succeed (`../llm/failure-disposition.ts`, `spend_call`) -- and so
+// does this check now: any spent call, or a reply the harness could not
+// validate (`llm_output.*`), is asked again under the same bound of
+// `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK`, one extra ask.
+//
+// **A reply cut off after its verdict is read for that verdict (t653).** Live
+// run `run-mva6mlo8-f519063c`: four of 21 judge replies looped inside `summary`
+// to the provider's 8,192-token ceiling and were lost, each a fresh draw on
+// retry. The verification now asks for `kind` and `diagnosis` before `summary`,
+// and the reply envelope reads a cut reply whose diagnosis closed before the
+// cut and marks it with the typed field `truncatedAfterVerdict: true`, which is
+// what this reads -- never the plain sentence the adapter puts in place of the
+// cut summary -- and the call's intervention is marked the same. The cut
+// summary is never read. A no or an unknown read so is the answer it gave. A
+// yes is read from its whole fields only and counts only if it passes there
+// every check a yes must pass; otherwise the quotes or row names it owes may be
+// in what was cut, so it gave no answer and is asked again as before. This
+// reads what the model wrote and caps nothing.
+//
+// **A build's test confirms a `yes` as well (`confirmAnswer`).** The build-test
+// judge's `yes` finishes a build, and in live run murwcmx2 one `yes` to a
+// request answered `no` before finished it on rows the playback judge refused.
+// A request that sets `confirmAnswer` asks a first `yes` once more with the same
+// evidence; a second `no` leaves it unsure (`agreement.ts`). The runtime result
+// check does not set it, and a first `yes` there still stands on one call.
+// Such a yes reached by its two checks with nothing re-asked of a different
+// verdict says so (`firstAskConfirmed`, `./first-ask/`, t677).
+//
+// **That confirming call asks the converse question (t691).** A8
+// `run-mvbr0w7e-6a01c05b`: the confirming request was byte for byte the
+// first's, at temperature 0, and both said yes over an answer holding rows it
+// should not have held -- one opinion counted twice. A first yes a build test
+// confirms is now asked, on the second call's copy (`recheck`), the converse
+// (`./agreement/ask-again.ts`): each stored row against the request's words
+// that ask for it in the answer. It is screened as every recheck is; where it
+// cannot be sent, the second call repeats the first and the trail says so
+// (`secondAsked`), so the yes is never called first-ask confirmed on it.
+// Its answer is weighed beside the first as before.
+//
+// **An unsure beside a yes whose doubt Core's record contradicts is asked once
+// more (t503).** Lane C round 17 (`run-mv6lgqi6-4bfab2e1`, trial 3): one check
+// could not tell because later pages were never read, where every paging read's
+// own account said its list ended, and the other said yes. That check is asked
+// a third time, once, with Core's record named on its copy (`recheck`); its
+// answer takes its place under the same rule (`agreement.ts`). The call's
+// intervention says so (`verificationReask`).
+//
+// **A split's no is asked once to name its defect (t725).** Social r4
+// `run-mvfq957o-40103539` (0084): a no beside a yes named no row wrongly kept
+// or left out, and the builder broke a right answer on it. After every other
+// re-ask, where still none was asked, that no is asked once more
+// (`./agreement/reask-split-no.ts`) with this verification's own `ask`, so its
+// call is charged to the same purse and marked `verificationReask`.
+//
+// **A no that names no defect Core can find is asked to list each (t752).** A
+// breadth rerun's trial stored exactly the rows asked for, and both judges said
+// no for a method an earlier judge had advised and a claim about a condition,
+// naming no row Core could find wrongly kept or missing, nor a wrong value. Last
+// of all, each no whose listed defects Core finds none of in its record
+// (`./agreement/located-defects/`) is asked once more through this
+// verification's own `ask` (`./agreement/unsupported-no.ts`), each call's
+// latest usable answer read as the agreement left it (`current`); a no still
+// naming none is never a no.
+//
+// **A no naming only rows Core's record of each refutes is asked conversely,
+// and a no still naming only such rows does not stand (t810, framework plan
+// P5b).** Run `run-mvud43a2-445c7f17`: a Flow stored exactly the rows asked
+// for, and every judge called left-out rows missing -- items the client marked
+// outside the person's set, and a row given a value its own cell does not hold
+// (`./located-defects/row-refuted.ts`). In that same last re-ask, such a no is
+// asked with Core's evidence for each row, the rows reversed and the converse
+// question (`./refuted-no/refuted-rows-recheck.ts`), through this
+// verification's own `ask`; where every call's latest answer is then a no
+// Core's record wholly refutes, or a yes citing no cell Core refutes, the
+// result answers (`noRefutedByRecord` where no yes came), with the rows
+// recorded (`refutedRows`). A computed fact that fails is still a Core no
+// before any judge, and the requested-output hold (`held`) still has the last
+// word.
+//
+// **Core's own counts are asked first and cost nothing.** A run whose every row
+// was refused, or whose rows lack a value their own schema requires, is settled
+// before a provider is even resolved.
+//
+// **An empty result is judged like any other, and that is new.** Until
+// 2026-09-24 a run that stored no rows -- an empty record set, or no record set
+// at all -- was exempt: it was recorded as not checked and never put to a
+// model, because a verification reached from an empty result had once entered
+// provider resolution and never returned (2026-09-20, t024). That exemption
+// made the single most obviously wrong answer a run can give -- an empty table
+// where the person asked for rows -- the one case nothing ever looked at, and
+// because nothing refuted it, nothing repaired it either. The hang is now
+// bounded rather than avoided (`deadline.ts`), and an empty result reaches the
+// same question every other result reaches. It can be answered `yes`: "if
+// nothing matches, an empty table is the right answer" is a request a Flow
+// satisfies by finding nothing, and only a reading of the request tells that
+// from an extraction that found nothing because it never looked.
+//
+// **`loop_verification` is the task kind, and it needed no new output shape.**
+// The kind has existed since the loop protocol was written -- described in its
+// own file as "a verdict on whether a change worked" -- and was never called.
+// It expects the diagnosis envelope, which already carries three-word verdicts;
+// the verdict this call is for is one more of them, `answersRequest`. That is
+// the whole of the extension: one field in a channel that is already named,
+// bounded, schema-declared and checked at the boundary.
+//
+// **The call is deliberately made outside the stage protocol.** The protocol's
+// order starts at `gather` and a run may not begin part-way through it, so a
+// standalone `verify` would be refused by Core's own ordering rule and the
+// refusal would be right: this is not the fifth stage of a recovery, it is a
+// check every finished run gets whether or not a recovery ever happened.
+//
+// **A yes is held to the answer the build declared (t757).** Where the build's
+// task spec declares a part's answer to be records -- on the judge's checklist
+// (`summary.taskChecklist`), or passed as `requestedOutput` -- and the run
+// stored none, with nothing in its record showing the empty answer honest, the
+// settled yes becomes `unsure` with Core's finding (`./requested-output/`). A
+// first yes so held is not asked again to confirm it: no answer could change
+// what the run stored.
+//
+// **A fact Core computed that fails is a Core no, and no judge is asked
+// (framework plan P5).** After Core's own counts, and before a provider is
+// even resolved, Core computes what it can settle of the result from its own
+// record (`./computed-facts/`). Any fact that `fails` is the answer: verdict
+// `does_not_answer`, basis `core_observation`, code
+// `core.result.computed_fact_failed`, the facts' own sentences as its reason
+// and observation, and a repair directive built as every refutation's is
+// (`./repair-directive.ts`), carrying the located defects where a judge's
+// located no carries its own (`repair.judgement.defects`), the sentences as
+// Core's findings and as its `checked` lines -- what the failure record's
+// `expected` and a build test's no hand on (`./build-test/judge.ts`). The
+// facts that hold are said to the judge, on its copy only, as
+// `summary.computedFacts`, before `earlierAdvice` so the cached prefix is
+// unchanged. A computed pass is never a yes: the judge is still asked, and
+// only its yes passes.
+
+import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowInstruction, AutomationStudioFlowIntervention, AutomationStudioFlowRunDetail } from "../../flows/authoring/model/index.ts";
+import {
+  automationStudioLlmProviderFailureSpendsCall,
+  runAutomationStudioLlmHarness,
+  screenAutomationStudioLlmEvidence,
+  type AutomationStudioLlmProvider,
+  type AutomationStudioLlmRunBudgetLedger,
+  type AutomationStudioLlmTokenLimits
+} from "../agents/llm/index.ts";
+import type {
+  AutomationStudioResultComputedFact,
+  AutomationStudioResultRequestedOutput,
+  AutomationStudioResultVerification,
+  AutomationStudioResultVerificationOutcome,
+  AutomationStudioRunResultSummary
+} from "./contracts/index.ts";
+import { automationStudioResultComputedFacts, automationStudioResultComputedNo } from "./computed-facts/index.ts";
+import {
+  automationStudioResultVerificationAgreement,
+  automationStudioResultVerificationAskAgain,
+  automationStudioResultVerificationConfirmingAsk,
+  automationStudioResultVerificationNoRecord,
+  automationStudioResultVerificationReaskContradicted,
+  automationStudioResultVerificationReaskSplitNo,
+  automationStudioResultVerificationReaskUnsupportedNo
+} from "./agreement/index.ts";
+import { automationStudioResultCheckActivity } from "./check-activity.ts";
+import { automationStudioResultCoreObservation } from "./core-observation.ts";
+import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
+import { automationStudioResultRequestedOutputHeld, automationStudioResultRequestedOutputMissing, automationStudioResultRequestedOutputOwed } from "./requested-output/index.ts";
+import { automationStudioRequestWording, automationStudioResultSummaryWithAlsoInResult, automationStudioResultSummaryWithLeftOutNamingTheItem, automationStudioResultSummaryWithRowIds } from "./request-rows/index.ts";
+import { automationStudioResultReaskNarrowingNo } from "./unsure-doubts/index.ts";
+import { automationStudioResultVerdict } from "./verdict/index.ts";
+import { automationStudioResultAdviceKept, automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
+import { automationStudioResultFirstAskConfirmed, automationStudioResultModelSaid } from "./first-ask/index.ts";
+import { emitAutomationStudioActivity } from "../activity/automation/index.ts";
+
+/**
+ * Core's codes for a run that was not verified, and why. Never a verdict.
+ *
+ * Two codes used to live here and no longer do, because the cases they named
+ * are now judged rather than skipped: `core.result.nothing_to_judge`, for a run
+ * that stored no record set, and `core.result.no_records`, for a record set
+ * holding no rows. Both are still readable on runs recorded before 2026-09-24,
+ * and `verification-status.ts` still maps the first to the `no_result` status a
+ * stored run may carry; nothing produces either any more.
+ *
+ * What is left is the two ways a question can fail to be put at all: no model
+ * to put it to, and a verification that did not finish inside its deadline
+ * (`deadline.ts`). Both are `performed: false`, both read as `unverified`, and
+ * neither is ever a pass.
+ */
+export const AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES = Object.freeze({
+  noModel: "core.result.no_model_available",
+  /** The verification did not settle inside its deadline, or the run was cancelled under it. */
+  notFinished: "core.result.verification_did_not_finish"
+} as const);
+
+export type AutomationStudioResultVerificationRequest = {
+  projectId: string;
+  flowId: string;
+  runId: string;
+  subflowId?: string | undefined;
+  /** What the run produced, already bounded and screened. */
+  summary: AutomationStudioRunResultSummary;
+  /** The request, as the Flow's own instructions state it. */
+  instructions: readonly AutomationStudioFlowInstruction[];
+  /** The finished run, for the steps it actually attempted. */
+  runDetail?: AutomationStudioFlowRunDetail | undefined;
+  /** The bound domain's declared denied keys. Required once anything is sent. */
+  deniedEvidenceKeys?: readonly string[] | undefined;
+  provider?: AutomationStudioLlmProvider | undefined;
+  policy?: AutomationStudioAdaptationPolicy | undefined;
+  tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
+  timeoutMs?: number | undefined;
+  maxEstimatedCostUsd?: number | undefined;
+  runBudget?: AutomationStudioLlmRunBudgetLedger | undefined;
+  signal?: AbortSignal | undefined;
+  now?: (() => number) | undefined;
+  /**
+   * True to confirm a first `answers` with a second call, as a first answer of
+   * anything else already is (`agreement.ts`). Set only by the build-test judge,
+   * whose `yes` finishes a build; the runtime result check leaves it unset.
+   */
+  confirmAnswer?: boolean | undefined;
+  /**
+   * What the run owes by the build's own declaration (`./requested-output/`,
+   * t757), for a caller that holds it outside the summary's task checklist.
+   * Absent, the checklist's declared answers are read; with neither, a yes is
+   * judged as it always was.
+   */
+  requestedOutput?: AutomationStudioResultRequestedOutput | undefined;
+  /** Completed receipts survive a later check's outer deadline; this does not count dispatches. */
+  recordIntervention?: ((intervention: AutomationStudioFlowIntervention) => void) | undefined;
+};
+
+/** The outcome, and the intervention record of each call made: none, one, two, or three with a re-ask (header, t503). */
+export type AutomationStudioResultVerificationReport = {
+  outcome: AutomationStudioResultVerificationOutcome;
+  /**
+   * In the order the calls were made. Each carries
+   * `metadata.source: "verifyAutomationStudioRunResult"` and
+   * `metadata.verificationCheck` (1 or 2), and a re-ask `verificationReask`, so
+   * a reader of the run can tell a verification call from a recovery's.
+   */
+  interventions: AutomationStudioFlowIntervention[];
+};
+
+/** Where a verification call's intervention says it came from. */
+const VERIFICATION_SOURCE = "verifyAutomationStudioRunResult";
+
+/**
+ * How many times one check is asked when its call did not come back for a
+ * temporary reason: the first ask, and once more (header). A verification
+ * makes at most twice this many calls.
+ */
+export const AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK = 2;
+
+export async function verifyAutomationStudioRunResult(request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> {
+  const core = automationStudioResultCoreObservation(request.summary);
+  if (core) return { outcome: { ...core, performed: true }, interventions: [] };
+  // The summary and the request's text: Core's record a no's every reason is weighed against (t607, `./refuted-no/`).
+  const requestText = request.instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n");
+  // What Core settles of the result before any judge is asked (header, framework plan P5): a fact that fails is a Core no.
+  const facts = automationStudioResultComputedFacts({ summary: request.summary, instructions: request.instructions, requestText, requestedOutput: request.requestedOutput });
+  const failing = facts.filter((fact) => fact.status === "fails");
+  if (failing.length) {
+    emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
+    return said({ outcome: { ...automationStudioResultComputedNo(request.summary, failing), performed: true }, interventions: [] });
+  }
+  // The facts that hold, said to the judge as settled, on its copy only (header): a computed pass is never a yes.
+  const holding = facts.filter((fact) => fact.status === "holds");
+  const judgedRequest: AutomationStudioResultVerificationRequest = holding.length ? { ...request, summary: summaryWithComputedFacts(request.summary, holding) } : request;
+  const provider = request.provider;
+  if (!provider) {
+    return {
+      interventions: [],
+      outcome: {
+        schemaVersion: "automation-studio.result-verification.v1",
+        performed: false,
+        code: AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.noModel,
+        reason: "No model was available to judge this run's result -- none is configured for this Flow, or this run was not authorized to ask one -- so whether the result answers the request was never judged."
+      }
+    };
+  }
+  emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
+  const confirmAnswer = request.confirmAnswer === true;
+  const interventions: AutomationStudioFlowIntervention[] = [];
+  // How the yes was reached, recorded as the calls are made (`./first-ask/`, t677).
+  const trail: CheckTrail = { interventions, verdictChanged: false, reasks: 0 };
+  const first = await askCheck(judgedRequest, provider, 1, trail);
+  // What the run owes by the build's declaration, and the yes held where it stored none of it (header, t757).
+  const owed = automationStudioResultRequestedOutputOwed(request.summary, request.requestedOutput);
+  const held = (outcome: ReturnType<typeof automationStudioResultVerificationAgreement>) => automationStudioResultRequestedOutputHeld(outcome, request.summary, owed);
+  // A first yes so held is not asked to confirm: no answer changes what the run stored (header).
+  const heldFirst = first.verdict === "answers" && automationStudioResultRequestedOutputMissing(request.summary, owed) !== undefined;
+  if (heldFirst || !automationStudioResultVerificationAskAgain(first, { confirmAnswer })) {
+    return said({ outcome: { ...held(automationStudioResultVerificationAgreement({ first })), performed: true }, interventions });
+  }
+  // A first yes a build test confirms is asked the converse question, never the same one again (header, t691).
+  const converse = screenedRecheck(automationStudioResultVerificationConfirmingAsk(first, request.summary, { confirmAnswer }), request.deniedEvidenceKeys);
+  const second = await askCheck(converse ? { ...judgedRequest, summary: { ...judgedRequest.summary, recheck: converse } } : judgedRequest, provider, 2, trail);
+  // The request as the judges read it: a split's no whose advice excludes by words it never states is marked and asked again (t515, `./agreement.ts`).
+  const wording = automationStudioRequestWording(request.instructions, request.summary);
+  const input = { first, second, confirmAnswer, reads: request.summary.reads, recordSets: request.summary.recordSets, wording, summary: request.summary, requestText };
+  const settled = automationStudioResultVerificationAgreement(input);
+  // A contradicted unsure beside a yes is asked once more, with Core's record named (header, t503); so is a split's no
+  // whose advice adds an exclusion the request never states (t515), and each no whose every reason Core's record
+  // refutes (t607). The agreement names the call to ask.
+  // Each call's latest answer that came back usable: what the last re-ask reads each call's no from (header, t752).
+  const current: [typeof first, typeof first] = [first, second];
+  const ask = async (recheck: string, call: 1 | 2) => {
+    trail.reasks += 1;
+    const answer = await askCheck({ ...judgedRequest, summary: { ...judgedRequest.summary, recheck } }, provider, call, trail, true);
+    if (answer.basis === "model") current[call - 1] = answer;
+    return answer;
+  };
+  const reasked = await automationStudioResultVerificationReaskContradicted({ ...input, settled, ask });
+  // Where nothing was asked again, a no blaming only steps that chose the request's own words is asked once more (t666, `./unsure-doubts/narrowing-no-reask.ts`);
+  // Core's record settles its other reasons as it does every re-ask's (t686), so a reason the record refutes leaves it askable (t690).
+  const agree = (one: typeof first, two: typeof first) => automationStudioResultVerificationAgreement({ ...input, first: one, second: two });
+  const narrowed = await automationStudioResultReaskNarrowingNo({
+    settled: reasked, first, second, reads: request.summary.reads, requestText, says: wording?.says, ask, record: automationStudioResultVerificationNoRecord(input), agree
+  });
+  // Last, where still nothing was asked again, a split's no is asked once to name its defect, quoting the request (t725, `./agreement/reask-split-no.ts`).
+  const split = await automationStudioResultVerificationReaskSplitNo({ settled: narrowed, first, second, ask, agree });
+  // Last of all, each no naming no defect Core finds in its record is asked once more to list each (header, t752).
+  const outcome = held(await automationStudioResultVerificationReaskUnsupportedNo({ settled: split, calls: current, record: automationStudioResultVerificationNoRecord(input), summary: request.summary, requestText, ask, agree }));
+  const confirmed = automationStudioResultFirstAskConfirmed({ confirmAnswer, outcome, first, second, verdictChanged: trail.verdictChanged, reasks: trail.reasks, secondAsked: converse ? "converse" : "same" });
+  return said({ outcome: { ...outcome, performed: true, ...(confirmed ? { firstAskConfirmed: true as const } : {}) }, interventions });
+}
+
+/** What every call of one verification adds to: each ask's intervention, and how its yes was reached (`./first-ask/`, t677). */
+type CheckTrail = { interventions: AutomationStudioFlowIntervention[]; verdictChanged: boolean; reasks: number };
+
+/**
+ * One check, asked again while its call did not come back for a temporary
+ * reason, up to `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK` asks
+ * (header). Every ask's intervention is recorded, in order, under a name of its
+ * own: two calls can finish within one millisecond of each other, and the
+ * harness names an intervention by the run and the time. An ask whose verdict
+ * word differs from an earlier ask's of this check marks the trail (t677).
+ */
+async function askCheck(
+  request: AutomationStudioResultVerificationRequest,
+  provider: AutomationStudioLlmProvider,
+  check: 1 | 2,
+  trail: CheckTrail,
+  /** The one re-ask of a contradicted unsure (header, t503): marked on its intervention. */
+  reask = false
+): Promise<ReturnType<typeof automationStudioResultVerdict>> {
+  const { interventions } = trail;
+  let current = request;
+  let evidenceRecheck = false;
+  // A held yes that advised a change: the call keeps that advice through its recheck (`./exclusion-evidence/advice-kept.ts`, t636).
+  let advised: ReturnType<typeof automationStudioResultVerdict> | undefined;
+  // The verdict word this check's first answering ask gave (`./first-ask/model-said.ts`); an ask that gave none sets nothing.
+  let firstSaid: ReturnType<typeof automationStudioResultModelSaid>;
+  for (let ask = 1; ; ask += 1) {
+    const reply = await askOnce(current, provider, check, ask, reask, evidenceRecheck);
+    const asked: typeof reply = advised ? { ...reply, verification: automationStudioResultAdviceKept(reply.verification, advised) } : reply;
+    if (asked.verification.changeAdvised) advised = asked.verification;
+    const saidNow = automationStudioResultModelSaid(asked.verification);
+    if (saidNow !== undefined && firstSaid !== undefined && saidNow !== firstSaid) trail.verdictChanged = true;
+    firstSaid ??= saidNow;
+    const taken = new Set(interventions.map((intervention) => intervention.interventionId));
+    const intervention = taken.has(asked.intervention.interventionId) ? { ...asked.intervention, interventionId: `${asked.intervention.interventionId}.${interventions.length + 1}` } : asked.intervention;
+    interventions.push(intervention);
+    request.recordIntervention?.(intervention);
+    const correction = automationStudioResultExclusionEvidenceRecheck(asked.verification, request.deniedEvidenceKeys);
+    if ((!asked.temporary && !correction) || ask >= AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK || request.signal?.aborted) return asked.verification;
+    if (correction) {
+      current = { ...request, summary: { ...request.summary, recheck: [request.summary.recheck, correction].filter(Boolean).join("\n") } };
+      evidenceRecheck = true;
+    }
+  }
+}
+
+/** The check's verdict, said in the chat as the check that was started ends (`check-activity.ts`), and returned unchanged. */
+function said(report: AutomationStudioResultVerificationReport): AutomationStudioResultVerificationReport {
+  const words = automationStudioResultCheckActivity(report.outcome);
+  emitAutomationStudioActivity({ phase: "verifying", label: words.label, detail: { kind: "check", title: "Result check", status: words.status, ...(words.text ? { text: words.text } : {}) } });
+  return report;
+}
+
+/**
+ * The judge's copy of the summary with the facts that hold, each by its kind
+ * and Core's sentence (header): placed just before `earlierAdvice`, every
+ * other field where it was, so everything before it is unchanged; last where
+ * there is no earlier advice.
+ */
+function summaryWithComputedFacts(summary: AutomationStudioRunResultSummary, holding: readonly AutomationStudioResultComputedFact[]): AutomationStudioRunResultSummary {
+  const computedFacts = holding.map((fact) => ({ kind: fact.kind, status: fact.status, said: fact.said }));
+  const entries = Object.entries(summary).filter(([key]) => key !== "computedFacts");
+  const at = entries.findIndex(([key]) => key === "earlierAdvice");
+  entries.splice(at < 0 ? entries.length : at, 0, ["computedFacts", computedFacts]);
+  return Object.fromEntries(entries) as AutomationStudioRunResultSummary;
+}
+
+/**
+ * One verification call and the verdict it reached. The second call of a
+ * verification is this one repeated: the same request, the same evidence.
+ * `temporary` when it gave no reply because of a fault that is asked again
+ * (`askAgainAfter`): one the adapter called temporary -- its deadline passing
+ * among them -- or a reply that arrived and could not be read, and the caller
+ * was not cancelled.
+ */
+async function askOnce(
+  request: AutomationStudioResultVerificationRequest,
+  provider: AutomationStudioLlmProvider,
+  check: 1 | 2,
+  ask: number,
+  reask: boolean,
+  evidenceRecheck: boolean
+): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention; temporary: boolean }> {
+  // With the instruction's named columns no stored column reads, said once
+  // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
+  // And the rows a condition alone left out that name the asked item
+  // (`request-rows/`, live run `run-muw60j7c-bb7c9a62`, C-2), on both kinds of
+  // judge's copy: the verdict is read with the same rows, so a yes is held to
+  // the rows the judge was shown. The rows are flagged before the paging words:
+  // the paging copy drops each condition's `testedLabel`, which the flagging
+  // reads and the judge is never shown (`run-mux6naez-6c20f26e`). Last, Core's
+  // short id before each left-out row a judge must still name
+  // (`request-rows/summary-with-row-ids.ts`, t599): the judge's copy only, and
+  // the verdict reads the rows without it. Before the ids, each left-out row
+  // whose item is also in the result is said so (`request-rows/summary-with-also-in-result.ts`,
+  // t624), and needs no id: no yes is asked to name it.
+  const judged = automationStudioResultSummaryWithRowIds(automationStudioResultSummaryWithAlsoInResult(automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithLeftOutNamingTheItem(
+    automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions),
+    request.instructions
+  ))));
+  const result = await runAutomationStudioLlmHarness({
+    taskKind: "loop_verification",
+    projectId: request.projectId,
+    flowId: request.flowId,
+    runId: request.runId,
+    ...(request.subflowId ? { subflowId: request.subflowId } : {}),
+    instructions: [...request.instructions],
+    ...(request.runDetail ? { runDetail: request.runDetail } : {}),
+    resultSummary: judged,
+    ...(request.deniedEvidenceKeys ? { deniedEvidenceKeys: request.deniedEvidenceKeys } : {}),
+    ...(request.policy ? { policy: request.policy } : {}),
+    provider,
+    ...(request.runBudget ? { runBudget: request.runBudget } : {}),
+    // No reply cap (user, 2026-10-03, t254: it was 2,000 since t239). Under a build's purse the judge's reply is held at its observed-maximum reserve (`../llm/build-purse/build-call-reserves.ts`).
+    ...withDefined("tokenLimits", request.tokenLimits),
+    ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
+    ...(request.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: request.maxEstimatedCostUsd } : {}),
+    ...(request.signal ? { signal: request.signal } : {}),
+    ...(request.now ? { now: request.now } : {}),
+    metadata: { source: VERIFICATION_SOURCE, expectedOutput: "diagnosis" }
+  });
+  const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
+  // A reply cut off after its verdict (header, t653), by the adapter's typed mark: read from its kind and diagnosis alone, never its summary.
+  const truncatedAfterVerdict = response?.truncatedAfterVerdict === true;
+  // The run's own summary, with the flagged rows the judge was shown: the
+  // judge's paging words are not Core's observation.
+  const summary = judged.leftOutNamingTheItem ? { ...request.summary, leftOutNamingTheItem: judged.leftOutNamingTheItem } : request.summary;
+  // A yes over a row a condition alone left out quotes, beside it, the request's own words that exclude it (t515, `./verdict/`).
+  const wording = automationStudioRequestWording(request.instructions, request.summary);
+  const read = automationStudioResultVerdict({
+    summary,
+    ...(response?.diagnosis ? { diagnosis: response.diagnosis } : {}),
+    // The reply's own prose, carried only as the judgement's advice where the
+    // diagnosis channel's `changed` gave none. The verdict reader screens and
+    // bounds it; nothing here is required of the model.
+    ...(response?.summary && !truncatedAfterVerdict ? { summaryText: response.summary } : {}),
+    basis: response ? "model" : "model_unavailable",
+    wording,
+    ...(response ? {} : { failureCode: firstErrorCode(result.diagnostics) })
+  });
+  // A cut yes its whole fields do not carry gave no answer, and is asked again as a cut reply always was (header, t653).
+  const unreadYes = truncatedAfterVerdict && response?.diagnosis?.answersRequest === "yes" && read.verdict !== "answers";
+  const verification = unreadYes ? automationStudioResultVerdict({ summary, basis: "model_unavailable", failureCode: CUT_REPLY_CODE, wording }) : read;
+  // The harness records a call's own metadata, not the caller's, so the
+  // intervention is told here which check it was and who asked.
+  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}), ...(evidenceRecheck ? { verificationEvidenceRecheck: true } : {}), ...(truncatedAfterVerdict ? { truncatedAfterVerdict: true } : {}) } };
+  const temporary = request.signal?.aborted !== true && (unreadYes || (!response && askAgainAfter(firstError(result.diagnostics))));
+  return { verification, intervention, temporary };
+}
+
+/** The code a cut reply's unread yes is recorded under: the reply was cut off, as it was before its verdict could be read (t653). */
+const CUT_REPLY_CODE = "llm.provider_output_truncated";
+
+/**
+ * Whether a call that gave no verdict is asked again (header): a fault the
+ * adapter called temporary, or a call Core's LLM policy calls spent -- the
+ * reply or the network failed, and the next call may succeed -- or a reply the
+ * harness could not validate. Never a refused key, a purse's refusal or a
+ * cancellation.
+ */
+function askAgainAfter(error: { code: string; metadata?: Record<string, unknown> | undefined } | undefined): boolean {
+  if (!error) return false;
+  if (error.metadata?.retryable === true) return true;
+  if (error.code.startsWith("llm_output.")) return true;
+  const status = error.metadata?.providerStatus;
+  return automationStudioLlmProviderFailureSpendsCall({ code: error.code, status: typeof status === "number" ? status : undefined });
+}
+
+/**
+ * A recheck the verification may send, screened as the exclusion-evidence
+ * recheck is (`./exclusion-evidence/recheck.ts`): none without the domain's
+ * denied keys, or where it would carry one or anything secret-shaped (t691).
+ */
+function screenedRecheck(recheck: string | undefined, deniedKeys: readonly string[] | undefined): string | undefined {
+  if (recheck === undefined || deniedKeys === undefined) return undefined;
+  const screened = screenAutomationStudioLlmEvidence({ recheck }, deniedKeys);
+  return screened.deniedKey || screened.secretShaped ? undefined : recheck;
+}
+
+/** `{ [key]: value }`, or nothing when the value is undefined, for an optional field that may not be set to `undefined`. */
+function withDefined<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]?: V });
+}
+
+/** The first error code a failed call reported. Codes only: a provider's message never reaches a run record. */
+function firstErrorCode(diagnostics: readonly { severity: string; code: string }[]): string | undefined {
+  return firstError(diagnostics)?.code;
+}
+
+/** The first error a failed call reported: the provider's fault, whose `metadata.retryable` is the adapter's verdict on it. */
+function firstError<T extends { severity: string }>(diagnostics: readonly T[]): T | undefined {
+  return diagnostics.find((diagnostic) => diagnostic.severity === "error");
+}

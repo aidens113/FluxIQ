@@ -370,7 +370,7 @@ the generated catalog yet (see Known gaps).
 **Project ownership.** `AutomationStudioProject.ownerUserId` is the owner
 recorded in `<automation data dir>/ownership/projects.json` (a SQLite row
 under layout v2, one transaction per change), beside the projects and outside
-the runtime's own records (`programs/automation-studio/api/ownership/`). A
+the runtime's own records (`framework/persistence/automation/ownership/`). A
 creator is recorded through `create-project`'s `creates`. The migration gives
 an unowned project the workspace owner, or the first enabled `admin` by
 creation; it is idempotent, never overwrites, and runs lazily on first lookup,

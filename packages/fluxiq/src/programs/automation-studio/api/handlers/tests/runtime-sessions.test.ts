@@ -5,8 +5,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
-import type { AutomationStudioService } from "../../../runtime/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
+import type { AutomationStudioService } from "../../../../../framework/automation-service/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 import { AUTOMATION_STUDIO_RUNTIME_SESSION_LISTING_MAX_BYTES } from "../runtime-sessions.ts";
 

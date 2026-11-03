@@ -2,10 +2,10 @@
 // domain surfaces it reads and writes.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../contracts.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, automationStudioWithWholeAttemptInputs, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../runtime/index.ts";
-import { AutomationStudioGatewayTraceInstallation } from "../../runtime/gateway-trace/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../../../../api-contracts/automation.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
+import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, automationStudioWithWholeAttemptInputs, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../../../framework/automation-service/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../../../runtime/recording/gateway-trace/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { automationStudioRunRefusalResponse } from "./run-refusal/index.ts";
 

@@ -1,4 +1,4 @@
-export * from "./automation-studio.js";
+export * from "./automation.js";
 export * from "./client-gateway.js";
 export * from "./core.js";
 export * from "./iam.js";

@@ -17,7 +17,7 @@ it("the complete declarative compiler graph is independent of Studio, including 
       if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue;
       const specifier = statement.moduleSpecifier;
       if (!specifier || !ts.isStringLiteral(specifier)) continue;
-      expect(specifier.text, file).not.toContain("@fluxiq/contracts/automation-studio");
+      expect(specifier.text, file).not.toContain("@fluxiq/contracts/automation");
       if (specifier.text.startsWith(".")) {
         const target = path.resolve(path.dirname(file), specifier.text);
         pending.push(target.endsWith(".ts") ? target : path.join(target, "index.ts"));

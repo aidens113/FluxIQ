@@ -1,0 +1,121 @@
+import type { AutomationStudioSiteResetLedger, AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetProjectLedger, AutomationStudioSiteResetTrialReset } from "../../flow-authoring/bootstrap/site-reset/index.ts";
+import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPreparingPort, runAutomationStudioSubflowBuilderLoop } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioLlmBuildPurse } from "../../agents/llm/build-purse/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput } from "../../agents/llm/index.ts";
+import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
+import type { AutomationStudioHostResourceLease, AutomationStudioHostResourcePort } from "../host-resources/index.ts";
+import type { AutomationStudioProjectBuildRecordStore, AutomationStudioProjectBuildRef } from "../record/index.ts";
+import type { AutomationStudioProjectWholeTestTried } from "../single-subflow/index.ts";
+
+// What the dispatcher reaches outside itself (automation-project-agents-plan,
+// `Concurrent dispatch`). The service that wires the supervisor in (A5c)
+// builds these once per build; nothing here is per brief except what the
+// brief port factory hands back.
+
+type BuilderInput = Parameters<typeof runAutomationStudioSubflowBuilderLoop>[0];
+
+/**
+ * The build's cancellation, as `AutomationStudioBuildCancellation`
+ * (`service/flow-bootstrap-commands/cancellation.ts`) offers it: each brief runs
+ * in a `child` of the supervisor's scope, so a Flow cancel aborts every builder
+ * and a builder ending never aborts its parent or a sibling.
+ */
+export type AutomationStudioProjectDispatchCancellation = {
+  child<T>(work: () => Promise<T>, stop?: AbortSignal): Promise<T>;
+  signal(): AbortSignal | undefined;
+};
+
+/** What a brief's ports are made for: the brief, its scope, its own ledger, its lease and its stop. */
+export type AutomationStudioProjectBriefPortRequest = {
+  brief: AutomationStudioProjectSubflowBrief;
+  scope: AutomationStudioSubflowScope;
+  /** The brief's own ledger, from the project ledger's `forBrief`: the permission wrapper records the brief's acts in it. */
+  ledger: AutomationStudioSiteResetLedger;
+  lease: AutomationStudioHostResourceLease;
+  signal: AbortSignal;
+};
+
+/**
+ * A brief's own ending, which stops its loop and not only its next call: a
+ * step the person was asked to permit and did not (a plan step refused, which
+ * the loop cannot see into), or a check only a person could pass that was not
+ * passed. `signal` aborts when either happens; `reason` then says which, in
+ * plain words, and the brief comes back `blocked` with it.
+ */
+export type AutomationStudioProjectBriefEnding = {
+  signal: AbortSignal;
+  reason(): string | undefined;
+};
+
+/**
+ * A build or repair brief's surroundings: the loop's harness tools,
+ * routing, permissions and person-needed wiring (`loop`), the candidate
+ * submission's domain surroundings (`submission`) and the partial-trial port
+ * from `service/subflow-trial/` (`trial`). The dispatcher sets the loop's
+ * signal, purse (the brief's allowance), iteration bound and call scope.
+ */
+export type AutomationStudioProjectBuilderPorts = {
+  loop: Omit<BuilderInput["loop"], "signal" | "purse" | "maxIterations">;
+  submission: Omit<BuilderInput["submission"], "signal">;
+  trial?: AutomationStudioSubflowTrialPreparingPort | undefined;
+  /** The site reset its trial gate asks before each trial: every lasting act of this build undone first (t578). */
+  reset?: AutomationStudioSiteResetTrialReset | undefined;
+  /** How many times the reset's own checks have moved the target, read around each test so a refused one says where it left it (t738). */
+  moves?: (() => number) | undefined;
+  observe?: BuilderInput["observe"];
+  /** The brief's permission and person-needed ending; absent, only the build's cancellation stops its loop. */
+  ended?: AutomationStudioProjectBriefEnding | undefined;
+  /**
+   * The bound domain's declared denied evidence keys
+   * (`AutomationStudioLlmEvidenceRuntimeBinding.deniedEvidenceKeys`): what the
+   * dispatcher withholds from the Flow's own parameters it shows a repair
+   * under `yourSubflow` (`./run-brief.ts`, t625). Required, as the binding's
+   * is, so no ports arrive without them; `[]` denies nothing.
+   */
+  deniedEvidenceKeys: readonly string[];
+};
+
+/**
+ * A reset brief's surroundings: a loop whose tools reverse this build's own
+ * lasting acts through the site's controls. `remainingActs` says what is
+ * still to undo; absent, the project ledger's acts still in place.
+ */
+export type AutomationStudioProjectResetPorts = {
+  loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "discoveryOnly" | "finishingTools" | "fullRunRequired" | "completionSchema" | "checkCompletion" | "callScope" | "signal" | "purse" | "maxIterations">;
+  /** Given the act ids the reset's completion named under `cannotUndo`, kept first where the ledger allows it (`./reset-loop.ts`). */
+  remainingActs?: ((cannotUndo?: readonly string[]) => Promise<readonly AutomationStudioSiteResetNamedAct[]>) | undefined;
+  /** As a builder's: the reset's own permission and person-needed ending. */
+  ended?: AutomationStudioProjectBriefEnding | undefined;
+};
+
+/** Makes each brief's ports once its lease is held. */
+export type AutomationStudioProjectBriefPortFactory = {
+  builder(request: AutomationStudioProjectBriefPortRequest): AutomationStudioProjectBuilderPorts | Promise<AutomationStudioProjectBuilderPorts>;
+  reset(request: AutomationStudioProjectBriefPortRequest): AutomationStudioProjectResetPorts | Promise<AutomationStudioProjectResetPorts>;
+};
+
+export type AutomationStudioProjectDispatcherInput = {
+  record: {
+    store: Pick<AutomationStudioProjectBuildRecordStore, "read" | "recordReturn" | "recordAllowance">;
+    ref: AutomationStudioProjectBuildRef;
+  };
+  /** The build's purse; each brief's allowance is carved from it. */
+  purse: AutomationStudioLlmBuildPurse;
+  cancellation: AutomationStudioProjectDispatchCancellation;
+  /** The domain's host-resource port; one scheduler per port, shared by every build on it. */
+  host: AutomationStudioHostResourcePort;
+  /** The project's one lasting-act ledger. */
+  ledger: AutomationStudioSiteResetProjectLedger;
+  ports: AutomationStudioProjectBriefPortFactory;
+  /** The call cap of a brief's allowance; absent, the brief's `maxIterations`. Its subflow trials' judge calls count against it too. */
+  maxCalls?: ((brief: AutomationStudioProjectSubflowBrief) => number | undefined) | undefined;
+  /**
+   * The build's proposals, told each single-subflow brief's trial with the
+   * verdict its gate kept (t679, `../single-subflow/whole-test-port.ts`): the
+   * scoped trial port tells them its own, and a single-subflow brief never asks
+   * it. Absent, nothing is told.
+   */
+  trialled?: AutomationStudioProjectWholeTestTried | undefined;
+  /** The builder loop; replaced only by tests. */
+  runBuilder?: typeof runAutomationStudioSubflowBuilderLoop | undefined;
+};

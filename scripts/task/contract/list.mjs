@@ -12,7 +12,7 @@
 // relative to it, and what it guards (named in the refusal).
 
 export const CONTRACT_TESTS = [
-  { package: "packages/fluxiq", file: "src/programs/automation-studio/runtime/llm/deepseek/tests/system-prompt.test.ts", guards: "the pinned DeepSeek system prompt" },
-  { package: "packages/fluxiq", file: "src/programs/automation-studio/runtime/flow-bootstrap/plan/tests/extraction-vocabulary.test.ts", guards: "the extraction vocabulary's prompt size budget" },
-  { package: "packages/fluxiq", file: "src/programs/automation-studio/runtime/flow-bootstrap/plan/tests/issue-feedback.test.ts", guards: "the pinned plan issue feedback text" }
+  { package: "packages/fluxiq", file: "src/runtime/agents/llm/deepseek/tests/system-prompt.test.ts", guards: "the pinned DeepSeek system prompt" },
+  { package: "packages/fluxiq", file: "src/runtime/flow-authoring/bootstrap/plan/tests/extraction-vocabulary.test.ts", guards: "the extraction vocabulary's prompt size budget" },
+  { package: "packages/fluxiq", file: "src/runtime/flow-authoring/bootstrap/plan/tests/issue-feedback.test.ts", guards: "the pinned plan issue feedback text" }
 ];
