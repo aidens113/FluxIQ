@@ -3,7 +3,7 @@
 // a keyset cursor, and only the summary rows -- never a session file.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { SQLiteRepository } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import type { SQLiteRepository } from "../../../persistence/repository/sqlite-repository.ts";
 import type { AutomationStudioRuntimeRunSummary, AutomationStudioRuntimeRunSummaryPage } from "../../../persistence/automation/index.ts";
 import type { AutomationStudioRuntimeSessionListingFilter } from "./filter.ts";
 import { automationStudioRuntimeSummaryPage } from "./page.ts";

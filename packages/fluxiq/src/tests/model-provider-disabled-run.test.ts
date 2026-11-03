@@ -3,11 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
-import { FluxIQ } from "../index.ts";
-import { AutomationStudioNativeNodeRuntime } from "../automation-service/index.ts";
-import type { AutomationStudioNodeDefinition } from "../automation-service/nodes/index.ts";
-import { installPrimaryRouter } from "../automation-service/tests/service-fixtures.ts";
-import { SecretKeysService } from "../../programs/secret-keys/index.ts";
+import { FluxIQ } from "../framework/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../framework/automation-service/index.ts";
+import type { AutomationStudioNodeDefinition } from "../framework/automation-service/nodes/index.ts";
+import { installPrimaryRouter } from "../framework/automation-service/tests/service-fixtures.ts";
+import { SecretKeysService } from "../programs/secret-keys/index.ts";
 
 it("executes an ordinary saved native Flow without releasing a retained key or dispatching a model when construction disables providers", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-disabled-provider-run-"));

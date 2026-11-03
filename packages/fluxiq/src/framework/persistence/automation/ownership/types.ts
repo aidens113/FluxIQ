@@ -1,5 +1,3 @@
-import type { User } from "../../../../programs/identity-access/index.ts";
-
 // Who owns each Automation Studio project (hosted production plan,
 // Permissions, "Ownership"; lane B3, t803). Ownership is kept beside the
 // project, not in the runtime's project record, so the api layer can record it
@@ -39,7 +37,12 @@ export type AutomationStudioProjectCatalog = {
 };
 
 /** What the default owner is chosen from: an Identity Access user's id, role, state and creation time. */
-export type AutomationStudioProjectOwnerCandidate = Pick<User, "id" | "roleId" | "enabled" | "createdAtMs">;
+export type AutomationStudioProjectOwnerCandidate = { id: string; roleId: string; enabled: boolean; createdAtMs: number };
+
+/** What the default owner is read from: any directory of users, such as Identity Access. */
+export type AutomationStudioProjectOwnerDirectory = {
+  snapshot(): Promise<{ users: AutomationStudioProjectOwnerCandidate[] }>;
+};
 
 /**
  * Where an unowned project's owner comes from: the workspace owner when a

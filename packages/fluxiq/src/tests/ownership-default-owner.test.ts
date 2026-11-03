@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { IdentityAccessService } from "../../../../../programs/identity-access/index.ts";
-import { automationStudioProjectDefaultOwner } from "../default-owner.ts";
+import { IdentityAccessService } from "../programs/identity-access/index.ts";
+import { automationStudioProjectDefaultOwner } from "../framework/persistence/automation/ownership/index.ts";
 
 const identityUsers = (identity: IdentityAccessService) => async () => (await identity.snapshot()).users;
 

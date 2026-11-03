@@ -1,5 +1,5 @@
 import path from "node:path";
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioProjectArtifactKind } from "../../../../flows/authoring/model/index.ts";
 
 // Every path under a project's storage root. The root is fixed at construction:

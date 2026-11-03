@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import sqlite3 from "sqlite3";
-import type { SQLiteConnector } from "../../database-manager/storage/connection-pool.ts";
+import type { SQLiteConnector } from "../../repository/connection-pool.ts";
 import { programStateConnections } from "../state-connections.ts";
 
 const temp: string[] = [];

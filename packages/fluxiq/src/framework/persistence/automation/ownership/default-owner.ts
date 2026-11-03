@@ -1,5 +1,7 @@
-import { adminRole } from "../../../../programs/identity-access/index.ts";
 import type { AutomationStudioProjectOwnerDefaults } from "./types.ts";
+
+/** The id of Identity Access's `admin` role, which a default owner must hold. */
+const ADMIN_ROLE_ID = "admin";
 
 /**
  * The owner an unowned project is given (hosted production plan, Permissions,
@@ -12,7 +14,7 @@ export async function automationStudioProjectDefaultOwner(defaults: AutomationSt
   const workspaceOwner = defaults.workspaceOwner ? await defaults.workspaceOwner() : null;
   if (typeof workspaceOwner === "string" && workspaceOwner.length > 0) return workspaceOwner;
   const admins = (await defaults.users())
-    .filter((user) => user.enabled && user.roleId === adminRole.id)
+    .filter((user) => user.enabled && user.roleId === ADMIN_ROLE_ID)
     .sort((left, right) => left.createdAtMs - right.createdAtMs || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
   return admins[0]?.id ?? null;
 }

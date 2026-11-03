@@ -1,7 +1,7 @@
 import path from "node:path";
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../program-state/storage.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import type { SQLiteTransaction } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import type { SQLiteTransaction } from "../../repository/sqlite-repository.ts";
 import { CanonicalAuthorityValidation as V } from "./validation.ts";
 
 /** Authoritative existing catalogue on its actual private global transaction. */

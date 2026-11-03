@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { programStateRoot } from "../../programs/_shared/state-root.ts";
+import { programStateRoot } from "../persistence/program-state/state-root.ts";
 import type { FluxIQLayoutV3Paths } from "./paths-type.ts";
 import { FLUXIQ_LAYOUT_V3_VERSION } from "./version.ts";
 

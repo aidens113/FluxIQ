@@ -1,4 +1,4 @@
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioProject } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioObjectStore } from "../../../persistence/automation/index.ts";
 import type { AutomationStudioProjectIndex } from "./types.ts";

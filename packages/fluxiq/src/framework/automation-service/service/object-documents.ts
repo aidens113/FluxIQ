@@ -4,7 +4,7 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { ClientGatewayService } from "../../../client-gateway/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../persistence/program-state/storage.ts";
 import type { AutomationStudioRecordingEntryTargetPreparer } from "../nodes/index.ts";
 import { type AppendRecordingEntryInput, type AutomationStudioProjectArtifactKind, type RecordingSession, type StateSnapshot } from "../../../flows/authoring/model/index.ts";
 import {

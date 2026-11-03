@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../core/index.ts";
-import { ProgramJsonStore, programDataFile } from "../../_shared/storage.ts";
+import { ProgramJsonStore, programDataFile } from "../../../framework/persistence/program-state/storage.ts";
 import type { ProductionRun, ProductionRunExecution, ProductionRunnerSnapshot, ProductionRunTargetType, ProductionTarget } from "../types.ts";
 
 export type ProductionRunDispatcher = {

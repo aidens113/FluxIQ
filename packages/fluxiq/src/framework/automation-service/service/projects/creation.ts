@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { AutomationStudioProject } from "../../../../api-contracts/automation.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioObjectStore } from "../../../persistence/automation/index.ts";
 import { CanonicalAuthorityWholeOperation, CanonicalAuthorityValidation as V, type CanonicalWholeEffectKind } from "../../../persistence/automation/canonical-authority/index.ts";
 import type { AutomationStudioProjectPaths } from "../paths/index.ts";

@@ -19,6 +19,5 @@ export type {
   ProgramEndpointResource,
   ProgramOwnedResourceKind,
   ProgramProjectChildKind,
-  ProgramResourceOwnerResolver,
   ProgramResourceRef
 } from "./types.ts";

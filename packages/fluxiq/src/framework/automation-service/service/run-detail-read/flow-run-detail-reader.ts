@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioFlowPaths } from "../paths/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../summaries/index.ts";

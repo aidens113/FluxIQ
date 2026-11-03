@@ -3,8 +3,8 @@ import { open as openFile, stat } from "node:fs/promises";
 import path from "node:path";
 import sqlite3 from "sqlite3";
 import type { JsonObject } from "../../../core/index.ts";
-import { recordSqlPerformance, withSqlPerformanceContext } from "../../_shared/performance-metrics.ts";
-import type { RecordEnvelope, Repository, RepositoryListPage, RepositoryListPageOptions, RepositoryScope } from "../types.ts";
+import { recordSqlPerformance, withSqlPerformanceContext } from "../performance-metrics/performance-metrics.ts";
+import type { RecordEnvelope, Repository, RepositoryListPage, RepositoryListPageOptions, RepositoryScope } from "./types.ts";
 import type { SQLiteConnectionPool, SQLiteConnector } from "./connection-pool.ts";
 import { enqueueDatabaseOperation } from "./operation-queue.ts";
 

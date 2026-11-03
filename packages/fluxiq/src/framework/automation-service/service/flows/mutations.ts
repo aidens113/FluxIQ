@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
-import { createRecord, SQLiteRepository } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import { ProgramJsonStore } from "../../../persistence/program-state/storage.ts";
+import { createRecord, SQLiteRepository } from "../../../persistence/repository/sqlite-repository.ts";
 import {
   type AutomationStudioFlowRouter,
   type AutomationStudioFlowSubflow,

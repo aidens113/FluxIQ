@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { ProgramJsonStore } from "../../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../program-state/storage.ts";
 import { CanonicalAuthorityProjectExistence } from "../project-existence.ts";
 
 const roots: string[] = [];

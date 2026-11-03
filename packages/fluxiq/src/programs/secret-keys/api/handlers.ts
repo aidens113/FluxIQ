@@ -1,6 +1,6 @@
 import type { GlobalProgramApiRegistry, ProgramApiActor } from "../../_shared/api.ts";
 import { endpointResource } from "../../_shared/iam/index.ts";
-import { isJsonObject } from "../../_shared/storage.ts";
+import { isJsonObject } from "../../../framework/persistence/program-state/storage.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 import {
   SECRET_KEYS_ENDPOINTS,

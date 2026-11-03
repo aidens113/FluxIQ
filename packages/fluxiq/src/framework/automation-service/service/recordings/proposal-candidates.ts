@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { parseAutomationStudioRecordOutput, type AutomationStudioRecordOutput } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { IoRegistry } from "../../../../io/index.ts";
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import { type AutomationStudioFlowArtifact, type RecordingSession } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioRecordingCandidateParameterNormalizer, AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperObservation } from "../../nodes/index.ts";
 import type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact } from "../../../../runtime/recording/recording-flow-proposal.ts";

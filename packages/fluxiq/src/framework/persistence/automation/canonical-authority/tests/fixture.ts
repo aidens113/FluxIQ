@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { ProgramJsonStore } from "../../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../program-state/storage.ts";
 import { CanonicalAuthorityOwnerStore } from "../owner-store.ts";
 import { CanonicalAuthorityProjectCoordinator } from "../project-coordinator.ts";
 import type { CanonicalAuthorityCapability, CanonicalAuthorityOperation } from "../contracts.ts";

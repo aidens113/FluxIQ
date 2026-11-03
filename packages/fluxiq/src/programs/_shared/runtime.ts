@@ -21,7 +21,7 @@ import { resolveFluxIQProfile } from "../../platform/profile/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
 import type { ProgramApiIamOptions } from "./iam/index.ts";
-import { ProgramJsonStore, programDataFile } from "./storage.ts";
+import { ProgramJsonStore, programDataFile } from "../../framework/persistence/program-state/storage.ts";
 
 export type GlobalProgramRuntime = {
   api: GlobalProgramApiRegistry;

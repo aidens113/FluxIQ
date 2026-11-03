@@ -11,7 +11,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import { createRecord } from "../../../../../programs/database-manager/storage/sqlite-repository.ts";
+import { createRecord } from "../../../../persistence/repository/sqlite-repository.ts";
 import type { AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioRuntimeRunSummary } from "../../../../persistence/automation/index.ts";
 import { AutomationStudioService } from "../../../service.ts";

@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import type { JsonObject } from "../../../core/index.ts";
-import { ProgramJsonStore } from "../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../persistence/program-state/storage.ts";
 import { parseAutomationStudioFlowBootstrapIncompleteDraft, type AutomationStudioFlowBootstrapIncompleteDraft } from "../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "./paths/index.ts";
 import type { AutomationStudioProjectStore } from "./projects/index.ts";

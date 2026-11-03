@@ -1,5 +1,5 @@
 import path from "node:path";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../program-state/storage.ts";
 import { CanonicalAuthorityValidation as V } from "./validation.ts";
 
 /** Reads the actual catalogue/manifest without legacy migration or empty fallback. */

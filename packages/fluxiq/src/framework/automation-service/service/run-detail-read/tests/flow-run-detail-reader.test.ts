@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { ProgramJsonStore } from "../../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../../persistence/program-state/storage.ts";
 import { AutomationStudioProjectRuntimeStreamStore } from "../../../../persistence/automation/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { createRunnableCanonicalFlow } from "../../../tests/service-fixtures.ts";

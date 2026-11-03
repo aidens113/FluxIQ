@@ -1,5 +1,5 @@
 import sqlite3 from "sqlite3";
-import { recordSqlPerformance } from "../../../../programs/_shared/performance-metrics.ts";
+import { recordSqlPerformance } from "../../performance-metrics/performance-metrics.ts";
 
 export type AutomationStudioCachedSqlRunResult = { changes: number; lastID: number };
 

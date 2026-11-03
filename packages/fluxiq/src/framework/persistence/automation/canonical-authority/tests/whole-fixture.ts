@@ -1,8 +1,8 @@
 import { cp, mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { ProgramJsonStore } from "../../../../../programs/_shared/storage.ts";
-import { SQLiteRepository } from "../../../../../programs/database-manager/index.ts";
+import { ProgramJsonStore } from "../../../program-state/storage.ts";
+import { SQLiteRepository } from "../../../repository/sqlite-repository.ts";
 import { createCanonicalAutomationStudioSQLiteRepositories, AutomationStudioProjectDatabasePool } from "../../index.ts";
 import { CanonicalAuthorityWholeOperation } from "../whole-operation.ts";
 import { AutomationStudioProjectPaths, AutomationStudioFlowPaths } from "../../../../automation-service/service/paths/index.ts";

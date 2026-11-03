@@ -5,7 +5,7 @@ import type { IdentityAccessService } from "../identity-access/index.ts";
 import type { Permission } from "../identity-access/types.ts";
 import { authorizeProgramPin, type ProgramPinAuthorizationPayload } from "./authorization.ts";
 import { GLOBAL_PROGRAMS } from "./catalog.ts";
-import { recordProgramEndpointPerformance, serializedMetricBytes, withEndpointPerformanceScope } from "./performance-metrics.ts";
+import { recordProgramEndpointPerformance, serializedMetricBytes, withEndpointPerformanceScope } from "../../framework/persistence/performance-metrics/performance-metrics.ts";
 import type { ProgramScope } from "./types.ts";
 import {
   filterProgramList,
@@ -19,9 +19,9 @@ import {
   type ProgramIamRegisteredAction,
   type ProgramIamRequest,
   type ProgramOwnedResourceKind,
-  type ProgramResourceOwnerResolver,
   type ProgramResourceRef
 } from "./iam/index.ts";
+import type { ProgramResourceOwnerResolver } from "../../framework/persistence/resource-owner/owner-resolver.ts";
 
 /**
  * What an endpoint does to persisted state, and therefore which credential the

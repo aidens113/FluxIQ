@@ -1,6 +1,6 @@
 import { AutomationInstructionError } from "../instruction-led/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
 import {
   type AutomationStudioTaskArtifact,
   createBlankAutomationStudioFlowArtifact,

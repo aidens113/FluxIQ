@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../core/index.ts";
-import { SQLiteRepository, type SQLiteTransaction } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository, type SQLiteTransaction } from "../../repository/sqlite-repository.ts";
 import type { AuthorityGuardCompletion, AuthorityGuardLegacyRequest } from "../project/authority-guard/index.ts";
 import { AutomationStudioAuthorityGuardValidation as G } from "../project/authority-guard/index.ts";
 import { CANONICAL_AUTHORITY_SCHEMA } from "./migration.ts";

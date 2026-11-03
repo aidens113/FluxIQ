@@ -2,7 +2,7 @@
 // project categories, and the project hierarchy and change feed.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { fluxiqPerformanceMetricsSnapshot } from "../../../_shared/performance-metrics.ts";
+import { fluxiqPerformanceMetricsSnapshot } from "../../../../framework/persistence/performance-metrics/performance-metrics.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type AutomationStudioListHierarchyChildrenRequest, type AutomationStudioProjectChangeFeedRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import { AutomationStudioProjectOwnerships } from "../../../../framework/persistence/automation/ownership/index.ts";

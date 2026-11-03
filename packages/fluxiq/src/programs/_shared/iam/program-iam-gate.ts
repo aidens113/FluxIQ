@@ -12,7 +12,8 @@ import { describeProgramResource } from "./describe-resource.ts";
 import { programIamIdSegment } from "./id-segment.ts";
 import { programPermissionPolicy, type ProgramPermissionGrant } from "./permission-policy.ts";
 import type { ProgramApiIamOptions } from "./registry-iam-types.ts";
-import type { ProgramOwnedResourceKind, ProgramResourceOwnerResolver, ProgramResourceRef } from "./types.ts";
+import type { ProgramResourceOwnerResolver } from "../../../framework/persistence/resource-owner/owner-resolver.ts";
+import type { ProgramOwnedResourceKind, ProgramResourceRef } from "./types.ts";
 
 /** One registration's action, program and permission: what the permission policies are built from. */
 export type ProgramIamRegisteredAction = {

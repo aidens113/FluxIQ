@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it } from "vitest";
-import { SQLiteRepository, createRecord } from "../../programs/database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository, createRecord } from "../persistence/repository/sqlite-repository.ts";
 import { FluxIQ, writeMigrationJournal } from "../index.ts";
 
 const roots: string[] = [];

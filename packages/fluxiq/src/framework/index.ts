@@ -12,9 +12,9 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io/index.ts";
-import { buildProgramDirectory, createGlobalProgramRuntime, programStateConnections, registerHostDocumentationGenerators, type HeldKeys, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
+import { buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type HeldKeys, type GlobalProgramRuntime, type ProgramDirectory, type ProgramApiIamOptions } from "../programs/index.ts";
+import { programStateConnections } from "./persistence/program-state/state-connections.ts";
 import { AutomationStudioIoRecorder, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration } from "./automation-service/public/index.ts";
-import type { ProgramApiIamOptions } from "../programs/_shared/iam/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
 import { migrateFluxIQStorage, rollbackFluxIQStorageMigration, type FluxIQStorageMigrationResult } from "./storage-migration.ts";
 

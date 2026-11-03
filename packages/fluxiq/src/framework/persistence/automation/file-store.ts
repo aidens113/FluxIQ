@@ -1,5 +1,5 @@
 import path from "node:path";
-import { safeSegment } from "../../../programs/_shared/storage.ts";
+import { safeSegment } from "../program-state/storage.ts";
 import type { AutomationStudioProject } from "../../../api-contracts/automation.ts";
 import type { AutomationStudioFlowPublication, AutomationStudioFlowRepresentationKind, AutomationStudioFlowScope } from "../../../flows/authoring/model/flows.ts";
 import type { RecordingFlowProposalArtifact } from "../../../runtime/recording/recording-flow-proposal.ts";

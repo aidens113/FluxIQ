@@ -1,0 +1,65 @@
+{
+  "sourceRoot": "packages/fluxiq/src",
+  "downstream": "../!FluxIQWebExtension",
+  "moves": [
+    {
+      "from": "programs/database-manager/storage",
+      "to": "framework/persistence/repository"
+    },
+    {
+      "from": "programs/database-manager/types.ts",
+      "to": "framework/persistence/repository/types.ts"
+    },
+    {
+      "from": "programs/_shared/storage.ts",
+      "to": "framework/persistence/program-state/storage.ts"
+    },
+    {
+      "from": "programs/_shared/state-connections.ts",
+      "to": "framework/persistence/program-state/state-connections.ts"
+    },
+    {
+      "from": "programs/_shared/state-root.ts",
+      "to": "framework/persistence/program-state/state-root.ts"
+    },
+    {
+      "from": "programs/_shared/tests/storage.test.ts",
+      "to": "framework/persistence/program-state/tests/storage.test.ts"
+    },
+    {
+      "from": "programs/_shared/tests/state-connections.test.ts",
+      "to": "framework/persistence/program-state/tests/state-connections.test.ts"
+    },
+    {
+      "from": "programs/_shared/tests/state-root.test.ts",
+      "to": "framework/persistence/program-state/tests/state-root.test.ts"
+    },
+    {
+      "from": "programs/_shared/performance-metrics.ts",
+      "to": "framework/persistence/performance-metrics/performance-metrics.ts"
+    },
+    {
+      "from": "programs/_shared/tests/performance-metrics.test.ts",
+      "to": "framework/persistence/performance-metrics/tests/performance-metrics.test.ts"
+    }
+  ],
+  "redirects": [
+    {
+      "from": "programs/database-manager/index.ts",
+      "to": "framework/persistence/repository/sqlite-repository.ts",
+      "exceptImportersUnder": [
+        "programs"
+      ],
+      "exceptImporters": [
+        "programs/_shared/storage.ts"
+      ]
+    },
+    {
+      "from": "programs/database-manager/index.ts",
+      "to": "framework/persistence/repository/types.ts",
+      "onlyImporters": [
+        "programs/_shared/storage.ts"
+      ]
+    }
+  ]
+}

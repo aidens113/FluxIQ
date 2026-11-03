@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import sqlite3 from "sqlite3";
-import { initializeFluxIQStorage } from "../../../framework/index.ts";
+import { initializeFluxIQStorage } from "../../../index.ts";
 import { ProgramJsonStore, ProgramStateReadError } from "../storage.ts";
 
 const roots: string[] = [];

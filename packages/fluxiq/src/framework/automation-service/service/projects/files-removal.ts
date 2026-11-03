@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioObjectStore, AutomationStudioProjectDatabasePool } from "../../../persistence/automation/index.ts";
 
 /**

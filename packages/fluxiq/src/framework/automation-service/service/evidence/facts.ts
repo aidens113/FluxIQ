@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { RecordingDomainDefinition } from "../../../../flows/authoring/model/index.ts";
 import type { EvidenceFact, EvidenceObservation } from "../../mining/index.ts";
 import type { NormalizedTimeline } from "../../../../runtime/recording/normalization/index.ts";

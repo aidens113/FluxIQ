@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
 import { upsertBy } from "../collections.ts";
 import type { RuntimeIndex } from "../indexes/index.ts";

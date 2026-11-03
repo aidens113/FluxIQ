@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open as openFile, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import type { JsonObject, JsonValue } from "../../core/index.ts";
-import type { RepositoryScope } from "../database-manager/index.ts";
-import { createRecord, SQLiteRepository, type SQLiteTransaction } from "../database-manager/storage/sqlite-repository.ts";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { RepositoryScope } from "../repository/types.ts";
+import { createRecord, SQLiteRepository, type SQLiteTransaction } from "../repository/sqlite-repository.ts";
 import { programStateConnections } from "./state-connections.ts";
 // The pool is kept here so a unit of work that reads program state opts in where it reads it.
 export { programStateConnections } from "./state-connections.ts";

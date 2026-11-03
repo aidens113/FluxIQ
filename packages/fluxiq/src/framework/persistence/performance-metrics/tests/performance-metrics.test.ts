@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { SQLiteRepository, createRecord } from "../../database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository, createRecord } from "../../repository/sqlite-repository.ts";
 import {
   clearFluxIQPerformanceMetrics,
   fluxiqPerformanceMetricsSnapshot,

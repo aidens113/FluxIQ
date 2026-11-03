@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { IoRegistry } from "../../../../io/index.ts";
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { RecordingSession } from "../../../../flows/authoring/model/index.ts";
 import type { ElementMatcher } from "../../../../runtime/target-matching/index.ts";
 import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingCandidateParameterNormalizer, AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperImplementation } from "../../nodes/index.ts";

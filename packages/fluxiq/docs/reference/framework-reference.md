@@ -91,7 +91,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CandidateTrial` | Class | `packages/fluxiq/src/ui/activity-status/candidate-trial.ts` | - |
 | `chooseNextEdge` | Value | `packages/fluxiq/src/engine/index.ts` | - |
 | `classifyClientGatewayTraceDivergence` | Value | `packages/fluxiq/src/client-gateway/trace-replay/comparison/divergence-class.ts` | - |
-| `clearFluxIQPerformanceMetrics` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
+| `clearFluxIQPerformanceMetrics` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `CLIENT_GATEWAY_ACTIVITY_CAPABILITY_ID` | Object | `packages/contracts/src/client-gateway.ts` | The capability a client advertises to receive `server.activity`. Core sends the activity stream only to ready sessions that declared it. |
 | `CLIENT_GATEWAY_ACTIVITY_RECOVERY_EVENTS` | Object | `packages/contracts/src/client-gateway.ts` | The lifecycle boundaries a handler fires at (C3), as a `handler` recovery names them. |
 | `CLIENT_GATEWAY_ACTIVITY_RECOVERY_KINDS` | Object | `packages/contracts/src/client-gateway.ts` | What kind of recovery a `step` row's `recovery` reports (state-aware recovery plan, C11): - `handler`: a lifecycle handler ran (On Start, On Before, On Retry, On Fail, On Before Next); - `entry`: a frame began at an alternative entry rather than its Start node; - `route`: the run moved to a checkpoint, or state routing moved it to the node the page is at; - `alternative`: a known alternative path or recovery Subflow was tried; - `interference`: the client closed a layer the page put over itself (a notice, a promotion, a consent banner) by its dismiss control while the step ran. Its `subject` is Core's own words by layer kind, never the control's words or other page text; - `reacquire`: a step whose target came from an earlier step (a read list's row, another node's answer) lost it when the page changed, so that earlier step was re-run and the same item found again by its identity (`succeeded`), or found gone (`failed`), t786. Its `subject` is Core's own words, naming the source step by its authored label at most, never page text. Additive: a client that does not know a kind reads the row as a plain step. |
@@ -340,7 +340,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `createId` | Value | `packages/fluxiq/src/core/index.ts` | - |
 | `CreateIdentityUserRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `createPasswordIdentityProvider` | Value | `packages/fluxiq/src/programs/identity-access/runtime/providers/password.ts` | - |
-| `createRecord` | Value | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts` | - |
+| `createRecord` | Value | `packages/fluxiq/src/framework/persistence/repository/sqlite-repository.ts` | - |
 | `createRuntimeInputs` | Value | `packages/fluxiq/src/engine/index.ts` | - |
 | `createRuntimeOutputs` | Value | `packages/fluxiq/src/engine/index.ts` | - |
 | `createRuntimeSession` | Value | `packages/fluxiq/src/engine/index.ts` | - |
@@ -356,11 +356,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `DatabaseManagerRunMigrationRequest` | Type | `packages/fluxiq/src/programs/database-manager/api/contracts.ts` | - |
 | `DatabaseManagerSensitiveGrantResponse` | Type | `packages/fluxiq/src/programs/database-manager/api/contracts.ts` | - |
 | `DatabaseManagerService` | Class | `packages/fluxiq/src/programs/database-manager/runtime/service.ts` | - |
-| `DatabaseManagerSnapshot` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
+| `DatabaseManagerSnapshot` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
 | `DatabaseManagerSnapshotRequest` | Type | `packages/fluxiq/src/programs/database-manager/api/contracts.ts` | - |
 | `DatabaseManagerSnapshotResponse` | Type | `packages/fluxiq/src/programs/database-manager/api/contracts.ts` | - |
 | `DatabaseManagerStoreRequest` | Type | `packages/fluxiq/src/programs/database-manager/api/contracts.ts` | - |
-| `DatabaseManagerStoreSummary` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
+| `DatabaseManagerStoreSummary` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
 | `DatabaseManagerViewState` | Type | `packages/fluxiq/src/programs/database-manager/ui/contracts.ts` | - |
 | `declinedSubmission` | Value | `packages/fluxiq/src/ui/activity-status/declined-submission.ts` | - |
 | `DEFAULT_SESSION_TTL_MS` | Object | `packages/fluxiq/src/programs/identity-access/runtime/service.ts` | - |
@@ -430,7 +430,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `evaluateClientGatewayTraceCompleteness` | Value | `packages/fluxiq/src/client-gateway/trace/evaluate-completeness.ts` | - |
 | `evaluateClientGatewayTraceSessionReferences` | Value | `packages/fluxiq/src/client-gateway/trace-replay/session-references/evaluation.ts` | - |
 | `FanOutGate` | Class | `packages/fluxiq/src/ui/activity-status/fan-out-gate.ts` | - |
-| `FileRepository` | Class | `packages/fluxiq/src/programs/database-manager/storage/file-repository.ts` | - |
+| `FileRepository` | Class | `packages/fluxiq/src/framework/persistence/repository/file-repository.ts` | - |
 | `FileRuntimeStore` | Class | `packages/fluxiq/src/runtime/storage.ts` | - |
 | `FileRuntimeStoreOptions` | Type | `packages/fluxiq/src/runtime/storage.ts` | - |
 | `FlowDocument` | Type | `packages/fluxiq/src/flows/index.ts` | - |
@@ -459,8 +459,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FluxIQLayoutV3Paths` | Type | `packages/fluxiq/src/framework/layout-v3/paths-type.ts` | Where a multi-tenant (`service`) deployment keeps its platform state and workspaces. All paths are absolute. |
 | `FluxIQMigrationJournal` | Type | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `FluxIQOptions` | Type | `packages/fluxiq/src/framework/index.ts` | - |
-| `FluxIQPerformanceMetric` | Type | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
-| `fluxiqPerformanceMetricsSnapshot` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
+| `FluxIQPerformanceMetric` | Type | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
+| `fluxiqPerformanceMetricsSnapshot` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `FluxIQRuntimeAdapter` | Type | `packages/fluxiq/src/runtime/contracts.ts` | - |
 | `FluxIQRuntimeCapability` | Type | `packages/fluxiq/src/runtime/contracts.ts` | - |
 | `FluxIQRuntimeCapabilityKind` | Type | `packages/fluxiq/src/runtime/contracts.ts` | - |
@@ -552,8 +552,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `longestWordCut` | Value | `packages/fluxiq/src/ui/activity-status/word-cut.ts` | - |
 | `matchClientGatewayTraceOperation` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/operation/match.ts` | - |
 | `migrateFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-migration.ts` | - |
-| `Migration` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
-| `MigrationRun` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
+| `Migration` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
+| `MigrationRun` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
 | `MockClientGatewayClient` | Class | `packages/fluxiq/src/client-gateway/testing/mock-client.ts` | - |
 | `NavigationItem` | Type | `packages/fluxiq/src/ui/index.ts` | - |
 | `normalizeDomainId` | Value | `packages/fluxiq/src/domains/index.ts` | - |
@@ -593,12 +593,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ProgramDirectoryContract` | Type | `packages/contracts/src/program-api.ts` | - |
 | `programDirectorySchema` | Object | `packages/contracts/src/program-api.ts` | - |
 | `ProgramEndpointClassification` | Type | `packages/fluxiq/src/programs/_shared/api.ts` | What an endpoint does to persisted state, and therefore which credential the registry requires beyond the endpoint's permission. Every registration declares one, so a new endpoint cannot reach the wire unclassified: omitting the field is a compile error, not a review note. - `read` — persists nothing. The permission is the whole gate. - `authoring` — creates or edits user content, or withdraws access without removing persisted data. The permission is the whole gate: the operator's PIN guards destruction, not authorship, so an autonomous loop can build and edit Flows with nobody at the keyboard, and revoking a compromised session or client never waits behind a prompt. - `destructive` — removes persisted user data, or takes an irreversible external action. `call()` requires the operator's session PIN before the handler runs. - `program-gated` — the owning program runs its own, stronger credential check inside the handler (password, PIN and TOTP, or a time-boxed grant). The registry adds nothing, so that one regime stays the single rule. - `destructive-ungated` — destructive, and no credential is checked. A declared gap, not an endorsement: either no operator auth session reaches the program at all, or the gate was never written. Each one is listed in `docs/architecture/automation-studio/persistence.md`. |
-| `ProgramEndpointPerformanceMetric` | Type | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
+| `ProgramEndpointPerformanceMetric` | Type | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `ProgramPinAuthorizationPayload` | Type | `packages/fluxiq/src/programs/_shared/authorization.ts` | - |
 | `ProgramScope` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `ProgramScopeContract` | Type | `packages/contracts/src/program-api.ts` | - |
 | `programScopeSchema` | Object | `packages/contracts/src/program-api.ts` | - |
-| `programStateConnections` | Object | `packages/fluxiq/src/programs/_shared/state-connections.ts` | The storage state's SQLite connection pools, one per storage root: a unit of work keeps connections with `forRoot(dir).keepWhile`, and a FluxIQ instance closes only its own root's with `close(dir)` (t435, t808). |
+| `programStateConnections` | Object | `packages/fluxiq/src/framework/persistence/program-state/state-connections.ts` | The storage state's SQLite connection pools, one per storage root: a unit of work keeps connections with `forRoot(dir).keepWhile`, and a FluxIQ instance closes only its own root's with `close(dir)` (t435, t808). |
 | `ProgramStatus` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `ProgramSummary` | Type | `packages/fluxiq/src/programs/_shared/types.ts` | - |
 | `ProgramSummaryContract` | Type | `packages/contracts/src/program-api.ts` | - |
@@ -612,9 +612,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `readClientGatewayTraceSessions` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/recorded-sessions.ts` | - |
 | `readMigrationJournal` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `readStorageConfig` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
-| `RecordEnvelope` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
-| `recordProgramEndpointPerformance` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
-| `recordSqlPerformance` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
+| `RecordEnvelope` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
+| `recordProgramEndpointPerformance` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
+| `recordSqlPerformance` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `registerAutomationStudioApi` | Value | `packages/fluxiq/src/programs/automation-studio/api/handlers/register.ts` | - |
 | `registerBackgroundTasksApi` | Value | `packages/fluxiq/src/programs/background-tasks/api/handlers.ts` | - |
 | `registerBasicComponents` | Value | `packages/fluxiq/src/components/index.ts` | - |
@@ -634,10 +634,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ReleaseComputeLeaseRequest` | Type | `packages/fluxiq/src/programs/compute-control/api/contracts.ts` | - |
 | `removeFluxIQWorkspaceRoot` | Value | `packages/fluxiq/src/framework/layout-v3/remove-workspace-root.ts` | - |
 | `replayClientGatewayTrace` | Value | `packages/fluxiq/src/client-gateway/trace-replay/replay-trace.ts` | - |
-| `Repository` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
-| `RepositoryListPage` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
-| `RepositoryListPageOptions` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
-| `RepositoryScope` | Type | `packages/fluxiq/src/programs/database-manager/types.ts` | - |
+| `Repository` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
+| `RepositoryListPage` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
+| `RepositoryListPageOptions` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
+| `RepositoryScope` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
 | `ResultState` | Type | `packages/fluxiq/src/core/index.ts` | - |
 | `RetryState` | Type | `packages/fluxiq/src/ui/activity-status/run-retry.ts` | What a run's recovery makes of one event. |
 | `RevealSecretKeyRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
@@ -683,25 +683,25 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SecretKeySummary` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
 | `SecretKeyUnlockRevoker` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | Who asks for a session's unlock to be dropped (`revokeSessionUnlock`): the user asking (null when nobody vouches for one), and whether they are an administrator. `administrator` is true only when the caller's own permission check admitted them (`identity.manage`), never because they hold a session id. |
 | `SecretRevealAuthorizationMetadata` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/held-keys.ts` | - |
-| `serializedMetricBytes` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
+| `serializedMetricBytes` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `Session` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
 | `SessionRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `SetBackgroundTaskEnabledRequest` | Type | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts` | - |
 | `SetIdentitySecretRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `slugify` | Value | `packages/fluxiq/src/core/index.ts` | - |
-| `SQLiteListPage` | Type | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts` | - |
-| `SQLiteListPageOptions` | Type | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts` | - |
-| `SQLiteRepository` | Class | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts` | - |
-| `SQLiteRepositoryOptions` | Type | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts` | - |
-| `SQLiteTransaction` | Type | `packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts` | - |
-| `SqlPerformanceContext` | Type | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
-| `SqlPerformanceMetric` | Type | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
+| `SQLiteListPage` | Type | `packages/fluxiq/src/framework/persistence/repository/sqlite-repository.ts` | - |
+| `SQLiteListPageOptions` | Type | `packages/fluxiq/src/framework/persistence/repository/sqlite-repository.ts` | - |
+| `SQLiteRepository` | Class | `packages/fluxiq/src/framework/persistence/repository/sqlite-repository.ts` | - |
+| `SQLiteRepositoryOptions` | Type | `packages/fluxiq/src/framework/persistence/repository/sqlite-repository.ts` | - |
+| `SQLiteTransaction` | Type | `packages/fluxiq/src/framework/persistence/repository/sqlite-repository.ts` | - |
+| `SqlPerformanceContext` | Type | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
+| `SqlPerformanceMetric` | Type | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `StartProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts` | - |
 | `stepFlow` | Value | `packages/fluxiq/src/engine/index.ts` | - |
 | `stepRecovery` | Value | `packages/fluxiq/src/ui/activity-status/step-recovery.ts` | - |
 | `stepSkip` | Value | `packages/fluxiq/src/ui/activity-status/step-skip.ts` | - |
 | `StopProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts` | - |
-| `subscribeFluxIQPerformanceMetrics` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
+| `subscribeFluxIQPerformanceMetrics` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `SupervisorEnding` | Class | `packages/fluxiq/src/ui/activity-status/supervisor-ending.ts` | - |
 | `SupervisorEndingWords` | Type | `packages/fluxiq/src/ui/activity-status/supervisor-ending.ts` | What the row ending a supervisor-ended build is said with: Core's whole sentence in place of its cut title, or why, after it. |
 | `SurfaceTone` | Type | `packages/fluxiq/src/ui/index.ts` | - |
@@ -729,7 +729,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `VaultStatus` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
 | `VaultUnlockRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `viewerRole` | Object | `packages/fluxiq/src/programs/identity-access/runtime/roles.ts` | - |
-| `withEndpointPerformanceScope` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
-| `withSqlPerformanceContext` | Value | `packages/fluxiq/src/programs/_shared/performance-metrics.ts` | - |
+| `withEndpointPerformanceScope` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
+| `withSqlPerformanceContext` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `writeClientGatewayTraceParityReport` | Value | `packages/fluxiq/src/client-gateway/trace-replay/comparison/parity-report.ts` | - |
 | `writeMigrationJournal` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
