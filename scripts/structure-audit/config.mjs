@@ -127,6 +127,7 @@ export const CONFIG = {
       "packages/fluxiq/src/components/automation/index.ts",
       "packages/fluxiq/src/components/automation/action-effect/index.ts",
       "packages/fluxiq/src/runtime/target-matching/index.ts",
+      "packages/fluxiq/src/runtime/output-dispatch/preparation/index.ts",
       "packages/fluxiq/src/framework/automation-service/nodes/index.ts",
       "packages/fluxiq/src/framework/automation-service/nodes/action-effect/index.ts",
       "packages/fluxiq/src/framework/automation-service/actionability/index.ts",
@@ -254,6 +255,7 @@ export const CONFIG = {
         "packages/fluxiq/src/runtime/automation-host/",
         "packages/fluxiq/src/runtime/models/",
         "packages/fluxiq/src/runtime/agents/",
+        "packages/fluxiq/src/runtime/output-dispatch/",
         "packages/fluxiq/src/runtime/target-matching/"
       ],
       to: ["packages/fluxiq/src/programs/automation-studio/"],

@@ -21,7 +21,7 @@ const DRY_RUN_CALL = /^dryrun\./u;
  * call id. `call.json` holds the call as the model made it, `result.json`
  * exactly the `evidence` the loop hands the model back (the raw value when the
  * tool did not answer with an execution result; the error's name and code when
- * it threw), `page.txt` the compact page text when the evidence carries one,
+ * it threw), `page.txt` the page text a registered domain reads out of the evidence,
  * a replay's row (`item`) and output values (`outputs`) by field names only,
  * and `meta.json`, last, the timing, the result code and `loopVerdict`: whether
  * Core read the value or refused it, so a refused one is no longer visible only
@@ -69,7 +69,7 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
       const execution = executionOf(result);
       const evidence = execution ? execution.evidence : result;
       files.json("result.json", error === undefined ? evidence ?? null : { error: thrown(error) });
-      const page = error === undefined ? automationStudioLlmStepLogPageText(evidence) : undefined;
+      const page = error === undefined ? automationStudioLlmStepLogPageText.of(evidence) : undefined;
       if (page !== undefined) files.text("page.txt", page);
       // What Core made of the value, by the reader the loop and a test's replay both use. A value it
       // refuses reaches the model as a call that failed with no evidence, whatever `resultCode` says:

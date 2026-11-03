@@ -6,17 +6,21 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceLoopProgressTrace } from "../../evidence-progress/index.ts";
-import { automationStudioLlmStepLogScope, automationStudioLlmStepLogTool } from "../index.ts";
+import { automationStudioLlmStepLogPageText, automationStudioLlmStepLogScope, automationStudioLlmStepLogTool } from "../index.ts";
 
 const PAGE = "page https://shop.example/cart\n[b1] button \"Checkout\"\n[t2] text \"Kettle 42.99\"";
 
 let directory: string;
+let dropSummary: () => void;
 
 beforeEach(() => {
   directory = mkdtempSync(path.join(tmpdir(), "fluxiq-tool-step-"));
+  // A registered domain's reading, as Core receives one: Core only writes what it answers.
+  dropSummary = automationStudioLlmStepLogPageText.use({ pageText: (evidence) => JSON.stringify(evidence).includes("Kettle 42.99") ? PAGE : undefined });
 });
 
 afterEach(() => {
+  dropSummary();
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -43,6 +47,17 @@ describe("a tool step", () => {
       resultCode: "web.action.succeeded", resultReason: "clicked", effectApplied: true, status: "ok"
     });
     expect(readFileSync(path.join(directory, "index.md"), "utf8")).toContain("| 0001 | tool | core:run_node | web.action.succeeded | - |");
+  });
+
+  it("writes no page.txt when no registered domain reads a page out of the evidence", async () => {
+    const carriesPage = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string }) => execution({ ok: true, page: PAGE }), env());
+    const carriesNone = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string }) => execution({ ok: true }), env());
+    await carriesNone({ callId: "c1", toolId: "web.look" });
+    dropSummary();
+    await carriesPage({ callId: "c2", toolId: "web.look" });
+    expect(readdirSync(path.join(directory, "0001-tool-web.look")).sort()).toEqual(["call.json", "meta.json", "result.json"]);
+    expect(readdirSync(path.join(directory, "0002-tool-web.look")).sort()).toEqual(["call.json", "meta.json", "result.json"]);
+    expect(json(path.join(directory, "0002-tool-web.look", "result.json"))).toEqual({ ok: true, page: PAGE });
   });
 
   it("names a replay inside a test scope, or under a dry run's call id, a test step", async () => {

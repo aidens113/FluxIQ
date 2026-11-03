@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
 import { defineOutput, IoRegistry } from "../../../io/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, automationNodeStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationNodeExecutionResult, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeNodeContext, type AutomationStudioNodeDefinition } from "../nodes/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, automationNodeStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationNodeExecutionResult, type AutomationStudioImporterSdkManifest, type AutomationStudioImporterImplementationBundle, type AutomationStudioNativeNodeContext, type AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../executor/index.ts";
 import { runAutomationStudioGraph } from "../executor/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../../runtime/flow-authoring/bootstrap/index.ts";
+import { automationStudioLlmStepLogPageText } from "../../../runtime/llm/step-log/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../runtime/native-nodes/index.ts";
+import type { JsonObject } from "../../../core/index.ts";
 import { automationStudioRunGraphOptions } from "../service/runtime-session/index.ts";
 
 import { createElementMatcher } from "../../../runtime/target-matching/index.ts";
@@ -24,6 +26,49 @@ function manifest(nodes = [node()]): AutomationStudioImporterSdkManifest { retur
 function effectFlow(instance: AutomationStudioFlowNode): AutomationStudioFlowDocument {
   return { schemaVersion: "0.1", flowId: "flow.effect", ownerKind: "routine", ownerId: "flow.effect", name: "Trusted effect", createdAt: 1, updatedAt: 1, nodes: [instance], edges: [] };
 }
+
+describe("a domain's target readings in its implementation bundle", () => {
+  const bundleOf = (extension: Partial<AutomationStudioImporterImplementationBundle>): AutomationStudioImporterImplementationBundle => ({ packageId: "example.package", packageVersion: "1.0.0", implementations: {}, ...extension });
+  const nothingElse = manifest([]);
+
+  it("are held per domain, and a domain that supplied none has none", () => {
+    const outputTargetPreparer = () => ({ ok: true as const });
+    const recordingEntryTargetPreparer = () => null;
+    const runtime = new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ outputTargetPreparer, recordingEntryTargetPreparer }));
+    expect(runtime.getTargetHooks("example")).toEqual({ outputTargetPreparer, recordingEntryTargetPreparer });
+    expect(runtime.getTargetHooks("other")).toBeUndefined();
+    expect(runtime.getTargetHooks(null)).toBeUndefined();
+    expect(new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({})).getTargetHooks("example")).toEqual({});
+  });
+
+  it("refuse a second, different reading for one domain, and leave the first in place", () => {
+    const first = () => ({ ok: true as const });
+    const runtime = new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ outputTargetPreparer: first }));
+    const second = { ...nothingElse, packageId: "example.second" };
+    expect(() => runtime.register(second, { ...bundleOf({ outputTargetPreparer: () => ({ ok: true as const }) }), packageId: "example.second" })).toThrow("A different outputTargetPreparer is already registered for domain example.");
+    expect(runtime.getTargetHooks("example")?.outputTargetPreparer).toBe(first);
+    expect(runtime.sdk.get("example.second")).toBeUndefined();
+  });
+
+  it("give a mapper's binding the domain's parameter reading", () => {
+    const recordingCandidateParameterNormalizer = (_domainId: string, parameters: JsonObject) => parameters;
+    const mapped = { ...nothingElse, recordingMappers: [{ id: "mapper", version: "1.0.0", description: "Maps." }] };
+    const runtime = new AutomationStudioNativeNodeRuntime().register(mapped, bundleOf({ recordingCandidateParameterNormalizer, recordingMappers: { mapper: () => null } }));
+    expect(runtime.listRecordingMappers("example")[0]?.normalizeParameters).toBe(recordingCandidateParameterNormalizer);
+  });
+
+  it("registers its evidence summary with the step log, which answers from nothing else", () => {
+    const evidence = { registered: true };
+    expect(automationStudioLlmStepLogPageText.of(evidence)).toBeUndefined();
+    const llmEvidenceSummary = { pageText: (value: unknown) => value === evidence ? "the domain's reading" : undefined };
+    new AutomationStudioNativeNodeRuntime().register(nothingElse, bundleOf({ llmEvidenceSummary }));
+    expect(automationStudioLlmStepLogPageText.of(evidence)).toBe("the domain's reading");
+    const drop = automationStudioLlmStepLogPageText.use(llmEvidenceSummary);
+    expect(automationStudioLlmStepLogPageText.of({ other: true })).toBeUndefined();
+    drop();
+    expect(automationStudioLlmStepLogPageText.of(evidence)).toBeUndefined();
+  });
+});
 
 describe("trusted-local native node runtime", () => {
   it("normalizes native target controls without changing actual outputs/logs or reading authored metadata", async () => {

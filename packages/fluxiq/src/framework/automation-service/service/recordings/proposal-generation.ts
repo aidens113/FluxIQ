@@ -4,7 +4,7 @@ import type { IoRegistry } from "../../../../io/index.ts";
 import { safeSegment } from "../../../../programs/_shared/storage.ts";
 import type { RecordingSession } from "../../../../flows/authoring/model/index.ts";
 import type { ElementMatcher } from "../../../../runtime/target-matching/index.ts";
-import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperImplementation } from "../../nodes/index.ts";
+import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingCandidateParameterNormalizer, AutomationStudioRecordingMapperCandidate, AutomationStudioRecordingMapperImplementation } from "../../nodes/index.ts";
 import type { RecordingFlowActionCandidate, RecordingFlowProposalArtifact } from "../../../../runtime/recording/recording-flow-proposal.ts";
 import { recordingActionEntryCandidate } from "../recording-projections/index.ts";
 import type { RecordingIndex as RecordingStateIndex } from "../../../persistence/automation/index.ts";
@@ -25,6 +25,8 @@ export type RecordingMapperBinding = {
   packageId: string;
   packageVersion: string;
   implementation: AutomationStudioRecordingMapperImplementation;
+  /** The domain's reading of a candidate's parameters, none when it registered no such reading. */
+  normalizeParameters?: AutomationStudioRecordingCandidateParameterNormalizer;
 };
 
 export type RecordingProposalForMapperInput = {
@@ -86,7 +88,8 @@ export async function recordingProposalForMapper(input: RecordingProposalForMapp
           domainId: input.domainId,
           ...(stateLink ? { stateLink } : {}),
           ...(recordedGapMs !== undefined ? { recordedGapMs } : {}),
-          ...(mapper.definition.outputIds ? { mapperOutputIds: mapper.definition.outputIds } : {})
+          ...(mapper.definition.outputIds ? { mapperOutputIds: mapper.definition.outputIds } : {}),
+          ...(mapper.normalizeParameters ? { normalizeParameters: mapper.normalizeParameters } : {})
         }));
       }
     } catch (error) {

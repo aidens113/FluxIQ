@@ -1,5 +1,6 @@
 export type { AutomationStudioValidationSeverity, AutomationStudioValidationIssue, AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 export { validateRecordingSession } from "./recording.ts";
+export type { AutomationStudioRecordingTargetPolicy } from "./recording-target-policy.ts";
 export { validateSignalRegistry } from "./signal-registry.ts";
 export { validatePolicyGraph } from "./policy-graph.ts";
 export { validateStateSnapshot, validateStateVisualFrame, validateEvidenceAnchor } from "./state.ts";

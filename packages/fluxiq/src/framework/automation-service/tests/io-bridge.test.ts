@@ -9,6 +9,7 @@ import { AutomationStudioService } from "../service.ts";
 import { AutomationStudioIoRecorder } from "../../../runtime/recording/io-bridge.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "../io-policy.ts";
 import { runAutomationStudioGraph } from "../executor/index.ts";
+import { exampleOutputTargetPreparer } from "../../../runtime/output-dispatch/tests/example-preparer.ts";
 import { createElementMatcher } from "../../../runtime/target-matching/index.ts";
 
 describe("Automation Studio IO bridge", () => {
@@ -201,7 +202,7 @@ describe("Automation Studio IO bridge", () => {
       edges: []
     };
 
-    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(io, "example", createElementMatcher()) });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(io, "example", exampleOutputTargetPreparer(createElementMatcher({ weights: { visibleText: 1, testId: 1 } }))) });
 
     expect(trace.status).toBe("succeeded");
     expect(dispatchedTarget?.selectedCandidate).toMatchObject({ candidateId: "save", matchedSignals: expect.arrayContaining(["visibleText", "testId"]) });
@@ -227,7 +228,7 @@ describe("Automation Studio IO bridge", () => {
       edges: []
     };
 
-    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(io, "example") });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(io, "example", exampleOutputTargetPreparer()) });
 
     expect(trace.status).toBe("failed");
     expect(trace.attempts[0]?.outputs.error).toContain("declares element targeting");

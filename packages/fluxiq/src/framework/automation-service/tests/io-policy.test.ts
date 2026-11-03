@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../core/index.ts";
-import { defineDomainIo, defineInput, defineOutput, IoRegistry, type OutputDispatchResult } from "../../../io/index.ts";
+import { defineDomainIo, defineInput, defineOutput, IoRegistry, type OutputDispatchRequest, type OutputDispatchResult } from "../../../io/index.ts";
 import { FileRuntimeStore, FLUXIQ_RUNTIME_WITHHELD_VALUE, RuntimeService, type FluxIQRuntimeCommandAttempt, type FluxIQRuntimeCommandResult } from "../../../runtime/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../flows/authoring/model/index.ts";
 import { classifyAutomationStudioAdaptiveFailure } from "../../../runtime/adaptation/adaptive-orchestrator.ts";
@@ -12,20 +12,44 @@ import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher, di
 import { packAutomationStudioLlmContext } from "../../../runtime/llm/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../service/index.ts";
 
+import { exampleOutputTargetPreparer } from "../../../runtime/output-dispatch/tests/example-preparer.ts";
 import { createElementMatcher } from "../../../runtime/target-matching/index.ts";
 
-const matcher = createElementMatcher();
+const preparer = exampleOutputTargetPreparer(createElementMatcher());
+const noMatcher = exampleOutputTargetPreparer();
 const effect = { type: "policy.output.dispatch", payload: { outputId: "activate-element", parameters: { elementId: "confirm" } } };
 const action = { actionType: "activate-element", outputId: "activate-element", parameters: { elementId: "confirm" } };
 // Every candidate scores below zero against this fingerprint, so the matcher returns none.
 const unmatchedTarget = { kind: "element", fingerprint: { visibleText: "Save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel" }] };
 
-describe("explicit domain target matching", () => {
+describe("a domain's output target preparer", () => {
+  it("leaves parameters unread and claims nothing when no domain registered one", async () => {
+    const parameters = { target: { kind: "custom", opaque: "domain-owned" }, empty: [] };
+    let dispatched: unknown;
+    const result = await dispatchPolicyOutput(ioWith((request) => {
+      dispatched = request.payload;
+      return { ok: true, outputId: "activate-element" };
+    }, { elementTarget: true }), "example", { ...action, parameters });
+    expect(result).toMatchObject({ status: "success" });
+    expect(result).not.toHaveProperty("targetResolution");
+    expect(dispatched).toEqual(parameters);
+  });
+
+  it("refuses an output that requires one when no domain registered one, before anything is dispatched", async () => {
+    let dispatches = 0;
+    const result = await dispatchPolicyOutput(ioWith(() => {
+      dispatches += 1;
+      return { ok: true, outputId: "activate-element" };
+    }, { outputTargetPreparationRequired: true }), "example", action);
+    expect(result).toMatchObject({ status: "failed", failure: { code: "output.target_preparer_missing", retryable: false } });
+    expect(dispatches).toBe(0);
+  });
+
   it("delegates opaque candidates without claiming confidence when no matcher was supplied", async () => {
     const target = { kind: "element", fingerprint: { selector: "#save", visibleText: "Save" }, candidates: [{ candidateId: "unrelated", selector: "#cancel", visibleText: "Cancel" }] };
     const actionWithTarget = { ...action, parameters: { target } };
-    const direct = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 1 }), "example", actionWithTarget);
-    const throughRuntime = await createRuntimePolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example", runtimeReturning({ status: "succeeded" }))({ type: effect.type, payload: { ...effect.payload, parameters: { target } } });
+    const direct = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 1 }), "example", actionWithTarget, undefined, undefined, noMatcher);
+    const throughRuntime = await createRuntimePolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example", runtimeReturning({ status: "succeeded" }), noMatcher)({ type: effect.type, payload: { ...effect.payload, parameters: { target } } });
     for (const result of [direct, throughRuntime]) {
       expect(result).toMatchObject({ status: "success", targetResolution: { status: "unresolved_no_matcher", candidateCount: 1 } });
       expect(result?.targetResolution).not.toHaveProperty("minimumConfidence");
@@ -134,7 +158,7 @@ describe("policy output dispatch failures", () => {
   it("names Core's own pre-dispatch rejections", async () => {
     expect((await dispatchPolicyOutput(ioWith(), "example", { actionType: "", parameters: {} })).failure).toMatchObject({ category: "graph_validation_or_unknown_node", code: "output_dispatch.missing_output_id" });
     expect((await dispatchPolicyOutput(ioWith(), "example", { ...action, outputId: "missing" })).failure).toMatchObject({ category: "blocked_by_capability_or_policy", code: "output_dispatch.output_not_registered" });
-    expect((await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", { ...action, parameters: {} })).failure).toMatchObject({ category: "graph_validation_or_unknown_node", code: "element_target.missing_fingerprint", stage: "target_resolution" });
+    expect((await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", { ...action, parameters: {} }, undefined, undefined, noMatcher)).failure).toMatchObject({ category: "graph_validation_or_unknown_node", code: "element_target.missing_fingerprint", stage: "target_resolution" });
   });
 
   it("reports a dispatched output whose confirmation never arrived as not observed", async () => {
@@ -170,7 +194,7 @@ describe("policy output dispatch failures", () => {
   });
 
   it("records a typed target resolution for no match, a weak match, and a confident match", async () => {
-    const unmatched = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", { ...action, parameters: { target: unmatchedTarget } }, undefined, undefined, matcher);
+    const unmatched = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", { ...action, parameters: { target: unmatchedTarget } }, undefined, undefined, preparer);
     expect(unmatched).toMatchObject({
       status: "failed",
       failure: { category: "target_not_found", code: "element_target.no_match", retryable: true, stage: "target_resolution" },
@@ -180,7 +204,7 @@ describe("policy output dispatch failures", () => {
     const weak = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 0.99 }), "example", {
       ...action,
       parameters: { target: { kind: "element", fingerprint: { visibleText: "Save", testId: "save" }, candidates: [{ candidateId: "save-text", visibleText: "Save" }] } }
-    }, undefined, undefined, matcher);
+    }, undefined, undefined, preparer);
     expect(weak).toMatchObject({
       status: "failed",
       failure: { category: "target_not_found", code: "element_target.below_confidence", retryable: true, stage: "target_resolution" },
@@ -192,7 +216,7 @@ describe("policy output dispatch failures", () => {
     const strong = await dispatchPolicyOutput(ioWith(undefined, { elementTarget: true }), "example", {
       ...action,
       parameters: { target: { kind: "element", fingerprint: { visibleText: "Save", testId: "save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel", testId: "cancel" }, { candidateId: "save", visibleText: "Save", testId: "save" }] } }
-    }, undefined, undefined, matcher);
+    }, undefined, undefined, preparer);
     expect(strong).toMatchObject({ status: "success", targetResolution: { status: "matched", candidateId: "save", candidateCount: 2 } });
     expect(strong).not.toHaveProperty("failure");
   });
@@ -254,7 +278,7 @@ describe("failure propagation from dispatch to diagnosis", () => {
 
   it("carries an element target miss to the attempt trace and a target override candidate", async () => {
     const flow = actionFlow({ target: unmatchedTarget });
-    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example", matcher) });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true }), "example", preparer) });
     const attempt = trace.attempts[0]!;
 
     expect(attempt).toMatchObject({ failure: { category: "target_not_found" }, targetResolution: { status: "no_match", candidateCount: 1 } });
@@ -267,7 +291,7 @@ describe("failure propagation from dispatch to diagnosis", () => {
 
   it("claims no confidence floor on the trace or the run record when no candidates were supplied for one to apply to", async () => {
     const flow = actionFlow({ selector: "#save-settings", target: { kind: "element", fingerprint: { visibleText: "Save changes", testId: "save-settings" } } });
-    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 0.68 }), "example") });
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: createIoPolicyEffectDispatcher(ioWith(undefined, { elementTarget: true, elementTargetMinConfidence: 0.68 }), "example", noMatcher) });
     const attempt = trace.attempts[0]!;
 
     expect(attempt.status).toBe("succeeded");
@@ -395,7 +419,7 @@ describe("a route an output answers in its result payload", () => {
   });
 });
 
-function ioWith(dispatch?: () => OutputDispatchResult, metadata?: JsonObject): IoRegistry {
+function ioWith(dispatch?: (request: OutputDispatchRequest) => OutputDispatchResult, metadata?: JsonObject): IoRegistry {
   const io = new IoRegistry();
   io.registerOutput("example", defineOutput({
     definition: { id: "activate-element", title: "Activate element", ...(metadata ? { metadata } : {}) },

@@ -174,7 +174,7 @@
     },
     "directory-files": {
       "apps/web/src/features/automation-studio/hierarchy": 30,
-      "packages/fluxiq/src/flows/authoring/model": 28
+      "packages/fluxiq/src/flows/authoring/model": 26
     },
     "exported-values": {
       "apps/web/src/features/automation-studio/state/state-geometry.ts::values": 31,
@@ -351,7 +351,6 @@
       "apps/web/src/features/automation-studio/views/view-registry.ts": 2,
       "apps/web/src/features/automation-studio/workspace/layout/mutations.ts": 2,
       "packages/fluxiq/src/flows/authoring/model/fixtures/index.ts": 2,
-      "packages/fluxiq/src/flows/authoring/model/index.ts": 2,
       "packages/fluxiq/src/framework/automation-service/route-state/index.ts": 2,
       "packages/fluxiq/src/framework/persistence/automation/canonical-authority/project-coordinator.ts": 2,
       "packages/fluxiq/src/framework/persistence/automation/canonical-authority/whole-sql.ts": 2,
@@ -430,12 +429,9 @@
       "apps/web/src/features/automation-studio/workspace/layout/defaults.ts": 1,
       "apps/web/src/features/automation-studio/workspace/layout/regions.ts": 1,
       "apps/web/src/features/programs/program-api.ts": 1,
-      "packages/fluxiq/src/flows/authoring/model/fixtures.ts": 1,
       "packages/fluxiq/src/flows/authoring/model/fixtures/flow-expansion.ts": 1,
       "packages/fluxiq/src/flows/authoring/model/fixtures/large-project.ts": 1,
-      "packages/fluxiq/src/flows/authoring/model/validation.ts": 1,
-      "packages/fluxiq/src/flows/authoring/model/validation/index.ts": 1,
-      "packages/fluxiq/src/flows/authoring/model/validation/recording.ts": 1,
+      "packages/fluxiq/src/flows/authoring/model/index.ts": 1,
       "packages/fluxiq/src/framework/automation-service/route-state/build-routing.ts": 1,
       "packages/fluxiq/src/framework/automation-service/route-state/router-state.ts": 1,
       "packages/fluxiq/src/framework/persistence/automation/canonical-authority/owner-store.ts": 1,
@@ -487,7 +483,6 @@
       "packages/fluxiq/src/runtime/llm/harness-options/inherited-plan-nodes.ts": 1,
       "packages/fluxiq/src/runtime/llm/harness-options/option.ts": 1,
       "packages/fluxiq/src/runtime/llm/harness-options/repeat-suggestion.ts": 1,
-      "packages/fluxiq/src/runtime/llm/harness.ts": 1,
       "packages/fluxiq/src/runtime/llm/harness/output-validation.ts": 1,
       "packages/fluxiq/src/runtime/llm/node-tools/draft-step.ts": 1,
       "packages/fluxiq/src/runtime/llm/node-tools/loop-tools.ts": 1,
@@ -529,7 +524,6 @@
       "apps/web/src/features/automation-studio/live/view-host/tests/composition.test.ts": 3,
       "apps/web/src/features/automation-studio/runtime/useAutomationRuntimeStatusState.ts": 3,
       "apps/web/src/features/automation-studio/sync/useAutomationProjectDataPlatform.ts": 3,
-      "packages/fluxiq/src/framework/persistence/automation/file-store.ts": 3,
       "apps/web/src/features/automation-studio/graph/derivation-job.ts": 2,
       "apps/web/src/features/automation-studio/live/commands/domain-commands.ts": 2,
       "apps/web/src/features/automation-studio/live/commands/recording-domain-commands.ts": 2,
@@ -623,14 +617,10 @@
       "apps/web/src/features/automation-studio/workspace/tests/view-adder.test.ts": 1,
       "apps/web/src/features/automation-studio/workspace/view-state.ts": 1,
       "packages/fluxiq/src/flows/authoring/dsl/contracts.ts": 1,
-      "packages/fluxiq/src/framework/automation-service/io-policy.ts": 1,
       "packages/fluxiq/src/framework/automation-service/state-linker.ts": 1,
-      "packages/fluxiq/src/framework/automation-service/tests/llm-deepseek-flow-bootstrap.test.ts": 1,
       "packages/fluxiq/src/framework/automation-service/tests/state-linker.test.ts": 1,
+      "packages/fluxiq/src/framework/persistence/automation/file-store.ts": 1,
       "packages/fluxiq/src/programs/_shared/api.ts": 1,
-      "packages/fluxiq/src/runtime/flow-authoring/bootstrap/tests/plan.test.ts": 1,
-      "packages/fluxiq/src/runtime/llm/reusable-context/reusable-context.ts": 1,
-      "packages/fluxiq/src/runtime/recording/client-gateway/bridge.ts": 1,
       "packages/fluxiq/src/runtime/recording/recording-flow-proposal.ts": 1,
       "packages/fluxiq/src/runtime/router-runtime/router-runtime.ts": 1,
       "packages/fluxiq/src/runtime/target-matching/fingerprinting/tests/element-fingerprint.test.ts": 1
@@ -659,18 +649,6 @@
       "apps/web/src/features/automation-studio/sync::project": 3,
       "packages/fluxiq/src/flows/authoring/model::state": 3,
       "apps/web/src/features/programs/shared-ui.tsx": 1
-    },
-    "program-controllers": {
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/llm-generation.ts::handler#4": 102,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/runtime-execution.ts::handler#3": 91,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/llm-generation.ts::sanitizedFlowBootstrapGeneration#1": 42,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/conversations.ts::handler#4": 34,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/instructions.ts::handler#5": 33,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/flows.ts::handler#8": 29,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/llm-execution-settings.ts::assertFlowLlmExecutionSettings#1": 28,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/conversations.ts::handler#1": 22,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/conversations.ts::commandContext#1": 21,
-      "packages/fluxiq/src/programs/automation-studio/api/handlers/conversations.ts::handler#5": 21
     },
     "statement-packing": {
       "apps/web/src/features/programs/live-views/tests/deployment-sync-recovery.test.tsx": 63,
@@ -1139,9 +1117,8 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/service.ts": 1
     },
     "web-vocabulary": {
-      "packages/fluxiq/src/flows/authoring/model/action-element-target.ts": 19,
       "packages/fluxiq/src/runtime/target-matching/fingerprinting/element-fingerprint.ts": 12,
-      "packages/fluxiq/src/framework/automation-service/service/object-documents.ts": 3,
+      "packages/fluxiq/src/flows/authoring/model/action-element-target.ts": 4,
       "packages/fluxiq/src/framework/automation-service/testing/scale-certification.ts": 3,
       "packages/contracts/src/automation.ts": 1,
       "packages/contracts/src/client-gateway.ts": 1,
