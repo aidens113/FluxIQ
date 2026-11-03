@@ -1,6 +1,6 @@
 # Project SQL foundation: exact ownership design
 
-Status: READ-ONLY discovery complete; native SQL/target-hook source stays frozen. Implementation awaits Root release.
+Status: USER STOP acknowledged; implementation release revoked. Initial mechanical ownership writes are saved, unverified and frozen. No further source/test edit, test/compiler/audit/build or migration continuation is authorized. Root/user requires an actual plan before continuation.
 Brief: `../briefs/project-sql-foundation.md`; context: Current State and remaining-backend-owner-map release 1.
 Paths below are relative to `packages/fluxiq/src`; no tests/compiler/audit/build ran for this discovery.
 
@@ -71,9 +71,17 @@ Actual existing SQL consumer: `src/tests/native-repository-completion.test.ts` (
 Add minimal canonical-only real SQLite and original-alias identity tests at the actual owners/legacy facade boundary; mixed administration/schema consumers remain at their nearest common integration owner, never behind a canonical reverse-import exception.
 Require original-body/complete type equality plus actual cooked SQL/checksum/default-array-object identity; full canonical source/type/erased/declaration closure 0 Programs/built; strict narrow roots; complete-context scoped rules filtered only after evaluation. Root runs documented package/whole-structure/build gates. No check ran for this plan.
 
-Outcome: Done
-Changed: This report only.
-Validation: Named source/import/declaration/default-array inspection; no tests/compiler/audit/build by instruction.
-Not verified: Proposed migration, typed/erased closure, native cleanup faults or runtime/public-package behavior after any move.
+## Exact stopped handoff
+
+The released generator finished its current complete write batch before Stop: 112 saved files (81 new canonical leaves/barrels and 31 old facade/administration paths), 63 moved declarations. Exact paths: `.fluxiq/refactor/project-sql-foundation-moved.json`. Individual files are fully written; the WORK UNIT is partial. There is no half-written active file or running command/session.
+Saved: complete original SQL/cache/pool/error/UOW/runner/default/schema declarations, their private state/helpers and generated internal barrels; exact old named exports; ONLY administration's default-array/ChangeFeedOperation extraction. Original `project/schema.ts` is unchanged. Root public parent/package/config, guard/admission/store/native SQL/performance/capture files were not edited.
+NOT done: approved cleanup/finalizer/rollback/failure-report/native-callback retention and pool drain changes, private cleanup helper, fault tests, canonical closure/type/structure/parity/runtime/declaration checks or public integration. Existing original cleanup defects remain in the moved bodies. One known unreviewed generated cross-directory TYPE import in `migrations/contracts/runner-options.ts` reaches `sql/database.ts` instead of its barrel; no corrective write followed Stop. No passing/current-build claim.
+Recovery evidence is intact: `.fluxiq/refactor/project-sql-foundation-originals.json` contains exact pre-move bytes for all32 original files; `...-declarations.json` holds137 declarations/member hashes/literal facts; `...-recipe.json` maps63 destinations/default30/order/excluded0035/state owners; `...-release-recipe.md` holds20 finite proposed fault rows; `...-move.cjs` is the completed generator. The generator verified all32 originals unchanged immediately before writing. Do not recapture over these originals.
+No rollback/removal/git action was performed. A recovery checkpoint, if Root/user chooses it, restores ONLY manifest-listed old paths from the original capture and removes/quarantines ONLY manifest-listed new owned paths (never the whole project directory or Root files), then verifies the original narrow gates. A forward validated checkpoint instead needs the complete plan approved, remaining corrections/import review and narrow acceptance; this partial batch is not ready to merge or label validated. Current source/evidence stay preserved meanwhile.
+
+Outcome: Partial
+Changed: Exact112 saved source paths in moved manifest; this own report and ignored recovery/recipe assets.
+Validation: Original-byte guard and mechanical extraction completed; NO post-move compiler/tests/audit/build/parity or integration ran.
+Not verified: Saved migration closure/type/budgets/SQL parity/runtime, every cleanup correction/fault oracle and public integration.
 Report: docs/working/runtime-ownership-refactor/reports/project-sql-foundation.md
-Notes: Source/tests remain frozen; all own readers ended. No git/shared docs/package/config/baseline/native SQL changes. Implementation requires explicit Root release.
+Notes: STOPPED; all source/tests frozen, no active command. No git/shared docs/package/config/baseline/native SQL changes. Prior implementation release is revoked; Root/user plan review comes next.

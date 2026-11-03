@@ -1,6 +1,6 @@
 # Original project SQL foundation ownership
 Role: Heavy worker, gpt-6.1-sol Max; no agents/git/shared working docs.
-Repo: t843 Core. READ ONLY discovery until Root explicitly releases implementation.
+Repo: t843 Core. Implementation release follows Root's explicit message; use the saved original AST/recipe capture as the migration source.
 Read Current State and reports/remaining-backend-owner-map.md release1; inspect only named owners/dependencies.
 Goal: move actual project SQL/pool/statements/close/transaction/migration owners out of Studio, preserving original identity/state/default behavior and canonical no-Studio closure.
 Proposed owned paths: programs/automation-studio/storage/project/{database,statement-cache,store-unavailable-error,unit-of-work}.ts; storage/schema-migrations.ts; project/schema/**; EXACT default migration array/type slice of project/administration.ts; immediate tests; new framework/persistence/project/{sql,mutations,migrations,schema}/** and needed internal barrels.
@@ -13,3 +13,7 @@ Root then freezes that contract and releases implementation; no speculative broa
 Planned acceptance: database/unit-of-work/schema/administration; schema-migrations/ready-memo; actual close/lease/rollback/retained error identity and real project native durable SQL consumer. Preserve real temporary fixtures; no user data/providers/browser/panel/full suites.
 For scoped rules retain complete context and filter findings by ownership so destination barrels/cycles remain visible. Actual full/type/erased canonical closure must exclude Studio even via old aliases.
 After implementation, notify Source+Tests FROZEN before readers; Root owns common documented package gates/build/integration and git. Standard return contract; report evidence limits honestly.
+Approved owner corrections: retain exact primary when cleanup succeeds; when both fail retain both in AggregateError(primary first/cause), including thrown undefined/falsy. Do not flatten arbitrary errors.
+Drain every statement finalizer and native close; retain finalization/close failures. Retain transaction+rollback, open+release, UOW failure-row+release and runner failure-report errors without overwriting primary.
+Pool.closeAll awaits every close even after rejection; failed idle close cannot permit new connection over unproved close. Throwing native metrics callbacks reject their actual Promise rather than hang or escape.
+Queue-tail then(success,failure) barriers are not IO acknowledgement. No baseline transfer/growth or new observed completion declarations; test the finite native cleanup fault recipe with genuine SQLite/callback witnesses.
