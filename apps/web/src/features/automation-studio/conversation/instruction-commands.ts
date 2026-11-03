@@ -21,8 +21,9 @@
 //
 // A delete or a payment is never run from here. Core answers those with a
 // confirmation in the thread instead, and the panel runs them only when the
-// person confirms with their PIN (`useConversationThread.sendAnswer`).
+// person confirms with their PIN (the chat's `answer` in `chat-widget/transport/answer-ask.ts`).
 
+import type { ApiResponse } from "../../programs/program-api";
 import type { ProgramCommandTransport } from "../data/program-transport";
 import {
   panelCapabilityVocabulary,
@@ -68,6 +69,8 @@ export type ConversationInstructionResult = {
   /** False only when the message itself was not stored. The person's words are then still in the composer. */
   ok: boolean;
   error?: string;
+  /** The refused request as the transport answered it, so a caller can keep its code. Present only when `ok` is false. */
+  failure?: ApiResponse<unknown>;
   /** The message was stored but Core's answer could not be written. Said in words, never swallowed. */
   problem: string | null;
   decision: ConversationInstructionDecision | null;
@@ -90,7 +93,7 @@ export async function sendConversationInstruction(
     ...(Object.keys(onScreen).length ? { onScreen } : {})
   });
   if (!result.ok) {
-    return { ok: false, error: result.error ?? "The message could not be sent.", problem: null, decision: null, execution: null, dispatch: null };
+    return { ok: false, error: result.error ?? "The message could not be sent.", failure: result, problem: null, decision: null, execution: null, dispatch: null };
   }
   const problem = typeof result.payload?.problem === "string" && result.payload.problem ? result.payload.problem : null;
   const decision = instructionDecision(result.payload?.response);

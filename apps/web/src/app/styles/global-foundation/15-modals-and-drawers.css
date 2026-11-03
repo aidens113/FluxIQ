@@ -59,6 +59,11 @@
   justify-content: flex-end;
   gap: var(--space-sm);
 }
+/* A long description beside the close button shrinks (min-width: 0 below) instead of pushing the button onto a row of its own. */
+.modal-panel > .panel-heading {
+  flex-wrap: nowrap;
+}
+
 .dialog-heading-copy {
   display: grid;
   gap: var(--space-xs);

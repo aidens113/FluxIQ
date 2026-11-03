@@ -71,6 +71,7 @@ export function threadKey(target: ChatTarget): string {
     case "project": return JSON.stringify(["project", scope]);
     case "automation": return JSON.stringify(["automation", scope, target.flowId]);
     case "question": return JSON.stringify(["question", scope, target.subjectKind, target.subjectId]);
+    case "thread": return JSON.stringify(["thread", scope, target.conversationId]);
   }
 }
 

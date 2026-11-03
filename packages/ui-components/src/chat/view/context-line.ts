@@ -1,4 +1,5 @@
-// The slim line above an automation's or a question's chat: which automation
+// The slim line above an automation's or a question's chat (a chosen thread
+// has the thread header instead): which automation
 // this thread is about ("Automation Price tracker"), or whose question it
 // holds ("The run's question"), and the way back to the latest chat. Hidden
 // for the latest chat, which needs no introduction. Built once and updated in
@@ -31,7 +32,8 @@ export function createContextLine(back: () => void): ContextLine {
   return {
     element,
     update(target) {
-      const hidden = target.kind === "latest" && target.projectId === undefined;
+      // A chosen thread is named by the thread header, not here.
+      const hidden = (target.kind === "latest" && target.projectId === undefined) || target.kind === "thread";
       if (element.hidden !== hidden) element.hidden = hidden;
       const text = target.kind === "automation" ? target.name.trim() || "This automation" : target.kind === "question" ? target.title : target.projectId !== undefined ? "Project chat" : "";
       if (name.textContent !== text) name.textContent = text;

@@ -64,84 +64,50 @@
 //
 // `fallback` (a client that cannot carry the conversation, or a FluxIQ that
 // refuses this browser's token) swaps the stream and composer for "Talk to
-// FluxIQ in the FluxIQ window."; the shell's Open FluxIQ is the way there.
+// FluxIQ in the FluxIQ window." (or the client's own words, `options.fallback`);
+// the shell's Open FluxIQ is the way there.
+//
+// With `options.threads` the chat holds Core's list of threads (`threads/`), not
+// one; `setBackground` leaves only that list reading; `history` and `welcome`
+// change how much of a thread is kept and what the empty chat says.
 
 import { createElement } from "../dom/index.ts";
 import type { ClientGatewayActivity } from "fluxiq/ui";
 import { createRecordingAttachment } from "./attachment/index.ts";
-import { createComposer, createConversationController, createReadNotice, type ConversationState, type CoreTurn } from "./conversation/index.ts";
+import { createComposer, createConversationController, createReadNotice, type ConversationController } from "./conversation/index.ts";
 import { createActivityFeed, threadRefreshWanted } from "./feed/index.ts";
+import { sameTarget } from "./same-target.ts";
 import { sameThread } from "./same-thread.ts";
 import { createHoldControl, createStopControl } from "./controls/index.ts";
 import { createChatOwnerContext, type ChatOwner } from "./owner-context.ts";
-import type { ChatHostStatus, ChatOpenControl, ChatOpenControlFactory, ChatRunPort, ChatTransport } from "./ports/index.ts";
+import type { ChatHostStatus, ChatOpenControl, ChatRunPort, ChatTransport } from "./ports/index.ts";
+import { readBeatMs } from "./read-beat.ts";
+import { createChatThreads, type ChatThreads } from "./threads/index.ts";
 import { readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
 import { activityForTarget, buildChatStream, createTurnClock, followedRunTarget, threadKey, type QuestionTarget } from "./stream/index.ts";
 import type { ChatTarget } from "./target.ts";
 import { CHAT_PROJECT_NAVIGATION, createProjectDraftOwner } from "./project-navigation/index.ts";
 import {
   createContextLine,
+  createEarlierTurns,
   createEmptyState,
+  createNoticeLine,
+  createPendingBanner,
   createScrollFollower,
   createThreadView,
+  createTurnControls,
   emptyStateModel,
   liveLineModel,
-  type TurnControls
+  handFocusOn,
+  navigationVisible,
+  showTurn
 } from "./view/index.ts";
 
-const THREAD_POLL_MS = 4_000;
+import type { ChatWidget, ChatWidgetOptions } from "./widget/index.ts";
+
+export type { ChatWidget, ChatWidgetOptions };
+
 const THREAD_REFRESH_DEBOUNCE_MS = 300;
-
-/** The mounted chat. */
-export type ChatWidget = {
-  readonly element: HTMLElement;
-  /** Tells it what the host knows of its connection; a different `ownerKey` makes it forget the last owner's chat. */
-  render(status: ChatHostStatus): void;
-  /** Starts or stops reading the thread and the activity; starting reads both at once. */
-  setActive(active: boolean): void;
-  /** Puts the caret in the composer. */
-  focusComposer(): void;
-  /** Attaches the project's newest finished, described recording to the next message; answers whether there was one. */
-  attachLatestRecording(): Promise<boolean>;
-  /** Shows `target`'s thread; what the person sends from then on goes there. */
-  open(target: ChatTarget): void;
-  /** Updates only the current automation's name, preserving the reading position. */
-  updateAutomationName(automation: { readonly flowId: string; readonly name: string }): void;
-  /** The thread shown now. */
-  target(): ChatTarget;
-  /** Hears every change of target, including the person's own "Latest chat". Answers an unsubscribe. */
-  onTargetChange(listener: (target: ChatTarget) => void): () => void;
-  /**
-   * Shows `run`'s steps live: when the thread on screen would not show them,
-   * opens one that does (`stream/run-target.ts`), waiting while the person
-   * types in the composer and never during a recording.
-   */
-  followRun(run: ClientGatewayActivity): void;
-};
-
-/** How a client mounts the chat. */
-export type ChatWidgetOptions = {
-  /** Hears whether the thread has turns, each time that changes. */
-  onConversation?: (hasTurns: boolean) => void;
-  /**
-   * Whether the chat shows its own line naming the automation, with "Latest
-   * chat" (default true). A panel that shows the open automation above the
-   * chat itself passes false, so the name is not said twice.
-   */
-  contextLine?: boolean;
-  /**
-   * The empty latest chat's "Extract data from this page": the panel shows its extraction sheet.
-   * Absent, the empty chat does not offer it.
-   */
-  onExtract?: () => void;
-  /**
-   * Makes an Open FluxIQ control, for a question that only FluxIQ can show; the host draws it, so the
-   * chat does not reach into the host. Absent, the model-key line has no link and an ask's Open FluxIQ is empty.
-   */
-  openControl?: ChatOpenControlFactory;
-  /** The owner key the chat starts under, so a first status with the same key is not a change of owner. */
-  ownerKey?: string;
-};
 
 /** Creates the chat, talking to FluxIQ through `transport`. */
 export function createChatWidget(transport: ChatTransport, options: ChatWidgetOptions = {}): ChatWidget {
@@ -152,25 +118,48 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   const owners = createChatOwnerContext(transport, options.ownerKey);
   let owner = owners.capture();
   const draftOwners = createProjectDraftOwner();
-  let controller = makeController(owner);
+  let controller: ConversationController = makeController(owner);
   let feed = makeFeed(owner);
   let clock = createTurnClock();
   let actionScope = {};
   let backScope = {};
+  // True while the chat is out of sight: only the thread list reads (`setBackground`).
+  let background = false;
+  const threads: ChatThreads | undefined = options.threads === undefined || transport.conversation.listAllThreads === undefined
+    ? undefined
+    : createChatThreads({
+      options: options.threads,
+      list: (query) => owner.transport.conversation.listAllThreads!(query),
+      projectId: () => latestStatus?.projectId,
+      projectName: () => latestStatus?.projectName,
+      target: () => shownTarget,
+      open: (next) => open(next),
+      busy: () => controller.state().sending,
+      changed: () => {
+        void controller.refresh();
+        renderAll();
+      }
+    });
+  const earlier = options.history === undefined ? undefined : createEarlierTurns(() => {
+    if (actionsAllowed()) void controller.showEarlier();
+  });
 
   const context = createContextLine(() => undefined);
   // The thread holding the question the work waits on, while it is not the one on screen.
   let answerIn: QuestionTarget | null = null;
-  let thread = createThreadView();
+  const threadOptions = { attachments: options.attachments, meta: options.turnMeta };
+  let thread = createThreadView(undefined, threadOptions);
   // The model-key line's Open FluxIQ, moved into each empty state the chat builds.
-  const keyOpener = options.openControl?.({ label: "Open FluxIQ", look: "small", canOpen: () => owner.current() && actionsAllowed() });
+  const keyOpener = options.openControl?.({ label: "Open FluxIQ", look: "small", purpose: "model-key", canOpen: () => owner.current() && actionsAllowed() });
   let readiness: ModelReadiness = "unknown";
   let readinessAsk: object | null = null;
   // The read of the keys on its way, if any, so typing never queues one per key press.
   let readinessReading: object | null = null;
   let empty = createEmptyState(() => undefined);
   let readNotice = createReadNotice(() => undefined);
-  const column = createElement("div", { className: "chat-column" }, [empty.element, thread.element, readNotice.element]);
+  const notice = createNoticeLine();
+  const columnParts = (): HTMLElement[] => [...(earlier === undefined ? [] : [earlier.element]), empty.element, thread.element, readNotice.element, notice.element];
+  const column = createElement("div", { className: "chat-column" }, columnParts());
   const scroller = createElement("div", { className: "chat-scroll" }, [column]);
   const jump = createElement("button", {
     className: "chat-jump",
@@ -186,7 +175,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     const destination = controller;
     follower.followNow();
     return destination.send(text, recordingId);
-  }, attachment);
+  }, attachment, options.composer);
   // A "missing" read is a claim about the moment it was made: the Lab adds its
   // key just before it types the request, and a person may add one in FluxIQ
   // and come back. Turning to the composer is when the line matters, so the
@@ -196,6 +185,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   composer.element.addEventListener("focusin", recheckReadiness);
   composer.element.addEventListener("input", recheckReadiness);
   const main = createElement("div", { className: "chat-main" }, [scroller, jump]);
+  // Show me moves the transcript's own scroll, not the page's (`view/show-turn.ts`).
+  const banner = options.pendingBanner === true ? createPendingBanner((turnId) => showTurn(scroller, thread.turnElement(turnId))) : undefined;
   // Each press goes through the owner of the moment, so a press for an older owner is refused (`lease-transport.ts`).
   const runs: ChatRunPort = {
     stop: (target) => owner.transport.runs.stop(target),
@@ -209,12 +200,15 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   const hold = createHoldControl(runs, () => connected && actionsAllowed());
   const runControls = createElement("div", { className: "chat-run-controls" }, [hold.element, stop.element]);
   const dock = createElement("div", { className: "chat-dock" }, [runControls, composer.element]);
+  const fallbackWords = options.fallback ?? { title: "Talk to FluxIQ in the FluxIQ window.", line: "This browser can't hold the conversation here. Open FluxIQ from the top of this panel." };
   const fallback = createElement("div", { className: "chat-fallback", hidden: true }, [
-    createElement("p", { className: "chat-empty-title", text: "Talk to FluxIQ in the FluxIQ window." }),
-    createElement("p", { className: "chat-empty-line", text: "This browser can't hold the conversation here. Open FluxIQ from the top of this panel." })
+    createElement("p", { className: "chat-empty-title", text: fallbackWords.title }),
+    createElement("p", { className: "chat-empty-line", text: fallbackWords.line })
   ]);
   const element = createElement("section", { className: "chat-panel", attrs: { "aria-label": "Chat with FluxIQ", tabindex: "-1" } }, [
     context.element,
+    ...(threads === undefined ? [] : [threads.element]),
+    ...(banner === undefined ? [] : [banner.element]),
     main,
     dock,
     fallback
@@ -222,6 +216,16 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
 
   // Open FluxIQ links inside turns, kept only while their turn is on screen.
   let turnOpeners: ChatOpenControl[] = [];
+  const turnControls = createTurnControls({
+    owner: () => owner,
+    scope: () => actionScope,
+    controller: () => controller,
+    allowed: actionsAllowed,
+    status: () => latestStatus,
+    track: (opener) => turnOpeners.push(opener),
+    openControl: options.openControl,
+    asks: options.asks
+  });
   let latestStatus: ChatHostStatus | undefined;
   let connected = false;
   let historyTaken = false;
@@ -235,6 +239,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   let questionKey = "";
   let timer: ReturnType<typeof setInterval> | undefined;
   let debounce: ReturnType<typeof setTimeout> | undefined;
+  let unhear: (() => void) | undefined;
   // The run the shell followed to this chat, until a thread showing it is on screen (`followRun`).
   let followed: ClientGatewayActivity | null = null;
   // The conversation id of each thread this chat has read, and each automation's name it has shown.
@@ -242,11 +247,16 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   const flowNames = new Map<string, string>();
 
   function actionsAllowed(): boolean { return owner.current() && (active || (!activationObserved && !replaced)); }
-  function makeController(captured: ChatOwner) {
-    return createConversationController(captured.transport.conversation, () => {
+  function makeController(captured: ChatOwner): ConversationController {
+    const changed = (): void => {
       if (captured === owner && captured.current()) {
         renderAll();
       }
+    };
+    return createConversationController(captured.transport.conversation, changed, undefined, {
+      ...(options.history === undefined ? {} : { window: options.history.window }),
+      withoutProject: () => threads?.withoutProject(),
+      quiet: () => background
     });
   }
   function makeFeed(captured: ChatOwner) {
@@ -272,13 +282,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
         if (captured !== owner || !captured.current() || backLease !== backScope || !actionsAllowed() || shownTarget.kind === "latest") return;
         const handoff = document.activeElement === back && navigationVisible(back) && document.hasFocus() && document.visibilityState === "visible";
         open({ kind: "latest" });
-        if (!handoff || !document.hasFocus() || document.visibilityState !== "visible" || !navigationVisible(element)) return;
-        const box = composer.element.querySelector<HTMLTextAreaElement>("#conversationInput");
-        if (box && !box.disabled && navigationVisible(box)) {
-          composer.focus();
-        } else {
-          element.focus({ preventScroll: true });
-        }
+        if (handoff) handFocusOn(element, composer);
       });
       context.element.insertBefore(back, oldBack);
       oldBack.remove();
@@ -309,22 +313,27 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       if (eligible() && answerIn !== null) {
         open(answerIn);
       }
-    });
-    column.replaceChildren(empty.element, thread.element, readNotice.element);
+    }, threadOptions);
+    column.replaceChildren(...columnParts());
   }
   function startReads(): void {
     if (!active || timer !== undefined) return;
-    if (!feedUnsupported) {
+    if (!feedUnsupported && !background) {
       feed.start();
       void feed.read();
     }
     if (unsupported) return;
     void controller.refresh();
+    void threads?.read();
+    unhear = owner.transport.changes?.subscribe(scheduleThreadRefresh);
     const captured = owner;
     const destination = controller;
     const currentFeed = feed;
     const handle = timer = setInterval(() => {
-      if (timer !== handle || captured !== owner || !captured.current() || document.visibilityState !== "visible" || !active) return;
+      if (timer !== handle || captured !== owner || !captured.current() || !active) return;
+      if (!background && document.visibilityState !== "visible") return;
+      void threads?.read();
+      if (background) return;
       if (!unsupported) void destination.refresh();
       if (!feedUnsupported && currentFeed.snapshot().reach === "failed") void currentFeed.read();
       // A key added after the chat read "missing" (in FluxIQ, or by the Lab
@@ -333,21 +342,19 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       // one (`run-mv2nlh9l-52e476da`, moment 1). Asked again only while the
       // empty latest chat is on screen and still says the key is missing.
       if (readiness === "missing" && readinessAsk !== null) askReadiness();
-    }, THREAD_POLL_MS);
+    }, readBeatMs(background, owner.transport.changes !== undefined));
   }
   function resetOwner(next: ChatOwner, initial: boolean): void {
     stopTimer();
-    if (debounce !== undefined) {
-      clearTimeout(debounce);
-    }
-    debounce = undefined;
     feed.stop();
     controller.setConnected(false);
     owner = next;
     replaced ||= !initial;
     controller = makeController(owner);
     feed = makeFeed(owner);
-    shownTarget = { kind: "latest" };
+    // With a thread list the latest chat is the host's project, so a first message has somewhere to open a thread.
+    shownTarget = threads !== undefined && latestStatus?.projectId !== undefined ? { kind: "latest", projectId: latestStatus.projectId } : { kind: "latest" };
+    threads?.reset();
     answerIn = null;
     questionKey = "";
     followed = null;
@@ -360,7 +367,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     readiness = "unknown";
     readinessAsk = null;
     readinessReading = null;
-    composer.setOwner(draftOwners.capture(owner, shownTarget.projectId, latestStatus?.projectId));
+    composer.setOwner(draftOwners.capture(owner, draftProject(), latestStatus?.projectId));
     composer.setPlaceholder("Message FluxIQ");
     context.update(shownTarget);
     refreshControls(true);
@@ -369,12 +376,12 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   }
 
   function open(next: ChatTarget, follow = true): void {
-    if (next.projectId === undefined && shownTarget.projectId !== undefined) next = { ...next, projectId: shownTarget.projectId };
+    if (next.projectId === undefined && shownTarget.projectId !== undefined && shownTarget.kind !== "thread") next = { ...next, projectId: shownTarget.projectId };
     if (sameTarget(next, shownTarget)) return;
     const threadChanges = !sameThread(next, shownTarget);
     shownTarget = next;
     if (next.kind === "automation" && next.name.trim() !== "") flowNames.set(next.flowId, next.name);
-    composer.setOwner(draftOwners.capture(owner, next.projectId, latestStatus?.projectId));
+    composer.setOwner(draftOwners.capture(owner, draftProject(), latestStatus?.projectId));
     if (threadChanges) {
       // Another thread: its first read is history again, and nothing of the last one stays.
       clock = createTurnClock();
@@ -387,6 +394,11 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     if (follow) follower.followNow();
     renderAll();
     for (const listener of [...targetListeners]) listener(next);
+    threads?.targetChanged(next);
+  }
+
+  function draftProject(): string | undefined {
+    return shownTarget.kind === "thread" ? undefined : shownTarget.projectId;
   }
 
   function onFeedChange(): void {
@@ -405,6 +417,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       if (debounce !== handle || captured !== owner || !captured.current() || !active) return;
       debounce = undefined;
       void destination.refresh();
+      void threads?.read();
     }, THREAD_REFRESH_DEBOUNCE_MS);
   }
 
@@ -433,7 +446,11 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     if (main.hidden !== fallbackShown) main.hidden = fallbackShown;
     if (dock.hidden !== fallbackShown) dock.hidden = fallbackShown;
     readNotice.render(state);
+    notice.update(state.notice);
+    composer.setUnavailable(threads?.unavailable());
     composer.render(state);
+    threads?.render(state.conversationId);
+    earlier?.update(state.earlierTurns === true, state.earlierCount);
     if (shownTarget.projectId !== undefined) {
       element.setAttribute(CHAT_PROJECT_NAVIGATION.projectAttribute, state.projectId ?? shownTarget.projectId);
       element.setAttribute(CHAT_PROJECT_NAVIGATION.scopeStateAttribute, state.scopeState ?? "error");
@@ -457,11 +474,12 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       (turn) => turnControls(turn, state),
       working
     );
+    banner?.update(fallbackShown ? undefined : state.turns.filter((turn) => turn.ask?.status === "pending").at(-1)?.turnId);
     // The keys are read each time the connected, empty latest chat comes on
     // screen, and again on each poll while they read "missing" (`startReads`).
     if (!(connected && shownTarget.kind === "latest" && state.mode === "empty" && actionsAllowed())) readinessAsk = null;
     else if (readinessAsk === null) askReadiness();
-    const emptyModel = emptyStateModel(state.mode, shownTarget, readiness, { extract: options.onExtract !== undefined });
+    const emptyModel = emptyStateModel(state.mode, shownTarget, readiness, { extract: options.onExtract !== undefined, welcome: options.welcome });
     empty.update(emptyModel, anything);
     turnOpeners = turnOpeners.filter((opener) => opener.element.isConnected);
     // An empty chat's welcome is read from its top; a conversation follows its newest at the bottom.
@@ -510,40 +528,6 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     return shownTarget !== before;
   }
 
-  function turnControls(turn: CoreTurn, state: ConversationState): TurnControls {
-    const captured = owner;
-    const scope = actionScope;
-    const destination = controller;
-    const askSignature = JSON.stringify(turn.ask);
-    const eligible = () => captured === owner && captured.current() && scope === actionScope && actionsAllowed()
-      && destination.state().conversationId === state.conversationId
-      && destination.state().turns.some((current) => current.turnId === turn.turnId && current.text === turn.text && JSON.stringify(current.ask) === askSignature);
-    const askId = turn.ask?.askId;
-    const answering = askId !== undefined && state.answering.has(askId);
-    const error = askId === undefined ? undefined : state.answerErrors.get(askId);
-    return {
-      state: `${answering}|${error ?? ""}`,
-      ask: {
-        answering,
-        error,
-        answer: (kind, value) => {
-          if (eligible() && askId !== undefined) void destination.answer(askId, kind, value);
-        },
-        openFluxIQ: () => {
-          if (!eligible() || options.openControl === undefined) {
-            return createElement("span");
-          }
-          const made: ChatOpenControl = options.openControl({ label: "Open FluxIQ", look: "link", canOpen: () => eligible() && made.element.isConnected });
-          if (latestStatus !== undefined) {
-            made.observe(latestStatus);
-          }
-          turnOpeners.push(made);
-          return made.element;
-        }
-      }
-    };
-  }
-
   function askReadiness(): void {
     const ask = {};
     readinessAsk = ask;
@@ -560,6 +544,10 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   function stopTimer(): void {
     if (timer !== undefined) clearInterval(timer);
     timer = undefined;
+    if (debounce !== undefined) clearTimeout(debounce);
+    debounce = undefined;
+    unhear?.();
+    unhear = undefined;
   }
 
   refreshControls(true);
@@ -580,8 +568,9 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       if (observation.changed) {
         resetOwner(owners.capture(), observation.initial);
       } else {
-        composer.setOwner(draftOwners.capture(owner, shownTarget.projectId, latestStatus?.projectId));
+        composer.setOwner(draftOwners.capture(owner, draftProject(), latestStatus?.projectId));
       }
+      threads?.render(controller.state().conversationId);
       for (const opener of turnOpeners) {
         opener.observe(status);
       }
@@ -596,8 +585,6 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       if (next === active && !first) return;
       active = next;
       stopTimer();
-      if (debounce !== undefined) clearTimeout(debounce);
-      debounce = undefined;
       if (!next) {
         feed.stop();
         controller.setConnected(false);
@@ -630,18 +617,17 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       if (run.subject.kind !== "run") return;
       followed = run;
       renderAll();
+    },
+    setBackground(on) {
+      if (on === background) return;
+      background = on;
+      stopTimer();
+      if (on) feed.stop();
+      else follower.followNow();
+      startReads();
+    },
+    showEarlier() {
+      void controller.showEarlier();
     }
   };
-}
-
-/** True when `a` and `b` are the same target: the same thread, under the same name, about the same work. */
-function sameTarget(a: ChatTarget, b: ChatTarget): boolean {
-  if (!sameThread(a, b)) return false;
-  if (a.kind === "automation" && b.kind === "automation") return a.name === b.name;
-  if (a.kind === "question" && b.kind === "question") return a.activityId === b.activityId && a.title === b.title;
-  return true;
-}
-
-function navigationVisible(element: HTMLElement): boolean {
-  return element.isConnected && !element.closest("[hidden], [inert]") && element.getClientRects().length > 0;
 }

@@ -1,9 +1,11 @@
 // The empty chat, centred in the stream: a title, one line, the latest
 // chat's two starts as buttons, the model-key line with its Open FluxIQ, and
-// example prompts as quiet buttons that fill the composer when chosen. Built
+// example prompts as quiet buttons that fill the composer when chosen, or a
+// host's welcome lines, each with its icon. Built
 // once; the starts and examples are rebuilt only when their set changes.
 
 import { createElement } from "../../dom/index.ts";
+import { lucideIcon } from "../../icons/index.ts";
 import type { EmptyStart, EmptyStateModel } from "./empty-state-model.ts";
 import { placeChildren } from "./place-children.ts";
 
@@ -30,7 +32,9 @@ export function createEmptyState(choose: (text: string) => void, hooks: EmptySta
   const keyText = createElement("span", { className: "chat-key-text" });
   const key = createElement("div", { className: "chat-key-line", hidden: true, attrs: { role: "status" } }, [keyText]);
   const examples = createElement("div", { className: "chat-examples", attrs: { role: "list", "aria-label": "Examples" } });
-  const element = createElement("div", { className: "chat-empty", hidden: true }, [title, line, starts, key, examples]);
+  const items = createElement("ul", { className: "chat-welcome-items" });
+  const element = createElement("div", { className: "chat-empty", hidden: true }, [title, line, items, starts, key, examples]);
+  let shownItems = "";
   let shownStarts = "";
   let shownExamples = "";
   return {
@@ -52,6 +56,17 @@ export function createEmptyState(choose: (text: string) => void, hooks: EmptySta
       const action = hooks.keyAction;
       if (action !== undefined && keyHidden && action.parentNode === key) action.remove();
       else if (action !== undefined && !keyHidden && action.parentNode !== key) key.append(action);
+      const itemSignature = JSON.stringify(model.items);
+      if (itemSignature !== shownItems) {
+        shownItems = itemSignature;
+        items.replaceChildren(...model.items.map((item) => createElement("li", { className: "chat-welcome-item" }, [
+          lucideIcon(item.icon, 15),
+          createElement("div", { className: "chat-welcome-copy" }, [
+            createElement("strong", { text: item.title }),
+            createElement("span", { text: item.body })
+          ])
+        ])));
+      }
       const startSignature = model.starts.map((start) => `${start.id}:${start.label}`).join("\u0000");
       if (startSignature !== shownStarts) {
         shownStarts = startSignature;

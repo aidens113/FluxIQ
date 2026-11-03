@@ -10,6 +10,8 @@ export type ChatHostStatus = {
   connected: boolean;
   ownerKey: string;
   projectId?: string | undefined;
+  /** The open project's name, for the chat's heading; a person never reads the id. */
+  projectName?: string | null | undefined;
   recording: boolean;
 };
 
@@ -17,4 +19,10 @@ export type ChatHostStatus = {
 export type ChatOpenControl = { readonly element: HTMLElement; observe(status: ChatHostStatus): void };
 
 /** Makes such a control; the host draws it, so the chat need not know how it opens anything. */
-export type ChatOpenControlFactory = (style: { label: string; look: "small" | "link"; canOpen?: () => boolean }) => ChatOpenControl;
+export type ChatOpenControlFactory = (style: {
+  label: string;
+  look: "small" | "link";
+  canOpen?: () => boolean;
+  /** What it is for, so a host can go straight there instead of opening itself: a model key to add, or a question only FluxIQ can show. */
+  purpose?: "model-key" | "ask";
+}) => ChatOpenControl;

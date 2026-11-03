@@ -53,6 +53,7 @@ const fixtureProfiles = Object.freeze({
 });
 const markerPath = path.join(fixtureRoot, ".fluxiq-e2e-fixture-root");
 const fastStudioOnly = process.env.FLUXIQ_E2E_FAST_STUDIO === "true";
+const chatOnly = process.env.FLUXIQ_E2E_CHAT_ONLY === "true";
 
 await resetOwnedFixtureRoot();
 
@@ -69,7 +70,7 @@ const emptyProject = await studio.createProject({
   categoryId: category.id,
 });
 
-const phase8EmptyProject = await seedPhase8Project("empty", phase8Contract.profiles.empty, category.id);
+const phase8EmptyProject = chatOnly ? summarizeProject(emptyProject) : await seedPhase8Project("empty", phase8Contract.profiles.empty, category.id);
 
 const smallProject = await seedProject({
   name: "UI Fixture - Small",
@@ -135,6 +136,10 @@ process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
 
 async function seedProject({ name, description, categoryId, fixture: fixtureOptions }) {
   const project = await studio.createProject({ name, description, categoryId });
+  // The Flow fixtures below predate Core's Subflow-graph rule (a top-level Flow may not own nodes, a Subflow needs its
+  // graph Flow first) and no longer save. The chat checks need projects, not Flows, so `FLUXIQ_E2E_CHAT_ONLY=true`
+  // seeds bare projects and leaves the Flow corpus out.
+  if (chatOnly) return { ...summarizeProject(project), flowIds: [], recordingIds: [], timelineRecordingId: null, counts: {} };
   const fixture = namespaceLargeFixtureIdentifiers(createAutomationStudioLargeProjectFixture({
     ...fixtureOptions,
     projectId: project.id,

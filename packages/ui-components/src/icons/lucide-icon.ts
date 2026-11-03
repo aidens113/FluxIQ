@@ -5,6 +5,7 @@
 // words beside it carry the meaning. A name the panel has no icon for draws
 // `circle-dot`, the generic action.
 
+import { LUCIDE_CHROME_ICON_NODES } from "./chrome-nodes.ts";
 import { LUCIDE_ICON_NODES } from "./lucide-nodes.ts";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -12,8 +13,9 @@ const FALLBACK = "circle-dot";
 
 /** The icon `name` (a lucide name, kebab case) at `size` pixels. */
 export function lucideIcon(name: string, size = 16): SVGSVGElement {
-  const known = Object.hasOwn(LUCIDE_ICON_NODES, name);
-  const nodes = LUCIDE_ICON_NODES[known ? name : FALLBACK] ?? [];
+  const known = Object.hasOwn(LUCIDE_ICON_NODES, name) || Object.hasOwn(LUCIDE_CHROME_ICON_NODES, name);
+  const found = known ? name : FALLBACK;
+  const nodes = LUCIDE_ICON_NODES[found] ?? LUCIDE_CHROME_ICON_NODES[found] ?? [];
   const svg = document.createElementNS(SVG, "svg");
   const attrs: Readonly<Record<string, string>> = {
     viewBox: "0 0 24 24",

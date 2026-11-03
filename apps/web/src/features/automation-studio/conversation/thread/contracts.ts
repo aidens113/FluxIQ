@@ -177,7 +177,8 @@ export function parseConversations(value: unknown): Conversation[] {
   });
 }
 
-function parseConversationAsk(value: unknown): ConversationAsk | null {
+/** Core's question as the panel reads it, or null when the record is not one. */
+export function parseConversationAsk(value: unknown): ConversationAsk | null {
   if (!isRecord(value)) return null;
   if (!isId(value.askId) || typeof value.parks !== "boolean") return null;
   if (value.kind !== "permission" && value.kind !== "choice" && value.kind !== "confirm" && value.kind !== "open") return null;

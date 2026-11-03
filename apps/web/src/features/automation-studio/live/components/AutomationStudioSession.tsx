@@ -6,7 +6,7 @@ import type { AutomationWorkspaceBreadcrumb } from "../../workspace/shell/contra
 import { automationWorkspaceViewStateForBase } from "../../workspace/view-state";
 import { automationStudioViewBaseId, automationStudioViewDefinition, automationStudioViewId, automationStudioViewObjectId } from "../../views/view-registry";
 import { AutomationStudioProjectGate } from "./AutomationStudioProjectGate";
-import { ConversationDock } from "../../conversation/components";
+import { ChatDock } from "../../../chat-widget";
 import { StudioStartJourney } from "../../onboarding/entry";
 import { automationEntityCollectionSelector, useAutomationStoreSelector, type AutomationProjectEntityKind } from "../../stores";
 import { useAutomationProjectCatalogLoader } from "../../project";
@@ -657,7 +657,7 @@ export function AutomationStudioSession(props: {
           with no way to. `projectId` is null because no project is open: the
           list then spans every project the person can see, which is also how a
           question raised by a run they started earlier reaches them here. */}
-      <ConversationDock projectId={null} />
+      <ChatDock projectId={null} />
     </StudioStartJourney>;
   }
 
@@ -678,7 +678,7 @@ export function AutomationStudioSession(props: {
     {/* What is open travels with every message, so "run it" means the Flow on
         screen. A selected part of a Flow counts as its parent Flow, exactly as
         the recording bridge above reads it. */}
-    <ConversationDock
+    <ChatDock
       projectId={activeProject.id}
       projectName={activeProject.name}
       onScreen={{
