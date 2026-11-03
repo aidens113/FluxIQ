@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../persistence/program-state/storage.ts";
 import { automationStudioFlowBootstrapIncompleteDraftKept, type AutomationStudioFlowBootstrapIncompleteDraft } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import {
   AutomationStudioBootstrapAdaptationStore,

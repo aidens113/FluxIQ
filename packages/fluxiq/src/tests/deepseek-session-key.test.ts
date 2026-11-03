@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SECRETS_LOCKED_ERROR_CODE, isSecretsLockedError, secretsLockedMessage } from "@fluxiq/contracts/platform";
-import { SecretKeysService } from "../../../../programs/secret-keys/index.ts";
-import { AutomationStudioSecretsLockedError } from "../../../models/secrets/index.ts";
-import { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "../session-key.ts";
+import { SecretKeysService } from "../programs/secret-keys/index.ts";
+import { AutomationStudioSecretsLockedError } from "../runtime/models/secrets/index.ts";
+import { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyPorts } from "../runtime/llm/deepseek/index.ts";
 
 // Which key a call made for a person uses (H1 selection fix, H0-S5), against
 // the real Secret Keys service: weak scrypt, fake key strings, no network.

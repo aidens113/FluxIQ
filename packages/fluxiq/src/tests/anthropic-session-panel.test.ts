@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SecretKeysService } from "../../../../programs/secret-keys/index.ts";
-import { releaseAutomationStudioSessionProviderKey } from "../../../models/secrets/index.ts";
-import { createAutomationStudioSessionKeyProviderResolver } from "../../session-key-provider.ts";
-import { automationStudioPanelCommandKeyFromSecretKeys } from "../../deepseek/index.ts";
-import { createAutomationStudioAnthropicPanelCommandModel } from "../panel-command.ts";
-import { streamReply, textFor, request, DIAGNOSIS } from "./fixtures.ts";
+import { SecretKeysService } from "../programs/secret-keys/index.ts";
+import { releaseAutomationStudioSessionProviderKey } from "../runtime/models/secrets/index.ts";
+import { createAutomationStudioSessionKeyProviderResolver } from "../runtime/llm/index.ts";
+import { automationStudioPanelCommandKeyFromSecretKeys } from "../runtime/llm/deepseek/index.ts";
+import { createAutomationStudioAnthropicPanelCommandModel } from "../runtime/llm/anthropic/index.ts";
+import { streamReply, textFor, request, DIAGNOSIS } from "../runtime/llm/anthropic/tests/fixtures.ts";
 
 const services: SecretKeysService[] = [];
 afterEach(() => {
@@ -71,7 +71,7 @@ describe("Claude keys, Flow resolution and panel requests", () => {
     vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_SCOPE", "test");
     vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", "5");
     vi.resetModules();
-    const scoped = await import("../../session-key-provider.ts");
+    const scoped = await import("../runtime/llm/index.ts");
     const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: secretKeys() });
     const result = resolve({ projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" }, providerId: "anthropic", modelId: "claude-sonnet-5-5", metadata: { adaptationPolicySettings: { maxEstimatedCostUsdPerRun: 9 } } })!;
     expect(result).toMatchObject({ maxEstimatedCostUsd: 5, maxTotalEstimatedCostUsd: 5, tokenLimits: { maxOutputTokens: 8000 } });
@@ -82,7 +82,7 @@ describe("Claude keys, Flow resolution and panel requests", () => {
     vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_SCOPE", "");
     vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", "5");
     vi.resetModules();
-    const scoped = await import("../../session-key-provider.ts");
+    const scoped = await import("../runtime/llm/index.ts");
     const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: secretKeys() });
     const input = { projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" }, providerId: "anthropic", modelId: "claude-sonnet-5-5" };
     expect(resolve(input)).toMatchObject({ maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.25 });

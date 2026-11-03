@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { safeSegment } from "../../../programs/_shared/storage.ts";
+import { safeSegment } from "../program-state/storage.ts";
 import { createAutomationStudioFileStorePaths } from "./file-store.ts";
 import {
   assertValidRecordingIndex,

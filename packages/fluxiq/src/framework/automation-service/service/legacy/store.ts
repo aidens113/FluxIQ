@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
 import { AutomationStudioLegacyWriteDisabledError, type AutomationStudioConfigArtifact, type AutomationStudioFlowDocument, type AutomationStudioLegacyBackup, type AutomationStudioLegacyRetirementAuditEvent, type AutomationStudioLegacyRetirementDiagnostic, type AutomationStudioLegacyRetirementState, type AutomationStudioProjectArtifacts, type AutomationStudioRoutineArtifact, type AutomationStudioTaskArtifact } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioObjectStore } from "../../../persistence/automation/index.ts";
 import { projectArtifactDocumentFileName, type AutomationStudioProjectPaths } from "../paths/index.ts";

@@ -3,7 +3,7 @@ import { cp, mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { ProgramJsonStore } from "../../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../../persistence/program-state/storage.ts";
 import { CanonicalAuthorityWholeOperation } from "../../../../persistence/automation/canonical-authority/index.ts";
 import { createCanonicalAutomationStudioSQLiteRepositories, AutomationStudioProjectDatabasePool } from "../../../../persistence/automation/index.ts";
 import { AutomationStudioProjectPaths, AutomationStudioFlowPaths } from "../../paths/index.ts";

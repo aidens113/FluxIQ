@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import { ProgramJsonStore } from "../../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../../persistence/program-state/storage.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
 import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioProjectDatabasePool } from "../../../../persistence/automation/index.ts";
 import { upsertBy } from "../../collections.ts";

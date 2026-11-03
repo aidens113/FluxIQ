@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { SQLiteRepository } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository } from "../../../persistence/repository/sqlite-repository.ts";
 import type { AutomationStudioFlowRunSummary } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioAdaptationSummary } from "../indexes/index.ts";
 import type { AutomationStudioAdaptationSummaryPage, AutomationStudioFlowRunSummaryPage } from "./store.ts";

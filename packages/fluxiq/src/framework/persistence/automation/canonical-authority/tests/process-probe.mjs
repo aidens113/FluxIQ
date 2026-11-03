@@ -4,7 +4,7 @@ const [root, action, resourceId] = process.argv.slice(2);
 const base = path.join(process.cwd(), "dist/framework/persistence/automation");
 const { CanonicalAuthorityOwnerStore } = await import(pathToFileURL(path.join(base, "canonical-authority/owner-store.js")).href);
 const { CanonicalAuthorityProjectCoordinator } = await import(pathToFileURL(path.join(base, "canonical-authority/project-coordinator.js")).href);
-const { SQLiteRepository } = await import(pathToFileURL(path.join(process.cwd(), "dist/programs/database-manager/storage/sqlite-repository.js")).href);
+const { SQLiteRepository } = await import(pathToFileURL(path.join(process.cwd(), "dist/framework/persistence/repository/sqlite-repository.js")).href);
 const options = { projectRootDir: path.join(root, "projects"), projectDatabaseRootDir: root };
 const owners = new CanonicalAuthorityOwnerStore(root, options);
 process.send({ status: "ready" });

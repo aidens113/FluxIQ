@@ -5,11 +5,11 @@ import path from "node:path";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
-import { HeldKeys } from "../../programs/secret-keys/index.ts";
-import { automationStudioActivityHub } from "../../runtime/automation-activity/index.ts";
-import { programStateConnections } from "../../programs/_shared/storage.ts";
-import { heldSessionKey } from "../../programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
-import { FluxIQ } from "../index.ts";
+import { HeldKeys } from "../programs/secret-keys/index.ts";
+import { automationStudioActivityHub } from "../runtime/automation-activity/index.ts";
+import { programStateConnections } from "../framework/persistence/program-state/storage.ts";
+import { heldSessionKey } from "../programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
+import { FluxIQ } from "../framework/index.ts";
 
 // A closed FluxIQ instance leaves nothing behind (t808): no hub subscription,
 // no SQLite pool for its root, no timer or handle, and nothing that keeps the

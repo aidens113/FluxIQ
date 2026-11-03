@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioProject } from "../../../../api-contracts/automation.ts";
 import { generateFlowTypeScript, verifyCodeOwnedFlowCompilation } from "../../../../flows/authoring/dsl/index.ts";
 import {

@@ -14,8 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAutomationStudioFlowExpansionFixture, createAutomationStudioLargeProjectFixture } from "../../../../../flows/authoring/model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { SQLiteRepository } from "../../../../../programs/database-manager/storage/sqlite-repository.ts";
-import { withEndpointPerformanceScope } from "../../../../../programs/_shared/performance-metrics.ts";
+import { SQLiteRepository } from "../../../../persistence/repository/sqlite-repository.ts";
+import { withEndpointPerformanceScope } from "../../../../persistence/performance-metrics/performance-metrics.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { SQLiteRepository } from "../../../../programs/database-manager/index.ts";
+import { SQLiteRepository } from "../../../../framework/persistence/repository/sqlite-repository.ts";
 import type { IamPrincipal } from "../../types.ts";
 import { IamStore } from "../iam-store.ts";
 

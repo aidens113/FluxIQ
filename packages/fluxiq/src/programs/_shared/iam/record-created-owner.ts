@@ -1,6 +1,7 @@
 import { programIamIdSegment } from "./id-segment.ts";
 import { programOwnedRefId } from "./owned-ref-id.ts";
-import type { ProgramOwnedResourceKind, ProgramResourceOwnerResolver, ProgramResourceRef } from "./types.ts";
+import type { ProgramResourceOwnerResolver } from "../../../framework/persistence/resource-owner/owner-resolver.ts";
+import type { ProgramOwnedResourceKind, ProgramResourceRef } from "./types.ts";
 
 /**
  * Records `userId` (the caller's raw user id) as the owner of what a `creates`

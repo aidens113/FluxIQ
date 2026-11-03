@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { ProgramJsonStore, programDataFile } from "../../_shared/storage.ts";
+import { ProgramJsonStore, programDataFile } from "../../../framework/persistence/program-state/storage.ts";
 import type { DeploymentArtifact, DeploymentGitBranch, DeploymentGitSnapshot, DeploymentGitVersion, DeploymentRunMode, DeploymentSyncRun, DeploymentSyncSnapshot, DeploymentTarget } from "../types.ts";
 
 const execFileAsync = promisify(execFile);

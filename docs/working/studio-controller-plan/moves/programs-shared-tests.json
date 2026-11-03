@@ -1,0 +1,30 @@
+{
+  "sourceRoot": "packages/fluxiq/src",
+  "downstream": "../!FluxIQWebExtension",
+  "moves": [
+    {
+      "from": "framework/persistence/automation/ownership/tests/default-owner.test.ts",
+      "to": "tests/ownership-default-owner.test.ts"
+    },
+    {
+      "from": "framework/tests/instance-leak.test.ts",
+      "to": "tests/instance-leak.test.ts"
+    },
+    {
+      "from": "framework/tests/model-provider-disabled-run.test.ts",
+      "to": "tests/model-provider-disabled-run.test.ts"
+    },
+    {
+      "from": "runtime/llm/anthropic/tests/session-panel.test.ts",
+      "to": "tests/anthropic-session-panel.test.ts"
+    },
+    {
+      "from": "runtime/llm/deepseek/tests/session-key.test.ts",
+      "to": "tests/deepseek-session-key.test.ts"
+    },
+    {
+      "from": "runtime/llm/tests/session-key-provider.test.ts",
+      "to": "tests/session-key-provider.test.ts"
+    }
+  ]
+}

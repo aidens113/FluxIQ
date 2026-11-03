@@ -2,7 +2,7 @@ import { removePathWithRetry } from "./directory-removal.ts";
 import { loadRecordingTimeline } from "./load-timeline.ts";
 import { automationStudioRecordingEntry, AutomationStudioProjectRuntimeStreamStore, type AutomationStudioProjectDatabasePool } from "../../../persistence/automation/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { LearnedTaskModel } from "../../learning/index.ts";
 import type { RecordingSession } from "../../../../flows/authoring/model/index.ts";
 import { AutomationStudioObjectStore, type CanonicalAutomationStudioRepositories } from "../../../persistence/automation/index.ts";

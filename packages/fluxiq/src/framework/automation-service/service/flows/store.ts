@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioHierarchyChildrenPage, AutomationStudioProjectChangeFeedPage } from "../../../../api-contracts/automation.ts";
 import {
   type AutomationStudioFlowArtifact,

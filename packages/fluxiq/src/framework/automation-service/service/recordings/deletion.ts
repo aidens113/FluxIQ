@@ -1,5 +1,5 @@
 import path from "node:path";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioObjectStore, CanonicalAutomationStudioRepositories, RecordingStateIndexStore } from "../../../persistence/automation/index.ts";
 import { createRecordingPipelineDocument, emptyPipelineIndex, type PipelineArtifactKind, type PipelineIndex, type RecordingPipelineDocument } from "../../../../runtime/recording/pipeline-model.ts";
 import { parseAutomationStudioObjectContentRef, recordingIndexStateObjectRefs, type RecordingIndex as RecordingStateIndex } from "../../../persistence/automation/index.ts";

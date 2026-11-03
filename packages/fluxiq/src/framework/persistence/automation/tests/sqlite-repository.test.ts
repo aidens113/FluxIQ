@@ -8,7 +8,7 @@ import { createCanonicalAutomationStudioSQLiteRepositories as factory } from "..
 import { canonicalFixture } from "../canonical-authority/tests/fixture.ts";
 import { CanonicalAuthorityOwnerStore } from "../canonical-authority/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import { SQLiteRepository, createRecord } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository, createRecord } from "../../repository/sqlite-repository.ts";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });

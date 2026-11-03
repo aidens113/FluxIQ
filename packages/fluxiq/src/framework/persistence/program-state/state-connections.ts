@@ -1,5 +1,5 @@
 import path from "node:path";
-import { SQLiteConnectionPool } from "../database-manager/storage/connection-pool.ts";
+import { SQLiteConnectionPool } from "../repository/connection-pool.ts";
 import { programStateRoot } from "./state-root.ts";
 
 /**

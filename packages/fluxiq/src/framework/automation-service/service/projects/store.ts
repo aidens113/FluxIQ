@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectHierarchy } from "../../../../api-contracts/automation.ts";
-import { ProgramJsonStore, programDataFile } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, programDataFile } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioProjectPaths } from "../paths/index.ts";
 import type { AutomationStudioProjectIndex, AutomationStudioProjectRecord } from "./types.ts";
 import type { CanonicalAuthorityWholeOperation } from "../../../persistence/automation/canonical-authority/index.ts";

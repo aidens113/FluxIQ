@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
-import type { AutomationStudioSessionKeyPorts } from "../deepseek/index.ts";
-import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "../deepseek/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmResolutionWithinFlowSettings } from "../flow-execution-limits/index.ts";
-import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, createAutomationStudioSessionKeyProviderResolver } from "../session-key-provider.ts";
-import { AutomationStudioSecretsLockedError } from "../deepseek/index.ts";
-import { IdentityAccessService } from "../../../programs/identity-access/index.ts";
-import { SecretKeysService } from "../../../programs/secret-keys/index.ts";
-import { DIAGNOSIS, envelope, jsonReply, textFor } from "../anthropic/tests/fixtures.ts";
-import type { AutomationStudioLlmProviderResolverInput } from "../index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../runtime/llm/harness/index.ts";
+import type { AutomationStudioSessionKeyPorts } from "../runtime/llm/deepseek/index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "../runtime/llm/deepseek/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmResolutionWithinFlowSettings } from "../runtime/llm/flow-execution-limits/index.ts";
+import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, createAutomationStudioSessionKeyProviderResolver } from "../runtime/llm/index.ts";
+import { AutomationStudioSecretsLockedError } from "../runtime/llm/deepseek/index.ts";
+import { IdentityAccessService } from "../programs/identity-access/index.ts";
+import { SecretKeysService } from "../programs/secret-keys/index.ts";
+import { DIAGNOSIS, envelope, jsonReply, textFor } from "../runtime/llm/anthropic/tests/fixtures.ts";
+import type { AutomationStudioLlmProviderResolverInput } from "../runtime/llm/index.ts";
 
 const WEAK_KDF = { testOnlyWeakParameters: { N: 2 ** 10, r: 8, p: 1, keyLength: 32 } as const };
 const PASSWORD_A = "dummy-password-a";
@@ -47,7 +47,7 @@ describe("session-key provider resolver", () => {
     vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_SCOPE", "test");
     vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", "0.1");
     vi.resetModules();
-    const scoped = await import("../session-key-provider.ts");
+    const scoped = await import("../runtime/llm/index.ts");
     const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: ports() });
     const metadata = { adaptationPolicySettings: { maxEstimatedCostUsdPerRun: 1 } };
     const resolution = resolve({ projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" }, metadata });

@@ -1,4 +1,4 @@
-import type { ProgramResourceOwnerResolver } from "../../../../programs/_shared/iam/index.ts";
+import type { ProgramResourceOwnerResolver } from "../../resource-owner/owner-resolver.ts";
 import type { AutomationStudioProject } from "../../../../api-contracts/automation/index.ts";
 import { automationStudioProjectDefaultOwner } from "./default-owner.ts";
 import { migrateAutomationStudioProjectOwners } from "./migration.ts";

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { SQLiteRepository } from "../../../programs/database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository } from "../../../framework/persistence/repository/sqlite-repository.ts";
 import { createPlatformStore } from "../create-platform-store.ts";
 import { PlatformStoreConflictError } from "../errors/index.ts";
 import { account, membership, token } from "./platform-store-suite.ts";

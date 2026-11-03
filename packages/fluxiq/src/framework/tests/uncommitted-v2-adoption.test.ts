@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { SQLiteRepository, createRecord } from "../../programs/database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository, createRecord } from "../persistence/repository/sqlite-repository.ts";
 import { adoptUncommittedFluxIQStorage, FluxIQ, inspectFluxIQStorage, migrateFluxIQStorage } from "../index.ts";
 
 const roots: string[] = [];

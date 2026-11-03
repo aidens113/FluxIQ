@@ -14,8 +14,8 @@
       "apps/web/src/features/automation-studio/model/project-artifacts.ts",
       "apps/web/src/features/automation-studio/model/tests/project-artifacts.test.ts",
       "packages/fluxiq/src/programs/_shared/api.ts",
-      "packages/fluxiq/src/programs/_shared/storage.ts",
-      "packages/fluxiq/src/programs/_shared/tests/storage.test.ts",
+      "packages/fluxiq/src/framework/persistence/program-state/storage.ts",
+      "packages/fluxiq/src/framework/persistence/program-state/tests/storage.test.ts",
       "packages/fluxiq/src/programs/tests/permission-matrix.test.ts"
     ]
   },
@@ -39,7 +39,7 @@
   },
   "overrides": [
     {
-      "includes": ["packages/fluxiq/src/programs/_shared/storage.ts"],
+      "includes": ["packages/fluxiq/src/framework/persistence/program-state/storage.ts"],
       "linter": { "rules": { "suspicious": { "noConfusingVoidType": "off" } } }
     },
     {

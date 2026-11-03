@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { FluxIQ } from "../../../framework/index.ts";
-import { SQLiteRepository } from "../../../programs/database-manager/index.ts";
+import { SQLiteRepository } from "../../../framework/persistence/repository/sqlite-repository.ts";
 import { BufferedIamAuditSink, IamAuditStore } from "../../iam/index.ts";
 import { FileEmailSender, NoneEmailSender } from "../email/index.ts";
 import { createPlatformServices } from "../service/index.ts";

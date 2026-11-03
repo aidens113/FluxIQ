@@ -1,4 +1,4 @@
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../persistence/program-state/storage.ts";
 import { emptyFlowSummaryIndex, type AutomationStudioFlowSummaryIndex } from "../../../persistence/automation/index.ts";
 import { emptyPipelineIndex, type PipelineIndex } from "../../../../runtime/recording/pipeline-model.ts";
 import type { AutomationStudioProjectPaths } from "../paths/index.ts";

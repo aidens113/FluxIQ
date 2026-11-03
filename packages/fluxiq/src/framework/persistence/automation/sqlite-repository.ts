@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import { SQLiteRepository, createRecord } from "../../../programs/database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository, createRecord } from "../repository/sqlite-repository.ts";
 import type { LearnedTaskModel } from "../../automation-service/learning/index.ts";
 import type { NormalizedTimeline } from "../../../runtime/recording/normalization/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowMigrationLedger, AutomationStudioFlowPublicationRecord, PolicyGraph, RecordingSession, SignalRegistry } from "../../../flows/authoring/model/index.ts";

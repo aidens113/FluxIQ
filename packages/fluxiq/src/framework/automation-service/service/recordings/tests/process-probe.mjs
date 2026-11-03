@@ -8,7 +8,7 @@ const load = relative => import(pathToFileURL(path.join(dist, relative)).href);
 const { FluxIQ } = await load("framework/index.js"); // Required first: program construction uses registered framework owners.
 const { appendRecordingEntry, finalizeRecordingSession } = await load("flows/authoring/model/index.js");
 const { AutomationStudioProjectRuntimeStreamStore, AutomationStudioProjectEventChunkStore } = await load("framework/persistence/automation/index.js");
-const { ProgramJsonStore } = await load("programs/_shared/storage.js");
+const { ProgramJsonStore } = await load("framework/persistence/program-state/storage.js");
 const fx = FluxIQ.create({ rootDir: root, loadEnv: false, envFiles: [], modelProvidersEnabled: false });
 let service;
 try {

@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { RecordingDomainRegistry } from "../../../../flows/authoring/model/index.ts";
 import type { EvidenceObservation, SignalMiningResult } from "../../mining/index.ts";
 import type { CanonicalAutomationStudioRepositories } from "../../../persistence/automation/index.ts";

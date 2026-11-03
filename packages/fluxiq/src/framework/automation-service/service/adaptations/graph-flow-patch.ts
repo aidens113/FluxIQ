@@ -13,7 +13,7 @@
 // path with no durable form -- is refused, as its durable applier would refuse
 // it here.
 
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowArtifact } from "../../../../flows/authoring/model/index.ts";
 import { actionTargetParameterValues, withAutomationStudioNodeAdaptationId } from "../../../../runtime/adaptation/flow-change/index.ts";
 import { compactJsonObject } from "../compact-json.ts";

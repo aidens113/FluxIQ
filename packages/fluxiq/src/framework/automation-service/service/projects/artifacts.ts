@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioProject, AutomationStudioProjectHierarchy } from "../../../../api-contracts/automation.ts";
 import type {
   AutomationStudioProjectArtifactKind,

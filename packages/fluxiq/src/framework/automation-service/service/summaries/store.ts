@@ -10,8 +10,8 @@ import { sqlInstructionRequirement, sqlInstructionStatus } from "../flows/index.
 import { instructionSummaryFromSql, sqlInstructionScopeKind, subflowSummaryFromSql } from "./sql-conversions.ts";
 import type { AutomationStudioInstructionSummaryPage, AutomationStudioSubflowSummaryPage } from "./types.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../../programs/_shared/storage.ts";
-import { createRecord, SQLiteRepository } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import { ProgramJsonStore, safeSegment } from "../../../persistence/program-state/storage.ts";
+import { createRecord, SQLiteRepository } from "../../../persistence/repository/sqlite-repository.ts";
 import type {
   AutomationStudioFlowInstruction,
   AutomationStudioFlowRunDetail,

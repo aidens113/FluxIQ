@@ -1,5 +1,5 @@
 import path from "node:path";
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { PipelineArtifactKind } from "../../../../runtime/recording/pipeline-model.ts";
 import { AutomationStudioProjectPaths } from "./project.ts";
 

@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MemoryIamAuditSink } from "../../iam/index.ts";
 import { IdentityAccessService } from "../../../programs/identity-access/index.ts";
-import { SQLiteRepository } from "../../../programs/database-manager/index.ts";
+import { SQLiteRepository } from "../../../framework/persistence/repository/sqlite-repository.ts";
 import { MemoryEmailSender } from "../email/index.ts";
 import { createPlatformServices } from "../service/index.ts";
 import { accountInput, latestLinkToken } from "./provisioning-fixture.ts";

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioFlowCandidateDraftStore, type AutomationStudioFlowCandidateDraftRecord } from "../index.ts";
 import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import { AutomationStudioBootstrapAdaptationStore } from "../../bootstrap-adaptations.ts";
-import { ProgramJsonStore } from "../../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../../persistence/program-state/storage.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
 

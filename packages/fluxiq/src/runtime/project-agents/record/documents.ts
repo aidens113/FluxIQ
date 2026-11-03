@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { JsonObject } from "../../../core/index.ts";
-import { ProgramJsonStore } from "../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../../framework/persistence/program-state/storage.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../../framework/automation-service/service/paths/index.ts";
 import type { AutomationStudioProjectBuildRef } from "./build-record.ts";
 

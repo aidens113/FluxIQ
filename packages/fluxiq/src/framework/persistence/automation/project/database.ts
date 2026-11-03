@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import sqlite3 from "sqlite3";
-import { withSqlPerformanceContext } from "../../../../programs/_shared/performance-metrics.ts";
+import { withSqlPerformanceContext } from "../../performance-metrics/performance-metrics.ts";
 import { AutomationStudioStatementCache } from "./statement-cache.ts";
 import { AutomationStudioProjectStoreUnavailableError } from "./store-unavailable-error.ts";
 

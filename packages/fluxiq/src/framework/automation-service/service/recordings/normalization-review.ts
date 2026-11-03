@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import { uniqueStrings } from "../collections.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 import type { AutomationStudioRecordingStore } from "./store.ts";

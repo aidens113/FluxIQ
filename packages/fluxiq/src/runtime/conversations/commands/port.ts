@@ -9,17 +9,42 @@
 // or pays is refused here, whatever a catalog entry asked for, so a chat
 // command can never be the way round the PIN.
 
-import type { GlobalProgramApiRegistry, ProgramApiActor } from "../../../programs/_shared/api.ts";
-import type { ProgramScope } from "../../../programs/_shared/types.ts";
 import type { AutomationStudioConversationCommandPort } from "./command.ts";
+
+/** Who a command calls as: the request's own session, user, role and permissions. */
+export type AutomationStudioConversationCommandActor = {
+  sessionId: string;
+  userId: string;
+  roleId: string;
+  permissions: string[];
+  channel?: "panel" | "paired-client";
+};
+
+/** The domain a command runs in. */
+export type AutomationStudioConversationCommandScope = { domainId?: string | null };
+
+/**
+ * What the port needs of the program registry, which satisfies it: list endpoints with their
+ * classification, and call one.
+ */
+export type AutomationStudioConversationCommandRegistry = {
+  call(request: {
+    programId: string;
+    endpoint: string;
+    scope: AutomationStudioConversationCommandScope;
+    actor?: AutomationStudioConversationCommandActor;
+    payload?: unknown;
+  }): Promise<{ ok: boolean; payload?: unknown; error?: string }>;
+  endpoints(): { programId: string; endpoint: string; classification: string }[];
+};
 
 const PROGRAM_ID = "automation-studio";
 const REACHABLE: ReadonlySet<string> = new Set(["read", "authoring"]);
 
 export function automationStudioConversationCommandPort(input: {
-  registry: Pick<GlobalProgramApiRegistry, "call" | "endpoints">;
-  actor: ProgramApiActor;
-  scope: ProgramScope;
+  registry: AutomationStudioConversationCommandRegistry;
+  actor: AutomationStudioConversationCommandActor;
+  scope: AutomationStudioConversationCommandScope;
 }): AutomationStudioConversationCommandPort {
   return {
     async call(endpoint, payload) {

@@ -4,6 +4,11 @@
 
 import { readdirSync } from "node:fs";
 
+// Every directory under programs/, for the boundary that keeps the framework from importing one.
+const programDirectories = readdirSync(new URL("../../packages/fluxiq/src/programs/", import.meta.url), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name);
+
 export const CONFIG = {
   repository: "core",
 
@@ -85,6 +90,20 @@ export const CONFIG = {
       to: "packages/fluxiq/src/programs/automation-studio",
       reason: "Automation Studio is a controller of the framework (user, 2026-11-02), so the framework never depends on it. Only the program catalog composes it."
     })),
+    // The dependency points from a program to the framework, never back. Backend
+    // code a program shares with the framework (repositories, program state,
+    // performance metrics, ports the framework implements) lives in
+    // `framework/persistence` or the area that owns it. The program catalog,
+    // `programs/index.ts`, is the one file that composes programs, so it is the
+    // only target outside this list. Tests count: a test that needs a real
+    // program beside a framework subject lives in `src/tests/`.
+    ...["api-contracts", "client-gateway", "core", "domains", "flows", "framework", "io", "runtime", "ui"].flatMap((area) =>
+      programDirectories.map((program) => ({
+        from: `packages/fluxiq/src/${area}`,
+        to: `packages/fluxiq/src/programs/${program}`,
+        reason: "A program depends on the framework, never the reverse (user, 2026-11-02). Move what the framework needs to its owner, such as framework/persistence, or declare a port on the framework side that the program satisfies; only the program catalog, programs/index.ts, composes programs. A test that needs a real program lives in packages/fluxiq/src/tests."
+      }))
+    ),
     {
       from: "packages/fluxiq/src/runtime/automation-host",
       to: "packages/fluxiq/src/engine/automation",

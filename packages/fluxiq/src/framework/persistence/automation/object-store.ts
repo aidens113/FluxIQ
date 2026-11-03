@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JsonObject } from "../../../core/index.ts";
-import { safeSegment } from "../../../programs/_shared/storage.ts";
+import { safeSegment } from "../program-state/storage.ts";
 import type { AutomationStudioObjectIndex, AutomationStudioObjectOwner, AutomationStudioObjectSummary } from "./file-store.ts";
 
 export const AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES = 256 * 1024;

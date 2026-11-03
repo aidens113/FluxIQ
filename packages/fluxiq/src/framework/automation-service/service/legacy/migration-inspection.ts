@@ -1,5 +1,5 @@
 import { resolveAutomationStudioFlowCatalog, type AutomationStudioFlowMigrationOutcome } from "../../../../flows/authoring/model/index.ts";
-import { safeSegment } from "../../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../../persistence/program-state/storage.ts";
 import type { AutomationStudioCatalogue } from "../catalogue.ts";
 import { flowScopeForProject } from "../flows/index.ts";
 import type { AutomationStudioProjectStore } from "../projects/index.ts";

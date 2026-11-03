@@ -1,4 +1,4 @@
-import { ProgramJsonStore } from "../../../../programs/_shared/storage.ts";
+import { ProgramJsonStore } from "../../program-state/storage.ts";
 import { AutomationStudioProjectOwnerRecordSet as RecordSet } from "./owner-records.ts";
 import type { AutomationStudioProjectOwnerRecords, AutomationStudioProjectOwnerStore } from "./types.ts";
 

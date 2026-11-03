@@ -1,4 +1,4 @@
-import { safeSegment } from "../../../programs/_shared/storage.ts";
+import { safeSegment } from "../../persistence/program-state/storage.ts";
 
 // Three keyed promise chains, one per mutation domain. The two bootstrap
 // wrappers and the recording wrapper are deliberately NOT the same function:

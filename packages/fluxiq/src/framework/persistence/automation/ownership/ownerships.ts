@@ -1,11 +1,11 @@
 import path from "node:path";
-import type { IdentityAccessService } from "../../../../programs/identity-access/index.ts";
 import type { AutomationStudioService } from "../../../automation-service/index.ts";
 import { AutomationStudioGatewayTraceServicePools } from "../../../../runtime/recording/gateway-trace/wiring/index.ts";
 import { AutomationStudioProjectOwnerDocumentStore } from "./document-store.ts";
 import { AutomationStudioProjectOwnerMemoryStore } from "./memory-store.ts";
 import { AutomationStudioProjectOwnership } from "./ownership.ts";
 import { automationStudioServiceProjectCatalog } from "./service-catalog.ts";
+import type { AutomationStudioProjectOwnerDirectory } from "./types.ts";
 
 // One project ownership per Automation Studio service, made where the API is
 // registered and found again by the service (the project handlers read it to
@@ -29,7 +29,7 @@ export const AutomationStudioProjectOwnerships = Object.freeze({
    * read from `identityAccess`; without one there is no default owner, so a
    * project stays ownerless until its creator is recorded.
    */
-  create(service: AutomationStudioService, identityAccess: IdentityAccessService | undefined): AutomationStudioProjectOwnership {
+  create(service: AutomationStudioService, identityAccess: AutomationStudioProjectOwnerDirectory | undefined): AutomationStudioProjectOwnership {
     const ownership = new AutomationStudioProjectOwnership({
       store: AutomationStudioProjectOwnerships.storeFor(service),
       catalog: automationStudioServiceProjectCatalog(service),

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
 import { endpointResource } from "../../_shared/iam/index.ts";
-import { isJsonObject } from "../../_shared/storage.ts";
+import { isJsonObject } from "../../../framework/persistence/program-state/storage.ts";
 import {
   DATABASE_MANAGER_ENDPOINTS,
   type DatabaseManagerPutRecordRequest,
@@ -10,7 +10,7 @@ import {
   type DatabaseManagerStoreRequest
 } from "./contracts.ts";
 import type { DatabaseManagerService } from "../runtime/service.ts";
-import type { RepositoryScope } from "../types.ts";
+import type { RepositoryScope } from "../../../framework/persistence/repository/types.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 
 type SensitiveStoreGrant = { userId: string; storeKey: string; expiresAtMs: number };

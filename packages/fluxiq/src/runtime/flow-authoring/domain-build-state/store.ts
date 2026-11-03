@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { ProgramJsonStore, safeSegment } from "../../../programs/_shared/storage.ts";
+import { ProgramJsonStore, safeSegment } from "../../../framework/persistence/program-state/storage.ts";
 import { AutomationStudioFlowPaths, type AutomationStudioProjectPaths } from "../../../framework/automation-service/service/paths/index.ts";
 import { AutomationStudioDomainBuildStateDocument as Document } from "./document.ts";
 import { AUTOMATION_STUDIO_DOMAIN_BUILD_STATE_LIMITS as LIMITS } from "./limits.ts";

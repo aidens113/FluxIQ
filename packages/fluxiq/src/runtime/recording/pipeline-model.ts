@@ -1,5 +1,5 @@
 import type { RecordingSession } from "../../flows/authoring/model/index.ts";
-import { safeSegment } from "../../programs/_shared/storage.ts";
+import { safeSegment } from "../../framework/persistence/program-state/storage.ts";
 import type { PolicyProposalArtifact } from "./policy-model.ts";
 import type { RecordingFlowProposalArtifact } from "./recording-flow-proposal.ts";
 

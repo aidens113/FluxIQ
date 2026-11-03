@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { JsonObject } from "../../../../core/index.ts";
-import { SQLiteRepository, type SQLiteTransaction } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import { SQLiteRepository, type SQLiteTransaction } from "../../repository/sqlite-repository.ts";
 import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDatabaseLease } from "../project/database.ts";
 import { AutomationStudioProjectAuthorityGuardStore as Guard, type AuthorityGuardCompletionCapability, type AuthorityGuardLegacyRequest } from "../project/authority-guard/index.ts";
 import { CANONICAL_AUTHORITY_SCHEMA } from "./migration.ts";

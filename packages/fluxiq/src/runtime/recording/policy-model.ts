@@ -2,7 +2,7 @@ import type { JsonObject } from "../../core/index.ts";
 import type { LearnedTaskModel } from "../../framework/automation-service/learning/index.ts";
 import type { SignalMiningResult } from "../../framework/automation-service/mining/index.ts";
 import type { AutomationStudioFlowDocument, PolicyGraph, PolicyNode } from "../../flows/authoring/model/index.ts";
-import { safeSegment } from "../../programs/_shared/storage.ts";
+import { safeSegment } from "../../framework/persistence/program-state/storage.ts";
 
 export type PolicyProposalArtifact = {
   schemaVersion: "0.1";

@@ -1,4 +1,4 @@
-import type { SQLiteTransaction } from "../../../../programs/database-manager/storage/sqlite-repository.ts";
+import type { SQLiteTransaction } from "../../repository/sqlite-repository.ts";
 import type { CanonicalProjectLifecycle } from "./contracts.ts";
 import { CanonicalAuthorityValidation as V } from "./validation.ts";
 
