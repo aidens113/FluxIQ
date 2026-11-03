@@ -1,4 +1,4 @@
-import type { StateVisualLayer } from "fluxiq/automation-studio";
+import type { StateVisualLayer } from "fluxiq/automation";
 import type { StateFactViewModel, StateVisualTone } from "./model/types";
 
 export function visualToneForLayer(layer: StateVisualLayer): StateVisualTone {

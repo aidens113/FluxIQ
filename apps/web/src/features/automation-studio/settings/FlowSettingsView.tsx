@@ -1,6 +1,6 @@
 "use client";
 
-import { automationStudioLlmProviderDefaultModel } from "fluxiq/automation-studio/llm-models";
+import { automationStudioLlmProviderDefaultModel } from "fluxiq/automation/llm-models";
 
 import { Combobox, StatusBadge } from "../../programs/shared-ui";
 import { useEffect, useMemo, useState } from "react";

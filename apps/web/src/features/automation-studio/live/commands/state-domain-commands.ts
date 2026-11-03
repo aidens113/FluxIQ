@@ -1,4 +1,4 @@
-import type { StateSnapshot } from "fluxiq/automation-studio";
+import type { StateSnapshot } from "fluxiq/automation";
 import {
   openAutomationStateView,
   type AutomationStateCommandOutcome,

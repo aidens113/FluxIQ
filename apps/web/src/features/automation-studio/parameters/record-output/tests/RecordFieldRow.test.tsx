@@ -1,7 +1,7 @@
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationStudioRecordOutput } from "fluxiq/automation-studio/nodes";
+import type { AutomationStudioRecordOutput } from "fluxiq/automation/nodes";
 import { RecordFieldRow } from "../RecordFieldRow";
 
 const output: AutomationStudioRecordOutput = {

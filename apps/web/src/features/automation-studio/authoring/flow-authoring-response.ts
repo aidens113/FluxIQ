@@ -1,4 +1,4 @@
-import { parseAutomationStudioCandidateAuthoringResult, type AutomationStudioCandidateAuthoringResult } from "fluxiq/automation-studio/candidate-authoring";
+import { parseAutomationStudioCandidateAuthoringResult, type AutomationStudioCandidateAuthoringResult } from "fluxiq/automation/candidate-authoring";
 import type { ApiResponse } from "../../programs/program-api";
 
 /**

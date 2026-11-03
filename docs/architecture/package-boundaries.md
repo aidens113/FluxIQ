@@ -51,20 +51,20 @@ The runtime keeps its established public subpaths during the 0.1 compatibility
 period. New subpaths should be added only for an independently useful surface;
 internal folders are not automatically public API.
 
-`fluxiq/automation-studio/action-permissions` is the browser-safe display seam
+`fluxiq/automation/action-permissions` is the browser-safe display seam
 for a permission request Core already produced. It exports the consequence
 phrases, request type, and strict request parser only. Browser panels use this
 subpath instead of reaching into runtime source or importing the Node-oriented
-`fluxiq/automation-studio` barrel; permission declaration, gating, instruction
+`fluxiq/automation` barrel; permission declaration, gating, instruction
 authority, services, and storage remain server-only implementation surfaces.
 
 `fluxiq/runtime/target-matching` publishes browser-safe neutral matching contracts, score aggregation and state identity matching. It does not interpret selectors, XPath, HTML tags, URL metadata, classes or attributes. Domains register their matcher explicitly for importer, recording and output dispatch contexts. Without a registered matcher, Core delegates unresolved target selection to the host rather than choosing with an incomplete score.
 
 The web domain owns its calibrated comparisons and snapshot projection under `domain/src/element-fingerprint/` in the downstream repository. The extension and domain use that single implementation. Its missing/contradicted stable-identifier similarities remain -0.1 and -0.8; the ownership migration preserves these values. Web identity regressions are validated downstream.
 
-The legacy `fluxiq/automation-studio/fingerprinting` subpath remains a browser-safe compatibility surface for its names and serialized shapes. Its zero-argument factory now performs neutral state matching; callers requiring web comparisons must provide/register the downstream web matcher. Core never imports a downstream implementation. See [runtime ownership](runtime-ownership.md) for the migration map.
+The legacy `fluxiq/automation/fingerprinting` subpath remains a browser-safe compatibility surface for its names and serialized shapes. Its zero-argument factory now performs neutral state matching; callers requiring web comparisons must provide/register the downstream web matcher. Core never imports a downstream implementation. See [runtime ownership](runtime-ownership.md) for the migration map.
 
-`fluxiq/components/automation` is the browser-safe node seam (the legacy `fluxiq/automation-studio/nodes` export remains compatible) for contract
+`fluxiq/components/automation` is the browser-safe node seam (the legacy `fluxiq/automation/nodes` export remains compatible) for contract
 logic a browser host must not restate. Since t728 it re-exports by name, from
 `@fluxiq/contracts/automation`, record processing
 (`nodes/record-process.ts`): the condition, sort and presence vocabularies,
@@ -155,7 +155,7 @@ September 2026" and could only write a pattern of three days.
   refusal's message is Core's own sentence on how to write one.
 - A date bound never keeps a row whose value states no date it can read,
   whatever `not` says.
-- `fluxiq/automation-studio/nodes` re-exports no new name: a browser host judges
+- `fluxiq/automation/nodes` re-exports no new name: a browser host judges
   a date bound with `automationStudioRecordConditionHolds` as before.
 
 ### Next minor (unreleased): a candidate's node is told the steps before it, and the window counts only what is sent (`fluxiq`)
@@ -194,7 +194,7 @@ activity, or a tool reads build failures or Flow spend.
   record and `get-flow-spend` ([one purse per Flow creation](automation-studio/llm-flow-bootstrap.md#one-purse-per-flow-creation)).
 - `fluxiq/ui` activity status ([client gateway](automation-studio/client-gateway.md#per-step-activity-and-resolved-asks)).
 - Record processing and the recording-capture policy on
-  `fluxiq/automation-studio/nodes` (above), and `get-recording-capture-policy`
+  `fluxiq/automation/nodes` (above), and `get-recording-capture-policy`
   on the paired-client allowlist.
 - `automationStudioWithoutCardNumbers`; `AUTOMATION_STUDIO_REPEATED_ANSWER_REASON`
   in `@fluxiq/contracts/automation`.
@@ -1078,7 +1078,7 @@ records each cascaded edge deletion as its own operation, and its
 - `InputOutputBinding` gains an opt-in `recordInputPayload`. A binding that sets
   it keeps the input event's payload on the recorded action entry, under
   `metadata.inputPayload`. Other bindings are unchanged.
-- 182 names are newly exported from the root, `fluxiq/automation-studio` and
+- 182 names are newly exported from the root, `fluxiq/automation` and
   `fluxiq/programs`, most of them from `runtime/recovery/` and `runtime/llm/`.
 
 **For Core contributors.** The structure audit now fails a value import from
@@ -1412,7 +1412,7 @@ No type or export changed. One published number moves. An element candidate
 that does not carry a stable identifier the recording captured is now charged
 −0.1 of that identifier's weight where it was charged −0.55. A candidate
 carrying a *different* identifier is untouched and still costs −0.8. The two
-branches of `compareExactSignal` in `fluxiq/automation-studio/fingerprinting`
+branches of `compareExactSignal` in `fluxiq/automation/fingerprinting`
 are now the named constants `MISSING_STABLE_IDENTIFIER_SIMILARITY` and
 `CONTRADICTED_STABLE_IDENTIFIER_SIMILARITY`.
 
@@ -1488,7 +1488,7 @@ change under a minor increment.
 
 `AutomationStudioAdaptiveFailureClass` now lives in `@fluxiq/contracts`
 (`@fluxiq/contracts/automation`, with the frozen list
-`AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`) and `fluxiq/automation-studio`
+`AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`) and `fluxiq/automation`
 re-exports it under the same name. It gains seven members: `target_not_found`,
 `target_ambiguous`, `navigation_unexpected`, `output_not_observed`,
 `page_changed`, `auth_required`, and `user_intervention_required`.

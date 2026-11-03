@@ -22,7 +22,7 @@
 // The shapes read here are Core's own, measured against
 // `packages/fluxiq/src/runtime/conversations/`.
 
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "fluxiq/automation-studio/action-permissions";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "fluxiq/automation/action-permissions";
 
 /**
  * The consequence classes, taken from the exhaustive phrase map Core exports

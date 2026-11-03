@@ -14,7 +14,7 @@ does not invalidate the executed call, erase its evidence, or change its effect.
 Old results without this field remain valid and carry no temporary claim.
 
 `projectAutomationStudioFailureControlRecord`, exported by
-`@fluxiq/contracts/automation` and `fluxiq/automation-studio`, validates
+`@fluxiq/contracts/automation` and `fluxiq/automation`, validates
 the complete input before returning a fresh control-only record. It keeps
 category, code, retryable and any present stage, effect, retryAfterMs,
 certainNoEffect and transient. Expected/actual comparison text and the evidence

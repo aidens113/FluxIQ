@@ -7,7 +7,7 @@ import {
   automationStudioLlmModelProvider,
   automationStudioLlmProviderDefaultModel,
   assertAutomationStudioLlmModelBinding
-} from "fluxiq/automation-studio/llm-models";
+} from "fluxiq/automation/llm-models";
 import { FLOW_RESULT_CHECK_DEFAULT_VALUES, flowResultCheckDraftFromSettings, flowResultCheckSchedule, type FlowResultCheckDraft } from "./flow-result-check-model";
 import { FLOW_SIZE_SETTING } from "./max-nodes-setting";
 

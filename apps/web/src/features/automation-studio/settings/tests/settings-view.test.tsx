@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "fluxiq/automation-studio/llm-models";
+import { AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "fluxiq/automation/llm-models";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()

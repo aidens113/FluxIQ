@@ -3,7 +3,7 @@ import process from "node:process";
 import {
   AUTOMATION_STUDIO_BASELINE_NODE_COUNTS,
   measureAutomationStudioLegacyBaseline
-} from "fluxiq/automation-studio/testing";
+} from "fluxiq/automation/testing";
 
 const counts = process.argv.slice(2).map(Number).filter((value) => Number.isFinite(value) && value > 0);
 const selectedCounts = counts.length ? counts : [...AUTOMATION_STUDIO_BASELINE_NODE_COUNTS];

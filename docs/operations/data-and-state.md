@@ -48,7 +48,7 @@ synchronous registration function. The web server loads it once at startup
 with a native `import()` (`apps/web/src/instrumentation.ts`). Build it as an ES
 module (`.mjs`, or `.js` under `"type": "module"`): FluxIQ packages are
 ESM-only, and only an ES module host can import public subpaths such as
-`fluxiq/automation-studio`. A CommonJS host still loads if it imports nothing
+`fluxiq/automation`. A CommonJS host still loads if it imports nothing
 from FluxIQ at runtime. The web runtime creates the plain `FluxIQ`
 instance, applies this module, and lets the importer register recording domains,
 nodes, adapters, or other host-owned extensions before API routes and the

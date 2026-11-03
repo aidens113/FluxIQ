@@ -12,8 +12,8 @@ import path from "node:path";
 import ts from "typescript";
 import { run } from "../browser-imports.mjs";
 
-const NODES = "packages/fluxiq/src/framework/automation-service/nodes";
-const PARKING = "packages/fluxiq/src/runtime/automation-parking";
+const NODES = "packages/fluxiq/src/programs/automation-studio/nodes";
+const PARKING = "packages/fluxiq/src/programs/automation-studio/runtime/parking";
 
 const BUNDLES = {
   consumer: "the fixture browser bundle",
@@ -35,7 +35,7 @@ const CLEAN = {
   [`${PARKING}/parked-run.ts`]: "export const parkRun = () => 1;",
   [`${PARKING}/person-needed-tool-calls.ts`]: "export function personNeededToolCalls() { return globalThis.crypto.randomUUID(); }",
   // Never reached from an entry, so its Node import is not the rule's business.
-  "packages/fluxiq/src/framework/automation-service/service/store.ts": 'import { readFile } from "node:fs/promises";\nexport const store = readFile;'
+  "packages/fluxiq/src/programs/automation-studio/runtime/service/store.ts": 'import { readFile } from "node:fs/promises";\nexport const store = readFile;'
 };
 
 function makeCtx(files, bundles = BUNDLES) {

@@ -1,4 +1,4 @@
-import type { StateSnapshot } from "fluxiq/automation-studio";
+import type { StateSnapshot } from "fluxiq/automation";
 import { describe, expect, it, vi } from "vitest";
 import {
   AUTOMATION_STATE_ENDPOINTS,

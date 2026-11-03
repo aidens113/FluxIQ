@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertCircle, AlertTriangle, CircleCheck, Info } from "lucide-react";
-import { automationStudioLlmProviderDefaultModel } from "fluxiq/automation-studio/llm-models";
+import { automationStudioLlmProviderDefaultModel } from "fluxiq/automation/llm-models";
 import { flowLlmProvider, type FlowSettingsDraft } from "./flow-settings-model";
 import {
   AI_PROVIDER_ADAPTATION_OFF_EXPLANATION,

@@ -4,7 +4,7 @@ import {
   automationNodeStateBinding,
   isAutomationNodeParameterStateBinding,
   type AutomationNodeParameter
-} from "fluxiq/automation-studio/nodes";
+} from "fluxiq/automation/nodes";
 import type { JsonValue } from "fluxiq/core";
 import type { JsonObject } from "../../programs/program-api";
 import { RecordOutputEditor, recordOutputParameterError } from "./record-output";

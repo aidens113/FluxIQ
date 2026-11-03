@@ -2,7 +2,7 @@ import { Info } from "lucide-react";
 import {
   AUTOMATION_STUDIO_RECORD_FIELD_HANDLINGS,
   type AutomationStudioRecordFieldHandling
-} from "fluxiq/automation-studio/nodes";
+} from "fluxiq/automation/nodes";
 import { Tooltip } from "../../../programs/shared-ui";
 
 const HANDLING_LABELS: Readonly<Record<AutomationStudioRecordFieldHandling, string>> = {

@@ -255,7 +255,11 @@ export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecu
         `pragma busy_timeout = ${Math.max(100, Math.trunc(input.busyTimeoutMs))}`
       ].join(";\n")));
     } catch (error) {
-      await database.close().catch(() => undefined);
+      try {
+        await database.close();
+      } catch (closeError) {
+        throw new AggregateError([error, closeError], "Project database setup and close failed.", { cause: error });
+      }
       throw error;
     }
     return database;
@@ -290,7 +294,11 @@ export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecu
         await executor.run("commit");
         return result;
       } catch (error) {
-        await executor.run("rollback").catch(() => undefined);
+        try {
+          await executor.run("rollback");
+        } catch (rollbackError) {
+          throw new AggregateError([error, rollbackError], "Project database transaction and rollback failed.", { cause: error });
+        }
         throw error;
       }
     });

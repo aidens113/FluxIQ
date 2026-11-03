@@ -2,7 +2,7 @@
 
 import { ListChecks, Trash2 } from "lucide-react";
 import { Handle, Position } from "@xyflow/react";
-import type { AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import type { AutomationNodePort } from "fluxiq/automation/nodes";
 import { automationPortCaption, automationPortDisplayLabel, automationPortTitle, automationPortTone } from "../../graph/ports";
 import { useFlowEditorActions } from "./FlowEditorActionsContext";
 export function NodePortList(props: { inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; definitionId?: string | undefined }) {

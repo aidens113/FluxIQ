@@ -37,7 +37,7 @@ New consumers use:
 - `fluxiq/runtime/models` and `fluxiq/runtime/agents` for generic model-backed execution;
 - `fluxiq/flows/executable/dsl` for declarative executable compilation.
 
-Legacy `fluxiq/automation-studio` entry points retain their exported names and delegate toward framework owners. Existing Studio-prefixed symbols remain compatible during this ownership migration. Schema discriminators, graph fields and stored target payloads remain unchanged.
+Legacy `fluxiq/automation` entry points retain their exported names and delegate toward framework owners. Existing Studio-prefixed symbols remain compatible during this ownership migration. Schema discriminators, graph fields and stored target payloads remain unchanged.
 
 The rich executor preserves retry floors, lasting-act uncertainty protection, stale-source reacquisition, lifecycle handling, record withholding and partial-run behavior. Studio composition may bind its legacy presentation/classification adapter while domains provide their concrete host behavior.
 

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 it("bundles the actual compiled public candidate entry in a browser without server dependencies", async () => {
   const packageRoot = fileURLToPath(new URL("../../../../../..", import.meta.url));
   const result = await build({
-    stdin: { contents: 'export { parseAutomationStudioCandidateAuthoringResult } from "fluxiq/automation-studio/candidate-authoring";', resolveDir: packageRoot },
+    stdin: { contents: 'export { parseAutomationStudioCandidateAuthoringResult } from "fluxiq/automation/candidate-authoring";', resolveDir: packageRoot },
     tsconfigRaw: {}, platform: "browser", format: "esm", bundle: true, write: false, metafile: true,
   });
   const inputs = Object.keys(result.metafile!.inputs).map((input) => input.split(path.sep).join("/"));

@@ -4,7 +4,7 @@ import {
   AUTOMATION_STUDIO_RECORD_VALUE_TYPES,
   type AutomationStudioRecordOutput,
   type AutomationStudioRecordValueType
-} from "fluxiq/automation-studio/nodes";
+} from "fluxiq/automation/nodes";
 import { FieldHandlingControl } from "./FieldHandlingControl";
 import {
   moveRecordField,

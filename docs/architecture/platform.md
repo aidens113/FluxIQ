@@ -379,7 +379,7 @@ not a project answers no owner.
 
 Trusted in-process host initialization can record a project's creator with
 `recordAutomationStudioCreatedProjectOwner(service, projectId, userId)` from
-`fluxiq/automation-studio`, reusing that service's registered owner resolver.
+`fluxiq/automation`, reusing that service's registered owner resolver.
 It refuses missing registration, nonexistent projects, empty owners and a
 different recorded creator. Repeating the same creator is safe, including a
 retry after creating the project but failing to assign its owner; a migration

@@ -69,7 +69,7 @@ export type ConversationReadRequest = FlowProjectRequest & {
  * do not come through the API.
  *
  * With `capabilities` the turn is also read as an instruction. That is the
- * panel's vocabulary (`fluxiq/automation-studio/panel-capabilities`), handed
+ * panel's vocabulary (`fluxiq/automation/panel-capabilities`), handed
  * across on every message so Core never keeps a second catalog; Core stores the
  * turn first, has the model decide whether to run a capability, ask one
  * question or reply, writes that into the thread, and answers with the

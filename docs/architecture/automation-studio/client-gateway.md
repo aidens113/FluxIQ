@@ -22,7 +22,7 @@ The reusable gateway lives under `packages/fluxiq/src/client-gateway/`:
 - `@fluxiq/client-gateway-websocket` is the client half of the gateway for
   WebSocket-capable recorders and executors. It re-exports the same protocol
   types as `fluxiq/client-gateway` and the same Automation Studio recording
-  request types as `fluxiq/automation-studio`. Its Automation Studio facade
+  request types as `fluxiq/automation`. Its Automation Studio facade
   mirrors direct-import method params such as `createRecording`,
   `appendRecordingEvent`, `appendRecordingDomainEvent`, and
   `finalizeRecording`, but implements them by sending websocket messages.
@@ -389,7 +389,7 @@ stop a run, and use its automation and recording controls:
 **The recording-capture policy is Core's (t728).** What a recording may capture
 is defined once in `@fluxiq/contracts/automation`
 (`packages/contracts/src/recording-capture/`), re-exported for browser code by
-name from `fluxiq/automation-studio/nodes`, never the Node barrel. A policy is
+name from `fluxiq/automation/nodes`, never the Node barrel. A policy is
 `{ captureInputValues, captureSnapshots, captureMutations: { allowed, default },
 directRequests: { allowed } }`. `AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY`
 (deep-frozen) allows all three capture switches, on by default, and does not

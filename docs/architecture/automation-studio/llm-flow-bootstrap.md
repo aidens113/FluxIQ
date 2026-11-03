@@ -1052,7 +1052,7 @@ contains an ID reference, not execution or acceptance authority. Explicit plain
 structural generation and raw omitted-mode API compatibility remain legacy.
 
 Browser consumers import the pure parser from
-`fluxiq/automation-studio/candidate-authoring`, rather than the server-bearing
+`fluxiq/automation/candidate-authoring`, rather than the server-bearing
 automation-studio barrel. The owning Fluxiq build validates and removes its fixed
 generated library outputs before compilation so relocated modules cannot survive
 as orphan artifacts. Neither browser compilation nor a draft response proves
@@ -3209,7 +3209,7 @@ A dry run moves the page without the loop seeing it, so the last state is
 forgotten until a call reports one. The domain's `answered_the_same_again`
 mark (one constant for Core and domains since t728,
 `AUTOMATION_STUDIO_REPEATED_ANSWER_REASON` in `@fluxiq/contracts/automation`,
-republished from `fluxiq/automation-studio`; Core's activity wording, the
+republished from `fluxiq/automation`; Core's activity wording, the
 unfinished-build last fix and `fluxiq/ui`'s failure reason all read it)
 and `repeatedAnswer` stay as what they were, a marking, and the
 no-progress guard stays the far backstop. Live runs `run-muq310ht-ab80eed0`
@@ -3664,7 +3664,7 @@ The registry's `evidenceLoopBinding(context, resolution)`
 built-in options and the domain's alike, inside
 `runWithAutomationStudioEvidenceBuildScope`; `core.recall_result` sits outside
 it. Anywhere inside its `executeTool`, after awaits included, the domain reads
-`automationStudioEvidenceBuildScope()` (from `fluxiq/automation-studio`), a
+`automationStudioEvidenceBuildScope()` (from `fluxiq/automation`), a
 frozen `{ projectId, flowId, buildId, callScope?, opening?, move? }`, or
 `undefined` outside a registry call.
 

@@ -145,7 +145,7 @@ export type GetRecordingCapturePolicyRequest = {
 /**
  * The policy a client offers the person and clamps its settings to, with
  * `clampAutomationStudioRecordingCaptureSettings` from
- * `@fluxiq/contracts/automation` (browser code: `fluxiq/automation-studio/nodes`).
+ * `@fluxiq/contracts/automation` (browser code: `fluxiq/automation/nodes`).
  */
 export type GetRecordingCapturePolicyResponse = {
   policy: AutomationStudioRecordingCapturePolicy;

@@ -438,7 +438,7 @@ function webLogger(): Logger {
 /**
  * Loads FLUXIQ_HOST_MODULE with a native dynamic import(). FluxIQ packages are
  * ESM-only and export only the `import` condition, so a host reaches public
- * subpaths such as `fluxiq/automation-studio` only as an ES module; require()
+ * subpaths such as `fluxiq/automation` only as an ES module; require()
  * cannot resolve them. import() also still loads a CommonJS host that needs no
  * FluxIQ runtime import. Registration stays synchronous, so the web server
  * awaits this once at startup (src/instrumentation.ts) before creating the runtime.

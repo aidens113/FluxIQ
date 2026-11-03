@@ -1,4 +1,4 @@
-import type { StateSnapshot } from "fluxiq/automation-studio";
+import type { StateSnapshot } from "fluxiq/automation";
 import {
   AUTOMATION_STATE_ENDPOINTS,
   stateCommandPostflight,

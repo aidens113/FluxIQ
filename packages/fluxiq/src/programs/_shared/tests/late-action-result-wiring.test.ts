@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION } from "../../../client-gateway/index.ts";
-import { runWithAutomationStudioActivity } from "../../automation-studio/index.ts";
+import { runWithAutomationStudioActivity } from "../../../framework/automation-service/public/index.ts";
 import { createRunnableCanonicalFlow } from "../../../framework/automation-service/tests/service-fixtures.ts";
 import { createGlobalProgramRuntime } from "../../index.ts";
 

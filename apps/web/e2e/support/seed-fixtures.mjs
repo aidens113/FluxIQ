@@ -2,7 +2,7 @@ import { mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
-import { createAutomationStudioLargeProjectFixture } from "fluxiq/automation-studio";
+import { createAutomationStudioLargeProjectFixture } from "fluxiq/automation";
 
 const FIXTURE_MARKER = "fluxiq-e2e-fixture-v1";
 const FIXED_NOW_MS = Date.UTC(2026, 0, 15, 12, 0, 0);

@@ -619,7 +619,7 @@ host must explicitly bind the exact package ID and version:
 import {
   AutomationStudioNativeNodeRuntime,
   type AutomationStudioImporterSdkManifest
-} from "fluxiq/automation-studio";
+} from "fluxiq/automation";
 
 const manifest: AutomationStudioImporterSdkManifest = {
   schemaVersion: "0.1",
@@ -666,7 +666,7 @@ When the web panel is serving Automation Studio, bind the same runtime from the
 host module loaded through `FLUXIQ_HOST_MODULE`. Build the host as an ES
 module: the web server loads it once at startup with a native `import()`, and
 FluxIQ's packages are ESM-only, so the host imports public entry points such as
-`fluxiq` or `fluxiq/automation-studio` and never deep-imports paths under
+`fluxiq` or `fluxiq/automation` and never deep-imports paths under
 `dist/`. The registration must be synchronous:
 
 ```ts

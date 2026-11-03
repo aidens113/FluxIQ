@@ -8,7 +8,7 @@ import { FluxIQ } from "fluxiq";
 import {
   AutomationStudioProjectDatabasePool,
   AutomationStudioProjectFlowResourceRepository,
-} from "fluxiq/automation-studio";
+} from "fluxiq/automation";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureRoot = path.resolve(process.env.FLUXIQ_E2E_FIXTURE_ROOT ?? path.join(webRoot, ".e2e-host"));

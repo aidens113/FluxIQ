@@ -1,5 +1,5 @@
 import { MarkerType, type Edge, type Node } from "@xyflow/react";
-import type { AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import type { AutomationNodePort } from "fluxiq/automation/nodes";
 import type { JsonObject } from "../../../programs/program-api";
 import { automationEditorPalette } from "../node-palette";
 import type { AutomationEditorNodeSpec, AutomationFlowNodeData } from "../node-types";

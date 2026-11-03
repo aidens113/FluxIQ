@@ -2,7 +2,7 @@
 
 import { DataTable } from "../../programs/components";
 import { JsonToggle } from "../runtime";
-import type { AutomationStudioRecordField, AutomationStudioRecordSchema } from "fluxiq/automation-studio/nodes";
+import type { AutomationStudioRecordField, AutomationStudioRecordSchema } from "fluxiq/automation/nodes";
 
 export type RunDatasetTableProps = {
   label: string;

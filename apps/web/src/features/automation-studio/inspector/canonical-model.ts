@@ -1,4 +1,4 @@
-import type { NodeStatePhase } from "fluxiq/automation-studio";
+import type { NodeStatePhase } from "fluxiq/automation";
 import type { JsonObject } from "../../programs/program-api";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import { inspectorIdentity } from "./inspector-identity";

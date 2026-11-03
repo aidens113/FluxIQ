@@ -312,7 +312,7 @@ deadline; refused, truncated and malformed paid replies retain usage and cost. D
 content, nested JSON-text layers and the final structured answer are credential
 screened before raw reply logging or return. Rejected raw answers stay unlogged.
 
-The browser-safe `fluxiq/automation-studio/llm-models` export retains the
+The browser-safe `fluxiq/automation/llm-models` export retains the
 DeepSeek names and adds `AUTOMATION_STUDIO_ANTHROPIC_MODELS`,
 `AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL` (`claude-sonnet-5-5`) and
 `AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS`. Sonnet, Haiku and Opus 5.5 have 1M
@@ -580,7 +580,7 @@ preflight code, situation state, repair contracts, result rows and summaries,
 replay cells and thrown text dropped or withheld -- now treats a card number as
 a secret; a failed Luhn check, a timestamp, an order number, a SKU or a phone
 number is not one. `automationStudioWithoutCardNumbers(text, marker)` (from
-`fluxiq/automation-studio`) replaces each card run with `marker` and keeps every
+`fluxiq/automation`) replaces each card run with `marker` and keeps every
 other character. A domain that would rather keep the rest of a string runs it
 in place before the screen, as the web domain does with its withheld marker;
 left to the screen, a card costs the whole value.
@@ -1512,7 +1512,7 @@ non-retryable state mismatch.
 Failed attempts carry a structured failure when one is known. Core owns the one
 category list, `AutomationStudioAdaptiveFailureClass`, exported from
 `@fluxiq/contracts` with `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES` and
-re-exported by `fluxiq/automation-studio`. A domain decides which member
+re-exported by `fluxiq/automation`. A domain decides which member
 applies and reports an `AutomationStudioFailureRecord` (`category`, a
 producer-owned `code`, `retryable`, and optional `stage`, `expected`, `actual`,
 and `evidenceDigest`) on the gateway action result, the runtime command result,
@@ -2709,7 +2709,7 @@ The first slice also defines contract-only homes for upcoming stages:
   context, the `FingerprintScorer` interface, and common element fingerprint
   matching used by recording mappers and native runtime output logic. It is the
   one Automation Studio folder published as its own package subpath,
-  `fluxiq/automation-studio/fingerprinting`, because a host that scores element
+  `fluxiq/automation/fingerprinting`, because a host that scores element
   candidates runs where the elements are and may have no Node runtime at all.
   The folder therefore holds no runtime imports, and a test inside it fails the
   build if one appears. See [package boundaries](package-boundaries.md).

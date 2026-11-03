@@ -59,7 +59,11 @@ export class AutomationStudioProjectUnitOfWork {
       }).migrate();
       return new AutomationStudioProjectUnitOfWork(lease);
     } catch (error) {
-      await lease.release();
+      try {
+        await lease.release();
+      } catch (releaseError) {
+        throw new AggregateError([error, releaseError], "Project unit-of-work migration and lease release failed.", { cause: error });
+      }
       throw error;
     }
   }
@@ -133,7 +137,11 @@ export class AutomationStudioProjectUnitOfWork {
       });
     } catch (error) {
       if (error instanceof IdempotentReplayError) throw error;
-      await this.persistFailure({ mutationId, operationKind, ownerKind, ownerId, requestDigest, changedAt, expiresAt: input.expiresAt ?? null, error });
+      try {
+        await this.persistFailure({ mutationId, operationKind, ownerKind, ownerId, requestDigest, changedAt, expiresAt: input.expiresAt ?? null, error });
+      } catch (persistenceError) {
+        throw new AggregateError([error, persistenceError], "Project mutation and failure recording failed.", { cause: error });
+      }
       throw error;
     }
   }

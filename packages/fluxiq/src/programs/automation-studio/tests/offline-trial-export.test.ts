@@ -2,7 +2,7 @@
 // barrel, and so through the package's `./automation-studio` entry, which a
 // downstream Lab calls it by.
 import { describe, expect, it } from "vitest";
-import * as automationStudio from "../index.ts";
+import * as automationStudio from "../../../framework/automation-service/public/index.ts";
 import * as runtime from "../../../framework/automation-service/index.ts";
 import { AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS, automationStudioOfflineTrialEvidenceResult, runAutomationStudioOfflineCandidateTrial } from "../../../framework/automation-service/service/offline-trial/index.ts";
 

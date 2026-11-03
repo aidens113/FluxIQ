@@ -19,8 +19,8 @@ Internal validation distinguishes rejection from unreadable reflection before
 the public optional API projects either to unknown.
 
 The type and reader are available from `@fluxiq/contracts/automation`,
-`fluxiq/automation-studio` and the browser-pure
-`fluxiq/automation-studio/actionability` entry.
+`fluxiq/automation` and the browser-pure
+`fluxiq/automation/actionability` entry.
 
 ## Wire compatibility
 
