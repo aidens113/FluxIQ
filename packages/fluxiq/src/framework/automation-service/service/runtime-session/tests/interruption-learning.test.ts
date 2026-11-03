@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
-import type { AutomationStudioInterruptionLearningRequest } from "../../../executor/lifecycle-run/index.ts";
+import type { AutomationStudioInterruptionLearningRequest } from "../../../../../engine/automation/lifecycle-run/index.ts";
 import type { AutomationStudioTrainingModeBehavior } from "../../../../../runtime/adaptation/training-modes.ts";
 import { runtimeRunDetailWithAdaptationContext, settleAutomationStudioJudgedPromotions } from "../../runtime-adaptation/index.ts";
 import { bindAutomationStudioInRunRepair } from "../in-run-repair.ts";

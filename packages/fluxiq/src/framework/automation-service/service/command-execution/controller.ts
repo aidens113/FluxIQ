@@ -1,7 +1,7 @@
 import type { ClientGatewayCommandContext, ClientGatewayCommandLedgerLease } from "../../../../client-gateway/service/command-ledger/index.ts";
 import { AutomationStudioCommandRunController, type AutomationStudioCommandRunScope, type AutomationStudioCommandRunOwner, type AutomationStudioCommandEffectProvenance } from "../command-run/index.ts";
-import { AutomationStudioNodeAttemptExecution } from "../../executor/node-execution/index.ts";
-import type { AutomationStudioExecutorCommandRun } from "../../executor/command-scope/index.ts";
+import { AutomationStudioNodeAttemptExecution } from "../../../../engine/automation/node-execution/index.ts";
+import type { AutomationStudioExecutorCommandRun } from "../../../../engine/automation/command-scope/index.ts";
 import { AutomationStudioCanonicalExecution } from "../../composite-execution/index.ts";
 import type { AutomationStudioCommandExecutionPorts } from "./contracts.ts";
 

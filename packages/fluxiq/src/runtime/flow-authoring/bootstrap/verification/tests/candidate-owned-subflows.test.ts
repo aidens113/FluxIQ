@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runAutomationStudioDetachedCandidate } from "../index.ts";
 import { candidateSubflowFixture } from "./subflow-fixture.ts";
-import { automationStudioRootInvocation } from "../../../../../framework/automation-service/executor/frames/index.ts";
+import { automationStudioRootInvocation } from "../../../../../engine/automation/frames/index.ts";
 import { automationNodeStateBinding } from "../../../../../framework/automation-service/nodes/index.ts";
 
 describe("detached candidate-owned sibling graphs", () => {

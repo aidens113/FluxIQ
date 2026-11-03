@@ -31,7 +31,7 @@ import {
   type AutomationStudioFlowDraftAmendmentChange,
   type AutomationStudioFlowDraftBindingContext
 } from "../flow-authoring/draft/index.ts";
-import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
+import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "./evidence-diagnostic/index.ts";
 import type {
   AutomationStudioLlmEvidenceRestoredStep,

@@ -36,7 +36,7 @@ export * from "./incomplete-draft/index.ts";
 export * from "./instructed-acts/index.ts";
 export * from "./offline-first/index.ts";
 export * from "./person-needed.ts";
-export * from "./plan.ts";
+export * from "./plan/index.ts";
 export * from "./reachability/index.ts";
 export * from "./review-projection.ts";
 export * from "./start-location.ts";

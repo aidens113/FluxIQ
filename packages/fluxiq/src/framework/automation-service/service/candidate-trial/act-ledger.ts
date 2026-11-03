@@ -39,7 +39,7 @@
 
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
-import { controlFlowNodes } from "../../nodes/control-flow/index.ts";
+import { controlFlowNodes } from "../../../../components/automation/control-flow/index.ts";
 import { automationStudioNodeActLasts, automationStudioNodeSideEffectClass, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { automationStudioOptionalStepGuardedGroup } from "../../executor/step-skip/index.ts";
 import { automationStudioAttemptSettled } from "../../../../runtime/adaptation/flow-change/index.ts";

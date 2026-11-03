@@ -204,7 +204,7 @@
 // `notRunLeftOut` counts the rest. A trial whose every step ran says nothing.
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
-import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
+import { automationStudioZeroPassLoopBodies } from "../../../../engine/automation/graph-navigation/index.ts";
 import { automationStudioStepNotRunSaid } from "../../executor/step-skip/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";

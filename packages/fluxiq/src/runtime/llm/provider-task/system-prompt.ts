@@ -1,6 +1,6 @@
 import { automationStudioExploredEvidenceLabel } from "../harness/explored-evidence-label.ts";
 import { automationStudioLlmTaskExpectsDiagnosis } from "../harness/task-kind.ts";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { automationStudioDiagnosisPromptInstruction } from "../diagnosis-instructions.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION } from "../evidence-loop-decision.ts";
 import { automationStudioLlmTaskOutputSchema } from "./output-schema.ts";

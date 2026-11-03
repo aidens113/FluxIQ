@@ -62,7 +62,7 @@
 // Core's message is still there.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { automationStudioDeepSeekMessages } from "../request-body.ts";
 import { automationStudioDeepSeekSystemPrompt } from "../system-prompt.ts";
 

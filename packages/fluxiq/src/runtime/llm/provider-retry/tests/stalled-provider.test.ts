@@ -23,11 +23,11 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, createAutomationStudioDeepSeekProvider } from "../../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../index.ts";
-import { automationStudioLlmProviderCall } from "../call.ts";
-import { AutomationStudioLlmProviderRetryLedger } from "../ledger.ts";
+import { automationStudioLlmProviderCall } from "../../../models/retry/index.ts";
+import { AutomationStudioLlmProviderRetryLedger } from "../../../models/retry/index.ts";
 
 const DEADLINE_MS = 1_500;
 const FAKE_SECRET = "local-test-only-secret-0000";

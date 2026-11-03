@@ -14,7 +14,7 @@
 // Domain-neutral on purpose: the shapes are strings Core screens, not fields
 // it reads (the web-vocabulary rule counts names, never data).
 
-import { automationStudioLocatorShapedText } from "../harness/locator-text.ts";
+import { automationStudioLocatorShapedText } from "../screening/index.ts";
 
 /** Words that only ever name how a control is found, never an ordinary control's words. */
 const FINDING_ONLY_WORDS = /\b(?:selectors?|fingerprint(?:s|ed)?)\b/iu;

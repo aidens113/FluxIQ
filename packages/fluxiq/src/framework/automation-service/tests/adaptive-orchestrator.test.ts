@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowAdaptation } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure, type AutomationStudioAdaptiveFailureClass } from "../../../runtime/adaptation/adaptive-orchestrator.ts";
 
 describe("Automation Studio adaptive failure classifier", () => {

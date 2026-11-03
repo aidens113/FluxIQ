@@ -23,7 +23,7 @@
 // they arrive whole exactly when the verdict does, and the harness holds each
 // to its shape as it would in a whole reply.
 
-import { isRecord } from "./json-record.ts";
+import { isRecord } from "../provider-transport/index.ts";
 
 /** What a reader of the call is told in place of the cut summary. Words for a person only: the verdict rule reads `truncatedAfterVerdict`. */
 const CUT_SUMMARY = "The reply was cut off at the provider's output limit after its diagnosis closed; what followed it did not arrive whole and is not read.";

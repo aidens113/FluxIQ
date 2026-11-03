@@ -11,8 +11,8 @@ import type { FluxIQRuntimeCommandStatus, FluxIQRuntimeWithheldValues, RuntimeSe
 import { readRuntimeTargetActionability } from "../../runtime/result-control/index.ts";
 import { normalizeAutomationStudioElementTarget, type AutomationStudioElementTarget, type PolicyAction } from "../../flows/authoring/model/index.ts";
 import type { ElementMatcher } from "../../runtime/target-matching/index.ts";
-import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution } from "./nodes/contracts.ts";
-import { automationStudioReferenceNow } from "./reference-now/index.ts";
+import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution } from "../../components/automation/index.ts";
+import { automationStudioReferenceNow } from "../../runtime/reference-time/index.ts";
 
 type PolicyOutputAction = Pick<PolicyAction, "outputId" | "actionType" | "parameters" | "confirmationInputId" | "confirmationTimeoutMs" | "metadata">;
 type ConfirmationOutcome = { ok: true } | { ok: false; error: string; cancelled: boolean };

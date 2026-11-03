@@ -22,7 +22,7 @@ import { buildAutomationStudioFlowBootstrapContext } from "../../../flow-authori
 import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstrap/plan/tests/index.ts";
 import { AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID, startAutomationStudioBuildRouting, type AutomationStudioBuildRouting } from "../../../../framework/automation-service/route-state/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../evidence-loop.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { buildAutomationStudioDeepSeekRequestBody } from "../request-body.ts";
 
 const registry = new AutomationStudioNodeRegistry(webDomainNodeDefinitionsFixture());

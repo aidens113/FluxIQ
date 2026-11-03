@@ -5,7 +5,7 @@ import { defineOutput, IoRegistry } from "../../../io/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, automationNodeStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationNodeExecutionResult, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeNodeContext, type AutomationStudioNodeDefinition } from "../nodes/index.ts";
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../executor/index.ts";
-import { runAutomationStudioGraph } from "../executor.ts";
+import { runAutomationStudioGraph } from "../executor/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../../runtime/flow-authoring/bootstrap/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../native-node-runtime.ts";
 import { automationStudioRunGraphOptions } from "../service/runtime-session/index.ts";

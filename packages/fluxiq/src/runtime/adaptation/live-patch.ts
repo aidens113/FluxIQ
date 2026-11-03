@@ -10,7 +10,7 @@ import {
   type AutomationStudioFlowNode
 } from "../../flows/authoring/model/index.ts";
 import { classifyAutomationStudioAdaptiveFailure } from "./adaptive-orchestrator.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "../../framework/automation-service/executor.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "../../framework/automation-service/executor/index.ts";
 import {
   AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS,
   automationStudioChangeValidationResult,

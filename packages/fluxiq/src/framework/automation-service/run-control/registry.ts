@@ -9,7 +9,7 @@
 // already over answers with the run as it ended.
 
 import { AutomationStudioRunController } from "./run-controller.ts";
-import type { AutomationStudioRunControlHolder, AutomationStudioRunControlPhase, AutomationStudioRunControlSnapshot } from "./types.ts";
+import type { AutomationStudioRunControlHolder, AutomationStudioRunControlPhase, AutomationStudioRunControlSnapshot } from "../../../runtime/automation-host/index.ts";
 
 export type AutomationStudioRunControlRegistryOptions = {
   now?: () => number;

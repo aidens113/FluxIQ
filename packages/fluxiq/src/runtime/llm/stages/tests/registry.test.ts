@@ -4,7 +4,7 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION,
   buildAutomationStudioLlmEvidenceLoopDecisionSchema
 } from "../../evidence-loop.ts";
-import { runAutomationStudioLlmHarness } from "../../harness.ts";
+import { runAutomationStudioLlmHarness } from "../../harness/index.ts";
 import {
   AUTOMATION_STUDIO_CORE_LOOP_EVIDENCE_TOOL_POLICY_INSTRUCTION,
   AUTOMATION_STUDIO_CORE_LOOP_STAGE_INSTRUCTIONS,

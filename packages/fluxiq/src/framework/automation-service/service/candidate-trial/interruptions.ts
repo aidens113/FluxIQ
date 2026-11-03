@@ -38,7 +38,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioClearedLayerKind, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
-import { automationStudioLayerKindOf } from "../../executor/node-execution/index.ts";
+import { automationStudioLayerKindOf } from "../../../../engine/automation/node-execution/index.ts";
 
 /** The most closed layers one step lists. */
 const MAX_INTERRUPTIONS = 4;

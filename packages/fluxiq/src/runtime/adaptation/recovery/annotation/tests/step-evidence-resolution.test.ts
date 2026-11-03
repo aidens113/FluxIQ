@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionPermissionCheck, type AutomationStudioPlanActionEffectSource } from "../../../../action-permission-requests/index.ts";
-import type { AutomationStudioFactCondition } from "../../../../../framework/automation-service/executor/lifecycle/index.ts";
+import type { AutomationStudioFactCondition } from "../../../../../engine/automation/lifecycle/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmExploredEvidenceSlot, AutomationStudioRuntimePatch } from "../../../../llm/index.ts";
 import { automationStudioRecoveryStepResolution } from "../step-evidence-resolution.ts";
 

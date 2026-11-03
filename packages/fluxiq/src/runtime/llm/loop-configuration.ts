@@ -18,7 +18,7 @@ import {
 } from "./loop-limits/index.ts";
 import type { AutomationStudioLlmEvidenceFinishingTools, AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
-import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
+import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
 import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-authoring/draft/scheduled-candidate/index.ts";
@@ -27,7 +27,7 @@ import type { AutomationStudioRunEnvironment } from "../../framework/automation-
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import { automationStudioLlmEvidenceLoopConfigurationIssue as issue, type AutomationStudioLlmEvidenceLoopConfigurationIssue } from "./configuration-issue/index.ts";
 import type { AutomationStudioLlmEvidencePlanningTools } from "./evidence-progress/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "./unreadable-reply.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "../models/failures/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW,
   type AutomationStudioLlmEvidenceCompletionCheck,

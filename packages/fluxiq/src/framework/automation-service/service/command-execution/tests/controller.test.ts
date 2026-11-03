@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { FluxIQ } from "../../../../index.ts";
-import { runAutomationStudioGraph } from "../../../executor.ts";
+import { runAutomationStudioGraph } from "../../../executor/index.ts";
 import { ClientGatewayService, CLIENT_GATEWAY_PROTOCOL_VERSION } from "../../../../../client-gateway/index.ts";
 import { ClientGatewayCommandContext } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import { IoRegistry, defineOutput } from "../../../../../io/index.ts";

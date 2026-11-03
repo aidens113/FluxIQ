@@ -38,7 +38,7 @@ import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
 import { automationStudioActivityCallContext } from "./call-context.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 import { automationStudioActivityDraftEdit, automationStudioActivityNarration, automationStudioActivityRefusedCall } from "./decision-answer/index.ts";
-import { emitAutomationStudioActivity } from "./emit.ts";
+import { emitAutomationStudioActivity } from "../activity/index.ts";
 import { automationStudioActivityFoldedTest } from "./folded-test/index.ts";
 import { emitAutomationStudioActivityThought } from "./thought.ts";
 import { automationStudioActivityRepeatedReason } from "./repeated-reason.ts";

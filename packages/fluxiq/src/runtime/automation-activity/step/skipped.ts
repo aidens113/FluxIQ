@@ -1,5 +1,5 @@
 import type { ClientGatewayActivity, ClientGatewayActivitySkip } from "@fluxiq/contracts/client-gateway";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 
 /**
  * Says that a run step was skipped rather than run (t416): one `step` row

@@ -3,7 +3,7 @@
 // limits it gets back. Nothing here authorizes spending: the resolver hands
 // back a provider on the caller's own key, and the run's budget bounds it.
 import type { JsonObject } from "../../core/index.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "./harness.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "./harness/index.ts";
 import type { AutomationStudioLlmModelCaller } from "./model-caller.ts";
 
 export type AutomationStudioLlmProviderResolution = {

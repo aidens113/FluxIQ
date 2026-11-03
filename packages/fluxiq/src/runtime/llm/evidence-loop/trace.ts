@@ -23,7 +23,7 @@ import { AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, type AutomationStudioFlow
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation";
 import type { AutomationStudioLlmEvidenceRowTransition } from "../decision-handlers/index.ts";
-import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
+import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerability.ts";
 import type { AutomationStudioLlmEvidenceRestoredStep } from "./completion-check.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftChange } from "./draft-change.ts";

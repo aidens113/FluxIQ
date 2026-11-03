@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createAutomationStudioFixture } from "../fixtures.ts";
+import { createAutomationStudioFixture } from "../fixtures/index.ts";
 import { initialNodeStatePhases } from "../node-state.ts";
-import { validateEvidenceAnchor, validateNodeEvidenceBinding, validateNodeStateRuntimeComparison, validateNodeStateSource, validateNodeStateViewSelection, validatePolicyGraph, validateRecordingSession, validateSignalRegistry, validateStateFact, validateStateSnapshot, validateStateVisualFrame } from "../validation.ts";
+import { validateEvidenceAnchor, validateNodeEvidenceBinding, validateNodeStateRuntimeComparison, validateNodeStateSource, validateNodeStateViewSelection, validatePolicyGraph, validateRecordingSession, validateSignalRegistry, validateStateFact, validateStateSnapshot, validateStateVisualFrame } from "../validation/index.ts";
 
 describe("automation studio canonical model", () => {
   it("represents a domain-neutral recording, signal registry, and policy graph", () => {

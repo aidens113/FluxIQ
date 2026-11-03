@@ -1,4 +1,4 @@
-export type { AutomationStudioValidationSeverity, AutomationStudioValidationIssue, AutomationStudioValidationResult } from "./issue.ts";
+export type { AutomationStudioValidationSeverity, AutomationStudioValidationIssue, AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 export { validateRecordingSession } from "./recording.ts";
 export { validateSignalRegistry } from "./signal-registry.ts";
 export { validatePolicyGraph } from "./policy-graph.ts";

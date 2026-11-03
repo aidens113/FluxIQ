@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveActionVisualTarget } from "../action-visual-target.ts";
 import type { ActionEntry } from "../timeline.ts";
 import type { StateSnapshot } from "../state.ts";
-import { validateActionVisualEntityTarget, validateRecordingSession } from "../validation.ts";
+import { validateActionVisualEntityTarget, validateRecordingSession } from "../validation/index.ts";
 
 describe("action visual targets", () => {
   it("validates action visual target shape on timeline actions", () => {

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, buildAutomationStudioLlmEvidenceLoopDecisionSchema, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioDeepSeekProvider } from "../../index.ts";
 import { automationStudioLlmStepLogScope } from "../index.ts";
 

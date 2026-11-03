@@ -9,7 +9,7 @@
 // with one.
 
 import { describe, expect, it, vi } from "vitest";
-import { runAutomationStudioLlmHarness } from "../harness.ts";
+import { runAutomationStudioLlmHarness } from "../harness/index.ts";
 import { automationStudioLlmUnusableDecisionFeedback } from "../unusable-decision.ts";
 import { automationStudioLlmProviderPaidUsage } from "../provider-contract.ts";
 import {

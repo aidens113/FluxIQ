@@ -1,4 +1,4 @@
-import { automationStudioActivityHumanLabel } from "./human-label.ts";
+import { automationStudioActivityHumanLabel } from "../../activity/text/index.ts";
 
 /** The name of the page a Flow or a build starts on, when its address names no site. */
 const START_PAGE = "the start page";

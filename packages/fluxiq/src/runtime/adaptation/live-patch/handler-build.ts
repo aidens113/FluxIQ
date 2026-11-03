@@ -9,7 +9,7 @@
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID } from "../../../framework/automation-service/nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID } from "../../../components/automation/control-flow/index.ts";
 import { automationStudioHandlerThenDisposition, type AutomationStudioRuntimePatchHandlerSpec } from "../../llm/index.ts";
 
 /** Where each body step sits relative to the one before it. */

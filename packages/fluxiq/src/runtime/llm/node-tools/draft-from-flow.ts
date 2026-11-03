@@ -99,7 +99,7 @@ import { automationNodeOutputReference, getAutomationNodeDefinition, rewriteAuto
 import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../flow-authoring/draft/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT, automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftScheduleCandidate } from "../../flow-authoring/draft/scheduled-candidate/index.ts";
-import { automationStudioAuthoredPaceMs } from "../../../framework/automation-service/executor/pacing/index.ts";
+import { automationStudioAuthoredPaceMs } from "../../../engine/automation/pacing/index.ts";
 // A type only, so nothing is imported back out of the directory this one is read by.
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-authoring/bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run-node.ts";

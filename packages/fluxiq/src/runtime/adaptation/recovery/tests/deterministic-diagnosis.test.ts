@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES, type AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation";
 import type { AutomationStudioFlowAdaptation } from "../../../../flows/authoring/model/index.ts";
 import { classifyAutomationStudioAdaptiveFailure } from "../../adaptive-orchestrator.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
 import {
   automationStudioRuntimeDiagnosisResolution,
   buildAutomationStudioRuntimeDeterministicDiagnosis

@@ -2,7 +2,7 @@ import type { AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/aut
 import { describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
 import { executeAutomationStudioRuntimePatch, preflightAutomationStudioRuntimePatch, proposeAutomationStudioRuntimeTargetOverride } from "../../../runtime/adaptation/live-patch.ts";
 

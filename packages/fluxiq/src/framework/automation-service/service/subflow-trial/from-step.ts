@@ -39,7 +39,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioLiveRunEnvironment } from "../../environment/index.ts";
-import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
+import { automationStudioZeroPassLoopBodies } from "../../../../engine/automation/graph-navigation/index.ts";
 import type { AutomationStudioSubflowFromStepRequest, AutomationStudioSubflowFromStepResult, AutomationStudioSubflowProposal, AutomationStudioSubflowScope } from "../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { runAutomationStudioDetachedSubflowFrom, type AutomationStudioCandidateStartReceipt, type AutomationStudioDetachedSubflowIdentity, type AutomationStudioDetachedSubflowProposal, type AutomationStudioDetachedSubflowResult } from "../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import { automationStudioCandidateFrameEvidence, automationStudioCandidateTrialFeedback as Feedback, automationStudioCandidateTrialLandedActs, automationStudioTrialExecutorOptions } from "../candidate-trial/index.ts";

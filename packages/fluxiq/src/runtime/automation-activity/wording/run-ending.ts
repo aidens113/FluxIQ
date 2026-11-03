@@ -23,7 +23,7 @@
 // were saved.
 
 import { ACTIVITY_DOUBTED_ENDING_CLOSE } from "../../../ui/index.ts";
-import { automationStudioActivityReasonText } from "./reason-text.ts";
+import { automationStudioActivityReasonText } from "../../activity/text/index.ts";
 
 type Fields = Readonly<Record<string, unknown>>;
 

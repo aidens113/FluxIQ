@@ -48,11 +48,11 @@
 
 import type { JsonObject } from "../../core/index.ts";
 import { automationStudioLlmProviderFailureSpendsCall } from "./failure-disposition.ts";
-import type { AutomationStudioLlmTaskResult, AutomationStudioLlmUsageSummary } from "./harness.ts";
+import type { AutomationStudioLlmTaskResult, AutomationStudioLlmUsageSummary } from "./harness/index.ts";
 import { automationStudioLlmProviderPaidUsage } from "./provider-contract.ts";
-import { automationStudioLlmProviderReplyAccount, type AutomationStudioLlmProviderReplyAccount } from "./reply-account.ts";
-import { automationStudioLlmProviderUnanswered } from "./unanswered-calls.ts";
-import { automationStudioLlmUnreadableReplySaid } from "./unreadable-reply.ts";
+import { automationStudioLlmProviderReplyAccount, type AutomationStudioLlmProviderReplyAccount } from "../models/failures/index.ts";
+import { automationStudioLlmProviderUnanswered } from "../models/failures/index.ts";
+import { automationStudioLlmUnreadableReplySaid } from "../models/failures/index.ts";
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 

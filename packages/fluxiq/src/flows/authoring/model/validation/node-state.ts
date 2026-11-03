@@ -1,5 +1,5 @@
 import type { NodeStateRuntimeComparison, NodeStateSource, NodeStateViewSelection } from "../index.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 
 export function validateNodeStateSource(source: NodeStateSource): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];

@@ -1,6 +1,6 @@
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioActivityLoopPass } from "./pass.ts";
-import type { AutomationStudioActivityLoop } from "./types.ts";
+import type { AutomationStudioActivityLoop } from "../../activity/loop/index.ts";
 
 type Attempt = { nodeId: string; status: string; route?: string | undefined; outputs: Readonly<Record<string, unknown>> };
 type Edge = { sourceNodeId: string; targetNodeId: string; sourcePortId?: string | undefined };

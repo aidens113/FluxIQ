@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AutomationStudioFlowAdaptation } from "../../index.ts";
-import { createAutomationStudioFlowExpansionFixture } from "../../fixtures.ts";
+import { createAutomationStudioFlowExpansionFixture } from "../../fixtures/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "../../flow-size/index.ts";
 import { parseAutomationStudioDeterministicPath, validateAutomationStudioFlowAdaptation } from "../adaptation.ts";
 

@@ -20,7 +20,7 @@
 // may be nothing, and then the chat says Core's words alone. The reason as
 // written stays in the build record and the run's evidence.
 
-import { automationStudioActivityReasonText } from "./reason-text.ts";
+import { automationStudioActivityReasonText } from "../../activity/text/index.ts";
 
 /** A code: lower-case words joined by `.` or `_`, with a `_` among them (`web.dom_read`, `repeat_without_progress`). */
 const CODE = /\b[a-z][a-z0-9]*(?:\.[a-z0-9]+)*_[a-z0-9]+(?:[._][a-z0-9]+)*\b/u;

@@ -31,7 +31,7 @@
 // A condition that names no control is left as written: it is about the page
 // (a dialog, the address), which this grammar does not cover.
 
-import type { AutomationStudioFactCondition, AutomationStudioFactConditionOp } from "../../../../framework/automation-service/executor/lifecycle/index.ts";
+import type { AutomationStudioFactCondition, AutomationStudioFactConditionOp } from "../../../../engine/automation/lifecycle/index.ts";
 
 const PRESENCE: ReadonlySet<AutomationStudioFactConditionOp> = new Set(["exists", "absent", "visible", "enabled"]);
 const COMPARED: ReadonlySet<string> = new Set(["text", "value"]);

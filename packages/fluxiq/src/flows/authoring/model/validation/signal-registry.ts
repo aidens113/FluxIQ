@@ -1,5 +1,5 @@
 import type { SignalRegistry } from "../index.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 
 export function validateSignalRegistry(registry: SignalRegistry): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];

@@ -1,11 +1,11 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import { parseAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSizeLimits } from "../../flow-authoring/bootstrap/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
+import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
 import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
-import { AUTOMATION_STUDIO_FACT_CONDITION_OPS } from "../../../framework/automation-service/executor/lifecycle/index.ts";
+import { AUTOMATION_STUDIO_FACT_CONDITION_OPS } from "../../../engine/automation/lifecycle/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
   AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_BOUNDS as BOUNDS,

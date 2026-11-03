@@ -41,7 +41,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioUnattendedRepairRedemption } from "../../../result-verification/check-authorization/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioGraphExecutionOptions } from "../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../../../../framework/automation-service/executor/index.ts";
 import {
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   AutomationStudioLlmRunBudgetLedger,

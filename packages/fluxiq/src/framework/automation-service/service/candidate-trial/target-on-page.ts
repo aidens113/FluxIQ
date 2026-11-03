@@ -75,7 +75,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
-import { automationStudioTargetMeasuredNotShown } from "../../executor/state-routing/index.ts";
+import { automationStudioTargetMeasuredNotShown } from "../../../../engine/automation/state-routing/index.ts";
 
 /** The lowest score at which the closest control is read as the saved one, still on the page (header). */
 const NEAR_MISS_MIN_SCORE = 0.12;

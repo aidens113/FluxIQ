@@ -21,7 +21,7 @@ import {
   AUTOMATION_STUDIO_UNHANDLED_REASONS,
   type AutomationStudioRouteRefusalGuard,
   type AutomationStudioUnhandledReason
-} from "../../executor/lifecycle/index.ts";
+} from "../../../../engine/automation/lifecycle/index.ts";
 
 type RecoveryFields = Pick<AutomationStudioFlowRunActionAttemptRecord, "framePath" | "failureClass" | "entry" | "lifecycle" | "subflowTarget">;
 

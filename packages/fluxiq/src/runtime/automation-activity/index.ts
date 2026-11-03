@@ -5,22 +5,22 @@
 // of a build's agents it works for; and the project cards the supervisor's
 // work is told with.
 export { automationStudioActivityAskPort, automationStudioActivityAskResolution, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityClearedWait, emitAutomationStudioActivityWaitedOut, emitAutomationStudioActivityWaitingOnAsk } from "./ask/index.ts";
-export { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "./agent.ts";
-export { bindAutomationStudioActivityRun } from "./bind.ts";
-export { boundedAutomationStudioActivity } from "./bounded.ts";
+export { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "../activity/index.ts";
+export { bindAutomationStudioActivityRun } from "../activity/index.ts";
+export { boundedAutomationStudioActivity } from "../activity/index.ts";
 export { AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS, emitAutomationStudioBuildRequest, withAutomationStudioBuildActivity } from "./build.ts";
 export { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 export { automationStudioActivityFoldedReason } from "./folded-reason.ts";
 // The reason a refusal given again carries in place of its cause, published
 // here so a domain that gives it reaches the one word Core reads (t728).
 export { AUTOMATION_STUDIO_REPEATED_ANSWER_REASON } from "@fluxiq/contracts/automation";
-export type { AutomationStudioActivityEmission, AutomationStudioActivityFrame, AutomationStudioActivityInput, AutomationStudioActivityListener, AutomationStudioActivityScope, AutomationStudioActivitySnapshot } from "./contracts.ts";
-export { automationStudioActivityHub } from "./default-hub.ts";
-export { emitAutomationStudioActivity } from "./emit.ts";
+export type { AutomationStudioActivityEmission, AutomationStudioActivityFrame, AutomationStudioActivityInput, AutomationStudioActivityListener, AutomationStudioActivityScope, AutomationStudioActivitySnapshot } from "../activity/index.ts";
+export { automationStudioActivityHub } from "../activity/index.ts";
+export { emitAutomationStudioActivity } from "../activity/index.ts";
 export { automationStudioActivityHold } from "./hold.ts";
-export { AutomationStudioActivityHub } from "./hub.ts";
-export { automationStudioActivityInBuild } from "./in-build.ts";
-export { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
+export { AutomationStudioActivityHub } from "../activity/index.ts";
+export { automationStudioActivityInBuild } from "../activity/index.ts";
+export { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "../activity/index.ts";
 export { automationStudioActivityLoopWords, type AutomationStudioActivityLoopPass } from "./loop/index.ts";
 export { observeAutomationStudioEvidenceLoop } from "./observer.ts";
 export {

@@ -1,4 +1,4 @@
-import { automationStudioActivityReasonText } from "./reason-text.ts";
+import { automationStudioActivityReasonText } from "../../activity/text/index.ts";
 
 /**
  * Why a written Flow was refused, said from its issues' own codes rather than

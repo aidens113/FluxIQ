@@ -1,5 +1,5 @@
 import type { ClientGatewayActivityRecovery } from "@fluxiq/contracts/client-gateway";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 
 /** What a card says when the emission site has no subject of its own. */
 const FALLBACK_SUBJECT: Readonly<Record<ClientGatewayActivityRecovery["kind"], string>> = Object.freeze({

@@ -17,7 +17,7 @@
 
 import { createHash } from "node:crypto";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID } from "../../../framework/automation-service/nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID } from "../../../components/automation/control-flow/index.ts";
 
 /** The nodes and edges a unit split is read from. */
 export type AutomationStudioUnitGraph = {

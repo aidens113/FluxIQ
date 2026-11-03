@@ -6,7 +6,7 @@ import type {
   AutomationStudioHostResourceLease,
   AutomationStudioHostResourcePort,
   AutomationStudioHostResourceSnapshot
-} from "./types.ts";
+} from "../../automation-host/index.ts";
 
 export interface AutomationStudioHostResourceAcquireOptions {
   /** Aborting removes the waiter from the queue; it never acquires, and its promise rejects with the signal's reason. */

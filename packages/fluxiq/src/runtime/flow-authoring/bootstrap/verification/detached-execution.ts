@@ -4,14 +4,14 @@ import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapsho
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../../framework/automation-service/nodes/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../../../framework/automation-service/composite-executor.ts";
 import { automationStudioOptionalStepWayOn, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../../../framework/automation-service/executor/index.ts";
-import { automationStudioReferenceNow } from "../../../../framework/automation-service/reference-now/index.ts";
+import { automationStudioReferenceNow } from "../../../reference-time/index.ts";
 import { automationStudioRouterStatePaths, routeAutomationStudioRun } from "../../../../framework/automation-service/route-state/index.ts";
 import type { AutomationStudioRouterExecutionResult } from "../../../../framework/automation-service/router-runtime.ts";
 import { normalizeAutomationStudioFlowBuildPlan } from "../adaptation.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "./contracts.ts";
 import { automationStudioCandidateGraphSource } from "./candidate-graphs.ts";
-import { automationStudioRootInvocation } from "../../../../framework/automation-service/executor/frames/index.ts";
+import { automationStudioRootInvocation } from "../../../../engine/automation/frames/index.ts";
 import { automationStudioDetachedFromNode, automationStudioDetachedFromNodeKeyValid } from "./from-node.ts";
 
 /**

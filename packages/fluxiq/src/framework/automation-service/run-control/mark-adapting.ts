@@ -7,7 +7,7 @@
 // is executing again the moment it takes a step.
 
 import { AutomationStudioRunController } from "./run-controller.ts";
-import type { AutomationStudioRunControlGate } from "./types.ts";
+import type { AutomationStudioRunControlGate } from "../../../runtime/automation-host/index.ts";
 
 export function automationStudioMarkRunAdapting(gate: AutomationStudioRunControlGate | undefined): void {
   if (gate instanceof AutomationStudioRunController) gate.setPhase("adapting");

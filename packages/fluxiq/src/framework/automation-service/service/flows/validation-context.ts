@@ -1,6 +1,6 @@
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowSubflow, AutomationStudioFlowValidationContext } from "../../../../flows/authoring/model/index.ts";
 import { isAutomationStudioSubflowGraphMetadata } from "../../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../../../components/automation/control-flow/index.ts";
 
 /**
  * What a graph cannot say about itself when it is validated for saving: the

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowInterface, AutomationStudioFlowScope } from "./flows.ts";
 import type { AutomationStudioFlowNode } from "./artifacts.ts";
-import type { AutomationStudioValidationIssue, AutomationStudioValidationResult } from "./validation.ts";
+import type { AutomationStudioValidationIssue, AutomationStudioValidationResult } from "./validation/index.ts";
 import type { AutomationStudioNodeDefinition } from "../../../framework/automation-service/nodes/index.ts";
 
 export type AutomationStudioPublishedFlowSnapshot = {

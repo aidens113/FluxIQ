@@ -16,8 +16,8 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
-import { automationStudioGraphHandlerRegistrations, automationStudioSubflowContract } from "../../../../framework/automation-service/executor/lifecycle/index.ts";
-import type { AutomationStudioRepairUnit } from "../../../../framework/automation-service/executor/lifecycle-run/index.ts";
+import { automationStudioGraphHandlerRegistrations, automationStudioSubflowContract } from "../../../../engine/automation/lifecycle/index.ts";
+import type { AutomationStudioRepairUnit } from "../../../../engine/automation/lifecycle-run/index.ts";
 import {
   automationStudioWithoutLocators,
   type AutomationStudioLlmInRunRepairContract,

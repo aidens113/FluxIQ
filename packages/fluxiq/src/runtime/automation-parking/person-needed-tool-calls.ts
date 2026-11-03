@@ -39,9 +39,9 @@
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../llm/index.ts";
-import type { AutomationStudioAsk, AutomationStudioAskStage } from "./ask.ts";
-import { automationStudioAskedPersonNeeded, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioPersonNeededOutcome } from "./person-needed-ask.ts";
-import type { AutomationStudioParkingPort } from "./port.ts";
+import type { AutomationStudioAsk, AutomationStudioAskStage } from "../interaction/index.ts";
+import { automationStudioAskedPersonNeeded, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioPersonNeededOutcome } from "../parking/index.ts";
+import type { AutomationStudioParkingPort } from "../parking/index.ts";
 
 /** How many times one piece of work may put the question to a person. */
 export const AUTOMATION_STUDIO_PERSON_NEEDED_MAX_ASKS = 3;

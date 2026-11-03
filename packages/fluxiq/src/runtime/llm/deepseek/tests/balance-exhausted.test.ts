@@ -3,7 +3,7 @@
 // chat window's call alike. Fake fetches only; no key or provider body is real.
 
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AutomationStudioLlmProviderError, normalizedAutomationStudioLlmProviderFailure } from "../../provider-contract.ts";
 import { automationStudioLlmProviderErrorSpendsCall, automationStudioLlmProviderFailureSpendsCall } from "../../failure-disposition.ts";
 import { automationStudioDeepSeekBalanceExhausted } from "../balance-exhausted.ts";

@@ -28,7 +28,7 @@ import type { AutomationStudioFlowDocument } from "../../../../../flows/authorin
 import { AutomationStudioProjectDatabasePool, AutomationStudioProjectGatewayTraceStore } from "../../../../../framework/persistence/automation/index.ts";
 import { AutomationStudioChannelScope, AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironment } from "../../../../../framework/automation-service/environment/index.ts";
 import { FixtureGatewayClient } from "../../../../../framework/automation-service/environment/tests/fixture-client.ts";
-import { runAutomationStudioGraph } from "../../../../../framework/automation-service/executor.ts";
+import { runAutomationStudioGraph } from "../../../../../framework/automation-service/executor/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_DATABASE_IDLE_CLOSE_MS } from "../../../../../framework/automation-service/service/projects/index.ts";
 import { automationStudioRunGraphOptions } from "../../../../../framework/automation-service/service/runtime-session/index.ts";
 import type { AutomationStudioGatewayTraceEpisodes } from "../../index.ts";

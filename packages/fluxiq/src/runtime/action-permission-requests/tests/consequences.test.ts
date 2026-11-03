@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES as MODEL_CONSEQUENCES } from "../../../flows/authoring/model/action-consequences/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES as MODEL_CONSEQUENCES } from "../../../components/automation/action-effect/consequences/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, automationStudioConsequencesInOrder, isAutomationStudioActionConsequence, parseAutomationStudioPermittedConsequences } from "../index.ts";
 
 describe("the existing consequence API after moving its vocabulary into the model", () => {

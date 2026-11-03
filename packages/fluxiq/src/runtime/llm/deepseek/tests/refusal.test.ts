@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AutomationStudioLlmProviderError } from "../../provider-contract.ts";
 import { createAutomationStudioDeepSeekProvider } from "../provider.ts";
 import { estimateAutomationStudioDeepSeekInputTokens } from "../request-body.ts";

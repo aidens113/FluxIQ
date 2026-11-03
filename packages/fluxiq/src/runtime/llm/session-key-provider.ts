@@ -26,12 +26,12 @@
 
 import { resolveAutomationStudioLlmBuildCallLimit } from "../../flows/authoring/model/index.ts";
 import { AutomationStudioSecretsLockedError } from "./deepseek/index.ts";
-import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "./session-keys/index.ts";
+import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../models/secrets/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS, automationStudioLlmModelProvider, automationStudioLlmProviderDefaultModel, assertAutomationStudioLlmModelBinding, isAutomationStudioAnthropicModel } from "./models/index.ts";
 import type { JsonObject } from "../../core/index.ts";
 // Read at module evaluation, so from the leaf that imports no value rather than
 // through the barrel, where an import cycle could leave them undefined.
-import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "./model-limits/index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS } from "../models/limits/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "./harness/index.ts";
 import { createAutomationStudioDeepSeekProvider, createAutomationStudioAnthropicProvider } from "./provider-factories.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS } from "./provider-contract.ts";

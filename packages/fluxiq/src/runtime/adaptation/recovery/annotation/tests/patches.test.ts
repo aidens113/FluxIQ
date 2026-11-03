@@ -6,7 +6,7 @@ import {
   type AutomationStudioActionConsequence
 } from "../../../../action-permission-requests/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowChangeProposal, AutomationStudioFlowDocument } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor/index.ts";
 import {
   packAutomationStudioLlmContext,
   type AutomationStudioLlmContextPacket,

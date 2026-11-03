@@ -24,7 +24,7 @@
 // and a step that also writes its expected state by hand says it twice.
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
-import { AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY } from "../../../../framework/automation-service/executor/defensive/index.ts";
+import { AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY } from "../../../../engine/automation/defensive/index.ts";
 import type { AutomationStudioFlowScriptStep } from "../authoring/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { automationStudioFlowScriptFacts } from "./fact-condition.ts";

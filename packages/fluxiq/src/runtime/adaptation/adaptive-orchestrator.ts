@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { parseAutomationStudioFailureRecord, type AutomationStudioAdaptiveFailureClass, type AutomationStudioFailureRecord } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunRecoveryRecord, AutomationStudioRouteDecisionRecord } from "../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace, AutomationStudioRecoveryCandidate, AutomationStudioTransitionComparisonStatus } from "../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace, AutomationStudioRecoveryCandidate, AutomationStudioTransitionComparisonStatus } from "../../framework/automation-service/executor/index.ts";
 
 // Core's failure names and structured failure record live in @fluxiq/contracts
 // so browser clients use the same list. They are re-exported beside the

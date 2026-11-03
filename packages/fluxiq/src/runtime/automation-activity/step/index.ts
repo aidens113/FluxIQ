@@ -6,8 +6,8 @@
 // run reaches it, and the marks under which a step is said as getting the page
 // ready, or as checked against the recorded run, rather than as a step of a
 // run on the site.
-export { automationStudioActivityStepAnnounced } from "./announced.ts";
-export { automationStudioActivityStepNumbers } from "./numbers.ts";
+export { automationStudioActivityStepAnnounced } from "../../activity/step/index.ts";
+export { automationStudioActivityStepNumbers } from "../../activity/step/index.ts";
 export { automationStudioActivityPreparing, runAutomationStudioActivityPreparation } from "./preparation.ts";
 export { automationStudioActivityRecordedCheck } from "./recorded-check.ts";
 export { emitAutomationStudioActivityStepInterference } from "./interference.ts";

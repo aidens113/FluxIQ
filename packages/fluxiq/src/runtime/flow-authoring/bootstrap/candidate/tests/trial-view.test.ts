@@ -7,7 +7,7 @@ import { automationStudioActionPermissionDenied } from "../../../../action-permi
 import { createAutomationStudioDeepSeekProvider } from "../../../../llm/deepseek/index.ts";
 import type { JsonValue } from "../../../../../core/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../llm/evidence-loop.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../../llm/harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../llm/harness/index.ts";
 import { packAutomationStudioLlmContext } from "../../../../llm/harness/index.ts";
 import { automationStudioLlmNodeDescriptions, automationStudioLlmRunNodeDescribingFailures } from "../../../../llm/node-tools/index.ts";
 import { automationStudioCandidateTrialView } from "../index.ts";

@@ -1,6 +1,6 @@
 import type { PolicyGraph } from "../index.ts";
 import { validateConditionExpression } from "./condition.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 
 export function validatePolicyGraph(policy: PolicyGraph): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];

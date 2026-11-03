@@ -1,4 +1,4 @@
-import type { AutomationStudioHostResourceLease } from "./types.ts";
+import type { AutomationStudioHostResourceLease } from "../../automation-host/index.ts";
 
 /** A command carried a lease that was released or reissued; the holder no longer owns the resource. */
 export class AutomationStudioHostResourceStaleLeaseError extends Error {

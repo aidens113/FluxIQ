@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmDiagnosisFields } from "../harness.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmDiagnosisFields } from "../harness/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION, automationStudioDiagnosisPromptInstruction } from "../diagnosis-instructions.ts";
 
 const base = { taskKind: "runtime_diagnosis" as const, projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };

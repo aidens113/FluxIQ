@@ -27,7 +27,7 @@ import type {
   AutomationStudioFlowDocument,
   AutomationStudioFlowRunDetail
 } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
 import {
   automationStudioRuntimeAdaptationContextForLlmRun,
   createAutomationStudioDeepSeekProvider,

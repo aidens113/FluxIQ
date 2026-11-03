@@ -1,8 +1,8 @@
 import { emitAutomationStudioActivityLoopEnded } from "./ended.ts";
-import { automationStudioActivityLoops } from "./loops.ts";
+import { automationStudioActivityLoops } from "../../activity/loop/index.ts";
 import { automationStudioActivityLoopPass } from "./pass.ts";
 import { automationStudioActivityLoopRow } from "./row.ts";
-import type { AutomationStudioActivityLoopPass } from "./types.ts";
+import type { AutomationStudioActivityLoopPass } from "../../activity/loop/index.ts";
 
 type Flow = Parameters<typeof automationStudioActivityLoops>[0];
 

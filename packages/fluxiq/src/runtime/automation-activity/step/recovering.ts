@@ -1,4 +1,4 @@
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "../wording/index.ts";
 
 /** A result code as a record may carry it: one token of letters, digits, `.`, `_`, `:`, `-`. */

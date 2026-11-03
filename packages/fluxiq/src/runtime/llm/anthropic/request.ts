@@ -1,11 +1,11 @@
 import { automationStudioAnthropicMessageBody } from "../../models/providers/anthropic/index.ts";
 export { AUTOMATION_STUDIO_ANTHROPIC_JSON_TEXT_INSTRUCTION, automationStudioAnthropicMessageBody } from "../../models/providers/anthropic/index.ts";
-import { automationStudioAnthropicCacheContent } from "./cache-content.ts";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
-import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../token-estimation.ts";
+import { automationStudioAnthropicCacheContent } from "../../models/providers/anthropic/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
+import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
 import { automationStudioLlmTaskMessages, automationStudioLlmTaskOutputSchema } from "../provider-task/index.ts";
 import type { AutomationStudioAnthropicModel } from "../models/index.ts";
-import { automationStudioAnthropicOutputFormat, type AutomationStudioAnthropicOutputFormat } from "./schema.ts";
+import { automationStudioAnthropicOutputFormat, type AutomationStudioAnthropicOutputFormat } from "../../models/providers/anthropic/index.ts";
 
 // Adapter framing only. The product's instructions and original outputSchema
 // are unchanged; this names a reversible transport encoding, no task content.

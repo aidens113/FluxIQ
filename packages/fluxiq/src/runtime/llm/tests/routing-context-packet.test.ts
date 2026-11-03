@@ -4,7 +4,7 @@ import { buildAutomationStudioFlowBootstrapRoutingContext } from "../../flow-aut
 import { webDomainNodeDefinitionsFixture } from "../../flow-authoring/bootstrap/plan/tests/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
-import { runAutomationStudioLlmHarness } from "../harness.ts";
+import { runAutomationStudioLlmHarness } from "../harness/index.ts";
 
 // A model can only write a route it can mean if it is told how the router
 // decides, what a condition can test, and what the page looked like. This

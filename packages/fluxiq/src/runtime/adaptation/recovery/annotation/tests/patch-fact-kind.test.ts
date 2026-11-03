@@ -3,7 +3,7 @@
 // or `value` for a comparison, and a comparison that names neither is refused.
 
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFactCondition } from "../../../../../framework/automation-service/executor/lifecycle/index.ts";
+import type { AutomationStudioFactCondition } from "../../../../../engine/automation/lifecycle/index.ts";
 import { automationStudioRecoveryPatchFactKind } from "../patch-fact-kind.ts";
 
 const on = { handles: { target: "t2" } };

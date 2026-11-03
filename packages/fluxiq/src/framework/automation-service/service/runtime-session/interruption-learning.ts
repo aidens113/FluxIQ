@@ -28,7 +28,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowIntervention } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioActionPermissionDenied } from "../../../../runtime/action-permission-requests/index.ts";
 import { automationStudioLegacyGraphRequest } from "../../legacy-envelope/index.ts";
-import type { AutomationStudioIncidentRepair, AutomationStudioInterruptionLearningRequest } from "../../executor/lifecycle-run/index.ts";
+import type { AutomationStudioIncidentRepair, AutomationStudioInterruptionLearningRequest } from "../../../../engine/automation/lifecycle-run/index.ts";
 import { prepareAutomationStudioInRunRepair } from "../../../../runtime/adaptation/live-patch.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioRuntimeAddHandlerPatch } from "../../../../runtime/llm/index.ts";

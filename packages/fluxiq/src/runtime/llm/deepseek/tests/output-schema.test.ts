@@ -7,7 +7,7 @@
 // C3). The mutation this is written against: dropping the request's
 // `allowedPatchKinds` on the way to the schema.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { automationStudioDeepSeekOutputSchema } from "../output-schema.ts";
 import { automationStudioDeepSeekSystemPrompt } from "../system-prompt.ts";
 

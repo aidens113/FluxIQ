@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../../flows/authoring/model/index.ts";
 import { assertAutomationStudioCompiledPlan, compileAutomationStudioPlan, runAutomationStudioCompiledPlan, type AutomationStudioCompiledPlanEdge, type AutomationStudioCompiledPlanNode } from "../compiled-plan.ts";
-import { runAutomationStudioGraph } from "../executor.ts";
+import { runAutomationStudioGraph } from "../executor/index.ts";
 
 describe("Automation Studio graph executor", () => {
   it("passes state-bound parameters to a custom node through the normal parameter values", async () => {

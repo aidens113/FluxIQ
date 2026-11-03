@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowIntervention } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
+import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
 import { failureEvidenceProvenance } from "./failure-evidence.ts";
 import type { AutomationStudioLlmProviderMetadata, AutomationStudioLlmUsageSummary } from "./provider.ts";
 import { summarizeAutomationStudioLlmResponse, type AutomationStudioLlmStructuredResponse } from "./structured-response.ts";

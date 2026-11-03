@@ -49,7 +49,7 @@
 // `run-muw60j7c-bb7c9a62`, moments 11-15).
 
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { emitAutomationStudioActivityThought } from "../thought.ts";
 import { automationStudioActivityDraftEditCard } from "../wording/index.ts";
 import { automationStudioActivityDraftEditWords } from "./edit-words.ts";

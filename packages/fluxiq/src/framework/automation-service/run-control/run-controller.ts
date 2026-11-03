@@ -27,7 +27,7 @@ import type {
   AutomationStudioRunControlPhase,
   AutomationStudioRunControlSnapshot,
   AutomationStudioRunControlState
-} from "./types.ts";
+} from "../../../runtime/automation-host/index.ts";
 
 /**
  * How long a run may stay held before it stops itself. It matches how long the

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioDeepSeekSystemPrompt } from "../system-prompt.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { packAutomationStudioLlmContext, type AutomationStudioLlmHarnessInput } from "../../harness/index.ts";
 
 const INSTRUCTION = { schemaVersion: "0.1", instructionId: "task", title: "Task", body: "Export the March report as a CSV file.", scope: { kind: "flow", projectId: "p", flowId: "f" }, priority: 50, status: "active", requirement: "required" };

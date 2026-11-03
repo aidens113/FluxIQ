@@ -1,5 +1,5 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
-import { emitAutomationStudioActivity } from "./emit.ts";
+import { emitAutomationStudioActivity } from "../activity/index.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
 import { automationStudioActivityRunEnding, automationStudioActivityRunObjection, automationStudioActivityRunUncertainEnding } from "./wording/index.ts";
 

@@ -29,7 +29,7 @@ import {
   type AutomationStudioAdaptiveCandidateKind,
   type AutomationStudioAdaptiveFailureClass
 } from "../adaptive-orchestrator.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor/index.ts";
 
 /**
  * What answers this failure, decided before any provider exists.

@@ -8,7 +8,7 @@ import { RuntimeService } from "../../../runtime/index.ts";
 import { AutomationStudioService } from "../service.ts";
 import { AutomationStudioIoRecorder } from "../../../runtime/recording/io-bridge.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "../io-policy.ts";
-import { runAutomationStudioGraph } from "../executor.ts";
+import { runAutomationStudioGraph } from "../executor/index.ts";
 
 describe("Automation Studio IO bridge", () => {
   it("records a bound action input as an output-native policy action", async () => {

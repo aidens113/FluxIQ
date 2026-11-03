@@ -5,7 +5,7 @@
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowDocument, AutomationStudioFlowSubflow } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
-import type { AutomationStudioSubflowGraph, AutomationStudioSubflowGraphSource } from "../../executor/frames/index.ts";
+import type { AutomationStudioSubflowGraph, AutomationStudioSubflowGraphSource } from "../../../../engine/automation/frames/index.ts";
 import { automationStudioFlowGraphVersion, type AutomationStudioFlowGraphVersion } from "../../../../runtime/flow-authoring/version/index.ts";
 import { automationStudioSubflowGraphIsOwned } from "./subflow-graph-ownership.ts";
 

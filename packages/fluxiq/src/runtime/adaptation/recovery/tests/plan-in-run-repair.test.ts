@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowDocument } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioAdaptiveCandidateKind } from "../../adaptive-orchestrator.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
 import { preflightAutomationStudioRuntimePatch } from "../../live-patch.ts";
 import type { AutomationStudioLlmTaskResult, AutomationStudioRuntimePatch } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";

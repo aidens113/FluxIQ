@@ -10,7 +10,7 @@ export * from "../../runtime/flow-authoring/domain-build-state/index.ts";
 export * from "../../runtime/adaptation/durable-behavior/index.ts";
 export * from "./composite-executor.ts";
 export * from "./compiled-plan.ts";
-export * from "./executor.ts";
+export * from "./executor/index.ts";
 export * from "../../runtime/flow-authoring/bootstrap/index.ts";
 // Published here, not through the flow-bootstrap barrel: see that barrel.
 export * from "../../runtime/flow-authoring/bootstrap/candidate/index.ts";

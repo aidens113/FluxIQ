@@ -1,7 +1,7 @@
 // The decorator that puts a domain's instructions on every request, and the
 // resolver wrapper the service stores, so no path to a provider leaves them out.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../harness-options/index.ts";
 import { automationStudioLlmProviderWithDomainInstructions, automationStudioLlmResolverWithDomainInstructions } from "../index.ts";
 

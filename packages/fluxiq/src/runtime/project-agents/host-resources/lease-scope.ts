@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ClientGatewayHostLease } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayHostLeaseSource } from "../../../client-gateway/service/host-lease/index.ts";
 import type { AutomationStudioHostResourceAcquireOptions, AutomationStudioHostResourceScheduler } from "./scheduler.ts";
-import type { AutomationStudioHostResourceHolder, AutomationStudioHostResourceLease } from "./types.ts";
+import type { AutomationStudioHostResourceHolder, AutomationStudioHostResourceLease } from "../../automation-host/index.ts";
 
 interface LeaseFrame {
   readonly lease: AutomationStudioHostResourceLease;

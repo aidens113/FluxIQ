@@ -3,8 +3,8 @@ import { createBlankAutomationStudioFlowArtifact, createCallFlowNode, createPubl
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionResult, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../../nodes/index.ts";
 import { AutomationStudioNativeNodeRuntime, runAutomationStudioGraph, runCanonicalAutomationStudioFlow } from "../../index.ts";
 import { automationStudioRunGraphOptions } from "../../service/runtime-session/index.ts";
-import { automationStudioRootInvocation } from "../../executor/frames/index.ts";
-import type { AutomationStudioExecutorCommandRun } from "../../executor/command-scope/index.ts";
+import { automationStudioRootInvocation } from "../../../../engine/automation/frames/index.ts";
+import type { AutomationStudioExecutorCommandRun } from "../../../../engine/automation/command-scope/index.ts";
 
 function definition(id: string): AutomationStudioNodeDefinition {
   return {

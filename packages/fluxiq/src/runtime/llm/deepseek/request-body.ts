@@ -1,7 +1,7 @@
 import { automationStudioLlmTaskMessages as automationStudioDeepSeekMessages, type AutomationStudioLlmTaskMessage as AutomationStudioDeepSeekMessage } from "../provider-task/index.ts";
 export { automationStudioLlmTaskMessages as automationStudioDeepSeekMessages, type AutomationStudioLlmTaskMessage as AutomationStudioDeepSeekMessage } from "../provider-task/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
-import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../token-estimation.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
+import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, type AutomationStudioDeepSeekModel } from "./models.ts";
 
 const AUTOMATION_STUDIO_DEEPSEEK_CHAT_FRAMING_TOKEN_RESERVE = 16;

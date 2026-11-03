@@ -33,7 +33,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY } from "./reauthor.ts";
 import { automationStudioStepFailureTarget } from "./step-failure-target.ts";
 

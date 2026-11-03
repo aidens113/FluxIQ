@@ -19,7 +19,7 @@
 // Each slot refuses with its own pre-flight code and a code only. The refused
 // value is never read into an error.
 
-import { automationStudioLocatorShapedText } from "./locator-text.ts";
+import { automationStudioLocatorShapedText } from "../screening/index.ts";
 import type { AutomationStudioLlmProviderPreflightErrorCode } from "../provider-contract.ts";
 import { screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
 import { isAutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";

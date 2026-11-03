@@ -5,7 +5,7 @@
 // pre-send evidence check a provider runs. Modules not named here (json-bounds,
 // provider-result, intervention, task-kind's task mappers, explored-evidence)
 // are harness internals and stay unexported.
-export type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
+export type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
 export {
   AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS,
   automationStudioLlmTaskExpectsDiagnosis,
@@ -24,7 +24,7 @@ export {
   AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS,
   resolveAutomationStudioLlmTokenLimits,
   type AutomationStudioLlmTokenLimits
-} from "./token-limits.ts";
+} from "../../models/limits/index.ts";
 export {
   AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION,
   resolveAutomationStudioLlmInstructions,
@@ -77,7 +77,7 @@ export { automationStudioLlmRequestEvidenceRefusal } from "./request-evidence-ch
 // And its in-place card screen, for a domain that withholds a card run from a
 // string and keeps the words around it (t728).
 export { automationStudioExecutableTargetKey, automationStudioWithoutCardNumbers, screenAutomationStudioLlmEvidence, type AutomationStudioLlmEvidenceScreenResult } from "./evidence-screen.ts";
-export { AUTOMATION_STUDIO_WITHHELD_LOCATOR, automationStudioLocatorShapedText, automationStudioWithoutLocators } from "./locator-text.ts";
+export { AUTOMATION_STUDIO_WITHHELD_LOCATOR, automationStudioLocatorShapedText, automationStudioWithoutLocators } from "../screening/index.ts";
 export {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,

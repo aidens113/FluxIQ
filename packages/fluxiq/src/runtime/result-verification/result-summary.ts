@@ -98,7 +98,7 @@ import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../flows/authoring/model/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
-import { automationStudioReferenceNow } from "../../framework/automation-service/reference-now/index.ts";
+import { automationStudioReferenceNow } from "../reference-time/index.ts";
 import { automationStudioScreenedNodeParameters } from "../adaptation/recovery/repair-context/index.ts";
 import type {
   AutomationStudioResultEndView,

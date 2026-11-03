@@ -1,7 +1,7 @@
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../harness/token-limits.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../../models/limits/index.ts";
 import { automationStudioLlmRequestEvidenceRefusal } from "../harness/request-evidence-check.ts";
 import { isAutomationStudioLlmRecentActionContext } from "../recent-actions/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderPreflightErrorCode } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/evidence-loop.ts";
 import { automationStudioFlowBootstrapOutputSchema } from "../../flow-authoring/bootstrap/plan/index.ts";

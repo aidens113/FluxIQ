@@ -1,5 +1,5 @@
 import type { EvidenceAnchor, StateBounds, StateCoordinateSpace, StatePath, StatePresentationMetadata, StateSnapshot, StateVisualFrame, StateVisualLayer } from "../index.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 
 export function validateStateSnapshot(snapshot: StateSnapshot): AutomationStudioValidationResult {
   const issues: AutomationStudioValidationIssue[] = [];

@@ -5,7 +5,7 @@
 // success check, or a step's own `done when:` (t413, its node's expected
 // state). A Flow holding none declares nothing and runs as before.
 import type { JsonValue } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY } from "../../../../framework/automation-service/executor/defensive/index.ts";
+import { AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY } from "../../../../engine/automation/defensive/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_REQUIREMENTS,
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS,

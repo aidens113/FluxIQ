@@ -1,4 +1,4 @@
-import { automationStudioSessionKeyProvider } from "../../llm/session-keys/index.ts";
+import { automationStudioSessionKeyProvider } from "../../models/secrets/index.ts";
 // Releasing the configured key for one unattended verification call.
 //
 // This is the only place a standing authorization touches a credential, and it

@@ -12,7 +12,7 @@ import {
   runAutomationStudioLlmHarness,
   validateAutomationStudioLlmOutput,
   type AutomationStudioLlmProvider
-} from "../harness.ts";
+} from "../harness/index.ts";
 
 describe("Automation Studio LLM harness", () => {
   it("resolves scoped instructions by precedence and preserves IDs", () => {

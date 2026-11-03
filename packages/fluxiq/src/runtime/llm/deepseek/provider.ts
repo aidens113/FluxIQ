@@ -5,7 +5,7 @@ import type {
   AutomationStudioLlmStructuredResponse,
   AutomationStudioLlmTaskRequest,
   AutomationStudioLlmUsageSummary
-} from "../harness.ts";
+} from "../harness/index.ts";
 import {
   automationStudioLlmSignalTimedOut,
   AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS,

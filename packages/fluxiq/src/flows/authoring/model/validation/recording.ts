@@ -1,5 +1,5 @@
 import { isAutomationStudioElementTarget, validateAutomationStudioElementTarget, type RecordingSession, type TimelineEntry } from "../index.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 import { validateActionVisualEntityTarget } from "./visual-target.ts";
 
 export function validateRecordingSession(recording: RecordingSession): AutomationStudioValidationResult {

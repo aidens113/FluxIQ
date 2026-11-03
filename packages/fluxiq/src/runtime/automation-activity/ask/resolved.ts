@@ -1,6 +1,6 @@
 import type { ClientGatewayActivityPhase, ClientGatewayActivityResolution } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioAsk } from "../../automation-parking/index.ts";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioActivityClearedText } from "./cleared-text.ts";
 import { automationStudioActivityAskIsPersonNeeded } from "./person-needed.ts";
 import { automationStudioActivityAskTitle } from "./title.ts";

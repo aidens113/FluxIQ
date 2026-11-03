@@ -1,5 +1,5 @@
 import { automationStudioActivityHumanLabel } from "../wording/index.ts";
-import type { AutomationStudioActivityLoop, AutomationStudioActivityLoopPass } from "./types.ts";
+import type { AutomationStudioActivityLoop, AutomationStudioActivityLoopPass } from "../../activity/loop/index.ts";
 
 /** What the stream reads of a run's attempts: which node ran, how it left, and what it output. */
 type Attempt = { nodeId: string; route?: string | undefined; outputs: Readonly<Record<string, unknown>> };

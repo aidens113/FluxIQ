@@ -8,7 +8,7 @@ import {
   type AutomationStudioFlowBootstrapSubflow
 } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { automationStudioSubflowStepId, type AutomationStudioSubflowProposal } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../../framework/automation-service/nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../../components/automation/control-flow/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 import { automationStudioProjectCallOrder, type AutomationStudioProjectCall } from "../dispatch/index.ts";
 

@@ -1,6 +1,6 @@
 import type { AutomationStudioChangeProposalPatch } from "../../../flows/authoring/model/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan } from "../../flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
+import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
 import {
   automationStudioHandlerThenDisposition,
   type AutomationStudioLlmStructuredResponse,
@@ -10,7 +10,7 @@ import {
   type AutomationStudioRuntimeReplaceUnitPatch
 } from "./structured-response.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } from "./task-request.ts";
-import { automationStudioDispositionAllowedAt } from "../../../framework/automation-service/nodes/control-flow/index.ts";
+import { automationStudioDispositionAllowedAt } from "../../../components/automation/control-flow/index.ts";
 
 export function validateAutomationStudioLlmOutput(
   response: AutomationStudioLlmStructuredResponse,

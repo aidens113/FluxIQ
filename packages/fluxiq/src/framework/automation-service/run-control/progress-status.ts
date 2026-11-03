@@ -12,7 +12,7 @@
 // state is not.
 
 import type { AutomationStudioRuntimeSession } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioRunControlSnapshot } from "./types.ts";
+import type { AutomationStudioRunControlSnapshot } from "../../../runtime/automation-host/index.ts";
 
 export const AUTOMATION_STUDIO_RUN_PROGRESS_STATUSES = [
   "ready",

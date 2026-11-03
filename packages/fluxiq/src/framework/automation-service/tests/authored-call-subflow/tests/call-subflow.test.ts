@@ -11,7 +11,7 @@ import type { AutomationStudioFlowArtifact, AutomationStudioFlowDocument, Automa
 import { acceptAutomationStudioFlowBootstrapResult } from "../../../../../runtime/flow-authoring/bootstrap/authoring/index.ts";
 import { savedFlowValidation, stateNodeRegistryFixture, webDomainNodeDefinitionsFixture } from "../../../../../runtime/flow-authoring/bootstrap/plan/tests/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
-import type { AutomationStudioSubflowGraphSource } from "../../../executor/frames/index.ts";
+import type { AutomationStudioSubflowGraphSource } from "../../../../../engine/automation/frames/index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
 const registry = stateNodeRegistryFixture(webDomainNodeDefinitionsFixture());

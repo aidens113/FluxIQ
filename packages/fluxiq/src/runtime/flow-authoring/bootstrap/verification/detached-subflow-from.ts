@@ -23,7 +23,7 @@
 // source, the root invocation and each graph's own failed-route budget.
 
 import { isDeepStrictEqual } from "node:util";
-import { automationStudioReferenceNow } from "../../../../framework/automation-service/reference-now/index.ts";
+import { automationStudioReferenceNow } from "../../../reference-time/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioDetachedSubflowCandidateIdentity, type AutomationStudioDetachedSubflowInput, type AutomationStudioDetachedSubflowProposal, type AutomationStudioDetachedSubflowResult } from "./detached-subflow.ts";
 

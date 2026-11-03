@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecretKeysService } from "../../../../programs/secret-keys/index.ts";
-import { releaseAutomationStudioSessionProviderKey } from "../../session-keys/index.ts";
+import { releaseAutomationStudioSessionProviderKey } from "../../../models/secrets/index.ts";
 import { createAutomationStudioSessionKeyProviderResolver } from "../../session-key-provider.ts";
 import { automationStudioPanelCommandKeyFromSecretKeys } from "../../deepseek/index.ts";
 import { createAutomationStudioAnthropicPanelCommandModel } from "../panel-command.ts";

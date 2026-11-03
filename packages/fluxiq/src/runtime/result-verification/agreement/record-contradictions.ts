@@ -1,7 +1,7 @@
 import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary } from "../contracts/index.ts";
 import { automationStudioResultReadStop } from "../read-account/index.ts";
 import { automationStudioResultOrderClaimContradicted } from "../value-readings/index.ts";
-import { automationStudioReferenceNow } from "../../../framework/automation-service/reference-now/index.ts";
+import { automationStudioReferenceNow } from "../../reference-time/index.ts";
 import type { JudgeReading } from "./types.ts";
 
 /**

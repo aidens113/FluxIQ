@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
 import {
   automationStudioExploredEvidenceLabel,
   packAutomationStudioLlmContext,

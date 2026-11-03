@@ -3,9 +3,9 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { ElementMatcher } from "../../../runtime/target-matching/index.ts";
 import type { AutomationStudioNativeLogEntry } from "../../../runtime/automation-host/index.ts";
 export type { AutomationStudioNativeLogEntry } from "../../../runtime/automation-host/index.ts";
-import type { AutomationNodeExecutionResult } from "./contracts.ts";
-import { AutomationStudioNodeRegistry } from "./canonical-registry.ts";
-import { validateAutomationStudioNodeDefinition, type AutomationStudioNodeDefinition, type AutomationStudioNodeParameterContract } from "./definitions.ts";
+import type { AutomationNodeExecutionResult } from "../../../components/automation/index.ts";
+import { AutomationStudioNodeRegistry } from "../../../components/automation/index.ts";
+import { validateAutomationStudioNodeDefinition, type AutomationStudioNodeDefinition, type AutomationStudioNodeParameterContract } from "../../../components/automation/index.ts";
 
 export const AUTOMATION_STUDIO_IMPORTER_SDK_VERSION = "0.1" as const;
 export type AutomationStudioImporterSchema = { id: string; version: string; valueType: JsonObject };

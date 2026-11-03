@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from "vitest";
 import * as nodes from "../../../../components/automation/index.ts";
 import * as studioNodes from "../index.ts";
-import * as studioMath from "../math/index.ts";
+import * as studioMath from "../../../../components/automation/math/index.ts";
 
 describe("Studio node compatibility facades", () => {
   it("exposes the canonical singleton values and the retained Studio SDK", () => {

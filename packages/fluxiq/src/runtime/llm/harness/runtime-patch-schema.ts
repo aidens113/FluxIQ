@@ -17,8 +17,8 @@
 // and nothing runs, so the model is not asked for a field nothing reads.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permission-requests/index.ts";
-import { AUTOMATION_STUDIO_FACT_CONDITION_OPS } from "../../../framework/automation-service/executor/lifecycle/index.ts";
-import { AUTOMATION_STUDIO_LIFECYCLE_EVENTS } from "../../../framework/automation-service/nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_FACT_CONDITION_OPS } from "../../../engine/automation/lifecycle/index.ts";
+import { AUTOMATION_STUDIO_LIFECYCLE_EVENTS } from "../../../components/automation/control-flow/index.ts";
 import {
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_BOUNDS as BOUNDS,

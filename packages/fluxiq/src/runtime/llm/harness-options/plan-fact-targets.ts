@@ -17,9 +17,9 @@
 // This module only finds them; a dialog target, `{ kind: "dialog", role, name }`,
 // names no handle and is not one of them.
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS } from "../../../framework/automation-service/nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS } from "../../../components/automation/control-flow/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-authoring/bootstrap/index.ts";
-import { AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY } from "../../../framework/automation-service/executor/defensive/index.ts";
+import { AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY } from "../../../engine/automation/defensive/index.ts";
 import { automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 
 /**

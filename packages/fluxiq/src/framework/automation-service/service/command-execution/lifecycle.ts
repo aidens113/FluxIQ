@@ -1,6 +1,6 @@
 import type { AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
-import type { AutomationStudioExecutorCommandRun } from "../../executor/command-scope/index.ts";
+import type { AutomationStudioExecutorCommandRun } from "../../../../engine/automation/command-scope/index.ts";
 import type { AutomationStudioRuntimeInterventionMode } from "../runtime-adaptation/index.ts";
 import { endAutomationStudioRuntimeSessionAfterThrow, type AutomationStudioRuntimeSessionEndingPorts } from "../runtime-session/index.ts";
 import type { AutomationStudioCommandExecutionController } from "./controller.ts";

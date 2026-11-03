@@ -8,7 +8,7 @@
 // bootstrap, 4,000 for a repair build).
 
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS } from "../../model-limits/index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS } from "../../../models/limits/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS,
   AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS,

@@ -22,7 +22,7 @@ import {
   estimateAutomationStudioDeepSeekCostUsd
 } from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA, type AutomationStudioFlowBootstrapCatalogEntry } from "../../flow-authoring/bootstrap/index.ts";
 import { automationStudioActionPermissionDenied } from "../../action-permission-requests/index.ts";
 import { packAutomationStudioLlmContext, type AutomationStudioLlmHarnessInput } from "../harness/index.ts";

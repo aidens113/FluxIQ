@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioTargetReacquireRecord } from "../../executor/target-reacquire/index.ts";
+import type { AutomationStudioTargetReacquireRecord } from "../../../../engine/automation/target-reacquire/index.ts";
 
 /** Public recovery metadata contains only its closed result and real source IDs, never target data. */
 export function automationStudioRunDetailReacquire(record: AutomationStudioTargetReacquireRecord): JsonObject {

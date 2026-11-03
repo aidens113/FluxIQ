@@ -140,7 +140,7 @@ import { automationStudioBuildTestPassLines } from "./pass-lines.ts";
 import { automationStudioBuildTestSpanRows } from "./span-rows.ts";
 import { automationStudioBuildTestStores } from "./stores.ts";
 import { automationStudioBuildTestInputs } from "./test-inputs.ts";
-import { automationStudioReferenceNow } from "../../../framework/automation-service/reference-now/index.ts";
+import { automationStudioReferenceNow } from "../../reference-time/index.ts";
 
 /**
  * The test a build ran, as this builder reads it.

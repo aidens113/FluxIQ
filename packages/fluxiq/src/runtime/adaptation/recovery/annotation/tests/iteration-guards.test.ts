@@ -5,7 +5,7 @@ import type {
   AutomationStudioFlowDocument,
   AutomationStudioFlowRunDetail
 } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD as CEILING,
   AutomationStudioLlmProviderError,

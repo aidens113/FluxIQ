@@ -5,7 +5,7 @@
 
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDraftAmendment } from "../../flow-authoring/draft/index.ts";
-import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
+import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 
 export type AutomationStudioLlmEvidenceLoopDecision =
   /**

@@ -11,7 +11,7 @@
 // involved; Core's closed words only, never a provider key.
 
 import { describe, expect, it } from "vitest";
-import { runAutomationStudioLlmHarness } from "../../../harness.ts";
+import { runAutomationStudioLlmHarness } from "../../../harness/index.ts";
 import {
   AutomationStudioLlmUnusableDecisionError,
   automationStudioLlmUnusableDecisionFeedback,

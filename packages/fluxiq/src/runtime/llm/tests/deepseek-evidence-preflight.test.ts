@@ -3,7 +3,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES,
   AutomationStudioLlmProviderError,

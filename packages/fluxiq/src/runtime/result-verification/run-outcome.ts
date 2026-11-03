@@ -75,7 +75,7 @@ import {
   type AutomationStudioFlowGraphVersion
 } from "../flow-authoring/version/index.ts";
 import { automationStudioAttemptInputs, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../framework/automation-service/executor/index.ts";
-import { automationStudioReferenceNow } from "../../framework/automation-service/reference-now/index.ts";
+import { automationStudioReferenceNow } from "../reference-time/index.ts";
 import { AutomationStudioLlmRunPurse, automationStudioLlmBuildTrace, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 import { resolveAutomationStudioRecoveryRunBudget } from "../adaptation/recovery/annotation/index.ts";
 

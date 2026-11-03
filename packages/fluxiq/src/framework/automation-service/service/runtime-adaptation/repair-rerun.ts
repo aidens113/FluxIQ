@@ -46,8 +46,8 @@ import type {
   AutomationStudioRuntimeSession
 } from "../../../../flows/authoring/model/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
-import { type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor.ts";
-import { automationStudioReferenceNow } from "../../reference-now/index.ts";
+import { type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { automationStudioReferenceNow } from "../../../../runtime/reference-time/index.ts";
 import type { AutomationStudioBootstrapAdaptation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioRefutedResultFlowWasReauthored, automationStudioRefutedResultHeldReauthor } from "../../../../runtime/adaptation/recovery/refuted-result/index.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";

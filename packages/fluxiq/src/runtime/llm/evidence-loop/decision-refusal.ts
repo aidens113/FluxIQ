@@ -11,7 +11,7 @@
 // shapes (`../unusable-decision.ts`, which says what each code below means to
 // the model). They count toward the no-progress guard like any other refusal,
 // because sending the same wrong shape again is the model repeating itself.
-import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
+import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import type { AutomationStudioFlowDraftBindingContext } from "../../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision } from "./decision.ts";
 import { automationStudioLlmEvidenceDecisionIssueCodes } from "../evidence-loop-decision.ts";

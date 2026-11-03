@@ -8,7 +8,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID, automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "../evidence-recall/index.ts";

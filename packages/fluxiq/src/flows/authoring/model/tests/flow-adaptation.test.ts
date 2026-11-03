@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { createAutomationStudioFlowExpansionFixture } from "../fixtures.ts";
+import { createAutomationStudioFlowExpansionFixture } from "../fixtures/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowAdaptationValidationResult, AutomationStudioFlowChangeOrigin } from "../index.ts";
 import {
   parseAutomationStudioFlowChangeOrigin,
@@ -11,7 +11,7 @@ import {
   validateAutomationStudioFlowRouter,
   validateAutomationStudioFlowSubflow,
   validateAutomationStudioFlow
-} from "../validation.ts";
+} from "../validation/index.ts";
 
 function adaptationWith(overrides: Partial<AutomationStudioFlowAdaptation>): AutomationStudioFlowAdaptation {
   return { ...createAutomationStudioFlowExpansionFixture().adaptation, ...overrides };

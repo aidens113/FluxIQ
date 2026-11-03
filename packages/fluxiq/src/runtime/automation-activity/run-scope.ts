@@ -1,4 +1,4 @@
-import { automationStudioActivityStorage } from "./storage.ts";
+import { automationStudioActivityStorage } from "../activity/index.ts";
 
 /**
  * The run the current async context belongs to, once its session is admitted

@@ -16,7 +16,7 @@
 // This drives the real loop through the real harness with run 13's figures.
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse } from "../../../../llm/build-purse/index.ts";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../../../../llm/harness.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../../../../llm/harness/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceTool } from "../../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";

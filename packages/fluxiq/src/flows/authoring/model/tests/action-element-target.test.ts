@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActionEntry } from "../timeline.ts";
 import { normalizeAutomationStudioElementTarget, validateAutomationStudioElementTarget } from "../action-element-target.ts";
-import { validateRecordingSession } from "../validation.ts";
+import { validateRecordingSession } from "../validation/index.ts";
 
 describe("automation studio element targets", () => {
   it("normalizes legacy selector-style targets into canonical element targets", () => {

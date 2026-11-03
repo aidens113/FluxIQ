@@ -32,9 +32,9 @@
 // press, or when the part already has a handler waiting for that layer.
 
 import type { AutomationStudioFlowDocument } from "../../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../../../components/automation/control-flow/index.ts";
 import type { AutomationStudioClearedLayer } from "../../executor/index.ts";
-import type { AutomationStudioFactCondition } from "../../executor/lifecycle/index.ts";
+import type { AutomationStudioFactCondition } from "../../../../engine/automation/lifecycle/index.ts";
 import type { AutomationStudioRuntimeAddHandlerPatch } from "../../../../runtime/llm/index.ts";
 import { automationStudioLayerFact, automationStudioLayerHandlerPatch } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { isJsonRecord } from "../json-values.ts";

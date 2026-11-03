@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../flows/authoring/model/index.ts";
-import { chooseAutomationStudioStartNode, runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "./executor.ts";
+import { chooseAutomationStudioStartNode, runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "./executor/index.ts";
 
 export const AUTOMATION_STUDIO_COMPILED_PLAN_SCHEMA_VERSION = "automation-studio.compiled-plan.v1" as const;
 export const AUTOMATION_STUDIO_COMPILED_PLAN_COMPILER_VERSION = "compiled-plan.v2" as const;

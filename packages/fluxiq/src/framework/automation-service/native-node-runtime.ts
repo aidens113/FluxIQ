@@ -3,10 +3,10 @@ import { createElementMatcher, type ElementMatcher } from "../../runtime/target-
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../../flows/authoring/model/index.ts";
 import { AutomationStudioImporterSdkRegistry, combineAutomationStudioResolvedActionEffects, isAutomationNodeParameterStateBinding, resolveAutomationStudioNodeActionEffect, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeContext, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioResolvedActionEffect, type AutomationStudioTargetResolverImplementation } from "./nodes/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort } from "./nodes/index.ts";
-import { automationStudioReferenceNow } from "./reference-now/index.ts";
+import { automationStudioReferenceNow } from "../../runtime/reference-time/index.ts";
 import { projectRuntimeTargetActionability } from "../../runtime/result-control/index.ts";
-import { automationStudioResolveTargetRefresh } from "./executor/parameter-refresh/index.ts";
-import type { AutomationStudioTargetRefreshResolution } from "./executor/parameter-refresh/index.ts";
+import { automationStudioResolveTargetRefresh } from "../../engine/automation/parameter-refresh/index.ts";
+import type { AutomationStudioTargetRefreshResolution } from "../../engine/automation/parameter-refresh/index.ts";
 
 export type AutomationStudioNativeRuntimeGrants = {
   permissions?: Iterable<string>;

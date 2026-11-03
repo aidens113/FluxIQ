@@ -26,7 +26,7 @@ import type { IoRegistry } from "../../../../io/index.ts";
 import type { RuntimeService } from "../../../../runtime/index.ts";
 import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import { type AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
-import { automationStudioReferenceNow } from "../../reference-now/index.ts";
+import { automationStudioReferenceNow } from "../../../../runtime/reference-time/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "../../io-policy.ts";
 import type { AutomationStudioNativeNodeRuntime } from "../../native-node-runtime.ts";
 

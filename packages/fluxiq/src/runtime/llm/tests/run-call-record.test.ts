@@ -8,7 +8,7 @@
 // the ledger assumed, and bounded to identifiers, codes and numbers.
 
 import { describe, expect, it } from "vitest";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../harness.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../harness/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 import { automationStudioLlmBuildCallRecord, automationStudioLlmRunCallRecord } from "../run-call-record.ts";
 

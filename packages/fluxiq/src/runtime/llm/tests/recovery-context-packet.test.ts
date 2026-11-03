@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioRuntimeRecoveryContext } from "../../adaptation/recovery/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
-import { packAutomationStudioLlmContext, runAutomationStudioLlmHarness } from "../harness.ts";
+import { packAutomationStudioLlmContext, runAutomationStudioLlmHarness } from "../harness/index.ts";
 
 const base = { projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };
 

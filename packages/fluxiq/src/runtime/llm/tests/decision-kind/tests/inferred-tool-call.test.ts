@@ -9,7 +9,7 @@
 // (`../../../unusable-decision.ts`). These run through the real harness and loop.
 
 import { describe, expect, it, vi } from "vitest";
-import { runAutomationStudioLlmHarness } from "../../../harness.ts";
+import { runAutomationStudioLlmHarness } from "../../../harness/index.ts";
 import { automationStudioLlmUnusableDecisionFeedback, type AutomationStudioLlmUnusableDecisionFieldIssue } from "../../../unusable-decision.ts";
 import {
   automationStudioLlmUnusableDecisionError,

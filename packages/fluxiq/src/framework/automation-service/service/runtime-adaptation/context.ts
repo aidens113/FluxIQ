@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowRunDetail, AutomationStudioFlowRunSummary } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioRecoveryBudget } from "../../executor.ts";
+import type { AutomationStudioRecoveryBudget } from "../../executor/index.ts";
 import { annotateRunDetailWithTrainingMode, type AutomationStudioTrainingBudgetState, type AutomationStudioTrainingModeBehavior, type AutomationStudioTrainingModeSettings, type decideAutomationStudioTrainingBudget } from "../../../../runtime/adaptation/training-modes.ts";
 import { firstFiniteNumber } from "../scalar-readings/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";

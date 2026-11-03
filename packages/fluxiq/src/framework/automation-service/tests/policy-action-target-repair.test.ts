@@ -8,7 +8,7 @@ import { defineOutput, IoRegistry } from "../../../io/index.ts";
 import { RuntimeService } from "../../../runtime/index.ts";
 import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowAdaptation } from "../../../flows/authoring/model/index.ts";
 import { AutomationStudioProjectAdaptationStore, AutomationStudioProjectCompiledPlanStore, AutomationStudioProjectDatabasePool, AutomationStudioProjectGraphRepository } from "../../persistence/automation/index.ts";
-import type { AutomationStudioGraphExecutionOptions } from "../executor.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../executor/index.ts";
 import { createRuntimePolicyEffectDispatcher } from "../io-policy.ts";
 import { evaluateFlowAdaptationPromotionGates } from "../../../runtime/adaptation/recovery/index.ts";
 

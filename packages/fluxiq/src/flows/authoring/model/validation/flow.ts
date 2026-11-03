@@ -1,6 +1,6 @@
 import type { AutomationStudioFlowArtifact, AutomationStudioSubflowRole } from "../index.ts";
 import { validateExecutableFlow, validateFlowInterface, isSemanticVersion } from "../../../executable/validation/index.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 
 export type AutomationStudioFlowValidationContext = { subflowRole?: AutomationStudioSubflowRole; externalCheckpointIds?: readonly string[] };
 

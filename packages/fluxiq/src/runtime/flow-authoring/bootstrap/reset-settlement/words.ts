@@ -31,7 +31,7 @@
 //   the trace-withholding marker (`../../executor/trace-withholding.ts`) names
 //   no address.
 
-import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../../framework/automation-service/executor/trace-withholding.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../../engine/automation/trace/index.ts";
 import type { AutomationStudioSiteResetOpenReason } from "./decision.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES } from "./undoes-key.ts";
 

@@ -1,2 +1,0 @@
-// Compatibility export; implementation belongs to the framework.
-export type { AutomationStudioRepairUnit, AutomationStudioIncidentRepairRequest, AutomationStudioIncidentRepair, AutomationStudioIncidentRepairCallback, AutomationStudioInterruptionLearningRequest, AutomationStudioInterruptionLearningCallback, AutomationStudioRunRepair } from "../../../../engine/automation/lifecycle-run/index.ts";

@@ -9,7 +9,7 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
 import { isAutomationNodeParameterStateBinding } from "../../../framework/automation-service/nodes/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor/index.ts";
 import type { AutomationStudioRuntimeTargetOverrideFailedAction } from "./refusal-reasons.ts";
 
 /** Core's node definition for a recorded action, which dispatches only its `parameters` payload. */

@@ -7,7 +7,7 @@ import { defineDomainIo, defineInput, defineOutput, IoRegistry, type OutputDispa
 import { FileRuntimeStore, FLUXIQ_RUNTIME_WITHHELD_VALUE, RuntimeService, type FluxIQRuntimeCommandAttempt, type FluxIQRuntimeCommandResult } from "../../../runtime/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../flows/authoring/model/index.ts";
 import { classifyAutomationStudioAdaptiveFailure } from "../../../runtime/adaptation/adaptive-orchestrator.ts";
-import { runAutomationStudioGraph } from "../executor.ts";
+import { runAutomationStudioGraph } from "../executor/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher, dispatchPolicyOutput } from "../io-policy.ts";
 import { packAutomationStudioLlmContext } from "../../../runtime/llm/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../service/index.ts";

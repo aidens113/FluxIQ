@@ -3,7 +3,7 @@ import { AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL, isAutomationStudioAnthropicM
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES } from "../provider-transport/index.ts";
 import { automationStudioAnthropicMessageBody } from "./request.ts";
-import { automationStudioAnthropicOutputFormat } from "./schema.ts";
+import { automationStudioAnthropicOutputFormat } from "../../models/providers/anthropic/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { isRecord } from "../provider-transport/index.ts";
 

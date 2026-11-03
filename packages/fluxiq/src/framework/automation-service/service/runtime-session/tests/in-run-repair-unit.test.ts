@@ -2,7 +2,7 @@
 // repair names one unit, the incident's, and every other unit is refused.
 
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioRepairUnit } from "../../../executor/lifecycle-run/index.ts";
+import type { AutomationStudioRepairUnit } from "../../../../../engine/automation/lifecycle-run/index.ts";
 import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../../../../runtime/llm/index.ts";
 import { automationStudioInRunRepairUnitRefusal } from "../in-run-repair-unit.ts";
 

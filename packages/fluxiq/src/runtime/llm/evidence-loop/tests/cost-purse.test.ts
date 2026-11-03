@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider, type AutomationStudioLlmUsageSummary } from "../../harness.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider, type AutomationStudioLlmUsageSummary } from "../../harness/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, type AutomationStudioLlmEvidenceLoopBudget, type AutomationStudioLlmEvidenceTool } from "../../evidence-loop.ts";
 import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse, automationStudioLlmCurrentBuildPurse } from "../../build-purse/index.ts";
 

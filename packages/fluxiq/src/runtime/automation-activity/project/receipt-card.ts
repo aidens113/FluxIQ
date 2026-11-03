@@ -1,6 +1,6 @@
 import type { ClientGatewayActivityPhase, ClientGatewayActivityProjectCard } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioProjectReceiptRef } from "../../project-agents/contracts/index.ts";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioProjectCardWords } from "./card-words.ts";
 
 type Verdict = Extract<ClientGatewayActivityProjectCard, { kind: "receipt" }>["verdict"];

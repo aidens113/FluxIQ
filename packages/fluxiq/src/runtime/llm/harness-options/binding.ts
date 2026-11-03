@@ -22,7 +22,7 @@ import type { AutomationStudioFlowScriptExamples } from "../../flow-authoring/bo
 import type { AutomationStudioFlowScriptGuidance } from "../../flow-authoring/bootstrap/script-guidance/index.ts";
 import type { AutomationStudioResolvedControlIntent } from "../resolved-control-intent/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
-import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
+import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
   automationStudioLlmDescribeNodesBundle,

@@ -1,5 +1,5 @@
 import type { EvidenceComparator, EvidenceReference, NodeEvidenceBinding, StateFact, StateFactReference } from "../index.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 import { validateEvidenceAnchor } from "./state.ts";
 
 export function validateStateFactReference(fact: StateFactReference): AutomationStudioValidationResult;

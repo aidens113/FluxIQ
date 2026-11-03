@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import type { AutomationStudioSessionKeyPorts } from "../deepseek/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "../deepseek/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmResolutionWithinFlowSettings } from "../flow-execution-limits/index.ts";

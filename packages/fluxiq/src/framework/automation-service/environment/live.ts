@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { automationStudioRunWait } from "../executor/pacing/index.ts";
+import { automationStudioRunWait } from "../../../engine/automation/pacing/index.ts";
 import type { AutomationStudioRunEnvironment } from "./environment.ts";
 
 /**

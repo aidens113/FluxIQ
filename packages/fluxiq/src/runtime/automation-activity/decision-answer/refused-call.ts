@@ -13,7 +13,7 @@
 // its own rows are its card.
 
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { activityActionOf } from "../../../ui/index.ts";
 import { automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "../wording/index.ts";
 

@@ -1,7 +1,7 @@
 import { AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH } from "../harness/structured-response.ts";
 import { automationStudioRuntimePatchOutputSchema } from "../harness/runtime-patch-schema.ts";
 import { automationStudioLlmTaskExpectsDiagnosis } from "../harness/task-kind.ts";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { automationStudioFlowBootstrapOutputSchema } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA } from "../verification-defects/index.ts";

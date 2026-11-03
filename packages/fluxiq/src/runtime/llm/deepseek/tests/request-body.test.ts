@@ -7,7 +7,7 @@ import {
 } from "../../../flow-authoring/bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstrap/plan/tests/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../evidence-loop.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { automationStudioDeepSeekOutputSchema } from "../output-schema.ts";
 import { automationStudioDeepSeekMessages } from "../request-body.ts";
 import { automationStudioDeepSeekRequestShape } from "../request-shape.ts";

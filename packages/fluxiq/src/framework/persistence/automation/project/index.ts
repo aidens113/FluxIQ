@@ -1,6 +1,6 @@
 export * from "./database.ts";
 export * from "./store-unavailable-error.ts";
-export * from "./schema.ts";
+export * from "./schema/index.ts";
 export {
   AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS,
   AutomationStudioProjectAdministration,

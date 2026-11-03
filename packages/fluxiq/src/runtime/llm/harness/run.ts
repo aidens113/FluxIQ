@@ -9,8 +9,8 @@ import { automationStudioLlmProviderCall, type AutomationStudioLlmProviderRetryA
 import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, automationStudioLlmBuildPurseHoldCall, automationStudioLlmProjectedCallCostUsd } from "../build-purse/index.ts";
 import { automationStudioLoopStageTransition } from "../stages/index.ts";
 import { packAutomationStudioLlmContext } from "./context-packet.ts";
-import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
-import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../token-estimation.ts";
+import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
+import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmUsageSummary } from "./provider.ts";
 import { interventionFromLlmResult } from "./intervention.ts";
 import { isRecord, validRequestIdentity } from "./json-bounds.ts";
@@ -23,7 +23,7 @@ import {
   AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD,
   resolveAutomationStudioLlmTokenLimits,
   validateAutomationStudioLlmUsage
-} from "./token-limits.ts";
+} from "../../models/limits/index.ts";
 
 export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHarnessInput): Promise<AutomationStudioLlmTaskResult> {
   const now = input.now ?? Date.now;

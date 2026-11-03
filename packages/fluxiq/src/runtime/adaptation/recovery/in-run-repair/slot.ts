@@ -4,7 +4,7 @@
 // tried and did (`./history.ts`). The recovery that carries it is the same one
 // a run that could not hold gets after it ends (`../annotation/annotate.ts`).
 
-import type { AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../../../framework/automation-service/executor/lifecycle-run/index.ts";
+import type { AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../../../engine/automation/lifecycle-run/index.ts";
 import type { AutomationStudioLlmInRunRepairContext, AutomationStudioLlmInRunRepairContract, AutomationStudioLlmInRunRepairUnit } from "../../../llm/index.ts";
 import { automationStudioInRunRepairHistory } from "./history.ts";
 

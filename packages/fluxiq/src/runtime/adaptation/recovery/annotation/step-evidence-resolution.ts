@@ -49,7 +49,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, resolveAutomationStudioPlanActionEffect, type AutomationStudioActionPermissionCheck, type AutomationStudioPlanActionEffectSource } from "../../../action-permission-requests/index.ts";
-import type { AutomationStudioFactCondition } from "../../../../framework/automation-service/executor/lifecycle/index.ts";
+import type { AutomationStudioFactCondition } from "../../../../engine/automation/lifecycle/index.ts";
 import type { AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../../flow-authoring/bootstrap/index.ts";
 import {
   AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID,

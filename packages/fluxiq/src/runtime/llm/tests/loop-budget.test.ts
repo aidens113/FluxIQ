@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS, automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopRemaining, automationStudioLlmEvidenceLoopWrapUp } from "../loop-budget.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../harness.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../harness/index.ts";
 import { AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironment } from "../../../framework/automation-service/environment/index.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];

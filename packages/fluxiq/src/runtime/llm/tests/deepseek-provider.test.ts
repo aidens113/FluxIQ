@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL,
   createAutomationStudioDeepSeekProvider

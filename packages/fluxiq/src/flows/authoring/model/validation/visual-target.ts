@@ -1,5 +1,5 @@
 import type { ActionVisualEntityTarget } from "../index.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 import { validateEvidenceAnchor, validateStatePath } from "./state.ts";
 
 export function validateActionVisualEntityTarget(target: ActionVisualEntityTarget): AutomationStudioValidationResult;

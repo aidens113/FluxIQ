@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor/index.ts";
 import { automationStudioRuntimePatchOutputSchema, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest, type AutomationStudioLlmTokenLimits } from "../../../../llm/index.ts";
 import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-verification/check-schedule/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../../../framework/automation-service/service.ts";

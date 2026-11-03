@@ -1,5 +1,5 @@
 import { automationStudioFlowBootstrapCatalogNames } from "../../flow-authoring/bootstrap/index.ts";
-import { automationStudioLlmTaskExpectsDiagnosis, type AutomationStudioLlmTaskRequest } from "../harness.ts";
+import { automationStudioLlmTaskExpectsDiagnosis, type AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { automationStudioDeepSeekOutputSchema } from "./output-schema.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_RESPONSE_FORMAT,

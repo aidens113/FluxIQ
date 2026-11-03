@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS } from "../../../framework/automation-service/nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS } from "../../../components/automation/control-flow/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "./plan/index.ts";
 import {
   createBlankAutomationStudioFlowArtifact,
@@ -14,7 +14,7 @@ import {
 import type {
   AutomationStudioFlowBuildPlan,
   AutomationStudioFlowBootstrapRisk
-} from "./plan.ts";
+} from "./plan/index.ts";
 import type {
   AutomationStudioActionDeclarationCrossCheck,
   AutomationStudioActionDeclarationRecord,
@@ -25,8 +25,8 @@ import type { AutomationStudioLlmEvidenceLoopTrace } from "../../llm/index.ts";
 import type { AutomationStudioBootstrapExistingTopology } from "./extend.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../../adaptation/flow-change/index.ts";
 import { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioRouteSignaturesValue } from "../../../framework/automation-service/route-state/signatures/index.ts";
-import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY as DECLARED_CONSEQUENCES_METADATA_KEY } from "../../../framework/automation-service/executor/defensive/index.ts";
-import { AUTOMATION_STUDIO_PACE_METADATA_KEY as PACE_METADATA_KEY } from "../../../framework/automation-service/executor/pacing/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY as DECLARED_CONSEQUENCES_METADATA_KEY } from "../../../engine/automation/defensive/index.ts";
+import { AUTOMATION_STUDIO_PACE_METADATA_KEY as PACE_METADATA_KEY } from "../../../engine/automation/pacing/index.ts";
 import { AUTOMATION_STUDIO_RESET_WITNESS_METADATA_KEY as RESET_WITNESS_METADATA_KEY } from "./candidate/reset-witness-key.ts";
 import { automationStudioSiteResetWitnessStampValid } from "./reset-admission/index.ts";
 

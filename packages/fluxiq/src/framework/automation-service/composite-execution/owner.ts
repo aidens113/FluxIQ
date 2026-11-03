@@ -1,7 +1,7 @@
 import type { JsonValue } from "../../../core/index.ts";
 import { getCallFlowConfiguration, validateFlowComposition, type AutomationStudioFlowArtifact, type AutomationStudioFlowDocument, type AutomationStudioPublishedFlowSnapshot } from "../../../flows/authoring/model/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../executor.ts";
-import { automationStudioChildInvocation, automationStudioRootInvocation, type AutomationStudioSubflowGraphRunner } from "../executor/frames/index.ts";
+import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../executor/index.ts";
+import { automationStudioChildInvocation, automationStudioRootInvocation, type AutomationStudioSubflowGraphRunner } from "../../../engine/automation/frames/index.ts";
 import { compileAutomationStudioRegions } from "../../../runtime/recording/region-compiler.ts";
 import { automationStudioCallAcrossBoundary } from "./boundary.ts";
 import { runAutomationStudioChildWithBounds } from "./child-bounds.ts";

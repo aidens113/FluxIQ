@@ -14,9 +14,9 @@
 
 import type { AutomationStudioConversationAsk, AutomationStudioConversationAskInput, AutomationStudioConversationSubject, AutomationStudioConversationWriter } from "../conversations/index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../recording/gateway-trace/installation.ts";
-import type { AutomationStudioAsk } from "./ask.ts";
-import type { AutomationStudioAskAnswer } from "./answer.ts";
-import type { AutomationStudioParkingPort } from "./port.ts";
+import type { AutomationStudioAsk } from "../interaction/index.ts";
+import type { AutomationStudioAskAnswer } from "../parking/index.ts";
+import type { AutomationStudioParkingPort } from "../parking/index.ts";
 
 /** How often the thread is re-read while waiting, when nothing in this process says the ask has moved. */
 const DEFAULT_POLL_INTERVAL_MS = 2_000;

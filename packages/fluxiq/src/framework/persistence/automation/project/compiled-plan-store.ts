@@ -9,7 +9,7 @@ import {
   type AutomationStudioCompiledPlanInstruction,
   type AutomationStudioCompiledPlanNode
 } from "../../../automation-service/compiled-plan.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../automation-service/executor.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../../automation-service/executor/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";

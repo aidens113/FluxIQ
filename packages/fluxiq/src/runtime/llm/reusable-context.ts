@@ -1,6 +1,6 @@
 import type { JsonValue } from "../../core/index.ts";
 import type { AutomationStudioReusableLlmContextRecord } from "../../framework/persistence/automation/index.ts";
-import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "./token-estimation.ts";
+import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../models/limits/index.ts";
 
 export type AutomationStudioReusableLlmContextPacket = {
   schemaVersion: "automation-studio.reusable-llm-context-packet.v1";

@@ -1,5 +1,5 @@
 import type { AutomationStudioActivityEmission } from "../index.ts";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioActivityPassWords, type AutomationStudioActivityLoopPass } from "../loop/index.ts";
 import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "../wording/index.ts";
 import { ACTIVITY_PAGE_PREPARATION_WORDS, ACTIVITY_RECORDED_CHECK_WORDS, cutAtWord } from "../../../ui/index.ts";

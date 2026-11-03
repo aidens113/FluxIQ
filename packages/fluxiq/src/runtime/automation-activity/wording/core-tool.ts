@@ -1,5 +1,5 @@
 import { activityActionVerb, type ActivityActionVerb } from "../../../ui/index.ts";
-import { automationStudioActivityHumanLabel } from "./human-label.ts";
+import { automationStudioActivityHumanLabel } from "../../activity/text/index.ts";
 
 /** `core.describe_nodes` (`../../llm/node-tools/describe-nodes.ts`), read as a plain string so this module does not reach into the loop. */
 const DESCRIBE_NODES = "core.describe_nodes";

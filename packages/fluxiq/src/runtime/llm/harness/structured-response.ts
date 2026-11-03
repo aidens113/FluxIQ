@@ -3,8 +3,8 @@ import type { AutomationStudioFlowBootstrapPlan } from "../../flow-authoring/boo
 import type { AutomationStudioChangeProposalPatch } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import { isJsonValue, isRecord } from "./json-bounds.ts";
-import type { AutomationStudioFactCondition } from "../../../framework/automation-service/executor/lifecycle/index.ts";
-import type { AutomationStudioHandlerDispositionKind, AutomationStudioLifecycleEvent } from "../../../framework/automation-service/nodes/control-flow/index.ts";
+import type { AutomationStudioFactCondition } from "../../../engine/automation/lifecycle/index.ts";
+import type { AutomationStudioHandlerDispositionKind, AutomationStudioLifecycleEvent } from "../../../components/automation/control-flow/index.ts";
 
 import type { AutomationStudioFlowDraftAmendment } from "../../flow-authoring/draft/index.ts";
 

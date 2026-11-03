@@ -44,7 +44,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
 import { automationStudioNodeRouteSignatures } from "../../../../framework/automation-service/route-state/signatures/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
 

@@ -4,7 +4,7 @@
 // else's credential.
 
 import type { AutomationStudioConversationCaller } from "../../conversations/index.ts";
-import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../session-keys/index.ts";
+import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../../models/secrets/index.ts";
 import type { AutomationStudioLlmProviderId } from "../models/index.ts";
 
 export type AutomationStudioPanelCommandKeyPorts = AutomationStudioSessionKeyPorts;

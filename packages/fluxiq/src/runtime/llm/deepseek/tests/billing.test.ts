@@ -7,7 +7,7 @@
 // rate, and held before it is sent at the rate in force then, all input
 // uncached. No request sends `max_tokens`.
 import { describe, expect, it } from "vitest";
-import { runAutomationStudioLlmHarness, type AutomationStudioLlmHarnessInput } from "../../harness.ts";
+import { runAutomationStudioLlmHarness, type AutomationStudioLlmHarnessInput } from "../../harness/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../index.ts";
 import { AutomationStudioLlmProviderRetryLedger } from "../../provider-retry/index.ts";
 import { automationStudioDeepSeekOffPeakAt, createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekCostUsd } from "../index.ts";

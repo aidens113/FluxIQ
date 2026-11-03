@@ -1,10 +1,10 @@
-import { automationStudioLlmTaskExpectsDiagnosis, isAutomationStudioModelAuthoredTargetOverrideTarget, isAutomationStudioNoRepairReason, type AutomationStudioLlmStructuredResponse, type AutomationStudioLlmTaskRequest, type AutomationStudioLlmUsageSummary } from "../harness.ts";
+import { automationStudioLlmTaskExpectsDiagnosis, isAutomationStudioModelAuthoredTargetOverrideTarget, isAutomationStudioNoRepairReason, type AutomationStudioLlmStructuredResponse, type AutomationStudioLlmTaskRequest, type AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapSizeLimitsOfContext, parseAutomationStudioFlowBootstrapPlan } from "../../flow-authoring/bootstrap/index.ts";
 import { automationStudioLlmEvidenceNormalizedDecisionResponse } from "../evidence-loop-decision.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH } from "./output-schema.ts";
 import type { AutomationStudioDeepSeekModel } from "./models.ts";
-import { isRecord } from "./json-record.ts";
+import { isRecord } from "../provider-transport/index.ts";
 import { automationStudioDeepSeekVerdictBeforeCut } from "./verdict-before-cut.ts";
 import { parseAutomationStudioDeepSeekEnvelope as readEnvelope } from "../../models/providers/deepseek/index.ts";
 export { automationStudioDeepSeekContentCase, automationStudioDeepSeekMalformedReply } from "../../models/providers/deepseek/index.ts";

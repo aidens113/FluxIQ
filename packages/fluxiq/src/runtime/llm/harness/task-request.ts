@@ -18,12 +18,12 @@ import type { AutomationStudioLlmProviderRefusal } from "../provider-refusal/ind
 import type { AutomationStudioLlmRunBudgetAllowance, AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
 import type { AutomationStudioLoopStage, AutomationStudioLoopStageInstructionRegistry } from "../stages/index.ts";
 import type { AutomationStudioLlmActionPermissions, AutomationStudioLlmContextPacket } from "./context-packet.ts";
-import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
+import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
 import type { AutomationStudioInstructionResolutionInput } from "./instruction.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmProviderMetadata, AutomationStudioLlmUsageSummary } from "./provider.ts";
 import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmStructuredResponse } from "./structured-response.ts";
 import type { AutomationStudioLlmTaskKind } from "./task-kind.ts";
-import type { AutomationStudioLlmTokenLimits } from "./token-limits.ts";
+import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
 
 export type AutomationStudioLlmTaskRequest = {
   requestId: string;

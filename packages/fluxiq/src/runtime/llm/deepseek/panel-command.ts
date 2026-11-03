@@ -33,10 +33,10 @@ import type {
   AutomationStudioConversationModelTurn
 } from "../../conversations/index.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
-import { automationStudioLlmProviderReplyAccount } from "../reply-account.ts";
+import { automationStudioLlmProviderReplyAccount } from "../../models/failures/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES, readAutomationStudioDeepSeekBoundedResponse } from "./bounded-read.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, isAutomationStudioDeepSeekModel, type AutomationStudioDeepSeekModel } from "./models.ts";
-import { isRecord } from "./json-record.ts";
+import { isRecord } from "../provider-transport/index.ts";
 import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
 import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";

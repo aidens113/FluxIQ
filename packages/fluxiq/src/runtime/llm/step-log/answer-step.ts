@@ -1,5 +1,5 @@
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE } from "../repeat-guard/index.ts";
-import { automationStudioLlmProviderUnanswered } from "../unanswered-calls.ts";
+import { automationStudioLlmProviderUnanswered } from "../../models/failures/index.ts";
 import { automationStudioLlmStepLogDirectory } from "./directory.ts";
 import { automationStudioLlmStepLogWriter } from "./files.ts";
 import { automationStudioLlmStepLogFolderRefused, automationStudioLlmStepLogOpenFolder, type AutomationStudioLlmStepLogFolder } from "./folder.ts";

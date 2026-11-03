@@ -1,5 +1,5 @@
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowAdaptation } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor/index.ts";
 import { decideAutomationStudioLlmInvocationGate, type AutomationStudioTrainingBudgetState, type AutomationStudioTrainingModeSettings } from "../training-modes.ts";
 import {
   buildAutomationStudioRuntimeDeterministicDiagnosis,

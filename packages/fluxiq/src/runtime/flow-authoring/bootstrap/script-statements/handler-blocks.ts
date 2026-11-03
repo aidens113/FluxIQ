@@ -33,7 +33,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapFactCondition, AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
-import { automationStudioDispositionAllowedAt, type AutomationStudioLifecycleEvent } from "../../../../framework/automation-service/nodes/control-flow/index.ts";
+import { automationStudioDispositionAllowedAt, type AutomationStudioLifecycleEvent } from "../../../../components/automation/control-flow/index.ts";
 import type { AutomationStudioFlowScriptBlock, AutomationStudioFlowScriptEntry, AutomationStudioFlowScriptStep } from "../authoring/index.ts";
 import { automationStudioFlowScriptFactGone, automationStudioFlowScriptFacts } from "./fact-condition.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";

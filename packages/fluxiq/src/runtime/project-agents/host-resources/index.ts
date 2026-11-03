@@ -5,7 +5,7 @@ export type {
   AutomationStudioHostResourceLease,
   AutomationStudioHostResourcePort,
   AutomationStudioHostResourceSnapshot
-} from "./types.ts";
+} from "../../automation-host/index.ts";
 export { AutomationStudioHostLeaseScope } from "./lease-scope.ts";
 export { AutomationStudioHostResourcePortContractError } from "./port-contract-error.ts";
 export { AutomationStudioHostResourceStaleLeaseError } from "./stale-lease-error.ts";

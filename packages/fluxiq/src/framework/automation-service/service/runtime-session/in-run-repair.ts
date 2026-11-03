@@ -45,7 +45,7 @@ import { automationStudioActionPermissionDenied, automationStudioConsequencesInO
 import { emitAutomationStudioActivityThought } from "../../../../runtime/automation-activity/index.ts";
 import { automationStudioLegacyGraphRequest } from "../../legacy-envelope/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
-import type { AutomationStudioIncidentRepair, AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../executor/lifecycle-run/index.ts";
+import type { AutomationStudioIncidentRepair, AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../../../engine/automation/lifecycle-run/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/llm/build-purse/index.ts";
 import { prepareAutomationStudioInRunRepair, type AutomationStudioInRunRepairPreparation } from "../../../../runtime/adaptation/live-patch.ts";
 import type { AutomationStudioLlmRunPurse, AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeSessionLlm } from "../../../../runtime/llm/index.ts";

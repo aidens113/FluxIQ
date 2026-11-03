@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioLlmStructuredResponse, AutomationStudioLlmUsageSummary } from "../harness.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioLlmStructuredResponse, AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmOpaqueSecretResolver } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES, AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES } from "../provider-transport/index.ts";
 import { AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL, AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS, automationStudioAnthropicModelRefusal, isAutomationStudioAnthropicModel, type AutomationStudioAnthropicModel } from "../models/index.ts";
@@ -6,7 +6,7 @@ import { validateAutomationStudioLlmTaskRequest, automationStudioLlmTaskOutputSc
 import type { AutomationStudioLlmSecretReference } from "../deepseek/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { automationStudioAnthropicRequest } from "./request.ts";
-import { automationStudioAnthropicMatchesSchema } from "./schema.ts";
+import { automationStudioAnthropicMatchesSchema } from "../../models/providers/anthropic/index.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
 import { isRecord } from "../provider-transport/index.ts";
 

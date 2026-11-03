@@ -1,6 +1,6 @@
 import type { ExecutableFlow } from "../../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioSubflowGraphSource } from "../../../../framework/automation-service/executor/frames/index.ts";
+import type { AutomationStudioSubflowGraphSource } from "../../../../engine/automation/frames/index.ts";
 import type { AutomationStudioBootstrapTopology } from "../index.ts";
 
 export type AutomationStudioCandidateGraphSource = AutomationStudioSubflowGraphSource & {

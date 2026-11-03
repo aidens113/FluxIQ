@@ -1,5 +1,5 @@
 import type { AutomationStudioAsk } from "../../automation-parking/index.ts";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioActivityAskIsPersonNeeded } from "./person-needed.ts";
 import { automationStudioActivityAskTitle } from "./title.ts";
 

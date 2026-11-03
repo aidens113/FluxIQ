@@ -12,7 +12,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { defineOutput, IoRegistry } from "../../../../../io/index.ts";
 import { RuntimeService } from "../../../../../runtime/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
-import { runAutomationStudioGraph } from "../../../executor.ts";
+import { runAutomationStudioGraph } from "../../../executor/index.ts";
 import { createRuntimePolicyEffectDispatcher } from "../../../io-policy.ts";
 import { runtimeSessionToFlowRunDetail } from "../../index.ts";
 import { extractionSummaryFromOutputs } from "../extraction-summary.ts";

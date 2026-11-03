@@ -74,7 +74,7 @@ import type { LearnedTaskModel } from "./learning/index.ts";
 import { compileFlowSource, convertCodeOwnedFlowToVisual, generateFlowTypeScript, verifyCodeOwnedFlowCompilation, type AutomationStudioFlowCompilation } from "../../flows/authoring/dsl/index.ts";
 import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "./mining/index.ts";
 import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type NormalizationOptions, type NormalizedTimeline } from "../../runtime/recording/normalization/index.ts";
-import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryBudget } from "./executor.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryBudget } from "./executor/index.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
 import { routeAutomationStudioRun, startAutomationStudioBuildRouting } from "./route-state/index.ts";
 import {

@@ -8,9 +8,9 @@
 
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { observeAutomationStudioFacts } from "../../../executor/lifecycle-run/index.ts";
+import { observeAutomationStudioFacts } from "../../../../../engine/automation/lifecycle-run/index.ts";
 import type { AutomationStudioFactEvaluationContext, AutomationStudioHostFactResult, AutomationStudioHostRuntimeBoundary, AutomationStudioHostRuntimeCapability } from "../../../host-runtime.ts";
-import type { AutomationStudioFactCondition } from "../../../executor/lifecycle/index.ts";
+import type { AutomationStudioFactCondition } from "../../../../../engine/automation/lifecycle/index.ts";
 
 // The domain's declarations, restated.
 type DomainFactVerdict = "true" | "false" | "unknown";

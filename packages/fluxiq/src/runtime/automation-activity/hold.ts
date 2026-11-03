@@ -1,4 +1,4 @@
-import { emitAutomationStudioActivity } from "./emit.ts";
+import { emitAutomationStudioActivity } from "../activity/index.ts";
 import { automationStudioActivityHumanLabel } from "./wording/index.ts";
 
 /** Where a run holds: the node it executes first when it is let go, and that node's place in the Flow. */

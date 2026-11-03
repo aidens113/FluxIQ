@@ -5,10 +5,10 @@
 // as it arrived.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AutomationStudioLlmProviderError } from "../../provider-contract.ts";
 import { parseAutomationStudioDeepSeekEnvelope } from "../response-envelope.ts";
-import { automationStudioDeepSeekClosedContent } from "../unclosed-content.ts";
+import { automationStudioDeepSeekClosedContent } from "../../../models/providers/deepseek/index.ts";
 
 const LIVE = JSON.parse(readFileSync(new URL("./unclosed-reply-0017.json", import.meta.url), "utf8")) as {
   choices: Array<{ finish_reason: string; message: { content: string } }>;

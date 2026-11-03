@@ -1,5 +1,5 @@
 import { activityActionControlNoun, activityActionVerb, type ActivityActionVerb } from "../../../ui/index.ts";
-import { automationStudioActivityHumanLabel } from "./human-label.ts";
+import { automationStudioActivityHumanLabel } from "../../activity/text/index.ts";
 import { automationStudioActivityListName } from "./list-name.ts";
 import { automationStudioActivityPageName } from "./page-name.ts";
 

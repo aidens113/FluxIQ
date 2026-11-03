@@ -2,7 +2,7 @@ import type { AutomationStudioAdaptationPolicy, AutomationStudioDeterministicPat
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "../flow-size/index.ts";
 import { validateConditionExpression } from "./condition.ts";
-import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
+import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "../../../executable/validation/index.ts";
 
 const VALIDATION_RESULT_STATUSES: ReadonlySet<unknown> = new Set(["succeeded", "failed"]);
 const VALIDATION_RESULT_KINDS: ReadonlySet<unknown> = new Set(["trial", "replay"]);

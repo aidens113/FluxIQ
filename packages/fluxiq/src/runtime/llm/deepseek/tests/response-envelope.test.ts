@@ -11,7 +11,7 @@
 // quotes and whose `where` holds five conditions.
 
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AutomationStudioLlmProviderError, normalizedAutomationStudioLlmProviderFailure } from "../../provider-contract.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekCostUsd } from "../index.ts";
 import { parseAutomationStudioDeepSeekEnvelope } from "../response-envelope.ts";

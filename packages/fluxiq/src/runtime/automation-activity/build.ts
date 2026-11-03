@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { activitySaidOnce, cutAtWord } from "../../ui/index.ts";
-import { emitAutomationStudioActivity } from "./emit.ts";
+import { emitAutomationStudioActivity } from "../activity/index.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
 
 /**

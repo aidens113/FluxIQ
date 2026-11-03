@@ -1,6 +1,6 @@
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, estimateTokens } from "./token-limits.ts";
+import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, estimateTokens } from "../../models/limits/index.ts";
 
 export type AutomationStudioResolvedInstruction = {
   instructionId: string;

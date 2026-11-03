@@ -33,7 +33,7 @@
 
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowRunActionAttemptRecord } from "../../../../flows/authoring/model/index.ts";
 import { type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
-import { automationStudioReferenceNow } from "../../reference-now/index.ts";
+import { automationStudioReferenceNow } from "../../../../runtime/reference-time/index.ts";
 import { automationStudioResultEndViewRead, summarizeAutomationStudioRunResult, type AutomationStudioResultEarlierAdvice, type AutomationStudioResultEndView, type AutomationStudioResultRecordSetInput, type AutomationStudioRunResultSummary } from "../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioTrialChangeFinding, AutomationStudioTrialSiteChange } from "../../../../runtime/flow-authoring/bootstrap/trial-change/index.ts";
 import { automationStudioResultSiteChangeScreened } from "../../../../runtime/result-verification/site-change/index.ts";

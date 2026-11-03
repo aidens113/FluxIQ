@@ -2,7 +2,7 @@
 // runtime/index.ts published for these modules before they moved here, so the
 // program's public surface is unchanged. token-estimation.ts stays internal
 // for the same reason: runtime/index.ts never exported it.
-export * from "./harness.ts";
+export * from "./harness/index.ts";
 export * from "./provider-contract.ts";
 // What an untyped provider throw was, as read and as a stored Flow Bootstrap
 // failure carries it once the harness has screened it (`throw-account/`).
@@ -67,14 +67,14 @@ export {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW,
   automationStudioLlmUnreadableReplySaid,
   type AutomationStudioLlmEvidenceLoopUnreadable
-} from "./unreadable-reply.ts";
+} from "../models/failures/index.ts";
 // A provider that stopped answering: what ends a loop on it, and what the
 // build's ending is told (`unanswered-calls.ts`).
 export {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_PROVIDER_UNANSWERED_IN_A_ROW,
   automationStudioLlmProviderUnanswered,
   type AutomationStudioLlmEvidenceLoopProviderUnavailable
-} from "./unanswered-calls.ts";
+} from "../models/failures/index.ts";
 // The decision history: every decision a loop made and what it answered, the
 // entry that shows it beside the window, and what one decision is shown
 // (`decision-context/`). Public because a caller reading a run's evidence has
@@ -131,4 +131,4 @@ export { automationStudioLlmBuildTrace } from "./evidence-progress/index.ts";
 
 export * from "./models/index.ts";
 export { createAutomationStudioAnthropicPanelCommandModel, estimateAutomationStudioAnthropicCostUsd, type AutomationStudioAnthropicPanelCommandOptions } from "./anthropic/index.ts";
-export { releaseAutomationStudioSessionProviderKey, automationStudioSessionKeyProvider } from "./session-keys/index.ts";
+export { releaseAutomationStudioSessionProviderKey, automationStudioSessionKeyProvider } from "../models/secrets/index.ts";

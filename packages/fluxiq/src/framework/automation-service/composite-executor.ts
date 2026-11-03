@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../flows/authoring/model/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "./executor.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "./executor/index.ts";
 import { AutomationStudioCanonicalExecution } from "./composite-execution/index.ts";
 
 /** Canonical compiler/composition owner; preserves the normal executor API. */

@@ -1,5 +1,5 @@
-import { automationStudioActivityReads } from "./reads.ts";
-import type { AutomationStudioActivityLoopPass } from "./types.ts";
+import { automationStudioActivityReads } from "../../activity/loop/index.ts";
+import type { AutomationStudioActivityLoopPass } from "../../activity/loop/index.ts";
 
 /**
  * What a step says of the pass it runs as. A read in a paging loop is the

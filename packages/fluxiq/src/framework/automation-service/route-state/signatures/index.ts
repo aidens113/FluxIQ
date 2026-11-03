@@ -26,7 +26,7 @@ export {
   automationStudioRouteSignaturesValue,
   type AutomationStudioRouteSignatureReading,
   type AutomationStudioRouteSignatures
-} from "./value.ts";
-export { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioNodeRouteSignatures } from "./node.ts";
-export { automationStudioCompareRouteSignatures, automationStudioSignRouteState, type AutomationStudioRouteSignatureComparison } from "./host.ts";
-export { automationStudioRouteEffectHolds, automationStudioRouteEffectSeen, automationStudioSignRouteEffect, type AutomationStudioRouteEffectReading } from "./effect.ts";
+} from "../../../../runtime/automation-host/route-state/index.ts";
+export { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioNodeRouteSignatures } from "../../../../runtime/automation-host/route-state/index.ts";
+export { automationStudioCompareRouteSignatures, automationStudioSignRouteState, type AutomationStudioRouteSignatureComparison } from "../../../../runtime/automation-host/route-state/index.ts";
+export { automationStudioRouteEffectHolds, automationStudioRouteEffectSeen, automationStudioSignRouteEffect, type AutomationStudioRouteEffectReading } from "../../../../runtime/automation-host/route-state/index.ts";

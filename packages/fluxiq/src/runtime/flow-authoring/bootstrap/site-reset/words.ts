@@ -9,7 +9,7 @@
 // domain and never teach to a scenario (AGENTS.md, "Model guidance never
 // teaches to the test").
 
-import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../../framework/automation-service/executor/trace-withholding.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../../engine/automation/trace/index.ts";
 import { automationStudioSiteResetConditionWords, type AutomationStudioSiteResetCanMeet, type AutomationStudioSiteResetFailed } from "../reset-answers/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY as UNDOES, type AutomationStudioSiteResetIssuedRef } from "../reset-settlement/index.ts";
 

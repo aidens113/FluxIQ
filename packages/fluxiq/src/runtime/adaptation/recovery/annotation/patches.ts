@@ -34,7 +34,7 @@ import {
   type AutomationStudioActionConsequence,
   type AutomationStudioActionPermissionGate
 } from "../../../action-permission-requests/index.ts";
-import type { AutomationStudioGraphExecutionOptions } from "../../../../framework/automation-service/executor.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../../../../framework/automation-service/executor/index.ts";
 import {
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   type AutomationStudioLlmContextPacket,

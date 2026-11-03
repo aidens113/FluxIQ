@@ -1,7 +1,7 @@
 // A paid decision stopped before tool execution still leaves a trace row.
 // Unoffered calls and an offered call that returned after the deadline have
 // different codes. Unknown tool names are never written as Core identifiers.
-import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
+import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "./trace.ts";
 
 /** A paid final decision withheld from execution, with its actual stopping code. */

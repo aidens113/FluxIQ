@@ -30,7 +30,7 @@ import { packAutomationStudioLlmExploredEvidence, type AutomationStudioLlmExplor
 import { automationStudioLlmDraftEntryWithoutDeniedKeys } from "./draft-screen.ts";
 import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
 import { AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION, resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
-import { automationStudioWithoutLocators } from "./locator-text.ts";
+import { automationStudioWithoutLocators } from "../screening/index.ts";
 import type { AutomationStudioLlmDiagnosisFields } from "./structured-response.ts";
 import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmInRunRepairContext } from "./task-request.ts";

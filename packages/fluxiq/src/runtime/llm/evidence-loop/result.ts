@@ -11,8 +11,8 @@ import type { AutomationStudioLlmEvidenceLoopAccounting } from "./accounting.ts"
 import type { AutomationStudioLlmEvidenceLoopConfigurationIssue } from "../configuration-issue/index.ts";
 import type { AutomationStudioLlmEvidenceLoopExhaustion } from "./exhaustion.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "./trace.ts";
-import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../unreadable-reply.ts";
-import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../unanswered-calls.ts";
+import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../../models/failures/index.ts";
+import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../models/failures/index.ts";
 
 export type AutomationStudioLlmEvidenceLoopFailureCode =
   | "llm_evidence_loop.invalid_configuration"

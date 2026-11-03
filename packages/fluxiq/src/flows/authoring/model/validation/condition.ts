@@ -1,5 +1,5 @@
 import type { AutomationConditionExpression } from "../index.ts";
-import { addIssue, type AutomationStudioValidationIssue } from "./issue.ts";
+import { addIssue, type AutomationStudioValidationIssue } from "../../../executable/validation/index.ts";
 
 export function validateConditionExpression(
   expression: AutomationConditionExpression,

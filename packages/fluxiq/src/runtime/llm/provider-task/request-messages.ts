@@ -1,7 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { automationStudioFlowBootstrapCatalogNames } from "../../flow-authoring/bootstrap/plan/index.ts";
 import type { AutomationStudioFlowBootstrapCatalogEntry } from "../../flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
+import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { automationStudioLlmTaskOutputSchema } from "./output-schema.ts";
 import { automationStudioLlmTaskSystemPrompt } from "./system-prompt.ts";
 

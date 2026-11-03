@@ -11,7 +11,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { defineOutput, IoRegistry } from "../../../../io/index.ts";
 import { ClientGatewayRuntimeTransport, RuntimeService } from "../../../../runtime/index.ts";
 import { AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES, type AutomationStudioFlowDocument } from "../../../../flows/authoring/model/index.ts";
-import { runAutomationStudioGraph } from "../../executor.ts";
+import { runAutomationStudioGraph } from "../../executor/index.ts";
 import { automationStudioRunGraphOptions } from "../../service/runtime-session/index.ts";
 import { AutomationStudioChannelScope, AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironment, type AutomationStudioScopedRunEnvironment } from "../index.ts";
 import { FixtureGatewayClient, type FixtureAnswer } from "./fixture-client.ts";

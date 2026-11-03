@@ -4,7 +4,7 @@
 // ceiling and were refused whole. The replies here are a generic library
 // catalogue, not a scenario the Lab measures.
 import { describe, expect, it } from "vitest";
-import { parseAutomationStudioLlmProviderResult, type AutomationStudioLlmTaskRequest } from "../../harness.ts";
+import { parseAutomationStudioLlmProviderResult, type AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AutomationStudioLlmProviderError } from "../../provider-contract.ts";
 import { parseAutomationStudioDeepSeekEnvelope } from "../response-envelope.ts";
 import { automationStudioDeepSeekVerdictBeforeCut } from "../verdict-before-cut.ts";

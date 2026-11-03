@@ -22,7 +22,7 @@ import {
   isAutomationStudioModelAuthoredTargetOverrideTarget,
   isAutomationStudioRuntimeTargetOverrideTarget,
   type AutomationStudioLlmTaskRequest
-} from "../harness.ts";
+} from "../harness/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 
 /** Locators a model might try to pass off as a handle. Every one is valid in its own language. */

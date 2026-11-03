@@ -21,7 +21,7 @@ import {
   type AutomationStudioLlmProviderThrowWithheld
 } from "../throw-account/index.ts";
 import { screenAutomationStudioLlmEvidence } from "./evidence-screen.ts";
-import { automationStudioWithoutLocators } from "./locator-text.ts";
+import { automationStudioWithoutLocators } from "../screening/index.ts";
 
 /**
  * What no carried message may mention, even where the credential screen finds

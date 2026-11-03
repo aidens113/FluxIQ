@@ -8,7 +8,7 @@ import {
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceTool
 } from "../evidence-loop/index.ts";
-import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
+import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import { automationStudioLlmEvidenceToolFailure, type AutomationStudioLlmEvidenceToolFailureCode } from "../tool-failure.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
 

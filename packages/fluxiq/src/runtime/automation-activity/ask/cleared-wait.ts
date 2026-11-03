@@ -1,5 +1,5 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
-import { emitAutomationStudioActivity } from "../emit.ts";
+import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioActivityClearedText } from "./cleared-text.ts";
 
 /** The card's title, the same on both rows. "check" is what a client reads it as a robot check by. */
