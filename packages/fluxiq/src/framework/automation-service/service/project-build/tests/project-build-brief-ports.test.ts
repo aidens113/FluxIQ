@@ -30,6 +30,7 @@
 // removed (it was released 1-4 s later in each case). The guard is wide so it
 // only stops a hang.
 
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -77,7 +78,7 @@ function submission(subflowKey: string, asked: readonly string[] = []): JsonObje
 }
 
 /** The stub domain's nodes: its save, which succeeds and changes nothing a test reads. */
-function saveRuntime(saveEffect?: () => void): AutomationStudioNativeNodeRuntime {
+function saveRuntime(saveEffect?: () => void, pageText?: (evidence: unknown) => string | undefined): AutomationStudioNativeNodeRuntime {
   const node: AutomationStudioNodeDefinition = {
     schemaVersion: "0.1", id: SAVE, version: "1.0.0", label: "Save", description: "Save it.", category: "action",
     source: { kind: "importer", domainId: "isolated", packageId: "isolated.stub", implementationKey: SAVE },
@@ -87,7 +88,7 @@ function saveRuntime(saveEffect?: () => void): AutomationStudioNativeNodeRuntime
   };
   return new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["isolated.actions"] }).register(
     { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "isolated.stub", packageVersion: "1.0.0", domainId: "isolated", nodes: [node] },
-    { packageId: "isolated.stub", packageVersion: "1.0.0", implementations: { [SAVE]: () => {
+    { packageId: "isolated.stub", packageVersion: "1.0.0", ...(pageText ? { llmEvidenceSummary: { pageText } } : {}), implementations: { [SAVE]: () => {
       saveEffect?.();
       return { status: "success" as const, route: "success", outputs: { success: true } };
     } } }
@@ -124,6 +125,8 @@ async function build(input: {
   startState?: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>["startState"];
   stepControl?: AutomationStudioActionDeclaration["control"];
   saveEffect?: () => void;
+  /** The stub domain's page reader, which the step log writes `page.txt` from. */
+  pageText?: (evidence: unknown) => string | undefined;
 }) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-brief-ports-"));
   /** Each builder's evidence at its first decision, by subflow. */
@@ -159,7 +162,7 @@ async function build(input: {
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, ...(input.startState ? { startState: input.startState } : {}), resolvePlanNodeParameters: (request: Parameters<typeof automationStudioTestDeclaredStepResolution>[0]) => automationStudioTestDeclaredStepResolution(request, input.stepControl) } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
     ...(input.prepareStart ? { prepareCandidateStart: input.prepareStart } : {})
   });
-  service.bindNativeNodeRuntime(saveRuntime(input.saveEffect));
+  service.bindNativeNodeRuntime(saveRuntime(input.saveEffect, input.pageText));
   cleanups.push(async () => {
     await service.close();
     await rm(dataDir, { recursive: true, force: true });
@@ -563,5 +566,49 @@ describe("a press with no list read before it", () => {
     expect(seen.read).toMatchObject({ resetDestinations: { collections: [{ ref: "destination-1" }] } });
     // A page that printed no list carries none.
     expect(seen.back).toEqual({ ok: true });
+  });
+});
+
+// The step log's `page.txt` is written from the domain's reader, which the service hands every loop of a build
+// (the supervisor's, each builder's and the reset's) and its recovery exploration: none keeps a reader of its own.
+describe("a build's step log", () => {
+  it("writes page.txt in the supervisor's, the builder's and the reset's steps", async () => {
+    const logs = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-step-log-"));
+    const saved = process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+    process.env.FLUXIQ_LLM_STEP_LOG_DIR = logs;
+    cleanups.push(async () => {
+      if (saved === undefined) delete process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+      else process.env.FLUXIQ_LLM_STEP_LOG_DIR = saved;
+      await rm(logs, { recursive: true, force: true });
+    });
+    const plan = {
+      taskSpec: { parts: [{ id: "p1", quote: { sourceId: "instruction.build", text: "Create a deterministic" }, goalFacts: ["It is saved"], lastingActs: [] }], notAsked: [] },
+      subflows: [{ key: "first", name: "first", parts: ["p1"] }]
+    };
+    const run = await build({
+      plan,
+      briefs: [
+        { kind: "build", subflowKey: "first", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, permittedActs: [], maxIterations: 6 },
+        { kind: "reset", subflowKey: "first", parts: [], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.02, maxIterations: 8 }
+      ],
+      tools: [{ toolId: "look", description: "Look", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false }),
+      reset: () => ({ kind: "complete", result: { summary: "Nothing to undo." } }),
+      pageText: () => "the page as the domain reads it"
+    });
+    await run.run().catch(() => undefined);
+    const withPage = new Set<string>();
+    for (const step of readdirSync(logs)) {
+      try {
+        if (readFileSync(path.join(logs, step, "page.txt"), "utf8") !== "the page as the domain reads it") continue;
+        const meta = JSON.parse(readFileSync(path.join(logs, step, "meta.json"), "utf8")) as { role?: string | null };
+        withPage.add(meta.role ?? "none");
+      } catch { /* a step without a page.txt */ }
+    }
+    expect([...withPage].sort()).toEqual(["builder", "supervisor"]);
+    // The builder brief's opening look, and the reset brief's: each its own loop, each with a page.txt.
+    const looks = readdirSync(logs).filter((step) => step.endsWith("-tool-look"));
+    expect(looks).toHaveLength(2);
+    for (const step of looks) expect(readFileSync(path.join(logs, step, "page.txt"), "utf8")).toBe("the page as the domain reads it");
   });
 });

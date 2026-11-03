@@ -5,7 +5,7 @@ import { automationStudioLlmStepLogWriter } from "./files.ts";
 import { automationStudioLlmStepLogFolderRefused, automationStudioLlmStepLogOpenFolder, type AutomationStudioLlmStepLogFolder } from "./folder.ts";
 import { automationStudioLlmStepLogListStep } from "./listing.ts";
 import { automationStudioLlmStepLogNaming } from "./naming.ts";
-import { automationStudioLlmStepLogPageText } from "./page-text.ts";
+import type { AutomationStudioLlmStepLogPageReader } from "./page-reader.ts";
 import { automationStudioLlmStepLogScope, type AutomationStudioLlmStepLogPass } from "./scope.ts";
 import { automationStudioLlmStepLogSummary } from "./summary.ts";
 
@@ -21,7 +21,7 @@ const DRY_RUN_CALL = /^dryrun\./u;
  * call id. `call.json` holds the call as the model made it, `result.json`
  * exactly the `evidence` the loop hands the model back (the raw value when the
  * tool did not answer with an execution result; the error's name and code when
- * it threw), `page.txt` the page text a registered domain reads out of the evidence,
+ * it threw), `page.txt` the page text the domain's reader (`pageText`, when given) reads out of the evidence,
  * a replay's row (`item`) and output values (`outputs`) by field names only,
  * and `meta.json`, last, the timing, the result code and `loopVerdict`: whether
  * Core read the value or refused it, so a refused one is no longer visible only
@@ -30,11 +30,11 @@ const DRY_RUN_CALL = /^dryrun\./u;
  * `run-musp474o-e0ed7432` left no record of which row a never-judged test's
  * pass checked. `run` itself, untouched, when the step log is off.
  */
-export function automationStudioLlmStepLogTool<R extends ToolRequest, O>(run: (request: R) => Promise<O>, env: Readonly<Record<string, string | undefined>> = process.env): (request: R) => Promise<O> {
+export function automationStudioLlmStepLogTool<R extends ToolRequest, O>(run: (request: R) => Promise<O>, env: Readonly<Record<string, string | undefined>> = process.env, pageText?: AutomationStudioLlmStepLogPageReader): (request: R) => Promise<O> {
   const directory = automationStudioLlmStepLogDirectory(env);
   if (!directory) return run;
   return async (request) => {
-    const step = toolStep(directory, request);
+    const step = toolStep(directory, request, pageText);
     let result: O;
     try {
       result = await run(request);
@@ -47,7 +47,7 @@ export function automationStudioLlmStepLogTool<R extends ToolRequest, O>(run: (r
   };
 }
 
-function toolStep(directory: string, request: ToolRequest): ((result: unknown, error: unknown) => void) | undefined {
+function toolStep(directory: string, request: ToolRequest, pageText: AutomationStudioLlmStepLogPageReader | undefined): ((result: unknown, error: unknown) => void) | undefined {
   const scope = automationStudioLlmStepLogScope.current();
   const toolId = typeof request.toolId === "string" ? request.toolId : "unnamed";
   const callId = typeof request.callId === "string" ? request.callId : "";
@@ -69,7 +69,7 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
       const execution = executionOf(result);
       const evidence = execution ? execution.evidence : result;
       files.json("result.json", error === undefined ? evidence ?? null : { error: thrown(error) });
-      const page = error === undefined ? automationStudioLlmStepLogPageText.of(evidence) : undefined;
+      const page = error === undefined ? pageText?.(evidence) : undefined;
       if (page !== undefined) files.text("page.txt", page);
       // What Core made of the value, by the reader the loop and a test's replay both use. A value it
       // refuses reaches the model as a call that failed with no evidence, whatever `resultCode` says:
