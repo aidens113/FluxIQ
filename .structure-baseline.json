@@ -1093,7 +1093,6 @@
       "apps/web/src/features/automation-studio/flow-editor/palette-preferences-repository.ts": 2,
       "apps/web/src/features/automation-studio/graph/draft-store.ts": 2,
       "packages/fluxiq/src/framework/persistence/automation/object-store.ts": 2,
-      "packages/fluxiq/src/framework/persistence/automation/project/database.ts": 2,
       "packages/fluxiq/src/framework/persistence/automation/recording-index-store.ts": 2,
       "packages/fluxiq/src/programs/identity-access/runtime/run-credential-change.ts": 2,
       "apps/web/src/features/automation-studio/graph/viewport-store.ts": 1,

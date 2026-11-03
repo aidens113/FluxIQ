@@ -171,7 +171,7 @@ Older parked work from before this refactor was left alone: unmerged branches t7
 - Changed: none of the three defects came from the moves; the files match `dev` apart from imports. A call a person-only check stopped now stands as having acted when its draft says it went out (`person-needed-tool-calls.ts`), which started that run's failure. A condition named by a read the screen took apart is matched to no column (`condition-authored.ts`). The extension's Next fallback uses the shared current-page rule (`detect-pagination.ts`, downstream).
 - Changed: `fluxiq` 0.27.0, `@fluxiq/contracts` 0.7.0 and `@fluxiq/client-gateway-websocket` 0.1.1, with a migration note in `docs/architecture/package-boundaries.md`.
 - Validation: each fix's test was seen to fail first. `vitest run` over `person-needed.test.ts`, `computed-facts`, `located-defects` and the two other person-needed suites -> 135 passed. `node scripts/test-extension.mjs detect-pagination pagination` -> 51 passed, 0 failed. Core `pnpm --filter fluxiq check` -> exit 0. Audit passes in both repositories.
-- Validation: `crossborder-next-page` specs, headed Chromium on the realistic marketplace -> 2 passed. The new spec without the fix -> failed with `ended: control_absent`, the run's own error.
+- Validation: `crossborder-next-page` specs, headed Chromium on the realistic marketplace -> 2 passed. The new spec without the fix -> failed with `ended: control_absent`, the run's own error. Moved to `list-states/tests/crossborder-pinned-next-page.spec.ts` for the folder's file limit and rerun there -> 1 passed.
 - Outcome: live tests pass. The final sweep follows.
 
 ## Open Questions
