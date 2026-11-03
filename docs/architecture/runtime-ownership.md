@@ -121,4 +121,4 @@ Five Core readers still interpret browser fields. They are known open work, not 
 
 ## Distribution
 
-The packages are `fluxiq@0.26.0`, `@fluxiq/contracts@0.6.0` and `@fluxiq/ui-components@0.1.0`. Downstream consumers rebuild against the matching Core version before compiling against these subpaths.
+The packages are `fluxiq@0.27.0`, `@fluxiq/contracts@0.7.0` and `@fluxiq/ui-components@0.1.0`. Downstream consumers rebuild against the matching Core version before compiling against these subpaths.

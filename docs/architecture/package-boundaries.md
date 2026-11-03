@@ -119,8 +119,8 @@ exercises a layout-v1 to layout-v2 migration, type-checks without workspace
 paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
-`@fluxiq/contracts` is at version `0.6.0`, `fluxiq` at `0.26.0`;
-`@fluxiq/client-gateway-websocket` and `@fluxiq/ui-components` are at `0.1.0`. Before 1.0, compatible
+`@fluxiq/contracts` is at version `0.7.0`, `fluxiq` at `0.27.0`,
+`@fluxiq/client-gateway-websocket` at `0.1.1` and `@fluxiq/ui-components` at `0.1.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes).
 "Compatible" is judged on what a consumer observes, not on the type surface: a
@@ -136,6 +136,35 @@ publication, tags, signing, provenance, the final legal licensor identity, and
 commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
+
+### 0.27.0: Automation Studio is a controller, and the runtime has its own entry (`fluxiq`, `@fluxiq/contracts`)
+
+Read this entry if a domain or client imports from `fluxiq/automation-studio` or
+`@fluxiq/contracts/automation-studio`. The runtime moved out of
+`programs/automation-studio`, so its public entries moved with it. Exported names
+did not change, including their `AutomationStudio` prefixes, so a consumer changes
+the path it imports and nothing else.
+
+**Renamed.**
+- `@fluxiq/contracts/automation-studio` is `@fluxiq/contracts/automation`.
+- Each of these `fluxiq/automation-studio/<name>` entries is `fluxiq/automation/<name>`:
+  `testing`, `evidence-build-scope`, `candidate-authoring`, `llm-models`,
+  `action-permissions`, `panel-capabilities`, `nodes`, `action-effect`,
+  `actionability`, `fingerprinting`.
+- The runtime exports of `fluxiq/automation-studio` are now in `fluxiq/automation`.
+  `fluxiq/automation-studio` keeps only the controller: its endpoint handlers,
+  metadata and view.
+
+**Not renamed.** `fluxiq/automation-studio/dsl` keeps its name because saved Flow
+source contains that exact import.
+
+**Added.**
+- `fluxiq/runtime/output-dispatch/preparation`, for a domain's output target hook.
+- A host may decline a capture with the reason `page_left_by_navigation`, so a Flow
+  can start from a page nothing can read. A consumer that switches over
+  `AutomationStudioHostStateCapture` reasons sees this new value.
+- `@fluxiq/ui-components` renders chat behind ports, for any client. See
+  [runtime ownership](runtime-ownership.md).
 
 ### Next minor (unreleased): a `where` bound may be a date (`@fluxiq/contracts`, `fluxiq`)
 
