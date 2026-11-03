@@ -10,6 +10,7 @@ describes accepted framework owners and does not make those locations permanent.
 | Owner | Responsibility |
 | --- | --- |
 | `flows/executable` | Rich graph, node/edge, interface, region, composite and execution DTOs without a project persistence envelope |
+| `flows/authoring/instruction` | Complete instruction records, scopes, tags and requirements; legacy Studio types alias these authorities |
 | `components/automation` | Neutral node definitions, registry, action effects and consequences, processing and parameter contracts |
 | `engine/automation` | Graph/node execution, frames, lifecycle, state routing, retries, target reacquisition, trace privacy and resume |
 | `runtime/automation-host` | Domain host ports, execution facts, resource/control contracts and opaque domain observations |
@@ -26,7 +27,7 @@ describes accepted framework owners and does not make those locations permanent.
 | `engine/automation/compiled-plan`, `engine/automation/composite` | Actual compiled and composite execution |
 | `@fluxiq/contracts/state`, `@fluxiq/contracts/recording`, `runtime/state`, `runtime/recording` | Shared rich state/recording contracts, state store/diff, sessions, normalization and structural validation |
 | `runtime/recording/indexing` | Recording indexes, timeline projection, nearest-state links and lookup; reference and observation policies are explicit |
-| `runtime/recording/mapping`, `flows/executable/recording`, `components/automation/recording` | Mapper iteration, candidate/review validation, recorded-step recipes and definition materialization; Studio retains proposal identity and persistence |
+| `runtime/recording/mapping`, `flows/executable/recording`, `components/automation/recording` | Mapper iteration, candidate/review validation, recorded-step recipes and definition materialization; proposal identity and persistence still under Studio require framework migration |
 | `engine/automation/router`, `flows/executable/routing` | Router compilation, conditions, ordered route selection and rich executable routing data |
 | `runtime/action-permissions`, `flows/executable/permissions` | Declaration validation, effect floors, assessment, permission state and grounded instruction data; Studio supplies request presentation and actual instruction reads |
 | `flows/executable/change` | Change vocabulary, exhaustive patch policy and bounded origin parsing |
@@ -34,11 +35,14 @@ describes accepted framework owners and does not make those locations permanent.
 | `runtime/execution-admission` | Private execution-coverage handles, lifecycle and durable persistence ports; concrete storage and actual invocation adapters are separate |
 | `runtime/execution-observation` | Original callback/receiver observation, actual backend retry-series identity and common callback-root lifecycle; unsupported completion earns no certificate |
 | `flows/executable/dsl` | Declarative executable Flow source and compilation; Studio stamps its persistence envelope |
-| `programs/automation-studio` | Project/editor APIs, persistence, publication and repository-backed resolution, authoring workflow composition, conversation and presentation adapters |
+| `framework/persistence`, `framework/observability/performance` | Shared JSON/SQLite stores, connection and operation ownership, project/Flow path layout, state-root routing and performance collection |
+| `framework/observability/exchange-log` | Native log file writing, credential screening, folder/retry numbering, metadata-only scopes, request/reply text rendering, field-name redaction and the single run-index cache |
+| `runtime/flow-authoring/execution` | Original authoring invocation scope and tool-observation forwarding |
+| `programs/automation-studio` | Panel UI, view state/navigation and thin framework control/API adapters; remaining backend code is unfinished migration work |
 
 The existing simple `FlowDocument` engine remains compatible. The mature executable graph has a different contract; the ownership move does not convert stored documents or replace its execution behavior with the simpler engine.
 
-A full Studio document is structurally assignable to the execution contract. The engine does not require editor timestamps, project storage ownership or publication history to execute a graph. Studio composes those concerns around framework execution.
+A full Studio document is structurally assignable to the execution contract. The engine does not require editor timestamps, project storage ownership or publication history to execute a graph. Project storage, publication and authoring composition belong to framework owners; their remaining Studio implementations must migrate.
 
 Host contracts do not import the engine. The engine and framework-owned contracts do not import Studio, including erased type imports. The structure audit enforces these boundaries. Presentation is supplied per run or scoped context; pure execution can run without a panel.
 
@@ -48,6 +52,9 @@ New consumers use:
 
 - `fluxiq/components/automation` and `fluxiq/components/automation/action-effect`;
 - `fluxiq/flows/executable`;
+- `fluxiq/flows/authoring` for shared instruction data;
+- `fluxiq/runtime/flow-authoring/project` for server-side project record storage/parsing and `fluxiq/runtime/state-restoration` for opaque state-signature mechanisms;
+- `fluxiq/framework/observability/exchange-log` for native exchange-log infrastructure;
 - `fluxiq/engine/automation`;
 - `fluxiq/runtime/target-matching`;
 - `fluxiq/runtime/automation-host` for the domain host boundary and execution DTOs;
@@ -64,9 +71,16 @@ Importer consumers use `fluxiq/components/automation/importer`; native binding a
 runtime adapters use `fluxiq/runtime/native-execution` and `fluxiq/runtime/adapters`.
 Execution environments, control and resource scheduling have focused public runtime
 subpaths. State and recording mechanisms require explicit content-reference and
-observation policies; Studio retains its storage scheme and compatibility classifier.
-The shared model-context packer lives in `runtime/models/context`, while persistence
-and retrieval of reusable context remain program responsibilities.
+observation policies. Remaining Studio storage and compatibility implementations
+are temporary migration locations, not program ownership exceptions.
+The shared model-context packer lives in `runtime/models/context`; persistence
+and retrieval of reusable context also belong to framework capabilities.
+
+Shared persistence and performance consumers use `fluxiq/framework/persistence`
+and `fluxiq/framework/observability/performance`. Legacy paths alias the same
+implementations, including their connection pools, locks and collection state.
+Authoring adapters use `fluxiq/runtime/flow-authoring/execution` for the original
+invocation scope rather than maintaining a separate program scope registry.
 
 `fluxiq/runtime/flow-authoring` exposes draft mechanisms without a Studio store or
 implicit browser wording. Typed presentation and schema-description factories
@@ -125,6 +139,16 @@ object spread or JSON round trip does not carry those companions. Copying a
 public or serialized object through the helper creates no observation authority.
 Existing explicit parent-binding operations remain responsible for entering the
 actual child; a copied options object alone proves no completed execution.
+Copy the original options before deleting public fields. Object-rest stripping
+before the helper also loses companions; the shared build guard rejects that
+pattern, including parameter and assignment destructuring.
+
+Exchange-log metadata scopes retain the original single AsyncLocalStorage owner;
+they carry log annotations only, not execution authority. Studio retains exact
+aliases to the native writer, numbering, screening and scope implementations.
+Model/tool formatting and callback completion remain required migration work;
+the infrastructure move preserves original best-effort behavior and grants no
+completion from a void return or writer status.
 
 The original gateway journal, required observer and post-handling consumption remain
 the command authorities. SQL coverage links to their real claim transaction. An original

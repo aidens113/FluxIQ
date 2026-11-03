@@ -59,6 +59,26 @@ The runtime keeps its established public subpaths during the 0.1 compatibility
 period. New subpaths should be added only for an independently useful surface;
 internal folders are not automatically public API.
 
+`fluxiq/flows/authoring` publishes the complete shared instruction record,
+scope, requirement, tag and source data. The original Studio names are type
+aliases to these authorities. `fluxiq/runtime/flow-authoring` owns the actual
+active-instruction projection and authoring invocation mechanisms. The data
+entry point emits no runtime dependency on program implementations.
+The server-side record Store/Documents/parser APIs are published separately at
+`fluxiq/runtime/flow-authoring/project`; their Node IO does not enter the existing
+aggregate authoring entry point. Complete project and plan data use the data-only
+`fluxiq/flows/authoring` boundary. Native exchange-log helpers are server-side at
+`fluxiq/framework/observability/exchange-log`.
+Its generic request/reply renderers, field-name redaction and run-index writer
+share their actual implementation and cache with the old Studio aliases.
+Page interpretation and domain-specific summaries are separate migration work;
+metadata scopes and formatting do not attest execution completion.
+
+Automation Studio's required end state is a UI panel with thin framework
+controls. Legacy backend exports remain compatibility entry points while their
+actual execution, authoring, persistence and orchestration owners migrate into
+framework packages; those paths do not establish permanent program ownership.
+
 `fluxiq/automation-studio/action-permissions` is the browser-safe display seam
 for a permission request Core already produced. It exports the consequence
 phrases, request type, and strict request parser only. Browser panels use this

@@ -1,0 +1,31 @@
+import { expect, it } from "vitest";
+import * as framework from "../../../../../../framework/observability/exchange-log/index.ts";
+import { automationStudioLlmStepLogAttempt } from "../attempts.ts";
+import { automationStudioLlmStepLogDirectory } from "../directory.ts";
+import { automationStudioLlmStepLogWriter } from "../files.ts";
+import { automationStudioLlmStepLogOpenFolder, automationStudioLlmStepLogFolderRefused } from "../folder.ts";
+import { automationStudioLlmStepLogScreen, AUTOMATION_STUDIO_LLM_STEP_LOG_REDACTED } from "../screen.ts";
+import { automationStudioLlmStepLogScope } from "../scope.ts";
+import { automationStudioLlmStepLogFieldNames } from "../field-names.ts";
+import { automationStudioLlmStepLogListStep } from "../listing.ts";
+import { automationStudioLlmStepLogNaming } from "../naming.ts";
+import { automationStudioLlmStepLogReadable } from "../readable.ts";
+import { automationStudioLlmStepLogRequestText } from "../request-text.ts";
+import { automationStudioLlmStepLogResponseText } from "../response-text.ts";
+
+it("shares the actual native writer, numbering, scope and screening owners with the framework", () => {
+  expect(automationStudioLlmStepLogAttempt).toBe(framework.automationStudioLlmStepLogAttempt);
+  expect(automationStudioLlmStepLogDirectory).toBe(framework.automationStudioLlmStepLogDirectory);
+  expect(automationStudioLlmStepLogWriter).toBe(framework.automationStudioLlmStepLogWriter);
+  expect(automationStudioLlmStepLogOpenFolder).toBe(framework.automationStudioLlmStepLogOpenFolder);
+  expect(automationStudioLlmStepLogFolderRefused).toBe(framework.automationStudioLlmStepLogFolderRefused);
+  expect(automationStudioLlmStepLogScreen).toBe(framework.automationStudioLlmStepLogScreen);
+  expect(AUTOMATION_STUDIO_LLM_STEP_LOG_REDACTED).toBe(framework.AUTOMATION_STUDIO_LLM_STEP_LOG_REDACTED);
+  expect(automationStudioLlmStepLogScope).toBe(framework.automationStudioLlmStepLogScope);
+  expect(automationStudioLlmStepLogFieldNames).toBe(framework.automationStudioLlmStepLogFieldNames);
+  expect(automationStudioLlmStepLogListStep).toBe(framework.automationStudioLlmStepLogListStep);
+  expect(automationStudioLlmStepLogNaming).toBe(framework.automationStudioLlmStepLogNaming);
+  expect(automationStudioLlmStepLogReadable).toBe(framework.automationStudioLlmStepLogReadable);
+  expect(automationStudioLlmStepLogRequestText).toBe(framework.automationStudioLlmStepLogRequestText);
+  expect(automationStudioLlmStepLogResponseText).toBe(framework.automationStudioLlmStepLogResponseText);
+});
