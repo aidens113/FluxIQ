@@ -2,6 +2,8 @@
 // file that differs between FluxIQ Core and the downstream web-extension
 // repository; the entry point, context, baseline, and rules are mirrored.
 
+import { readdirSync } from "node:fs";
+
 export const CONFIG = {
   repository: "core",
 
@@ -134,7 +136,10 @@ export const CONFIG = {
       "packages/fluxiq/src/framework/automation-service/panel-capabilities/client/index.ts",
       "packages/fluxiq/src/client-gateway/contracts.ts",
       "packages/client-gateway-websocket/src/index.ts",
-      "packages/fluxiq/src/ui/index.ts"
+      "packages/fluxiq/src/ui/index.ts",
+      "packages/ui-components/src/index.ts",
+      "packages/ui-components/src/dom/index.ts",
+      "packages/ui-components/src/icons/index.ts"
     ],
     ownedElsewhere: [],
     browserPackages: []
@@ -178,7 +183,7 @@ export const CONFIG = {
   // web-vocabulary rule reads every name declared or read under them and fails
   // on a web or DOM word that is not already baselined.
   //
-  // `packages/` is the whole of it, and deliberately so. It is what a domain
+  // `packages/` is nearly the whole of it, and deliberately so. It is what a domain
   // repository installs and imports, so a web word that lands there becomes a
   // field every other domain carries. `apps/web` is out: it is Core's own
   // Next.js interface, and a React component legitimately owns a class name, a
@@ -186,7 +191,14 @@ export const CONFIG = {
   // toolkit, not Core learning one domain's vocabulary. `scripts/` is out for
   // the same reason; the docs-links rule parses HTML anchors because Markdown
   // contains them.
-  domainNeutralPaths: ["packages"],
+  //
+  // `packages/ui-components` is out for the reason `apps/web` is: it is Core's chat
+  // UI drawn with the DOM, the DOM used as a UI toolkit, and it depends on Core,
+  // never the reverse, so no domain's contract carries its words. Every other
+  // package counts, so a new one is checked without anyone remembering to add it.
+  domainNeutralPaths: readdirSync(new URL("../../packages/", import.meta.url), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== "ui-components")
+    .map((entry) => `packages/${entry.name}`),
 
   // Path prefixes exempt from the depth limit because a framework dictates
   // their layout. The Next.js app router encodes routes as directories.
