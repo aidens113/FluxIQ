@@ -307,6 +307,9 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
   execution_failed: "The candidate did not run to its end, so this revision cannot complete. Read the feedback for the step that failed: what it says happened, and whether trying again may pass (retryable). If it may, test this same revision again; otherwise correct that step, submit the whole candidate, then test the new revision."
 });
 
+/** Said for a not_judged with no retests left (t849): testing it again is refused, so it never says to. Generic words. */
+const NOT_JUDGED_SPENT = "The trial was not judged, and this revision has no retests left, so it cannot complete. Change the Flow for what the feedback names, submit the whole candidate, then test the new revision.";
+
 /**
  * Said for an unsure while the revision may still be tested (header, t632,
  * t641): a re-test is allowed, and the better move only where Core's record
@@ -748,6 +751,7 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
   }
   // What stopped it, after the verdict's own first sentence (header).
   if (answer.verdict === "execution_failed") return Stop.instruction(answer, { head: EXECUTION_FAILED_HEAD, retestable, resubmit: "submit the whole candidate" });
+  if (answer.verdict === "not_judged" && !retestable) return NOT_JUDGED_SPENT;
   return INSTRUCTIONS[answer.verdict];
 }
 
