@@ -180,3 +180,36 @@ test("comments are not part of the compared program text", () => {
   assert.deepEqual(a, b);
   assert.notDeepEqual(a, comparableTokens("a.ts", 'import "./x.ts";\nexport const v = 2;\n'));
 });
+
+test("a later move out of a framework area follows imports, configs and comments the same way", () => {
+  const repo = repository({
+    [`${SOURCE_ROOT}/runtime/agents/llm/call.ts`]: "export const call = 1;\n",
+    [`${SOURCE_ROOT}/runtime/agents/budget.ts`]: "export const budget = 1;\n",
+    [`${SOURCE_ROOT}/engine/user.ts`]: 'import { call } from "../runtime/agents/llm/call.ts";\n// see `runtime/agents/llm/call.ts`, and `runtime/agents/budget.ts`\nexport const used = call;\n',
+    "tsconfig.base.json": '{ "x": ["packages/fluxiq/src/runtime/agents/llm/call.ts"], "y": ["packages/fluxiq/src/runtime/agents/budget.ts"] }\n',
+    "docs/guide.md": "Lives in `runtime/agents/llm/call.ts`.\n"
+  });
+  move(repo, [{ from: "runtime/agents/llm", to: "runtime/llm" }]);
+  assert.equal(repo.read(`${SOURCE_ROOT}/engine/user.ts`), 'import { call } from "../runtime/llm/call.ts";\n// see `runtime/llm/call.ts`, and `runtime/agents/budget.ts`\nexport const used = call;\n');
+  assert.match(repo.read("tsconfig.base.json"), /src\/runtime\/llm\/call\.ts.*src\/runtime\/agents\/budget\.ts/);
+  assert.match(repo.read("docs/guide.md"), /`runtime\/llm\/call\.ts`/);
+  assert.equal(repo.exists(`${SOURCE_ROOT}/runtime/agents/budget.ts`), true);
+});
+
+test("a path under another package's src is not this package's", () => {
+  const repo = repository({
+    [`${SOURCE_ROOT}/runtime/agents/llm/call.ts`]: "export const call = 1;\n",
+    "docs/a.json": '{ "other": "apps/extension/src/runtime/agents/llm/call.ts", "ours": "src/runtime/agents/llm/call.ts" }\n'
+  });
+  move(repo, [{ from: "runtime/agents/llm", to: "runtime/llm" }]);
+  assert.equal(repo.read("docs/a.json"), '{ "other": "apps/extension/src/runtime/agents/llm/call.ts", "ours": "src/runtime/llm/call.ts" }\n');
+});
+
+test("a similarly named longer path in prose is left alone", () => {
+  const repo = repository({
+    [`${SOURCE_ROOT}/runtime/agents/llm/call.ts`]: "export const call = 1;\n",
+    "docs/guide.md": "See `runtime/agents/llm-old/x.ts` and `runtime/agents/llm`.\n"
+  });
+  move(repo, [{ from: "runtime/agents/llm", to: "runtime/llm" }]);
+  assert.equal(repo.read("docs/guide.md"), "See `runtime/agents/llm-old/x.ts` and `runtime/llm`.\n");
+});

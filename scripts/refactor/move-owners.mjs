@@ -35,11 +35,9 @@ const MOCK_CALL = new Set(["mock", "doMock", "unmock", "doUnmock", "importActual
 
 // A path to source or emitted output. Data folders (`.fluxiq/data/programs/...`)
 // and panel routes (`/api/programs/...`) carry neither prefix and never match.
-const PREFIXED_PATH = /(?<![\w.-])((?:packages\/fluxiq\/)?(?:src|dist)\/)(programs\/[\w.\/-]*[\w\/-])/g;
-// A bare source path. Only ever applied to comments and prose, never to code.
-const BARE_PATH = /(?<![\w.\/-])(programs\/automation-studio\/[\w.\/-]*[\w\/-])/g;
+const PREFIXED_PATH = /(?<![\w.-])(packages\/fluxiq\/(?:src|dist)\/|(?<!\/)(?:src|dist)\/|\.\/dist\/)([\w.\/-]*[\w\/-])/g;
 // Any source or emitted path, moved or not, for comparing two versions of a file.
-const ANY_NAMED_PATH = /(?<![\w.-])((?:packages\/fluxiq\/)?(?:src|dist)\/)[\w.\/-]*[\w\/-]/g;
+const ANY_NAMED_PATH = /(?<![\w.-])(packages\/fluxiq\/(?:src|dist)\/|(?<!\/)(?:src|dist)\/|\.\/dist\/)[\w.\/-]*[\w\/-]/g;
 
 export function compileMoves(sourceRoot, moves) {
   const rules = moves
@@ -191,11 +189,7 @@ function sameTokens(file, before, after, newFile = file) {
   return true;
 }
 
-function worthParsing(file, text, moved) {
-  return moved || file.includes("programs/") || text.includes("programs/");
-}
-
-function rewriteCode(file, text, newFile, moves, sourceRoot, parseSpecifiers) {
+function rewriteCode(file, text, newFile, moves, sourceRoot, parseSpecifiers, barePath) {
   const edits = [];
   const counts = { specifiers: 0, paths: 0, comments: 0 };
   const sourceFile = parse(file, text);
@@ -215,9 +209,9 @@ function rewriteCode(file, text, newFile, moves, sourceRoot, parseSpecifiers) {
     .filter((edit) => !literals.some((literal) => edit.start >= literal.start && edit.end <= literal.end));
   counts.paths = prefixed.length;
   edits.push(...prefixed);
-  if (text.includes("programs/automation-studio/")) {
+  if (barePath.mentionedIn(text)) {
     for (const range of commentRanges(sourceFile)) {
-      const bare = pathEdits(text, range, BARE_PATH, moves, sourceRoot);
+      const bare = pathEdits(text, range, barePath.pattern, moves, sourceRoot);
       counts.comments += bare.length;
       edits.push(...bare);
     }
@@ -225,14 +219,28 @@ function rewriteCode(file, text, newFile, moves, sourceRoot, parseSpecifiers) {
   return { text: edits.length > 0 ? applyEdits(text, edits) : text, counts };
 }
 
-function rewriteProse(text, moves, sourceRoot) {
+function rewriteProse(text, moves, sourceRoot, barePath) {
   const whole = { pos: 0, end: text.length };
-  const edits = [...pathEdits(text, whole, PREFIXED_PATH, moves, sourceRoot), ...pathEdits(text, whole, BARE_PATH, moves, sourceRoot)];
+  const edits = [...pathEdits(text, whole, PREFIXED_PATH, moves, sourceRoot), ...pathEdits(text, whole, barePath.pattern, moves, sourceRoot)];
   return { text: edits.length > 0 ? applyEdits(text, edits) : text, changed: edits.length };
+}
+
+// A bare source path, one of the moved paths and nothing longer. Only ever applied
+// to comments and prose, never to code, because a bare path in code can be a stored
+// data folder or a route. A data folder or route also carries a leading `/`, which
+// keeps it out of comments and prose too.
+function compileBarePath(moveList) {
+  const sources = moveList.filter((move) => move.from !== move.to).map((move) => move.from);
+  const escaped = [...sources].sort((a, b) => b.length - a.length).map((source) => source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return {
+    pattern: new RegExp(`(?<![\\w.\\/-])((?:${escaped.join("|")})(?:\\/[\\w.\\/-]*[\\w\\/-])?)(?![\\w-])`, "g"),
+    mentionedIn: (text) => sources.some((source) => text.includes(source))
+  };
 }
 
 export function planMoves({ root, downstreamRoot, sourceRoot, moves: moveList }) {
   const moves = compileMoves(sourceRoot, moveList);
+  const barePath = compileBarePath(moveList);
   const files = repositoryFiles(root);
   const present = new Set(files);
   const renames = new Map();
@@ -265,15 +273,14 @@ export function planMoves({ root, downstreamRoot, sourceRoot, moves: moveList })
     const moved = newFile !== file;
     const text = fs.readFileSync(path.join(root, file), "utf8");
     if (CODE_FILE.test(file)) {
-      if (!worthParsing(file, text, moved)) continue;
-      const result = rewriteCode(file, text, newFile, moves, sourceRoot, true);
+      const result = rewriteCode(file, text, newFile, moves, sourceRoot, true, barePath);
       totals.specifiers += result.counts.specifiers;
       totals.paths += result.counts.paths;
       totals.comments += result.counts.comments;
       if (result.text !== text && !sameTokens(file, text, result.text, newFile)) problems.push(`tokens changed in ${file}`);
       if (result.text !== text || moved) writes.set(file, { to: newFile, text: result.text, changed: result.text !== text });
     } else if (TEXT_FILE.test(file)) {
-      const result = rewriteProse(text, moves, sourceRoot);
+      const result = rewriteProse(text, moves, sourceRoot, barePath);
       totals.prose += result.changed;
       if (result.text !== text || moved) writes.set(file, { to: newFile, text: result.text, changed: result.text !== text });
     } else if (moved) {
@@ -285,14 +292,13 @@ export function planMoves({ root, downstreamRoot, sourceRoot, moves: moveList })
   if (downstreamRoot) {
     for (const file of repositoryFiles(downstreamRoot)) {
       const text = fs.readFileSync(path.join(downstreamRoot, file), "utf8");
-      if (!text.includes("programs/")) continue;
       if (CODE_FILE.test(file)) {
-        const result = rewriteCode(file, text, file, moves, sourceRoot, false);
+        const result = rewriteCode(file, text, file, moves, sourceRoot, false, barePath);
         totals.paths += result.counts.paths;
         totals.comments += result.counts.comments;
         if (result.text !== text) downstreamWrites.set(file, result.text);
       } else if (TEXT_FILE.test(file)) {
-        const result = rewriteProse(text, moves, sourceRoot);
+        const result = rewriteProse(text, moves, sourceRoot, barePath);
         totals.prose += result.changed;
         if (result.text !== text) downstreamWrites.set(file, result.text);
       }
@@ -314,7 +320,7 @@ function reverseEdges(root, files, renames, moves, sourceRoot) {
     const newFile = renames.get(file) ?? file;
     if (newFile.startsWith(programs)) continue;
     const text = fs.readFileSync(path.join(root, file), "utf8");
-    if (!worthParsing(file, text, newFile !== file)) continue;
+    if (newFile === file && !text.includes("programs/")) continue;
     const sourceFile = parse(file, text);
     for (const literal of specifierLiterals(sourceFile)) {
       if (!literal.text.startsWith(".")) continue;

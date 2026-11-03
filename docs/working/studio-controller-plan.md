@@ -15,25 +15,58 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 
 **Done means:** nothing outside Studio imports Studio, tests included; Studio holds only endpoint registration and thin handlers, view state, metadata and its entry; the extension and a second real client both render chat from one package; both `dev` branches and `main` carry it after the full suites pass.
 
-**Progress measure:** implementation lines under `programs/automation-studio`, counted by the structure audit. 120,705 on dev at the start; expected near 4,000 at the end.
+**Progress measure:** implementation lines under `programs/automation-studio`. 120,705 on dev at the start; 3,504 after the move, all in `api/` and `metadata.ts`.
 
 **Lanes**
 
 | Lane | Task | Owner | State |
 | --- | --- | --- | --- |
-| Backend moves and controller | t845 | Lead | Tool built and tested; dry run clean; first move next |
-| Chat package and second client | t846 | Sub-supervisor | Dispatched |
-| Web semantics downstream | t847 | Worker | Dispatched |
+| Backend moves and controller | t845 | Lead | Move committed locally and verified; first full suite running; audit findings next |
+| Chat package and second client | t846 | Sub-supervisor | Running |
+| Web semantics downstream | t847 | Worker | Running |
 
 **Next steps**
 
-1. Rename the neutral contract subpath and narrow the five type imports that reach Studio's API barrel.
-2. Run the full move in one commit, verify it, then typecheck, audit and test.
-3. Remove the forwarding files; move the storage helpers moved code still takes from `programs/_shared`.
-4. Add the Studio gate to the structure audit; retarget `fluxiq/automation-studio` consumers; thin the handlers.
-5. Integrate t847, then t846, then the t841 work; run the full suites; promote.
+1. Read the first full suite, then fix the failures the move caused and record the rest.
+2. Retire about 400 forwarding files and create the 30 prefix directories. Fix the 29 import findings, adopt the new rule's baseline and push.
+3. Move the logic out of the ten flagged functions, listed below.
+4. Move the storage helpers moved code still takes from `programs/_shared` and `database-manager`. Retarget about 1,500 `fluxiq/automation-studio` imports.
+5. Fix the failures dev already has, listed below.
+6. Integrate t847, then t846, then finish t841. Update authored architecture documents and remove `scripts/refactor`. Run the full suites, then promote.
 
-**Blockers:** none.
+**Blockers:** none. Core's t845 commits are local because the pre-push audit refuses them until step 2; the downstream branch is pushed.
+
+**Failures dev already has.** These fail on plain `dev` at `ff8eb0be8` as well as on t845, so the move did not cause them, and they block promotion. Paths are the new ones under `packages/fluxiq/src`.
+
+| File | Failing tests | Observed |
+| --- | ---: | --- |
+| `framework/automation-service/service/candidate-trial/tests/consequences.test.ts` | 5 | `expected { inputs: {}, …(7) } to be { inputs: {}, …(6) }` |
+| `runtime/flow-authoring/bootstrap/candidate/tests/trial-gate.test.ts` | 3 | Output contains `llm_evidence_loop.repeat_refused` |
+| `framework/automation-service/service/candidate-trial/tests/environment/tests/trial-environment.test.ts` | 1 | `expected { …(4) } to be { …(3) }` |
+| `framework/automation-service/service/subflow-trial/tests/environment.test.ts` | 1 | `expected { …(4) } to be { …(3) }` |
+| `framework/automation-service/service/end-view/tests/passive-result.test.ts` | 1 | `expected [Function bound spy] to be [Function spy]` |
+| `runtime/adaptation/recovery/tests/runtime-exploration-views.test.ts` | 1 | Not yet read |
+| `runtime/agents/llm/harness/tests/run-size.test.ts` | 1 | `expected 'attempted' to be 'not_attempted'` |
+| `runtime/result-verification/build-test/tests/task-checklist.test.ts` | 1 | Request bytes differ |
+
+**Failures the move caused so far.** `components/automation/tests/ownership.test.ts` timed out at 15 s during the parallel run; not yet known whether that is load. The two browser-safe subpath `client/tests/index.test.ts` files and `explored-evidence-label.test.ts` hard-code relative paths to files that moved.
+
+**Functions still holding logic,** flagged by the new rule, all under `programs/automation-studio/api/handlers/`:
+
+| File | Function | Lines |
+| --- | --- | ---: |
+| `llm-generation.ts` | endpoint handler | 102 |
+| `runtime-execution.ts` | endpoint handler | 91 |
+| `llm-generation.ts` | `sanitizedFlowBootstrapGeneration` | 42 |
+| `conversations.ts` | endpoint handler | 34 |
+| `instructions.ts` | endpoint handler | 33 |
+| `flows.ts` | endpoint handler | 29 |
+| `llm-execution-settings.ts` | `assertFlowLlmExecutionSettings` | 28 |
+| `conversations.ts` | endpoint handler | 22 |
+| `conversations.ts` | endpoint handler | 21 |
+| `conversations.ts` | `commandContext` | 21 |
+
+The other 166 endpoints are already thin: a permission, a resource and a call to the service.
 
 ## Why The Plan Changed
 
@@ -46,7 +79,7 @@ Measured on 2026-11-02 against `dev` (Core `ff8eb0be8`, downstream `d6e5448c`):
 | Paths changed against dev | n/a | 3,025 |
 | `project-build-trial-reset` "runs each trial on the site" | passes, 2.5 s of test time | times out at 300 s |
 
-t843 moved 7% of the logic. Most of its change is an execution-admission and observation system with guards threaded through the code being moved. The goals do not include that system, and no standing rule or user-attributed line in the record asks for it; it began as a report on granting another live trial.
+t843 moved 7% of the logic. Most of its change is an execution-admission and observation system with guards threaded through the code being moved: a database ledger recording that each step was allowed to run and proof that it ran. The goals do not include that system, and no standing rule or user-attributed line in the record asks for it; it began as a report on granting another live trial. Asked about it on 2026-11-02, the user did not know what it was. It stays unmerged on t843; do not bring it back as part of this work.
 
 Limit on the test comparison: t843 edited that test file by 347 lines, so these are not the identical test. Running dev's copy on t843 failed at load because a helper it imports had moved. The comparison shows the composed build works on dev; it does not isolate which t843 change stalls it. That no longer matters to this plan, because the moves start from dev and cannot change behaviour.
 
@@ -57,6 +90,13 @@ Limit on the test comparison: t843 edited that test file by 347 lines, so these 
 `--verify <ref>` re-reads both sides from git and proves the same thing independently of the code that made the edits. Studio has no location-dependent production code and no computed imports, which is what makes a path-only move safe.
 
 The moves run as one commit rather than one per folder. The structure audit bans `runtime/` from importing Studio, and Studio's folders depend on each other, so moving them one at a time would fail the audit at every step and block every backup push.
+
+`scripts/refactor/retire-forwarding.mjs` deletes modules that only forward to one other module, pointing importers at the real one. `scripts/refactor/prefix-directories.mjs` applies the audit's rule that a shared filename prefix becomes a directory, for the groups the audit newly reports. Those groups were exempt only because their old paths were too deep to take another directory. All three tools are temporary and are removed when this work finishes.
+
+## How It Stays Done
+
+- `scripts/structure-audit/rules/program-controllers.mjs` fails the build if a source file appears in Studio outside `api/`, `ui/`, `index.ts` and `metadata.ts`, and ratchets any function there over 20 lines. The budget is per function because a file of thirty endpoints is long and still thin. The 20-line figure is a supervisor choice from the measured distribution, not a user rule: 131 of 176 handlers are 10 lines or fewer.
+- `importBoundaries` in the audit config stops every framework area importing Studio, tests included. Only the program catalog composes it.
 
 ## Destinations
 
@@ -111,6 +151,17 @@ Older parked work from before this refactor was left alone: unmerged branches t7
 - Validation: on t843, `pnpm --filter fluxiq check` -> 1 error, in `step-loop/tests/incident-repair-properties.test.ts`, left as found. `implicit-clocks` has one failing case, which also fails without the push-gate edits.
 - Outcome: plan replaced. No paid run, panel or browser started.
 
+### 2026-11-02 - Moved the Studio backend in one verified commit
+
+- Agent: lead.
+- Changed: `756a98917` moves 4,363 files with the manifest in `studio-controller-plan/moves/01-studio-backend.json` and renames the contract to `@fluxiq/contracts/automation`. Downstream `916cd990` and `a8e89863` follow. `e7dd34617` adds the `program-controllers` rule, import boundaries and the two further tools.
+- Validation: `node scripts/refactor/move-owners.mjs <manifest>` -> 43 s, 4,363 moved, 5,701 imports rewritten, 0 problems. `--verify` -> 4,464 files compared; the only differences are two contract-rename strings and the tool's own later edits.
+- Validation: `pnpm --filter fluxiq check` -> 0 errors, 2 m 5 s. `node scripts/structure-audit.mjs` -> 60 findings: 30 prefix groups, 29 imports, 1 directory size. All path shape; none in logic.
+- Validation: `node --test` on the tool and rule tests -> 21 and 8 passed at their last runs.
+- Validation: first full suite (`pnpm -r --no-bail test`) started 22:20; 12 failing files at 1,500 passing. Running those files on `dev` shows 8 fail there too, with 14 failing tests.
+- Correction: a first file-length budget of 150 lines was replaced after measuring that the long files are registration tables. An earlier commit that captured only the contract's file rename was redone, unpushed, as part of `756a98917`.
+- Outcome: move holds at compile and token level; full suite result pending. No paid run, panel or browser started.
+
 ## Open Questions
 
-None requiring the user. Whether to pick the admission work back up later is the user's call and does not affect this plan.
+None requiring the user.
