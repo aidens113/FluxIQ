@@ -169,6 +169,30 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     expect(await storedOrdinals(pool, "run.a", "listings")).toEqual([1, 2, 3]);
   });
 
+  it("starts a dataset over for a repair's re-run, taking on the batch's own schema and declaration", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    await store.appendBatch(batch({ nodeId: "node.old", rows: items(3), invalidCount: 2, truncated: true, process: { limit: 1 } }));
+    await store.processRunDatasets("run.a");
+
+    const process: AutomationStudioRecordProcessing = { sort: [{ field: "title", order: "desc" }] };
+    const started = await store.appendBatch(batch({ startsOver: true, nodeId: "node.new", attemptId: "attempt.2", batchKey: "attempt.2", schema: OTHER_SCHEMA, schemaDigest: "sha256:schema-b", rows: [{ title: "a" }], process }));
+    expect(started).toMatchObject({ recordCount: 1, invalidCount: 0, truncated: false, nodeIds: ["node.new"], schemaDigest: "sha256:schema-b" });
+    expect(started.processing).toBeUndefined();
+    expect(await batchCounts(pool, "run.a", "listings")).toEqual([{ batch_key: "attempt.2", attempt_id: "attempt.2", row_count: 1, invalid_count: 0, truncated: 0 }]);
+    await expect(answerRows(pool, "run.a", "listings")).resolves.toEqual([]);
+
+    // The pass's later batches append under what the first one fixed, and are held to it.
+    await store.appendBatch(batch({ nodeId: "node.new", attemptId: "attempt.3", batchKey: "attempt.3", schema: OTHER_SCHEMA, schemaDigest: "sha256:schema-b", rows: [{ title: "b" }], process }));
+    await expect(store.appendBatch(batch({ attemptId: "attempt.4", batchKey: "attempt.4", rows: items(1) }))).rejects.toThrow("Run dataset schema changed within one run.");
+
+    const [processed] = await store.processRunDatasets("run.a");
+    expect(processed).toMatchObject({ recordCount: 2, processing: { collected: 2, kept: 2 } });
+    const page = await store.getPage({ runId: "run.a", datasetId: "listings" });
+    expect(page?.schema).toEqual(OTHER_SCHEMA);
+    expect(page?.rows).toEqual([{ title: "b" }, { title: "a" }]);
+    expect((await store.listProjectDatasets()).datasets[0]).toMatchObject({ latestRecordCount: 2, schemaDigest: "sha256:schema-b" });
+  });
+
   it("refuses a row with a key outside the stored schema, or over the row size, and writes nothing", async () => {
     const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
     await expect(store.appendBatch(batch({ rows: [{ title: "ok" }, { title: "bad", secret: "x" }] }))).rejects.toThrow("Run dataset row holds a key that is not in the stored schema.");

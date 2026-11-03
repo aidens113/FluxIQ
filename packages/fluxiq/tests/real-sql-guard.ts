@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import sqlite3 from "sqlite3";
-import { afterAll } from "vitest";
-import { hasRealSqlMarker, REAL_SQL_MARKER } from "./test-groups.ts";
+import { afterAll, expect, vi } from "vitest";
+import { hasRealSqlMarker, REAL_SQL_MARKER, REAL_SQL_TEST_TIMEOUT_MS } from "./test-groups.ts";
 
 // A vitest setup file, run before every test file in every group: it counts the
 // real SQLite databases the file opens and, after the file, fails it if it opened
@@ -16,6 +16,11 @@ import { hasRealSqlMarker, REAL_SQL_MARKER } from "./test-groups.ts";
 // not seen.
 
 export type Opened = { count: number; first?: string };
+
+// A plain `vitest run <path>` has no group, so a marked file's timeout is set here,
+// before the file is collected. Pinned by `real-sql-timeout.test.ts`.
+const testFile = expect.getState().testPath;
+if (testFile && hasRealSqlMarker(readFileSync(testFile, "utf8"))) vi.setConfig({ testTimeout: REAL_SQL_TEST_TIMEOUT_MS, hookTimeout: REAL_SQL_TEST_TIMEOUT_MS });
 
 const SLOT = Symbol.for("fluxiq.tests.realSqlGuard");
 const WRAPPED = Symbol.for("fluxiq.tests.realSqlGuard.wrapped");

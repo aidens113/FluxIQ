@@ -41,6 +41,16 @@ describe("automationStudioActivityRunEnding", () => {
     expect(automationStudioActivityRunEnding(refuted)).toBe("it saved 13 rows, but the check found they don't answer what you asked.");
   });
 
+  it("says a fixed Flow was not run again because that would repeat something the run did, not that the fix failed", () => {
+    const ended = automationStudioActivityRunEnding({
+      resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer", basis: "model", code: "core.result.does_not_answer_request", observation: "3 records stored." },
+      resultRepair: { attempted: true, phase: "settled", outcome: "not_rerun", history: [{ attempt: 1, totalRecordCount: 3 }] },
+      adaptiveRetry: { attempted: false, notResumableCode: "repair_rerun.lasting_act_may_have_landed" }
+    });
+    expect(ended).toBe("it saved 3 rows, but the check found they don't answer what you asked, and the fix wasn't run: that would repeat what this run already did.");
+    expect(`Run failed: ${ended}`.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_ACTIVITY_LIMITS.label);
+  });
+
   it("says each way a repair can end", () => {
     const ending = (marker: Record<string, unknown>, extra: Record<string, unknown> = {}) => automationStudioActivityRunEnding({ ...refuted, resultRepair: repairEnded(marker), ...extra });
     expect(ending({ outcome: "rerun_failed" })).toMatch(/, and the fixed Flow didn't run to the end\.$/u);

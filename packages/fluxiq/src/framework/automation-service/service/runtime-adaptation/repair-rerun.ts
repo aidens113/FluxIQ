@@ -46,8 +46,9 @@ import type {
   AutomationStudioRuntimeSession
 } from "../../../../flows/authoring/model/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
-import { type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { automationStudioNodeExplicitLastingRisk, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
 import { automationStudioReferenceNow } from "../../../../runtime/reference-time/index.ts";
+import { automationStudioAttemptsMayHaveActedLastingly } from "../../../../runtime/adaptation/flow-change/index.ts";
 import type { AutomationStudioBootstrapAdaptation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioRefutedResultFlowWasReauthored, automationStudioRefutedResultHeldReauthor } from "../../../../runtime/adaptation/recovery/refuted-result/index.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";
@@ -169,6 +170,12 @@ export async function rerunAutomationStudioSessionAfterRepair(
   // first: they were written for the graph before. Otherwise the re-run is the
   // whole-Flow pass for the patches the refuted result's repair wrote, which had
   // no failed step to resume from.
+  // A re-run from the start goes through every step again, and the completed-act ledger does not outlive a
+  // pass, so it is declined where a lasting act may have landed: read against the graph the first pass ran, not
+  // a held edit's. A held edit is then settled unapplied, as any edit no pass ran (`./judged-reauthor.ts`).
+  const firstPassGraph = input.from !== "start" ? undefined : held && "flow" in held ? await changedFlow(input) : found;
+  if (firstPassGraph && "declinedCode" in firstPassGraph) return firstPassGraph;
+  if (firstPassGraph && await automationStudioAttemptsMayHaveActedLastingly({ flow: firstPassGraph.flow, attempts: input.session.trace?.attempts ?? [], resolveActionEffect: input.graphOptions?.resolveActionEffect, subflowGraphs: input.graphOptions?.subflowGraphs })) return { declinedCode: UNREADABLE.lastingAct };
   const settled = input.from === "start"
     ? await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.adaptationContext.flowId, session: input.session, detail: input.detail, ...(reauthored ? {} : { only: "ran" as const }) })
     : input.detail;
@@ -176,6 +183,8 @@ export async function rerunAutomationStudioSessionAfterRepair(
   const candidate = reauthored ? { flow: updatedFlow, adaptationIds: [] } : await pendingCandidate({ ...input, detail }, updatedFlow);
   if ("declinedCode" in candidate) return candidate;
   if (input.from === "start" && !reauthored && !candidate.adaptationIds.length) return { declinedCode: UNREADABLE.nothingToRerun };
+  // A step the patch itself inserted and that says it lastingly acts already acted in its trial.
+  if (input.from === "start" && !reauthored && candidate.flow.nodes.some((node) => node.metadata?.runtimePatchRunId === input.session.runId && automationStudioNodeExplicitLastingRisk(node))) return { declinedCode: UNREADABLE.lastingAct };
   const referenceNow = automationStudioReferenceNow(input.session.trace?.referenceNow) ?? automationStudioReferenceNow(input.graphOptions?.referenceNow)
     ?? automationStudioReferenceNow(input.session.startedAt) ?? automationStudioReferenceNow(input.session.trace?.startedAt);
   const retryTrace = adopted ?? await runCanonicalAutomationStudioFlow(
@@ -361,6 +370,7 @@ const UNREADABLE = {
   subflowAbsent: "repair_rerun.subflow_absent",
   graph: "repair_rerun.subflow_graph_unreadable",
   nothingToRerun: "repair_rerun.nothing_to_rerun",
+  lastingAct: "repair_rerun.lasting_act_may_have_landed",
   candidate: "repair_rerun.candidate_unreadable",
   candidateUnwritable: "repair_rerun.candidate_unwritable",
   heldReauthor: "repair_rerun.held_reauthor_unreadable"

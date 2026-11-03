@@ -117,7 +117,8 @@ const BY_KIND: Record<AutomationStudioChangeProposalKind, string> = {
   promote_adaptation: "it kept a fix it had tried before",
   edit_instruction: "it changed the instructions it follows",
   add_handler: "it learned a way past an interruption it met",
-  replace_unit: "it re-wrote a step that stopped working"
+  replace_unit: "it re-wrote a step that stopped working",
+  insert_steps: "it added a step it was missing"
 };
 
 const BY_TARGET: Record<AppliedTarget, string> = {

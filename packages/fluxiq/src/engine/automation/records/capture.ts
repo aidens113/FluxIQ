@@ -148,7 +148,7 @@ function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId
   const batch: AutomationStudioRecordBatch = {
     nodeId: request.nodeId,
     attemptId: request.attemptId,
-    batchKey: recordBatchKey(request.callFlowAttemptPath ?? [], request.attemptId),
+    batchKey: automationStudioRecordBatchKey(request.callFlowAttemptPath ?? [], request.attemptId),
     datasetId: output.datasetId,
     writeMode: output.writeMode,
     // The stored schema, so the dataset is never told an excluded field's id.
@@ -170,7 +170,7 @@ const BATCH_KEY_SEPARATOR = "/";
 // the key is too. Node ids carry no character restriction, so each id is escaped
 // rather than trusted: `%` first, then `/`. The escape is reversible, so two
 // different paths never produce one key, and `/` appears only between ids.
-function recordBatchKey(callFlowAttemptPath: readonly string[], attemptId: string): string {
+export function automationStudioRecordBatchKey(callFlowAttemptPath: readonly string[], attemptId: string): string {
   return [...callFlowAttemptPath, attemptId].map(escapedKeySegment).join(BATCH_KEY_SEPARATOR);
 }
 

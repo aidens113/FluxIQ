@@ -1,22 +1,18 @@
 // A repair that inserts a step into the Flow a trial runs.
 //
-// **Trial only, and deliberately.** Durably inserting a step into a Flow is the
-// extend-mode build plan's job (`flow-bootstrap/extend.ts`): a wrong answer is
-// routed there, the model explores the live page, and the step it finds is
-// written into the Flow through the same assembler and the same review that
-// built the Flow in the first place. This kind briefly carried a durable form
-// of its own, `insert_step_path`, and that was two routes to one capability --
-// the duplication this codebase keeps having to undo. It was folded into the
-// extend plan, and what is left here is what the word `temporary` always meant:
-// a band-aid that lets the current run get past a step it is missing, which
-// nothing promotes.
+// **Kept only after a judged whole run.** A wrong answer that names no fault in
+// the words a re-author route takes reaches the patch ladder, and the ladder's
+// fix for a missing step is this one. It used to be "trial only": its durable
+// kind was `edit_recovery`, which neither a candidate nor an apply could write,
+// so a trial that read the right answer led nowhere. Live run
+// `run-mw0jw263-0251c104` read all 10 expected rows in such a trial and ended
+// failed on its first pass's 3. A trial that passes now holds the patch for the
+// judged re-run its Flow is owed, on the candidate this file writes, and the
+// patch is kept as `insert_steps` only when that run is judged to answer
+// (`service/runtime-adaptation/judged-promotion.ts`).
 //
-// `temporary_action_sequence` had no application at all: `live-patch.ts`
-// refused it as `unapplied_patch_kind`, and the change-proposal kind it mapped
-// to, `edit_recovery`, is refused outright as having no durable form. So the
-// commonest way an instruction-built Flow fails -- every step succeeded and the
-// answer is still wrong, because a step is missing -- had no patch kind whose
-// repair could be attempted, let alone kept. Live run
+// The commonest way an instruction-built Flow fails is every step succeeding and
+// the answer still being wrong, because a step is missing. Live run
 // `run-mufvlasz-c83071f7` (2026-09-24) is the case: a catalog search Flow that
 // navigated and extracted, never typed the query, and returned 23 records where
 // 4 were expected.
@@ -37,6 +33,7 @@
 // what lets the two agree without passing ids around.
 
 import type { JsonObject } from "../../../core/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY } from "../../../framework/automation-service/executor/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioRuntimePatch } from "../../llm/index.ts";
 
@@ -72,7 +69,8 @@ export function applyAutomationStudioInsertedSteps(
       description: patch.reason,
       ...(step.parameters ? { parameterValues: structuredClone(step.parameters) as JsonObject } : {}),
       ...(position ? { position: { x: position.x - STEP_X_OFFSET * (patch.steps.length - index), y: position.y } } : {}),
-      metadata: { runtimePatchRunId: runId }
+      // A declared consequence travels with the step, so a later run reads the same statement the person was asked about.
+      metadata: { runtimePatchRunId: runId, ...(patch.consequences?.length ? { [AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY]: [...patch.consequences] } : {}) }
     });
   }
   const first = ids[0]!;

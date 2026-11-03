@@ -61,6 +61,16 @@ import { AUTOMATION_STUDIO_REAUTHOR_NOTHING_TO_CHANGE, type AutomationStudioReau
  */
 export const AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE: (typeof AUTOMATION_STUDIO_RESULT_VERDICT_CODES)["doesNotAnswer"] = "core.result.does_not_answer_request";
 
+/**
+ * Core's code for a no its own record reached, with no judge asked
+ * (`../../../result-verification/computed-facts/computed-no.ts`). It is the same
+ * verdict on the same answer, carrying the located defects a judge's no carries,
+ * so a repair reads it as it reads a judge's. Live run `run-mw0jw263-0251c104` had
+ * its answer refuted this way, was refused here as not a wrong answer, and got a
+ * ladder that cannot add a step. A test holds this to the code that file writes.
+ */
+export const AUTOMATION_STUDIO_RESULT_COMPUTED_NO_CODE = "core.result.computed_fact_failed";
+
 
 /** Where a refuted run's metadata records what became of the route. */
 export const AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY = "resultReauthor";
@@ -89,7 +99,8 @@ export function automationStudioRefutedResultReauthorDecision(input: {
   projectId?: string | undefined;
   flowId?: string | undefined;
 }): AutomationStudioRefutedResultReauthorDecision {
-  if (automationStudioRefutedResultCode(input.detail) !== AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE) {
+  const code = automationStudioRefutedResultCode(input.detail);
+  if (code !== AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE && code !== AUTOMATION_STUDIO_RESULT_COMPUTED_NO_CODE) {
     return { route: false, refusal: "not_a_wrong_answer" };
   }
   if (!input.projectId || !input.flowId) return { route: false, refusal: "flow_unavailable" };

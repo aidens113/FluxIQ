@@ -26,7 +26,9 @@ import type {
   AutomationStudioRunDatasetExport,
   AutomationStudioRunDatasetExportLimits,
   AutomationStudioRunDatasetExportRequest,
+  AutomationStudioRunDatasetHeldTrial,
   AutomationStudioRunDatasetPageRequest,
+  AutomationStudioRunDatasetRestartedPass,
   AutomationStudioRunDatasetStream,
   AutomationStudioRunDatasetTooLargeExport,
   AutomationStudioRunDatasetsRunRequest
@@ -62,26 +64,139 @@ export class AutomationStudioRunDatasets {
    * the batch.
    */
   recordBatchHandler(projectId: string, runId: string): (batch: AutomationStudioRecordBatch) => Promise<AutomationStudioRunDatasetSummary> {
-    return async (batch) => {
-      const store = await this.openStore(projectId);
-      try {
-        return await store.appendBatch({
-          runId,
-          datasetId: batch.datasetId,
-          label: batch.label,
-          nodeId: batch.nodeId,
-          attemptId: batch.attemptId,
-          batchKey: batch.batchKey,
-          schema: batch.schema,
-          schemaDigest: automationStudioRecordSchemaDigest(batch.schema),
-          writeMode: batch.writeMode,
-          process: batch.process,
-          rows: batch.rows,
-          invalidCount: batch.invalidCount,
-          truncated: batch.truncated
+    return (batch) => this.storeBatch(projectId, runId, batch, false);
+  }
+
+  /**
+   * What a repair's re-run of the whole Flow stores with, under the run's own id.
+   * The pass is the run's answer, so nothing of an earlier pass may stay in it: a
+   * wrong row would be judged again, and a right one would hold its old place
+   * ahead of the rows dedupe then folds into it (`run-mw0jw263-0251c104`). Each
+   * dataset's first batch of the pass starts it over, so a re-run that never
+   * reaches a read leaves that read's rows.
+   */
+  restartedPass(projectId: string, runId: string): AutomationStudioRunDatasetRestartedPass {
+    const started = new Set<string>();
+    const store = async (batch: AutomationStudioRecordBatch): Promise<AutomationStudioRunDatasetSummary> => {
+      const startsOver = !started.has(batch.datasetId);
+      const summary = await this.storeBatch(projectId, runId, batch, startsOver);
+      // Refused, it cleared nothing, so the dataset's next batch is still its first.
+      started.add(batch.datasetId);
+      return summary;
+    };
+    // One at a time, in the order they came: a first batch stored after a later one would clear it.
+    let turn: Promise<void> = Promise.resolve();
+    return {
+      onRecordBatch: async (batch) => {
+        const earlier = turn;
+        let done = (): void => undefined;
+        turn = new Promise((resolve) => {
+          done = resolve;
         });
-      } finally {
-        await store.close();
+        await earlier;
+        try {
+          return await store(batch);
+        } finally {
+          done();
+        }
+      },
+      settle: async (status) => {
+        if (status !== "succeeded") return;
+        try {
+          const store = await this.openStore(projectId);
+          try {
+            for (const dataset of await store.listDatasets(runId)) {
+              if (!started.has(dataset.datasetId)) await store.deleteRunDatasets(runId, { datasetId: dataset.datasetId });
+            }
+          } finally {
+            await store.close();
+          }
+        } catch {
+          /* best-effort: as processing is, a store failure never replaces what the re-run did */
+        }
+      }
+    };
+  }
+
+  /**
+   * The executor options for a patch's trial inside a refuted run's repair, with
+   * no record hook. The trial reads under the run's id but is no pass of the run:
+   * none of its attempts join the run's record, and either a re-run from the start
+   * follows it or the answer that was judged stands. Its rows used to arrive after
+   * the dataset was processed and stay unprocessed (`run-mw0jw263-0251c104`). A
+   * build's trial has a session of its own for this reason. A failed step's trial
+   * keeps the hook: its run carries on from it.
+   */
+  trialOptions<T extends { onRecordBatch?: unknown }>(options: T | undefined): Omit<T, "onRecordBatch"> | undefined {
+    if (!options) return undefined;
+    const { onRecordBatch: _notStored, ...trial } = options;
+    return trial;
+  }
+
+  /**
+   * What a failed step's patch trial stores with. The trial is unjudged, and the
+   * run may or may not carry on from it, so its rows are held, not stored: they
+   * join the run only when a retry takes the trial up (`commit`, or the retry's own
+   * first batch through `resumeOptions`), and leave with it otherwise (`discard`).
+   * A trial that failed gives its rows up as it ends, whatever follows it.
+   */
+  heldTrial(projectId: string, runId: string): AutomationStudioRunDatasetHeldTrial {
+    let held: AutomationStudioRecordBatch[] = [];
+    let trialStart = 0;
+    const commit = async (): Promise<void> => {
+      const batches = held;
+      held = [];
+      trialStart = 0;
+      for (const batch of batches) await this.storeBatch(projectId, runId, batch, false);
+    };
+    const hold = async (batch: AutomationStudioRecordBatch): Promise<AutomationStudioRunDatasetSummary> => {
+      held.push(batch);
+      return await this.withProjectStore(projectId, async (store) => {
+        // The ordinals its markers get: where these rows will go if the trial is taken up.
+        const stored = (await store.listDatasets(runId)).find((dataset) => dataset.datasetId === batch.datasetId);
+        const heldRows = held.filter((entry) => entry.datasetId === batch.datasetId).reduce((sum, entry) => sum + entry.rows.length, 0);
+        return { runId, datasetId: batch.datasetId, nodeIds: [batch.nodeId], schemaDigest: automationStudioRecordSchemaDigest(batch.schema), recordCount: (stored?.recordCount ?? 0) + heldRows, truncated: batch.truncated, invalidCount: batch.invalidCount, updatedAt: Date.now() };
+      });
+    };
+    const trialRecordBatches = {
+      begin: () => {
+        trialStart = held.length;
+      },
+      reject: () => {
+        held = held.slice(0, trialStart);
+      }
+    };
+    const resumed = async (batch: AutomationStudioRecordBatch): Promise<AutomationStudioRunDatasetSummary> => {
+      await commit();
+      return await this.storeBatch(projectId, runId, batch, false);
+    };
+    return {
+      trialOptions: (options) => (this.pool && options ? { ...options, onRecordBatch: hold, trialRecordBatches } : options),
+      resumeOptions: (options) => (this.pool && options ? { ...options, onRecordBatch: resumed } : options),
+      commit,
+      discard: () => {
+        held = [];
+        trialStart = 0;
+      }
+    };
+  }
+
+  /**
+   * Removes the batches of a unit an in-run repair replaced (the executor names
+   * them), so the unit's re-attempt is what the answer holds. A store failure never
+   * fails the run: the rows stay, and the judge reads them.
+   */
+  batchDiscarder(projectId: string, runId: string): (batchKeys: readonly string[]) => Promise<void> {
+    return async (batchKeys) => {
+      try {
+        const store = await this.openStore(projectId);
+        try {
+          await store.discardBatches(runId, batchKeys);
+        } finally {
+          await store.close();
+        }
+      } catch {
+        /* best-effort: as processing is, a store failure never replaces what the run did */
       }
     };
   }
@@ -91,10 +206,10 @@ export class AutomationStudioRunDatasets {
    * and its `process` declaration, and returns the run's summaries, most
    * recently written first. Called when the run's graph run ends, before its
    * result is verified (read-list design P1); processing again starts from the
-   * collected rows, so a repair re-run that appends under the run is processed
-   * again the same way. Without a pool there is nothing to process and it
-   * returns `[]`. It throws when the store cannot be opened or refuses; the
-   * caller decides what that means for the run.
+   * collected rows, so a repair re-run's rows are processed the same way. Without
+   * a pool there is nothing to process and it returns `[]`. It throws when the
+   * store cannot be opened or refuses; the caller decides what that means for the
+   * run.
    */
   async processRunDatasets(input: AutomationStudioRunDatasetsRunRequest): Promise<AutomationStudioRunDatasetSummary[]> {
     if (!this.pool) return [];
@@ -179,6 +294,30 @@ export class AutomationStudioRunDatasets {
     return this.withProjectStore(input.projectId, (store) =>
       store.listDatasetRuns({ flowId: input.flowId, datasetId: input.datasetId, status: input.status, runId: input.runId, limit: input.limit, cursor: input.cursor })
     );
+  }
+
+  private async storeBatch(projectId: string, runId: string, batch: AutomationStudioRecordBatch, startsOver: boolean): Promise<AutomationStudioRunDatasetSummary> {
+    const store = await this.openStore(projectId);
+    try {
+      return await store.appendBatch({
+        runId,
+        datasetId: batch.datasetId,
+        label: batch.label,
+        nodeId: batch.nodeId,
+        attemptId: batch.attemptId,
+        batchKey: batch.batchKey,
+        schema: batch.schema,
+        schemaDigest: automationStudioRecordSchemaDigest(batch.schema),
+        writeMode: batch.writeMode,
+        process: batch.process,
+        rows: batch.rows,
+        invalidCount: batch.invalidCount,
+        truncated: batch.truncated,
+        startsOver
+      });
+    } finally {
+      await store.close();
+    }
   }
 
   private async inlineExport(store: AutomationStudioProjectRunDatasetStore, input: AutomationStudioRunDatasetExportRequest, format: AutomationStudioRunDatasetExportFormat): Promise<AutomationStudioRunDatasetExport | null> {

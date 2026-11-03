@@ -7,6 +7,7 @@ export * from "./action-target-parameters.ts";
 export * from "./attempt-projection.ts";
 export * from "./confidence.ts";
 export * from "./contracts.ts";
+export * from "./lasting-acts.ts";
 export * from "./resume.ts";
 export * from "./trial.ts";
 export * from "./verdict.ts";
