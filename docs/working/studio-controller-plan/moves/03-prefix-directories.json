@@ -1,0 +1,17 @@
+{
+  "sourceRoot": "packages/fluxiq/src",
+  "moves": [
+    {
+      "from": "runtime/result-verification/request-rows/summary/with-also-in-result.ts",
+      "to": "runtime/result-verification/request-rows/summary/with/also-in-result.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/summary/with-left-out-naming-the-item.ts",
+      "to": "runtime/result-verification/request-rows/summary/with/left-out-naming-the-item.ts"
+    },
+    {
+      "from": "runtime/result-verification/request-rows/summary/with-row-ids.ts",
+      "to": "runtime/result-verification/request-rows/summary/with/row-ids.ts"
+    }
+  ]
+}

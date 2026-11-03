@@ -3,7 +3,7 @@
 // functions rather than a copy kept equal by a parity test (t728, lane S; audit
 // findings 4B/4C). The extension content script and the domain reach
 // `@fluxiq/contracts` only through `fluxiq` subpaths, and this one is
-// browser-safe: never route these through the `fluxiq/automation-studio`
+// browser-safe: never route these through the `fluxiq/automation`
 // barrel, which pulls in `node:crypto`. The date condition readers and their
 // parity table (t800, K1) are here for the same reason: a domain's grammar asks
 // Core whether a bound or a `within` names a date, and runs the shared cases.

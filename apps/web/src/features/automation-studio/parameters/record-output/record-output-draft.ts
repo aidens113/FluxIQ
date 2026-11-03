@@ -9,7 +9,7 @@ import {
   type AutomationStudioRecordSchema,
   type AutomationStudioRecordValueType,
   type AutomationStudioRecordWriteMode
-} from "fluxiq/automation-studio/nodes";
+} from "fluxiq/automation/nodes";
 
 // Pure edits over the record output the record-output editor writes into a
 // node's parameters. Every edit returns fresh objects built field by field, so

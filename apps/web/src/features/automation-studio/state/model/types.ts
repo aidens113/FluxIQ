@@ -1,4 +1,4 @@
-import type { EvidenceAnchor, NodeEvidenceRole, NodeStatePhase, NodeStateSource, StateSnapshot, StateVisualFrame } from "fluxiq/automation-studio";
+import type { EvidenceAnchor, NodeEvidenceRole, NodeStatePhase, NodeStateSource, StateSnapshot, StateVisualFrame } from "fluxiq/automation";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 
 export type BuildNodeStateViewModelInput = {

@@ -1,4 +1,4 @@
-import type { NodeStatePhase } from "fluxiq/automation-studio";
+import type { NodeStatePhase } from "fluxiq/automation";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import { createScopedExternalStore, type ScopedExternalStore } from "./external-store";
 

@@ -7,8 +7,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ClientGatewayService, ClientGatewayTraceMemoryStore } from "../../../client-gateway/index.ts";
 import { createGlobalProgramRuntime } from "../../index.ts";
-import { AutomationStudioOfflineTrialInstallation } from "../../automation-studio/runtime/index.ts";
-import { AutomationStudioGatewayTraceInstallation } from "../../automation-studio/runtime/gateway-trace/index.ts";
+import { AutomationStudioOfflineTrialInstallation } from "../../../framework/automation-service/index.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../../runtime/recording/gateway-trace/index.ts";
 
 /** Clears whatever a runtime installed: installing and at once uninstalling leaves nothing installed. */
 function clearInstallations(): void {

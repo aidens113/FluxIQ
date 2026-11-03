@@ -1,18 +1,6 @@
-export * from "./api/index.ts";
-export { projectAutomationStudioFailureControlRecord } from "@fluxiq/contracts/automation-studio";
-export * from "./runtime/actionability/index.ts";
-export type { AutomationStudioChangeFeedOperation } from "./api/index.ts";
-export * from "./client-gateway/index.ts";
-export * from "./dsl/index.ts";
-export * from "./fingerprinting/index.ts";
-export * from "./learning/index.ts";
+// Automation Studio's own entry, `fluxiq/automation-studio`: a controller of the
+// framework, holding its endpoints, view state and metadata. The automation runtime
+// itself is `fluxiq/automation`.
+export * from "./api/handlers.ts";
 export * from "./metadata.ts";
-export * from "./mining/index.ts";
-export * from "./model/index.ts";
-export * from "./nodes/index.ts";
-export * from "./normalization/index.ts";
-export * from "./runtime/index.ts";
-export * from "./storage/index.ts";
-export * from "./testing/index.ts";
-export * from "./types.ts";
 export * from "./ui/index.ts";

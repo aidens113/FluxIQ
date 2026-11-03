@@ -27,6 +27,12 @@ separate from behavioral work.
 
 ## Build And Check Cache
 
+Core's pre-push hook uses the registered `structure-audit:check` step. The
+fingerprint includes every git-visible file, so a changed source, test,
+baseline or document invalidates the prior pass. Failed audits are never
+stamped. A failure prints the output captured from that single attempt instead
+of running the audit again for diagnostics.
+
 Every package's `build` and `check`, and the plain structure audit, run
 through `scripts/build-cache/`, a content-fingerprinted stamp-and-skip cache.
 A package script runs
@@ -36,7 +42,7 @@ is a name in the registry `scripts/build-cache/steps.mjs` (`contracts:build`,
 refuses a command that differs from the registry's, so the two cannot drift
 apart. The root `build` and `check` pass several steps to the same CLI, which
 runs them in-process in workspace dependency order, and `check` runs the type
-checks in parallel. Each step prints one line:
+  checks in parallel. Each step prints one line:
 `{"build-cache":"reuse"|"build","step":…,"reason":…,"ms":…,"source":"stamp"|"store"|"command"}`.
 Tests are never cached.
 

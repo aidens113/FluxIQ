@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_ANTHROPIC_MODELS } from "fluxiq/automation-studio/llm-models";
+import { AUTOMATION_STUDIO_ANTHROPIC_MODELS } from "fluxiq/automation/llm-models";
 import { AiProviderSettingsSection } from "../AiProviderSettingsSection";
 import { aiProviderKeyAvailability } from "../ai-provider-model";
 import { buildFlowSettingsSavePayload, flowEffectiveSettings, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail } from "../flow-settings-model";

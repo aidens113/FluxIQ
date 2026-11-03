@@ -1,5 +1,5 @@
 import { MarkerType, type Connection, type Edge, type Node } from "@xyflow/react";
-import type { AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import type { AutomationNodePort } from "fluxiq/automation/nodes";
 import {
   automationConnectionIsValid,
   automationPortColor,

@@ -1,2 +1,0 @@
-// Compatibility export; implementation belongs to the framework.
-export { type AutomationStudioLifecycleGraph, type AutomationStudioRegisteredLifecycleGraph, type AutomationStudioRunIncident, type AutomationStudioLifecycleFrameView, type AutomationStudioIncidentHandlerRun, type AutomationStudioLifecycleRunState, automationStudioLifecycleRunState } from "../../../../../engine/automation/lifecycle-run/index.ts";

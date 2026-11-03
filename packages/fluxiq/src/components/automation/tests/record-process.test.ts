@@ -1,8 +1,8 @@
 // The record-processing readers re-exported for browser code (t728, lane S):
 // the extension content script and the domain judge a `where`, read a number,
 // dedupe and sort with Core's own functions through the browser-safe
-// `fluxiq/automation-studio/nodes` subpath, never through a copy and never
-// through the `fluxiq/automation-studio` barrel, which pulls in `node:crypto`.
+// `fluxiq/automation/nodes` subpath, never through a copy and never
+// through the `fluxiq/automation` barrel, which pulls in `node:crypto`.
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

@@ -39,7 +39,7 @@ function textOf(node: any): string {
 
 describe("the Flow size setting mirror", () => {
   it("matches Core's setting", () => {
-    const core = readFileSync(new URL("../../../../../../../packages/fluxiq/src/programs/automation-studio/model/flow-size/flow-size-settings.ts", import.meta.url), "utf8");
+    const core = readFileSync(new URL("../../../../../../../packages/fluxiq/src/flows/authoring/model/flow-size/flow-size-settings.ts", import.meta.url), "utf8");
     const field = (name: string) => {
       const found = core.match(new RegExp(`\\b${name}:\\s*("[^"]*"|[0-9_]+)`));
       expect(found, `Core no longer states ${name}; re-read flow-size-settings.ts`).toBeTruthy();

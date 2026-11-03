@@ -2,7 +2,7 @@
 // LLM context pool, each with its own read, write, purge and stats surface.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type AutomationStudioClearReusableLlmContextScopeRequest, type AutomationStudioDeleteProjectUiCacheRequest, type AutomationStudioDeleteReusableLlmContextRequest, type AutomationStudioGetProjectUiCacheRequest, type AutomationStudioGetReusableLlmContextRequest, type AutomationStudioListProjectUiCacheStatsRequest, type AutomationStudioListReusableLlmContextsRequest, type AutomationStudioPackReusableLlmContextsRequest, type AutomationStudioPurgeExpiredReusableLlmContextsRequest, type AutomationStudioPutReusableLlmContextRequest, type AutomationStudioSaveProjectUiCacheRequest } from "../contracts.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type AutomationStudioClearReusableLlmContextScopeRequest, type AutomationStudioDeleteProjectUiCacheRequest, type AutomationStudioDeleteReusableLlmContextRequest, type AutomationStudioGetProjectUiCacheRequest, type AutomationStudioGetReusableLlmContextRequest, type AutomationStudioListProjectUiCacheStatsRequest, type AutomationStudioListReusableLlmContextsRequest, type AutomationStudioPackReusableLlmContextsRequest, type AutomationStudioPurgeExpiredReusableLlmContextsRequest, type AutomationStudioPutReusableLlmContextRequest, type AutomationStudioSaveProjectUiCacheRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerCacheEndpoints(dependencies: AutomationStudioApiDependencies): void {

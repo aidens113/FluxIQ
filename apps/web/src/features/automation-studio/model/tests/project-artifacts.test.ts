@@ -1,4 +1,4 @@
-import type { AutomationStudioFlowDocument, AutomationStudioTaskArtifact } from "fluxiq/automation-studio";
+import type { AutomationStudioFlowDocument, AutomationStudioTaskArtifact } from "fluxiq/automation";
 import { describe, expect, it } from "vitest";
 import { flowToTaskPolicy, graphToTaskFlow, mergeById } from "../project-artifacts";
 

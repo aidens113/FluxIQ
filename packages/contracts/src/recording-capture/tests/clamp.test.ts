@@ -8,7 +8,7 @@ import {
   clampAutomationStudioRecordingCaptureSettings,
   type AutomationStudioRecordingCapturePolicy
 } from "../index.ts";
-import * as automationStudio from "../../automation-studio.ts";
+import * as automationStudio from "../../automation.ts";
 
 const ALL_ON = { captureInputValues: true, captureSnapshots: true, captureMutations: true, directRequests: true };
 

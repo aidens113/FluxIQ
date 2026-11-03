@@ -1,0 +1,87 @@
+/* Design tokens, light and dark. Every stylesheet of the chat reads colours
+   from these names and never from a literal, so a surface or a theme changes
+   here and nowhere else. They sit on `:root` on purpose, so a host defines
+   its own surface from the same names. Imported once, by the host. */
+
+:root {
+  color-scheme: light dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --canvas: #f5f7fa;
+  --surface: #ffffff;
+  --surface-raised: #eef2f7;
+  --surface-muted: #f0f3f7;
+  --divider: #d6dde6;
+  --text: #16202b;
+  --muted: #5b6b7c;
+  --accent: #2f6fc0;
+  --accent-soft: #e3eefb;
+  --accent-text: #1d4f8f;
+  --success: #1f9d61;
+  --warning: #b7791f;
+  --warning-soft: #fdf4e3;
+  --warning-text: #7a4f0e;
+  --danger: #d23b4a;
+  --danger-soft: #fdeaec;
+  --danger-text: #9b1f2c;
+  --neutral-dot: #8b98a6;
+  --focus: #2f6fc0;
+  --hover: #e4eaf2;
+  --shadow: 0 12px 32px rgb(15 23 42 / 16%);
+  --shadow-sm: 0 1px 4px rgb(15 23 42 / 8%);
+
+  /* The chat (chat/): a chat app's type, bubble, code and composer. */
+  --chat-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --chat-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+  --chat-size: 14px;
+  --chat-column: 720px;
+  --bubble: #eef1f5;
+  --code-bg: #eef1f5;
+  --composer: #ffffff;
+  --composer-focus: #aab6c4;
+  --send: #16202b;
+  --send-text: #ffffff;
+  --send-off: #dde3ea;
+  --send-off-text: #8b98a6;
+
+  --radius: 10px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0b1016;
+    --surface: #111923;
+    --surface-raised: #172231;
+    --surface-muted: #0e151e;
+    --divider: #26384a;
+    --text: #eef4fb;
+    --muted: #93a4b6;
+    --accent: #5e9eea;
+    --accent-soft: #183250;
+    --accent-text: #dcebff;
+    --success: #3bc982;
+    --warning: #efbb52;
+    --warning-soft: #211d15;
+    --warning-text: #f8d489;
+    --danger: #fa6571;
+    --danger-soft: #27171d;
+    --danger-text: #ffb5bc;
+    --neutral-dot: #718094;
+    --focus: #9dccff;
+    --hover: #1b2b3d;
+    --shadow: 0 20px 60px rgb(0 0 0 / 48%);
+    --shadow-sm: 0 1px 4px rgb(0 0 0 / 40%);
+    --bubble: #1f2c3b;
+    --code-bg: #0b1119;
+    --composer: #172231;
+    --composer-focus: #3d5670;
+    --send: #eef4fb;
+    --send-text: #0b1016;
+    --send-off: #26384a;
+    --send-off-text: #718094;
+  }
+}

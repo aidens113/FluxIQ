@@ -1,3 +1,3 @@
-export * from "./contracts.ts";
+export * from "../../../api-contracts/automation.ts";
 export * from "./handlers.ts";
-export { recordAutomationStudioCreatedProjectOwner } from "./ownership/index.ts";
+export { recordAutomationStudioCreatedProjectOwner } from "../../../framework/persistence/automation/ownership/index.ts";

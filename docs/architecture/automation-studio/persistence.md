@@ -57,7 +57,7 @@ recording-drain performance remains a separate validation requirement.
 
 ## Other persistence foundations
 
-The isolated `storage/project/accepted-state` foundation stores explicitly supplied
+The isolated `framework/persistence/automation/project/accepted-state` foundation stores explicitly supplied
 complete visual-project snapshots in project SQLite. Its immutable snapshot and
 staged/tombstoned head are written with the existing unit-of-work mutation result
 in one transaction. Full epoch/generation/content bindings provide CAS; an
@@ -72,7 +72,7 @@ cutover requires separately reviewed explicit adoption and all-reader/all-writer
 participation, authorization and trusted verification; candidate promotion remains
 closed.
 
-The isolated `storage/project/authority-guard` foundation coordinates trusted legacy
+The isolated `framework/persistence/automation/project/authority-guard` foundation coordinates trusted legacy
 mutation owners under original project IDs. Opening creates/migrates infrastructure
 SQL; it is not a project existence or admission check. A durable pending claim
 commits before the external operation. Whole-operation digest receipts advance one
@@ -604,7 +604,7 @@ reported, and what the ledger charged
 If a run detail file is missing after a partial write, the service rebuilds and
 re-saves it from the durable runtime session record before returning it. Every
 run-detail save is serialized per run and merged onto the detail already
-stored (`runtime/service/summaries/run-detail-merge.ts`). The incoming detail
+stored (`framework/automation-service/service/summaries/run/detail-merge.ts`). The incoming detail
 wins for each key it carries. A stored key it does not carry is kept, unless it
 is one the session projection or the stores recompute. Collections merge by
 record ID. So a detail rebuilt from the bare session never removes what the
@@ -618,12 +618,12 @@ record, and adaptive execution allows only one active adaptive run per project.
 and marks queued/running sessions cancelled in durable storage.
 
 A run left `running` by a process that is gone is ended the first time the
-service reads that project's runs (`runtime/service/runtime-session/orphaned-run-sweep.ts`).
+service reads that project's runs (`framework/automation-service/service/runtime-session/orphaned-run-sweep.ts`).
 Only a run that started before this process did, and that no live executor of
 this service owns, is touched: a run this process started is never swept,
 because the same process losing track of something is not evidence that the
 process running it ended. The session ends `interrupted`, which is terminal
-and neither a failure nor a success (`runtime/service/runtime-session/terminal-status.ts`),
+and neither a failure nor a success (`framework/automation-service/service/runtime-session/terminal-status.ts`),
 so no reader that ends, lists, repairs, reruns or promotes runs takes it for
 either, with `metadata.interruption = { state: "interrupted",
 reason: "process_ended", at, sessionStatus: "running", lastingAct: "unknown",
@@ -632,7 +632,7 @@ A parked (`waiting`) run is durable by design and is not swept.
 
 An action result that arrives after Core stopped waiting for its command is
 kept on the run detail as `metadata.lateActionResults`, at most 20, oldest
-first out (`runtime/service/runtime-session/late-action-result.ts`): the
+first out (`framework/automation-service/service/runtime-session/late-action-result.ts`): the
 command, how Core had ended it (`timed_out`, `uncertain`, `closed` or
 `settled`), the status the client reported and Core's reading of it, whether it
 was interrupted, the effect and failure code when the client's record states
@@ -642,14 +642,14 @@ the run's session lock and merged like every other detail key.
 A run that repaired a true failure in place (state-aware recovery plan, C6
 step 8) keeps one receipt per fix it overlaid, and one per incident it asked
 about and got no fix for, as `metadata.inRunRepairs`
-(`runtime/service/runtime-adaptation/context.ts`): `repairId`, `incidentId`,
+(`framework/automation-service/service/runtime-adaptation/context.ts`): `repairId`, `incidentId`,
 the failing `nodeId` and `framePath`, the `unit`, `outcome` (`overlaid` or
 `none` with a closed `code` and a plain-words `reason`), for a fix its `kind`,
 `adaptationId`, `changeProposalId` and promotion `approvalDecision`, and what
 the run's in-run repairs had `spent` against the run's cost ceiling. Each fix's
 adaptation id is also in the detail's `adaptationIds`, and the judged end
 writes how it was settled onto its receipt
-(`runtime/service/runtime-adaptation/judged-promotion.ts`). No page data, run
+(`framework/automation-service/service/runtime-adaptation/judged-promotion.ts`). No page data, run
 value or model text is kept.
 
 LLM harness invocations are persisted as run interventions. Each intervention
@@ -674,7 +674,7 @@ Revert changes the adaptation lifecycle to `reverted`; it does not require
 manual Flow JSON edits.
 
 With project storage, adaptations live in the typed `adaptations` table
-(`storage/project/adaptation-store.ts`), and review tries that store first.
+(`framework/persistence/automation/project/adaptation-store.ts`), and review tries that store first.
 `applyApprovedAdaptation` requires the caller's promotion gates as
 `promotionGates` and refuses to apply without a pass, recording a
 `policy_blocked` audit event; a stale base records `stale_base`, and a failed
@@ -1113,7 +1113,7 @@ authoritative collections; `adaptationCount` is the number of unique
 ## Adaptation Matching Migration
 
 Project migration `0020_adaptation_matching_columns`
-(`storage/project/schema/adaptation-matching.ts`) adds three typed columns to
+(`framework/persistence/automation/project/schema/adaptation-matching.ts`) adds three typed columns to
 `adaptations`, so a change can be matched to the failure it answers without
 reading its JSON detail:
 

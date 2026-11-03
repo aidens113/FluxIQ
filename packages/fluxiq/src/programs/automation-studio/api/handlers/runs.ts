@@ -11,8 +11,8 @@
 // belongs on.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type FlowAdaptationRequest, type FlowExpansionSummaryRequest, type FlowRunActionPageRequest, type FlowRunDetailRequest, type FlowRunEventPageRequest, type FlowSpendRequest, type FlowSpendResponse, type ReviewFlowAdaptationRequest } from "../contracts.ts";
-import { automationStudioWithWholeAttemptInputs, type AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type FlowAdaptationRequest, type FlowExpansionSummaryRequest, type FlowRunActionPageRequest, type FlowRunDetailRequest, type FlowRunEventPageRequest, type FlowSpendRequest, type FlowSpendResponse, type ReviewFlowAdaptationRequest } from "../../../../api-contracts/automation.ts";
+import { automationStudioWithWholeAttemptInputs, type AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRunEndpoints(dependencies: AutomationStudioApiDependencies): void {

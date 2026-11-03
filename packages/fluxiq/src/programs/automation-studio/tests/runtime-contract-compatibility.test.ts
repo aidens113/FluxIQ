@@ -12,9 +12,9 @@ import {
   automationStudioActionPermissionSentence,
   parseAutomationStudioActionPermissionRequest
 } from "../../../runtime/action-permissions/index.ts";
-import * as studioAsk from "../runtime/conversations/index.ts";
-import * as studioParking from "../runtime/parking/index.ts";
-import * as studioPermissions from "../runtime/action-permissions/index.ts";
+import * as studioAsk from "../../../runtime/conversations/index.ts";
+import * as studioParking from "../../../runtime/automation-parking/index.ts";
+import * as studioPermissions from "../../../runtime/action-permission-requests/index.ts";
 
 describe("Studio compatibility with framework runtime contracts", () => {
   it("shares the ask effect and answer rules with the canonical interaction ports", () => {

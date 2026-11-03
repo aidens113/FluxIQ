@@ -10,7 +10,9 @@ Framework packages provide reusable mechanics:
 - flow documents, validation, execution, and result semantics;
 - component registry contracts and domain-neutral node packs;
 - runtime sessions and compute dispatch contracts;
-- Automation Studio documents, recordings, and policy artifacts.
+- the automation runtime, services, stores and model loop that Automation Studio
+  controls: documents, recordings, policy artifacts, Flow building and runs;
+- a reusable chat UI (`@fluxiq/ui-components`) any client can mount.
 
 Downstream projects provide domain behavior:
 
@@ -55,15 +57,21 @@ runtime keeps clear folders rather than many tiny workspace packages.
 | --- | --- | --- |
 | `src/core` | shared primitives and result types | domain concepts |
 | `src/domains` | domain manifest and registry contracts | built-in domain packages |
-| `src/programs` | global framework programs, program catalog, scope model, and global program API registry | domain program implementations |
-| `src/api-contracts` | shared API schemas | private domain payloads |
-| `src/flows` | flow graph model, executable graph contracts and validation | runtime side effects or editor/project persistence |
-| `src/framework` | host-project bootstrap and top-level FluxIQ class | domain implementation code |
+| `src/programs` | global framework programs, program catalog, scope model, and global program API registry. A controller program such as Automation Studio holds only endpoint registration, view state and metadata | domain program implementations, and backend logic for any program |
+| `src/api-contracts` | shared API schemas, including `api-contracts/automation` for Automation Studio's endpoints | private domain payloads |
+| `src/flows` | flow graph model, executable graph contracts and validation, and the authoring model and Flow source language (`flows/authoring`) | runtime side effects or editor/project persistence |
+| `src/framework` | host-project bootstrap, the top-level FluxIQ class, the automation service (`framework/automation-service`) and automation persistence (`framework/persistence/automation`) | domain implementation code |
 | `src/components` | component metadata and neutral node packs | domain actions |
 | `src/engine` | session lifecycle, node dispatch and automation graph execution | domain decision logic or editor/project persistence |
-| `src/runtime` | runtime services, host ports, execution support and domain adapter boundaries | concrete browser/DOM interpretation or program persistence |
+| `src/runtime` | runtime services, host ports, execution support, the Flow-building model loop (`runtime/llm`), Flow authoring, result verification, adaptation, conversations, activity and domain adapter boundaries | concrete browser/DOM interpretation or program persistence |
 | `src/io` | input/output adapter contracts, streams, dispatch, and validation | domain implementation details |
 | `src/ui` | reusable React UI primitives | domain-specific screens |
+
+Nothing under `src/` other than the program catalog imports a program; the
+structure audit enforces it. The chat UI is not part of `fluxiq`: it is the
+separate package `packages/ui-components`, which each client mounts through
+ports. See [runtime ownership](runtime-ownership.md) for where each Automation
+Studio capability lives.
 
 Global program internals use the layout described in
 [`program-layout.md`](./program-layout.md).

@@ -1,4 +1,4 @@
-import type { AutomationNodeParameter, AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import type { AutomationNodeParameter, AutomationNodePort } from "fluxiq/automation/nodes";
 import type { JsonObject } from "../../programs/program-api";
 
 export function defaultAutomationParameterValues(parameters: AutomationNodeParameter[]): JsonObject {

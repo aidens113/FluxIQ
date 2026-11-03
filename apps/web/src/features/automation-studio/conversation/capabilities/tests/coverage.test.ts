@@ -27,7 +27,7 @@ import { automationStudioFeaturePath, productionSources } from "../../../archite
 import { PANEL_ENDPOINTS_WITHOUT_A_CAPABILITY, panelCapabilities, panelCapabilityEndpoints } from "../registry";
 
 const REPOSITORY_ROOT = resolve(automationStudioFeaturePath, "../../../../..");
-const CORE_ENDPOINTS_FILE = "packages/fluxiq/src/programs/automation-studio/api/contracts/endpoints.ts";
+const CORE_ENDPOINTS_FILE = "packages/fluxiq/src/api-contracts/automation/endpoints.ts";
 
 /**
  * Verbs that change something that outlasts the request. Written out rather

@@ -104,7 +104,7 @@ describe("FluxIQ web host module loading", () => {
     const root = mkdtempSync(path.join(importingRepositoryDir(), "fluxiq-esm-host-"));
     const modulePath = path.join(root, "host.mjs");
     writeFileSync(modulePath, [
-      "import { AutomationStudioNativeNodeRuntime } from \"fluxiq/automation-studio\";",
+      "import { AutomationStudioNativeNodeRuntime } from \"fluxiq/automation\";",
       "export function registerFluxIQHost(fluxiq) {",
       "  fluxiq.programs.automationStudio.bindNativeNodeRuntime(new AutomationStudioNativeNodeRuntime());",
       "  return fluxiq;",
@@ -126,7 +126,7 @@ describe("FluxIQ web host module loading", () => {
   it("explains that a CommonJS host cannot require FluxIQ's ESM-only package exports", async () => {
     const root = mkdtempSync(path.join(importingRepositoryDir(), "fluxiq-cjs-host-"));
     const modulePath = path.join(root, "host.cjs");
-    writeFileSync(modulePath, "require(\"fluxiq/automation-studio\");\nmodule.exports.registerFluxIQHost = (fluxiq) => fluxiq;\n");
+    writeFileSync(modulePath, "require(\"fluxiq/automation\");\nmodule.exports.registerFluxIQHost = (fluxiq) => fluxiq;\n");
     process.env.FLUXIQ_HOST_MODULE = modulePath;
     try {
       await expect(loadFluxIQHostModule()).rejects.toThrow("FluxIQ packages are ESM-only");

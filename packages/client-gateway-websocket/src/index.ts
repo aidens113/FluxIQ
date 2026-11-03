@@ -50,4 +50,4 @@ export type {
   RecordingDomainEventInput,
   RecordingSession,
   StateSnapshot
-} from "@fluxiq/contracts/automation-studio";
+} from "@fluxiq/contracts/automation";

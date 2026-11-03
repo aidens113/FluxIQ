@@ -10,8 +10,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry } from "../../../../_shared/api.ts";
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
-import type { AutomationStudioService } from "../../../runtime/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
+import type { AutomationStudioService } from "../../../../../framework/automation-service/index.ts";
 import { cacheActor } from "./test-actor.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 

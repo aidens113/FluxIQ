@@ -1,0 +1,58 @@
+import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/index.ts";
+
+// The state digest a build takes either side of each step it runs.
+//
+// The hook the evidence loop offers names a call and a tool and nothing else,
+// because the loop asks the same question twice and does not care which side of
+// the step it is on. The domain's hook needs to know: it is asked once before
+// the action and once after it, and the two answers are what say whether the
+// step changed anything (`runtime/recovery/exploration-state/digest-source.ts`).
+// So the side is tracked here, by the call it belongs to -- the first answer for
+// a call is its "before", the second its "after" -- rather than being derived
+// one from the other, which would make the loop's own state-chain check vacuous.
+//
+// Without this the reduction has no chain to walk for a build: a build's steps
+// were recorded with no digests at all, while the recovery exploration, whose
+// binding is wired the same way one directory over, had them from the start.
+
+/**
+ * The evidence loop's `captureStateDigest` for one build, or nothing when the
+ * bound domain cannot observe its own state.
+ *
+ * A domain that says nothing leaves the step without digests, which the
+ * reduction reports rather than treats as a failure.
+ *
+ * Nothing, too, when the binding reports each call's states on its result
+ * (`stateDigestsOnCalls`): the loop then reads them there and the build makes
+ * no digest call at all. Asking the hook as well would put two digests at one
+ * point, and in the web domain each was a whole page capture of its own -- a
+ * look cost three captures and an action four (`run-munneauy-de8663ed`).
+ */
+export function automationStudioBootstrapStateDigestHook(
+  binding: AutomationStudioLlmEvidenceRuntimeBinding | undefined,
+  context: { projectId: string; flowId: string; startLocation?: string }
+): ((input: { callId: string; toolId: string; signal?: AbortSignal }) => Promise<string | undefined>) | undefined {
+  if (binding?.stateDigestsOnCalls === true) return undefined;
+  const capture = binding?.captureStateDigest?.bind(binding);
+  if (!capture) return undefined;
+  const asked = new Set<string>();
+  return (input) => {
+    // Reading the node library touches no state, so it is never digested: a
+    // digest here is a whole page capture in the web domain, taken twice.
+    if (input.toolId === AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID) return Promise.resolve(undefined);
+    const phase = asked.has(input.callId) ? "after" : "before";
+    asked.add(input.callId);
+    return capture({
+      projectId: context.projectId,
+      flowId: context.flowId,
+      callId: input.callId,
+      toolId: input.toolId,
+      phase,
+      // A build told where its Flow starts has had nothing opened for it, so
+      // the state before its first step is no state. The domain is told, so it
+      // can answer "nothing" instead of failing the step that goes there.
+      ...(context.startLocation === undefined ? {} : { startLocation: context.startLocation }),
+      ...(input.signal ? { signal: input.signal } : {})
+    });
+  };
+}

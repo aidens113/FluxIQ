@@ -5,7 +5,7 @@ import type { ClientGatewayHostLease } from "@fluxiq/contracts/client-gateway";
  * (automation-project-agents-plan, `Host resources and concurrency`), the way
  * it reads `commandOwner`: from the async context the command is dispatched
  * in. The host wires Core's lease scope here
- * (`programs/automation-studio/runtime/project-agents/host-resources/lease-scope.ts`);
+ * (`runtime/project-agents/host-resources/lease-scope.ts`);
  * the gateway never imports it.
  */
 export type ClientGatewayHostLeaseSource = {

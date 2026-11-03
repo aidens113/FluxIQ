@@ -298,7 +298,7 @@ FluxIQ may send:
 
 Framework clients can use the workspace package. It exposes a low-level gateway
 transport and an Automation Studio facade. The facade imports Automation Studio
-request types from `fluxiq/automation-studio`, so websocket clients compile
+request types from `fluxiq/automation`, so websocket clients compile
 against the same params as direct-import callers.
 
 ```ts
@@ -340,7 +340,7 @@ The package is split by responsibility:
 - `index.ts`: public exports only.
 
 The package exports protocol types from `fluxiq/client-gateway` and recording
-request types from `fluxiq/automation-studio`. It does not contain browser,
+request types from `fluxiq/automation`. It does not contain browser,
 scraping, or domain-specific automation behavior.
 
 ## Domain Recording Events
@@ -361,7 +361,7 @@ recording domain or FluxIQ preserves the normal raw gateway behavior.
 Direct import path:
 
 ```ts
-import { AutomationStudioService } from "fluxiq/automation-studio";
+import { AutomationStudioService } from "fluxiq/automation";
 
 const automationStudio = new AutomationStudioService();
 

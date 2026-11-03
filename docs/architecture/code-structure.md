@@ -9,18 +9,20 @@ every push: `.githooks/pre-push` runs the audit and refuses a push it fails
 document -- has no merge step to run it. `pnpm install` points git at
 `.githooks` (the root `prepare` script; a no-op outside a git checkout).
 
-## The Gap This Closes
+## What These Rules Decide
 
-[Global program layout](./program-layout.md) defines the layers inside a
-program — `api/`, `model/`, `runtime/`, `storage/`, `ui/` — and nothing below
-them. That works while each layer fits in a handful of files. Automation
-Studio outgrew it: `storage/` reached 72 files and `runtime/` 66, with a
-12,482-line `service.ts` beside them. Both symptoms have one cause. Code
-extracted from a large file had no deterministic destination, so it was
-dropped next to the file it came from.
+A directory of a dozen files needs no structure. A directory of seventy does,
+and without a rule the extra files pile up beside the one they were extracted
+from. The rules below make placement a procedure rather than a judgement: they
+add the two levels [global program layout](./program-layout.md) leaves
+undefined — feature and kind — and they say which tree a file belongs in
+before any of that.
 
-The rules below add the two levels program-layout leaves undefined — feature
-and kind — and make placement a procedure rather than a judgement.
+Backend code never lives in a program. Execution, authoring, verification,
+persistence and orchestration live in framework areas under
+`packages/fluxiq/src/`, even when one program is their only client today. A
+program holds endpoint registration, view state and metadata
+([program layout](./program-layout.md#controller-programs)).
 
 ## Placement Is A Decision Procedure
 
@@ -36,7 +38,9 @@ Every source file answers four questions, in order. The answers are its path.
 | --- | --- |
 | Domain-neutral framework capability any program or importer may use: primitives, IO, flows, engine, runtime kernel, UI theme, domain and component registries, client gateway, API contracts | `packages/fluxiq/src/<area>/` — the areas listed in [architecture README](./README.md) |
 | Program-flavoured code used by two or more global programs: program API helpers, authorization, catalog, shared storage helpers | `packages/fluxiq/src/programs/_shared/` |
-| Code for exactly one global program | `packages/fluxiq/src/programs/<program-id>/` |
+| Endpoint registration, view state and catalog metadata for one global program | `packages/fluxiq/src/programs/<program-id>/` |
+| Backend logic that only one program calls today (services, persistence, model calls, authoring) | The framework area that owns the capability, not the program. Automation Studio's backend is in `framework/automation-service`, `framework/persistence/automation`, `runtime/*`, `flows/authoring` and `api-contracts/automation` |
+| A chat interface any client can mount | `packages/ui-components` (`@fluxiq/ui-components`): plain DOM and CSS behind ports the client supplies |
 | Web UI for one feature of the panel | `apps/web/src/features/<feature>/` |
 | Next.js routes, API route handlers, the global shell that composes routes (`AuthShell`, `ProgramLauncher`, `ProgramWorkspace`, `GlobalClientGatewayPairing`, `RouteErrorSurface`), and global stylesheets | `apps/web/src/app/` — nothing feature-specific; feature logic lives under `features/`. A `tests/` folder here is safe: Next.js routes only folders containing a `page` or `route` file. |
 | Domain-specific behaviour | Not in this repository. See Repository Boundary in `AGENTS.md`. |
@@ -46,20 +50,25 @@ have a consumer?* If yes, it is not program-owned. Promote a file to
 `_shared` or a global area only when a second consumer actually exists. Do
 not generalize ahead of a real second use.
 
-### 2. Layer — which responsibility inside a program
+### 2. Layer — which responsibility inside a tree
+
+A controller program (Automation Studio is one) has only the `api/` and `ui/`
+rows. The others are the layers of a framework area or of a program that is
+not a controller.
 
 | Layer | Owns | Must not own |
 | --- | --- | --- |
-| `api/` | Endpoint names, request/response contracts, handler registration | Business logic, persistence |
+| `api/` | Endpoint names, thin handler registration | Business logic, persistence |
 | `model/` | Document types, validation, fixtures, pure transforms over documents | IO, side effects |
 | `runtime/` | Services, executors, orchestration, adapters, providers | Storage formats, UI state |
 | `storage/` | Repositories, stores, schema, migrations, indexes | Orchestration, UI |
 | `ui/` | View-state DTOs and navigation metadata | React components — those are `apps/web` |
 
-A program may add a capability area beside the layers when it is a genuinely
-separate capability with its own public subpath or contract. Automation
-Studio's `nodes/`, `dsl/`, and `fingerprinting/` are examples. Add one only
-with real ownership, never as a place for files that fit nowhere else.
+A tree may add a capability area beside the layers when it is a genuinely
+separate capability with its own public subpath or contract, such as the
+automation node pack (`framework/automation-service/nodes`) or the Flow source
+language (`flows/authoring/dsl`). Add one only with real ownership, never as a
+place for files that fit nowhere else. A controller program adds none.
 
 ### 3. Feature — the noun inside a layer
 
@@ -106,7 +115,7 @@ sits in needs splitting, not the kind folder.
 ### Depth
 
 Ownership, program, layer, feature, kind, file:
-`packages/fluxiq/src/programs/automation-studio/storage/project/hierarchy/repository.ts`
+`packages/fluxiq/src/framework/persistence/automation/project/hierarchy/repository.ts`
 is seven path segments. Cap source files at eight segments from the
 repository root. A ninth means a layer or feature was assigned wrongly. A
 test sits one segment deeper than its subject and is not counted. The one
@@ -129,15 +138,15 @@ storage/project/hierarchy/
 - The test for `<dir>/<name>.ts` is `<dir>/tests/<name>.test.ts`. Same
   name, one directory down. A test is always one step from its subject.
 - A test with more than one subject lives in the `tests/` folder of the
-  nearest directory that contains all of them. A test spanning `storage/`
-  and `runtime/` lives in `automation-studio/tests/`.
+  nearest directory that contains all of them. A test spanning
+  `project/` and `service/` lives in `framework/automation-service/tests/`.
 - Test-only helpers — fixtures, builders, fakes — live in the `tests/`
   folder of the nearest directory that contains everything they serve, as
   non-`.test` files. The `.test.ts` suffix is what marks a test; the folder
   may hold support alongside.
 - **Test support that ships is source, not a test.** Anything exported from a
   public subpath or imported by non-test code stays in `src/<area>/testing/`.
-  `programs/automation-studio/testing/` and `client-gateway/testing/` are
+  `framework/automation-service/testing/` and `client-gateway/testing/` are
   this kind: both are re-exported from public barrels.
 - A `tests/` folder is a directory, so it does not count toward its parent's
   25-file cap. It carries the cap itself, and that holds automatically: a
@@ -199,11 +208,11 @@ timeout.
   surface. Imports target the directory, not a file inside it. This is what
   makes moving a file invisible to its consumers, and it is why the feature
   rule can be applied mechanically.
-- **The public surface is the layer barrel.** `automation-studio/index.ts`
-  re-exports `./storage/index.ts`, `./runtime/index.ts`, and so on
-  wholesale, and those layers are not public subpaths. Reorganizing inside a
-  layer changes nothing for consumers as long as the layer's `index.ts`
-  keeps exporting the same names. Check that invariant, not the file tree.
+- **The public surface is the area barrel.** `framework/automation-service/public/index.ts`
+  is the entry `fluxiq/automation` publishes; the directories behind it are not
+  public subpaths. Reorganizing inside a directory changes nothing for
+  consumers as long as its `index.ts` keeps exporting the same names. Check
+  that invariant, not the file tree.
 - **800 lines per file, 25 files per directory, 40 methods per class.** The
   first two fail `pnpm check`; the third warns. Existing violations are frozen
   in `.structure-baseline.json` and may only shrink. A line holds one
@@ -323,9 +332,9 @@ The detailed procedure for each, with the current offenders, is in the
   back to the importer.
 - **Reaching Node from a module a browser loads.** A `node:crypto` import
   type-checks; what fails is loading it in the browser, so no type check
-  sees it. On 2026-09-30 a `runtime/parking/` module imported `node:crypto`,
-  the web extension's bundle reached it through `automation-studio/nodes`,
-  and only a live Lab run noticed. The `browser-imports` rule walks the
+  sees it. A `runtime/parking/` module that imports `node:crypto` is reachable
+  from the web extension's bundle through `fluxiq/automation/nodes`, so only a
+  live run would notice. The `browser-imports` rule walks the
   value-import graph from `browserBundles.entries` (where downstream browser
   bundles enter this repository) and fails on any Node built-in, any
   third-party package not declared in `browserBundles.browserPackages`, and
@@ -377,11 +386,10 @@ The detailed procedure for each, with the current offenders, is in the
   gateway-trace and offline-trial modules (downstream: the offline-reads,
   snapshot-page and offline-trial-experiment modules).
 
-## Worked Example — `automation-studio/storage/`
+## Worked Example — `framework/persistence/automation/`
 
-Before: 72 files flat (37 source, 35 tests).
-
-After the tests move and the feature rule, with no kind split needed:
+A store of dozens of files, divided by the feature rule with no kind split
+needed:
 
 ```text
 storage/                      13 source files + project/
@@ -398,15 +406,14 @@ storage/                      13 source files + project/
   (storage/ and project/ each own a tests/ folder for their own files)
 ```
 
-`storage/index.ts` exports exactly what it exported before. No importer
-changes.
+`index.ts` is the only door in: importers name the directory, so moving a file
+behind it changes no importer.
 
 ## Worked Example — `features/automation-studio/live/`
 
-Before: 49 files flat (43 source, 17 tests). Of the source, 19 are `use*`
-hooks, 7 are PascalCase components, 4 end in `-commands`.
-
-After the tests move and the kind rule:
+The feature holds 43 source files. Nineteen are `use*` hooks, 7 are
+PascalCase components and 4 end in `-commands`, so the kind rule gives it one
+directory for each:
 
 ```text
 live/                         6 source files + four directories

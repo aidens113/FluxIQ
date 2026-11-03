@@ -1,0 +1,366 @@
+// The routing context a Flow build is shown, kept current as its exploration
+// moves the page.
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import { automationStudioRouteSituationDelta } from "./delta.ts";
+import { automationStudioScreenRouteSituation } from "./screen-situation.ts";
+import type { AutomationStudioFlowPort } from "../../../flows/authoring/model/index.ts";
+import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudioFlowBootstrapRoutingContext } from "../../../runtime/flow-authoring/bootstrap/index.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../runtime/native-nodes/index.ts";
+import { observeAutomationStudioRouteState, readAutomationStudioRouteState, type AutomationStudioRouteStateObservation } from "./observe.ts";
+import { automationStudioSignRouteEffect, automationStudioSignRouteState, type AutomationStudioRouteSignatures } from "./signatures/index.ts";
+
+/** What a Flow build routes with, kept current as its exploration moves the page. */
+export type AutomationStudioBuildRouting = {
+  /** The routing context as it stands: the state where a run starts, then each distinct state exploration reached. */
+  context(): AutomationStudioFlowBootstrapRoutingContext;
+  /**
+   * An evidence-loop `decide` that first records the state the newest call
+   * left, when a call ran since the last decision: from that call's own
+   * `routeState`, or observed when it carried none.
+   */
+  observing<T extends { signal?: AbortSignal | undefined }, R>(decide: (input: T) => Promise<R>): (input: T) => Promise<R>;
+  /**
+   * An evidence-loop `executeTool` that keeps the route state each call
+   * reports about the page it left. Every call the loop makes goes through it,
+   * the dry run's replayed steps included.
+   */
+  recording<C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>): (call: C) => Promise<X>;
+  /**
+   * What one evidence decision is shown (W2): its window with each observed
+   * situation placed in it as a `core.route_state` entry right after the call
+   * that left it -- the start before every entry -- and the routing context with
+   * no situations of its own, saying where they are.
+   *
+   * **Why.** A provider's cache matches a prefix, and the routing context sat
+   * after the window because it grows: a situation per decision whose call
+   * reached a new page state. So all of it, 23k characters by decision 16 of
+   * `run-muqclqt5-b04525e8`, was read uncached on every decision. A situation
+   * never changes once observed, so placed where it happened it is written once
+   * and read from cache ever after, and the routing context left behind is
+   * constant for the build and goes in front of the window.
+   *
+   * **Appended, never inserted (t484).** A situation is placed once, the first
+   * time it is shown, and stays after the same entry on every later decision.
+   * It goes after the call it followed, but never before an entry a previous
+   * decision was already sent unchanged: in front of one it rewrites bytes
+   * the cache already holds. `run-mv62icw0-070f88ad` decision 0041 lost the
+   * cache at 57% that way. The situation after its trial had been observed
+   * after one of the trial's own steps, which no entry names, so it followed
+   * the situation before it, into the middle of the window. A situation whose
+   * call no entry names now follows the newest call in the window -- the one
+   * that ran it, such as the trial -- and every situation stays after all that
+   * happened before it was observed, so "after the call it follows" stays true.
+   *
+   * A state value shaped like a credential is withheld, as the packet builder
+   * withholds one from the routing context; a key the domain denies refuses the
+   * request, as it does in any evidence. `deniedKeys` is the domain's list.
+   */
+  shown<E extends { callId: string; toolId: string; value: JsonValue }>(evidence: readonly E[], deniedKeys: readonly string[]): {
+    evidence: Array<E | { callId: string; toolId: string; value: JsonObject }>;
+    context: AutomationStudioFlowBootstrapRoutingContext;
+  };
+  /**
+   * The route signatures of the pages a draft step ran between (t243): the
+   * page it started on, which is its expected pre-state, and the page it left,
+   * looked up by the step's own `stateBefore`/`stateAfter` digests. Absent when
+   * the build signed neither page.
+   *
+   * **Where they come from.** `recording` keeps, for each call that reported a
+   * page digest it left (`stateDigests.after`) and the route state of that page,
+   * the host's signature of that state under that digest; the free first look
+   * counts the same way. A step's `stateBefore` is the previous call's
+   * `stateAfter` whenever nothing moved the page in between, so a step that
+   * started on a page the build saw gets its pre-state.
+   *
+   * **Why by digest.** Call ids repeat across repair rounds (`initial.<tool>`
+   * opens every round, and the model picks the rest), so a map by call id would
+   * hand one round's page to another's step. A digest names the page itself.
+   * An observation the host made outside a call has no digest and maps nothing.
+   *
+   * **The effect.** `recording` also keeps the full route state of the page
+   * the newest call left, with that call's `stateDigests.after` -- one state,
+   * never more. A call that reports it started there (`stateDigests.before`
+   * equal to that digest), left a different page and reported the route state
+   * it left is a step whose page is known on both sides, so the host's
+   * `signRouteEffect` over those two states is kept under the pair of digests.
+   * A look (equal digests) did nothing and records none; a call that started
+   * elsewhere, or after a call that threw, has no known "before" and records
+   * none. A run reads the effect for a step it cannot run: the site may
+   * already have done what the step does (`../executor/state-routing/`).
+   */
+  signaturesOf(step: { stateBefore?: string | undefined; stateAfter?: string | undefined }): AutomationStudioRouteSignatures | undefined;
+};
+
+/** The tool id a situation is shown under in the window. */
+export const AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID = "core.route_state";
+
+/** Said in the routing context in place of its situations, which the window carries. */
+const SITUATIONS_SHOWN = "Each core.route_state entry of your evidence is one situation: the state observed where a run starts, and after the call it follows. The first entry's state is the full screened baseline. Each later entry names the prior situation's callId in baseSituation: reconstruct its state by copying that prior state, deleting every flattened key in removed, then setting every flattened key in updates. An omitted key is unchanged; a null update is a value, not a removal. Earlier entries never change.";
+
+/** How the evidence loop names its free first look (`../llm/evidence-loop.ts`): `initial.<toolId>`. */
+const FREE_FIRST_LOOK_CALL_PREFIX = "initial.";
+
+const START_SEEN = "where a run starts, before any step runs";
+
+/**
+ * Starts a build's routing context on a blank Flow: its declared inputs, the
+ * state paths the host fills, and the state where a run would start -- the
+ * state the router will decide on.
+ *
+ * **Where the states come from.** Each is the page's route state, which the
+ * host fills a whole page capture to learn (`observeRouteState`). Asked before
+ * the build and again before every decision whose shown evidence grew, that
+ * was the largest browser cost a decision had left once t196 removed the
+ * digest captures -- and most of it re-read a page a call had just captured
+ * for itself. So a call may report the route state of the page it left
+ * (`routeState` on its execution result, `../llm/evidence-loop/tool-execution.ts`)
+ * and the build reads that instead. The host is asked only where no call has
+ * left a current one: after a call that carried none, and for the start when
+ * the look that stands for it carried none.
+ *
+ * **When a state is recorded.** Before a decision, when a call ran since the
+ * last one -- not when the decision is shown more entries. A note of Core's own
+ * (the budget, feedback, an answer from memory) and a window that shifts moved
+ * no page, so they record nothing.
+ *
+ * **The start** (`start`). `"now"` observes it here, before anything runs: a
+ * build that writes its Flow in one reply has no call to read it from.
+ * `"first_look"` takes it from the evidence loop's free first look, which only
+ * looks, so the page it reports is the page a run starts on; when the look
+ * carried none it is observed right after the look. When the loop's first call
+ * is not that look (it has none, or it threw), the start is observed before
+ * that call runs, and when nothing has run, at the first decision. A host that
+ * cannot observe its state at all is not deferred to: a Router could not read
+ * what a call reported, so the context says the state is unavailable, as
+ * before.
+ */
+export async function startAutomationStudioBuildRouting(input: {
+  hostRuntime?: AutomationStudioHostRuntimeBoundary | undefined;
+  projectId: string;
+  flowId: string;
+  flowInputs: readonly AutomationStudioFlowPort[];
+  start?: "now" | "first_look";
+  /**
+   * Tools whose calls read nothing on the page and change nothing there --
+   * `core.describe_nodes`, which reads the node library. A call of one records
+   * nothing: it is not the free first look, it did not move the page, and the
+   * next decision is not made to observe a page it never touched, which in the
+   * web domain is a whole page capture. Named by the caller, so this module
+   * needs to know no tool.
+   */
+  pageless?: readonly string[];
+}): Promise<AutomationStudioBuildRouting> {
+  const pageless = new Set(input.pageless ?? []);
+  // `after` is the call whose page the state was observed on; absent for the start.
+  const observations: Array<{ seen: string; state: JsonObject; after?: string }> = [];
+  const observe = (signal: AbortSignal | undefined) => observeAutomationStudioRouteState({ hostRuntime: input.hostRuntime, projectId: input.projectId, flowId: input.flowId, ...(signal ? { signal } : {}) });
+  // Unsettled only while a deferred start waits for the free first look.
+  let start: AutomationStudioRouteStateObservation | undefined;
+  const settleStart = (observation: AutomationStudioRouteStateObservation): void => {
+    start = observation;
+    if (observation.ok) observations.push({ seen: START_SEEN, state: observation.state });
+  };
+  if (input.start !== "first_look" || !input.hostRuntime?.observeRouteState) settleStart(await observe(undefined));
+  // The host's signature of each page a call left, by the digest the call reported for it (`signaturesOf`).
+  const signatures = new Map<string, JsonObject>();
+  // The host's record of what each step did, by its before and after digests (`effectKey`).
+  const effects = new Map<string, JsonObject>();
+  // The page the newest call left, in full, with its digest: what the next call's effect is taken from.
+  let left: { digest: string; state: JsonObject } | undefined;
+  // The newest call, and the state it left when that is known; whether it ran since the last decision.
+  let newest: { callId: string; toolId: string; state?: JsonObject } | undefined;
+  let calls = 0;
+  let ranSinceObserved = false;
+  // Where each situation was first shown: after the entry with this call id, or `null` before every entry (`shown`).
+  const placed: Array<string | null> = [];
+  // Snapshot a situation only when first shown; later decisions reuse its bytes.
+  const projected: Array<{ callId: string; toolId: string; value: JsonObject }> = [];
+  let priorShown: { callId: string; state: JsonObject } | undefined;
+  // The window the previous decision was shown, each entry as its bytes, before any situation was placed in it.
+  let previouslyShown: string[] = [];
+  const contextOf = (seen: ReadonlyArray<{ seen: string; state: JsonObject }>) => buildAutomationStudioFlowBootstrapRoutingContext({
+    current: "The Flow is blank: it has no routes and no subflows yet.",
+    flowInputs: input.flowInputs.map((port) => ({
+      id: port.id,
+      valueType: port.valueType.kind,
+      ...(port.required ? { required: true } : {}),
+      ...(port.description ? { description: port.description } : {})
+    })),
+    statePaths: input.hostRuntime?.routeStatePaths ?? [],
+    observations: seen,
+    ...(start && !start.ok ? { stateUnavailable: start.reason } : {})
+  });
+  return {
+    context: () => contextOf(observations),
+    shown: (evidence, deniedKeys) => {
+      const whole = contextOf(observations);
+      const window = evidence.map((entry) => JSON.stringify(entry));
+      if (whole.situations.length > placed.length) {
+        // The call each situation was observed after: that of the observation after which the context first had it.
+        const anchors: Array<string | undefined> = [];
+        for (let index = 0, had = 0; index < observations.length && anchors.length < whole.situations.length; index += 1) {
+          const situations = contextOf(observations.slice(0, index + 1)).situations.length;
+          if (situations > had) anchors.push(observations[index]!.after);
+          had = situations;
+        }
+        const sent = unchangedEntries(previouslyShown, window);
+        for (let index = placed.length; index < whole.situations.length; index += 1) placed.push(firstPlacement(evidence, anchors[index], index, sent));
+      }
+      previouslyShown = window;
+      for (let index = projected.length; index < whole.situations.length; index += 1) {
+        const situation = whole.situations[index]!;
+        const state = automationStudioScreenRouteSituation(situation.state, deniedKeys);
+        const callId = `${AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID}.${index + 1}`;
+        const value = automationStudioRouteSituationDelta({ seen: situation.seen, state, ...(priorShown ? { prior: priorShown } : {}) });
+        projected.push({ callId, toolId: AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID, value });
+        priorShown = { callId, state };
+      }
+      // Callers may transform the window; they cannot rewrite cached projections.
+      const entries = projected.map((entry) => ({ ...entry, value: JSON.parse(JSON.stringify(entry.value)) as JsonObject }));
+      return { evidence: placedAfterTheirCalls(evidence, entries, placed), context: { ...whole, situations: [], situationsShown: SITUATIONS_SHOWN } };
+    },
+    recording: <C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>) => async (call: C): Promise<X> => {
+      if (pageless.has(call.toolId)) return await executeTool(call);
+      const freeFirstLook = calls === 0 && call.callId.startsWith(FREE_FIRST_LOOK_CALL_PREFIX);
+      calls += 1;
+      // Anything else may move the page, so the start is read before it does.
+      if (!start && !freeFirstLook) settleStart(await observe(call.signal));
+      const ran: { callId: string; toolId: string; state?: JsonObject } = { callId: call.callId, toolId: call.toolId };
+      // Cleared until this call reports the page it left: one that throws may still have moved it.
+      const found = left;
+      left = undefined;
+      let result: X;
+      try {
+        result = await executeTool(call);
+      } finally {
+        // A call that threw may still have moved the page; it reports nothing, so the next decision observes.
+        newest = ran;
+        ranSinceObserved = true;
+      }
+      const carried = reportedRouteState(result);
+      if (carried) ran.state = carried;
+      if (!start && freeFirstLook) {
+        const observed = carried ? { ok: true as const, state: carried } : await observe(call.signal);
+        settleStart(observed);
+        // Observed right after the look, so it is also the state the look left.
+        if (observed.ok) ran.state = observed.state;
+      }
+      const digests = reportedDigests(result);
+      const leftDigest = digests.after;
+      const signed = leftDigest !== undefined && ran.state ? automationStudioSignRouteState(input.hostRuntime, ran.state) : undefined;
+      if (leftDigest !== undefined && signed?.ok) signatures.set(leftDigest, signed.signature);
+      if (found && ran.state && digests.before === found.digest && leftDigest !== undefined && leftDigest !== found.digest) {
+        const effect = automationStudioSignRouteEffect(input.hostRuntime, found.state, ran.state);
+        if (effect.ok) effects.set(effectKey(found.digest, leftDigest), effect.signature);
+      }
+      if (leftDigest !== undefined && ran.state) left = { digest: leftDigest, state: ran.state };
+      return result;
+    },
+    signaturesOf: (step) => {
+      const before = step.stateBefore === undefined ? undefined : signatures.get(step.stateBefore);
+      const after = step.stateAfter === undefined ? undefined : signatures.get(step.stateAfter);
+      const effect = step.stateBefore === undefined || step.stateAfter === undefined ? undefined : effects.get(effectKey(step.stateBefore, step.stateAfter));
+      return before || after || effect ? { ...(before ? { before } : {}), ...(after ? { after } : {}), ...(effect ? { effect } : {}) } : undefined;
+    },
+    observing: (decide) => async (decision) => {
+      // What the page is now, once anything has had to learn it.
+      let current: AutomationStudioRouteStateObservation | undefined = ranSinceObserved && newest?.state ? { ok: true, state: newest.state } : undefined;
+      if (!start) settleStart(current ??= await observe(decision.signal));
+      // Only a host that could observe the start is asked again, and only
+      // when a call ran since the last decision: that call may have moved the page.
+      if (start?.ok && ranSinceObserved) {
+        ranSinceObserved = false;
+        current ??= await observe(decision.signal);
+        if (current.ok) observations.push({ seen: `after exploring with ${newest?.toolId ?? "a tool"}`, state: current.state, ...(newest ? { after: newest.callId } : {}) });
+      }
+      return await decide(decision);
+    }
+  };
+}
+
+/**
+ * Where a situation goes the first time it is shown: the call id of the entry it
+ * follows, or `null` for before every entry. That is after the call it was
+ * observed after; the start (no call, the first situation) before every entry;
+ * and a situation whose call no entry names -- a step a trial or a dry run ran
+ * inside one call -- after the newest call, the one that ran it. Never in front
+ * of the first `sent` entries, which a previous decision was sent unchanged.
+ */
+function firstPlacement(evidence: ReadonlyArray<{ callId: string; toolId: string }>, call: string | undefined, index: number, sent: number): string | null {
+  let newestCall = evidence.length;
+  while (newestCall > 0 && isCoreNote(evidence[newestCall - 1]!)) newestCall -= 1;
+  const named = call === undefined ? -1 : evidence.findIndex((entry) => entry.callId === call);
+  const after = call === undefined && index === 0 ? 0 : named >= 0 ? named + 1 : newestCall;
+  const at = Math.max(after, sent);
+  return at === 0 ? null : evidence[at - 1]!.callId;
+}
+
+/**
+ * An entry Core wrote rather than a call the model made: Core names its own
+ * under their tool id (`core.evidence_history`) or the tool id and a counter
+ * (`core.budget.3`, `core.route_state.2`), where a call carries the id its
+ * decision gave it.
+ */
+function isCoreNote(entry: { callId: string; toolId: string }): boolean {
+  return entry.callId === entry.toolId || entry.callId.startsWith(`${entry.toolId}.`);
+}
+
+/** How many leading entries of `now` the previous decision was sent byte for byte the same. */
+function unchangedEntries(before: readonly string[], now: readonly string[]): number {
+  let count = 0;
+  while (count < before.length && count < now.length && before[count] === now[count]) count += 1;
+  return count;
+}
+
+/**
+ * The window with each situation entry placed after the entry it was first
+ * shown after (`placed`); one placed before every entry goes first. One whose
+ * entry has left the window -- a round's window does not carry the last
+ * round's calls -- follows the situation before it, so the situations stay in
+ * the order they were seen.
+ */
+function placedAfterTheirCalls<E extends { callId: string }, R>(evidence: readonly E[], entries: readonly R[], placed: ReadonlyArray<string | null>): Array<E | R> {
+  const present = new Set(evidence.map((entry) => entry.callId));
+  const before: R[] = [];
+  const after = new Map<string, R[]>();
+  let anchor: string | undefined;
+  entries.forEach((entry, index) => {
+    const call = placed[index];
+    if (call === null) anchor = undefined;
+    else if (call !== undefined && present.has(call)) anchor = call;
+    if (anchor === undefined) before.push(entry);
+    else after.set(anchor, [...(after.get(anchor) ?? []), entry]);
+  });
+  return [...before, ...evidence.flatMap((entry) => [entry, ...(after.get(entry.callId) ?? [])])];
+}
+
+/**
+ * The digests of the page a call found and the page it left, from its own
+ * captures, each when it reported one. The web domain reports both on an
+ * action: its read before acting is `before`, its read after is `after`.
+ */
+function reportedDigests(result: unknown): { before?: string; after?: string } {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return {};
+  const execution = result as { kind?: unknown; stateDigests?: unknown };
+  if (execution.kind !== "llm_evidence_tool_execution" || !execution.stateDigests || typeof execution.stateDigests !== "object") return {};
+  const { before, after } = execution.stateDigests as { before?: unknown; after?: unknown };
+  return { ...(isDigest(before) ? { before } : {}), ...(isDigest(after) ? { after } : {}) };
+}
+
+function isDigest(value: unknown): value is string {
+  return typeof value === "string" && value !== "";
+}
+
+/** One step's key in the effects map: the pages it ran between. Digests are code-shaped, so a newline cannot occur in one. */
+function effectKey(before: string, after: string): string {
+  return `${before}\n${after}`;
+}
+
+/** The route state a call reported about the page it left, when it reported a usable one. */
+function reportedRouteState(result: unknown): JsonObject | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return undefined;
+  const execution = result as { kind?: unknown; routeState?: unknown };
+  if (execution.kind !== "llm_evidence_tool_execution" || execution.routeState === undefined) return undefined;
+  const read = readAutomationStudioRouteState(execution.routeState);
+  return read.ok ? read.state : undefined;
+}

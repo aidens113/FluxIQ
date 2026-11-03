@@ -1,0 +1,145 @@
+// What `generate-flow-bootstrap-adaptation` does with a request: refuses what it
+// cannot honour before anything runs, runs the build as whoever's unlocked key
+// pays, keeps a failed build's diagnostic for a later reader, and answers with
+// the build checked field by field.
+
+import { resolveAutomationStudioBuildAuthoringMode } from "../../../../flows/authoring/model/authoring-mode/index.ts";
+import type { GenerateFlowBootstrapAdaptationRequest, GenerateFlowBootstrapAdaptationResponse } from "../../../../api-contracts/automation.ts";
+// Values come from their owning modules, not the runtime barrel: through the barrel a load order
+// reached llm-generation before generation-failure finished loading, and its builders read undefined
+// (sweep-1008: twelve runtime-execution tests). Types erase, so they may stay on the barrel.
+import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
+import { parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailedBuilds } from "../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
+import type { AutomationStudioService } from "../../service.ts";
+import { boundedIdentifier } from "./bounded-identifier.ts";
+import { flowBootstrapGenerationReadiness } from "./readiness.ts";
+import { sanitizedFlowBootstrapGeneration } from "./sanitized-generation.ts";
+
+const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
+  "projectId",
+  "flowId",
+  "authSessionId",
+  "permittedConsequences",
+  "evidenceGuided",
+  "authoringMode",
+  "useReusableContext",
+  "startLocation",
+  "mode",
+  "interpretationCostUsd",
+  "interpretationCalls"
+]);
+
+function flowBootstrapRuntimeUnavailable(readiness: ReturnType<typeof flowBootstrapGenerationReadiness>) {
+  return { ok: false, error: "Flow bootstrap generation runtime is unavailable.", payload: { readiness } } as const;
+}
+
+export async function generateFlowBootstrapAdaptationForRequest(
+  dependencies: {
+    service: Pick<AutomationStudioService, "generateFlowBootstrapAdaptation" | "getFlowBootstrapGenerationRuntimeReadiness">;
+    failedBuilds: AutomationStudioFlowBootstrapFailedBuilds<NonNullable<ReturnType<typeof parseAutomationStudioFlowBootstrapGenerationError>>>;
+  },
+  request: { payload?: unknown; actor?: { userId: string; sessionId: string } }
+) {
+  const { service, failedBuilds } = dependencies;
+  if (!request.actor) return { ok: false, error: "Flow bootstrap generation is unavailable." };
+  const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload)
+    ? request.payload as Partial<GenerateFlowBootstrapAdaptationRequest> & Record<string, unknown>
+    : {};
+  const unknownField = Object.keys(payload).find((key) => !FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS.has(key));
+  if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
+  if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
+  if (payload.authoringMode !== undefined && ((payload.authoringMode !== "candidate" && payload.authoringMode !== "project" && payload.authoringMode !== "configured") || payload.evidenceGuided !== true)) return { ok: false, error: "Candidate authoring requires evidence-guided generation." };
+  // `configured` is how a client that cannot read Core's configuration
+  // (the web panel) asks for Core's own authoring mode
+  // (`../../model/authoring-mode/`); it is resolved here, once, so the build
+  // and the answer below agree on it. An extend resolves to a mode that can
+  // extend, as the chat's improve does (`resolveAutomationStudioBuildAuthoringMode`);
+  // `project` asked for by name is forwarded as asked.
+  let candidateAuthoring: "candidate" | "project" | undefined;
+  try {
+    const mode = payload.authoringMode === "configured" ? resolveAutomationStudioBuildAuthoringMode(payload.mode === "extend" ? "extend" : "create") : payload.authoringMode;
+    candidateAuthoring = mode === "candidate" || mode === "project" ? mode : undefined;
+  }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Core's authoring mode is misconfigured." }; }
+  if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
+  // `extend` improves the Flow as it stands instead of writing one from
+  // nothing. Only the two words Core knows pass; absent is `create`, which
+  // is what every caller that predates the field has always meant.
+  if (payload.mode !== undefined && payload.mode !== "create" && payload.mode !== "extend") return { ok: false, error: "Flow bootstrap generation request contains an invalid mode." };
+  // Refused here rather than carried: a build that lost the one thing
+  // telling it where its Flow starts would explore from nowhere.
+  let startLocation: string | undefined;
+  try { startLocation = automationStudioFlowStartLocation(payload.startLocation); }
+  catch { return { ok: false, error: "Flow bootstrap generation request contains an invalid start location." }; }
+  // What the chat's reading of the message cost, carried into the Flow's
+  // creation purse. Only a finite, non-negative amount passes.
+  const interpretationCostUsd = payload.interpretationCostUsd;
+  if (interpretationCostUsd !== undefined && (typeof interpretationCostUsd !== "number" || !Number.isFinite(interpretationCostUsd) || interpretationCostUsd < 0)) return { ok: false, error: "Flow bootstrap generation request contains an invalid interpretation cost." };
+  const interpretationCalls = payload.interpretationCalls;
+  if (interpretationCalls !== undefined && (!Number.isSafeInteger(interpretationCalls) || (interpretationCalls as number) < 0)) return { ok: false, error: "Flow bootstrap generation request contains an invalid interpretation call count." };
+  const readiness = flowBootstrapGenerationReadiness(service);
+  if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
+  // What the person allowed the build's actions to do. Absent is nothing;
+  // a class Core does not know refuses the request rather than being
+  // dropped, so a build never runs holding less than was asked for.
+  let permittedConsequences: AutomationStudioActionConsequence[];
+  try { permittedConsequences = parseAutomationStudioPermittedConsequences(payload.permittedConsequences); }
+  catch { return { ok: false, error: "Flow bootstrap generation request contains invalid permitted consequences." }; }
+  if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
+  const projectId = boundedIdentifier(payload.projectId, "Project");
+  const flowId = boundedIdentifier(payload.flowId, "Flow");
+  let generated: GenerateFlowBootstrapAdaptationResponse;
+  try {
+    generated = await service.generateFlowBootstrapAdaptation({
+      projectId,
+      flowId,
+      // Whose key pays for the build's model calls. Not an authorization,
+      // and not a fixed key handle: the session is the one the build
+      // started from, which each call tries first before the person's
+      // other live unlocks (`runtime/llm/session-key-provider.ts`). A
+      // sign-out of it mid-build no longer fails the build while another
+      // unlock of theirs lives; with none, the next call is `secrets.locked`.
+      caller: { actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId },
+      // A build that meets an act outside these asks the person; empty
+      // permits nothing lasting.
+      permittedConsequences,
+      ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
+      ...(candidateAuthoring ? { authoringMode: candidateAuthoring } : {}),
+      ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
+      ...(payload.mode === "extend" ? { mode: "extend" as const } : {}),
+      // Where the Flow starts, when the caller named one. Validated above,
+      // so a request that named an unusable one was already refused rather
+      // than built from nowhere.
+      ...(startLocation === undefined ? {} : { startLocation }),
+      ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
+      ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
+      // Somebody has just pressed build, so a question this build raises is
+      // worth holding it open for: answered, the build carries on with
+      // permission instead of coming back needing another one.
+      permissionAskTimeoutMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS
+    });
+  } catch (error) {
+    if ((error as { name?: string } | null)?.name === "AbortError") {
+      const diagnostic = parseAutomationStudioFlowBootstrapGenerationError((error as { cause?: unknown }).cause);
+      failedBuilds.ended(projectId, flowId, diagnostic ?? undefined);
+      return { ok: false, error: "Build stopped. The Flow was not promoted.", payload: { cancelled: true, ...(diagnostic ? { diagnostic } : {}) } };
+    }
+    const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
+    failedBuilds.ended(projectId, flowId, diagnostic ?? undefined);
+    if (diagnostic) {
+      return {
+        ok: false,
+        error: `Flow Bootstrap generation failed (${diagnostic.code}).`,
+        payload: { diagnostic }
+      };
+    }
+    return { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.unclassified_failure)." };
+  }
+  failedBuilds.ended(projectId, flowId, undefined);
+  // Candidate mode ends as a draft or, after a trial judged yes twice, as a proposal naming that candidate and trial (t340); legacy mode only ever proposes, and never names a candidate.
+  const consistent = candidateAuthoring ? generated.status === "draft" || generated.candidate !== undefined : generated.status === "proposed" && generated.candidate === undefined;
+  if (!consistent) return { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
+  const sanitized = sanitizedFlowBootstrapGeneration(generated);
+  return { ok: true, payload: sanitized.status === "draft" ? { candidate: sanitized } : { adaptation: sanitized } };
+}

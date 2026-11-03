@@ -3,7 +3,7 @@
 import { DataTable, StatusBadge, SummaryStrip } from "../../programs/shared-ui";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CircleCheck } from "lucide-react";
-import type { AutomationStudioActionPermissionRequest } from "fluxiq/automation-studio/action-permissions";
+import type { AutomationStudioActionPermissionRequest } from "fluxiq/automation/action-permissions";
 import { RunHistory } from "./RunHistory";
 import { RunPermissionRequest } from "./RunPermissionRequest";
 import { RunControlBar } from "./RunControlBar";

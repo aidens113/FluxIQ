@@ -1,4 +1,4 @@
-import type { NodeStatePhase } from "fluxiq/automation-studio";
+import type { NodeStatePhase } from "fluxiq/automation";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import type { BuildNodeStateViewModelInput, NodeStateViewModel } from "./model/types";
 import { objectMetadata, stringMetadata } from "./state-visual-classification";

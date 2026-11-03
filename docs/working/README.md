@@ -39,6 +39,7 @@ The downstream web-extension index is at `F:\!FluxIQWebExtension\docs\working\RE
 | [repository-state-audit.md](./repository-state-audit.md) | Senior supervisor agent | 66 | Core-side record for the paired read-only audit of FluxIQ Core and FluxIQWebExtension at their current dev heads. | `repository-state-audit.md` |
 | [runtime-ownership-refactor.md](./runtime-ownership-refactor.md) | Senior supervisor agent | 144 | Separate framework runtime from Automation Studio ownership and audit all downstream web boundaries. | `runtime-ownership-refactor.md` |
 | [state-aware-recovery-plan.md](./state-aware-recovery-plan.md) | Senior supervisor agent | 404 | The domain-neutral contracts for invocation frames and Call Subflow, subflow contracts (interface, entries, checkpoints, success check), lifecycle handlers and their scopes, continuations and dispositions, the integrated recovery ladder with safe state routing, one recovery incident and budget per failure, fact conditions, the requirement gate, traces, and the candidate-script grammar and unit repair that author them. Browser observation, command reconciliation, chat wording, the Lab and the schedule are owned downstream. | `state-aware-recovery-plan.md` |
+| [studio-controller-plan.md](./studio-controller-plan.md) | Senior supervisor | 188 | Move backend logic out of programs/automation-studio, leave Studio as a thin controller of Core, and put the extension's chat UI in its own reusable package. | `studio-controller-plan.md` |
 | [ui-ux-upgrade-audit-plan.md](./ui-ux-upgrade-audit-plan.md) | FluxIQ Web and Automation Studio | 6007 ⚠ | Product-wide UI/UX audit and implementation backlog for the FluxIQ web panel (`apps/web`): global shell, authentication, the eight global operational programs, every Automation Studio surface, shared primitives, and the Playwright browser-evidence gates. | none |
 
 ## Paused
@@ -82,5 +83,5 @@ detail`. Retained for evidence. Do not plan current work from them.
 | [automation-studio-load-performance-plan.md](./automation-studio-load-performance-plan.md) | Automation Studio | 346 | Summary-first load performance for project open, pane switching, runtime debug, and Flow browsing. | none |
 | [automation-studio-ui-lag-root-cause-audit.md](./automation-studio-ui-lag-root-cause-audit.md) | Automation Studio | 513 | Root-cause audit of Automation Studio UI lag; audit complete, remediation tracked elsewhere. | none |
 
-⚠ marks documents over the 800-line compaction threshold (16 of 47 here).
+⚠ marks documents over the 800-line compaction threshold (16 of 48 here).
 Compact them the next time work touches them; do not schedule a bulk rewrite.

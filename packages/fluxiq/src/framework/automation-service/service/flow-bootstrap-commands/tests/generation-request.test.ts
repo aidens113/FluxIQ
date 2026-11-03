@@ -1,0 +1,64 @@
+// What a build request must carry: the caller it is made for, and nothing that
+// authorizes the model calls themselves.
+import { describe, expect, it } from "vitest";
+import { readAutomationStudioFlowBootstrapGenerationRequest } from "../generation/index.ts";
+
+const CALLER = { actorUserId: "user.1", actorSessionId: "session.1" };
+
+function input(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { projectId: "project-1", flowId: "flow-1", mode: "extend", evidenceGuided: true, caller: CALLER, ...extra };
+}
+
+describe("a Flow Bootstrap generation request", () => {
+  it("reads the caller and the consequences the person allowed", () => {
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ permittedConsequences: ["send_or_publish"] }))).toMatchObject({
+      mode: "extend",
+      caller: CALLER,
+      permittedConsequences: ["send_or_publish"]
+    });
+  });
+
+  it("permits no consequence when none is named", () => {
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ mode: "create" }))).toMatchObject({ mode: "create", permittedConsequences: [] });
+  });
+
+  it("refuses a request with no caller", () => {
+    expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ caller: undefined }))).toThrow(/caller/);
+  });
+
+  it("refuses the fields a grant used to carry", () => {
+    expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ executionGrant: {} }))).toThrow(/unsupported fields: executionGrant/);
+    expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ caller: { ...CALLER, purpose: "build_and_adapt" } }))).toThrow(/unsupported fields: purpose/);
+  });
+
+  it("reads what the chat's reading of the message cost, and refuses anything but a finite, non-negative amount", () => {
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: 0.0003 }))).toMatchObject({ interpretationCostUsd: 0.0003 });
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: 0 }))).toMatchObject({ interpretationCostUsd: 0 });
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input())).not.toHaveProperty("interpretationCostUsd");
+    for (const bad of [-0.0001, Number.NaN, Number.POSITIVE_INFINITY, "0.0003", null]) {
+      expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: bad }))).toThrow(/interpretation cost/);
+    }
+  });
+
+  it("reads how many priced calls that reading was, and refuses anything but a whole, non-negative number", () => {
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCostUsd: 0.0003, interpretationCalls: 2 }))).toMatchObject({ interpretationCostUsd: 0.0003, interpretationCalls: 2 });
+    expect(readAutomationStudioFlowBootstrapGenerationRequest(input())).not.toHaveProperty("interpretationCalls");
+    for (const bad of [-1, 1.5, "2", null]) {
+      expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ interpretationCalls: bad }))).toThrow(/interpretation call count/);
+    }
+  });
+});
+
+it("candidate authoring is opt-in and requires evidence-guided generation", () => {
+  expect(readAutomationStudioFlowBootstrapGenerationRequest(input())).not.toHaveProperty("authoringMode");
+  expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "candidate" }))).toMatchObject({ authoringMode: "candidate" });
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "candidate", evidenceGuided: undefined }))).toThrow(/Candidate authoring/);
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "other" }))).toThrow(/Candidate authoring/);
+});
+
+it("project authoring is read as its own mode, requires evidence-guided generation, and refuses an extend until A7", () => {
+  expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ mode: "create", authoringMode: "project" }))).toMatchObject({ mode: "create", authoringMode: "project" });
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ mode: "create", authoringMode: "project", evidenceGuided: undefined }))).toThrow(/Candidate authoring/);
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "project" }))).toThrow(/Project authoring cannot extend/);
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "legacy" }))).toThrow(/Candidate authoring/);
+});

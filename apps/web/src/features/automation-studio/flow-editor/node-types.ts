@@ -1,4 +1,4 @@
-import type { AutomationNodeParameter, AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import type { AutomationNodeParameter, AutomationNodePort } from "fluxiq/automation/nodes";
 import type { Node } from "@xyflow/react";
 import type { JsonObject } from "../../programs/program-api";
 

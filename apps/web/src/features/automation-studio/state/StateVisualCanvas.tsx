@@ -1,7 +1,7 @@
 import { ImageIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
-import type { EvidenceAnchor, StateVisualLayer } from "fluxiq/automation-studio";
+import type { EvidenceAnchor, StateVisualLayer } from "fluxiq/automation";
 import type { NodeStateViewModel, StateFactViewModel, StateOverlayViewModel } from "./model/types";
 import type { DirectRenderedTextCandidate, StateBounds, StateVisualMetrics, StateVisualSurfaceMode } from "./state-visual-types";
 import { anchorBounds, anchorBoundsKind, bboxZIndex, boundsEqual, boundsForSurface, boundsIntersectsViewport, documentBoundsIntersectViewport, factRenderKind, firstPositiveNumber, layerBounds, layerBoundsKind, layerBoundsStyle, layerRenderKind, layerVisibleOnViewport, overlayStyle, visualFrameMetrics, visualLayerStyle } from "./state-geometry";

@@ -29,33 +29,16 @@
 // field in one line.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../contracts.ts";
-import type { GlobalProgramApiRegistry, ProgramApiRequest } from "../../../_shared/api.ts";
-import { automationStudioPageLimit } from "../../storage/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../../../../api-contracts/automation.ts";
+import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
+import type { AutomationStudioConversations } from "../../../../framework/automation-service/index.ts";
 import {
-  automationStudioConversationCommandPort,
-  automationStudioConversationPageShown,
-  automationStudioConversationCommandVocabulary,
-  parseAutomationStudioPanelCapabilities,
-  runConfirmedAutomationStudioConversationCommand,
-  startAutomationStudioConversationCommand,
-  AUTOMATION_STUDIO_CONVERSATION_COMMAND_ASK_PREFIX,
-  type AutomationStudioConversationAsk,
-  type AutomationStudioConversationCommandContext,
-  type AutomationStudioConversationCommandExecution,
-  type AutomationStudioConversationFlowReference,
-  type AutomationStudioConversationOnScreen
-} from "../../runtime/index.ts";
-import {
-  AUTOMATION_STUDIO_CONVERSATION_ANSWER_KINDS,
-  isAutomationStudioConversationStatus,
-  isAutomationStudioConversationSubjectKind,
-  type AutomationStudioConversation,
-  type AutomationStudioConversationAnswerKind,
-  type AutomationStudioConversations,
-  type AutomationStudioConversationStatus,
-  type AutomationStudioConversationSubject
-} from "../../runtime/index.ts";
+  answerConversationAskForRequest,
+  appendConversationTurnForRequest,
+  listConversationsForRequest,
+  requestedSubject,
+  type AutomationStudioConversationRequestService
+} from "../../../../framework/automation-service/service/conversation-requests/index.ts";
 
 /**
  * What the conversation endpoints need: the registry, the domain-scope check,
@@ -70,17 +53,7 @@ import {
  */
 export type AutomationStudioConversationApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
-  readonly service: {
-    assertProjectDomainAccess(projectId: string, domainId?: string | null): Promise<void>;
-    /** Exactly what the `projects` endpoint returns for a domain scope: the caller's entitlement, already decided. */
-    listProjects(domainId?: string | null): Promise<{ projects: Array<{ id: string }> }>;
-    /**
-     * The project's Flows, so a person can name one the way they know it. Optional:
-     * without it a Flow the person names is passed on as they wrote it.
-     */
-    listFlows?(projectId: string): Promise<Array<{ flow: { flowId: string; name: string } }>>;
-    readonly conversations: AutomationStudioConversations;
-  };
+  readonly service: AutomationStudioConversationRequestService;
 };
 
 export function registerAutomationStudioConversationEndpoints(dependencies: AutomationStudioConversationApiDependencies): void {
@@ -108,25 +81,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
     },
     handler: async (request) => {
       const payload = conversationPayload<ConversationListRequest>(request.payload);
-      const narrow = { subject: requestedSubject(payload.subjectKind, payload.subjectId), status: requestedStatus(payload.status), limit: payload.limit };
-      if (payload.projectId !== null && payload.projectId !== undefined) {
-        const projectId = String(payload.projectId);
-        await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-        return { ok: true, payload: { conversations: await conversations().listConversations({ projectId, ...narrow }) } };
-      }
-      // Across every project the caller can see. `listProjects` is the same
-      // entitlement the `projects` endpoint grants for this domain scope, so
-      // there is one answer to "what may this caller see" rather than two, and
-      // no per-project refusal to swallow: a project that is out of scope is
-      // not in the list at all.
-      const { projects } = await service.listProjects(request.scope.domainId);
-      const limit = automationStudioPageLimit(payload.limit);
-      const found: AutomationStudioConversation[] = [];
-      for (const project of projects) {
-        if (found.length >= limit) break;
-        found.push(...await conversations().listConversations({ projectId: project.id, ...narrow, limit: limit - found.length }));
-      }
-      return { ok: true, payload: { conversations: found.slice(0, limit) } };
+      return { ok: true, payload: { conversations: await listConversationsForRequest(service, request.scope.domainId, payload) } };
     }
   });
 
@@ -200,35 +155,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationTurnAppendRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-      const personTurn = {
-        projectId,
-        conversationId: String(payload.conversationId ?? ""),
-        text: String(payload.text ?? ""),
-        actorId: request.actor?.userId,
-        attachment: requestedAttachment(payload.attachmentKind, payload.attachmentRef)
-      };
-      // With the panel's vocabulary, the turn is an instruction as well as a
-      // record: Core reads it, decides, and writes the answer into the thread.
-      // Core's own descriptor stands in for any capability Core runs itself,
-      // and when the decision is one of those Core runs it here, for whichever
-      // client asked (`runtime/conversations/commands/`). `execution` says
-      // what came of it, and is null when the client is to run what was chosen.
-      if (Array.isArray(payload.capabilities)) {
-        const onScreen = requestedOnScreen(payload.onScreen);
-        const caller = request.actor ? conversations().callerFor(request.actor) : null;
-        const answer = await conversations().respondToPersonTurn({
-          ...personTurn,
-          capabilities: automationStudioConversationCommandVocabulary(parseAutomationStudioPanelCapabilities(payload.capabilities)),
-          flows: await projectFlows(service, projectId),
-          onScreen,
-          caller: caller ? { userId: caller.userId, sessionId: caller.sessionId } : null
-        });
-        const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null, attachedRecordingId: onScreen.recordingId, interpretationCostUsd: answer.interpretationCostUsd, interpretationCalls: answer.interpretationCalls });
-        const execution = context ? await startAutomationStudioConversationCommand({ response: answer.response, context }) : null;
-        return { ok: true, payload: { turn: answer.turn, response: answer.response ? { ...answer.response, execution } : null, problem: answer.problem } };
-      }
-      const turn = await conversations().appendTurn(personTurn);
-      return { ok: true, payload: { turn } };
+      return { ok: true, payload: await appendConversationTurnForRequest(dependencies, request, projectId, payload) };
     }
   });
 
@@ -244,22 +171,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationAnswerRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-      const askId = String(payload.askId ?? "");
-      const kind = requiredAnswerKind(payload.kind);
-      // A question a conversation command asked ("apply this change?") is
-      // Core's to act on when granted. It is read before the answer is written
-      // so that only the answer that settles it runs anything: an exact resend
-      // replays the stored answer and must not apply the change a second time.
-      const commandAsk = askId.startsWith(AUTOMATION_STUDIO_CONVERSATION_COMMAND_ASK_PREFIX) ? await conversations().getAsk({ projectId, askId }) : null;
-      const ask = await conversations().answerAsk({
-        projectId,
-        askId,
-        kind,
-        value: typeof payload.value === "string" ? payload.value : undefined,
-        actorId: request.actor?.userId
-      });
-      if (commandAsk?.status !== "pending") return { ok: true, payload: { ask } };
-      return { ok: true, payload: { ask, execution: await confirmedExecution(dependencies, request, projectId, ask) } };
+      return { ok: true, payload: await answerConversationAskForRequest(dependencies, request, projectId, payload) };
     }
   });
 
@@ -285,120 +197,6 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
   });
 }
 
-/**
- * What a conversation command runs with, for this request: the registry,
- * called as this request's actor in its scope, under the session a paired
- * client's person has unlocked (`commands/caller.ts`), and the page on screen
- * as a build's start. Null without an actor, which the registry never lets
- * through, so there is always someone the work is done as.
- */
-function commandContext(
-  dependencies: AutomationStudioConversationApiDependencies,
-  request: ProgramApiRequest,
-  target: { projectId: string; conversationId: string; startLocation: string | null; attachedRecordingId?: string | undefined; interpretationCostUsd?: number | undefined; interpretationCalls?: number | undefined }
-): AutomationStudioConversationCommandContext | null {
-  if (!request.actor) return null;
-  const conversations = dependencies.service.conversations;
-  const caller = conversations.callerFor(request.actor);
-  return {
-    port: automationStudioConversationCommandPort({ registry: dependencies.registry, actor: { ...request.actor, sessionId: caller.sessionId }, scope: request.scope }),
-    host: conversations,
-    projectId: target.projectId,
-    conversationId: target.conversationId,
-    sessionId: caller.sessionId,
-    keyLocked: caller.keyLocked,
-    // The calls above run as the unlocked session, so a run the command starts says itself that a paired client asked (`commands/run-flow.ts`).
-    paired: caller.paired,
-    startLocation: target.startLocation,
-    // The recording attached to the message that asked, from its `onScreen` alone (`commands/create-here.ts`).
-    ...(target.attachedRecordingId ? { attachedRecordingId: target.attachedRecordingId } : {}),
-    // What reading the turn cost, carried into the purse of a Flow the command builds (`commands/build.ts`).
-    ...(target.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: target.interpretationCostUsd }),
-    ...(target.interpretationCalls === undefined ? {} : { interpretationCalls: target.interpretationCalls })
-  };
-}
-
-/** Runs what a granted conversation-command ask carries, or sets aside what a declined one offered, and says what came of it. Null for any other answer. */
-async function confirmedExecution(
-  dependencies: AutomationStudioConversationApiDependencies,
-  request: ProgramApiRequest,
-  projectId: string,
-  ask: AutomationStudioConversationAsk
-): Promise<AutomationStudioConversationCommandExecution | null> {
-  const context = commandContext(dependencies, request, { projectId, conversationId: ask.conversationId, startLocation: null });
-  if (!context || (ask.answer?.kind !== "grant" && ask.answer?.kind !== "deny")) return null;
-  const turn = await dependencies.service.conversations.getTurn({ projectId, conversationId: ask.conversationId, turnId: ask.turnId });
-  return runConfirmedAutomationStudioConversationCommand({ ask, attachment: turn?.attachment ?? null, context });
-}
-
-/**
- * The project's Flows by name, or null when they could not be listed. Null is
- * not an empty project: the model is told the list is missing and passes a
- * named Flow on as written, so a failed listing costs the person a lookup, not
- * their instruction.
- */
-async function projectFlows(service: AutomationStudioConversationApiDependencies["service"], projectId: string): Promise<AutomationStudioConversationFlowReference[] | null> {
-  if (!service.listFlows) return null;
-  try {
-    const entries = await service.listFlows(projectId);
-    return entries.map((entry) => ({ flowId: entry.flow.flowId, name: entry.flow.name || entry.flow.flowId }));
-  } catch (error) {
-    if (error instanceof Error && /domain scope|unavailable/iu.test(error.message)) throw error;
-    return null;
-  }
-}
-
-/** The longest page address carried as a build's start location. */
-const PAGE_ADDRESS_MAX = 2_048;
-
-/**
- * What the panel has open. Anything that is not a non-empty string is left out
- * rather than refused, and so is a page address that is not http or https or
- * is longer than a start location may be: it is context, and a message is not
- * refused for the context it came with.
- */
-function requestedOnScreen(value: unknown): AutomationStudioConversationOnScreen {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const record = value as Record<string, unknown>;
-  const onScreen: AutomationStudioConversationOnScreen = {};
-  for (const key of ["flowId", "subflowId", "runId", "recordingId"] as const) {
-    const entry = record[key];
-    if (typeof entry === "string" && entry.trim()) onScreen[key] = entry.trim();
-  }
-  const pageUrl = typeof record.pageUrl === "string" ? record.pageUrl.trim() : "";
-  // A control character or space in an address that reaches a prompt is a mistake or an attempt to break out of it.
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters is the point.
-  if (pageUrl && pageUrl.length <= PAGE_ADDRESS_MAX && automationStudioConversationPageShown(pageUrl) !== null && !/[\s\u0000-\u001f\u007f]/u.test(pageUrl)) onScreen.pageUrl = pageUrl;
-  return onScreen;
-}
-
 function conversationPayload<TRequest>(payload: unknown): Partial<TRequest> {
   return payload && typeof payload === "object" ? (payload as Partial<TRequest>) : {};
-}
-
-/** A subject is a kind and an id together; half of one narrows nothing and is refused rather than ignored. */
-function requestedSubject(kind: unknown, id: unknown): AutomationStudioConversationSubject | undefined {
-  if (kind === undefined && id === undefined) return undefined;
-  if (!isAutomationStudioConversationSubjectKind(kind)) throw new Error("A conversation subject kind must be project, flow, build or run.");
-  if (typeof id !== "string" || !id) throw new Error("A conversation subject needs an ID.");
-  return { kind, id };
-}
-
-function requestedStatus(status: unknown): AutomationStudioConversationStatus | undefined {
-  if (status === undefined) return undefined;
-  if (!isAutomationStudioConversationStatus(status)) throw new Error("A conversation status is open or resolved.");
-  return status;
-}
-
-function requestedAttachment(kind: unknown, ref: unknown): { kind: string; ref: string } | undefined {
-  if (kind === undefined && ref === undefined) return undefined;
-  if (typeof kind !== "string" || !kind || typeof ref !== "string" || !ref) throw new Error("A conversation attachment needs both a kind and a reference.");
-  return { kind, ref };
-}
-
-function requiredAnswerKind(kind: unknown): AutomationStudioConversationAnswerKind {
-  if (typeof kind !== "string" || !(AUTOMATION_STUDIO_CONVERSATION_ANSWER_KINDS as readonly string[]).includes(kind)) {
-    throw new Error(`An answer is one of: ${AUTOMATION_STUDIO_CONVERSATION_ANSWER_KINDS.join(", ")}.`);
-  }
-  return kind as AutomationStudioConversationAnswerKind;
 }

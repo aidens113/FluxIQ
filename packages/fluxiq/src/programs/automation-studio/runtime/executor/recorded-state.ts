@@ -1,2 +1,0 @@
-// Compatibility export; implementation belongs to the framework.
-export { type AutomationStudioRecordedState, AUTOMATION_STUDIO_RECORDED_GAP_METADATA_KEY, AUTOMATION_STUDIO_READINESS_FLOOR_MS, AUTOMATION_STUDIO_READINESS_CAP_MS, automationStudioRecordedState, automationStudioReadinessCeilingMs, automationStudioNodeReadinessState, automationStudioExpectationRequest } from "../../../../engine/automation/transitions/index.ts";

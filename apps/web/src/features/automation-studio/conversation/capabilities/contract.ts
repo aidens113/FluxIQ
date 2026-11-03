@@ -24,7 +24,7 @@
 // parallel vocabulary would drift from the buttons within a week, and the whole
 // point is that there is one declaration behind both.
 
-import { AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "fluxiq/automation-studio/action-permissions";
+import { AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "fluxiq/automation/action-permissions";
 import type { ProgramCommandTransport } from "../../data/program-transport";
 import type { AutomationStudioActionConsequence } from "../thread";
 
@@ -162,7 +162,7 @@ export type PanelCapability = {
  *
  * `runtime/action-permissions/destructive.ts` decides it, and as of 2026-09-28
  * it is published on the browser-safe
- * `fluxiq/automation-studio/action-permissions` barrel. Until then it was not,
+ * `fluxiq/automation/action-permissions` barrel. Until then it was not,
  * so the panel kept its own copy of the two gated classes with a test pinning
  * the copy - which meant Core could narrow or widen its gate and the browser
  * would go on showing the old answer, with every test on both sides green. Two

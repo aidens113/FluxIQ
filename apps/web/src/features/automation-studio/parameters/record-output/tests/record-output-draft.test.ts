@@ -3,7 +3,7 @@ import {
   AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS,
   parseAutomationStudioRecordOutput,
   type AutomationStudioRecordOutput
-} from "fluxiq/automation-studio/nodes";
+} from "fluxiq/automation/nodes";
 import {
   addRecordField,
   deriveRecordFieldId,

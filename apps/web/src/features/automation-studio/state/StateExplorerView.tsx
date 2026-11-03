@@ -1,7 +1,7 @@
 "use client";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { NodeStatePhase } from "fluxiq/automation-studio";
+import type { NodeStatePhase } from "fluxiq/automation";
 import type { AutomationSelection } from "../shared/selection-contracts";
 import { buildNodeStateInputSignature, buildNodeStateViewModel, buildNodeStateViewStateSignature } from "./model";
 import type { BuildNodeStateViewModelInput } from "./model/types";

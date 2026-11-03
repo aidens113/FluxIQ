@@ -31,20 +31,20 @@ import {
   validateAutomationStudioAdaptationPolicy,
   type AutomationStudioAdaptationPolicy,
   type AutomationStudioFlowArtifact
-} from "../model/index.ts";
+} from "../../../flows/authoring/model/index.ts";
 import {
   AUTOMATION_STUDIO_ACTION_CONSEQUENCES,
   AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES,
   isAutomationStudioDestructiveActionConsequence
-} from "../runtime/action-permissions/index.ts";
-import type { AutomationStudioChangeConfidenceDecision } from "../runtime/flow-change/index.ts";
-import { adaptationPolicyFromFlowMetadata, trainingModeSettingsFromMetadata } from "../runtime/service/flow-settings/index.ts";
+} from "../../../runtime/action-permission-requests/index.ts";
+import type { AutomationStudioChangeConfidenceDecision } from "../../../runtime/adaptation/flow-change/index.ts";
+import { adaptationPolicyFromFlowMetadata, trainingModeSettingsFromMetadata } from "../../../framework/automation-service/service/flow-settings/index.ts";
 import {
   behaviorForAutomationStudioTrainingMode,
   decideAutomationStudioAdaptationPromotionGate,
   decideAutomationStudioBootstrapApplyGate,
   decideAutomationStudioLlmInvocationGate
-} from "../runtime/index.ts";
+} from "../../../framework/automation-service/index.ts";
 
 /** The exhaustive answer. Anything else in this list asks a person about ordinary work. */
 const ASKS_A_PERSON = ["move_money", "delete", "send_or_publish"] as const;

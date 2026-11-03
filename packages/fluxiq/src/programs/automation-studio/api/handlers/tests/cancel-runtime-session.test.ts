@@ -12,8 +12,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
-import { createRunnableCanonicalFlow } from "../../../runtime/tests/service-fixtures.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
+import { createRunnableCanonicalFlow } from "../../../../../framework/automation-service/tests/service-fixtures.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 import { createCacheApiTestService } from "./test-service.ts";
 

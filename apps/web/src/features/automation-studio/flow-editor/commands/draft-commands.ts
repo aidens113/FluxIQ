@@ -1,4 +1,4 @@
-import type { AutomationStudioFlowDocument } from "fluxiq/automation-studio";
+import type { AutomationStudioFlowDocument } from "fluxiq/automation";
 import { runAutomationGraphWorkerTask } from "../../graph/worker-tasks";
 import { graphToTaskFlow } from "../../model/project-artifacts";
 import {

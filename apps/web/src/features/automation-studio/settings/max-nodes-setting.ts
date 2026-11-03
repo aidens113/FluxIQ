@@ -3,7 +3,7 @@
  * Subflow may hold.
  *
  * A mirror of Core's `AUTOMATION_STUDIO_FLOW_SIZE_SETTING`
- * (`packages/fluxiq/src/programs/automation-studio/model/flow-size/flow-size-settings.ts`),
+ * (`packages/fluxiq/src/flows/authoring/model/flow-size/flow-size-settings.ts`),
  * not an import of it. The panel takes Core runtime values only through the
  * narrow client-safe subpaths `fluxiq` exports (`llm-models`, `nodes`, ...),
  * and there is no such subpath for the Flow model; the main barrel carries the

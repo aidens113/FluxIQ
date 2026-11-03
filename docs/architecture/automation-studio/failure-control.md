@@ -14,7 +14,7 @@ does not invalidate the executed call, erase its evidence, or change its effect.
 Old results without this field remain valid and carry no temporary claim.
 
 `projectAutomationStudioFailureControlRecord`, exported by
-`@fluxiq/contracts/automation-studio` and `fluxiq/automation-studio`, validates
+`@fluxiq/contracts/automation` and `fluxiq/automation`, validates
 the complete input before returning a fresh control-only record. It keeps
 category, code, retryable and any present stage, effect, retryAfterMs,
 certainNoEffect and transient. Expected/actual comparison text and the evidence
@@ -44,3 +44,11 @@ an unknown transient field. The paired web host imports the new public helper
 and requires the rebuilt Core SDK. Its first producer annotates only after
 reading the existing browser wire, so an existing browser remains compatible.
 Clients that omit the field retain the conservative behavior above.
+
+A trial gate bounds its own re-tests. A trial answer that ran, and has a re-test
+left, says so with a typed field, `ownRetestBound: true`; the repeat guard
+records no failure for that call, and only when `effectApplied` is true. Past
+the gate's limit the field is absent, and a call that did nothing is never
+exempt whatever it claims. The field is not in the evidence the model reads, and
+the answer's `retry_allowed` reason stays diagnostic: words still grant
+nothing.

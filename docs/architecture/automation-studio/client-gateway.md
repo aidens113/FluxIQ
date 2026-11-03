@@ -22,7 +22,7 @@ The reusable gateway lives under `packages/fluxiq/src/client-gateway/`:
 - `@fluxiq/client-gateway-websocket` is the client half of the gateway for
   WebSocket-capable recorders and executors. It re-exports the same protocol
   types as `fluxiq/client-gateway` and the same Automation Studio recording
-  request types as `fluxiq/automation-studio`. Its Automation Studio facade
+  request types as `fluxiq/automation`. Its Automation Studio facade
   mirrors direct-import method params such as `createRecording`,
   `appendRecordingEvent`, `appendRecordingDomainEvent`, and
   `finalizeRecording`, but implements them by sending websocket messages.
@@ -33,7 +33,7 @@ The reusable gateway lives under `packages/fluxiq/src/client-gateway/`:
   rather than the implementation.
 
 Automation Studio consumes the gateway through
-`packages/fluxiq/src/programs/automation-studio/client-gateway/bridge.ts`.
+`packages/fluxiq/src/runtime/recording/client-gateway/bridge.ts`.
 The bridge converts client messages into canonical Studio artifacts:
 
 Recording start carries an explicit demonstration description, persisted as
@@ -387,9 +387,9 @@ stop a run, and use its automation and recording controls:
 - Secret Keys: `snapshot`, projected (below)
 
 **The recording-capture policy is Core's (t728).** What a recording may capture
-is defined once in `@fluxiq/contracts/automation-studio`
+is defined once in `@fluxiq/contracts/automation`
 (`packages/contracts/src/recording-capture/`), re-exported for browser code by
-name from `fluxiq/automation-studio/nodes`, never the Node barrel. A policy is
+name from `fluxiq/automation/nodes`, never the Node barrel. A policy is
 `{ captureInputValues, captureSnapshots, captureMutations: { allowed, default },
 directRequests: { allowed } }`. `AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY`
 (deep-frozen) allows all three capture switches, on by default, and does not
@@ -506,7 +506,7 @@ recorder copies from the gateway envelope -- answering
 recording refuses it. Entries appended as domain events carry the event id as
 their entry id and correlation id instead, so they are not matched. Run
 summaries (`list-flow-runs`) carry `durableBehaviorChanged`, computed by the
-same helper as `run-runtime-session`'s answer (`runtime/durable-behavior/`). It
+same helper as `run-runtime-session`'s answer (`runtime/adaptation/durable-behavior/`). It
 is true for a runtime patch the run applied automatically, and for a
 re-author the run kept after its judged whole run.
 
@@ -540,22 +540,22 @@ same capabilities. The ids are:
   under $50 ..." -- has asked for an automation without saying "automate".
   Three rules make that message start `flow.createHere`:
   - The model is told so, when a page is open and the capability is offered
-    (`instructions/prompt.ts`).
+    (`runtime/conversations/instructions/prompt.ts`).
   - A required `instruction` that nothing supplied is the message itself
-    (`instructions/invocation.ts`), unless the message is only the
+    (`runtime/conversations/instructions/invocation.ts`), unless the message is only the
     capability's own name or phrases ("automate this page"), which is still
     asked about.
   - Read without the model -- none is connected, or it did not answer within
     the 24 s reading deadline -- a message that matches no capability, with a
     page open, and that is a job (at least 6 words, filler left out, not a
-    question) is built from that page (`instructions/fallback.ts`). The thread
+    question) is built from that page (`runtime/conversations/instructions/fallback.ts`). The thread
     still says it was read without the model.
 
   The first chat-driven live Lab run (`run-muq2dlhq-96bffb09`) showed the gap:
   its typed task was answered "I could not tell what you wanted done" while
   the model was slow, and nothing was built.
 - **Reading the message has a deadline that holds whatever the model does**
-  (`instructions/interpret.ts`, t613). The model is asked at most three
+  (`runtime/conversations/instructions/interpret.ts`, t613). The model is asked at most three
   times, each attempt for at most 15 s and all of them within 24 s; then Core
   reads the words itself and the thread says the model "did not answer in
   time". Each attempt ends on Core's own timer, which also aborts the
@@ -598,14 +598,14 @@ same capabilities. The ids are:
 - **The first reply says what will happen, in plain words** (UI D9, live run
   `run-musp8nz1-dbd3905a`, which read `Doing "Create an automation here".`).
   A command Core runs gives its own first reply (`announce` on
-  `AutomationStudioConversationCommand`, written by `instructions/respond.ts`):
+  `AutomationStudioConversationCommand`, written by `runtime/conversations/instructions/respond.ts`):
   create-here "I'll make you a new automation for this, working out its steps
   by trying them on <place>. I'll say here when it is ready.", and explore,
   improve and run likewise. A capability the client runs reads `On it:
   <title>`. The thread never shows a command's title or an address: a page is
   named by its site's name, lower case without `www.`, a page served from this
   machine or an IP address is "the page you had open", and no page is "the
-  website" (`conversations/site-name.ts`). The success lines say what is so --
+  website" (`runtime/conversations/site-name.ts`). The success lines say what is so --
   `Your automation "<name>" is ready: I tried its steps on <place> and put the
   ones that worked into it.` -- and never `Say "run it"`, since a run may
   already be under way when they are read.
@@ -645,7 +645,7 @@ same capabilities. The ids are:
 
 Core emits each explained model decision as a `thought` with its human action
 and screened reason in `detail.text`; repairs and result checks have their own
-activity messages (`runtime/activity/observer.ts`, `wording/reason-text.ts`).
+activity messages (`runtime/automation-activity/observer.ts`, `runtime/activity/text/reason-text.ts`).
 The model's required one-sentence `summary` is held beside the decision, not
 inside its trace or the next model context. Activity can carry these screened
 words about the page; retained diagnostic traces remain content-free.
@@ -720,7 +720,7 @@ constants. `apps/web`'s live line (`conversation/activity/paced-status.ts`,
 an event no newer than the last it took (each poll hands the current event
 again) and maps `ActivityDisplay` to its own display, keeping `paused` as an
 outcome; its own headline, pacer and wording modules are gone. Its chat step
-titles (`conversation/steps/words.ts`) are still its own, as the extension's
+titles (`apps/web/src/features/automation-studio/conversation/activity/steps/words.ts`) are still its own, as the extension's
 are.
 
 A decision Core declined before doing it is a card under that decision, never
@@ -732,9 +732,9 @@ Core's words (`ACTIVITY_ACTION_REFUSAL_WORDS`), never a code. A refused action
 is `failed` when nothing of it was done and `done` when part of an edit landed
 (the record's `Applied: <n>`). An edit to the draft gets a card whether it
 landed or not ("Editing the Flow -- done / partly done / not done",
-`runtime/activity/wording/draft-edit-card.ts`; the kind is named "Edit the
+`runtime/automation-activity/wording/draft-edit-card.ts`; the kind is named "Edit the
 Flow"), and a call refused as a repeat gets its own card once the loop answers
-it (`runtime/activity/decision-answer/refused-call.ts`). The model's sentence is
+it (`runtime/automation-activity/decision-answer/refused-call.ts`). The model's sentence is
 only the decision's reason, said as what was tried. Inside a build, a split
 judge's card closes with the build's sentence ("the build cannot finish on this
 test") rather than the run's ("the run is not marked as failed for it",
@@ -743,11 +743,11 @@ test") rather than the run's ("the run is not marked as failed for it",
 The other rows a build or run ends a step with are said in Core's words too.
 A completion the check passed but the build's test refused is "The proposed
 Flow was sent back to be fixed" with why and how many steps need fixing
-(`runtime/activity/wording/completion-refusal.ts`, through the completion
+(`runtime/automation-activity/wording/completion-refusal.ts`, through the completion
 attempt's `testRefused`). A reply the loop could not use is "Deciding the next
 step -- didn't work", with no reason and no edit card
-(`runtime/activity/decision-answer/draft-edit.ts`). A decision's reason is
-screened before it is shown (`wording/reason-text.ts`): a sentence naming an
+(`runtime/automation-activity/decision-answer/draft-edit.ts`). A decision's reason is
+screened before it is shown (`runtime/activity/text/reason-text.ts`): a sentence naming an
 act id or the draft's mechanics is dropped, handles and node ids are hidden, and
 a reason made only of codes shows nothing. A test step that did not do the same again says why by its replay code
 (`activityActionFailureReason` in `fluxiq/ui`: "it did nothing this time, where
@@ -757,10 +757,10 @@ came back."), shows the check's reading only where it names nothing internal,
 and never shows its advice (`runtime/result-verification/check-words.ts`). A
 run failed by its result check ends "Run failed: <what came back, why that
 failed it, and how the repair ended>", read from the run's own record
-(`runtime/activity/wording/run-ending.ts`).
+(`runtime/automation-activity/wording/run-ending.ts`).
 
 A step a list loop's pass runs carries that pass's row in `step.row`, as a
-person reads it ("Jonas Weber", `runtime/activity/loop/row.ts`), cut to the
+person reads it ("Jonas Weber", `runtime/automation-activity/loop/row.ts`), cut to the
 title's bound, so its card can say "Confirm · Jonas Weber" (t378). The field is
 optional: steps outside a list loop, and the recovering and settled rows, do
 not carry it, and a client that does not know it reads the step without it.
@@ -774,7 +774,7 @@ words, never page data, cut to the title's bound), `outcome` (`succeeded`,
 `failed` or `refused`), `event` (the C3 boundary, on a `handler` recovery only)
 and `targetId` (the checkpoint, entry, node or Subflow it led to). Core's
 emitter is `emitAutomationStudioActivityStepRecovery`
-(`runtime/activity/step/recovery.ts`): the row is titled with the subject,
+(`runtime/automation-activity/step/recovery.ts`): the row is titled with the subject,
 `ref` is the recovered node, the live line reads "Recovered: ...", "Recovery
 did not work: ..." or "Recovery not tried: ...", and it opens no step of its
 own. The hub keeps `recovery` only on a `step` row and only in the contract's
@@ -787,7 +787,7 @@ itself while a step's output ran: an overlay (a consent wall, say), a rate-limit
 notice, a notice, an assistant, or a layer no classifier named (`other`). Core
 says one row per
 node attempt that closed any, from the attempt's `clearedLayers`
-(`runtime/activity/step/interference.ts`), with `outcome: "succeeded"` and no
+(`runtime/automation-activity/step/interference.ts`), with `outcome: "succeeded"` and no
 `event` or `targetId`. Its `subject` is Core's own words by layer kind ("Closed
 a notice the page put in the way"), or "Closed N notices the page put in the
 way" for several; it never
@@ -802,14 +802,14 @@ Two activity fields say how a unit of work stopped or holds (t376):
 
 - `stopped: true` is set only on the final event of work a person or caller
   cancelled: a run whose session settled `cancelled` (Stop, Stop on a held
-  run, or a hold past its 15-minute limit, `runtime/activity/run.ts`) and a
+  run, or a hold past its 15-minute limit, `runtime/automation-activity/run.ts`) and a
   build that ended in its cancellation's `AbortError`
-  (`runtime/activity/build.ts`). It comes from the cancellation itself, never
+  (`runtime/automation-activity/build.ts`). It comes from the cancellation itself, never
   from the label, so a client says "Run stopped" or "Build stopped" by
   reading the field. A build that ran out of budget is not `stopped`, though
   its own words say "Build stopped: ...".
 - Phase `paused` is a run held at a step boundary by run control
-  (`runtime/run-control/`). When the run holds, Core sends one event with
+  (`framework/automation-service/run-control/`). When the run holds, Core sends one event with
   `phase: "paused"`, `label` "Paused: you have the page" for a takeover
   (`takeControl: true`) or "Paused" for a plain pause, and `step` naming the
   node the run executes first when it goes on (absent for a Merge, which has no
@@ -818,8 +818,8 @@ Two activity fields say how a unit of work stopped or holds (t376):
   carries a `detail` row, and nothing is sent while the hold lasts. A held run
   that is stopped sends no "continuing": it ends through the ordinary
   cancelled ending, with `stopped`. The executor emits both inside the run's
-  own activity scope (`runtime/activity/hold.ts`, from the checkpoint in
-  `runtime/executor/graph-run.ts`).
+  own activity scope (`runtime/automation-activity/hold.ts`, from the checkpoint in
+  `framework/automation-service/executor/graph-run.ts`).
 
 A wait opens an ask activity row and settles through another ask row with the
 same `ref` and `detail.resolution`. The closed resolutions are:
@@ -867,10 +867,10 @@ and two optional, additive fields say which one did what (t539):
   it starts after, empty for none, so a client says "<subflow> waits for
   <predecessor>" while a predecessor dispatched beside it is still out; t649),
   `return` (outcome, reason, spend, calls and a count of trials; the reason is
-  said for the person by `runtime/activity/project/return-words.ts`, never the
+  said for the person by `runtime/automation-activity/project/return-words.ts`, never the
   dispatcher's codes, calls, subflow keys or brief ids, which the supervisor
   still reads in the build record) and `receipt` (a subflow or whole-Flow trial
-  and its verdict). The emitters (`runtime/activity/project/`) build each from the
+  and its verdict). The emitters (`runtime/automation-activity/project/`) build each from the
   project-agent contracts and never put a digest in a title, a ref or a card;
   the hub rebuilds a card field by field (`runtime/activity/project-card-bounds.ts`),
   cutting strings to 160 characters (a return's `reason` to 240) and lists to
@@ -1165,7 +1165,7 @@ holds `missing_transition`, `argument_mismatch`, `ambiguous_context`,
 `missing_artifact`, `incomplete_capture`, `incompatible_contract`,
 `redacted_input`, and the reevaluator's `snapshot_unavailable` and
 `dynamic_content`, spelled as the Automation Studio trial evidence vocabulary
-(U5, `programs/automation-studio/model/offline-trial/vocabulary.ts`) spells
+(U5, `flows/authoring/model/offline-trial/vocabulary.ts`) spells
 them. A trial in which a reevaluator answered any operation carries the
 evidence origin `snapshot_evaluation` beside `recorded` and `pure_computation`,
 so it never reads as purely recorded, and lists those operations in
@@ -1177,7 +1177,7 @@ trial `inconclusive`.
 exact candidate revision, digest and goal contract, so the judged whole run
 stays live.
 
-**Seams a host uses** (exported from `programs/automation-studio/runtime/index.ts`
+**Seams a host uses** (exported from `framework/automation-service/index.ts`
 and the client-gateway barrel): `runAutomationStudioOfflineCandidateTrial` (the
 candidate trial runner on a trace environment, with an optional `reevaluator`;
 refused in exploration and on a derived trace);
@@ -1199,13 +1199,13 @@ digest; every retest is live. The source is the build's latest eligible live
 trial trace of the same scope (a whole candidate, or one subflow of a build):
 a record with a trial run and a trace id, that ran, was not judged again, and
 for a subflow had its entry prepared. An offline run's own trace is never a
-source. The host installs the trial host (`service/offline-first/`,
+source. The host installs the trial host (`framework/automation-service/service/offline-first/`,
 `AutomationStudioOfflineTrialInstallation`) when tracing is on;
 `FLUXIQ_OFFLINE_TRIALS=0` turns it off, and with it off, no source, a request
 that is not the candidate's, or ports that are not live, the call runs live
 and the step log says why (`not_tried`).
 
-**Outcome mapping** (`service/offline-first/answer.ts`):
+**Outcome mapping** (`framework/automation-service/service/offline-first/answer.ts`):
 
 - A recorded `no` or `execution_failed` is kept as the builder's repair
   feedback, marked `checkedAgainst: "recorded_run"`. It sends no site command,
@@ -1222,7 +1222,7 @@ and the step log says why (`not_tried`).
   the whole-run gate. Live-success accounting counts live episodes only. An
   offline pass pays the judge twice, offline and then live.
 - An answer that does not match its revision and digest, or is malformed, runs
-  live as inconclusive (`flow-bootstrap/offline-first/gate-step.ts`).
+  live as inconclusive (`runtime/flow-authoring/bootstrap/offline-first/gate-step.ts`).
 
 The offline check runs before admission, the start hook and any reset. An
 offline trial makes no site change, so it needs no reset and no before/after
@@ -1237,7 +1237,7 @@ hosted in the Core host process behind a capability.
 **What the person sees.** The chat and status words are truthful about where a
 test ran: "Testing your Flow on the site" for a live trial, "Checking your
 Flow against the recorded run" for an offline one, and "The test didn't run:
-<reason>" for a refused one (`activity/candidate/offline-words.ts`,
+<reason>" for a refused one (`runtime/automation-activity/candidate/offline-words.ts`,
 `ui/activity-status/`). A kept offline answer says it ran against the
 recording of the last live test, not the site. A setup rerun inside a subflow
 trial is marked as preparation.

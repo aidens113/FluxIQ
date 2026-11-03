@@ -75,8 +75,9 @@ capabilities shared by all host projects:
 - Production Runner;
 - Automation Studio.
 
-Automation Studio is intentionally registered as a program but its full port is
-planned separately. Accounts Manager and any OSRS-specific programs are not
+Automation Studio is a controller program: it registers endpoints and view state,
+and the services behind them are framework areas (see
+[runtime ownership](runtime-ownership.md#studio-is-a-controller)). Accounts Manager and any OSRS-specific programs are not
 part of this public framework.
 
 ## Data Model

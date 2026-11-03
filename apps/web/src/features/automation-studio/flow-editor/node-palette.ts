@@ -2,7 +2,7 @@ import {
   automationNodeClassGroups,
   getAutomationNodeDefinitions,
   type AutomationNodeDefinition
-} from "fluxiq/automation-studio/nodes";
+} from "fluxiq/automation/nodes";
 import type { AutomationEditorNodeSpec, AutomationEditorPaletteGroup } from "./node-types";
 
 export const automationEditorPalette: AutomationEditorPaletteGroup[] = automationNodeClassGroups

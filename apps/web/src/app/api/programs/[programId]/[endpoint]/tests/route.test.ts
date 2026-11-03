@@ -1,4 +1,4 @@
-import { AUTOMATION_STUDIO_ENDPOINTS } from "fluxiq/automation-studio";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "fluxiq/automation";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const call = vi.fn();

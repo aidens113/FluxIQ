@@ -2,8 +2,8 @@
 // group and fallback mutations.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type DeleteFlowMapRouteGroupRequest, type DeleteFlowMapRouteRequest, type FlowIdProjectRequest, type MutateFlowMapRouteRequest, type SaveFlowMapFallbackRequest, type SaveFlowMapRouteGroupRequest, type SaveFlowMapRouteRequest, type TestFlowMapRouteConditionRequest } from "../contracts.ts";
-import { evaluateAutomationStudioRouteCondition, type AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type DeleteFlowMapRouteGroupRequest, type DeleteFlowMapRouteRequest, type FlowIdProjectRequest, type MutateFlowMapRouteRequest, type SaveFlowMapFallbackRequest, type SaveFlowMapRouteGroupRequest, type SaveFlowMapRouteRequest, type TestFlowMapRouteConditionRequest } from "../../../../api-contracts/automation.ts";
+import { evaluateAutomationStudioRouteCondition, type AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRouterEndpoints(dependencies: AutomationStudioApiDependencies): void {

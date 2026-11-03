@@ -1,5 +1,5 @@
 import type { Connection, Edge, Node } from "@xyflow/react";
-import type { AutomationNodePort } from "fluxiq/automation-studio/nodes";
+import type { AutomationNodePort } from "fluxiq/automation/nodes";
 
 type AutomationPortNodeData = { inputs?: AutomationNodePort[]; outputs?: AutomationNodePort[] };
 

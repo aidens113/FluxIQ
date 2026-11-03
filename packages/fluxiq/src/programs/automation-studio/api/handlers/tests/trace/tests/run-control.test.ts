@@ -10,9 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../../../_shared/api.ts";
 import type { ClientGatewayTraceEvent } from "../../../../../../../client-gateway/index.ts";
-import { AutomationStudioGatewayTraceInstallation } from "../../../../../runtime/gateway-trace/index.ts";
-import { episode, newEpisodes, storedEvents, type EpisodesHarness } from "../../../../../runtime/gateway-trace/tests/episode-builders.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../contracts.ts";
+import { AutomationStudioGatewayTraceInstallation } from "../../../../../../../runtime/recording/gateway-trace/index.ts";
+import { episode, newEpisodes, storedEvents, type EpisodesHarness } from "../../../../../../../runtime/recording/gateway-trace/tests/episode-builders.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../../../api-contracts/automation.ts";
 import { registerAutomationStudioApi } from "../../../index.ts";
 
 const actor: ProgramApiActor = { sessionId: "session.trace", userId: "user.trace", roleId: "admin", permissions: ["programs.read", "runtime.control"] };

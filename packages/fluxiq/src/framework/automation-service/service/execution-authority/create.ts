@@ -1,0 +1,35 @@
+import type { AutomationStudioFlowScope } from "../../../../flows/authoring/model/index.ts";
+import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
+import { automationStudioFlowDraftReplayClearedCode } from "../../../../runtime/llm/node-tools/index.ts";
+import { automationStudioLlmPriorNodesRuntimeAuthority } from "../../../../runtime/llm/prior-nodes/index.ts";
+import type { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
+
+/** Assemble one build's actual permission, person-needed and current rerun authority boundaries together. */
+export function automationStudioFlowBootstrapExecutionAuthority(input: {
+  permission: Parameters<typeof automationStudioFlowBootstrapActionPermissions>[0];
+  tools: Parameters<typeof automationStudioFlowBootstrapPersonNeeded>[0]["tools"];
+  ask?: Parameters<typeof automationStudioFlowBootstrapPersonNeeded>[0]["ask"] | undefined;
+  signal?: AbortSignal | undefined;
+  generation: object;
+  runtime(): AutomationStudioNativeNodeRuntime | undefined;
+  binding(): object | undefined;
+  scope: AutomationStudioFlowScope;
+}): {
+  permissions: ReturnType<typeof automationStudioFlowBootstrapActionPermissions>;
+  personNeeded: ReturnType<typeof automationStudioFlowBootstrapPersonNeeded>;
+  rerunAuthority: ReturnType<typeof automationStudioLlmPriorNodesRuntimeAuthority>;
+} {
+  const permissions = automationStudioFlowBootstrapActionPermissions(input.permission);
+  // A person-only check and a permission request stay on this build's own thread and signal.
+  const personNeeded = automationStudioFlowBootstrapPersonNeeded({
+    executeTool: permissions.executeTool, tools: input.tools,
+    signal: AbortSignal.any([permissions.signal, ...(input.signal ? [input.signal] : [])]),
+    clearedResultCode: automationStudioFlowDraftReplayClearedCode,
+    ...(input.ask ? { ask: input.ask } : {})
+  });
+  const rerunAuthority = automationStudioLlmPriorNodesRuntimeAuthority({
+    runtime: input.runtime, binding: input.binding, generation: input.generation,
+    authority: permissions, scope: input.scope, signal: personNeeded.signal
+  });
+  return { permissions, personNeeded, rerunAuthority };
+}

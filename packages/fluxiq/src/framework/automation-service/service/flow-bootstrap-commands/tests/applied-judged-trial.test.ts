@@ -1,0 +1,162 @@
+// @fluxiq-test-group real-sql
+// A candidate build's judged-yes trial, remembered by the Flow it saved (t662),
+// through the actual service: the build proposes on two yeses, the chat
+// approves and applies, apply records the trial against the versions it saved,
+// a playback of the saved Flow names exactly those versions, and the run's
+// result check then holds that playback's double no on the trial's very rows
+// unverified, while different rows are refuted as before. The rows are a
+// seed nursery's, written into each run's own store: the Start-to-End Flow the
+// build makes reads none.
+//
+// t664: the check is now asked as the service asks it for a routed playback,
+// with the Subflow the router chose (A8 towels `run-mvahlxuu-760d9e28`, whose
+// hold never fired because the port named no trial to such a run), and the
+// double no is weighed by the real agreement (`weighedNos`, t663): two nos
+// Core's record refutes in part are held; two that stand whole are refuted,
+// and every double no says why.
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioLlmTaskRequest, AutomationStudioLlmVerificationDefect } from "../../../../../runtime/llm/index.ts";
+import {
+  automationStudioFlowGraphVersion,
+  automationStudioFlowInstructionDigest,
+  automationStudioFlowJudgedBuildTrialFromMetadata,
+  automationStudioFlowVersionsFromMetadata
+} from "../../../../../runtime/flow-authoring/version/index.ts";
+import { AUTOMATION_STUDIO_RESULT_BUILD_YES_DISAGREES, automationStudioResultJudgedBuildTrialOfSavedFlow } from "../../../../../runtime/result-verification/build-yes-hold/index.ts";
+import { verifyAutomationStudioRuntimeSessionResult } from "../../../../../runtime/result-verification/index.ts";
+import { provider as judging } from "../../../../../runtime/result-verification/tests/run-outcome-harness.ts";
+import { AutomationStudioService } from "../../../service.ts";
+import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+
+vi.setConfig({ testTimeout: 120_000 });
+
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
+
+const SCHEMA: AutomationStudioRecordSchema = { schemaVersion: "0.1", fields: [{ id: "variety", label: "Variety", valueType: "string" }, { id: "price", label: "Price", valueType: "string" }] };
+const PACKETS: JsonObject[] = [{ variety: "Brandywine Pink", price: "$3.25" }, { variety: "Cherokee Purple", price: "$3.50" }];
+
+/** A candidate build that explores once, submits Start to End, tests it (two yeses) and completes; then the chat approves and applies it. */
+async function appliedCandidate() {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-applied-judged-trial-"));
+  let judged = 0, decisions = 0;
+  const provider = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
+    if (request.taskKind === "loop_verification") return judgeReply(++judged <= 2 ? "yes" : "unknown");
+    decisions++;
+    const latest = [...(request.context.evidenceLoop?.evidence ?? [])].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
+    const decision = decisions === 1 ? { kind: "tool_call", callId: "look", toolId: "inspect", input: {} }
+      : decisions === 2 ? { kind: "tool_call", callId: "submit", toolId: "core.submit_candidate", input: { summary: "Start to End", plan: plan() } }
+      : decisions === 3 ? { kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: { revision: latest?.revision, digest: latest?.digest } }
+      : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } };
+    return { response: { kind: "evidence_tool_decision", summary: "Scripted", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
+  });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
+    llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { looked: true }, effectApplied: false, targetsUnchanged: true }) } });
+  cleanups.push(async () => {
+    await service.close();
+    await rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  });
+  const { project, flow } = await blankFixture(service);
+  const projectId = project.id, flowId = flow.flowId;
+  const result = await service.generateFlowBootstrapAdaptation({ projectId, flowId, caller: caller(), evidenceGuided: true, authoringMode: "candidate" });
+  if (result.status !== "proposed") throw new Error(`expected a proposal, got ${result.status}`);
+  await service.reviewFlowBootstrapAdaptation({ projectId, flowId, adaptationId: result.adaptationId, action: "approve", actorId: "user.test" });
+  await service.reviewFlowBootstrapAdaptation({ projectId, flowId, adaptationId: result.adaptationId, action: "apply", actorId: "user.test" });
+  return { service, projectId, flowId, adaptationId: result.adaptationId, trialRunId: result.candidate!.trial.runId };
+}
+
+/** Stores `rows` as one dataset of the run, processed as a run's datasets are when it ends. */
+async function stored(service: AutomationStudioService, projectId: string, runId: string, rows: JsonObject[]): Promise<void> {
+  await service.runDatasets.recordBatchHandler(projectId, runId)({ nodeId: "read", attemptId: `${runId}.read`, batchKey: `${runId}.read`, datasetId: "packets", label: "Packets", writeMode: "append", schema: SCHEMA, rows: rows.map((row) => ({ ...row })), invalidCount: 0, truncated: false });
+  await service.runDatasets.processRunDatasets({ projectId, runId });
+}
+
+/**
+ * What each judge's no says: a count Core's record refutes (2 rows stored, not
+ * 5) beside a claim it cannot check; that claim alone stands whole. The prose
+ * names a condition, not a row; the row each no rests on is in its defects
+ * (`KEPT`).
+ */
+const PART_REFUTED = { observed: "Only 5 rows were stored. Condition 1 should not have kept the hybrid packets." };
+const STANDS_WHOLE = { observed: "Condition 1 should not have kept the hybrid packets." };
+/**
+ * The defect each no lists, as a current no must (t752, 534c41fb): a row every playback here stores, quoting the request, which Core finds
+ * in the run's own record. Without it the reply is unreadable and the check is never a no.
+ */
+const KEPT: AutomationStudioLlmVerificationDefect[] = [{ kind: "kept_not_asked", row: "Brandywine Pink", requestWords: "Create a deterministic Start to End Flow" }];
+
+/** The run's result check over the service's own stores and saved Flow, with a judge that says no on every call, as `said` reads. */
+async function checkedAsTheServiceChecks(service: AutomationStudioService, projectId: string, session: AutomationStudioRuntimeSession, said: Record<string, string> = PART_REFUTED) {
+  const asked: AutomationStudioLlmTaskRequest[] = [];
+  const written: AutomationStudioRuntimeSession[] = [];
+  // The Subflow the router chose, which `service.ts` hands every routed run's check (`route.selectedSubflow`) and records among the run's versions.
+  const subflowId = automationStudioFlowVersionsFromMetadata(session.metadata).find((version) => version.subflowId)?.subflowId;
+  expect(subflowId).toBeDefined();
+  const next = await verifyAutomationStudioRuntimeSessionResult({ projectId, session, subflowId, ports: {
+    flowInstructionSet: (request) => service.getFlowInstructionSet(request),
+    getFlowRunDetail: async () => null, saveFlowRunDetail: async (detail: AutomationStudioFlowRunDetail) => detail, writeRuntimeSession: async (_projectId, saved) => { written.push(saved); },
+    listRunDatasets: (request) => service.runDatasets.listRunDatasets(request), getRunDatasetPage: (request) => service.runDatasets.getRunDatasetPage(request),
+    resolveProvider: async () => ({ provider: judging("no", asked, undefined, said, KEPT) }),
+    // The runtime's declared denied keys, as `service.ts` hands them to every run's check: without them the check withholds every value,
+    // and no row a no names could be one Core finds in its record (t752).
+    deniedEvidenceKeys: [],
+    // The port exactly as `service.ts` builds it for a run's result check.
+    judgedBuildTrial: automationStudioResultJudgedBuildTrialOfSavedFlow({ flowMetadata: async (project, flow) => (await service.getFlow(project, flow)).metadata })
+  } });
+  return { next, asked };
+}
+
+describe("a candidate build's judged trial, remembered by the Flow it saved", () => {
+  it("is recorded at apply, names the versions a playback runs, and holds that routed playback's partly refuted double no on the trial's rows", async () => {
+    const built = await appliedCandidate();
+    const { service, projectId, flowId } = built;
+    const parent = await service.getFlow(projectId, flowId);
+    const record = automationStudioFlowJudgedBuildTrialFromMetadata(parent.metadata);
+    const subflows = await service.listFlowSubflowSummaries({ projectId, flowId, limit: 10, offset: 0 });
+    const primary = (await service.getFlowSubflow(projectId, flowId, subflows.subflows[0]!.subflowId))!;
+    const graph = await service.getFlow(projectId, primary.graphFlowId!);
+    expect(record).toEqual({
+      // t677: the judge's first-ask yes (both checks yes, two calls) is recorded as such.
+      trialRunId: built.trialRunId, verdict: "yes", calls: 2, firstAskConfirmed: true, adaptationId: built.adaptationId,
+      instructionDigest: automationStudioFlowInstructionDigest(await service.getFlowInstructionSet({ projectId, flowId })),
+      versions: [automationStudioFlowGraphVersion({ flow: parent }), automationStudioFlowGraphVersion({ flow: graph, subflowId: primary.subflowId })]
+    });
+    expect(record!.versions[1]!.revision).toBeGreaterThanOrEqual(1);
+
+    // A playback of the saved Flow names exactly the versions apply recorded.
+    const playback = await service.runRuntimeSession({ projectId, flowId, adaptiveMode: "no_llm_intervention" });
+    expect(playback.status).toBe("succeeded");
+    const ran = automationStudioFlowVersionsFromMetadata(playback.metadata);
+    expect(ran.map((version) => [version.graphFlowId, version.revision])).toEqual(record!.versions.map((version) => [version.graphFlowId, version.revision]));
+
+    // The trial's rows and the playback's are the same, and the build's yes was a first-ask two-call yes: a double no Core refutes in part is held, never a yes.
+    await stored(service, projectId, built.trialRunId, PACKETS);
+    await stored(service, projectId, playback.runId, PACKETS);
+    const same = await checkedAsTheServiceChecks(service, projectId, playback);
+    expect(same.asked).toHaveLength(2);
+    expect(same.next.status).toBe("succeeded");
+    expect(same.next.metadata?.resultVerification).toMatchObject({ status: "unverified", verdict: "unsure", basis: "model_disagreed", code: AUTOMATION_STUDIO_RESULT_BUILD_YES_DISAGREES, buildYesHold: { held: true, because: "held" } });
+    // The same playback whose nos stand whole against Core's record is refuted (t664).
+    const standing = await checkedAsTheServiceChecks(service, projectId, playback, STANDS_WHOLE);
+    expect(standing.next.status).toBe("failed");
+    expect(standing.next.metadata?.resultVerification).toMatchObject({ status: "refuted", verdict: "does_not_answer", basis: "model", buildYesHold: { held: false, because: "no_stands_whole" } });
+  });
+
+  it("refutes a playback's double no as before where its rows are not the trial's", async () => {
+    const built = await appliedCandidate();
+    const { service, projectId, flowId } = built;
+    const playback = await service.runRuntimeSession({ projectId, flowId, adaptiveMode: "no_llm_intervention" });
+    await stored(service, projectId, built.trialRunId, PACKETS);
+    await stored(service, projectId, playback.runId, [PACKETS[0]!, { variety: "Brandywine Pink", price: "$2.75" }]);
+    const differs = await checkedAsTheServiceChecks(service, projectId, playback);
+    expect(differs.next.status).toBe("failed");
+    expect(differs.next.metadata?.resultVerification).toMatchObject({ status: "refuted", verdict: "does_not_answer", basis: "model", buildYesHold: { held: false, because: "rows_differ" } });
+  });
+});

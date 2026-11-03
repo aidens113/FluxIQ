@@ -1,0 +1,14 @@
+{
+  "sourceRoot": "packages/fluxiq/src",
+  "downstream": "../!FluxIQWebExtension",
+  "moves": [
+    { "from": "runtime/llm/loop-limits", "to": "runtime/loop-limits" },
+    { "from": "framework/automation-service/native-node-runtime.ts", "to": "runtime/native-nodes/native-node-runtime.ts" },
+    { "from": "framework/automation-service/host-runtime.ts", "to": "runtime/native-nodes/host-runtime.ts" },
+    { "from": "framework/automation-service/router-runtime.ts", "to": "runtime/router-runtime/router-runtime.ts" },
+    { "from": "runtime/llm/reusable-context.ts", "to": "runtime/llm/reusable-context/reusable-context.ts" },
+    { "from": "runtime/llm/completed-evidence.ts", "to": "runtime/llm/completed-evidence/completed-evidence.ts" },
+    { "from": "api-contracts/automation/document-types.ts", "to": "api-contracts/automation/document-types/document-types.ts" },
+    { "from": "runtime/llm/harness-options/tests/plan-node-handles-load-order.test.ts", "to": "runtime/llm/harness-options/plan/tests/node-handles-load-order.test.ts" }
+  ]
+}

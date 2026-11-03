@@ -2,7 +2,7 @@
 
 import React from "react";
 import { ShieldAlert } from "lucide-react";
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "fluxiq/automation-studio/action-permissions";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "fluxiq/automation/action-permissions";
 
 /**
  * The question a run brings back when its recovery needed to do something
