@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmStepLogPageReader } from "../../llm/step-log/index.ts";
 // Running the exploration loop at run time, under a budget, with exactly one
 // named outcome at the end of it.
 //
@@ -136,6 +137,8 @@ export type AutomationStudioExplorationRefusalClassifier = (resultCode: string) 
 export type AutomationStudioRuntimeExplorationInput = {
   /** The tools and the dispatch, from the harness-option registry. */
   loop: AutomationStudioHarnessOptionLoopBinding;
+  /** The domain's page reader for the step log's `page.txt` (`../../llm/step-log/page-reader.ts`). */
+  stepLogPageText?: AutomationStudioLlmStepLogPageReader | undefined;
   /**
    * One provider decision. Throwing `AutomationStudioExplorationUnusableDecisionError`
    * says the call was spent on an answer that cannot be used, and the runner
@@ -319,6 +322,7 @@ export async function runAutomationStudioRuntimeExploration(
       // starting and aborting keeps the receipt honest: no call was billed.
       ? undefined
       : await runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop({
+        ...(input.stepLogPageText ? { stepLogPageText: input.stepLogPageText } : {}),
         tools: input.loop.tools, observedStateKeys: input.loop.observedStateKeys,
         // An answer that could not be used is asked for again, each attempt
         // admitted and charged like any other call. It is a step that did not

@@ -6,21 +6,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceLoopProgressTrace } from "../../evidence-progress/index.ts";
-import { automationStudioLlmStepLogPageText, automationStudioLlmStepLogScope, automationStudioLlmStepLogTool } from "../index.ts";
+import { automationStudioLlmStepLogScope, automationStudioLlmStepLogTool } from "../index.ts";
 
 const PAGE = "page https://shop.example/cart\n[b1] button \"Checkout\"\n[t2] text \"Kettle 42.99\"";
 
 let directory: string;
-let dropSummary: () => void;
+
+// A domain's reading, as Core receives one: Core only writes what it answers.
+const pageText = (evidence: unknown): string | undefined => JSON.stringify(evidence).includes("Kettle 42.99") ? PAGE : undefined;
 
 beforeEach(() => {
   directory = mkdtempSync(path.join(tmpdir(), "fluxiq-tool-step-"));
-  // A registered domain's reading, as Core receives one: Core only writes what it answers.
-  dropSummary = automationStudioLlmStepLogPageText.use({ pageText: (evidence) => JSON.stringify(evidence).includes("Kettle 42.99") ? PAGE : undefined });
 });
 
 afterEach(() => {
-  dropSummary();
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -33,7 +32,7 @@ function execution(evidence: unknown) {
 describe("a tool step", () => {
   it("writes the call, exactly the evidence the model is given back, the page view, and its meta", async () => {
     const evidence = { ok: true, value: { page: { schemaVersion: "web-llm-page.v3", page: PAGE } } };
-    const run = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string; value: unknown }) => execution(evidence), env());
+    const run = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string; value: unknown }) => execution(evidence), env(), pageText);
 
     await expect(run({ callId: "c3", toolId: "core:run_node", value: { nodeId: "web.click", target: "b1" } })).resolves.toMatchObject({ resultCode: "web.action.succeeded" });
 
@@ -53,8 +52,7 @@ describe("a tool step", () => {
     const carriesPage = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string }) => execution({ ok: true, page: PAGE }), env());
     const carriesNone = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string }) => execution({ ok: true }), env());
     await carriesNone({ callId: "c1", toolId: "web.look" });
-    dropSummary();
-    await carriesPage({ callId: "c2", toolId: "web.look" });
+      await carriesPage({ callId: "c2", toolId: "web.look" });
     expect(readdirSync(path.join(directory, "0001-tool-web.look")).sort()).toEqual(["call.json", "meta.json", "result.json"]);
     expect(readdirSync(path.join(directory, "0002-tool-web.look")).sort()).toEqual(["call.json", "meta.json", "result.json"]);
     expect(json(path.join(directory, "0002-tool-web.look", "result.json"))).toEqual({ ok: true, page: PAGE });
@@ -187,10 +185,29 @@ describe("a tool step", () => {
       decide: async (_request: { iteration: number }) => ({ kind: "complete" }),
       executeTool: async (_request: { callId: string; toolId: string; value: unknown }) => execution({ ok: true, page: PAGE })
     };
-    const wrapped = automationStudioLlmEvidenceLoopProgressTrace(input, env(), () => undefined);
+    const wrapped = automationStudioLlmEvidenceLoopProgressTrace({ ...input, stepLogPageText: pageText }, env(), () => undefined);
     expect(wrapped).not.toBe(input);
     await wrapped.executeTool({ callId: "initial.web.look", toolId: "web.look", value: {} });
     expect(readFileSync(path.join(directory, "0001-tool-web.look", "page.txt"), "utf8")).toBe(PAGE);
+  });
+
+  it("keeps two runs' readers apart in one process", async () => {
+    const one = mkdtempSync(path.join(tmpdir(), "fluxiq-tool-step-one-"));
+    try {
+      const evidence = { ok: true, page: "shared evidence" };
+      const make = (dir: string, reader: (evidence: unknown) => string | undefined) => automationStudioLlmEvidenceLoopProgressTrace({
+        decide: async (_request: { iteration: number }) => ({ kind: "complete" }),
+        executeTool: async (_request: { callId: string; toolId: string }) => execution(evidence),
+        stepLogPageText: reader
+      }, { FLUXIQ_LLM_STEP_LOG_DIR: dir }, () => undefined);
+      const first = make(directory, () => "reading of run A");
+      const second = make(one, () => "reading of run B");
+      await Promise.all([first.executeTool({ callId: "c1", toolId: "web.look" }), second.executeTool({ callId: "c1", toolId: "web.look" })]);
+      expect(readFileSync(path.join(directory, "0001-tool-web.look", "page.txt"), "utf8")).toBe("reading of run A");
+      expect(readFileSync(path.join(one, "0001-tool-web.look", "page.txt"), "utf8")).toBe("reading of run B");
+    } finally {
+      rmSync(one, { recursive: true, force: true });
+    }
   });
 });
 
