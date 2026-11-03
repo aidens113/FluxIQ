@@ -54,8 +54,8 @@ describe("actual record-output processing evidence reaches the runtime verdict",
   it("rejects misaligned witness arrays and condition indices rather than borrowing another row's proof", () => {
     const entry = conditionOf(processingCatalogue());
     const authored = CATALOGUE_PROCESS.where![0]!;
-    expect(automationStudioResultProcessingReadings({ ...entry, leftOutObservations: entry.leftOutObservations!.slice(1) }, authored, 1)).toBeUndefined();
-    expect(automationStudioResultProcessingReadings({ ...entry, number: 2 }, authored, 1)).toBeUndefined();
+    expect(automationStudioResultProcessingReadings({ ...entry, leftOutObservations: entry.leftOutObservations!.slice(1) }, authored, 1, new Set())).toBeUndefined();
+    expect(automationStudioResultProcessingReadings({ ...entry, number: 2 }, authored, 1, new Set())).toBeUndefined();
   });
 
   it("reads malformed public-contract proof as unavailable rather than trusting its assertions", () => {

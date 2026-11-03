@@ -144,6 +144,8 @@ export type AutomationStudioResultVerificationPorts = {
    * at all, which is a configuration and not a failure: a run that could never
    * have stored a record set has no result of this kind to judge, and the run
    * records that rather than a verdict.
+   * Bound to `listRunDatasetsForVerification`, the one read whose processing accounts keep
+   * their tested cells: a public read leaves them out, and its rows would settle nothing (t841).
    */
   listRunDatasets?: ((input: { projectId: string; runId: string }) => Promise<AutomationStudioRunDatasetSummary[]>) | undefined;
   getRunDatasetPage?: ((input: { projectId: string; runId: string; datasetId: string; limit?: unknown; cursor?: unknown }) => Promise<AutomationStudioRunDatasetPage | null>) | undefined;

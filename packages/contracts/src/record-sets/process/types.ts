@@ -118,7 +118,7 @@ export type AutomationStudioRecordProcessingPass = {
 export type AutomationStudioRecordProcessingLeftOutRow = {
   field: string;
   label: string;
-  /** The tested cell as the evaluator read it; absent on older accounts. Duplicate labels with conflicting cells are unavailable. */
+  /** The tested cell as the evaluator read it; absent on older accounts and every public read (`account-without-evidence.ts`). Duplicate labels with conflicting cells are unavailable. */
   tested?: AutomationStudioRecordProcessingTestedValue;
 };
 
@@ -146,7 +146,7 @@ export type AutomationStudioRecordProcessingConditionAccount = {
   rejected: number;
   alone: number;
   leftOutOnlyByThis: AutomationStudioRecordProcessingLeftOutRow[];
-  /** The condition actually evaluated and its date reference, copied by the producer; absent on older accounts. */
+  /** The condition actually evaluated and its date reference, copied by the producer; absent on older accounts and every public read (`account-without-evidence.ts`). */
   evaluation?: { condition: AutomationStudioRecordCondition; now: number };
   /**
    * Of `rejected`, the rows a date bound left out because their value states no

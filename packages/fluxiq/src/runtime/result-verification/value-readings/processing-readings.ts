@@ -10,7 +10,7 @@ import type { AutomationStudioResultProcessingCondition } from "../processing-ac
 import { automationStudioResultSettledRows } from "./settled-rows.ts";
 
 /** Supported excluded cells, as Core's existing settled-value semantics reads them. */
-export function automationStudioResultProcessingReadings(entry: AutomationStudioResultProcessingCondition, authored: AutomationStudioRecordCondition, number: number) {
+export function automationStudioResultProcessingReadings(entry: AutomationStudioResultProcessingCondition, authored: AutomationStudioRecordCondition, number: number, answerColumns: ReadonlySet<string>) {
   const evaluated = entry.evaluation && parseAutomationStudioRecordCondition(entry.evaluation.condition);
   const rows = entry.leftOutOnlyByThis;
   const observations = entry.leftOutObservations;
@@ -30,5 +30,5 @@ export function automationStudioResultProcessingReadings(entry: AutomationStudio
   });
   // A screened/ambiguous row never becomes a negative reading, even when its
   // placeholder text would happen to fail a numeric bound.
-  return automationStudioResultSettledRows({ condition: evaluated, column: evaluated.field, number, wording: entry.condition, leftOut, now: entry.evaluation!.now });
+  return automationStudioResultSettledRows({ condition: evaluated, column: evaluated.field, number, wording: entry.condition, leftOut, now: entry.evaluation!.now, answerColumns });
 }
