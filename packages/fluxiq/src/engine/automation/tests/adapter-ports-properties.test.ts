@@ -26,14 +26,25 @@ describe("retained ports and delegated callback selections", () => {
     await f.run(async options => {
       class Control {
         #calls = 0;
-        async checkpoint(...args: []) { expect(args).toEqual([]); this.#calls++; calls++; }
+        async checkpoint(...args: []) {
+          expect(args).toEqual([]);
+          this.#calls++;
+          calls++;
+        }
         heldBy() { return undefined; }
       }
       const original = new Control();
       expect(AutomationExecutionPorts.method(options, original, "checkpoint")).toBe(original);
       await AutomationExecutionPorts.method(options, original, "checkpoint").checkpoint();
       await Promise.resolve();
-      Object.defineProperty(original, "checkpoint", { get() { reads++; return () => { calls++; }; } });
+      Object.defineProperty(original, "checkpoint", {
+        get() {
+          reads++;
+          return () => {
+            calls++;
+          };
+        },
+      });
       expect(() => AutomationExecutionPorts.method(options, original, "checkpoint").checkpoint()).toThrow("callback_accessor_unsupported");
     });
     expect(reads).toBe(0);
@@ -49,7 +60,14 @@ describe("retained ports and delegated callback selections", () => {
       const timer = { cancel() { calls++; } };
       await expect(executeWithRegionTimeout(async () => {
         await Promise.resolve();
-        Object.defineProperty(timer, "cancel", { get() { reads++; return () => { calls++; }; } });
+        Object.defineProperty(timer, "cancel", {
+          get() {
+            reads++;
+            return () => {
+              calls++;
+            };
+          },
+        });
         return attempt;
       }, 50, undefined, () => attempt, undefined, () => timer, options)).rejects.toThrow("callback_accessor_unsupported");
     });
@@ -64,7 +82,14 @@ describe("retained ports and delegated callback selections", () => {
     let calls = 0;
     await f.run(async options => {
       const owner = {};
-      Object.defineProperty(owner, "recovery", { get() { reads++; return () => { calls++; }; } });
+      Object.defineProperty(owner, "recovery", {
+        get() {
+          reads++;
+          return () => {
+            calls++;
+          };
+        },
+      });
       const source = Object.assign(placement === "own" ? owner : Object.create(owner), { load: async () => undefined });
       await expect(automationStudioActiveLifecycleRegistrations(automationStudioRunFrames(), source, automationCallbackObservation(options))).rejects.toThrow("callback_accessor_unsupported");
     });
@@ -78,7 +103,11 @@ describe("retained ports and delegated callback selections", () => {
     class Source {
       #calls = 0;
       async load() { return undefined; }
-      async recovery(...args: []) { expect(args).toEqual([]); this.#calls++; return undefined; }
+      async recovery(...args: []) {
+        expect(args).toEqual([]);
+        this.#calls++;
+        return undefined;
+      }
       get calls() { return this.#calls; }
     }
     const source = new Source();
@@ -93,7 +122,14 @@ describe("retained ports and delegated callback selections", () => {
     let bodies = 0;
     await f.run(async options => {
       const run = automationStudioRunFrames();
-      Object.defineProperty(run, "runSubflow", { get() { reads++; return () => { bodies++; }; } });
+      Object.defineProperty(run, "runSubflow", {
+        get() {
+          reads++;
+          return () => {
+            bodies++;
+          };
+        },
+      });
       await expect(runAutomationStudioHandlerBody({ run, parent: frame("parent"), graph: registered, bodyNodeId: "checkpoint", inputs: {}, options })).rejects.toThrow("callback_accessor_unsupported");
     });
     expect(reads).toBe(0);
@@ -106,7 +142,12 @@ describe("retained ports and delegated callback selections", () => {
     let reads = 0;
     await f.run(async observation => {
       const input = { stack: [frame("parent"), frame("child", "child.graph")], graphs: new Map([[graph.flowId, registered]]), checkpointId: "saved", values: {} };
-      Object.defineProperty(input, "valuesOf", { get() { reads++; return () => ({ "saved.value": 1 }); } });
+      Object.defineProperty(input, "valuesOf", {
+        get() {
+          reads++;
+          return () => ({ "saved.value": 1 });
+        },
+      });
       expect(() => automationStudioLifecycleRouteTarget(input, observation)).toThrow("callback_accessor_unsupported");
     });
     expect(reads).toBe(0);
@@ -119,7 +160,12 @@ describe("retained ports and delegated callback selections", () => {
     await f.run(async observation => {
       const input = { projectId: "project", flowId: "flow", router: { routerId: "router", flowId: "flow", rules: [] }, subflows: [] };
       const owner = placement === "own" ? input : {};
-      Object.defineProperty(owner, "now", { get() { reads++; return () => 2; } });
+      Object.defineProperty(owner, "now", {
+        get() {
+          reads++;
+          return () => 2;
+        },
+      });
       if (placement === "inherited") Object.setPrototypeOf(input, owner);
       expect(() => runExecutableRouter(input, observation)).toThrow("callback_accessor_unsupported");
     });
@@ -131,7 +177,18 @@ describe("retained ports and delegated callback selections", () => {
     const f = await enteredObservationFixture();
     let acts = 0;
     await f.run(async observation => {
-      const input = { projectId: "project", flowId: "flow", router: { routerId: "router", flowId: "flow", rules: [] }, subflows: [], now(...args: []) { expect(this).toBe(input); expect(args).toEqual([]); acts++; return 0; } };
+      const input = {
+        projectId: "project",
+        flowId: "flow",
+        router: { routerId: "router", flowId: "flow", rules: [] },
+        subflows: [],
+        now(...args: []) {
+          expect(this).toBe(input);
+          expect(args).toEqual([]);
+          acts++;
+          return 0;
+        },
+      };
       expect(runExecutableRouter(input, observation).decision.decidedAt).toBe(0);
     });
     expect(acts).toBe(1);

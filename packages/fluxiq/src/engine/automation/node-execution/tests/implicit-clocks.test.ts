@@ -18,7 +18,12 @@ describe("clocks on actual entered execution frames", () => {
     let calls = 0;
     await f.run(async options => {
       const receiver = { privateValue: 0.375 };
-      options[operation] = function(this: typeof receiver, ...args: []) { expect(this).toBe(receiver); expect(args).toEqual([]); calls++; return this.privateValue; };
+      options[operation] = function(this: typeof receiver, ...args: []) {
+        expect(this).toBe(receiver);
+        expect(args).toEqual([]);
+        calls++;
+        return this.privateValue;
+      };
       expect(automationExecutionClock(options, operation, receiver)).toBe(0.375);
     });
     expect(calls).toBe(1);
@@ -30,7 +35,11 @@ describe("clocks on actual entered execution frames", () => {
     const f = await enteredObservationFixture();
     class Clock {
       #calls = 0;
-      now(...args: []) { expect(args).toEqual([]); this.#calls++; return 71; }
+      now(...args: []) {
+        expect(args).toEqual([]);
+        this.#calls++;
+        return 71;
+      }
       get calls() { return this.#calls; }
     }
     const original = new Clock();
@@ -52,7 +61,12 @@ describe("clocks on actual entered execution frames", () => {
   it.each([undefined, null])("keeps the native fallback after accounting a custom nullable result %s", async result => {
     const f = await enteredObservationFixture();
     let calls = 0;
-    const original = { now: () => { calls++; return result as unknown as number; } };
+    const original = {
+      now: () => {
+        calls++;
+        return result as unknown as number;
+      },
+    };
     await f.run(async observation => {
       expect(automationObservedClock(observation, original, original)()).toBeGreaterThan(0);
     });
@@ -70,7 +84,16 @@ describe("clocks on actual entered execution frames", () => {
     await f.run(async options => {
       let result;
       try {
-        Object.defineProperty(container, operation, { configurable: true, get() { reads++; return () => { calls++; return 0.5; }; } });
+        Object.defineProperty(container, operation, {
+          configurable: true,
+          get() {
+            reads++;
+            return () => {
+              calls++;
+              return 0.5;
+            };
+          },
+        });
         result = await executeAutomationStudioNode(graph(node), node, {}, options, 1, automationStudioTraceWithholding(), automationStudioRunState());
       } finally { Object.defineProperty(container, operation, original); }
       expect(result?.status).toBe("failed");
@@ -90,7 +113,16 @@ describe("clocks on actual entered execution frames", () => {
     await f.run(async options => {
       let result;
       try {
-        Object.defineProperty(definition, "execute", { configurable: true, get() { reads++; return () => { acts++; return {}; }; } });
+        Object.defineProperty(definition, "execute", {
+          configurable: true,
+          get() {
+            reads++;
+            return () => {
+              acts++;
+              return {};
+            };
+          },
+        });
         result = await executeAutomationStudioNode(graph(node), node, {}, options, 1, automationStudioTraceWithholding(), automationStudioRunState());
       } finally { Object.defineProperty(definition, "execute", descriptor); }
       expect(result?.status).toBe("failed");
@@ -110,7 +142,13 @@ describe("clocks on actual entered execution frames", () => {
     await f.run(async options => {
       options.nativeNodeExecutor = async () => {
         acts++;
-        Object.defineProperty(Date, "now", { configurable: true, get() { reads++; throw new Error("secondary clock getter"); } });
+        Object.defineProperty(Date, "now", {
+          configurable: true,
+          get() {
+            reads++;
+            throw new Error("secondary clock getter");
+          },
+        });
         throw primary;
       };
       let result;
@@ -130,7 +168,10 @@ describe("clocks on actual entered execution frames", () => {
       const result = await executeAutomationStudioNode(graph(wait), wait, {}, options, 1, automationStudioTraceWithholding(), automationStudioRunState());
       expect(result.outputs.durationMs).toBe(100);
       let draws = 0;
-      options.random = () => { draws++; return 0.25; };
+      options.random = () => {
+        draws++;
+        return 0.25;
+      };
       const integer = { id: "integer", definitionId: "builtin.random.number", parameterValues: { min: 0, max: 10, mode: "integer" } };
       const number = await executeAutomationStudioNode(graph(integer), integer, {}, options, 2, automationStudioTraceWithholding(), automationStudioRunState());
       expect(number.outputs.value).toBe(2);

@@ -7,8 +7,14 @@ describe("the original observation's descriptor read", () => {
     const f = await enteredObservationFixture();
     let traps = 0;
     const wrapped = Proxy.revocable({ callback: () => "must not run" }, {
-      getOwnPropertyDescriptor() { traps++; throw new Error("descriptor trap ran"); },
-      getPrototypeOf() { traps++; throw new Error("prototype trap ran"); }
+      getOwnPropertyDescriptor() {
+        traps++;
+        throw new Error("descriptor trap ran");
+      },
+      getPrototypeOf() {
+        traps++;
+        throw new Error("prototype trap ran");
+      }
     });
     const receiver = placement === "inherited" ? Object.create(wrapped.proxy) : wrapped.proxy;
     if (placement === "revoked") wrapped.revoke();
@@ -22,7 +28,13 @@ describe("the original observation's descriptor read", () => {
   it("keeps an unobserved Proxy's original get trap and receiver", () => {
     let reads = 0;
     const callback = () => "original";
-    const original = new Proxy({ callback }, { get(target, key, receiver) { reads++; expect(receiver).toBe(original); return Reflect.get(target, key, receiver); } });
+    const original = new Proxy({ callback }, {
+      get(target, key, receiver) {
+        reads++;
+        expect(receiver).toBe(original);
+        return Reflect.get(target, key, receiver);
+      },
+    });
     expect(observedExecutionProperty(undefined, original, "callback")).toBe(callback);
     expect(reads).toBe(1);
   });

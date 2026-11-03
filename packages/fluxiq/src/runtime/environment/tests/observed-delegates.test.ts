@@ -7,7 +7,10 @@ describe("observed environment delegates", () => {
   it("keeps the default forwarding within clear when its real caller accounts the actual child", async () => {
     const f = await enteredObservationFixture();
     let children = 0;
-    const child = () => { children++; return 23; };
+    const child = () => {
+      children++;
+      return 23;
+    };
     f.source.manage({ receiver: undefined, callback: child, contract: "no_direct_effects" });
     await f.run(async observation => {
       const work = async () => await invokeObservedExecutionCallback(observation, { receiver: undefined, callback: child, args: [] });
@@ -33,12 +36,14 @@ describe("observed environment delegates", () => {
       #calls = 0;
       async within<T>(...args: [() => Promise<T>]): Promise<T> {
         expect(args).toEqual([work]);
-        this.#calls++; acts++;
+        this.#calls++;
+        acts++;
         return await args[0]();
       }
       async delay(...args: [number, AbortSignal | undefined]): Promise<void> {
         expect(args).toEqual([17, signal]);
-        this.#calls++; acts++;
+        this.#calls++;
+        acts++;
       }
       get calls() { return this.#calls; }
     }
@@ -58,7 +63,10 @@ describe("observed environment delegates", () => {
     const f = await enteredObservationFixture();
     const original = new Error("execution_observation.durable_frame_missing");
     let acts = 0;
-    const callback = async () => { acts++; throw original; };
+    const callback = async () => {
+      acts++;
+      throw original;
+    };
     const environment = { ...automationStudioLiveRunEnvironment, within: callback, delay: callback };
     await f.run(async observation => {
       const invoke = () => kind === "within"
@@ -79,7 +87,15 @@ describe("observed environment delegates", () => {
     let acts = 0;
     delete (clock as { startTimer?: unknown }).startTimer;
     const owner = placement === "own" ? clock : Object.create(Object.getPrototypeOf(clock));
-    Object.defineProperty(owner, "startTimer", { get() { reads++; return () => { acts++; return { cancel() {} }; }; } });
+    Object.defineProperty(owner, "startTimer", {
+      get() {
+        reads++;
+        return () => {
+          acts++;
+          return { cancel() {} };
+        };
+      },
+    });
     if (placement === "inherited") Object.setPrototypeOf(clock, owner);
     await f.run(async observation => {
       await expect(withinAutomationStudioRunEnvironment(environment, async () => { acts++; }, observation)).rejects.toThrow("clock_delegate_unavailable");
@@ -99,7 +115,13 @@ describe("observed environment delegates", () => {
     await f.run(async observation => {
       await withinAutomationStudioRunEnvironment(environment, async () => {
         await Promise.resolve();
-        Object.defineProperty(clock, "startTimer", { configurable: true, get() { reads++; throw new Error("replacement must not run"); } });
+        Object.defineProperty(clock, "startTimer", {
+          configurable: true,
+          get() {
+            reads++;
+            throw new Error("replacement must not run");
+          },
+        });
         expect(AutomationStudioChannelScope.current()).toBe("actual.scope");
         const timer = AutomationStudioChannelScope.gatewaySource.timers?.();
         expect(timer).toBe(original);
@@ -119,7 +141,16 @@ describe("observed environment delegates", () => {
     const environment = createAutomationStudioScopedRunEnvironment({ kind: "fixture", clock });
     let reads = 0;
     let calls = 0;
-    Object.defineProperty(clock, "delay", { get() { reads++; return async function(this: AutomationStudioVirtualClock, ms: number) { expect(this).toBe(clock); expect(ms).toBe(9); calls++; }; } });
+    Object.defineProperty(clock, "delay", {
+      get() {
+        reads++;
+        return async function(this: AutomationStudioVirtualClock, ms: number) {
+          expect(this).toBe(clock);
+          expect(ms).toBe(9);
+          calls++;
+        };
+      },
+    });
     await f.run(async observation => {
       await expect(automationStudioRunWait(environment, 9, observation)).rejects.toThrow("clock_delegate_unavailable");
     });
@@ -144,7 +175,16 @@ describe("observed environment delegates", () => {
     let reads = 0;
     const work = async () => 23;
     const environment = { ...automationStudioLiveRunEnvironment };
-    Object.defineProperty(environment, "within", { get() { reads++; return function(this: unknown, ...args: [typeof work]) { expect(this).toBe(environment); expect(args).toEqual([work]); return args[0](); }; } });
+    Object.defineProperty(environment, "within", {
+      get() {
+        reads++;
+        return function(this: unknown, ...args: [typeof work]) {
+          expect(this).toBe(environment);
+          expect(args).toEqual([work]);
+          return args[0]();
+        };
+      },
+    });
     expect(await withinAutomationStudioRunEnvironment(environment, work)).toBe(23);
     expect(reads).toBe(1);
     expect(observedExecutionProperty(undefined, environment, "within")).toBeTypeOf("function");

@@ -1,7 +1,7 @@
 // Model-only projections of already flattened routing situations. Full route
 // observations and signatures never pass through this representation.
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioLlmEvidenceCanonicalJson } from "../llm/evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceCanonicalJson } from "./canonical-json.ts";
 
 /** A baseline, or updates/removals relative to the actual preceding situation. */
 export function automationStudioRouteSituationDelta(input: {

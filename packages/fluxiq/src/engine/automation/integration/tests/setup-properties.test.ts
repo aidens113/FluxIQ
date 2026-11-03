@@ -23,7 +23,14 @@ describe("observed graph option composition", () => {
         const original = native();
         const owner = placement === "own" ? original : {};
         delete (original as Partial<AutomationNativeExecutionPort>)[key];
-        Object.defineProperty(owner, key, { get() { reads++; return () => { acts++; }; } });
+        Object.defineProperty(owner, key, {
+          get() {
+            reads++;
+            return () => {
+              acts++;
+            };
+          },
+        });
         if (placement === "inherited") Object.setPrototypeOf(original, owner);
         expect(() => createAutomationGraphOptions({ ...input(observation), nativeNodeRuntime: original })).toThrow("callback_accessor_unsupported");
       });
@@ -38,7 +45,12 @@ describe("observed graph option composition", () => {
     let reads = 0;
     await f.run(async (_options, observation) => {
       const original = input(observation);
-      Object.defineProperty(original, key, { get() { reads++; return () => undefined; } });
+      Object.defineProperty(original, key, {
+        get() {
+          reads++;
+          return () => undefined;
+        },
+      });
       expect(() => createAutomationGraphOptions(original)).toThrow("callback_accessor_unsupported");
     });
     expect(reads).toBe(0);
@@ -50,7 +62,12 @@ describe("observed graph option composition", () => {
     let reads = 0;
     await f.run(async (_options, observation) => {
       const environment = { ...automationStudioLiveRunEnvironment, kind: "fixture" as const };
-      Object.defineProperty(environment, key, { get() { reads++; return () => undefined; } });
+      Object.defineProperty(environment, key, {
+        get() {
+          reads++;
+          return () => undefined;
+        },
+      });
       expect(() => createAutomationGraphOptions({ ...input(observation), environment })).toThrow("callback_accessor_unsupported");
     });
     expect(reads).toBe(0);
@@ -61,7 +78,11 @@ describe("observed graph option composition", () => {
     const f = await enteredAutomationFixture();
     class Native {
       #calls = 0;
-      getRuntimeCapabilities(...args: []) { expect(args).toEqual([]); this.#calls++; return ["native"]; }
+      getRuntimeCapabilities(...args: []) {
+        expect(args).toEqual([]);
+        this.#calls++;
+        return ["native"];
+      }
       get calls() { return this.#calls; }
     }
     const original = Object.assign(new Native(), native());
@@ -81,7 +102,10 @@ describe("observed graph option composition", () => {
     let calls = 0;
     await f.run(async (_options, observation) => {
       const port = native();
-      port.getRuntimeCapabilities = () => { calls++; throw original; };
+      port.getRuntimeCapabilities = () => {
+        calls++;
+        throw original;
+      };
       expect(() => createAutomationGraphOptions({ ...input(observation), nativeNodeRuntime: port })).toThrow(original);
     });
     expect(calls).toBe(1);
@@ -92,7 +116,10 @@ describe("observed graph option composition", () => {
     const f = await automationObservationFixture();
     let calls = 0;
     const port = native();
-    port.getRuntimeCapabilities = () => { calls++; return ["native"]; };
+    port.getRuntimeCapabilities = () => {
+      calls++;
+      return ["native"];
+    };
     expect(createAutomationGraphOptions({ ...input(f.observation), nativeNodeRuntime: port }).runtimeCapabilities).toEqual(["native"]);
     expect(calls).toBe(1);
     expect([...f.store.rows.values()].filter(row => row.row.sourceKey === "automation.engine")).toHaveLength(0);

@@ -1,3 +1,4 @@
+import { automationStudioLlmEvidenceCanonicalJson } from "../route-state/canonical-json.ts";
 // How the loop reads what a provider said, and writes what it may say.
 //
 // This is the loop's grammar, kept apart from the loop that runs on it. One
@@ -95,14 +96,8 @@ const WRITTEN_CODE = "core.run_node.written";
 
 /** How many steps one amendment decision may edit at once. */
 const MAX_AMENDMENTS_PER_DECISION = 16;
+export { automationStudioLlmEvidenceCanonicalJson };
 
-export function automationStudioLlmEvidenceCanonicalJson(value: JsonValue): string {
-  if (Array.isArray(value)) return `[${value.map(automationStudioLlmEvidenceCanonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${automationStudioLlmEvidenceCanonicalJson(value[key] as JsonValue)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
 
 /** The shape a closed code or a resolved identifier must have to travel: no whitespace, so no sentence. */
 const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
