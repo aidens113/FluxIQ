@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { observationFixture } from "./fixture.ts";
+import { markObservedExecutionFrameUnknown } from "../mark-unknown.ts";
 
 it("retains generic synchronous gap behavior until the owning adapter explicitly fences its frame", async () => {
   const f = await observationFixture();
@@ -24,8 +25,8 @@ it("lets the owner persist unknown on the original frame and refuses another syn
   const callback = () => {
     const observation = f.source.forParent(f.source.context(prepared));
     const result = f.source.invokeSync(observation, { receiver: backend, callback: backend.write, args: [] });
-    f.source.markFrameUnknown(observation);
-    f.source.markFrameUnknown(observation);
+    markObservedExecutionFrameUnknown(observation);
+    markObservedExecutionFrameUnknown(observation);
     expect(() => f.source.invokeSync(observation, { receiver: backend, callback: backend.write, args: [] })).toThrow("execution_observation.frame_outcome_unknown");
     return result;
   };
@@ -47,4 +48,5 @@ it("recognizes only the original declared read-only pair and refuses copied obse
   expect(f.source.isReadOnly({ receiver: {}, callback: owner.read })).toBe(false);
   expect(f.source.isReadOnly({ receiver: owner, callback: owner.read, binding: {} })).toBe(false);
   expect(() => f.source.markFrameUnknown(Object.assign({}, f.observation))).toThrow("execution_observation.foreign_binding");
+  expect(() => markObservedExecutionFrameUnknown(Object.assign({}, f.observation))).toThrow("execution_observation.foreign_binding");
 });

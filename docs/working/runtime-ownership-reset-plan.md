@@ -1,7 +1,7 @@
 # Runtime Ownership Refactor: Reset Plan
 
 Status: Active
-Status detail: Planning only after the user's explicit stop; implementation is frozen pending review.
+Status detail: User authorized plan execution after salvage audit; first bounded foundation and defect batches active.
 Created: 2026-11-02
 Last updated: 2026-11-02
 Owner: Senior supervisor
@@ -11,9 +11,10 @@ Related: [existing record](runtime-ownership-refactor.md), [remaining owner inve
 
 ## Current State
 
-The user authorized a salvage-versus-restart audit on 2026-11-02; implementation remains frozen. See `Restart Audit` below and the three reports under `runtime-ownership-reset-plan/reports/`. The audit recommends selective retention, not a wholesale restart. It does not authorize restoring or discarding source.
-
-All three workers stopped. No implementation, tests, builds, providers or browser runs are active. Further source work is not authorized while this plan is reviewed.
+The user authorized execution on 2026-11-02 ("Ok follow the plan"). The implementation freeze is lifted for this plan. The completed salvage audit remains evidence for selective retention; do not discard the preserved source wholesale.
+First active briefs: SQL foundation (project persistence and original storage aliases/consumers); callback guards (descriptor/clock integration and immediate tests); stalled build (source tracing first, runtime probe only on a frozen closure). Exact ownership and acceptance are in runtime-ownership-reset-plan/briefs/. Root owns shared documents, exports outside assigned paths, integration and final verification.
+No paid/browser/panel run is started. Package-wide readers wait for a coherent frozen tree; workers may run stable owner-local tests.
+User additionally requested the fastest safe execution on 2026-11-02. Root owns the parallel [time-reduction investigation](runtime-ownership-reset-plan/reports/time-reduction.md); it may reduce redundant collection/builds and dependency waits but cannot weaken acceptance. Retained budget/unknown-frame small unit: 17 tests passed, two-root strict closure zero diagnostics/program edges, scoped structure 19 files zero failures.
 Authoring pair: C:/Users/osrs_/FluxStuff/fxwork/t843/!FluxIQ and sibling !FluxIQWebExtension, task/t843-runtime-foundations. The IDE's t842 document is an older checkout.
 Latest pushed checkpoints: Core c0dee9bbe, downstream 460a5af6. They are partial task backups; dev/main have not advanced for this unit.
 At that checkpoint Core typecheck/structure passed, normal public-package downstream domain check/build passed, all82 selected domain cases passed, extension check/build passed. One real composed build test remains stalled before start-state admission; no complete-runtime acceptance is claimed.
@@ -146,6 +147,13 @@ No measured finish date follows from this audit. Earlier 1-3 day and conversatio
 - Validation: `node scripts/structure-audit.mjs --rule working-docs --update` and `node scripts/structure-audit.mjs --rule working-docs` -> exit 0 in both repositories; generated indexes refreshed without changing either structural baseline. `git diff --check` on owned documentation -> exit 0. No full test/build sweep consumed.
 - Git disposition: audit documentation is committed locally on the existing t843 task branches. Push/integration held because Core's preserved source WIP has the observed structure failures; no source changes are staged and neither dev nor main advances.
 
+### 2026-11-02 - Approved execution and retained small-unit acceptance
+- Agent: Codex senior supervisor.
+- Changed: user resumed implementation; assigned exact SQL/guard/stall briefs, preserved all WIP, opened time-reduction investigation.
+- Validation: `pnpm.cmd exec vitest run src/runtime/agents/budget/run-cost-ceiling/tests/run-cost-ceiling-env.test.ts src/programs/automation-studio/model/run-cost-ceiling/tests/run-cost-ceiling-env.test.ts src/runtime/execution-observation/tests/frame-unknown.test.ts --minWorkers 1 --maxWorkers 1` (packages/fluxiq) -> 3 files, 17 tests passed, 1.95s.
+- Validation: `node -` TypeScript strict two-root closure -> 72 local modules, zero errors and zero program dependencies; `node --input-type=module -` scoped structure -> 19 files, zero failures. These are stable owner checks, not aggregate-tree acceptance.
+- Outcome: budget move/frame helper accepted as a small unit; other batches remain active. User explicitly requested maximizing safe speed; measured costs and controls recorded in reports/time-reduction.md.
+
 ## Open Questions
 
-Root must review this migration/defect split with the user before implementation resumes. Specific batch sizes and duration must be based on the frozen file/dependency manifests; earlier estimates are withdrawn as unsupported.
+The user approved execution of this migration/defect split. Exact batch manifests and the localized stall determine scheduling; earlier estimates remain withdrawn as unsupported.

@@ -4,6 +4,7 @@ export { ExecutionCallbackRootSource } from "./roots/index.ts";
 export { invokeExecutionCallbackRoot, type ExecutionCallbackRootLifecycle, type ExecutionCallbackRootPreparation } from "./roots/index.ts";
 export { invokeObservedExecutionCallback } from "./invoke.ts";
 export { invokeObservedExecutionCallbackSync } from "./invoke-sync.ts";
+export { markObservedExecutionFrameUnknown } from "./mark-unknown.ts";
 export { ExecutionRetrySeriesOwner } from "./series.ts";
 export { ExecutionBackendAttempts } from "./backend.ts";
 export * from "./configuration/index.ts";
