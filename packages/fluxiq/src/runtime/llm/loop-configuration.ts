@@ -19,6 +19,7 @@ import {
 import type { AutomationStudioLlmEvidenceFinishingTools, AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
+import type { AutomationStudioLlmStepLogPageReader } from "./step-log/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
 import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-authoring/draft/scheduled-candidate/index.ts";
@@ -67,6 +68,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * (`./evidence-progress/planning-tools.ts`). Absent, every note is as it was.
    */
   planning?: AutomationStudioLlmEvidencePlanningTools | undefined;
+  /**
+   * The domain's reading of a tool result's page text, for the step log's
+   * `page.txt` alone (`./step-log/page-reader.ts`). Never read by the loop and
+   * never part of a request to the model. Absent, no step writes a `page.txt`.
+   */
+  stepLogPageText?: AutomationStudioLlmStepLogPageReader | undefined;
   tools: AutomationStudioLlmEvidenceTool[];
   decide(input: {
     iteration: number;

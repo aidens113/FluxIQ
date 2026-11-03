@@ -30,7 +30,7 @@
 // `FLUXIQ_LLM_STEP_LOG_DIR` is: each tool call the loop makes, an in-loop dry
 // run's replays included, becomes a step folder. Any one switch turns the
 // wrapper on.
-import { automationStudioLlmStepLogDirectory, automationStudioLlmStepLogTool } from "../step-log/index.ts";
+import { automationStudioLlmStepLogDirectory, automationStudioLlmStepLogTool, type AutomationStudioLlmStepLogPageReader } from "../step-log/index.ts";
 import { automationStudioLlmBuildTrace } from "./build-trace.ts";
 import { automationStudioLlmEvidenceDecisionDump } from "./decision-dump.ts";
 import { automationStudioLlmEvidenceToolExecutionControl } from "./tool-execution-control.ts";
@@ -40,6 +40,8 @@ type Traceable = {
   decide(input: { iteration: number }): Promise<unknown>;
   executeTool(input: { callId: string; toolId: string }): Promise<unknown>;
   checkCompletion?: ((result: never, context: never) => unknown) | undefined;
+  /** The domain's page reader for the step log's `page.txt` (`../step-log/page-reader.ts`). */
+  stepLogPageText?: AutomationStudioLlmStepLogPageReader | undefined;
 };
 
 /** The loop's input, with its two waits timed when the trace, the dump or the step log is switched on; the same object when none is. */
@@ -47,7 +49,7 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
   const tracing = automationStudioLlmBuildTrace.on(env);
   const dump = automationStudioLlmEvidenceDecisionDump(env);
   if (!tracing && !dump && !automationStudioLlmStepLogDirectory(env)) return input;
-  const execute = automationStudioLlmStepLogTool(async (request: Parameters<T["executeTool"]>[0]) => automationStudioLlmEvidenceToolExecutionControl(await input.executeTool(request)), env);
+  const execute = automationStudioLlmStepLogTool(async (request: Parameters<T["executeTool"]>[0]) => automationStudioLlmEvidenceToolExecutionControl(await input.executeTool(request)), env, input.stepLogPageText);
   const log = (line: string) => automationStudioLlmBuildTrace.line(line, env, write);
   log("loop start");
   const decide = async (request: Parameters<T["decide"]>[0]) => {

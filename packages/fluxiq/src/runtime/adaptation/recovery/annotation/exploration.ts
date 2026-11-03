@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmStepLogPageReader } from "../../../llm/step-log/index.ts";
 // The recovery path's call into the bounded exploration runner.
 //
 // Phase 2.3 built the runner, the budget, the outcomes and the whole-recovery
@@ -121,6 +122,8 @@ export type AutomationStudioRecoveryExplorationInput = {
   binding: AutomationStudioLlmEvidenceRuntimeBinding;
   /** The parameter keys that name the control a step acts on, from the bound domain's bundle. */
   controlParameterKeys?: ReadonlySet<string> | undefined;
+  /** The domain's page reader for the step log's `page.txt` (`llm/step-log/page-reader.ts`). */
+  stepLogPageText?: AutomationStudioLlmStepLogPageReader | undefined;
   /** Where the Flow is authored. Decides which options the registry will offer. */
   scope: AutomationStudioFlowScope;
   /** The recovery's adaptation policy, carried to every decision call. Not what decides an action: the gate does. */
@@ -253,6 +256,7 @@ export async function runAutomationStudioRecoveryExploration(
   const exploration = await runAutomationStudioRuntimeExploration({
     loop,
     controlParameterKeys: input.controlParameterKeys,
+    ...(input.stepLogPageText ? { stepLogPageText: input.stepLogPageText } : {}),
     decide: (decision) => explorationDecision(input, decision, (code) => { runBudgetRefusal ??= code; }),
     budget: input.budget ?? resolveAutomationStudioExplorationBudget(),
     recoveryDeadline: input.recoveryDeadline,

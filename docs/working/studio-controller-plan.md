@@ -21,16 +21,19 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 - **Chat is one package.** `@fluxiq/ui-components` renders the extension's chat and Core's panel route `/programs/automation-studio/chat`.
 - **Validated.** Full sweep: Core 21,940 tests passed, extension repository 9,954 passed, checks and builds passing. Live from the extension chat: both tasks passed, $6.31 across all the runs. The ledger has each one.
 
-**Left out of this unit on purpose, for the user to decide:**
+**Follow-up in progress (user, 2026-11-03: "obviously fix the problems").** What this unit left unfinished was wrongly recorded here as the user's decision. None of it was; each is now being fixed in its own paired task, with reports under `studio-controller-plan/reports/followups/`:
 
-- **Five small browser-field readers remain in Core:** `recording-steps.ts`, `activity/wording/action.ts`, `evidence/state-elements.ts`, `rerun-check.ts`, `locator-text.ts`. They read fields of stored targets for wording and screening. Moving them needs a design per reader.
-- **Framework code still imports `programs/_shared/storage.ts` and `database-manager`.** These are shared helpers rather than Studio, so the goals do not reach them.
-- **The step log's page reader is a process-wide registry.** It only writes the diagnostic `page.txt`, and replacing it means threading an option through the evidence loop.
-- **Core's panel has two chat UIs,** its own and the shared widget at `/programs/automation-studio/chat`, which nothing links to yet. Replacing its own needs six port additions; see `reports/chat-package.md`.
-- **t841** is saved and pushed, unmerged: an unfinished fix for correct results being held as unsure.
-- **Other `retry_allowed` refusals** may have the same gap the re-test fix closed; see `reports/dev-failures.md`.
-- **A repaired run's rows came out neither deduped nor sorted.** In `run-mw0jw263-0251c104` the 3 rows of the failed attempt stayed in front of the 10 of the repaired read, duplicates included, though `processEndedRunDatasets` is called after a repair. Why is not established: either the rows were not reprocessed or their stored keys differ. The run was honestly reported as failed, and it needs a failure and a repair to appear.
-- **A ceiling above $5 without the flag is refused for chat-started builds.** That is an agent's reading from t843, not a user rule.
+| Task | Problem | State |
+| --- | --- | --- |
+| t841 | Correct results held as unsure: filtered-out rows carry no measured evidence | Merged with dev, being finished |
+| t848 | A repaired run's rows came out neither deduped nor sorted (`run-mw0jw263-0251c104`); cause not yet established | In progress |
+| t849 | Other refusals carrying `retry_allowed` may stay refused even when the model does as told | In progress |
+| t850 | The step log's page reader is process-wide mutable state | In progress |
+| t851 | Five Core modules still read browser fields | In progress |
+| t852 | Core's panel has two chat UIs; replace its own with the shared widget | In progress |
+| t853 | Framework and runtime code import `programs/_shared` | In progress; merges last, because it touches import lines everywhere |
+
+**Corrected record: the $5 refusal is not a limit and did not come from t843.** `assertLlmMaxCostWithinCeiling` (`packages/test-runner/src/live-llm/max-cost-within-ceiling.ts`, extension repository) refuses a typed `--llm-max-cost-usd` above the ceiling the run's Core resolves, instead of holding the run to a lower figure in silence. It dates from 2026-10-18, when twelve launches were held to a ceiling nobody typed and two builds stopped on it. It refuses before any provider call, costs nothing, and names `--llm-cost-ceiling-usd`, which raises the ceiling. No change needed.
 
 **Not exercised:** no Firefox run. No real-browser test of the panel's chat route. A call stopped by a person-only check while exploring is proven by tests only: `run-mw0l0e9y-a7d8ae51` met its checks in test steps and playback, which carry no draft.
 
