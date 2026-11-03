@@ -47,6 +47,7 @@ import { cellOf, cellText } from "./cell-text.ts";
 import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
 import { automationStudioRecordConditionHolds, automationStudioRecordConditionText } from "./condition/index.ts";
 import { AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS } from "./processing-vocabulary.ts";
+import { parseAutomationStudioRecordCondition } from "./parse-condition.ts";
 import { readAutomationStudioRecordConditionDate } from "./row-date.ts";
 import { automationStudioRecordRowIdentity } from "./row-identity.ts";
 import { sortAutomationStudioRecordRows } from "./sort-rows.ts";
@@ -59,6 +60,7 @@ import type {
   AutomationStudioRecordProcessingConditionAccount,
   AutomationStudioRecordProcessingHiddenSortKey,
   AutomationStudioRecordProcessingPass,
+  AutomationStudioRecordProcessingTestedValue,
   AutomationStudioRecordSortKey
 } from "./types.ts";
 
@@ -142,6 +144,21 @@ function conditionAccounts(
 ): AutomationStudioRecordProcessingConditionAccount[] {
   return where.map((condition, index) => {
     const account: AutomationStudioRecordProcessingConditionAccount = { field: condition.field, condition: automationStudioRecordConditionText(condition), rejected: 0, alone: 0, leftOutOnlyByThis: [] };
+    const evaluated = parseAutomationStudioRecordCondition(condition);
+    if (evaluated && Number.isFinite(now)) account.evaluation = { condition: evaluated, now };
+    // One label can name several captures. Only identical tested readings on
+    // the same label column may share a witness, including captures kept by
+    // another condition. Never silently keep the first conflicting reading.
+    const witnessed = new Map<string, { field: string; tested: AutomationStudioRecordProcessingTestedValue }>();
+    for (const row of rows) {
+      const label = labelOf(row.values, labelFields);
+      if (!label) continue;
+      const tested = testedValue(condition, cellOf(row.values, condition.field), now);
+      const previous = witnessed.get(label.label);
+      witnessed.set(label.label, previous && (previous.field !== label.field || JSON.stringify(previous.tested) !== JSON.stringify(tested))
+        ? { field: label.field, tested: { state: "unavailable" } }
+        : { field: label.field, tested });
+    }
     const named = new Set<string>();
     const dated = automationStudioRecordConditionComparesDates(condition);
     let undated = 0;
@@ -155,11 +172,23 @@ function conditionAccounts(
       const label = labelOf(row.values, labelFields);
       if (label === undefined || named.has(label.label)) return;
       named.add(label.label);
-      account.leftOutOnlyByThis.push(label);
+      account.leftOutOnlyByThis.push({ ...label, tested: witnessed.get(label.label)!.tested });
     });
     if (undated > 0) account.undated = undated;
     return account;
   });
+}
+
+/** A primitive's actual reading. Unsupported values and lossy numeric text are not negative evidence. */
+function testedValue(condition: AutomationStudioRecordCondition, cell: unknown, now: number): AutomationStudioRecordProcessingTestedValue {
+  if (cell === undefined || cell === null || (typeof cell === "string" && !cell.trim())) return { state: "absent" };
+  if (typeof cell !== "string" && typeof cell !== "boolean" && (typeof cell !== "number" || !Number.isFinite(cell))) return { state: "unavailable" };
+  const value = String(cell);
+  if (["[withheld]", "(withheld)", "(no value)"].includes(value)) return { state: "unavailable" };
+  // The numeric evaluator uses the original number; a value such as 1e21
+  // must not be witnessed as the different number its textual reader finds.
+  if (automationStudioRecordConditionHolds(condition, cell, now) !== automationStudioRecordConditionHolds(condition, value, now)) return { state: "unavailable" };
+  return { state: "present", value };
 }
 
 /** Whether a cell states no date a date bound can read, a missing value included (header, t790). */

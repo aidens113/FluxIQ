@@ -56,7 +56,10 @@ export function fakeCollaborators(options: { binding?: AutomationStudioLlmEviden
       processEndedRunDatasets: async (input: { projectId: string; runId: string }) => {
         seen("processEndedRunDatasets", input);
       },
-      listRunDatasets: async () => [],
+      listRunDatasetsForVerification: async (input: { projectId: string; runId: string }) => {
+        seen("listRunDatasetsForVerification", input);
+        return [];
+      },
       getRunDatasetPage: async () => null
     }),
     conversations: () => ({

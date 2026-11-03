@@ -135,7 +135,7 @@ import type { AutomationStudioResultProcessingCondition } from "../../processing
 // The leaf, not the barrel: `../read-account/` reaches `../../llm/`, which reaches this directory, so a value through the barrel would close a module cycle.
 import { automationStudioResultConditionName } from "../../read-account/condition-name.ts";
 import { automationStudioResultReadWorkingSets } from "../../read-account/working-sets.ts";
-import { AutomationStudioRequestRowId } from "../row/index.ts";
+import { AutomationStudioRequestRowId, automationStudioRequestSettledColumn } from "../row/index.ts";
 import type { AutomationStudioRequestRowsCondition, AutomationStudioRequestRowsRead, AutomationStudioRequestRowsSettledMember, AutomationStudioRequestRowsStored, AutomationStudioRequestRowsTest } from "../types.ts";
 import { automationStudioRequestRowWords } from "../words.ts";
 
@@ -144,12 +144,6 @@ const PROCESSING_CONDITION = "recordOutput.process.where";
 
 /** A left-out row said with the value its condition tested after its label (`../read-account/alone-rows.ts`). */
 const TESTED_VALUE = /^(.+?) — (?:\(withheld\)|[\p{L}\p{N}_.$@-]{1,64}: .*)$/su;
-/** The column a row said with its tested value names. */
-const TESTED_COLUMN = /^.+? — ([\p{L}\p{N}_.$@-]{1,64}): /su;
-/** A presence test's wording (`../read-account/condition.ts`): its column, what its read found where said, and `is present` or `is absent`. */
-const PRESENCE_WORDING = /^([\p{L}\p{N}_.$@-]{1,64})(?: \(read .*\))? (?:not )?is (?:present|absent)$/su;
-/** A text test's wording when a column names what it tests (t624). */
-const TEXT_WORDING = /^([\p{L}\p{N}_.$@-]{1,64})(?: \(read .*\))? (?:not )?(?:contains|startsWith|endsWith|matches|equals) \[?"/su;
 
 /**
  * Every list read a summary holds rows for, and a run's stored rows. The
@@ -222,7 +216,7 @@ export function automationStudioRequestRowsReads(
     reads.push(read({ nodeId: account.nodeId }, storedLabels.filter((label) => !leftOut.has(label)), storedLabels, conditions, tests));
   }
   for (const set of recordSets) {
-    const conditions = processingConditions(set.processing?.conditions);
+    const conditions = processingConditions(set.processing?.conditions, answerColumns);
     if (!conditions.length) continue;
     const nodes = (set.processing?.passes ?? []).map((pass) => pass.node);
     const collecting = reads.find((candidate) => candidate.nodeId !== undefined && nodes.includes(candidate.nodeId));
@@ -249,10 +243,18 @@ export function automationStudioRequestRowsReads(
 }
 
 /** A record set's processing conditions that left rows out alone, each named where the Flow writes it (header). */
-function processingConditions(conditions: readonly AutomationStudioResultProcessingCondition[] | undefined): AutomationStudioRequestRowsCondition[] {
-  return (conditions ?? []).flatMap((entry, index) =>
-    entry.leftOutOnlyByThis?.length ? [condition(`${PROCESSING_CONDITION} ${automationStudioResultConditionName(entry.number ?? index + 1, entry.condition)}`, entry.leftOutOnlyByThis, entry.testedLabel === true, undefined,
-      { tests: [{ number: entry.number ?? index + 1, ...(entry.condition ? { wording: entry.condition } : {}) }] })] : []);
+function processingConditions(conditions: readonly AutomationStudioResultProcessingCondition[] | undefined, answerColumns: ReadonlySet<string>): AutomationStudioRequestRowsCondition[] {
+  return (conditions ?? []).flatMap((entry, index) => {
+    if (!entry.leftOutOnlyByThis?.length) return [];
+    const number = entry.number ?? index + 1;
+    const settled = entry.leftOutSettled?.length && entry.settledKind ? {
+      labels: entry.leftOutSettled.map(automationStudioRequestRowLabel),
+      names: boundNames(number, entry.leftOutSettled, entry.condition, entry.settledKind, answerColumns), kind: entry.settledKind
+    } : undefined;
+    const witnesses = witnessesOf(entry.leftOutObservations, entry.leftOutOnlyByThis.length);
+    return [condition(`${PROCESSING_CONDITION} ${automationStudioResultConditionName(number, entry.condition)}`, entry.leftOutOnlyByThis, entry.testedLabel === true, settled,
+      { tests: [{ number, ...(entry.condition ? { wording: entry.condition } : {}) }], ...(witnesses ? { witnesses } : {}) })];
+  });
 }
 
 /** A left-out row's label: the row as given, less Core's id said before it (header) and the tested value said after it. */
@@ -315,11 +317,10 @@ function uniqueTests(tests: readonly AutomationStudioRequestRowsTest[]): Automat
  */
 function boundNames(number: number, settledRows: readonly string[], wording: string | undefined, kind: "bound" | "presence" | "text", answerColumns: ReadonlySet<string>): string[][] {
   const names = [wordsOf(`condition ${number}`)];
-  const presence = PRESENCE_WORDING.exec(wording ?? "")?.[1];
   // Whether the condition bounds a number is the kind Core settled it by, not a re-reading of its wording.
   const unbounded = kind !== "bound";
-  const column = TESTED_COLUMN.exec(AutomationStudioRequestRowId.unsaid(settledRows[0] ?? ""))?.[1] ?? presence ?? TEXT_WORDING.exec(wording ?? "")?.[1];
-  if (column && !answerColumns.has(column)) names.push(wordsOf(column), wordsOf(column.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")));
+  const column = automationStudioRequestSettledColumn(settledRows[0] ?? "", wording, answerColumns);
+  if (column) names.push(wordsOf(column), wordsOf(column.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2")));
   if (!unbounded) for (const word of wordsOf(wording ?? "")) if (/^\p{N}+$/u.test(word)) names.push([word]);
   const said = new Set<string>();
   return names.filter((name) => {

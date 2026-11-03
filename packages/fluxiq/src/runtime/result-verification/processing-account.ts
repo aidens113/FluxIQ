@@ -25,7 +25,13 @@
 // **`number`** is the condition's place in `process.where`, from 1: the index
 // every line names it by (`./read-account/condition-name.ts`, t574).
 
-import type { AutomationStudioRecordProcessingAccount, AutomationStudioRecordProcessingConditionAccount } from "@fluxiq/contracts/automation";
+import {
+  automationStudioRecordConditionText,
+  parseAutomationStudioRecordCondition,
+  type AutomationStudioRecordProcessingAccount,
+  type AutomationStudioRecordProcessingConditionAccount,
+  type AutomationStudioRecordProcessingTestedValue
+} from "@fluxiq/contracts/automation";
 import { screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 
 /**
@@ -49,6 +55,13 @@ export type AutomationStudioResultProcessingCondition = {
   testedLabel?: true;
   /** How Core read the tested value on a few rows the answer kept (`./value-readings/`, t511). */
   valuesRead?: string[];
+  /** Screened evaluator context and row-aligned tested cells, absent on legacy or inconsistent accounts. */
+  evaluation?: NonNullable<AutomationStudioRecordProcessingConditionAccount["evaluation"]>;
+  leftOutObservations?: Array<AutomationStudioRecordProcessingTestedValue | { state: "withheld" } | null>;
+  /** The same measured-value settlement used for native reads; the model must still quote the request's condition. */
+  leftOutSettled?: string[];
+  settled?: string;
+  settledKind?: "bound" | "presence" | "text";
 };
 
 /** A record set's processing account as the judge is shown it: the store's counts and passes, and each condition said (`processing-account.ts`). */
@@ -84,13 +97,52 @@ function condition(entry: AutomationStudioRecordProcessingConditionAccount, deni
     return WITHHELD_LABEL;
   });
   const testedLabel = entry.leftOutOnlyByThis.length > 0 && entry.leftOutOnlyByThis.every((row) => row.field === entry.field);
+  const evaluation = wordingDenied ? undefined : evaluatedContext(entry);
+  // No raw condition operand bypasses the same backstop used for its wording.
+  const contextScreen = evaluation && screenAutomationStudioLlmEvidence({ [entry.field]: evaluation.condition }, deniedKeys);
+  const safeEvaluation = contextScreen?.deniedKey || contextScreen?.secretShaped ? undefined : evaluation;
+  if (evaluation && !safeEvaluation) withheld = true;
+  const observations = safeEvaluation ? entry.leftOutOnlyByThis.map((row, index) => {
+    if (rows[index] === WITHHELD_LABEL) return { state: "withheld" as const };
+    const tested = testedValue(row.tested);
+    if (!tested) return null;
+    if (tested.state === "absent" || tested.state === "unavailable") return { state: tested.state };
+    if (tested.state !== "present" || typeof tested.value !== "string") return null;
+    const found = screenAutomationStudioLlmEvidence({ [entry.field]: tested.value }, deniedKeys);
+    if (!found.deniedKey && !found.secretShaped) return { state: "present" as const, value: tested.value };
+    withheld = true;
+    return { state: "withheld" as const };
+  }) : undefined;
   return {
     condition: {
       ...(wordingDenied ? {} : { condition: entry.condition }),
       ...counts,
       ...(rows.length ? { leftOutOnlyByThis: rows } : {}),
-      ...(testedLabel ? { testedLabel: true as const } : {})
+      ...(testedLabel ? { testedLabel: true as const } : {}),
+      ...(safeEvaluation ? { evaluation: safeEvaluation } : {}),
+      ...(observations?.length ? { leftOutObservations: observations } : {})
     },
     withheld
   };
+}
+
+/** A persisted public type is still read at runtime: malformed or stale context grants no measured evidence. */
+function evaluatedContext(entry: AutomationStudioRecordProcessingConditionAccount): AutomationStudioResultProcessingCondition["evaluation"] {
+  const value = entry.evaluation;
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).some((key) => key !== "condition" && key !== "now") || !Number.isFinite(value.now)) return undefined;
+  const condition = parseAutomationStudioRecordCondition(value.condition);
+  return condition && condition.field === entry.field && automationStudioRecordConditionText(condition) === entry.condition
+    ? { condition, now: value.now } : undefined;
+}
+
+/** Only the producer's exact cell shapes survive a JSON/public-contract boundary. */
+function testedValue(value: unknown): AutomationStudioRecordProcessingTestedValue | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const keys = Object.keys(value);
+  const state = Reflect.get(value, "state");
+  if (state === "absent" || state === "unavailable") return keys.length === 1 && keys[0] === "state" ? { state } : null;
+  const cell = Reflect.get(value, "value");
+  return state === "present" && keys.length === 2 && keys.includes("state") && keys.includes("value") && typeof cell === "string" && cell.trim().length > 0
+    ? { state, value: cell } : null;
 }

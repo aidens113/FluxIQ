@@ -6,6 +6,7 @@ import {
   AUTOMATION_STUDIO_RUN_DATASET_EXPORT_FORMATS,
   parseAutomationStudioRecordProcessing,
   parseAutomationStudioRecordSchema,
+  automationStudioRecordProcessingAccountWithoutEvidence,
   processAutomationStudioRecordRows,
   storedAutomationStudioRecordSchema,
   type AutomationStudioDatasetRunStatus,
@@ -263,6 +264,12 @@ export class AutomationStudioProjectRunDatasetStore {
   /** Every dataset the run stored, most recently written first. */
   listDatasets(runId: string): Promise<AutomationStudioRunDatasetSummary[]> {
     return runDatasetSummariesForRun(this.lease.database, runId);
+  }
+
+  /** `listDatasets` with each processing account whole, its tested cells included: the result check's evidence, and no public read's (t841). */
+  async listDatasetsForVerification(runId: string): Promise<AutomationStudioRunDatasetSummary[]> {
+    const rows = await this.lease.database.all<RunDatasetSummaryRow>(`select ${SUMMARY_COLUMNS} from run_datasets where run_id = ? order by updated_at_ms desc, dataset_id`, [requiredId(runId, "run")]);
+    return rows.map((row) => (row.processing_json === null ? summaryFromRow(row) : { ...summaryFromRow(row), processing: JSON.parse(row.processing_json) as AutomationStudioRecordProcessingAccount }));
   }
 
   /**
@@ -603,7 +610,8 @@ function summaryFromRow(row: RunDatasetSummaryRow): AutomationStudioRunDatasetSu
     updatedAt: row.updated_at_ms
   };
   if (row.label !== null) summary.label = row.label;
-  if (processing !== undefined) summary.processing = processing;
+  // Every public read is built here, so none can carry a left-out row's tested cell: only `listDatasetsForVerification` adds it back (t841).
+  if (processing !== undefined) summary.processing = automationStudioRecordProcessingAccountWithoutEvidence(processing);
   return summary;
 }
 
