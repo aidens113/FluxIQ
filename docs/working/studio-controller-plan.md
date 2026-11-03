@@ -21,20 +21,19 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 
 | Lane | Task | Owner | State |
 | --- | --- | --- | --- |
-| Backend moves and controller | t845 | Lead | Move committed locally and verified; first full suite running; audit findings next |
-| Chat package and second client | t846 | Sub-supervisor | Running |
+| Backend moves and controller | t845 | Lead | Moves done, audit passing, pushed. Two workers running: `thin-handlers`, `dev-failures` |
+| Chat package and second client | t846 | Sub-supervisor | Done and re-checked by the lead; pushed, not merged. Needs a browser run and `web:build` |
 | Web semantics downstream | t847 | Worker | Running |
 
 **Next steps**
 
-1. Read the first full suite, then fix the failures the move caused and record the rest.
-2. Retire about 400 forwarding files and create the 30 prefix directories. Fix the 29 import findings, adopt the new rule's baseline and push.
-3. Move the logic out of the ten flagged functions, listed below.
-4. Move the storage helpers moved code still takes from `programs/_shared` and `database-manager`. Retarget about 1,500 `fluxiq/automation-studio` imports.
-5. Fix the failures dev already has, listed below.
-6. Integrate t847, then t846, then finish t841. Update authored architecture documents and remove `scripts/refactor`. Run the full suites, then promote.
+1. Accept the `thin-handlers` and `dev-failures` reports, re-running their checks.
+2. Move the storage helpers moved code still takes from `programs/_shared` and `database-manager`. Retarget about 1,500 `fluxiq/automation-studio` imports and shrink Studio's barrel to the controller.
+3. Integrate t847, then t846, then finish t841. Port the push-gate cache change and the SQL cleanup error fix from t843.
+4. Update authored architecture documents and remove `scripts/refactor`.
+5. Run the full suites, a browser check of the chat in both clients, and `web:build`. Merge to both `dev` branches, then `main`.
 
-**Blockers:** none. Core's t845 commits are local because the pre-push audit refuses them until step 2; the downstream branch is pushed.
+**Blockers:** none. Both t845 branches and both t846 branches are pushed.
 
 **Failures dev already has.** These fail on plain `dev` at `ff8eb0be8` as well as on t845, so the move did not cause them, and they block promotion. Paths are the new ones under `packages/fluxiq/src`.
 
@@ -48,8 +47,9 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 | `runtime/adaptation/recovery/tests/runtime-exploration-views.test.ts` | 1 | Not yet read |
 | `runtime/agents/llm/harness/tests/run-size.test.ts` | 1 | `expected 'attempted' to be 'not_attempted'` |
 | `runtime/result-verification/build-test/tests/task-checklist.test.ts` | 1 | Request bytes differ |
+| `framework/automation-service/tests/io-bridge.test.ts` | 1 | `expected undefined to match object { candidateId: 'save', …(1) }` |
 
-**Failures the move caused so far.** `components/automation/tests/ownership.test.ts` timed out at 15 s during the parallel run; not yet known whether that is load. The two browser-safe subpath `client/tests/index.test.ts` files and `explored-evidence-label.test.ts` hard-code relative paths to files that moved.
+**Failures the move caused.** Fixed in `debb7cb84` unless marked: two ownership checks that timed out because backend had been placed inside small neutral layers; `thrown-issue-codes` and `accounting`, from the stack-frame reader; two `client/tests/index` files and `explored-evidence-label`, which hard-coded paths. Awaiting a rerun on a rebuilt tree: `settings-round-trip` in `apps/web` and the four process-boundary files that load modules from `dist`.
 
 **Functions still holding logic,** flagged by the new rule, all under `programs/automation-studio/api/handlers/`:
 
@@ -87,7 +87,7 @@ Limit on the test comparison: t843 edited that test file by 347 lines, so these 
 
 `scripts/refactor/move-owners.mjs` moves whole trees with their tests. It rewrites relative imports, `vi.mock` and related calls, `new URL(.., import.meta.url)` reads, named paths in configs and baselines, and paths in comments and prose. It never touches stored data paths (`.fluxiq/data/programs/...`) or panel routes (`/api/programs/...`), refuses to overwrite a file, and refuses to run if any file's tokens would change beyond its paths.
 
-`--verify <ref>` re-reads both sides from git and proves the same thing independently of the code that made the edits. Studio has no location-dependent production code and no computed imports, which is what makes a path-only move safe.
+`--verify <ref>` re-reads both sides from git and proves the same thing independently of the code that made the edits. Studio has no computed imports and no production code that loads files by location. One function did depend on location, which an earlier version of this plan missed: `flowBootstrapThrownIssueCodes` read stack frames under `automation-studio/`. The first full suite caught it through `accounting.test.ts`. It now reads frames under Core's source and reports the same frames by their new paths, and a search of moved production code found no other reader. So "cannot change behaviour" holds for the move itself, while code that inspects paths has to be looked for separately.
 
 The moves run as one commit rather than one per folder. The structure audit bans `runtime/` from importing Studio, and Studio's folders depend on each other, so moving them one at a time would fail the audit at every step and block every backup push.
 
@@ -161,6 +161,17 @@ Older parked work from before this refactor was left alone: unmerged branches t7
 - Validation: first full suite (`pnpm -r --no-bail test`) started 22:20; 12 failing files at 1,500 passing. Running those files on `dev` shows 8 fail there too, with 14 failing tests.
 - Correction: a first file-length budget of 150 lines was replaced after measuring that the long files are registration tables. An earlier commit that captured only the contract's file rename was redone, unpushed, as part of `756a98917`.
 - Outcome: move holds at compile and token level; full suite result pending. No paid run, panel or browser started.
+
+### 2026-11-02 - First full suite, follow-up moves and audit passing
+
+- Agent: lead; `chat-package` sub-supervisor with four workers.
+- Changed: `debb7cb84` moves `llm`, conversations and other trees out of small neutral layers. `525b4ae4f` retires 400 forwarding modules. `92d815df2` creates 25 prefix directories. `5449a7768` settles small owners and adopts the `program-controllers` baseline. The diagnostic issue code cap rises from 100 to 160 characters, because ten deep modules would otherwise have lost their code.
+- Validation: `pnpm -r --no-bail test` at `814b036ce`, one of today's two full runs -> contracts 562 passed; gateway 182 passed; fluxiq 15,542 passed and 34 failed, then real-sql 1,677 passed and 21 failed; apps/web 3,453 passed and 1 failed. 42 m 21 s.
+- Validation: the failing files on `dev` at `ff8eb0be8` -> 9 files and 15 tests fail there too; `accounting`, `settings-round-trip` and the ownership and path tests pass there, so those came from the move.
+- Validation: `node scripts/structure-audit.mjs` -> passed (478 warnings, 1,112 baselined). `pnpm --filter fluxiq check` -> 0 errors. `vitest run src/programs/automation-studio/api/tests` -> 82 passed. `git push` through the pre-push audit -> accepted.
+- Validation, chat lane, re-run by the lead: `vitest run` in `packages/ui-components` -> 65 files, 408 passed. `node scripts/test-extension.mjs panel/` from `apps/extension` -> 584 passed, 0 failed. Audit passes in both t846 worktrees; `core-mirror` matches. The lane's report is `studio-controller-plan/reports/chat-package.md` on t846.
+- Correction: the web-vocabulary rule listed its packages by hand after the chat lane's change, so a new package would have escaped it. It now covers every package except `ui-components`.
+- Outcome: no browser, paid run or panel started. One full run remains in today's allowance.
 
 ## Open Questions
 

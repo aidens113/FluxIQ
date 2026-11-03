@@ -14,8 +14,9 @@ Worktree: `C:/Users/osrs_/FluxStuff/fxwork/t845/!FluxIQ`, branch `task/t845-stud
 | `runtime/adaptation/recovery/tests/runtime-exploration-views.test.ts` | 1 | Not yet read |
 | `runtime/llm/harness/tests/run-size.test.ts` | 1 | `expected 'attempted' to be 'not_attempted'` |
 | `runtime/result-verification/build-test/tests/task-checklist.test.ts` | 1 | Request bytes differ |
+| `framework/automation-service/tests/io-bridge.test.ts` | 1 | `expected undefined to match object { candidateId: 'save', …(1) }` |
 
-Paths may have moved a little further by dispatch; find them by file name. The prefix-directory step may also have moved source files they import.
+The prefix-directory step moved some source files these tests import. Use the import paths in the tests as they now stand.
 
 Method:
 
@@ -24,17 +25,17 @@ Method:
 - Several failures look like one cause (an extra option key, a bound function), so group them.
 - `llm_evidence_loop.repeat_refused` and the request-byte difference touch model-facing behaviour: read `AGENTS.md` on the guard against repeated failing actions and on guidance never teaching to the test before changing them.
 
-Owned paths: the eight test files and the source they exercise.
+Owned paths: the nine test files and the source they exercise.
 
 Must not touch: `programs/automation-studio/api/**` (the `thin-handlers` brief owns it), `scripts/**`, `.structure-baseline.json`, `packages/fluxiq/package.json`. No git mutations and no commits. Do not add any execution-admission, observation or completion-proof mechanism: the parked t843 branch has these and they are not to come back.
 
-Never run full suites: the user caps them at twice a day. No paid model calls, no panel, no browser. Run the eight files directly: `pnpm.cmd exec vitest run <files> --minWorkers 1 --maxWorkers 2` from `packages/fluxiq`.
+Never run full suites: the user caps them at twice a day. No paid model calls, no panel, no browser. Run the nine files directly: `pnpm.cmd exec vitest run <files> --minWorkers 1 --maxWorkers 2` from `packages/fluxiq`.
 
 Context: `docs/working/studio-controller-plan.md`, Current State only.
 
 Acceptance checks, run and quote each:
 
-1. The eight files -> all pass.
+1. The nine files -> all pass.
 2. Any further test directories beside source you changed -> pass.
 3. `pnpm.cmd --filter fluxiq check` -> 0 errors.
 4. `node scripts/structure-audit.mjs` -> no new findings from your files.
