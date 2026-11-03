@@ -116,6 +116,26 @@ describe("a build tool result that needs a person", () => {
     expect(wrapped.endedOnIntervention()).toBeUndefined();
   });
 
+  // Run `run-mw0jw263-0251c104`: a Next page that moved the list met a check on the way, and a domain
+  // reports such a call as the refusal it was when the check stopped it. The step stood with
+  // `effectApplied: false`, so the draft called a working step did_not_work and left it out of the Flow.
+  it("a call that went out stands as having acted, whatever the refusal said when the check stopped it", async () => {
+    const stoppedBy = (effect: "mutate" | "observe"): AutomationStudioLlmEvidenceToolExecutionResult => ({
+      ...checkResult(),
+      effectApplied: false,
+      draft: { actionId: "example.open", input: { to: "the list" }, effect, proposes: effect === "mutate" }
+    });
+    const cleared = async (effect: "mutate" | "observe") => {
+      const domain = executor();
+      const executeTool: typeof domain.executeTool = async (entry) => entry.toolId === ACT.toolId ? stoppedBy(effect) : await domain.executeTool(entry);
+      const wrapped = automationStudioFlowBootstrapPersonNeeded({ executeTool, tools: [LOOK, ACT], ask: { port: thread([choice("person_done")]).port } });
+      return await wrapped.executeTool(call()) as AutomationStudioLlmEvidenceToolExecutionResult;
+    };
+    expect((await cleared("mutate")).effectApplied).toBe(true);
+    // One the check stopped before anything went out stands as the look it is, and changed nothing.
+    expect((await cleared("observe")).effectApplied).toBe(false);
+  });
+
   it("asks again when the look still meets a check, within the same bound", async () => {
     const domain = executor({ lookChecks: 1 });
     const asks = thread([choice("person_done"), choice("person_done")]);

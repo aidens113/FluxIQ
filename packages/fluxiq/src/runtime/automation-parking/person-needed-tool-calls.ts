@@ -21,7 +21,12 @@
 // at the caller's stage, and the loop waits where it stands. On Continue the
 // call stands as the domain described it once cleared -- its `draft`,
 // `effectApplied` and `nodeId` -- and its evidence is replaced by a fresh look
-// at the target, under a note that says a person completed a check here. On
+// at the target, under a note that says a person completed a check here. A
+// call whose draft says it went out stands as having acted, whatever
+// `effectApplied` said of the moment the check stopped it: a domain reports that
+// call as the refusal it was (run `run-mw0jw263-0251c104`, where a Next page that
+// moved the list stood as `did_not_work`, out of the Flow, and was refused as
+// changing nothing when the model asked for it again). On
 // anything else -- Stop, nobody answering, no port to ask through, a port that
 // could not be written -- the wrapper aborts its signal and throws, so the
 // loop stops at its next turn without asking the model anything, and the
@@ -219,7 +224,7 @@ function standing(
   return {
     kind: "llm_evidence_tool_execution",
     evidence,
-    effectApplied: ran.effectApplied,
+    effectApplied: ran.effectApplied || ran.draft?.effect === "mutate",
     ...(ran.targetsUnchanged === undefined ? {} : { targetsUnchanged: ran.targetsUnchanged }),
     ...(clearedCode ? { resultCode: clearedCode } : {}),
     ...(ran.nodeId === undefined ? {} : { nodeId: ran.nodeId }),
