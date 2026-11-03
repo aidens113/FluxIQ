@@ -43,6 +43,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@fluxiq/ui-components':
+        specifier: workspace:*
+        version: link:../../packages/ui-components
       '@xyflow/react':
         specifier: ^12.8.4
         version: 12.11.2(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -137,6 +140,19 @@ importers:
       typedoc:
         specifier: ^0.28.20
         version: 0.28.20(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/ui-components:
+    dependencies:
+      fluxiq:
+        specifier: workspace:*
+        version: link:../fluxiq
+    devDependencies:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

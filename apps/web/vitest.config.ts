@@ -11,7 +11,7 @@ import { defineConfig } from "vitest/config";
 // It is not rebuilt here: the Core beside a task worktree is shared by every
 // sibling task and running Lab, and a rebuild deletes modules under them.
 const coreRoot = fileURLToPath(new URL("../..", import.meta.url));
-const LIBRARIES = ["contracts", "fluxiq"];
+const LIBRARIES = ["contracts", "fluxiq", "ui-components"];
 const REBUILD = `pnpm ${LIBRARIES.map((name) => `--filter ${name === "fluxiq" ? name : `@fluxiq/${name}`}`).join(" ")} build`;
 
 type Newest = { ms: number; file: string | null };
