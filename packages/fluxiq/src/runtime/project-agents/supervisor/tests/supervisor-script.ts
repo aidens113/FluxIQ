@@ -39,6 +39,8 @@ export async function supervise(steps: Step[], built = project(), options: {
   clock?: AutomationStudioProjectSupervisorClock;
   /** Decisions the loop may make beyond the script, so a rule that holds an ending only with turns to spare can hold it (`../completion.ts`, t743). */
   spareTurns?: number;
+  /** Wraps the loop's input, to read what a tool hands the loop rather than what the model is shown (t849). */
+  observe?: (loop: AutomationStudioLlmEvidenceLoopInput) => AutomationStudioLlmEvidenceLoopInput;
 } = {}) {
   let index = 0;
   const seen: Entry[] = [];
@@ -50,6 +52,7 @@ export async function supervise(steps: Step[], built = project(), options: {
     ports: built.ports,
     ...(options.timeLimit ? { timeLimit: options.timeLimit } : {}),
     ...(options.clock ? { clock: options.clock } : {}),
+    ...(options.observe ? { observe: options.observe } : {}),
     loop: {
       tools: options.tools ?? HOST_TOOLS,
       maxIterations: steps.length + (options.spareTurns ?? 0),

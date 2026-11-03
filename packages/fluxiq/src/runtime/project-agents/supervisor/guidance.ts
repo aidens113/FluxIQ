@@ -271,7 +271,12 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     dispatchCycle: "The briefs' predecessors make a circle, so none of them can start. Give each brief only subflows that come before it.",
     allowanceUnavailable: "What this build can still give out, shown here, is too little for every brief that still needs a share to finish. Send fewer briefs at once, or end honestly.",
     surveyUnavailable: "A survey brief cannot run here yet. Send build briefs: each builder explores what its own parts need.",
-    dispatchFailed: "The briefs could not be run, so no return came back. Try again, or end honestly if it keeps failing.",
+    dispatchFailed: "The briefs could not be run: no builder was started, so nothing was done on the target, and no return came back. The same call is refused unrun while nothing else has changed, and nothing you can do changes this failure: end honestly with ended and your reason.",
+    /** The same failure after a builder began (`./dispatch-tool.ts`, t849): what it did is uncertain, and acting again could repeat a lasting act. */
+    dispatchFailedBuildersRan: "The dispatch failed after the builders of the briefs under started began, so no return came back for them and what they did on the target is uncertain: a lasting act may have landed with nothing on record to say so. leftOnTarget lists only what Core has on record. "
+      + "Do not send those briefs again: that could make such an act a second time, and the same call is refused unrun. End honestly with ended and your reason, and Core names what is left on the target.",
+    /** The return Core keeps for such a builder, shown if its brief is sent again (`./dispatch-tool.ts`, t849). */
+    dispatchFailedBuilderReturn: "Its builder began, the dispatch failed before its return could be kept, and what it did on the target is uncertain.",
     assembleRefused: "The Flow could not be assembled: every listed issue names the subflow and why. Send the briefs it needs, or change the plan, then assemble again.",
     composedRefused: "The assembled Flow was refused, as listed. Change the subflow an issue names with a new brief, or change the plan, then assemble again.",
     /** The one refusal left before a whole test (`./whole-trial.ts`, t775): an asked end state another step of this build already made. */

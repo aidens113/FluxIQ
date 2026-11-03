@@ -15,6 +15,7 @@ import { automationStudioProjectSupervisorDispatchOrder } from "./dispatch-order
 import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE as GUIDANCE } from "./guidance.ts";
 import { automationStudioProjectSupervisorLeftOnTarget, type AutomationStudioProjectSupervisorLeftOnTarget } from "./left-on-target.ts";
 import type { AutomationStudioProjectSupervisorRescuedTest } from "./state.ts";
+import { automationStudioProjectSupervisorRequestKeys as KEYS } from "./request-keys/index.ts";
 import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-answer.ts";
 import { AutomationStudioProjectSupervisorWholeTrial } from "./whole-trial.ts";
 
@@ -164,6 +165,23 @@ const EPSILON_USD = 1e-9;
  * lasting acts it left on the target, which its builder is shown with words to
  * take another path (`../dispatch/run-brief.ts`). A second such stop under the
  * same plan, and every other blocked return, is refused as before.
+ *
+ * **The same call runs once what its refusal named has changed (t849).** Each
+ * of these refusals tells the model what to do first, and the loop's repeat guard
+ * keys this tool on what they read (`./request-keys/`), so the identical call
+ * reaches them again once that changed, and is refused unrun until it has.
+ *
+ * **A dispatch that failed says what is known, and is not invited back
+ * (t849).** The dispatcher throws for a record it cannot read, hold or write,
+ * some of them after every brief has ended (`../dispatch/dispatcher.ts`). Nothing
+ * the model can do changes that, and the identical call is refused unrun, so
+ * `project.dispatch_failed` says to end rather than to try again. Which builders
+ * began is read from the record (`startedBuilders`): with none, nothing was
+ * applied and the target is unchanged. With any, the answer claims neither
+ * (`answer.uncertain`), since a lasting act may have landed, and each such brief
+ * keeps a blocked return, so sending it again is `project.brief_repeated` while
+ * nothing it starts from changed, however else the build moved. The model is told
+ * to end, so this failure lets it (`./completion.ts`).
  */
 export async function automationStudioProjectSupervisorDispatchTool(context: AutomationStudioProjectSupervisorContext, written: JsonObject): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports, state } = context;
@@ -238,8 +256,9 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
     given = (await ports.dispatch({ briefs: order.ordered, signal, ...(wholeTrial ? { wholeTrial } : {}) })).returns;
   } catch (error) {
     if (signal.aborted) throw error;
-    return answer.refused("project.dispatch_failed", GUIDANCE.refusals.dispatchFailed, { briefIds: order.ordered.map((brief) => brief.briefId) }, { retry: true });
+    return await dispatchFailed(context, order.ordered);
   }
+  state.dispatchFailed = false;
   const returns = order.ordered.map((brief, index) => answering(brief, given[index]));
   for (const [index, brief] of order.ordered.entries()) {
     const returned = returns[index]!;
@@ -251,7 +270,7 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
   if (lastReset) {
     const [index, brief] = lastReset;
     const returned = returns[index]!;
-    state.resetLeft = returned.outcome === "done" ? undefined : { briefId: brief.briefId, outcome: returned.outcome, reason: returned.reason, left: leftKey(automationStudioProjectSupervisorLeftOnTarget(ports)) };
+    state.resetLeft = returned.outcome === "done" ? undefined : { briefId: brief.briefId, outcome: returned.outcome, reason: returned.reason, left: KEYS.left(automationStudioProjectSupervisorLeftOnTarget(ports)) };
   }
   // What each brief was sent with, and what stood once every return came back: the same brief sent again with nothing changed since matches it (header).
   for (const brief of order.ordered) state.sentAs.set(brief.briefId, sentKey(context, brief));
@@ -278,6 +297,40 @@ export async function automationStudioProjectSupervisorDispatchTool(context: Aut
       : !allDone ? unmadeOutputNext(structure, order.ordered.map((brief, index) => ({ brief, returned: returns[index]! }))) ?? GUIDANCE.next.afterReturnsNotDone
         : reset ? afterReset(context) : singleYes ? GUIDANCE.next.afterSingleWholeYes : GUIDANCE.next.afterReturnsDone
   }, { acted: true });
+}
+
+/** `project.dispatch_failed`, saying what is known of the target (header, t849). */
+async function dispatchFailed(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
+  const { ports, state } = context;
+  state.dispatchFailed = true;
+  const briefIds = briefs.map((brief) => brief.briefId);
+  const started = await startedBuilders(context, briefs);
+  if (!started.length) return answer.refused("project.dispatch_failed", GUIDANCE.refusals.dispatchFailed, { briefIds });
+  for (const brief of started) {
+    // Held in this run only, the record having failed: at least its start counts as a call, and `stopped`, since no changed brief is owed before the ending the model is told to make.
+    state.answer(brief.briefId, { briefId: brief.briefId, outcome: "blocked", reason: GUIDANCE.refusals.dispatchFailedBuilderReturn, trials: [], spentUsd: 0, calls: 1, terminalReason: "stopped" });
+    state.sentAs.set(brief.briefId, sentKey(context, brief));
+  }
+  const left = automationStudioProjectSupervisorLeftOnTarget(ports);
+  return answer.uncertain("project.dispatch_failed", GUIDANCE.refusals.dispatchFailedBuildersRan, {
+    briefIds, started: started.map((brief) => brief.briefId), leftOnTarget: left.acts.map((act) => ({ act: act.act, did: act.did, brief: act.brief, undoable: act.undoable }))
+  });
+}
+
+/**
+ * The briefs whose builders began: the dispatcher records a brief's allowance just before its builder runs (`../dispatch/run-brief.ts`),
+ * and a write that failed starts none. A record that cannot say counts every brief, since acting again on a wrong "none" could repeat a lasting act.
+ */
+async function startedBuilders(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): Promise<readonly AutomationStudioProjectSubflowBrief[]> {
+  const { ports } = context;
+  try {
+    const view = await ports.record.read(ports.build);
+    if (!view) return briefs;
+    const allowed = new Set(view.record.allowances.map((entry) => entry.briefId));
+    return briefs.filter((brief) => allowed.has(brief.briefId));
+  } catch {
+    return briefs;
+  }
 }
 
 /** The whole test a single-subflow plan's brief tests through (header, t679); undefined for any other plan. */
@@ -420,7 +473,7 @@ function sentKey(context: AutomationStudioProjectSupervisorContext, brief: Autom
     predecessors: [...brief.entry.predecessors].sort().map((key) => [key, done.get(key)?.brief.briefId ?? null, done.get(key)?.returned.proposal?.revision ?? null]),
     excerpt: brief.recordingExcerpt ?? null,
     receipt: brief.failingReceipt ? [brief.failingReceipt.kind, brief.failingReceipt.receiptId, brief.failingReceipt.digest] : null,
-    left: leftKey(automationStudioProjectSupervisorLeftOnTarget(context.ports))
+    left: KEYS.left(automationStudioProjectSupervisorLeftOnTarget(context.ports))
   });
 }
 
@@ -467,7 +520,7 @@ function withEarlierAttempt(context: AutomationStudioProjectSupervisorContext, b
 /** The refusal of a further brief of a subflow whose latest repair changed nothing, while what stood then stands (header); undefined when none is. */
 function unchangedAgain(context: AutomationStudioProjectSupervisorContext, briefs: readonly AutomationStudioProjectSubflowBrief[]): AutomationStudioLlmEvidenceToolExecutionResult | undefined {
   const { state, controller, gate } = context;
-  const standing = standingKey(context);
+  const standing = KEYS.standing(context);
   const unchanged = briefs.flatMap((brief, index) => {
     const repair = brief.kind === "reset" ? undefined : state.unchangedRepairs.get(brief.subflowKey);
     return repair && repair.planDigest === brief.planDigest && repair.standing === standing ? [{ path: `briefs.${index}`, subflowKey: brief.subflowKey, repair: repair.briefId, sameAs: repair.sameAs }] : [];
@@ -478,13 +531,6 @@ function unchangedAgain(context: AutomationStudioProjectSupervisorContext, brief
   const instruction = !latest ? GUIDANCE.refusals.repairUnchangedAssemble : "revision" in retest ? GUIDANCE.refusals.repairUnchangedTest : GUIDANCE.refusals.repairUnchangedEnd;
   const test = latest ? gate.standing(latest) : undefined;
   return answer.refused("project.repair_unchanged", instruction, { unchanged, ...(latest ? { latestTest: { revision: latest.revision, verdict: test?.verdict ?? "not_tested", ...("revision" in retest ? { trialsSoFar: retest.trials } : {}) } } : {}) }, { retry: true });
-}
-
-/** The latest assembled Flow, its latest whole test and whether it may be tested again, as one comparable key (header). */
-function standingKey(context: AutomationStudioProjectSupervisorContext): string {
-  const latest = context.controller.latest();
-  const standing = latest ? context.gate.standing(latest) : undefined;
-  return JSON.stringify([latest?.revision ?? null, latest?.digest ?? null, standing?.trialRunId ?? null, standing?.verdict ?? null, context.gate.retestable()]);
 }
 
 /**
@@ -506,7 +552,7 @@ async function changedNothing(context: AutomationStudioProjectSupervisorContext,
       continue;
     }
     const sameAs = { briefId: prior.brief.briefId, revision: prior.returned.proposal!.revision };
-    state.unchangedRepairs.set(brief.subflowKey, { briefId: brief.briefId, sameAs, planDigest: brief.planDigest, standing: standingKey(context) });
+    state.unchangedRepairs.set(brief.subflowKey, { briefId: brief.briefId, sameAs, planDigest: brief.planDigest, standing: KEYS.standing(context) });
     unchanged.set(brief.briefId, sameAs);
   }
   return unchanged;
@@ -537,7 +583,7 @@ function repeatedReset(context: AutomationStudioProjectSupervisorContext): Autom
   const before = state.resetLeft;
   if (!latest || !before || before.briefId !== latest.briefId || !state.resetCameBackLast()) return undefined;
   const left = automationStudioProjectSupervisorLeftOnTarget(ports);
-  if (leftKey(left) !== before.left) return undefined;
+  if (KEYS.left(left) !== before.left) return undefined;
   const instruction = controller.latest() ? GUIDANCE.refusals.resetRepeatedTest : GUIDANCE.refusals.resetRepeatedEnd;
   return answer.refused("project.reset_repeated", instruction, {
     lastReset: { briefId: before.briefId, outcome: before.outcome, reason: before.reason },
@@ -549,11 +595,6 @@ function repeatedReset(context: AutomationStudioProjectSupervisorContext): Autom
 function unsettleableCount(left: AutomationStudioProjectSupervisorLeftOnTarget): JsonObject {
   const count = left.acts.filter((act) => act.unsettleable === true).length;
   return count ? { lastingActsUnsettleable: count } : {};
-}
-
-/** What is left on the target, as one comparable key. */
-function leftKey(left: AutomationStudioProjectSupervisorLeftOnTarget): string {
-  return JSON.stringify({ acts: left.acts.map((act) => [act.act, act.undoable]).sort() });
 }
 
 /** The return the dispatcher gave for this brief, or a blocked one saying why it does not answer it. */

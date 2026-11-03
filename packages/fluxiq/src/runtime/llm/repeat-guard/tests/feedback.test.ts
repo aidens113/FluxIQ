@@ -51,6 +51,12 @@ describe("the note for a refused repeat", () => {
     }
   });
 
+  it("never tells a loop that drafts nothing to change a draft, when its tool is keyed on the build (t849)", () => {
+    const said = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "project.dispatch", inARow: 1, earlier: { callId: "c1", outcome: "same_draft" }, undrafted: true }).instruction);
+    expect(said).not.toMatch(/draft/u);
+    expect(said).toContain("end this work where it stands, with nothing tested or judged.");
+  });
+
   it("words a drafting loop's note as before, and a candidate's byte for byte whatever the flag (t591)", () => {
     for (const earlier of EARLIER) {
       const drafting = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier }).instruction);
