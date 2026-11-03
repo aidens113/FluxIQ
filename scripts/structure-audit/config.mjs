@@ -201,6 +201,24 @@ export const CONFIG = {
     .filter((entry) => entry.isDirectory() && entry.name !== "ui-components")
     .map((entry) => `packages/${entry.name}`),
 
+  // Modules whose browser reading moved to the domain, behind hooks on its
+  // implementation bundle (t851). The web-vocabulary rule holds them to more than
+  // the rest of Core: a browser's field names count here as names and as whole
+  // strings. `allow` names a term a file may keep. Empty entries are the point:
+  // only lower this list by moving a module, never by allowing what it reads.
+  domainReadingFreePaths: [
+    { path: "packages/fluxiq/src/framework/automation-service/service/instruction-led/recording-steps.ts" },
+    { path: "packages/fluxiq/src/runtime/automation-activity/wording/action.ts" },
+    // `selector` is a member of Core's published `StateElementKind`, which a domain's
+    // reading and declared paths answer with and which ranks and weighs here. This
+    // file never decides a path is one.
+    { path: "packages/fluxiq/src/framework/automation-service/service/evidence/state-elements.ts", allow: ["selector"] },
+    { path: "packages/fluxiq/src/runtime/llm/node-tools/rerun-check.ts" },
+    // A screen whose shapes spell their notations in regular expressions, which are
+    // data to this rule: it reads no field and declares no name of one.
+    { path: "packages/fluxiq/src/runtime/llm/screening/locator-text.ts" }
+  ],
+
   // Path prefixes exempt from the depth limit because a framework dictates
   // their layout. The Next.js app router encodes routes as directories.
   depthExemptPrefixes: ["apps/web/src/app"],

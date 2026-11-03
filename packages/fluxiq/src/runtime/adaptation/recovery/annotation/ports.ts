@@ -71,6 +71,8 @@ export type AutomationStudioRuntimeRecoveryPorts = {
   resolveUnattendedRepairAuthority?: (() => Promise<AutomationStudioUnattendedRepairAuthority>) | undefined;
   /** The domain bound to this host: its evidence keys, its options, its refusals. */
   llmEvidenceRuntime?: AutomationStudioLlmEvidenceRuntimeBinding | undefined;
+  /** The parameter keys that name the control a step acts on, from the bound domain's bundle, for the exploration's own reruns. */
+  controlParameterKeys?: ReadonlySet<string> | undefined;
   reusableLlmContextEnabled: boolean;
   flowInstructionSet(input: { projectId: string; flowId?: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]>;
   reusableLlmContextForFreshEvidence(

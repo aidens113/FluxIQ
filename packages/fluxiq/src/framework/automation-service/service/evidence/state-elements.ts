@@ -6,26 +6,45 @@ import type {
   RecordingDomainDefinition
 } from "../../../../flows/authoring/model/index.ts";
 import type { NormalizedTimeline } from "../../../../runtime/recording/normalization/index.ts";
+import type { AutomationStudioStateElementKindReader } from "../../nodes/index.ts";
 import { formatStatePath } from "./text.ts";
 
 // What a recorded state path means: which paths a domain declares, what kind
 // of element a value looks like when the domain declares nothing, whether it
 // is worth correlating at all, and how to rank the ones that are.
+//
+// A domain's own words for a path come from its implementation bundle
+// (`stateElementKindReader`), asked first. Core keeps the words any domain's
+// state uses. Nothing here screens anything: a kind ranks a path, so a domain
+// with no reader only ranks its own words as Core's neutral ones.
 
-export function stateElementDescriptorsForTimeline(timeline: NormalizedTimeline, domains: RecordingDomainDefinition[]): Map<string, StateElementDescriptor> {
-  const descriptors = new Map<string, StateElementDescriptor>();
+/** The recording domains a timeline belongs to: the ones it names, or every one when it names none. */
+function domainsOfTimeline(timeline: NormalizedTimeline, domains: readonly RecordingDomainDefinition[]): RecordingDomainDefinition[] {
   const domainIds = new Set<string>([
     ...(typeof timeline.metadata?.domainId === "string" ? [timeline.metadata.domainId] : []),
     ...timeline.timeline.map((entry) => typeof entry.metadata?.domainId === "string" ? entry.metadata.domainId : "").filter(Boolean)
   ]);
-  for (const domain of domains) {
-    if (domainIds.size && !domainIds.has(domain.domainId)) continue;
+  return domains.filter((domain) => !domainIds.size || domainIds.has(domain.domainId));
+}
+
+/** The first reader the timeline's domains supply. */
+export function stateElementKindReaderForTimeline(timeline: NormalizedTimeline, domains: readonly RecordingDomainDefinition[], readerOf: (domainId: string) => AutomationStudioStateElementKindReader | undefined): AutomationStudioStateElementKindReader | undefined {
+  for (const domain of domainsOfTimeline(timeline, domains)) {
+    const reader = readerOf(domain.domainId);
+    if (reader) return reader;
+  }
+  return undefined;
+}
+
+export function stateElementDescriptorsForTimeline(timeline: NormalizedTimeline, domains: RecordingDomainDefinition[], readKind?: AutomationStudioStateElementKindReader): Map<string, StateElementDescriptor> {
+  const descriptors = new Map<string, StateElementDescriptor>();
+  for (const domain of domainsOfTimeline(timeline, domains)) {
     for (const pathDefinition of domain.statePaths ?? []) {
       const statePath = formatStatePath(pathDefinition.namespace, pathDefinition.path);
       descriptors.set(statePath, {
         namespace: pathDefinition.namespace,
         path: pathDefinition.path,
-        kind: pathDefinition.elementKind ?? inferStateElementKind(pathDefinition.path, pathDefinition.type),
+        kind: pathDefinition.elementKind ?? inferStateElementKind(pathDefinition.path, pathDefinition.type, readKind),
         ...(pathDefinition.label !== undefined ? { label: pathDefinition.label } : {}),
         ...(pathDefinition.description !== undefined ? { description: pathDefinition.description } : {}),
         ...(pathDefinition.entityId !== undefined ? { entityId: pathDefinition.entityId } : {}),
@@ -45,17 +64,17 @@ export function stateValuesFromSnapshot(snapshot: StateSnapshot): Array<[string,
   );
 }
 
-export function prioritizedStateValuesForAction(snapshot: StateSnapshot, descriptors: Map<string, StateElementDescriptor>, limit: number): Array<[string, StateValue]> {
+export function prioritizedStateValuesForAction(snapshot: StateSnapshot, descriptors: Map<string, StateElementDescriptor>, limit: number, readKind?: AutomationStudioStateElementKindReader): Array<[string, StateValue]> {
   return stateValuesFromSnapshot(snapshot)
-    .filter(([statePath, stateValue]) => isValuableStateElement(statePath, stateValue, descriptors))
-    .map(([statePath, stateValue]) => ({ statePath, stateValue, score: stateElementPriority(statePath, stateValue, descriptors) }))
+    .filter(([statePath, stateValue]) => isValuableStateElement(statePath, stateValue, descriptors, readKind))
+    .map(([statePath, stateValue]) => ({ statePath, stateValue, score: stateElementPriority(statePath, stateValue, descriptors, readKind) }))
     .sort((left, right) => right.score - left.score || left.statePath.localeCompare(right.statePath))
     .slice(0, limit)
     .map((item) => [item.statePath, item.stateValue]);
 }
 
-export function stateElementPriority(statePath: string, stateValue: StateValue, descriptors: Map<string, StateElementDescriptor>): number {
-  const descriptor = descriptorForStateValue(statePath, stateValue, descriptors);
+export function stateElementPriority(statePath: string, stateValue: StateValue, descriptors: Map<string, StateElementDescriptor>, readKind?: AutomationStudioStateElementKindReader): number {
+  const descriptor = descriptorForStateValue(statePath, stateValue, descriptors, readKind);
   let score = descriptors.has(statePath) ? 50 : 0;
   if (descriptor.stableAcrossSessions) score += 20;
   if (descriptor.entityId) score += 12;
@@ -68,7 +87,7 @@ export function stateElementPriority(statePath: string, stateValue: StateValue, 
   return score;
 }
 
-export function descriptorForStateValue(statePath: string, stateValue: StateValue, descriptors: Map<string, StateElementDescriptor>): StateElementDescriptor {
+export function descriptorForStateValue(statePath: string, stateValue: StateValue, descriptors: Map<string, StateElementDescriptor>, readKind?: AutomationStudioStateElementKindReader): StateElementDescriptor {
   const existing = descriptors.get(statePath);
   if (existing) return existing;
   const [namespace, ...pathParts] = statePath.split(".");
@@ -76,7 +95,7 @@ export function descriptorForStateValue(statePath: string, stateValue: StateValu
   return {
     namespace: namespace || "custom",
     path: pathValue,
-    kind: typeof stateValue.metadata?.elementKind === "string" ? stateValue.metadata.elementKind as StateElementKind : inferStateElementKind(pathValue, stateValue.type),
+    kind: typeof stateValue.metadata?.elementKind === "string" ? stateValue.metadata.elementKind as StateElementKind : inferStateElementKind(pathValue, stateValue.type, readKind),
     ...(typeof stateValue.semanticRole === "string" ? { description: stateValue.semanticRole } : {}),
     ...(typeof stateValue.metadata?.label === "string" ? { label: stateValue.metadata.label } : {}),
     ...(typeof stateValue.metadata?.entityId === "string" ? { entityId: stateValue.metadata.entityId } : {}),
@@ -86,19 +105,20 @@ export function descriptorForStateValue(statePath: string, stateValue: StateValu
   };
 }
 
-export function isValuableStateElement(statePath: string, stateValue: StateValue, descriptors: Map<string, StateElementDescriptor>): boolean {
+export function isValuableStateElement(statePath: string, stateValue: StateValue, descriptors: Map<string, StateElementDescriptor>, readKind?: AutomationStudioStateElementKindReader): boolean {
   if (stateValue.sensitive || stateValue.comparable === false) return false;
-  const descriptor = descriptorForStateValue(statePath, stateValue, descriptors);
+  const descriptor = descriptorForStateValue(statePath, stateValue, descriptors, readKind);
   if (descriptor.kind === "unknown" || descriptor.kind === "position" || descriptor.kind === "bounds") return false;
   const normalizedPath = statePath.toLowerCase();
   if (normalizedPath.includes("mouse") || normalizedPath.includes("cursor") || normalizedPath.includes("hover")) return false;
   return true;
 }
 
-export function inferStateElementKind(pathValue: string, type: StateValue["type"]): StateElementKind {
+export function inferStateElementKind(pathValue: string, type: StateValue["type"], readKind?: AutomationStudioStateElementKindReader): StateElementKind {
+  const read = readKind?.(pathValue, type);
+  if (read !== undefined) return read;
   const normalized = pathValue.toLowerCase();
-  if (normalized.includes("selector")) return "selector";
-  if (normalized.includes("testid") || normalized.includes("test_id") || normalized.endsWith("id") || normalized.includes(".id")) return "static_id";
+  if (normalized.endsWith("id") || normalized.includes(".id")) return "static_id";
   if (normalized.includes("internal")) return "internal_id";
   if (normalized.includes("label")) return "label";
   if (normalized.includes("text") || normalized.includes("title") || normalized.includes("message")) return "text";

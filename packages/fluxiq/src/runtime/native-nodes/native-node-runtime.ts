@@ -27,9 +27,9 @@ export type AutomationStudioNativeRuntimeGrants = {
  */
 export type AutomationStudioNativeExecution = { result: AutomationNodeExecutionResult; logs: AutomationStudioNativeLogEntry[]; declaredOutputs?: readonly AutomationNodePort[] };
 
-/** The domain's target readings a registered bundle supplies, scoped to its domain and never inferred from target fields. */
-export type AutomationStudioDomainTargetHooks = Pick<AutomationStudioImporterImplementationBundle, "outputTargetPreparer" | "recordingEntryTargetPreparer" | "recordingTargetPolicy" | "recordingCandidateParameterNormalizer">;
-const TARGET_HOOKS = ["outputTargetPreparer", "recordingEntryTargetPreparer", "recordingTargetPolicy", "recordingCandidateParameterNormalizer"] as const;
+/** The domain's readings a registered bundle supplies, scoped to its domain and never inferred from target fields. */
+export type AutomationStudioDomainTargetHooks = Pick<AutomationStudioImporterImplementationBundle, "outputTargetPreparer" | "recordingEntryTargetPreparer" | "recordingTargetPolicy" | "recordingCandidateParameterNormalizer" | "recordedStepReader" | "stateElementKindReader" | "activityControlReader" | "controlParameterKeys">;
+const TARGET_HOOKS = ["outputTargetPreparer", "recordingEntryTargetPreparer", "recordingTargetPolicy", "recordingCandidateParameterNormalizer", "recordedStepReader", "stateElementKindReader", "activityControlReader", "controlParameterKeys"] as const;
 
 /**
  * Explicit trusted-local implementation binder. This is an authorization and

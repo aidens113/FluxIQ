@@ -1,10 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import { automationStudioActivityHub } from "../index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../index.ts";
 import { runWithAutomationStudioActivity } from "../index.ts";
 import { emitAutomationStudioActivityStep } from "../step/index.ts";
+
+vi.mock("../wording/control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../wording/tests/example-control.ts")).exampleActivityControlReader
+}));
 
 /** A dotted id such as `core.run_node`: never in a sentence a person reads. */
 const RAW_ID = /\b[a-z]+\.[a-z_]+/iu;

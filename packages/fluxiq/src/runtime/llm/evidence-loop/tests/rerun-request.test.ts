@@ -100,7 +100,7 @@ describe("a retained argument after the actual rerun", () => {
     const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "first", toolId: "press", input: { config: { control: "first", kept: true } }, add: true, act: "a1" })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { config: { control: "second" } })] })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { config: { control: "third" } })] }).mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, deniedEvidenceKeys: [], lastingActs: async () => new Set(["a1"]), maxIterations: 7, maxToolCalls: 7, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, deniedEvidenceKeys: [], lastingActs: async () => new Set(["a1"]), controlParameterKeys: new Set(["target"]), maxIterations: 7, maxToolCalls: 7, dryRun: false });
     expect(performed).toBe(1);
     expect(executeTool.mock.calls.filter(([call]) => call.value.replay === "verify")).toHaveLength(2);
     expect(note(decide, 2)).toBeUndefined();

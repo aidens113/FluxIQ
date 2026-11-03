@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { activityActionOf } from "../../../../ui/index.ts";
 import { automationStudioActivityToolCall } from "../index.ts";
+
+vi.mock("../control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../tests/example-control.ts")).exampleActivityControlReader
+}));
 
 const card = (call: Parameters<typeof automationStudioActivityToolCall>[0]) => {
   const words = automationStudioActivityToolCall(call);

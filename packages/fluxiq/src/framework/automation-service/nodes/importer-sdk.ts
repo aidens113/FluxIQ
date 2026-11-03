@@ -4,7 +4,7 @@ import type { OutputTargetPreparer } from "../../../runtime/output-dispatch/inde
 import type { ElementMatcher } from "../../../runtime/target-matching/index.ts";
 import type { AutomationStudioNativeLogEntry } from "../../../runtime/automation-host/index.ts";
 export type { AutomationStudioNativeLogEntry } from "../../../runtime/automation-host/index.ts";
-import type { AppendRecordingEntryInput, AutomationStudioRecordingTargetPolicy } from "../../../flows/authoring/model/index.ts";
+import type { AppendRecordingEntryInput, AutomationStudioRecordingTargetPolicy, StateElementKind, StateValue, TimelineEntry } from "../../../flows/authoring/model/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../components/automation/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../components/automation/index.ts";
 import { validateAutomationStudioNodeDefinition, type AutomationStudioNodeDefinition, type AutomationStudioNodeParameterContract } from "../../../components/automation/index.ts";
@@ -108,6 +108,33 @@ type RecordingActionEntryInput = Extract<AppendRecordingEntryInput, { type: "act
 export type AutomationStudioRecordingEntryTargetPreparer = (domainId: string, entry: Readonly<RecordingActionEntryInput>) => Pick<RecordingActionEntryInput, "parameters" | "target"> | null;
 /** What a domain reads out of a tool's evidence for the step log's `page.txt`. Never reaches a model. */
 export type AutomationStudioLlmEvidenceSummary = { pageText(evidence: unknown): string | undefined };
+/**
+ * A recorded step as a domain reads it, for the build model's account of a
+ * recording (`service/instruction-led/recording-steps.ts`). Core decides what
+ * is said; the domain says only what its own entry means.
+ */
+export type AutomationStudioRecordedStepReading = {
+  /** The domain knows this control holds a secret, whatever it is called. The step is left out and only counted. */
+  secret: boolean;
+  /** Every word the control is identified by. Core screens them for a secret or payment detail, so no domain can forget to. */
+  identity: readonly string[];
+  /** The control's own name: never the value it holds. Core drops a name that reads as an address, an email or a long number. */
+  label?: string | undefined;
+  /** What kind of control it is, in the plain widget words Core's undo reading uses ("checkbox", "option", "button"). */
+  role?: string | undefined;
+  /** The act puts a value into the control. */
+  entersValue: boolean;
+  /** The act takes back the step before it. */
+  undoes: boolean;
+};
+/** `kind` is the entry's act, as Core normalized it. Null: the entry describes the page rather than something the person did, and is left out uncounted. */
+export type AutomationStudioRecordedStepReader = (step: { kind: string; entry: Readonly<TimelineEntry> }) => AutomationStudioRecordedStepReading | null;
+/** What a state path the domain never declared is, when its own words say; undefined leaves the path to Core's neutral words. */
+export type AutomationStudioStateElementKindReader = (path: string, type: StateValue["type"]) => StateElementKind | undefined;
+/** The control a step acts on, as the activity stream says it: its names in order of preference, and the plain widget words for what it is. */
+export type AutomationStudioActivityControl = { names: readonly unknown[]; kinds: readonly unknown[] };
+/** Undefined: the node's parameters carry no control. Words for the chat only, never for a model. */
+export type AutomationStudioActivityControlReader = (parameters: unknown) => AutomationStudioActivityControl | undefined;
 
 export type AutomationStudioImporterImplementationBundle = {
   packageId: string;
@@ -124,6 +151,14 @@ export type AutomationStudioImporterImplementationBundle = {
   recordingCandidateParameterNormalizer?: AutomationStudioRecordingCandidateParameterNormalizer;
   /** Evidence reading for the step log only: never a way to change what a model is sent. */
   llmEvidenceSummary?: AutomationStudioLlmEvidenceSummary;
+  /** Reads a recorded step for the build model's account of a recording. Absent, every recorded step is withheld and only counted. */
+  recordedStepReader?: AutomationStudioRecordedStepReader;
+  /** The domain's own words for a state path it never declared. */
+  stateElementKindReader?: AutomationStudioStateElementKindReader;
+  /** Names the control a node's parameters carry, for the activity stream. Absent, a step's card says its verb alone. */
+  activityControlReader?: AutomationStudioActivityControlReader;
+  /** The parameter keys that name the control a step acts on. Absent, a checked rerun treats every parameter as naming it. */
+  controlParameterKeys?: ReadonlySet<string>;
   recordingMappers?: Record<string, AutomationStudioRecordingMapperImplementation>;
   targetResolvers?: Record<string, AutomationStudioTargetResolverImplementation>;
   comparators?: Record<string, AutomationStudioComparatorImplementation>;

@@ -105,6 +105,16 @@
 // web API reached through a variable, or a web word spelled in a language it
 // cannot split. It does not read comments, which is deliberate. Existing
 // instances are baselined per file and may only shrink.
+//
+// One of those holes is closed where it was found. Five modules read a browser's
+// fields under names no term above catches, because Core's own model owns the
+// words beside them (`accessibleName`, `visibleText`), or as plain strings in a
+// key list. Those readings moved to the domain behind hooks on its implementation
+// bundle, and nothing would have stopped them walking back. So the files listed
+// under `CONFIG.domainReadingFreePaths` are held to more: `READING_TERMS` count
+// there as names and also as a whole string, which is how a key list is written.
+// An entry's `allow` names a term that file may keep, and its comment says why. A
+// listed path that names no audited file fails, so a move cannot empty the list.
 
 export const id = "web-vocabulary";
 export const title = "Framework source stays neutral about the web domain";
@@ -122,6 +132,12 @@ const TERMS = [
 // Terms that count only as the whole name, because the word means something
 // else inside a longer one. See the header for why `selector` is here.
 const WHOLE_NAME_TERMS = ["selector"].map((term) => term.split(" "));
+
+// The fields a browser describes a control by, and the notations it addresses
+// one with. Counted only in the files `CONFIG.domainReadingFreePaths` lists.
+const READING_TERMS = [
+  "implicit role", "accessible name", "visible text", "input type", "test id", "testid", "autocomplete", "password", "selector", "xpath", "x path", "css"
+].map((term) => term.split(" "));
 
 // The one name never counted: the platform's error type, not the document
 // object model. The header says why this is an exemption and not a baseline.
@@ -173,13 +189,28 @@ function nameOf(ts, node) {
   return ts.isStringLiteralLike(node) && isPropertyKey(ts, node) ? node.text : undefined;
 }
 
-function offences(ctx, file) {
+function readingTermsIn(name, allow) {
+  const words = wordsOf(name);
+  return READING_TERMS.filter((term) => !allow.has(term.join(" ")) && words.some((_, index) => index + term.length <= words.length && runAt(words, term, index))).map((term) => term.join(" "));
+}
+
+// A string that is nothing but one of the terms: an element of a key list.
+function readingTermsOfString(text, allow) {
+  const words = wordsOf(text);
+  return READING_TERMS.filter((term) => !allow.has(term.join(" ")) && words.length === term.length && runAt(words, term, 0)).map((term) => term.join(" "));
+}
+
+function offences(ctx, file, reading) {
   const { ts } = ctx;
   const sourceFile = ctx.parse(file);
   const found = [];
   const visit = (node) => {
     const name = nameOf(ts, node);
     const terms = name ? termsIn(name) : [];
+    if (reading) {
+      if (name) terms.push(...readingTermsIn(name, reading));
+      else if (ts.isStringLiteralLike(node)) terms.push(...readingTermsOfString(node.text, reading));
+    }
     if (terms.length > 0) found.push({ line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1, terms });
     ts.forEachChild(node, visit);
   };
@@ -212,8 +243,24 @@ function firstLines(found) {
 
 export function run(ctx) {
   const findings = [];
-  for (const file of auditedFiles(ctx)) {
-    const found = offences(ctx, file);
+  const audited = auditedFiles(ctx);
+  const readingFree = new Map((ctx.CONFIG.domainReadingFreePaths ?? []).map((entry) => [entry.path, new Set(entry.allow ?? [])]));
+  for (const listed of readingFree.keys()) {
+    if (audited.includes(listed)) continue;
+    findings.push({
+      rule: id,
+      key: `domainReadingFreePaths:${listed}`,
+      value: 1,
+      limit: 0,
+      path: listed,
+      line: 1,
+      message: `domainReadingFreePaths: "${listed}" names no audited file. It was renamed or removed; point the entry at where that module lives now, or delete it.`,
+      severity: "fail",
+      ratchet: false
+    });
+  }
+  for (const file of audited) {
+    const found = offences(ctx, file, readingFree.get(file));
     if (found.length === 0) continue;
 
     const subject = found.length === 1

@@ -40,6 +40,8 @@ function makeCtx(files, config = {}) {
 }
 
 const findingsFor = (source) => run(makeCtx({ "packages/fluxiq/src/model.ts": source }));
+const READER = "packages/fluxiq/src/reader.ts";
+const readerCount = (source, allow) => run(makeCtx({ [READER]: source }, { domainReadingFreePaths: [{ path: READER, ...(allow ? { allow } : {}) }] })).reduce((total, finding) => total + finding.value, 0);
 const count = (source) => findingsFor(source).reduce((total, finding) => total + finding.value, 0);
 const named = (name) => count(`export const ${name} = 1;`);
 
@@ -207,4 +209,49 @@ test("the message says what to use instead and what the baseline means", () => {
   assert.match(message, /`queryPath` or `statePath`/);
   assert.match(message, /opaque handle Core stores and returns without reading/);
   assert.match(message, /the recorded count may only fall/);
+});
+
+// --- A module whose browser reading moved to the domain, held to more. ---
+
+test("a browser field read under a name the ordinary terms leave alone is a finding in a listed file", () => {
+  for (const source of [
+    "export const name = control.accessibleName;",
+    "export const name = control.visibleText;",
+    "export const role = control.implicitRole;",
+    "export const kind = control.inputType;",
+    "export const id = control.testId;",
+    "export const token = attributes.autocomplete;",
+    "export const type = control[\"inputType\"];"
+  ]) {
+    assert.ok(readerCount(source) >= 1, source);
+    assert.equal(count(source), 0, `not counted outside the list: ${source}`);
+  }
+});
+
+test("a browser field written as a key list's string is a finding in a listed file", () => {
+  assert.equal(readerCount('export const KEYS = new Set(["target", "selector", "element"]);'), 1);
+  assert.equal(readerCount('export const secret = attributes.type === "password";'), 1);
+  assert.equal(readerCount('export const KEYS = ["testid", "test_id"];'), 2);
+  assert.equal(count('export const KEYS = new Set(["target", "selector", "element"]);'), 0);
+});
+
+test("a sentence that uses the word, and a regular expression, stay data in a listed file", () => {
+  assert.equal(readerCount('export const said = "enter your password here";'), 0);
+  assert.equal(readerCount("export const shape = /password|selector|\\.css/;"), 0);
+});
+
+test("an entry's allow keeps the one term that file may hold", () => {
+  assert.equal(readerCount('export const stable = kind === "selector";', ["selector"]), 0);
+  assert.equal(readerCount('export const stable = kind === "selector" || kind === "password";', ["selector"]), 1);
+});
+
+test("a listed path that names no audited file fails, and never as a ratchet", () => {
+  const findings = run(makeCtx({ [READER]: "export const a = 1;" }, { domainReadingFreePaths: [{ path: "packages/fluxiq/src/moved.ts" }] }));
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].ratchet, false);
+  assert.match(findings[0].message, /names no audited file/);
+});
+
+test("a repository that lists nothing is unchanged", () => {
+  assert.deepEqual(run(makeCtx({ [READER]: "export const name = control.accessibleName;" })), []);
 });
