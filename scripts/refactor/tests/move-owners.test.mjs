@@ -168,6 +168,12 @@ test("verification catches a file that went missing", () => {
   assert.match(verifyAgainst(options, "HEAD").problems[0], /missing/);
 });
 
+test("line endings inside a multi-line string are not a change", () => {
+  const lf = comparableTokens("a.ts", "export const sql = `select\n  1`;\n");
+  assert.deepEqual(lf, comparableTokens("a.ts", "export const sql = `select\r\n  1`;\r\n"));
+  assert.notDeepEqual(lf, comparableTokens("a.ts", "export const sql = `select\n  2`;\n"));
+});
+
 test("comments are not part of the compared program text", () => {
   const a = comparableTokens("a.ts", '// one\nimport "./x.ts";\nexport const v = 1;\n');
   const b = comparableTokens("a.ts", '/* two */\nimport "./y/z.ts";\nexport const v = 1;\n');

@@ -161,7 +161,10 @@ function applyEdits(text, edits) {
 
 // The token stream a file compiles from, with the only tokens a move may change
 // blanked. Two files with equal streams are the same program text.
-export function comparableTokens(file, text) {
+export function comparableTokens(file, raw) {
+  // Git stores LF and a Windows checkout holds CRLF, which only shows up as a
+  // difference inside a multi-line string.
+  const text = raw.replace(/\r\n/g, "\n");
   const sourceFile = parse(file, text);
   const blanked = new Set(specifierLiterals(sourceFile).map((node) => node.getStart(sourceFile)));
   const tokens = [];
