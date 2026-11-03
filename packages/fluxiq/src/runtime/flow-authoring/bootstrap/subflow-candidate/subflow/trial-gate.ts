@@ -279,6 +279,7 @@ import { AutomationStudioSubflowPendingRepair } from "../pending-repair.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_REPAIR_WORDS as REPAIR_WORDS } from "../repair-words.ts";
 import { automationStudioSubflowTrialOfflineFirstCheck } from "./trial-offline-first.ts";
 import { automationStudioSubflowTrialResultRead } from "./trial-result.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_TRIAL_SPENT_WORDS as SPENT } from "./trial-spent-words.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_INPUT as TEST_INPUT } from "../test-input.ts";
 
 /**
@@ -736,11 +737,11 @@ function withCarried(own: AutomationStudioResultKeptCondition[], carried: readon
 function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: boolean, whole = false): string {
   // Core's own trial runner that failed is no subflow before this one that did (header, lane 3).
   const runner = answer.verdict === "execution_failed" && Stop.of(answer.feedback).kind === "trial_runner";
-  if (!answer.entryPrepared && !runner) return ENTRY_NOT_PREPARED;
+  if (!answer.entryPrepared && !runner) return retestable ? ENTRY_NOT_PREPARED : SPENT.entryNotPrepared;
   // A control on the page but not shown: a step before it must show it, never a test of the same revision (header, t661).
   const notShown = automationStudioCandidateNotShownInstruction(answer, "submit the subflow with core.submit_subflow");
   if (notShown) return notShown;
-  if (answer.verdict === "not_judged" && answer.feedback.yesUnconfirmed === true) return NOT_JUDGED_AFTER_YES;
+  if (answer.verdict === "not_judged" && answer.feedback.yesUnconfirmed === true) return retestable ? NOT_JUDGED_AFTER_YES : SPENT.notJudgedAfterYes;
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
   // A yes the row check could not confirm (header, t692).
   if (answer.verdict === "unsure" && retestable && answer.feedback.code === ROWS_UNACCOUNTED) return ROWS_UNACCOUNTED_RETESTABLE;
@@ -753,6 +754,7 @@ function instructionFor(answer: AutomationStudioSubflowTrialResult, retestable: 
   }
   // What stopped it, after the verdict's own first sentence (header, lane 3).
   if (answer.verdict === "execution_failed") return Stop.instruction(answer, { head: EXECUTION_FAILED_HEAD, retestable, resubmit: RESUBMIT });
+  if (answer.verdict === "not_judged" && !retestable) return SPENT.notJudged;
   return whole && answer.verdict === "yes" ? WHOLE_YES : INSTRUCTIONS[answer.verdict];
 }
 

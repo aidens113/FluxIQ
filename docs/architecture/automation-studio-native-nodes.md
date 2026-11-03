@@ -429,6 +429,14 @@ summary's `processing`): `collected` (= `filteredOut` + `duplicates` + `cut`
 short, and `passes`: one entry per batch with its node, its pass number per
 node, its rows and its `newRows` (rows that repeat no earlier collected row).
 
+Each `where` condition also accounts for the rows it alone excluded. Its optional
+tested-value evidence comes from the same processing evaluation over collected
+rows, before answer-column projection. Evidence is screened before it reaches a
+judge and is left out of every public dataset and run-detail read; it is not an
+assertion the model can author. Older accounts remain valid
+without it and retain their previous verification requirements. Duplicate row
+labels cannot merge conflicting observations into a measured exclusion.
+
 **Not yet.** The build's test does not process: `buildTest.stores` still
 counts every row each pass of a read returned
 ([the build's test](automation-studio/llm-flow-bootstrap.md#generation-command)

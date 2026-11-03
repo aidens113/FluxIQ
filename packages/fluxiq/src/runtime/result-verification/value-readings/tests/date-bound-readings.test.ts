@@ -32,7 +32,7 @@ describe("a date bound's settled rows", () => {
   ];
 
   it("settle a row whose date fails the bound, as a date, and leave an undated row to be quoted", () => {
-    const settled = automationStudioResultSettledRows({ condition: ON_OR_AFTER, column: "starts", number: 1, wording: "starts atLeast \"2026-09-19\" as a date", leftOut, now: NOW });
+    const settled = automationStudioResultSettledRows({ answerColumns: new Set(), condition: ON_OR_AFTER, column: "starts", number: 1, wording: "starts atLeast \"2026-09-19\" as a date", leftOut, now: NOW });
     expect(settled?.leftOutSettled).toEqual(["Book swap — starts: 18 Sep 2026"]);
     expect(settled?.settled).toContain("Core read starts as a date on each row in leftOutSettled");
     expect(settled?.settled).not.toContain("as a number");

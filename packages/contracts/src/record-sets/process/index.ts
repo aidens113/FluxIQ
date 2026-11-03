@@ -4,6 +4,7 @@
 // collected rows into its answer and the account of it, a condition said in
 // words, with the date bound a condition may carry (t790, run
 // `run-mvswewhy-e4e469d4`). `cell-text.ts` is internal and not re-exported.
+export * from "./account-without-evidence.ts";
 export * from "./compares-dates.ts";
 export * from "./count-unsortable-rows.ts";
 export * from "./condition/index.ts";

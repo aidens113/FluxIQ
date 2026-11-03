@@ -26,7 +26,7 @@ export type AutomationStudioServiceTrialCollaborators = Readonly<{
   writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<void>;
   /** The executor's parts a run's options are made from (`../runtime-session/graph-options.ts`). */
   executor(): Pick<Parameters<typeof automationStudioRunGraphOptions>[0], "io" | "runtimeService" | "nativeNodeRuntime" | "hostRuntime">;
-  runDatasets(): Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "processEndedRunDatasets" | "listRunDatasets" | "getRunDatasetPage">;
+  runDatasets(): Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage">;
   conversations(): Pick<AutomationStudioConversations, "available" | "parkingPort">;
   /** The bound domain's evidence runtime; undefined until a host binds one. */
   binding(): AutomationStudioLlmEvidenceRuntimeBinding | undefined;

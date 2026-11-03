@@ -204,7 +204,8 @@ describe("a yes over rows a presence or absence test left out, which Core measur
     const [member, promoted, name] = presenceCatalogueSummary().reads![0]!.conditions!;
     expect(member!.leftOutSettled).toEqual(PRESENCE_CATALOGUE_NO_MEMBER.map((row) => `${row} — member: (no value)`));
     expect(member!.settled).toContain("On each row in leftOutSettled the read found no member, so each fails condition 1 (member is present) as written");
-    expect(member!.settled).toContain("quote, once, in a sentence that names condition 1 (member is present) or member, the request's own words asking for only rows that have it");
+    // `member` is one of the answer's columns, which names no settled condition (t790), so the sentence never offers it (lead decision, 2026-11-03, t841).
+    expect(member!.settled).toContain("quote, once, in a sentence that names condition 1 (member is present), the request's own words asking for only rows that have it");
     expect(promoted!.leftOutSettled).toEqual(PRESENCE_CATALOGUE_PROMOTED);
     expect(promoted!.settled).toContain("the read found promoted, so each fails condition 2 (promoted is absent) as written");
     expect(promoted!.settled).toContain("asking for only rows without it");

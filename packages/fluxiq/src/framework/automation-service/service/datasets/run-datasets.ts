@@ -125,6 +125,11 @@ export class AutomationStudioRunDatasets {
     return this.withProjectStore(input.projectId, (store) => store.listDatasets(input.runId));
   }
 
+  /** `listRunDatasets` with each processing account whole, for the result check alone: no route may return this (t841). */
+  listRunDatasetsForVerification(input: AutomationStudioRunDatasetsRunRequest): Promise<AutomationStudioRunDatasetSummary[]> {
+    return this.withProjectStore(input.projectId, (store) => store.listDatasetsForVerification(input.runId));
+  }
+
   /** One page of a dataset's rows (1-200, default 50), or null when the run stored no such dataset. */
   getRunDatasetPage(input: AutomationStudioRunDatasetPageRequest): Promise<AutomationStudioRunDatasetPage | null> {
     return this.withProjectStore(input.projectId, (store) => store.getPage({ runId: input.runId, datasetId: input.datasetId, limit: input.limit, cursor: input.cursor }));

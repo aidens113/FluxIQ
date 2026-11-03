@@ -32,7 +32,9 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
 //   step of this build already made is refused
 //   `candidate.trial_starts_in_end_state`, answered here
 //   `project.trial_starts_in_end_state`, naming just those acts and the brief
-//   that made each, so a reset brief undoes only them (`retry_allowed`).
+//   that made each, so a reset brief undoes only them. The repeat guard lifts it
+//   once a later call ran (`PRECONDITIONS`, `../../llm/repeat-guard/outcomes.ts`);
+//   its `retry_allowed` is only a diagnostic.
 //   `project.trial_reset_required` and `project.trial_unsettleable` are
 //   retired.
 //

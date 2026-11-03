@@ -52,7 +52,7 @@ export function automationStudioServiceTrialEnvironment(collaborators: Automatio
     processDatasets: (runId) => collaborators.runDatasets().processEndedRunDatasets({ projectId, runId }),
     recordSets: (runId) => {
       const datasets = collaborators.runDatasets();
-      return readRecordSets(datasets.available ? { listRunDatasets: (request) => datasets.listRunDatasets(request), getRunDatasetPage: (request) => datasets.getRunDatasetPage(request) } : {}, projectId, runId);
+      return readRecordSets(datasets.available ? { listRunDatasets: (request) => datasets.listRunDatasetsForVerification(request), getRunDatasetPage: (request) => datasets.getRunDatasetPage(request) } : {}, projectId, runId);
     },
     actionAttempts: (session) => runtimeSessionToFlowRunDetail(session, projectId).actionAttempts,
     observedStateKeys: input.observedStateKeys,

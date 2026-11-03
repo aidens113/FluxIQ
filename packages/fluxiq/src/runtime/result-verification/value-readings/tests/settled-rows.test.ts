@@ -13,6 +13,7 @@ const unread = (state: "absent" | "unavailable" | "withheld"): AutomationStudioR
 
 const settle = (condition: Omit<AutomationStudioRecordCondition, "field">, witnesses: Array<AutomationStudioResultLeftOutObservation | null | undefined>, named: string | null = "shelf") =>
   automationStudioResultSettledRows({
+    answerColumns: new Set(),
     condition: { field: named ?? "value", ...condition },
     column: named ?? undefined,
     number: 2,
@@ -96,7 +97,7 @@ const boundRow = (label: string, value: string, witness?: AutomationStudioResult
 });
 
 const bound = (condition: Omit<AutomationStudioRecordCondition, "field">, leftOut: ReturnType<typeof boundRow>[]) =>
-  automationStudioResultSettledRows({ condition: { field: "pages", ...condition }, column: "pages", number: 1, wording: "pages atMost 300", leftOut });
+  automationStudioResultSettledRows({ answerColumns: new Set(), condition: { field: "pages", ...condition }, column: "pages", number: 1, wording: "pages atMost 300", leftOut });
 
 describe("a numeric bound's left-out rows whose value the read found empty (t636)", () => {
   it("are settled where the witness found an empty value or none, or the row says (no value) with no witness", () => {
