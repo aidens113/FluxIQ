@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 const [phase, root, dist, mode] = process.argv.slice(2);
 const load = relative => import(pathToFileURL(path.join(dist, relative)).href);
 const { FluxIQ } = await load("framework/index.js");
-const { AutomationStudioProjectRuntimeStreamStore } = await load("programs/automation-studio/storage/index.js");
+const { AutomationStudioProjectRuntimeStreamStore } = await load("framework/persistence/automation/index.js");
 const fx = FluxIQ.create({ rootDir: root, loadEnv: false, envFiles: [], modelProvidersEnabled: false });
 let typed;
 try {
