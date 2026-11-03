@@ -5,12 +5,21 @@ import { automationStudioReferenceNow } from "../../../runtime/reference-time/in
 import { createIoOutputEffectDispatcher, createRuntimeOutputEffectDispatcher } from "../../../runtime/output-dispatch/index.ts";
 import type { AutomationGraphOptionsInput } from "./input.ts";
 import { bindAutomationExecutionObservation } from "../execution-admission/index.ts";
-import { AutomationNativeObservationBindings, AutomationOrchestrationCallbacks, AutomationPureCallbacks } from "../execution-admission/kernel/index.ts";
+import { AutomationNativeObservationBindings, AutomationOrchestrationCallbacks, AutomationPureCallbacks, automationExecutionProperty, hasAutomationCallbackFrame, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../runtime/native-execution/index.ts";
+import { executionDataProperty } from "../../../runtime/execution-observation/index.ts";
+
+const nativeMethods = Object.freeze({
+  execute: executionDataProperty(AutomationStudioNativeNodeRuntime.prototype, "execute"),
+  resolveActionEffect: executionDataProperty(AutomationStudioNativeNodeRuntime.prototype, "resolveActionEffect"),
+  resolveTargetRefresh: executionDataProperty(AutomationStudioNativeNodeRuntime.prototype, "resolveTargetRefresh"),
+  getRuntimeCapabilities: executionDataProperty(AutomationStudioNativeNodeRuntime.prototype, "getRuntimeCapabilities")
+});
+
 export function createAutomationGraphOptions(input: AutomationGraphOptionsInput): AutomationStudioGraphExecutionOptions {
   const options: AutomationStudioGraphExecutionOptions = { inputs: input.inputs ?? {}, signal: input.signal };
-  if (input.executionObservation)
-    bindAutomationExecutionObservation(options, input.executionObservation);
+  const observation = executionDataProperty(input, "executionObservation");
+  if (observation) bindAutomationExecutionObservation(options, observation);
   const referenceNow = automationStudioReferenceNow(input.referenceNow);
   if (referenceNow !== undefined)
     options.referenceNow = referenceNow;
@@ -24,13 +33,22 @@ export function createAutomationGraphOptions(input: AutomationGraphOptionsInput)
     if (bound.domainId)
       options.authorizedDomainIds = input.authorizedDomainIds.filter((domainId) => domainId === bound.domainId);
   }
-  const native = input.nativeNodeRuntime;
+  const native = automationExecutionProperty(options, input, "nativeNodeRuntime");
   if (native) {
-    const execute = native.execute;
-    const resolveActionEffect = native.resolveActionEffect;
-    const resolveTargetRefresh = native.resolveTargetRefresh;
-    options.runtimeCapabilities = [...new Set([...(options.runtimeCapabilities ?? []), ...native.getRuntimeCapabilities()])];
-    const canonicalExecute = native instanceof AutomationStudioNativeNodeRuntime && execute === AutomationStudioNativeNodeRuntime.prototype.execute;
+    const execute = automationExecutionProperty(options, native, "execute");
+    const resolveActionEffect = automationExecutionProperty(options, native, "resolveActionEffect");
+    const resolveTargetRefresh = automationExecutionProperty(options, native, "resolveTargetRefresh");
+    const getRuntimeCapabilities = automationExecutionProperty(options, native, "getRuntimeCapabilities");
+    const readCapabilities = () => getRuntimeCapabilities.call(native);
+    const canonicalCapabilities = native instanceof AutomationStudioNativeNodeRuntime && getRuntimeCapabilities === nativeMethods.getRuntimeCapabilities;
+    if (canonicalCapabilities) AutomationPureCallbacks.registerLexical(readCapabilities);
+    const capabilities = hasAutomationCallbackFrame(options)
+      ? canonicalCapabilities
+        ? invokeAutomationCallbackSync(options, { receiver: undefined, callback: readCapabilities, args: [] })
+        : invokeAutomationCallbackSync(options, { receiver: native, callback: getRuntimeCapabilities, args: [] })
+      : readCapabilities();
+    options.runtimeCapabilities = [...new Set([...(options.runtimeCapabilities ?? []), ...capabilities])];
+    const canonicalExecute = native instanceof AutomationStudioNativeNodeRuntime && execute === nativeMethods.execute;
     options.nativeNodeExecutor = (request) => {
       const observation = canonicalExecute ? AutomationNativeObservationBindings.of(request) : undefined;
       return observation ? execute.call(native, request.node, request.inputs, request.signal, request.hostContext, observation) : execute.call(native, request.node, request.inputs, request.signal, request.hostContext);
@@ -38,16 +56,16 @@ export function createAutomationGraphOptions(input: AutomationGraphOptionsInput)
     options.resolveActionEffect = (node, parameterValues) => resolveActionEffect.call(native, node, parameterValues);
     options.resolveTargetRefresh = (node, parameterValues) => resolveTargetRefresh.call(native, node, parameterValues);
     if (canonicalExecute) AutomationOrchestrationCallbacks.register(options.nativeNodeExecutor);
-    if (native instanceof AutomationStudioNativeNodeRuntime && resolveActionEffect === AutomationStudioNativeNodeRuntime.prototype.resolveActionEffect) AutomationPureCallbacks.registerLexical(options.resolveActionEffect);
-    if (native instanceof AutomationStudioNativeNodeRuntime && resolveTargetRefresh === AutomationStudioNativeNodeRuntime.prototype.resolveTargetRefresh) AutomationPureCallbacks.registerLexical(options.resolveTargetRefresh);
+    if (native instanceof AutomationStudioNativeNodeRuntime && resolveActionEffect === nativeMethods.resolveActionEffect) AutomationPureCallbacks.registerLexical(options.resolveActionEffect);
+    if (native instanceof AutomationStudioNativeNodeRuntime && resolveTargetRefresh === nativeMethods.resolveTargetRefresh) AutomationPureCallbacks.registerLexical(options.resolveTargetRefresh);
   }
-  if (input.hostRuntime)
-    options.hostRuntime = input.hostRuntime;
+  const hostRuntime = automationExecutionProperty(options, input, "hostRuntime");
+  if (hostRuntime) options.hostRuntime = hostRuntime;
   if (input.maxSteps !== undefined)
     options.maxSteps = input.maxSteps;
-  if (input.onRecordBatch)
-    options.onRecordBatch = input.onRecordBatch;
-  if (input.parking)
-    options.parking = input.parking;
-  return automationStudioEnvironmentExecutorOptions(options, input.environment ?? automationStudioLiveRunEnvironment);
+  const onRecordBatch = automationExecutionProperty(options, input, "onRecordBatch");
+  if (onRecordBatch) options.onRecordBatch = onRecordBatch;
+  const parking = automationExecutionProperty(options, input, "parking");
+  if (parking) options.parking = parking;
+  return automationStudioEnvironmentExecutorOptions(options, automationExecutionProperty(options, input, "environment") ?? automationStudioLiveRunEnvironment);
 }

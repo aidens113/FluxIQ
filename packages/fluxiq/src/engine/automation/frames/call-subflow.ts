@@ -10,7 +10,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import { automationStudioNodeOutputReferences } from "../graph-navigation/index.ts";
 import { automationStudioChildInvocation } from "./child-frame.ts";
 import type { AutomationStudioSubflowGraph } from "./invocation-options.ts";
-import { AutomationPureCallbacks } from "../execution-admission/kernel/index.ts";
+import { AutomationPureCallbacks, AutomationExecutionPorts, automationExecutionProperty } from "../execution-admission/kernel/index.ts";
 
 /** What one Call Subflow attempt produced: the node's result, and the child it ran, when it ran one. */
 export type AutomationStudioCalledSubflow = {
@@ -54,13 +54,15 @@ export async function automationStudioCallSubflow(request: {
   if (invocation?.run.stack.some((frame) => frame.subflowId === call.subflowId)) {
     return refused("graph_validation_or_unknown_node", "executor.call_subflow.cycle", `Subflow ${call.subflowId} is already running in this run, so calling it again from inside itself would never end.`);
   }
-  if (!options.subflowGraphs) return refused("missing_router_or_subflow_target", "executor.call_subflow.no_source", `Subflow ${call.subflowId} could not be run: this run was given no Subflows to call.`);
-  const loaded = await options.subflowGraphs.load(call.subflowId);
+  const subflowGraphs = AutomationExecutionPorts.subflowGraphs(options);
+  if (!subflowGraphs) return refused("missing_router_or_subflow_target", "executor.call_subflow.no_source", `Subflow ${call.subflowId} could not be run: this run was given no Subflows to call.`);
+  const load = automationExecutionProperty(options, subflowGraphs, "load");
+  const loaded = await load.call(subflowGraphs, call.subflowId);
   // A part an in-run repair replaced runs as fixed for the rest of the run (C6 step 8).
   const override = loaded ? invocation?.run.subflowOverrides.get(loaded.subflowId) : undefined;
   const target = loaded && override ? { ...loaded, graph: override } : loaded;
   if (!target) return refused("missing_router_or_subflow_target", "executor.call_subflow.unknown", `Subflow ${call.subflowId} could not be run: it is not a Subflow of this automation.`);
-  const runSubflow = invocation?.run.runSubflow;
+  const runSubflow = invocation ? automationExecutionProperty(options, invocation.run, "runSubflow") : undefined;
   if (!runSubflow) return refused("missing_router_or_subflow_target", "executor.call_subflow.no_runner", `Subflow ${call.subflowId} could not be run: this run has no way to run a Subflow.`);
   const executedTraces = new WeakMap<AutomationStudioGraphExecutionTrace, AutomationStudioGraphExecutionTrace>();
   const capture = (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace): void => { executedTraces.set(saved, executed); };

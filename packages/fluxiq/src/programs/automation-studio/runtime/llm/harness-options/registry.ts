@@ -1,4 +1,4 @@
-import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../../../../runtime/flow-authoring/execution/tools/forwarding/index.ts";
 // The registry of harness options: what the exploration loop is allowed to do,
 // and who is allowed to add to it.
 //
@@ -18,6 +18,7 @@ import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolReq
 
 import { randomUUID } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioHarnessOptionLoopBinding } from "../../../../../runtime/agents/tools/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowScope } from "../../../model/index.ts";
 import type { AutomationStudioNodeAvailability } from "../../../nodes/index.ts";
@@ -83,33 +84,7 @@ export type AutomationStudioHarnessOptionResolution = {
   approvedOptionIds?: Iterable<string>;
 };
 
-export type AutomationStudioHarnessOptionLoopBinding = {
-  tools: AutomationStudioLlmEvidenceTool[];
-  executeTool(input: {
-    callId: string;
-    toolId: string;
-    value: JsonObject;
-    signal?: AbortSignal;
-    /** Fixed execution date reference, never part of model-authored tool values. */
-    referenceNow?: number;
-    /**
-     * The run's permission check for this one action, from the run's
-     * `AutomationStudioActionPermissionGate`. Both of Core's callers -- Flow
-     * authoring and the recovery exploration -- always pass one. Absent, the
-     * option is handed `automationStudioActionPermissionDenied`: an action
-     * driven with no run behind it has nobody to ask, so nothing with a
-     * lasting consequence is permitted.
-     */
-    permission?: AutomationStudioActionPermissionCheck;
-  }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
-  /**
-   * The keys of a result that are a view of the target, declared by the
-   * bundles with an option offered here; absent when none declared any. The
-   * loop shows the newest view whole and replaces every earlier one
-   * (`../context-window.ts`).
-   */
-  observedStateKeys?: readonly string[];
-};
+export type { AutomationStudioHarnessOptionLoopBinding } from "../../../../../runtime/agents/tools/index.ts";
 
 export class AutomationStudioHarnessOptionRegistry {
   private readonly options = new Map<string, AutomationStudioHarnessOption>();

@@ -67,7 +67,7 @@ import { automationStudioActionPermissionDenied } from "../../action-permissions
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, runAsAutomationStudioCoreMove, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
 import { automationStudioSiteResetValuesOf as valuesOf } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetLines, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
-import type { AutomationStudioBuildToolObserver } from "../../build-execution/tools/index.ts";
+import type { AutomationStudioBuildToolObserver } from "../../../../../runtime/flow-authoring/execution/tools/index.ts";
 import { automationStudioLlmBindingFieldOrigin } from "../../llm/binding-origin/index.ts";
 import { AutomationStudioSiteResetCallbackPolicies, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetProducer } from "../reset-observation/index.ts";
 

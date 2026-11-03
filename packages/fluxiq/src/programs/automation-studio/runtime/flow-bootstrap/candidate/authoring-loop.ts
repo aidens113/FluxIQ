@@ -12,7 +12,7 @@ import { automationStudioCandidateStallRetest } from "./stall-retest.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
 import { automationStudioCandidateTrialView } from "./trial-view.ts";
 import { inheritCandidateTrialReentry } from "../../candidate-trials/reentry/index.ts";
-import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, bindAutomationStudioObservedBuildTools } from "../../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, bindAutomationStudioObservedBuildTools } from "../../../../../runtime/flow-authoring/execution/tools/index.ts";
 import { AuthoringExecutionScope } from "../../../../../runtime/flow-authoring/execution/observation/index.ts";
 
 /** The code a completion is refused under when it does not name the latest accepted submission, or there is none. */

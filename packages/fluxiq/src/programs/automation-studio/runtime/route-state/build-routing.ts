@@ -8,7 +8,7 @@ import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudio
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
 import { observeAutomationStudioRouteState, readAutomationStudioRouteState, type AutomationStudioRouteStateObservation } from "./observe.ts";
 import { automationStudioSignRouteEffect, automationStudioSignRouteState, type AutomationStudioRouteSignatures } from "./signatures/index.ts";
-import { AutomationStudioBuildToolFactories, invokeAutomationStudioBuildToolDelegate, withAutomationStudioBuildToolCallbackScope } from "../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, invokeAutomationStudioBuildToolDelegate, withAutomationStudioBuildToolCallbackScope } from "../../../../runtime/flow-authoring/execution/tools/forwarding/index.ts";
 import { AutomationStudioSiteResetObservation } from "../flow-bootstrap/reset-observation/index.ts";
 
 /** What a Flow build routes with, kept current as its exploration moves the page. */

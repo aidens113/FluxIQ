@@ -1,3 +1,5 @@
+import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
+import { AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import { automationStudioActivityInBuild, automationStudioActivityRecoveryChoice, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, type AutomationStudioRecoveryNext } from "../../../runtime/activity/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../index.ts";
@@ -84,12 +86,12 @@ export async function automationStudioStepFailedAttempt(
   // a failure that is not retried is settled before anything else can happen to it.
   const settleFailed = (): void => emitAutomationStudioActivityStepRecovering({ nodeId: failedNode.id, label: failedNode.label, definitionId: failedNode.definitionId, parameters: failedNode.parameterValues, failureCode: attempts[attemptIndex]!.failure?.code });
   if (fault?.actUncertain) settleFailed();
-  await options.commandRun?.checkpoint();
+  await AutomationExecutionPorts.commandRun(options)?.checkpoint();
   // C6 step 4: the effect check, before anything below can make the act again or take the run elsewhere.
   if (fault?.actUncertain) {
     const result = await automationStudioRunEffectCheck(automationStudioHostEffectCheck(failedNode, options, actionEffect), attempts[attemptIndex]!, ctx.arrival.attempts);
     attempts[attemptIndex] = { ...attempts[attemptIndex]!, effectCheck: { result, checkedAt: now() } };
-    await options.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(options)?.checkpoint();
     if (options.signal?.aborted) return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", failedNode.id, "Run cancelled.") };
     if (result !== "not_landed") return settledUncertainAct(ctx, failedNode, attemptIndex, fault, result);
     // Did not land: unacted, so the ladder, the retry floor and every rung below apply as to any unacted fault.
@@ -109,7 +111,7 @@ export async function automationStudioStepFailedAttempt(
     mayAbsorb,
     executeNode: async (interference) => {
       const cleared = await executeAutomationStudioNode(flow, interference, values, options, ctx.nextAttemptNumber(), withholding, runState);
-      await options.commandRun?.checkpoint();
+      await AutomationExecutionPorts.commandRun(options)?.checkpoint();
       attempts.push(regionId ? { ...cleared, regionId } : cleared);
       for (const [key, value] of Object.entries(cleared.outputs)) {
         values[`${interference.id}.${key}`] = value;
@@ -158,9 +160,9 @@ export async function automationStudioStepFailedAttempt(
     automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: false, movedBy: onRetry.kind === "resume" ? "on_retry" : "retry", onFail: [] }, incidentId);
     automationStudioRecordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault, "retried", wait.waitMs);
     ctx.pendingRetry = { attemptNumber: ctx.arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: wait.waitMs, rung: ladder.rung, previousAttemptId: attempt.attemptId, ...(hint ? { hintedWaitMs: hint.askedMs, creditedMs: hint.creditedMs } : {}), ...(attempt.failure?.certainNoEffect ? { repress: true as const } : {}) };
-    await options.commandRun?.checkpoint();
-    await automationStudioRunWait(options, wait.waitMs);
-    await options.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(options)?.checkpoint();
+    await automationStudioRunWait(options, wait.waitMs, automationCallbackObservation(options));
+    await AutomationExecutionPorts.commandRun(options)?.checkpoint();
     if (options.signal?.aborted) return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", failedNode.id, "Run cancelled.") };
     return { kind: "retry" };
   }

@@ -4,6 +4,7 @@ import { automationStudioNodeActLasts } from "../../defensive/index.ts";
 import type { AutomationStudioCompletedAct, AutomationStudioLifecycleRouteGuard } from "../../lifecycle-run/index.ts";
 import { automationStudioStateRouteSpan } from "../../state-routing/index.ts";
 import type { AutomationStudioStepLoopContext } from "../loop-context.ts";
+import { automationExecutionProperty, invokeAutomationCallbackSync } from "../../execution-admission/kernel/index.ts";
 
 /** One frame's path as the guard judges it: its graph, its attempts, where the run is in it, and where the route leads. */
 type JudgedPath = { flow: AutomationStudioFlowDocument; attempts: readonly AutomationStudioNodeAttemptTrace[]; fromNodeId: string; toNodeId: string };
@@ -41,15 +42,17 @@ type JudgedPath = { flow: AutomationStudioFlowDocument; attempts: readonly Autom
 export function automationStudioStepLifecycleRouteGuard(ctx: AutomationStudioStepLoopContext, fromNodeId: string): AutomationStudioLifecycleRouteGuard {
   return (target) => {
     const invocation = ctx.options.invocation;
+    const callback = automationExecutionProperty(ctx.options, ctx.options, "resolveActionEffect");
+    const resolve = callback ? (node: AutomationStudioFlowDocument["nodes"][number]) => invokeAutomationCallbackSync(ctx.options, { receiver: undefined, callback, args: [node] }) : undefined;
     const own = { flow: ctx.flow, attempts: ctx.attempts, fromNodeId, toNodeId: target.nodeId };
     const ledger = invocation?.run.lifecycle.completedActs ?? new Map<string, AutomationStudioCompletedAct>();
-    if (!invocation || target.invocationId === invocation.frame.invocationId) return judge(own, ledger, ctx.options.resolveActionEffect);
+    if (!invocation || target.invocationId === invocation.frame.invocationId) return judge(own, ledger, resolve);
     const { stack, lifecycle } = invocation.run;
     const at = stack.findIndex((frame) => frame.invocationId === target.invocationId);
     const view = lifecycle.frames.get(target.invocationId);
     const callNodeId = stack[at + 1]?.callNodeId;
     if (at < 0 || !view || !callNodeId) return { unreachable: `Checkpoint "${target.checkpointId}" is not in a frame this run is executing.`, passesUncertainAct: false };
-    const judged = judge({ flow: view.flow, attempts: view.attempts, fromNodeId: callNodeId, toNodeId: target.nodeId }, ledger, ctx.options.resolveActionEffect);
+    const judged = judge({ flow: view.flow, attempts: view.attempts, fromNodeId: callNodeId, toNodeId: target.nodeId }, ledger, resolve);
     return { ...judged, passesUncertainAct: judged.passesUncertainAct || lastEndedUncertain(ctx.attempts, fromNodeId) };
   };
 }

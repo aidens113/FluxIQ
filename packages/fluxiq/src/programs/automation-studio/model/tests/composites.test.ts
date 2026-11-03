@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { compositeNodeDefinitionId, createBlankAutomationStudioFlowArtifact, createPublishedFlowSnapshot, projectPublishedFlowSnapshotToNodeDefinition } from "../index.ts";
+import { createBlankAutomationStudioFlowArtifact } from "../../../../flows/authoring/flow/index.ts";
+import { createPublishedFlowSnapshot } from "../../../../flows/authoring/publication/index.ts";
+import { compositeNodeDefinitionId } from "../../../../flows/executable/composite/index.ts";
+import { projectPublishedFlowSnapshotToNodeDefinition } from "../../../../components/automation/composite/index.ts";
 
 describe("published Flow composites", () => {
 const scope = { kind: "domain" as const, domainId: "example" };

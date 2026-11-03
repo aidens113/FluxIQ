@@ -1,4 +1,4 @@
-import { invokeObservedExecutionCallbackSync, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
+import { invokeObservedExecutionCallbackSync, observedExecutionProperty, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioRouteEffectSighting } from "../index.ts";
 import { automationStudioReadRouteSignature, type AutomationStudioRouteSignatureReading } from "./value.ts";
@@ -18,7 +18,7 @@ export function automationStudioSignRouteEffect(
   after: JsonObject,
   executionObservation?: ExecutionCallbackObservation
 ): AutomationStudioRouteSignatureReading {
-  const sign = hostRuntime?.signRouteEffect;
+  const sign = hostRuntime ? observedExecutionProperty(executionObservation, hostRuntime, "signRouteEffect") : undefined;
   if (!sign) return { ok: false, reason: "The host records no step effects." };
   let effect: unknown;
   try {
@@ -42,7 +42,7 @@ export function automationStudioRouteEffectHolds(
   observed: JsonObject,
   executionObservation?: ExecutionCallbackObservation
 ): AutomationStudioRouteEffectReading {
-  const holds = hostRuntime?.routeEffectHolds;
+  const holds = hostRuntime ? observedExecutionProperty(executionObservation, hostRuntime, "routeEffectHolds") : undefined;
   if (!holds) return { holds: false, reason: "The host cannot tell whether a step's effect is on the page." };
   let answer: unknown;
   try {
@@ -66,7 +66,7 @@ export function automationStudioRouteEffectSeen(
   observed: JsonObject,
   executionObservation?: ExecutionCallbackObservation
 ): AutomationStudioRouteEffectSighting {
-  const seen = hostRuntime?.routeEffectSeen;
+  const seen = hostRuntime ? observedExecutionProperty(executionObservation, hostRuntime, "routeEffectSeen") : undefined;
   if (!seen) return "unknown";
   let answer: unknown;
   try {

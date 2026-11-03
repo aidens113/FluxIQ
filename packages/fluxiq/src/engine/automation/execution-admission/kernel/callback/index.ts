@@ -6,3 +6,5 @@ export { markAutomationCallbackFrameUnknownSync } from "./unknown-sync.ts";
 export { automationExecutionProperty } from "./property.ts";
 export { automationObservedProperty } from "./observed-property.ts";
 export { assertAutomationClockCallback } from "./clock.ts";
+export { hasAutomationCallbackFrame } from "./frame.ts";
+export { automationCallbackFromObservation } from "./from-observation.ts";

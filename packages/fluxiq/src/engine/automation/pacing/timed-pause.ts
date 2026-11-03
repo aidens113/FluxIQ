@@ -1,3 +1,5 @@
+import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
+import { AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../index.ts";
 import { automationStudioRunWait } from "./run-wait.ts";
 
@@ -29,8 +31,8 @@ export async function automationStudioTimedPause(input: {
   if (attempt.status !== "waiting" || attempt.ask || typeof requestedMs !== "number" || !Number.isFinite(requestedMs) || requestedMs < 0) return undefined;
   const deadlineLeft = options.deadlineAt === undefined ? Number.POSITIVE_INFINITY : Math.max(0, options.deadlineAt - now());
   const waitMs = Math.round(Math.min(requestedMs, deadlineLeft, Math.max(0, input.regionRemainingMs ?? Number.POSITIVE_INFINITY)));
-  await options.commandRun?.checkpoint();
-  await automationStudioRunWait(options, waitMs);
-  await options.commandRun?.checkpoint();
+  await AutomationExecutionPorts.commandRun(options)?.checkpoint();
+  await automationStudioRunWait(options, waitMs, automationCallbackObservation(options));
+  await AutomationExecutionPorts.commandRun(options)?.checkpoint();
   return { ...attempt, status: "succeeded", finishedAt: now(), pause: { requestedMs, waitedMs: waitMs, ...(waitMs < requestedMs ? { bounded: true as const } : {}) } };
 }

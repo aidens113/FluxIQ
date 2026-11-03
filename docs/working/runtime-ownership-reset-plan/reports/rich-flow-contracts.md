@@ -2,7 +2,7 @@
 
 ## Current State
 
-Manifest ready; source remains read-only pending Root release. No tests, builds, source edits, git mutations or agents were run. Paths below are relative to `packages/fluxiq/src/`.
+Source migration complete and frozen for Root verification. Complete declarations/defaults are canonical; old paths retain aliases. Scoped tests, strict canonical type closure, declaration parity and scoped file structure pass. No package-wide checks/builds, git mutations or agents ran. Paths below are relative to `packages/fluxiq/src/`.
 
 ## Exact declaration and file manifest
 
@@ -14,9 +14,9 @@ From `programs/automation-studio/model/flows.ts` to `flows/authoring/flow/`:
 | --- | --- |
 | AutomationStudioFlowVisibility | visibility.ts |
 | AutomationStudioFlowOrigin | origin.ts |
-| AUTOMATION_STUDIO_FLOW_REPRESENTATION_VERSION | representation-version.ts |
-| AutomationStudioFlowRepresentationKind | representation-kind.ts |
-| automationStudioFlowRepresentationKind | representation-kind-of.ts |
+| AUTOMATION_STUDIO_FLOW_REPRESENTATION_VERSION | representation/version.ts |
+| AutomationStudioFlowRepresentationKind | representation/kind.ts |
+| automationStudioFlowRepresentationKind | representation/kind-of.ts |
 | isAutomationStudioSubflowGraphMetadata | is-subflow-graph-metadata.ts |
 | withAutomationStudioFlowRepresentation | with-representation.ts |
 | AutomationStudioFlowSource | source.ts |
@@ -44,13 +44,13 @@ From `flows.ts` to `flows/authoring/settings/`:
 
 | Declaration | File |
 | --- | --- |
-| AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION | intervention-mode-version.ts |
-| AutomationStudioInterventionMode | intervention-mode.ts |
-| automationStudioInterventionMode | intervention-mode-of.ts |
+| AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION | intervention/version.ts |
+| AutomationStudioInterventionMode | intervention/mode.ts |
+| automationStudioInterventionMode | intervention/read.ts |
 | withAutomationStudioInterventionMode | with-intervention-mode.ts |
 | defaultAutomationStudioFlowSettingsMetadata | defaults.ts |
 
-The existing private `isJsonObject` body is retained privately in each of the two intervention functions' files; it gains no public export.
+The existing private `isJsonObject` body lives once in `settings/internal/is-json-object.ts`, exported only by its internal barrel and omitted from the public settings barrel. Both original consumers import it. Representation/intervention groups use subdirectories to satisfy the shared-prefix rule.
 
 From `programs/automation-studio/model/artifacts.ts` to `flows/authoring/legacy-artifact/`:
 
@@ -96,11 +96,19 @@ Move `AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY` from `model/tokens-p
 - Add focused canonical blank-legacy artifact and old/new function/constant alias identity checks under new canonical owners. Existing test oracles remain intact.
 - Do not run broad checks/builds/audits while concurrent writers run; narrow checks only after release, coordinated with Root.
 
+## Observed acceptance
+
+- `node "$env:TEMP/rich-flow-parity.cjs"` -> 36 declaration/doc/literal comparisons (35 public plus one internal predicate), zero mismatches after normalizing line endings and internal export modifier. Original complete size-setting header retained.
+- `node "$env:TEMP/rich-flow-closure.cjs"` -> strict four-barrel TypeScript closure: 405 source modules, zero diagnostics, zero program dependencies including erased types.
+- `node "$env:TEMP/rich-flow-structure.mjs"` -> 58 owned files, zero file-local structure failures. Browser/reach/cycle/package/docs graph rules intentionally excluded because the context is scoped, not the whole repository; Root runs those on the frozen tree. Initial use of graph rules against scoped context produced missing-entry harness errors; initial canonical test placement correctly failed the authoring-to-program boundary and was corrected by placing alias tests under the legacy model owner. No audit rule/baseline changes.
+- `pnpm.cmd exec vitest run src/programs/automation-studio/model/tests/flows.test.ts src/programs/automation-studio/model/tests/composites.test.ts src/programs/automation-studio/model/tests/intervention-mode.test.ts src/programs/automation-studio/model/flow-size/tests/flow-size-settings.test.ts src/programs/automation-studio/model/tests/rich-flow-compatibility.test.ts --minWorkers 1 --maxWorkers 1` (packages/fluxiq) -> 5 files and 26 tests passed, final run 4.96s.
+- Compatibility test is under `model/tests/rich-flow-compatibility.test.ts`; it covers canonical complete blank legacy output plus function/constant identity through original aliases.
+
 ## Return Contract
 
-Outcome: Done (manifest preparation only)
-Changed: docs/working/runtime-ownership-reset-plan/reports/rich-flow-contracts.md
-Validation: read-only `rg` and source inspection -> exact declarations, dependencies and existing focused tests inventoried; tests not run because this stage is manifest-only.
-Not verified: runtime behavior, compile closure, alias identity, structure or declaration parity after movement; source movement not released.
+Outcome: Done
+Changed: Canonical flow/publication/legacy-artifact/settings source trees and barrels; original model aliases; four existing immediate test files; new model/tests/rich-flow-compatibility.test.ts; this report.
+Validation: focused vitest -> 5 files/26 tests pass; declaration parity -> 36/36; strict closure -> zero diagnostics/program edges; scoped file structure -> 58 files/zero failures.
+Not verified: package-wide compiler/build, whole-repository structure/browser/reach gates, downstream public package rebuild or external consumers (Root-owned).
 Report: docs/working/runtime-ownership-reset-plan/reports/rich-flow-contracts.md
-Notes: Ready for Root source release. Source unchanged. No agents/git/broad tests run.
+Notes: Source frozen for Root acceptance. Single private predicate module; no behavior/default/digest edits. No agents/git/broad checks run.

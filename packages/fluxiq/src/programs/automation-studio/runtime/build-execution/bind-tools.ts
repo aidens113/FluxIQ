@@ -1,1 +1,1 @@
-export { bindAutomationStudioObservedBuildTools } from "./tools/index.ts";
+export { bindAutomationStudioObservedBuildTools } from "../../../../runtime/flow-authoring/execution/tools/index.ts";

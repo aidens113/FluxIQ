@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { AutomationStudioChannelScope } from "./channel-scope.ts";
 import type { AutomationStudioRunEnvironment } from "./environment.ts";
 import type { AutomationStudioVirtualClock } from "./virtual-clock.ts";
+import { automationStudioLiveRunEnvironment } from "./live.ts";
+import { AutomationStudioEnvironmentClockBindings } from "./clock-bindings.ts";
 
 /** An offline environment: the channel scope its client sessions are attached under, beside the port itself. */
 export type AutomationStudioScopedRunEnvironment = AutomationStudioRunEnvironment & {
@@ -33,16 +35,22 @@ export function createAutomationStudioScopedRunEnvironment(input: {
   const scopeId = input.scopeId ?? `channel.${input.kind}.${randomUUID()}`;
   if (!scopeId) throw new Error("channel_scope.scope_id_required");
   const clock = input.clock;
-  const random = input.random ?? (() => Math.random());
+  const random = input.random ?? automationStudioLiveRunEnvironment.random;
   const newRunId = input.newRunId ?? ((prefix: string) => `${prefix}.${randomUUID()}`);
+  const now = () => clock.now();
+  const delay = (ms: number, signal?: AbortSignal) => clock.delay(ms, signal);
+  const within = <T>(work: () => Promise<T>): Promise<T> => AutomationStudioChannelScope.run(scopeId, work, clock.startTimer);
+  AutomationStudioEnvironmentClockBindings.bind(now, clock, "now");
+  AutomationStudioEnvironmentClockBindings.bind(delay, clock, "delay");
+  AutomationStudioEnvironmentClockBindings.bind(within, clock, "startTimer", true);
   return Object.freeze({
     kind: input.kind,
     scopeId,
-    now: () => clock.now(),
-    delay: (ms: number, signal?: AbortSignal) => clock.delay(ms, signal),
+    now,
+    delay,
     startTimer: clock.startTimer,
     random,
     newRunId,
-    within: <T>(work: () => Promise<T>): Promise<T> => AutomationStudioChannelScope.run(scopeId, work, clock.startTimer)
+    within
   });
 }

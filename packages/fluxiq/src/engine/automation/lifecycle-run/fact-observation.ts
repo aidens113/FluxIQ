@@ -15,7 +15,8 @@ import type { AutomationStudioFactCondition, AutomationStudioFactConditionResult
 import { parseAutomationStudioFactConditions } from "../lifecycle/index.ts";
 import { automationStudioHostFactConditionResult } from "./host-fact-result.ts";
 
-import { invokeObservedExecutionCallback, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
+import { invokeObservedExecutionCallback, observedExecutionProperty, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
+import { automationObservedClock } from "../execution-admission/kernel/index.ts";
 
 /** The conditions one reader of the observation asks, under a key it reads its answers back by. */
 export type AutomationStudioFactObservationGroup = {
@@ -52,7 +53,7 @@ export async function observeAutomationStudioFacts(input: {
   context: AutomationStudioFactEvaluationContext;
   now?: () => number;
 }, executionObservation?: ExecutionCallbackObservation): Promise<AutomationStudioFactObservation> {
-  const now = input.now ?? Date.now;
+  const now = automationObservedClock(executionObservation, input, undefined);
   const answers = input.groups.map((group) => group.conditions.map(() => undefined as AutomationStudioFactConditionResult | undefined));
   const sent: Array<{ group: number; index: number; condition: AutomationStudioFactCondition }> = [];
   input.groups.forEach((group, groupIndex) => {
@@ -83,10 +84,11 @@ async function askHost(
   executionObservation?: ExecutionCallbackObservation
 ): Promise<{ calls: 0 | 1; answers: AutomationStudioFactConditionResult[] } | { calls: 0 | 1; reference: string; problem?: string }> {
   if (input.context.signal?.aborted) return { calls: 0, reference: "core:cancelled" };
-  const evaluate = input.hostRuntime?.factEvaluator;
+  const host = observedExecutionProperty(executionObservation, input, "hostRuntime");
+  const evaluate = host ? observedExecutionProperty(executionObservation, host, "factEvaluator") : undefined;
   if (!evaluate) return { calls: 0, reference: "core:no_fact_evaluation" };
   try {
-    const returned: unknown = await invokeObservedExecutionCallback(executionObservation, { receiver: input.hostRuntime, callback: evaluate, args: [conditions, input.context] }, input.context.signal);
+    const returned: unknown = await invokeObservedExecutionCallback(executionObservation, { receiver: host, callback: evaluate, args: [conditions, input.context] }, input.context.signal);
     if (!Array.isArray(returned) || returned.length !== conditions.length) {
       const answered = Array.isArray(returned) ? String(returned.length) : "no list of";
       return { calls: 1, reference: "core:host_batch_length", problem: `The host answered ${answered} fact results for ${conditions.length} conditions, so none of them is read.` };

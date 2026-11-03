@@ -1,7 +1,7 @@
 # Runtime Ownership Refactor: Reset Plan
 
-Status: Active
-Status detail: Rich contracts and transaction-local proof optimization locally validated; admission SQL owners and remaining callback/router entry integration active.
+Status: Superseded
+Status detail: Replaced on 2026-11-02 by studio-controller-plan.md on task t845, which restarts the moves from dev with a path-only tool. Kept as the record of t843; do not resume from it.
 Created: 2026-11-02
 Last updated: 2026-11-02
 Owner: Senior supervisor
@@ -11,8 +11,11 @@ Related: [existing record](runtime-ownership-refactor.md), [remaining owner inve
 
 ## Current State
 
+**Superseded 2026-11-02.** Measured against dev: Studio implementation fell from 120,705 to 111,870 lines (7%), while 242 non-test files outside the execution-admission system came to depend on it. The composed test `project-build-trial-reset` ("runs each trial on the site") passes on dev in 2.5 s of test time and does not on this tree. The user restated the goals as: move runtime logic out of Automation Studio, make Studio a controller of Core, and put the extension's chat UI in its own package. Admission is not among them. The admission system and its guards stay unmerged on this branch. Everything below is the historical record of t843.
+
 The user authorized execution on 2026-11-02 ("Ok follow the plan"). The implementation freeze is lifted for this plan. The completed salvage audit remains evidence for selective retention; do not discard the preserved source wholesale.
 First SQL and callback batches passed public-package integration. Complete rich Flow/session/evidence contracts, transaction-local proof reuse and admission SQL ownership are now implemented; exact evidence and held checks are in the ledger below. Remaining callback/environment guards and real router observation entry run as disjoint worker units. Original composed positive remains unverified after the bounded diagnostic. Root owns shared documents, integration, final verification and public export coordination.
+The next source window is frozen: complete rich routing/state owners, full tool prerequisites and P2 actual tool observer/forwarders are implemented. Lead independently verified routing18-declaration/37-unrelated-declaration parity and tool19-declaration/22-alias parity. P2 outside18-file/19-specifier retargeting is applied with exact inverse-byte proof. Callback/clock/environment/proxy guards and their regressions are saved; combined compiler/structure/owner behavior checks are next. No further migration source is released until these readers finish.
 No paid/browser/panel run is started. Package-wide readers wait for a coherent frozen tree; workers may run stable owner-local tests.
 User additionally requested the fastest safe execution on 2026-11-02. Root owns the parallel [time-reduction investigation](runtime-ownership-reset-plan/reports/time-reduction.md); it may reduce redundant collection/builds and dependency waits but cannot weaken acceptance. Retained budget/unknown-frame small unit: 17 tests passed, two-root strict closure zero diagnostics/program edges, scoped structure 19 files zero failures.
 Authoring pair: C:/Users/osrs_/FluxStuff/fxwork/t843/!FluxIQ and sibling !FluxIQWebExtension, task/t843-runtime-foundations. The IDE's t842 document is an older checkout.
@@ -178,6 +181,16 @@ No measured finish date follows from this audit. Earlier 1-3 day and conversatio
 - Worker claim awaiting lead acceptance: P1 ->49 original declarations preserved,271-module strict closure without Studio,60 cases passed. Parallel clocks ->125 passing cases in first owner run, one mixed legacy/observed fixture reconciled without weakening guards, then5/5 boundary cases passed. Final combined checks still required after the final observation forwarding line.
 - Assigned: callback_guards finishes descriptor/clock/environment adapters; stalled_build owns router-owner-entry brief (complete routing contracts, actual state-routing move, then proposed real existing-kernel entry); sql_foundation performs only19 import/export specifier replacements across17 exact outside-consumer files. File ownership transfer of Studio router-state.ts confirmed; engine router/run and shared helpers remain callback-owned.
 - Outcome: source batches local pending coherent combined acceptance. No provider/browser/panel/full sweep launched. Five isolated model-log scaffolds remain preserved and unfinished. Remaining A–N/backend/web/chat work remains required.
+
+### 2026-11-02 - Routing, configured tools and original reset-read parent
+- Agent: lead and three file-owned workers; exact briefs/reports remain under this plan directory.
+- Changed: rich routing/policy contracts and actual state-routing bodies moved, original-kernel routing entry added, two thin callers forward original graph options. Ordinary service freshly constructed options still have no observation binding; P3 integration remains explicitly required. RequiredCommandRun lifecycle was not changed or called twice.
+- Validation: lead `node .fluxiq/refactor/router-owner-verify.mjs` ->18 declarations/bodies and actual exports preserved,37 unrelated model declarations unchanged,13 thin caller changed lines/zero unauthorized changes at that checkpoint. Later independent P2 consumer import changes have their own manifest.
+- Changed: complete tool result and harness binding moved; P2 moves the original tool observer/private state once. Lead saved-source checks ->two complete prerequisite declarations/docs/literals exact;19 P2 declarations exact and22 direct aliases. Lead applied outside18-file/19-specifier imports only, including8 narrow forwarding targets; inverse changes recover every original byte. Full registry/type/runtime/browser-forwarding acceptance still pending.
+- Changed: separate reset-read-parent defect forwards the actual existing call through baseline/settled reads and capture, only when its original private scope exists; unobserved reader argument tuples remain unchanged. No new source, scope or completion proof.
+- Validation: new actual observer/StartCheck regression red ->zero passive callbacks instead of two,1 failed/36.28s including35.59s collection. After two source edits, the new case and four original site-reset files ->36/36 passed,50.18s including47.15s collection/70ms tests. The new regression was then expanded to cover both baseline and settled-read branches; repeat is held for the common grouped check. This confirms a dropped-parent defect, not the composed stall's exact cause.
+- Changed: callback review additionally accounts successful unsupported custom callbacks, preserves exact canonical live/native built-ins, retains original unobserved clock-error behavior, and rejects observed Proxy reflection before traps. Actual frame/property lead check before the final Proxy cases ->8/8 passed,2.04s.
+- Outcome: all current source frozen for combined readers. Core local P1 checkpoint6ff258505 awaits coherent push; downstream task documentation pushed through2b701020 after its generated index correction. Dev/main unchanged; no full sweep/provider/browser/panel launched.
 
 ## Open Questions
 

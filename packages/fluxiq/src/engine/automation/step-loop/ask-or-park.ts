@@ -9,6 +9,7 @@ import { automationStudioRecordDefendedFault } from "./defended-fault.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 import type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
+import { automationCallbackObservation, automationExecutionProperty, automationObservedClock, invokeAutomationCallback, AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 
 /**
  * Handles the question an attempt raised, and the wait it asked for: the ask is
@@ -41,7 +42,7 @@ export async function automationStudioStepAskOrPark(
   });
   // A step only a person can get past asks one (`person-needed.ts`), and
   // neither the ladder nor a repair runs on it.
-  const personStep = automationStudioPersonNeededStep({ attempt, node, attempts, raised, parkingBound: Boolean(options.parking) });
+  const personStep = automationStudioPersonNeededStep({ attempt, node, attempts, raised, parkingBound: Boolean(automationExecutionProperty(options, options, "parking")) });
   if (personStep.kind === "exhausted") {
     automationStudioRecordDefendedFault(runState, node.id, attempt, ctx.arrival.attempts, automationStudioAssessAttemptFault(attempt, node, now(), runState.actionEffects.get(node.id)), "stopped", 0);
     return { kind: "return", trace: automationStudioEndedTrace(ctx, "failed", node.id, personStep.message) };
@@ -65,7 +66,7 @@ export async function automationStudioStepAskOrPark(
       }
     });
     attempts[attemptIndex] = { ...attempts[attemptIndex]!, ask: { askId: ask.askId, kind: ask.kind, parks: ask.parks, status: "pending", ...(personNeeded ? { personNeeded: true as const } : {}) } };
-    await options.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(options)?.checkpoint();
     const undelivered = await openAutomationStudioAsk(options, ask);
     if (undelivered) {
       return { kind: "return", trace: automationStudioEndedTrace(ctx, "failed", node.id, undelivered) };
@@ -75,7 +76,7 @@ export async function automationStudioStepAskOrPark(
       let settlement: Awaited<ReturnType<typeof settleAskInPlace>>;
       try {
         settlement = await settleAskInPlace(options, parked);
-        await options.commandRun?.checkpoint();
+        await AutomationExecutionPorts.commandRun(options)?.checkpoint();
       } catch (error) {
         // The thread could not be read: the wait is over, and nobody answered.
         emitAutomationStudioActivityAskResolved(ask, "cancelled", "running");
@@ -135,9 +136,10 @@ export async function automationStudioStepAskOrPark(
  * conversation up yet should not have its runs fail for asking.
  */
 async function openAutomationStudioAsk(options: AutomationStudioGraphExecutionOptions, ask: AutomationStudioAsk): Promise<string | undefined> {
-  if (!options.parking) return undefined;
+  const port = automationExecutionProperty(options, options, "parking");
+  if (!port) return undefined;
   try {
-    await options.parking.open(ask);
+    await invokeAutomationCallback(options, { receiver: port, callback: automationExecutionProperty(options, port, "open"), args: [ask] });
     return undefined;
   } catch {
     return `Run stopped: it needed to ask a person something (${ask.askId}), and the question could not be delivered.`;
@@ -150,15 +152,16 @@ async function openAutomationStudioAsk(options: AutomationStudioGraphExecutionOp
  * trace later, which is the shape that survives a restart.
  */
 async function settleAskInPlace(options: AutomationStudioGraphExecutionOptions, parked: AutomationStudioParkedRun): Promise<AutomationStudioAskSettlement | undefined> {
-  const port = options.parking;
-  if (!port?.awaitAnswer) return undefined;
-  const answer = await port.awaitAnswer(parked.ask, {
+  const port = automationExecutionProperty(options, options, "parking");
+  const awaitAnswer = port ? automationExecutionProperty(options, port, "awaitAnswer") : undefined;
+  if (!port || !awaitAnswer) return undefined;
+  const answer = await invokeAutomationCallback(options, { receiver: port, callback: awaitAnswer, args: [parked.ask, {
     ...(parked.expiresAtMs !== undefined ? { expiresAtMs: parked.expiresAtMs } : {}),
     ...(options.signal ? { signal: options.signal } : {})
-  });
+  }] });
   // A port that waited as long as it was told and came back with nothing has
   // established the expiry by having waited, so no clock is consulted here.
-  return automationStudioAskSettlement(parked, answer, options.now?.() ?? Date.now());
+  return automationStudioAskSettlement(parked, answer, automationObservedClock(automationCallbackObservation(options), options, options)());
 }
 
 /** What the attempt records once its ask is settled: how it ended, and the way the run left the node. */

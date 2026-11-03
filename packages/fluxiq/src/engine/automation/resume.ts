@@ -5,6 +5,9 @@ import { automationStudioAskSettlement } from "../../runtime/parking/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { resumeAutomationStudioGraphRun, type AutomationStudioGraphRunSeed } from "./graph-run.ts";
 import { copyAutomationExecutionOptions } from "./execution-admission/index.ts";
+import { automationCallbackObservation, automationObservedClock, AutomationExecutionPorts, registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame } from "./execution-admission/kernel/index.ts";
+
+const observedResumeKernel = registerAutomationExecutionKernel(undefined, resumeBody, "children");
 
 /** How a parked run is being settled: somebody answered, or nobody did. */
 export type AutomationStudioRunResumption =
@@ -49,8 +52,14 @@ export async function resumeAutomationStudioGraph(
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioResumeOutcome> {
   const options = request.options ?? {};
-  await options.commandRun?.checkpoint();
-  const nowMs = options.now?.() ?? Date.now();
+  const frame = await prepareAutomationFrame(options, { receiver: undefined, callback: resumeBody }, observedResumeKernel);
+  if (!frame) return await resumeBody(request, options, onExecutedTrace);
+  return await invokeAutomationFrame(frame, { receiver: undefined, callback: resumeBody, args: [request, frame.options, onExecutedTrace] });
+}
+
+async function resumeBody(request: Parameters<typeof resumeAutomationStudioGraph>[0], options: AutomationStudioGraphExecutionOptions, onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void): Promise<AutomationStudioResumeOutcome> {
+  await AutomationExecutionPorts.commandRun(options)?.checkpoint();
+  const nowMs = automationObservedClock(automationCallbackObservation(options), options, options)();
   const parked = request.trace.parked;
   if (!parked || request.trace.status !== "waiting") {
     return refused("not_parked", "This trace is not a run parked on a question, so there is nothing to answer.");

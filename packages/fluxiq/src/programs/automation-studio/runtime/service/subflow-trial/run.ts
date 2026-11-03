@@ -1,3 +1,6 @@
+import { withinAutomationStudioRunEnvironment } from "../../../../../runtime/environment/index.ts";
+import { observedExecutionProperty } from "../../../../../runtime/execution-observation/index.ts";
+import { automationCallbackFromObservation, automationObservedClock } from "../../../../../engine/automation/execution-admission/kernel/index.ts";
 import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
 // One partial trial of a subflow builder's proposal (automation-project-agents
 // plan, `Subflow trial`; unit A4b). The validator side of `core.test_subflow`.
@@ -124,7 +127,7 @@ import { automationStudioSubflowTrialPredecessorGap } from "./predecessor-gap.ts
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import { automationStudioSubflowTrialStoppedAtKey } from "./stopped-at.ts";
 import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
-import { bindTrialExecutorParent, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation } from "../../candidate-trials/index.ts";
+import { bindTrialExecutorParent, candidateTrialExecutionObservation, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation } from "../../candidate-trials/index.ts";
 import { bindPartialTrialFrame, inheritPartialTrialContext, observePartialTrialCallback } from "../../candidate-trials/partial/index.ts";
 
 const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
@@ -149,9 +152,10 @@ export type AutomationStudioSubflowTrialOutcome = {
  * judge calls held before it starts (header, t661).
  */
 export async function runAutomationStudioSubflowTrial(request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioSubflowTrialOutcome> {
-  const environment = ports.environment ?? automationStudioLiveRunEnvironment;
+  const observation = automationCallbackFromObservation(candidateTrialExecutionObservation(request), candidateTrialObservationContext(request) !== undefined);
+  const environment = observedExecutionProperty(observation, ports, "environment") ?? automationStudioLiveRunEnvironment;
   // The trial's client work runs on its environment's channel; live, exactly as before (header, U7).
-  return await environment.within(() => trialIn(environment, request, ports, preparedStart, judgeInputTokens));
+  return await withinAutomationStudioRunEnvironment(environment, () => trialIn(environment, request, ports, preparedStart, judgeInputTokens), observation);
 }
 
 /** One partial trial, run inside its environment (header, U7). */
@@ -194,7 +198,8 @@ async function trialIn(environment: AutomationStudioRunEnvironment, request: Aut
 async function runIn(environment: AutomationStudioRunEnvironment, request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, prepared: { start: AutomationStudioCandidateTrialStart; predecessors: readonly AutomationStudioSubflowProposal[]; identity: AutomationStudioDetachedSubflowIdentity }, runId: string): Promise<AutomationStudioSubflowTrialOutcome> {
   const { signal, scope, proposal } = request;
   const { start, predecessors, identity } = prepared;
-  const now = ports.now ?? environment.now;
+  const observation = automationCallbackFromObservation(candidateTrialExecutionObservation(request), candidateTrialObservationContext(request) !== undefined);
+  const now = automationObservedClock(observation, { now: observedExecutionProperty(observation, ports, "now") ?? observedExecutionProperty(observation, environment, "now") }, undefined);
   const answer = answerFor(request);
   const marker = { buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, revision: proposal.revision, digest: proposal.digest };
   const opened = await ports.openSession({ runId, metadata: { subflowTrial: { ...marker } } });

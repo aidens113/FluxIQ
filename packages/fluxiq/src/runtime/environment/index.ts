@@ -4,3 +4,5 @@ export { automationStudioLiveRunEnvironment } from "./live.ts";
 export { createAutomationStudioScopedRunEnvironment, type AutomationStudioScopedRunEnvironment } from "./scoped.ts";
 export { AutomationStudioVirtualClock } from "./virtual-clock.ts";
 export { automationStudioRunWait } from "./wait.ts";
+export { AutomationStudioEnvironmentClockBindings } from "./clock-bindings.ts";
+export { withinAutomationStudioRunEnvironment } from "./within.ts";

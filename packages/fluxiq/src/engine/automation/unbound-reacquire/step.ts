@@ -12,6 +12,7 @@ import { automationStudioApplyParameterRefresh } from "../parameter-refresh/inde
 import type { AutomationStudioUnboundTargetReacquireRequest } from "../../../runtime/automation-host/contracts/index.ts";
 import type { AutomationStudioIdentityReacquireRecord } from "../../../runtime/automation-host/contracts/index.ts";
 import { automationStudioUnboundReacquireAnswer } from "./host-answer.ts";
+import { automationCallbackObservation, automationExecutionProperty, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
 
 /** The source-less branch only; the caller owns common retry/act gates and cancellation. */
 export async function automationStudioUnboundReacquire(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, retried: AutomationStudioNodeAttemptTrace): Promise<AutomationStudioIdentityReacquireRecord> {
@@ -20,10 +21,11 @@ export async function automationStudioUnboundReacquire(ctx: AutomationStudioStep
   if (prepared.kind !== "prepared") return ended("unavailable", prepared.reason);
   const { resolved } = prepared;
   if (resolved.missingPaths.length) return ended("unavailable", "unresolved_parameters");
-  if (!ctx.options.resolveTargetRefresh) return ended("unavailable", "no_refresh_declaration");
+  const resolve = automationExecutionProperty(ctx.options, ctx.options, "resolveTargetRefresh");
+  if (!resolve) return ended("unavailable", "no_refresh_declaration");
   let scope: AutomationStudioTargetRefreshResolution;
   try {
-    scope = automationStudioRefreshScope(ctx.options.resolveTargetRefresh(node, resolved.values));
+    scope = automationStudioRefreshScope(invokeAutomationCallbackSync(ctx.options, { receiver: ctx.options, callback: resolve, args: [node, resolved.values] }));
   } catch {
     scope = { kind: "unreadable", reason: "registry_unreadable" };
   }
@@ -43,7 +45,9 @@ export async function automationStudioUnboundReacquire(ctx: AutomationStudioStep
   }
   if (ctx.options.signal?.aborted) return ended("unavailable", "aborted");
   const request = Object.freeze({ ...snapshot, ...(ctx.options.signal ? { signal: ctx.options.signal } : {}) });
-  const answer = await automationStudioUnboundReacquireAnswer(ctx.options.hostRuntime!, request);
+  const host = automationExecutionProperty(ctx.options, ctx.options, "hostRuntime");
+  if (!host) return ended("unavailable", "observation_unavailable");
+  const answer = await automationStudioUnboundReacquireAnswer(host, request, automationCallbackObservation(ctx.options));
   if (ctx.options.signal?.aborted) return ended("unavailable", "aborted");
   if (answer.outcome !== "found") return ended(answer.outcome, "reason" in answer ? answer.reason : undefined);
   const patched = automationStudioRefreshPatches(scope.refresh, snapshot.parameters, answer.patches);

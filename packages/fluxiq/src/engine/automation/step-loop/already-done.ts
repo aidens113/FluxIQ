@@ -9,6 +9,7 @@ import { automationStudioEndedTrace } from "./ended-trace.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 import type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
 import { automationStudioStepFrameSucceeded } from "./success-check.ts";
+import { automationExecutionProperty, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
 
 /** The closed code a skipped act's attempt carries. */
 const ALREADY_DONE_CODE = "executor.act.already_done";
@@ -41,7 +42,12 @@ export async function automationStudioStepAlreadyDone(
 ): Promise<Extract<AutomationStudioStepOutcome, { kind: "return" | "next" }> | undefined> {
   delete ctx.lifecycle.pendingAct;
   const invocation = ctx.options.invocation;
-  if (!invocation || invocation.frame.cursor.phase === "handler" || (priorIdentity ? priorIdentity.nodeId !== node.id : !automationStudioNodeActLasts(node, ctx.options.resolveActionEffect?.(node)))) return undefined;
+  if (!invocation || invocation.frame.cursor.phase === "handler" || priorIdentity && priorIdentity.nodeId !== node.id) return undefined;
+  if (!priorIdentity) {
+    const resolve = automationExecutionProperty(ctx.options, ctx.options, "resolveActionEffect");
+    const floor = resolve ? invokeAutomationCallbackSync(ctx.options, { receiver: ctx.options, callback: resolve, args: [node] }) : undefined;
+    if (!automationStudioNodeActLasts(node, floor)) return undefined;
+  }
   const key = priorIdentity?.key ?? automationStudioCompletedActIdentity({
     flow: ctx.flow,
     node,

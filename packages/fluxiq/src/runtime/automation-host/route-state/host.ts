@@ -1,4 +1,4 @@
-import { invokeObservedExecutionCallbackSync, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
+import { invokeObservedExecutionCallbackSync, observedExecutionProperty, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../index.ts";
 import { automationStudioReadRouteSignature, type AutomationStudioRouteSignatureReading } from "./value.ts";
@@ -12,7 +12,7 @@ export type AutomationStudioRouteSignatureComparison = { matches: boolean; close
  * JSON object.
  */
 export function automationStudioSignRouteState(hostRuntime: AutomationStudioHostRuntimeBoundary | undefined, state: JsonObject, executionObservation?: ExecutionCallbackObservation): AutomationStudioRouteSignatureReading {
-  const sign = hostRuntime?.signRouteState;
+  const sign = hostRuntime ? observedExecutionProperty(executionObservation, hostRuntime, "signRouteState") : undefined;
   if (!sign) return { ok: false, reason: "The host signs no route states." };
   let signature: unknown;
   try {
@@ -35,7 +35,7 @@ export function automationStudioCompareRouteSignatures(
   observed: JsonObject,
   executionObservation?: ExecutionCallbackObservation
 ): AutomationStudioRouteSignatureComparison {
-  const compare = hostRuntime?.compareRouteSignatures;
+  const compare = hostRuntime ? observedExecutionProperty(executionObservation, hostRuntime, "compareRouteSignatures") : undefined;
   if (!compare) {
     const equal = jsonEqual(recorded, observed);
     return { matches: equal, closeness: equal ? 1 : 0 };

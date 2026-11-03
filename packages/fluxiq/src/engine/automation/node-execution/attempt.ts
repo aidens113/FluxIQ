@@ -42,8 +42,8 @@ import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refre
 import { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP, automationStudioRuntimeRepeatExecutionKind } from "../../../runtime/repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "../repeat/index.ts";
 import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
-import { invokeAutomationNative, invokeAutomationEffect, invokeAutomationCallback, invokeAutomationCallbackSync, AutomationPureCallbacks, hasAutomationExecutionObservation, markAutomationCallbackFrameUnknown, automationExecutionProperty, automationExecutionClock } from "../execution-admission/kernel/index.ts";
-import { assertAutomationRecordBatchData } from "../execution-admission/options/index.ts";
+import { invokeAutomationNative, invokeAutomationEffect, invokeAutomationCallback, invokeAutomationCallbackSync, AutomationPureCallbacks, AutomationExecutionPorts, hasAutomationExecutionObservation, markAutomationCallbackFrameUnknown, automationExecutionProperty, automationExecutionClock } from "../execution-admission/kernel/index.ts";
+import { assertAutomationRecordBatchData, automationDataProperty } from "../execution-admission/options/index.ts";
 
 // `cleared` collects the layers each dispatch of the attempt says the client
 // closed over the page (`./cleared-layers.ts`), in dispatch order;
@@ -57,7 +57,7 @@ const WRITE_PERSIST_FAILED_MESSAGE = "The records could not be saved.";
 
 /** Owns the actual node attempt, effect capture and private execution provenance. */
 export class AutomationStudioNodeAttemptExecution {
-  private static readonly trustedDefinitions = new Map([...controlFlowNodes, ...dataNodes, ...logicNodes, ...mathNodes, ...policyNodes.filter(definition => definition.id === "builtin.policy.action" || definition.id === "builtin.policy.recovery"), ...randomNodes, ...timingNodes].map(definition => [definition, definition.execute]));
+  private static readonly trustedDefinitions = new Map([...controlFlowNodes, ...dataNodes, ...logicNodes, ...mathNodes, ...policyNodes.filter(definition => definition.id === "builtin.policy.action" || definition.id === "builtin.policy.recovery"), ...randomNodes, ...timingNodes].map(definition => [definition, automationDataProperty(definition, "execute")]));
   private static readonly entries = new WeakMap<object, AutomationStudioExecutorNodeEntry>();
   private static readonly handling = new WeakMap<object, Map<object, { context: ClientGatewayCommandContext; run: AutomationStudioExecutorCommandRun; witness: object }>>();
   static readEntry(consumer: object, run: AutomationStudioExecutorCommandRun): AutomationStudioExecutorNodeEntry {
@@ -81,14 +81,15 @@ export class AutomationStudioNodeAttemptExecution {
     parameterOverlay?: AutomationStudioParameterRefreshOverlay,
     repeatSample?: AutomationStudioRuntimeRepeatSample
   ): Promise<AutomationStudioNodeAttemptTrace> {
-    await options.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(options)?.checkpoint();
     const startedAt = automationExecutionClock(options, "now", options);
     const attemptId = `${node.id}.attempt.${attemptNumber}`;
-    const consumer = options.commandRun ? Object.freeze({}) : undefined;
-    if (consumer) this.entries.set(consumer, Object.freeze({ run: options.commandRun!, invocationId: randomUUID(), attemptId, nodeId: node.id, executingFlowId: flow.flowId, executingFlowDigest: Rules.digest(flow) }));
+    const consumer = AutomationExecutionPorts.commandRun(options) ? Object.freeze({}) : undefined;
+    if (consumer) this.entries.set(consumer, Object.freeze({ run: AutomationExecutionPorts.commandRun(options)!, invocationId: randomUUID(), attemptId, nodeId: node.id, executingFlowId: flow.flowId, executingFlowDigest: Rules.digest(flow) }));
     const definition = getAutomationNodeDefinition(node.definitionId);
-    if (options.commandRun && definition?.execute && (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== definition.execute)) {
-      await options.commandRun.stop("executor.unsupported_definition");
+    const execute = definition ? automationExecutionProperty(options, definition, "execute") : undefined;
+    if (AutomationExecutionPorts.commandRun(options) && definition && execute && (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== execute)) {
+      await AutomationExecutionPorts.commandRun(options)!.stop("executor.unsupported_definition");
       throw new Error("executor.unsupported_definition");
     }
     const resolvedParameters = automationStudioRefreshInputs(flow, node, values, options, runState.variables);
@@ -159,7 +160,7 @@ export class AutomationStudioNodeAttemptExecution {
         Object.assign(effectiveInputs, options.inputs ?? {}, collectWiredNodeInputs(flow, node, values));
       }
       const admitted = await repeatSample.before(executionNode, effectiveInputs, beforeAction, kind, attemptId);
-      await options.commandRun?.checkpoint();
+      await AutomationExecutionPorts.commandRun(options)?.checkpoint();
       if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
       if (!admitted) {
         // Only this graph-owned private sample can authorize the terminal stop.
@@ -169,9 +170,11 @@ export class AutomationStudioNodeAttemptExecution {
     }
     // A Call Subflow runs its sibling graph as a frame of this run, never through a host (`../frames/call-subflow.ts`).
     if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID) {
-      const runSubflow = options.invocation?.run.runSubflow;
-      if (options.commandRun && (!runSubflow || !options.commandRun.acceptsComposite(runSubflow))) {
-        await options.commandRun.stop("executor.unsupported_native_or_composite");
+      const invocation = automationExecutionProperty(options, options, "invocation");
+      const run = invocation ? automationExecutionProperty(options, invocation, "run") : undefined;
+      const runSubflow = run ? automationExecutionProperty(options, run, "runSubflow") : undefined;
+      if (AutomationExecutionPorts.commandRun(options) && (!runSubflow || !AutomationExecutionPorts.commandRun(options)!.acceptsComposite(runSubflow))) {
+        await AutomationExecutionPorts.commandRun(options)!.stop("executor.unsupported_native_or_composite");
         throw new Error("executor.unsupported_native_or_composite");
       }
       // Its `inputs` were resolved above, as every parameter is: each holds the value it gives the child.
@@ -179,9 +182,9 @@ export class AutomationStudioNodeAttemptExecution {
       const called = await automationStudioCallSubflow({ node: executionNode, options: this.callFlowChildOptions(options, attemptId) });
       return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, automationExecutionClock(options, "now", options), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
     }
-    if (!definition?.execute) {
-      if (!options.commandRun && automationExecutionProperty(options, options, "nativeNodeExecutor")) runState.dispatchedActions.add(node.id);
-      const native = await (!options.commandRun ? invokeAutomationNative(options, {
+    if (!definition || !execute) {
+      if (!AutomationExecutionPorts.commandRun(options) && automationExecutionProperty(options, options, "nativeNodeExecutor")) runState.dispatchedActions.add(node.id);
+      const native = await (!AutomationExecutionPorts.commandRun(options) ? invokeAutomationNative(options, {
         node: executionNode,
         // The run's own Flow inputs, then what an edge brings: a declared port is
         // never filled from a bare key another node left behind (`node-inputs.ts`).
@@ -205,8 +208,8 @@ export class AutomationStudioNodeAttemptExecution {
         return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, automationExecutionClock(options, "now", options), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
       const compositeExecutor = automationExecutionProperty(options, options, "compositeExecutor");
-      if (options.commandRun && (!compositeExecutor || !options.commandRun.acceptsComposite(compositeExecutor))) {
-        await options.commandRun.stop("executor.unsupported_native_or_composite");
+      if (AutomationExecutionPorts.commandRun(options) && (!compositeExecutor || !AutomationExecutionPorts.commandRun(options)!.acceptsComposite(compositeExecutor))) {
+        await AutomationExecutionPorts.commandRun(options)!.stop("executor.unsupported_native_or_composite");
         throw new Error("executor.unsupported_native_or_composite");
       }
       if (compositeExecutor) runState.dispatchedActions.add(node.id);
@@ -244,8 +247,8 @@ export class AutomationStudioNodeAttemptExecution {
         variables: runState.variables,
         iteration: this.iterationFor(runState, node.id),
         ...(hasAutomationExecutionObservation(options) ? {
-          ...(automationExecutionProperty(options, options, "random") ? { random: function (this: unknown) { return automationExecutionClock(options, "random", this); } } : {}),
-          ...(automationExecutionProperty(options, options, "now") ? { now: function (this: unknown) { return automationExecutionClock(options, "now", this); } } : {})
+          ...(automationExecutionProperty(options, options, "random") || this.trustedDefinitions.get(definition) === execute && randomNodes.includes(definition) ? { random: function (this: unknown) { return automationExecutionClock(options, "random", this); } } : {}),
+          ...(automationExecutionProperty(options, options, "now") || this.trustedDefinitions.get(definition) === execute ? { now: function (this: unknown) { return automationExecutionClock(options, "now", this); } } : {})
         } : {
           ...(options.random ? { random: options.random } : {}),
           ...(options.now ? { now: options.now } : {})
@@ -254,15 +257,14 @@ export class AutomationStudioNodeAttemptExecution {
         ...(options.signal ? { signal: options.signal } : {}),
         ...(expectationEvaluator ? { expectationEvaluator } : {})
       };
-      if (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== definition.execute) runState.dispatchedActions.add(node.id);
-      const execute = definition.execute;
+      if (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== execute) runState.dispatchedActions.add(node.id);
       if (this.trustedDefinitions.get(definition) === execute) AutomationPureCallbacks.register(definition, execute);
       let result = await invokeAutomationCallback(options, { receiver: definition, callback: execute, args: [context] });
       const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, definition.outputs);
       return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, automationExecutionClock(options, "now", options), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target) }, options, beforeAction, hostCapabilities, runState);
     } catch (error) {
-      await options.commandRun?.stop("executor.attempt_failed");
+      await AutomationExecutionPorts.commandRun(options)?.stop("executor.attempt_failed");
       // The one place a node's throw becomes an attempt, and therefore the one
       // place a throw is classified. Before this, a throw produced a failed
       // attempt with no structured failure at all, and the retry loop -- which
@@ -312,7 +314,7 @@ export class AutomationStudioNodeAttemptExecution {
     const branchRoutes = this.declaredBranchRoutes(declaredOutputs);
     let result = projectRuntimeTargetActionability(initial);
     for (const [index, effect] of (initial.effects ?? []).entries()) {
-      await options.commandRun?.checkpoint();
+      await AutomationExecutionPorts.commandRun(options)?.checkpoint();
       // A question for a person is the executor's to raise, not a domain's to
       // answer: no host dispatcher is asked to know what an ask is.
       if (effect.type === AUTOMATION_STUDIO_ASK_EFFECT) continue;
@@ -322,11 +324,11 @@ export class AutomationStudioNodeAttemptExecution {
         const written = await this.withWrittenRecords(effect, options, target);
         result = { ...result, effects: (result.effects ?? []).map((kept, position) => position === index ? written.effect : kept) };
         dispatched = written.result;
-        if (options.commandRun && dispatched.failure?.code === "record_output.persist_failed") throw new Error("executor.required_capture_failed");
+        if (AutomationExecutionPorts.commandRun(options) && dispatched.failure?.code === "record_output.persist_failed") throw new Error("executor.required_capture_failed");
       } else {
-        if (options.commandRun) {
+        if (AutomationExecutionPorts.commandRun(options)) {
           if (effect.type !== "policy.output.dispatch" || !target.consumer || !automationExecutionProperty(options, options, "effectDispatcher")) throw new Error("executor.unsupported_required_effect");
-          issued = await options.commandRun.context(target.consumer, index);
+          issued = await AutomationExecutionPorts.commandRun(options)!.context(target.consumer, index);
         }
         if (!automationExecutionProperty(options, options, "effectDispatcher")) continue;
         if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
@@ -365,9 +367,9 @@ export class AutomationStudioNodeAttemptExecution {
         // or left its outcome unknown and latched the run: nothing is consumed,
         // the attempt fails with that fact, and the step loop stops there
         // (`../step-loop/uncertain-stop.ts`).
-        if (issued && !options.commandRun!.receipted(issued.context)) {
+        if (issued && !AutomationExecutionPorts.commandRun(options)!.receipted(issued.context)) {
           if (ClientGatewayCommandOutcome.observer(issued.context)) await ClientGatewayCommandOutcome.stop(issued.context, "executor.required_not_receipted");
-          result = options.commandRun!.withdraw(issued.context) ? this.notSentResult(result, dispatched) : this.outcomeUnknownResult(result, dispatched);
+          result = AutomationExecutionPorts.commandRun(options)!.withdraw(issued.context) ? this.notSentResult(result, dispatched) : this.outcomeUnknownResult(result, dispatched);
           break;
         }
         if (issued && (dispatched.failure?.code === "record_output.persist_failed" || dispatched.status !== "success" && dispatched.status !== "failed")) throw new Error("executor.required_result_unhandled");
@@ -390,11 +392,11 @@ export class AutomationStudioNodeAttemptExecution {
         const route = dispatched.route && branchRoutes.has(dispatched.route) ? { route: dispatched.route } : {};
         result = { ...result, outputs: { ...outputs, ...automationStudioResultPathOutputs(outputs, declaredOutputs) }, ...targetResolution, ...route };
       }
-      if (issued && target.consumer && options.commandRun) {
+      if (issued && target.consumer && AutomationExecutionPorts.commandRun(options)) {
         const handled = this.handling.get(target.consumer) ?? new Map();
-        handled.set(issued.capability, { context: issued.context, run: options.commandRun, witness: Object.freeze({}) });
+        handled.set(issued.capability, { context: issued.context, run: AutomationExecutionPorts.commandRun(options), witness: Object.freeze({}) });
         this.handling.set(target.consumer, handled);
-        await options.commandRun.consume(target.consumer, issued.capability, issued.context);
+        await AutomationExecutionPorts.commandRun(options)!.consume(target.consumer, issued.capability, issued.context);
       }
       if (dispatched.status === "failed") break;
     }

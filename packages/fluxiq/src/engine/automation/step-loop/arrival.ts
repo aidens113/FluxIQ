@@ -1,3 +1,5 @@
+import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
+import { AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "../index.ts";
 import { automationStudioAwaitNodeReadiness, type AutomationStudioReadinessOutcome } from "../recovery/index.ts";
@@ -64,7 +66,7 @@ export async function automationStudioStepArrival(
   const retryPolicy = automationStudioNodeRetryPolicy(ctx.flow, node, options);
   const recordedState = automationStudioRecordedState(node);
   // A node's pace holds each arrival at it, never a retry of one (`pacing/pace-keeper.ts`).
-  const paced = ctx.arrival.attempts === 1 ? await runState.pace.before(node, now, (ms) => automationStudioRunWait(options, ms)) : undefined;
+  const paced = ctx.arrival.attempts === 1 ? await runState.pace.before(node, now, (ms) => automationStudioRunWait(options, ms, automationCallbackObservation(options))) : undefined;
   // On Before, retries included, before the readiness gate; its record rides on the attempt it cleared the way for.
   const before = await automationStudioStepLifecycle(ctx, { event: "before", node, attemptNumber: ctx.arrival.attempts, attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}` });
   if (before.kind === "return" || before.kind === "route") return before.kind === "return" ? before : { kind: "next", node: before.node };
@@ -75,13 +77,13 @@ export async function automationStudioStepArrival(
   // that judged the state and found it not met asks state routing first,
   // and a way on skips the dispatch entirely (`state-routing/`).
   const readiness = await automationStudioAwaitNodeReadiness(node, options, `${node.id}.attempt.${ctx.nextAttemptNumber()}`);
-  await options.commandRun?.checkpoint();
+  await AutomationExecutionPorts.commandRun(options)?.checkpoint();
   if (options.signal?.aborted) {
     return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", node.id, "Run cancelled.") };
   }
   // Immediately before the attempt it comes before, once per arrival; it spends no attempt.
   const reacquired = await automationStudioStepReacquire(ctx, node, retryPolicy);
-  if (reacquired) await options.commandRun?.checkpoint();
+  if (reacquired) await AutomationExecutionPorts.commandRun(options)?.checkpoint();
   if (options.signal?.aborted) {
     return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", node.id, "Run cancelled.") };
   }

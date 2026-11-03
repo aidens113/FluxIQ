@@ -63,6 +63,16 @@ export class ExecutionObservationSource implements ConfiguredExecutionSource {
     return ExecutionObservationBindings.create(this, parent);
   }
 
+  /** Absence is pre-entry only; an entered foreign/mismatched parent stays invalid. */
+  hasFrame(observation: ExecutionCallbackObservation): boolean {
+    const observed = ExecutionObservationBindings.read(observation);
+    if (observed.source !== this) throw new Error("execution_observation.foreign_binding");
+    if (!entered.has(observed.parent.parent)) return false;
+    const frame = this.frame(observation);
+    if (frame.state !== "pending" || frame.terminal || frame.interrupted || frame.outcome !== undefined) throw new Error("execution_observation.frame_inactive");
+    return true;
+  }
+
   manage<TReceiver, TArguments extends unknown[], TResult>(registration: ManagedExecutionCallbackRegistration<TReceiver, TArguments, TResult>): void {
     const identity = this.identity(registration);
     if (this.used.some(value => this.same(value, identity)) || this.contracts.some(value => this.same(value, identity))) throw new Error("execution_observation.contract_already_bound");

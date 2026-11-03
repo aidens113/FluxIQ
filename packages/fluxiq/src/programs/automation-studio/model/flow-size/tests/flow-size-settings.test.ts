@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, automationStudioFlowMaxNodesPerSubflow, automationStudioFlowSizeSettingIssue } from "../index.ts";
+import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, automationStudioFlowMaxNodesPerSubflow, automationStudioFlowSizeSettingIssue } from "../../../../../flows/authoring/settings/size/index.ts";
 
 describe("the Flow size setting", () => {
   it("defaults to 100 nodes per Subflow for a Flow with no setting", () => {

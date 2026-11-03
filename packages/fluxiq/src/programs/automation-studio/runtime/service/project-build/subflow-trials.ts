@@ -20,7 +20,7 @@ import { observeCandidateTrialChoice } from "../../candidate-trials/authority/in
 import { candidateTrialSuppressesWrites } from "../../candidate-trials/index.ts";
 import { trialExecutionSource } from "../../candidate-trials/observation/index.ts";
 import { AutomationStudioSiteResetCallbackPolicies, AutomationStudioSiteResetObservation, invokeAutomationStudioSiteResetCallback, invokeAutomationStudioSiteResetSync } from "../../flow-bootstrap/reset-observation/index.ts";
-import { withAutomationStudioBuildToolCallbackScope } from "../../build-execution/tools/index.ts";
+import { withAutomationStudioBuildToolCallbackScope } from "../../../../../runtime/flow-authoring/execution/tools/forwarding/index.ts";
 
 // A project build's partial trials (unit A5c over A4b's runner): one port for
 // the build, shared by every brief, made from the same trial environment the

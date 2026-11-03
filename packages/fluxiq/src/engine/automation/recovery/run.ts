@@ -1,8 +1,8 @@
+import { AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowEdge } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioResolvedActionEffect } from "../../../components/automation/index.ts";
-import { hostExpectationEvaluator } from "../../../runtime/automation-host/index.ts";
 import { AUTOMATION_STUDIO_LADDER_RUNG_KINDS, type AutomationStudioGraphExecutionOptions, type AutomationStudioLadderRungKind, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryDecision } from "../contracts.ts";
 import { automationStudioExpectationRequest, automationStudioNodeReadinessState, automationStudioReadinessCeilingMs, automationStudioRecordedState } from "../transitions/index.ts";
 import { chooseAutomationStudioRecovery, type AutomationStudioLadderState } from "./ladder.ts";
@@ -12,6 +12,7 @@ import { automationStudioExpectationSatisfiedAfterFailure } from "../transitions
 import { automationStudioObstructionWayOut } from "../node-execution/index.ts";
 import { emitAutomationStudioActivityStepInterference } from "../../../runtime/activity/index.ts";
 import { invokeAutomationExpectation } from "../expectation-observation/index.ts";
+import { automationExecutionProperty, automationExecutionClock } from "../execution-admission/kernel/index.ts";
 
 /** The node metadata that marks a Flow node as one whose job is to clear interference: an overlay, a consent wall, a timed prompt. */
 const CLEARS_INTERFERENCE_METADATA_KEY = "clearsInterference";
@@ -71,10 +72,10 @@ export type AutomationStudioLadderRunInput = {
  * recovery node, or the model.
  */
 export async function runAutomationStudioRecoveryLadder(input: AutomationStudioLadderRunInput): Promise<AutomationStudioLadderOutcome> {
-  await input.options.commandRun?.checkpoint();
+  await AutomationExecutionPorts.commandRun(input.options)?.checkpoint();
   let attemptsForNode = input.attemptsForNode;
   for (;;) {
-    await input.options.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(input.options)?.checkpoint();
     const decision = chooseAutomationStudioRecovery(
       input.flow,
       input.node,
@@ -137,7 +138,7 @@ function ladderState(input: AutomationStudioLadderRunInput, attemptsForNode: num
     // Waiting again is only worth offering when the run did not already see the
     // state before it attempted: if readiness held and the node still failed,
     // the failure is not this node waiting for the page.
-    readinessAvailable: Boolean(automationStudioNodeReadinessState(input.node)) && Boolean(hostExpectationEvaluator(input.options.hostRuntime)) && input.attempt.readiness?.satisfied !== true,
+    readinessAvailable: Boolean(automationStudioNodeReadinessState(input.node)) && hasExpectationEvaluator(input.options) && input.attempt.readiness?.satisfied !== true,
     ...(interferenceNodeId ? { interferenceNodeId } : {}),
     ...(automationStudioObstructionWayOut(input.attempt.obstruction) ? { obstructionPressable: true as const } : {})
   };
@@ -222,12 +223,12 @@ export async function automationStudioAwaitNodeReadiness(
   attemptId: string
 ): Promise<AutomationStudioReadinessOutcome | undefined> {
   const readyState = automationStudioNodeReadinessState(node);
-  const host = options.hostRuntime;
-  const evaluate = host?.expectationEvaluator;
+  const host = automationExecutionProperty(options, options, "hostRuntime");
+  const evaluate = host ? automationExecutionProperty(options, host, "expectationEvaluator") : undefined;
   if (!readyState || !evaluate) return undefined;
   const ceilingMs = automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs);
   const request = automationStudioExpectationRequest(readyState, ceilingMs);
-  const now = options.now ?? Date.now;
+  const now = () => automationExecutionClock(options, "now", undefined);
   const startedAt = now();
   try {
     const evaluation = await invokeAutomationExpectation(options, { receiver: host, callback: evaluate, args: [request.conditions, request.mode, request.timeoutMs, {
@@ -248,4 +249,9 @@ export async function automationStudioAwaitNodeReadiness(
     // as it would have been without one.
     return { ceilingMs, waitedMs: Math.max(0, now() - startedAt), satisfied: false, checkedConditionCount: 0, message: error instanceof Error ? error.message : "The readiness gate could not be evaluated." };
   }
+}
+
+function hasExpectationEvaluator(options: AutomationStudioGraphExecutionOptions): boolean {
+  const host = automationExecutionProperty(options, options, "hostRuntime");
+  return Boolean(host && automationExecutionProperty(options, host, "expectationEvaluator"));
 }

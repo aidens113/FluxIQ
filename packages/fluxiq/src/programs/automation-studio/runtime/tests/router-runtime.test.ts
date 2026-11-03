@@ -10,12 +10,14 @@ import {
   type AutomationStudioRouterExecutionResult
 } from "../router-runtime.ts";
 import { compileExecutableRouterPlan, runExecutableRouter, evaluateExecutableRouteCondition } from "../../../../engine/automation/router/index.ts";
+import { defaultAutomationStudioSubflowForFlow as canonicalDefaultSubflow } from "../../../../flows/authoring/routing/index.ts";
 
 describe("Automation Studio router runtime", () => {
   it("keeps actual canonical callable identities under the legacy names", () => {
     expect(compileAutomationStudioRouterPlan).toBe(compileExecutableRouterPlan);
     expect(runAutomationStudioRouter).toBe(runExecutableRouter);
     expect(evaluateAutomationStudioRouteCondition).toBe(evaluateExecutableRouteCondition);
+    expect(defaultAutomationStudioSubflowForFlow).toBe(canonicalDefaultSubflow);
   });
 
   it("retains the old rich input, unused adaptation-policy slot and complete target projection", () => {

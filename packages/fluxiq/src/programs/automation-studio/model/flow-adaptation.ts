@@ -1,92 +1,19 @@
 import type { AutomationStudioChangeProposalPatch as ChangeProposalPatch } from "../../../flows/executable/change/proposal/index.ts";
 import type { AutomationStudioFlowAdaptation as FlowAdaptationRecord } from "../../../flows/executable/adaptation/index.ts";
 import type { ExecutableChangeProposalMode, ExecutableChangeProposalStatus, ExecutableChangeProposalKind, ExecutableAdaptationRiskLevel, ExecutableAdaptationStatus, ExecutableChangeEntryPoint, ExecutableChangeOrigin, ExecutableChangeValidationKind, ExecutableAdaptationValidationResult } from "../../../flows/executable/change/index.ts";
-import type { ExecutableDefinitionStatus } from "../../../flows/executable/index.ts";
 import type { FlowInstruction, InstructionScope, InstructionTag, InstructionRequirement } from "../../../flows/authoring/index.ts";
-import type { ExecutableRouteTarget, ExecutableRouteRule, ExecutableRouter, ExecutableSubflowTarget, ExecutableRouteDecision } from "../../../flows/executable/routing/index.ts";
+import type { ExecutableRouteDecision } from "../../../flows/executable/routing/index.ts";
+import type { AutomationStudioFlowRouter, AutomationStudioFlowSubflow } from "../../../flows/authoring/routing/index.ts";
+import type { AutomationStudioAdaptationPolicy } from "../../../flows/authoring/adaptation-policy/index.ts";
+export type { AutomationStudioAdaptationPolicyPreset, AutomationStudioAdaptationPolicy } from "../../../flows/authoring/adaptation-policy/index.ts";
 import type { AutomationStudioFailureRecord, AutomationStudioRunDatasetSummary, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { ExecutableFlowRunStatus } from "../../../flows/executable/execution/index.ts";
 import type { AutomationConditionExpression } from "./conditions.ts";
 import type { EvidenceReference, StateFactReference } from "./evidence.ts";
 import type { AutomationStudioFlowScope } from "./flows.ts";
-import type { AutomationStudioInterventionMode } from "./flows.ts";
 
-export type AutomationStudioFlowExpansionStatus = ExecutableDefinitionStatus;
-
-export type AutomationStudioRouteTarget = ExecutableRouteTarget;
-
-export type AutomationStudioFlowRouteGroup = {
-  schemaVersion: "0.1";
-  groupId: string;
-  routerId: string;
-  name: string;
-  description?: string;
-  order: number;
-  status: AutomationStudioFlowExpansionStatus;
-  collapsed?: boolean;
-  createdAt: number;
-  updatedAt: number;
-  metadata?: JsonObject;
-};
-
-export type AutomationStudioFlowRouteRule = ExecutableRouteRule & {
-  schemaVersion: "0.1";
-  routerId: string;
-  name: string;
-  description?: string;
-  confidence?: number;
-  createdAt: number;
-  updatedAt: number;
-  metadata?: JsonObject;
-};
-
-export type AutomationStudioFlowRouter = ExecutableRouter<AutomationStudioFlowRouteRule> & {
-  schemaVersion: "0.1";
-  projectId: string;
-  name: string;
-  description?: string;
-  status: AutomationStudioFlowExpansionStatus;
-  createdAt: number;
-  updatedAt: number;
-  metadata?: JsonObject;
-};
-
-export type AutomationStudioSubflowRole =
-  | "primary"
-  | "site"
-  | "screen"
-  | "integration"
-  | "recovery"
-  | "fallback"
-  | "utility";
-
-export type AutomationStudioFlowSubflow = ExecutableSubflowTarget & {
-  schemaVersion: "0.1";
-  flowId: string;
-  projectId: string;
-  name: string;
-  description?: string;
-  role: AutomationStudioSubflowRole;
-  tags?: string[];
-  graphFlowId?: string;
-  routeTags?: string[];
-  inputMapping?: Array<{ flowInputId: string; subflowInputId: string; required?: boolean }>;
-  outputMapping?: Array<{ subflowOutputId: string; flowOutputId: string; required?: boolean }>;
-  localInstructionIds?: string[];
-  proposalModeOverride?: AutomationStudioChangeProposalMode;
-  interventionModeOverride?: AutomationStudioInterventionMode;
-  stability?: {
-    runCount: number;
-    successCount: number;
-    failureCount: number;
-    lastRunAt?: number;
-    lastFailureAt?: number;
-  };
-  createdAt: number;
-  updatedAt: number;
-  metadata?: JsonObject;
-};
+export type { AutomationStudioFlowExpansionStatus, AutomationStudioRouteTarget, AutomationStudioFlowRouteGroup, AutomationStudioFlowRouteRule, AutomationStudioFlowRouter, AutomationStudioSubflowRole, AutomationStudioFlowSubflow } from "../../../flows/authoring/routing/index.ts";
 
 export type AutomationStudioInstructionScope = InstructionScope;
 
@@ -465,47 +392,8 @@ export type AutomationStudioFlowAdaptationValidationResult = ExecutableAdaptatio
 
 export type AutomationStudioFlowAdaptation = FlowAdaptationRecord;
 
-export type AutomationStudioAdaptationPolicyPreset =
-  | "locked"
-  | "observe"
-  | "repair"
-  | "adaptive"
-  | "autonomous";
-
-export type AutomationStudioAdaptationPolicy = {
-  schemaVersion: "0.1";
-  policyId: string;
-  scope: { kind: "flow"; flowId: string } | { kind: "subflow"; flowId: string; subflowId: string };
-  preset: AutomationStudioAdaptationPolicyPreset;
-  proposalMode: AutomationStudioChangeProposalMode;
-  allowRuntimeRecovery: boolean;
-  allowCreateRecoveryPaths: boolean;
-  allowModifySubflows: boolean;
-  allowCreateSubflows: boolean;
-  allowModifyRouter: boolean;
-  allowModifyExpectations: boolean;
-  allowModifyActionTargets: boolean;
-  allowDeleteOrDisableBehavior: boolean;
-  allowExternalSideEffects: boolean;
-  requireApprovalForDestructiveChanges: boolean;
-  requireApprovalForExternalSideEffects: boolean;
-  maxInterventionsPerRun?: number;
-  maxEstimatedCostUsdPerRun?: number;
-  createdAt: number;
-  updatedAt: number;
-  metadata?: JsonObject;
-};
-
-export type AutomationStudioFlowExpansionReferences = {
-  routerId?: string;
-  subflowIds?: string[];
-  instructionIds?: string[];
-  recordingIds?: string[];
-  changeProposalIds?: string[];
-  runIds?: string[];
-  adaptationIds?: string[];
-  adaptationPolicyId?: string;
-};
+import type { AutomationStudioFlowExpansionReferences } from "../../../flows/authoring/flow/index.ts";
+export type { AutomationStudioFlowExpansionReferences };
 
 export type AutomationStudioFlowExpansionInventory = {
   scope: AutomationStudioFlowScope;

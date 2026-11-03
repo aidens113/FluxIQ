@@ -22,7 +22,6 @@ import { copyAutomationExecutionOptions } from "../execution-admission/index.ts"
  * the page the next attempt starts from, as after any dispatch.
  */
 export async function automationStudioReacquireSourceRerun(ctx: AutomationStudioStepLoopContext, source: AutomationStudioFlowNode): Promise<Readonly<Record<string, JsonValue>> | undefined> {
-  const { onRecordBatch: _notSaved } = ctx.options;
   const options = copyAutomationExecutionOptions(ctx.options);
   delete options.onRecordBatch;
   const runState: AutomationStudioRunState = {

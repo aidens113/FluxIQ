@@ -1,4 +1,4 @@
-import { automationCallbackObservation } from "../../execution-admission/kernel/index.ts";
+import { automationCallbackObservation, automationExecutionProperty, automationObservedClock, AutomationExecutionPorts } from "../../execution-admission/kernel/index.ts";
 // The lifecycle dispatcher at run time (state-aware recovery plan, C3-C5, C7).
 //
 // This module owns dispatching one lifecycle event at one node of the frame
@@ -80,11 +80,14 @@ export async function dispatchAutomationStudioLifecycleEvent(input: AutomationSt
   if (!run || !current) return { kind: "none", observations: 0, runs: [] };
   automationStudioRegisterLifecycleGraph(run.lifecycle, input.graph);
   if (run.stack.some((frame) => frame.cursor.phase === "handler")) return { kind: "none", observations: 0, runs: [] };
-  const { registrations, graphs } = await automationStudioActiveLifecycleRegistrations(run, input.options.subflowGraphs);
+  const { registrations, graphs } = await automationStudioActiveLifecycleRegistrations(run, AutomationExecutionPorts.subflowGraphs(input.options), automationCallbackObservation(input.options));
   const candidates = resolveAutomationStudioHandlerCandidates({ stack: run.stack, registrations, event: input.event, nodeId: input.nodeId });
   if (!candidates.some(isHandlerNode)) return { kind: "none", observations: 0, runs: [] };
   run.lifecycle.budget ??= automationStudioLifecycleBudget(input.options.recoveryBudget);
-  const dispatch: Dispatch = { input, run, current, framePath: run.stack.map((frame) => frame.invocationId), graphs, candidates, observations: 0, now: input.options.now ?? Date.now };
+  const observation = automationCallbackObservation(input.options);
+  const selectedNow = automationExecutionProperty(input.options, input.options, "now") ?? (observation ? undefined : Date.now);
+  const clock = selectedNow ? { now: selectedNow } : {};
+  const dispatch: Dispatch = { input, run, current, framePath: run.stack.map((frame) => frame.invocationId), graphs, candidates, observations: 0, now: function(this: unknown) { return automationObservedClock(observation, clock, this)(); } };
   return await walk(dispatch);
 }
 
@@ -210,7 +213,7 @@ async function settle(dispatch: Dispatch, candidate: AutomationStudioHandlerCand
   }
   const readyConditions = factReadyState(dispatch);
   const routeTarget = body.written.kind === "route"
-    ? automationStudioLifecycleRouteTarget({ stack: run.stack, graphs: dispatch.graphs, checkpointId: body.written.checkpointId, values: input.values, valuesOf: (invocationId) => run.lifecycle.frames.get(invocationId)?.values })
+    ? automationStudioLifecycleRouteTarget({ stack: run.stack, graphs: dispatch.graphs, checkpointId: body.written.checkpointId, values: input.values, valuesOf: (invocationId) => run.lifecycle.frames.get(invocationId)?.values }, automationCallbackObservation(input.options))
     : undefined;
   const groups: AutomationStudioFactObservationGroup[] = [
     { key: "completion", conditions: registration.completionCheck },
@@ -220,7 +223,8 @@ async function settle(dispatch: Dispatch, candidate: AutomationStudioHandlerCand
   const observed = await observe(dispatch, groups);
   const completionCheck = automationStudioFactConditionsHold(registration.completionCheck, observed.get("completion") ?? []);
   const readyState = readyConditions ? automationStudioFactConditionsHold(readyConditions, observed.get("ready") ?? []) : undefined;
-  const guard = routeTarget && input.routeGuard ? input.routeGuard(routeTarget.target) : undefined;
+  const routeGuard = routeTarget ? automationExecutionProperty(input.options, input, "routeGuard") : undefined;
+  const guard = routeTarget && routeGuard ? routeGuard.call(input, routeTarget.target) : undefined;
   // A target the step loop cannot reach is not found, so the route is refused before the route budget is charged.
   const route: AutomationStudioRouteCheck | undefined = body.written.kind !== "route" ? undefined : {
     found: Boolean(routeTarget) && !guard?.unreachable,
@@ -259,7 +263,7 @@ function factReadyState(dispatch: Dispatch): AutomationStudioFactCondition[] | u
 async function observe(dispatch: Dispatch, groups: readonly AutomationStudioFactObservationGroup[]): Promise<ReadonlyMap<string, readonly AutomationStudioFactConditionResult[]>> {
   const { input, current } = dispatch;
   const observation = await observeAutomationStudioFacts({
-    hostRuntime: input.options.hostRuntime,
+    hostRuntime: automationExecutionProperty(input.options, input.options, "hostRuntime"),
     groups,
     context: {
       inputs: current.inputs,
@@ -310,6 +314,13 @@ function finish(dispatch: Dispatch, outcome: {
   const { registration, level } = outcome.candidate;
   const handlerNode = registration.source.kind === "handler_node" ? dispatch.graphs.get(registration.graphFlowId)?.graph.nodes.find((node) => node.id === registration.source.nodeId) : undefined;
   const target = outcome.decision.kind === "route" ? outcome.routeTarget?.target : undefined;
+  let finishedAt = outcome.startedAt;
+  try {
+    finishedAt = dispatch.now();
+  } catch (error) {
+    if (!outcome.body?.bodyFailed) throw error;
+    // best-effort: keep the handler's primary failure and the clock's original unknown fence.
+  }
   const records = automationStudioLifecycleRunRecords({
     executionId: dispatch.run.lifecycle.nextId("handler-execution"),
     event: input.event,
@@ -324,7 +335,7 @@ function finish(dispatch: Dispatch, outcome: {
     ran: outcome.ran,
     bodyFailed: outcome.body?.bodyFailed ?? false,
     startedAt: outcome.startedAt,
-    finishedAt: dispatch.now(),
+    finishedAt,
     ...(handlerNode?.label ? { label: handlerNode.label } : {}),
     ...(target ? { targetId: target.checkpointId } : {}),
     ...(outcome.quiet ? { quiet: true } : {})

@@ -1,4 +1,4 @@
-import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
+import { automationCallbackObservation, automationExecutionProperty } from "../execution-admission/kernel/index.ts";
 // A lasting step whose act answered success is done only if what it did
 // appeared (t476).
 //
@@ -76,8 +76,8 @@ export async function automationStudioAttemptWithRecordedEffect(
   if (expectedState && Object.keys(expectedState).length > 0) return attempt;
   if (!automationStudioNodeActLasts(node, actionEffect)) return attempt;
   const effect = automationStudioNodeRouteSignatures(node).effect;
-  const hostRuntime = options.hostRuntime;
-  if (!effect || !hostRuntime?.routeEffectSeen || !hostRuntime.observeRouteState) return attempt;
+  const hostRuntime = automationExecutionProperty(options, options, "hostRuntime");
+  if (!effect || !hostRuntime || !automationExecutionProperty(options, hostRuntime, "routeEffectSeen") || !automationExecutionProperty(options, hostRuntime, "observeRouteState")) return attempt;
   const projectId = automationStudioGraphHostProjectId(flow);
   // No host project scope means no evidence that a recorded effect is absent.
   if (projectId === undefined) return attempt;
@@ -88,7 +88,7 @@ export async function automationStudioAttemptWithRecordedEffect(
     if (!observation.ok || automationStudioRouteEffectSeen(hostRuntime, effect, observation.state, automationCallbackObservation(options)) !== "not_seen") return attempt;
     if (waitedMs >= windowMs || options.signal?.aborted === true) break;
     const waitMs = Math.min(EFFECT_POLL_MS, windowMs - waitedMs);
-    await automationStudioRunWait(options, waitMs);
+    await automationStudioRunWait(options, waitMs, automationCallbackObservation(options));
     waitedMs += waitMs;
   }
   const failure: AutomationStudioFailureRecord = { ...AUTOMATION_STUDIO_RECORDED_EFFECT_UNSEEN_FAILURE };

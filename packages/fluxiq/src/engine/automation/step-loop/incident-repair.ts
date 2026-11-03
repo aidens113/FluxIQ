@@ -11,6 +11,7 @@ import { automationStudioEndedTrace } from "./ended-trace.ts";
 import { automationStudioStepLifecycleRegister } from "./lifecycle/index.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 import type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
+import { automationExecutionProperty, invokeAutomationCallback, AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 
 /** Failure categories that are a permission gate: a fix to the Flow cannot grant what was refused. */
 const PERMISSION_CATEGORIES: ReadonlySet<string> = new Set(["external_side_effect_denied", "blocked_by_capability_or_policy"]);
@@ -50,7 +51,7 @@ export async function automationStudioStepRepairIncident(
   const { options } = ctx;
   const invocation = options.invocation;
   const incidentId = failure.incidentId;
-  if (!options.repairIncident || !invocation || !incidentId) return undefined;
+  if (!automationExecutionProperty(options, options, "repairIncident") || !invocation || !incidentId) return undefined;
   const prior = invocation.run.lifecycle.repairs.get(incidentId);
   if (prior) {
     if (prior.outcome === "held") dropOverlay(ctx, invocation, failure, incidentId, prior);
@@ -60,9 +61,9 @@ export async function automationStudioStepRepairIncident(
   const failedAttempt = ctx.attempts[failure.attemptIndex]!;
   const unit = repairUnit(ctx, invocation, failure.node, failedAttempt, incidentId);
   emitAutomationStudioActivityThought({ phase: "repairing", title: "Fixing a step", text: "Nothing in the Flow could take the run past this step, so the run waits here while the step is fixed, then tries it again where it stood.", ref: failure.node.id });
-  await options.commandRun?.checkpoint();
+  await AutomationExecutionPorts.commandRun(options)?.checkpoint();
   const answer = await ask(ctx, invocation, { unit, failedAttempt, incidentId });
-  await options.commandRun?.checkpoint();
+  await AutomationExecutionPorts.commandRun(options)?.checkpoint();
   if (options.signal?.aborted) {
     record(ctx, invocation, failure, incidentId, { unit, outcome: "none", reason: "The run was cancelled while the step was being fixed." });
     return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", failure.node.id, "Run cancelled.") };
@@ -100,10 +101,10 @@ export async function automationStudioStepRepairIncident(
 export async function automationStudioStepLearnInterruption(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, attemptIndex: number): Promise<void> {
   const { options } = ctx;
   const invocation = options.invocation;
-  if (!options.learnInterruption || !invocation) return;
+  if (!automationExecutionProperty(options, options, "learnInterruption") || !invocation) return;
   if (invocation.run.stack.some((frame) => frame.cursor.phase === "handler")) return;
   for (const layer of ctx.attempts[attemptIndex]?.clearedLayers ?? []) {
-    if (options.signal?.aborted || options.runControl?.heldBy?.()) return;
+    if (options.signal?.aborted || AutomationExecutionPorts.runControl(options)?.heldBy?.()) return;
     if (!learnable(layer)) continue;
     const key = `interruption:${invocation.frame.graphFlowId}:${layer.name}`;
     if (invocation.run.lifecycle.repairs.has(key)) continue;
@@ -140,7 +141,7 @@ async function learn(ctx: AutomationStudioStepLoopContext, invocation: Automatio
     ...(ctx.options.signal ? { signal: ctx.options.signal } : {})
   };
   try {
-    return await ctx.options.learnInterruption!(request);
+    return await invokeAutomationCallback(ctx.options, { receiver: ctx.options, callback: automationExecutionProperty(ctx.options, ctx.options, "learnInterruption")!, args: [request] });
   } catch (error) {
     return { kind: "none", reason: `The interruption could not be learned: ${error instanceof Error ? error.message : String(error)}` };
   }
@@ -154,7 +155,7 @@ async function learn(ctx: AutomationStudioStepLoopContext, invocation: Automatio
  */
 export function automationStudioStepRepairWillAsk(ctx: AutomationStudioStepLoopContext, failure: TrueFailure): boolean {
   const invocation = ctx.options.invocation;
-  if (!ctx.options.repairIncident || !invocation || !failure.incidentId) return false;
+  if (!automationExecutionProperty(ctx.options, ctx.options, "repairIncident") || !invocation || !failure.incidentId) return false;
   if (invocation.run.lifecycle.repairs.has(failure.incidentId)) return false;
   return mayAsk(ctx, invocation, failure);
 }
@@ -168,7 +169,7 @@ export function automationStudioStepRepairWillAsk(ctx: AutomationStudioStepLoopC
  */
 function mayAsk(ctx: AutomationStudioStepLoopContext, invocation: AutomationStudioInvocationOptions, failure: TrueFailure): boolean {
   const { options } = ctx;
-  if (options.signal?.aborted || options.runControl?.heldBy?.()) return false;
+  if (options.signal?.aborted || AutomationExecutionPorts.runControl(options)?.heldBy?.()) return false;
   if (invocation.run.stack.some((frame) => frame.cursor.phase === "handler")) return false;
   if (failure.fault?.actUncertain) return false;
   if (ctx.attempts[failure.attemptIndex]?.failure?.code === AUTOMATION_STUDIO_TARGET_GONE_CODE) return false;
@@ -223,7 +224,7 @@ async function ask(
     ...(ctx.options.signal ? { signal: ctx.options.signal } : {})
   };
   try {
-    return await ctx.options.repairIncident!(request);
+    return await invokeAutomationCallback(ctx.options, { receiver: ctx.options, callback: automationExecutionProperty(ctx.options, ctx.options, "repairIncident")!, args: [request] });
   } catch (error) {
     return { kind: "none", reason: `The fix could not be asked for: ${error instanceof Error ? error.message : String(error)}` };
   }

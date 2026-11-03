@@ -15,7 +15,7 @@ import { automationStudioExpectationRequest, automationStudioReadinessCeilingMs,
 import type { AutomationStudioActualTransition, AutomationStudioExpectedTransition, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison, AutomationStudioTransitionComparisonStatus } from "../contracts.ts";
 import { expectedTransitionForNode } from "./expected.ts";
 
-import { automationCallbackObservation } from "../execution-admission/kernel/index.ts";
+import { automationCallbackObservation, automationExecutionProperty, automationExecutionClock } from "../execution-admission/kernel/index.ts";
 import { invokeAutomationExpectation } from "../expectation-observation/index.ts";
 
 // How a structured failure category reads as a transition comparison for a
@@ -135,8 +135,8 @@ export async function attemptWithHostExpectationEvaluation(
   attempt: AutomationStudioNodeAttemptTrace,
   options: AutomationStudioGraphExecutionOptions
 ): Promise<AutomationStudioNodeAttemptTrace> {
-  const host = options.hostRuntime;
-  const evaluate = host?.expectationEvaluator;
+  const host = automationExecutionProperty(options, options, "hostRuntime");
+  const evaluate = host ? automationExecutionProperty(options, host, "expectationEvaluator") : undefined;
   const expectedState = attempt.transitionComparison?.expected.expectedState;
   // A waiting attempt has not finished, and the expectation node already asked
   // the host itself, so neither is asked twice. An expected state with no keys
@@ -219,12 +219,12 @@ export async function attemptWithHostExpectationEvaluation(
  */
 export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, options: AutomationStudioGraphExecutionOptions, actionEffect?: AutomationStudioResolvedActionEffect): AutomationStudioLastingActCheck<AutomationStudioNodeAttemptTrace> {
   return async (attempt) => {
-    const host = options.hostRuntime;
-    const evaluate = host?.expectationEvaluator;
+    const host = automationExecutionProperty(options, options, "hostRuntime");
+    const evaluate = host ? automationExecutionProperty(options, host, "expectationEvaluator") : undefined;
     const expectedState = attempt.transitionComparison?.expected.expectedState ?? expectedTransitionForNode(node, attempt).expectedState;
     if (!expectedState || Object.keys(expectedState).length === 0) {
       const timeoutMs = automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs);
-      return await automationStudioHostActLanded(options.hostRuntime, { node, attemptId: attempt.attemptId, timeoutMs, ...(options.signal ? { signal: options.signal } : {}) }, automationCallbackObservation(options));
+      return await automationStudioHostActLanded(host, { node, attemptId: attempt.attemptId, timeoutMs, ...(options.signal ? { signal: options.signal } : {}) }, automationCallbackObservation(options));
     }
     if (automationStudioExpectationSatisfiedAfterFailure(attempt.transitionComparison)) return "landed";
     const facts = expectedFacts(expectedState);
@@ -307,13 +307,14 @@ async function readExpectedFacts(
   };
   let waitedMs = 0;
   for (;;) {
-    const observation = await observeAutomationStudioFacts({ hostRuntime: options.hostRuntime, groups: [{ key: "expected", conditions: facts }], context, ...(options.now ? { now: options.now } : {}) }, automationCallbackObservation(options));
+    const hostRuntime = automationExecutionProperty(options, options, "hostRuntime");
+    const observation = await observeAutomationStudioFacts({ hostRuntime, groups: [{ key: "expected", conditions: facts }], context, now: () => automationExecutionClock(options, "now", undefined) }, automationCallbackObservation(options));
     const answers = observation.results.get("expected") ?? [];
     const read: ExpectedFactsRead = { truth: automationStudioFactConditionsHold(facts, answers), settled: answers.filter((answer) => answer.truth !== "unknown").length };
     const final = read.truth === "true" || observation.calls === 0 || observation.problem !== undefined || waitedMs >= windowMs || options.signal?.aborted === true;
     if (final) return read;
     const waitMs = Math.min(EXPECTED_FACTS_POLL_MS, windowMs - waitedMs);
-    await automationStudioRunWait(options, waitMs);
+    await automationStudioRunWait(options, waitMs, automationCallbackObservation(options));
     waitedMs += waitMs;
   }
 }

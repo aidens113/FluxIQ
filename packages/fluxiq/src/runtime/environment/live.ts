@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { automationStudioRunWait } from "./wait.ts";
+import { automationStudioNativeDelay } from "./native-delay.ts";
 import type { AutomationStudioRunEnvironment } from "./environment.ts";
 
 /**
@@ -11,7 +11,7 @@ import type { AutomationStudioRunEnvironment } from "./environment.ts";
 export const automationStudioLiveRunEnvironment: AutomationStudioRunEnvironment = Object.freeze({
   kind: "live",
   now: () => Date.now(),
-  delay: (ms: number, signal?: AbortSignal) => automationStudioRunWait(signal ? { signal } : {}, ms),
+  delay: automationStudioNativeDelay,
   random: () => Math.random(),
   newRunId: (prefix: string) => `${prefix}.${randomUUID()}`,
   within: <T>(work: () => Promise<T>): Promise<T> => work()

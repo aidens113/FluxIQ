@@ -32,6 +32,7 @@ describe("a run's executor options and its environment", () => {
     const options = automationStudioRunGraphOptions({ ...base(), environment });
     expect(options.now).toBe(environment.now);
     expect(options.delay).toBe(environment.delay);
+    expect(options.clock).toBe(environment);
     expect(options.random).toBe(random);
     expect(options.startTimer).toBe(environment.startTimer);
     const startedAt = Date.now();
@@ -43,6 +44,7 @@ describe("a run's executor options and its environment", () => {
     const options = automationStudioRunGraphOptions(base());
     expect(options.now).toBe(automationStudioLiveRunEnvironment.now);
     expect(options.delay).toBe(automationStudioLiveRunEnvironment.delay);
+    expect(options.clock).toBe(automationStudioLiveRunEnvironment);
     expect("random" in options).toBe(false);
     expect("startTimer" in options).toBe(false);
     const explicit = automationStudioRunGraphOptions({ ...base(), environment: automationStudioLiveRunEnvironment });
@@ -55,7 +57,9 @@ describe("a run's executor options and its environment", () => {
     const environment = createAutomationStudioScopedRunEnvironment({ kind: "fixture", clock: new AutomationStudioVirtualClock() });
     const withEnvironment = automationStudioRunGraphOptions({ ...input, environment });
     const without = automationStudioRunGraphOptions(input);
-    const rest = ({ now: _now, delay: _delay, random: _random, startTimer: _startTimer, ...others }: Record<string, unknown>) => others;
+    const rest = ({ now: _now, delay: _delay, random: _random, startTimer: _startTimer, clock: _clock, ...others }: Record<string, unknown>) => others;
+    expect(withEnvironment.clock).toBe(environment);
+    expect(without.clock).toBe(automationStudioLiveRunEnvironment);
     expect(rest(withEnvironment)).toEqual(rest(without));
     expect(rest(without)).toEqual({ inputs: { query: "lamps" }, signal: input.signal, maxSteps: 12, onRecordBatch: input.onRecordBatch });
   });

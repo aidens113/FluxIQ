@@ -1,4 +1,4 @@
-import { invokeObservedExecutionCallbackSync, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
+import { invokeObservedExecutionCallbackSync, observedExecutionProperty, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/executable/graph/index.ts";
 import { automationStudioNodeRouteSignatures, automationStudioRouteEffectHolds } from "../../../runtime/automation-host/route-state/index.ts";
@@ -48,7 +48,9 @@ export function automationStudioRepeatedLastingAct(input: {
   walk.delete(fromNodeId);
   const completed = new Set(input.attempts.filter((attempt) => attempt.status === "succeeded" && !attempt.skipped).map((attempt) => attempt.nodeId));
   for (const node of flow.nodes) {
-    if (!walk.has(node.id) || !completed.has(node.id) || !automationStudioNodeActLasts(node, (input.resolveActionEffect ? invokeObservedExecutionCallbackSync(executionObservation, { receiver: input, callback: input.resolveActionEffect, args: [node] }) : undefined))) continue;
+    if (!walk.has(node.id) || !completed.has(node.id)) continue;
+    const resolve = observedExecutionProperty(executionObservation, input, "resolveActionEffect");
+    if (!automationStudioNodeActLasts(node, resolve ? invokeObservedExecutionCallbackSync(executionObservation, { receiver: input, callback: resolve, args: [node] }) : undefined)) continue;
     const effect = automationStudioNodeRouteSignatures(node).effect;
     const onPage = effect !== undefined && automationStudioRouteEffectHolds(input.hostRuntime, effect, input.observed, executionObservation).holds;
     return { nodeId: node.id, effect: onPage ? "on_page" : "unknown" };

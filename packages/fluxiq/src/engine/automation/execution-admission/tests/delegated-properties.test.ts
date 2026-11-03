@@ -1,0 +1,54 @@
+import { expect, it } from "vitest";
+import { createExecutionAdmissionAuthority } from "../../../../runtime/execution-admission/index.ts";
+import { ExecutionObservationSource } from "../../../../runtime/execution-observation/index.ts";
+import { AdmissionTestPersistence } from "../../../../runtime/execution-admission/tests/persistence.ts";
+import { AdmissionTestScopeOwner } from "../../../../runtime/execution-admission/tests/scope-owner.ts";
+import { AdmissionTestSource } from "../../../../runtime/execution-admission/tests/source.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../../contracts/index.ts";
+import { bindAutomationExecutionObservation, createAutomationExecutionAdmissionSource } from "../index.ts";
+import { automationExecutionProperty } from "../kernel/index.ts";
+
+it.each([true, false])("uses only a real original delegated parent frame (delegation=%s)", async delegated => {
+  const store = new AdmissionTestPersistence();
+  const scopes = new AdmissionTestScopeOwner();
+  const authority = createExecutionAdmissionAuthority({ persistence: store, scopes });
+  const scope = await authority.openScope(scopes.issue());
+  const engine = createAutomationExecutionAdmissionSource(scope);
+  const parent = new ExecutionObservationSource(scope, "test.parent");
+  const root = new AdmissionTestSource(scope, "test.root");
+  root.delegatesTo.push(parent.owner);
+  const rootPorts = authority.registerSource(root);
+  parent.connect(authority.registerSource(parent.registration(delegated ? [engine.owner] : [])));
+  engine.connect(authority.registerSource(engine.registration([engine.owner])));
+  const origin = root.origin();
+  const reserved = await authority.consumer.reserve(scope, rootPorts.issuer.fromOrdinaryAdmission(root.admit(origin)));
+  let reads = 0;
+  const callback = () => {
+    const callbacks = engine.owner;
+    if (!(callbacks instanceof ExecutionObservationSource)) throw new Error("test.original_source_missing");
+    const observation = callbacks.forParent(parent.context(prepared));
+    if (delegated) expect(callbacks.hasFrame(observation)).toBe(true);
+    else expect(() => callbacks.hasFrame(observation)).toThrow("delegation_refused");
+    const options: AutomationStudioGraphExecutionOptions = {};
+    bindAutomationExecutionObservation(options, engine.forParent(parent.context(prepared)));
+    Object.defineProperty(options, "now", { get() {
+      reads++;
+      return () => 7;
+    } });
+    expect(() => automationExecutionProperty(options, options, "now")).toThrow(delegated ? "callback_accessor_unsupported" : "delegation_refused");
+  };
+  parent.manage({ receiver: undefined, callback, contract: "managed_direct_effects", consumeCompletion: ({ invocation }) => parent.frameCompletion(invocation) });
+  const call = { receiver: undefined, callback, args: [] as [] };
+  const prepared = await parent.prepare(parent.forParent({ reservation: reserved.reservation, parent: reserved.root }), call);
+  await parent.invoke(prepared, call);
+  await parent.flush();
+  expect(reads).toBe(0);
+  expect(parent.completion(prepared)).toBe(delegated ? "unknown" : "settled");
+  if (delegated) await expect(rootPorts.producer.finish(reserved.root, root.complete(origin))).rejects.toThrow();
+  else await rootPorts.producer.finish(reserved.root, root.complete(origin));
+  await authority.consumer.release(reserved.reservation);
+  expect((await authority.consumer.inspect(scope)).state).toBe(delegated ? "pending" : "clear");
+  const reopened = createExecutionAdmissionAuthority({ persistence: store, scopes });
+  const reopenedScope = await reopened.openScope(scopes.issue());
+  expect((await reopened.consumer.inspect(reopenedScope)).state).toBe(delegated ? "pending" : "clear");
+});

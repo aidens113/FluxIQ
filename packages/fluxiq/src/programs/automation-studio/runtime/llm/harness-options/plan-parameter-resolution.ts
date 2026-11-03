@@ -170,7 +170,7 @@ import { automationStudioPlanStepConsequences } from "./plan-step-consequences.t
 import { automationStudioReadRouteSignature } from "../../route-state/signatures/index.ts";
 import { AuthoringExecutionScope, invokeAuthoringExecutionCallback, invokeAuthoringExecutionSync } from "../../../../../runtime/flow-authoring/execution/observation/index.ts";
 import { ExecutionCallbackPolicies } from "../../../../../runtime/execution-observation/policies/index.ts";
-import { AutomationStudioProjectBuildToolObservers } from "../../build-execution/tools/index.ts";
+import { AutomationStudioProjectBuildToolObservers } from "../../../../../runtime/flow-authoring/execution/tools/index.ts";
 import type { ExecutionCallbackCall } from "../../../../../runtime/execution-observation/index.ts";
 
 type ParameterResolver = Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters">;

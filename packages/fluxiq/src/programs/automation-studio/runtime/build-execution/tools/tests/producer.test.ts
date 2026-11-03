@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/harness-options/index.ts";
 import { automationStudioLlmEvidenceRuntimeBindingChecked } from "../../../llm/domain-instructions/index.ts";
-import { bindAutomationStudioObservedBuildTools } from "../../bind-tools.ts";
+import { bindAutomationStudioObservedBuildTools } from "../../../../../../runtime/flow-authoring/execution/tools/index.ts";
 import { AdmissionTestPersistence } from "../../../../../../runtime/execution-admission/tests/persistence.ts";
 import { BuildToolTestHost } from "./host.ts";
 import { buildToolFixture } from "./fixture.ts";

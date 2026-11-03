@@ -1,6 +1,7 @@
 import type { AutomationStudioFlowEdge } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
+import { AutomationExecutionPorts, invokeAutomationCallbackSync, hasAutomationExecutionObservation, automationExecutionProperty } from "../execution-admission/kernel/index.ts";
 
 type RegionTimerSource = NonNullable<AutomationStudioGraphExecutionOptions["startTimer"]>;
 
@@ -11,27 +12,51 @@ type RegionTimerSource = NonNullable<AutomationStudioGraphExecutionOptions["star
  * when it is absent, exactly as before; an offline run's virtual timers when
  * its environment supplies them (P4, "Virtual clock").
  */
-export async function executeWithRegionTimeout(run: (signal: AbortSignal) => Promise<AutomationStudioNodeAttemptTrace>, timeoutMs: number, parentSignal: AbortSignal | undefined, timeoutAttempt: () => AutomationStudioNodeAttemptTrace, commandRun?: AutomationStudioGraphExecutionOptions["commandRun"], startTimer?: AutomationStudioGraphExecutionOptions["startTimer"]): Promise<AutomationStudioNodeAttemptTrace> {
+export async function executeWithRegionTimeout(run: (signal: AbortSignal) => Promise<AutomationStudioNodeAttemptTrace>, timeoutMs: number, parentSignal: AbortSignal | undefined, timeoutAttempt: () => AutomationStudioNodeAttemptTrace, commandRun?: AutomationStudioGraphExecutionOptions["commandRun"], startTimer?: AutomationStudioGraphExecutionOptions["startTimer"], options?: AutomationStudioGraphExecutionOptions): Promise<AutomationStudioNodeAttemptTrace> {
   const controller = new AbortController();
   const startRegionTimer: RegionTimerSource = startTimer ?? startRealRegionTimer;
   let timer: { cancel(): void } | undefined;
   let abortListener: (() => void) | undefined;
   try {
     const bounds = new Promise<AutomationStudioNodeAttemptTrace>((resolve, reject) => {
-      const stop = (attempt: AutomationStudioNodeAttemptTrace) => { controller.abort(new Error("Region stopped."));
-        void Promise.resolve(commandRun?.stop("executor.region_stopped")).then(() => resolve(attempt), reject); };
-      timer = startRegionTimer({ kind: "region_timeout" }, timeoutMs, () => stop(timeoutAttempt()));
+      const stop = (attempt: AutomationStudioNodeAttemptTrace) => {
+        controller.abort(new Error("Region stopped."));
+        try {
+          void Promise.resolve(AutomationExecutionPorts.method(options, commandRun, "stop")?.stop("executor.region_stopped")).then(() => resolve(attempt), reject);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      const fire = () => {
+        try {
+          stop(timeoutAttempt());
+        } catch (error) {
+          reject(error);
+        }
+      };
+      timer = startTimer && options && hasAutomationExecutionObservation(options)
+        ? invokeAutomationCallbackSync(options, { receiver: undefined, callback: startTimer, args: [{ kind: "region_timeout" }, timeoutMs, fire] })
+        : startRegionTimer({ kind: "region_timeout" }, timeoutMs, fire);
       if (parentSignal) {
-        abortListener = () => stop({ ...timeoutAttempt(), status: "cancelled", message: "Run cancelled." });
+        abortListener = () => {
+          try {
+            stop({ ...timeoutAttempt(), status: "cancelled", message: "Run cancelled." });
+          } catch (error) {
+            reject(error);
+          }
+        };
         parentSignal.addEventListener("abort", abortListener, { once: true });
         if (parentSignal.aborted) abortListener();
       }
     });
     const start = () => run(controller.signal);
-      const running = commandRun ? commandRun.own(start) : start();
+    const running = commandRun ? AutomationExecutionPorts.method(options, commandRun, "own").own(start) : start();
     return await Promise.race([running, bounds]);
   } finally {
-    timer?.cancel();
+    if (timer) {
+      if (options) automationExecutionProperty(options, timer, "cancel").call(timer);
+      else timer.cancel();
+    }
     if (parentSignal && abortListener) parentSignal.removeEventListener("abort", abortListener);
   }
 }

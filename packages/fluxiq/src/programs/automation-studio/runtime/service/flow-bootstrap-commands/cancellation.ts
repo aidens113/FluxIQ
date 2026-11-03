@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
-import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../../../../runtime/flow-authoring/execution/tools/forwarding/index.ts";
 
 /** The scope a build's work runs in: its own controller, and the Flow it is registered under. */
 type AutomationStudioBuildCancellationScope = {

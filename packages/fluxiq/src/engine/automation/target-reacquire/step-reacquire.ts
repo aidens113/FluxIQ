@@ -20,6 +20,7 @@ import { automationStudioReacquireSourcePlace } from "./source-place.ts";
 import { automationStudioReacquireSourceRerun } from "./source-rerun.ts";
 import { automationStudioStaleTargetFailure } from "./stale-failure.ts";
 import { automationStudioUnboundReacquire } from "../unbound-reacquire/index.ts";
+import { automationCallbackObservation, automationExecutionProperty, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
 
 /** What a re-acquire came to: the record the next attempt carries, and the attempt that stands in for it when the item is gone. */
 export type AutomationStudioStepReacquired = { record: AutomationStudioTargetReacquireRecord; gone?: AutomationStudioNodeAttemptTrace };
@@ -53,7 +54,8 @@ export async function automationStudioStepReacquire(
   if (!retried || ctx.arrival.reacquired || ctx.arrival.attempts !== automationStudioReacquireBeforeAttempt(retryPolicy.maxAttempts)) return undefined;
   if (!automationStudioStaleTargetFailure(retried, { actCompleted: actCompleted(ctx, node) })) return undefined;
   const lineage = automationStudioTargetLineage(ctx.flow, node);
-  if (!lineage && !ctx.options.hostRuntime?.reacquireUnboundTarget) return undefined;
+  const host = automationExecutionProperty(ctx.options, ctx.options, "hostRuntime");
+  if (!lineage && !(host && automationExecutionProperty(ctx.options, host, "reacquireUnboundTarget"))) return undefined;
   ctx.arrival.reacquired = true;
   if (!lineage) ctx.arrival.identityReacquired = true;
   const record = lineage ? await reacquire(ctx, node, lineage, retried) : await automationStudioUnboundReacquire(ctx, node, retried);
@@ -79,12 +81,17 @@ async function reacquire(
     sourceNodeId: lineage.sourceNodeId, kind: lineage.kind, outcome, ...(reason ? { reason } : {}), ...(returned ? { returned: true as const } : {}), at: ctx.now()
   });
   const source = ctx.nodesById.get(lineage.sourceNodeId);
-  const host = options.hostRuntime;
-  if (!source || !automationStudioReacquireSourceReadOnly(source, ctx.runState.actionEffects.get(source.id) ?? options.resolveActionEffect?.(source))) return ended("unavailable", "source_not_read_only");
-  if (!host?.reacquireTarget) return ended("unavailable", "no_matcher");
+  const host = automationExecutionProperty(options, options, "hostRuntime");
+  let sourceFloor = source ? ctx.runState.actionEffects.get(source.id) : undefined;
+  if (source && sourceFloor === undefined) {
+    const resolve = automationExecutionProperty(options, options, "resolveActionEffect");
+    sourceFloor = resolve ? invokeAutomationCallbackSync(options, { receiver: options, callback: resolve, args: [source] }) : undefined;
+  }
+  if (!source || !automationStudioReacquireSourceReadOnly(source, sourceFloor)) return ended("unavailable", "source_not_read_only");
+  if (!host || !automationExecutionProperty(options, host, "reacquireTarget")) return ended("unavailable", "no_matcher");
   const bound = automationStudioReacquireBoundValue(ctx.flow, node, lineage, values);
   if (!bound) return ended("unavailable", "no_stale_value");
-  const place = await automationStudioReacquireSourcePlace({ host, node, source, attempts: ctx.attempts, signal: options.signal });
+  const place = await automationStudioReacquireSourcePlace({ host, node, source, attempts: ctx.attempts, signal: options.signal }, automationCallbackObservation(options));
   const returned = place === "returned";
   if (place === "unavailable") return ended("unavailable", "place_unreachable");
   const outputs = await automationStudioReacquireSourceRerun(ctx, source);
@@ -93,7 +100,7 @@ async function reacquire(
   if (!candidates) return ended("unavailable", "no_candidates", returned);
   const answer = await automationStudioReacquireHostAnswer(host, {
     node, source, lineage, stale: bound.stale, candidates, failure: retried.failure!, ...(options.signal ? { signal: options.signal } : {})
-  });
+  }, automationCallbackObservation(options));
   if (answer.outcome === "unmatched") return ended("unmatched", answer.reason, returned);
   if (answer.outcome === "gone") return ended("gone", undefined, returned);
   if (lineage.kind === "row") {

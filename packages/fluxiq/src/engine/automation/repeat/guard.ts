@@ -1,3 +1,4 @@
+import { AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 import type { JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
@@ -12,7 +13,7 @@ import { automationStudioRuntimeRepeatCheckpoint } from "./checkpoint.ts";
 import { automationStudioRuntimeRepeatComponent } from "../../../runtime/repeat/index.ts";
 import { automationStudioRuntimeRepeatDigest } from "../../../runtime/repeat/index.ts";
 import { automationStudioReadRuntimeRepeatObservation } from "../../../runtime/repeat/index.ts";
-import { invokeAutomationCallback } from "../execution-admission/kernel/index.ts";
+import { invokeAutomationCallback, automationExecutionProperty, hasAutomationExecutionObservation } from "../execution-admission/kernel/index.ts";
 
 /** One frame's bounded, private evidence for two completed unchanged visits. */
 export function automationStudioRuntimeRepeatGuard() {
@@ -70,9 +71,9 @@ export function automationStudioRuntimeRepeatGuard() {
       let attemptId = "";
       const observe = async (point: "before_action" | "after_action", stateRef: AutomationStudioHostStateSnapshotRef | undefined): Promise<AutomationStudioRuntimeRepeatObservation> => {
         if (!stateRef || !resolved) return { kind: "unavailable", reason: "missing" };
-        const host = options.hostRuntime;
+        const host = automationExecutionProperty(options, options, "hostRuntime");
         try {
-          const method = observer(host);
+          const method = hasAutomationExecutionObservation(options) ? host ? automationExecutionProperty(options, host, "observeRuntimeRepeat") : undefined : observer(host);
           if (!method) return { kind: "unavailable", reason: "unsupported" };
           const request: AutomationStudioRuntimeRepeatObservationInput = { node: resolved, attemptId, inputs, stateRef, point, ...(options.signal ? { signal: options.signal } : {}) };
           return automationStudioReadRuntimeRepeatObservation(await invokeAutomationCallback(options, { receiver: host, callback: method, args: [request] }));
@@ -138,7 +139,7 @@ export function automationStudioRuntimeRepeatGuard() {
           }
           if (!key || !beforeState) return;
           const after = await observe("after_action", attempt.stateRefs?.afterAction);
-          await options.commandRun?.checkpoint();
+          await AutomationExecutionPorts.commandRun(options)?.checkpoint();
           if (options.signal?.aborted || after.kind === "unavailable") {
             barrier();
             return;

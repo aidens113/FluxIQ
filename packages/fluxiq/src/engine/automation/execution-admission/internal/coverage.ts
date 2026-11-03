@@ -35,7 +35,7 @@ export function hasUnsupportedAutomationCallbacks(options: AutomationStudioGraph
   }
   const host = automationDataProperty(options, "hostRuntime");
   if (!host) return false;
-  for (const key of ["classifyLegacyStepAct", "observeRouteState", "signRouteState", "compareRouteSignatures", "signRouteEffect", "routeEffectHolds", "routeEffectSeen", "captureStateSnapshot", "observeRuntimeRepeat", "inspectStateDiff", "rollbackHint", "expectationEvaluator", "checkFacts", "factEvaluator", "actLanded", "checkActLanded", "waitForTarget", "reacquireTarget", "sourcePlace"] as const) {
+  for (const key of ["classifyLegacyStepAct", "observeRouteState", "signRouteState", "compareRouteSignatures", "signRouteEffect", "routeEffectHolds", "routeEffectSeen", "captureStateSnapshot", "observeRuntimeRepeat", "inspectStateDiff", "rollbackHint", "expectationEvaluator", "checkFacts", "factEvaluator", "actLanded", "checkActLanded", "waitForTarget", "reacquireTarget", "reacquireUnboundTarget", "returnToSourcePlace", "sourcePlace"] as const) {
     const callback = automationDataProperty(host, key);
     if (typeof callback === "function" && !AutomationPureCallbacks.has(host, callback) && !source.isManaged({ receiver: host, callback })) return unsupported("host", key);
   }

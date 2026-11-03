@@ -4,3 +4,4 @@ export { AutomationStudioRunControlRegistry, type AutomationStudioRunControlRegi
 export { automationStudioRunControlOf } from "./host-registry.ts";
 export { automationStudioMarkRunAdapting } from "./mark-adapting.ts";
 export * from "./progress/index.ts";
+export * from "./session/index.ts";

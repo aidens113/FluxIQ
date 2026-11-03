@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   createBlankAutomationStudioFlowArtifact,
-  createPublishedFlowSnapshot,
-  validateAutomationStudioFlow,
   type AutomationStudioFlowArtifact
-} from "../index.ts";
+} from "../../../../flows/authoring/flow/index.ts";
+
+import { createPublishedFlowSnapshot } from "../../../../flows/authoring/publication/index.ts";
+import { validateAutomationStudioFlow } from "../validation/index.ts";
 
 describe("canonical Automation Studio Flow contract", () => {
   it("creates a private, visual-owned global Flow without legacy ownership", () => {

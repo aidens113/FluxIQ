@@ -43,6 +43,7 @@
 // ledger pairs a later press by it (`../reset-undo/claims.ts`, `pairOf`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import { AuthoringExecutionScope } from "../../../../../runtime/flow-authoring/execution/observation/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY, automationStudioSiteResetValueReplacements as replacements } from "../reset-settlement/index.ts";
 import type { AutomationStudioSiteResetEffect, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
@@ -55,9 +56,9 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
   call: { callId: string; toolId: string; value: JsonObject };
   ledger: { observed?(read: AutomationStudioSiteResetRead): void; actOf(callId: string): string | undefined; placed(act: string, place: AutomationStudioSiteResetPlace): void; undoSeen(act: string, changedInPlace: boolean): void; noEffect?(act: string): void };
   reader: {
-    read(start?: JsonObject, signal?: AbortSignal): Promise<AutomationStudioSiteResetReadAnswer>;
+    read(start?: JsonObject, signal?: AbortSignal, invocation?: object): Promise<AutomationStudioSiteResetReadAnswer>;
     /** A read with live content left out (`./start-check.ts`); absent, `read`. */
-    settled?(start?: JsonObject, signal?: AbortSignal): Promise<AutomationStudioSiteResetReadAnswer>;
+    settled?(start?: JsonObject, signal?: AbortSignal, invocation?: object): Promise<AutomationStudioSiteResetReadAnswer>;
     /** The item tokens every read so far has seen. */
     seenItems?(): ReadonlySet<string>;
   };
@@ -68,32 +69,36 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
 }): Promise<T> {
   const { call, ledger, reader, signal } = input;
   if (call.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID && !input.allTools) return await input.run();
+  const invocation = AuthoringExecutionScope.of(call) ? call : undefined;
+  const read = (start?: JsonObject) => invocation ? reader.read(start, signal, invocation) : reader.read(start, signal);
   const undoes = call.value[AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY];
   const consequences = call.value.consequences;
   const acts = undoes === undefined && Array.isArray(consequences) && consequences.some((consequence) => typeof consequence === "string" && LOOKED_FOR.has(consequence));
   if (typeof undoes !== "string" && !acts) {
     // A custom tool may declare its lasting effect only inside its permission call, so project originals must precede it.
     if (input.allTools && call.toolId !== AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID) {
-      const before = await reader.read(undefined, signal);
+      const before = await read();
       if (!("unread" in before)) ledger.observed?.(before);
     }
     const ran = await input.run();
-    const observed = await reader.read(undefined, signal);
+    const observed = await read();
     if (!("unread" in observed)) ledger.observed?.(observed);
     return ran;
   }
-  const before = await reader.read(undefined, signal);
+  const before = await read();
   if (!("unread" in before)) ledger.observed?.(before);
   // Every item seen before the act, its own page's included: none of them is one it created.
   const seen = "unread" in before ? undefined : reader.seenItems?.();
   const ran = await input.run();
   // A target that could not be read is left to the ledger, which then decides as it did before.
   if ("unread" in before) {
-    const observed = await reader.read(undefined, signal);
+    const observed = await read();
     if (!("unread" in observed)) ledger.observed?.(observed);
     return ran;
   }
-  const after = reader.settled ? await reader.settled(before.state, signal) : await reader.read(before.state, signal);
+  const after = reader.settled
+    ? await (invocation ? reader.settled(before.state, signal, invocation) : reader.settled(before.state, signal))
+    : await read(before.state);
   if ("unread" in after) return ran;
   ledger.observed?.(after);
   if (typeof undoes !== "string" && !acts) return ran;

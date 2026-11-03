@@ -1,3 +1,8 @@
+import type { ExecutionCallbackObservation } from "../execution-observation/index.ts";
+import { observedExecutionProperty, invokeObservedExecutionCallbackSync, markObservedExecutionFrameUnknown, hasObservedExecutionFrame } from "../execution-observation/index.ts";
+import { AutomationStudioEnvironmentClockBindings } from "./clock-bindings.ts";
+import { automationStudioNativeDelay } from "./native-delay.ts";
+
 /**
  * Every wait a graph run takes on its own account: between two attempts of a
  * node, for a pace between two starts of one, and for a Wait node's pause.
@@ -8,22 +13,20 @@
  * cancelled run is not held for the rest of a long pause. Whoever waited checks
  * the signal afterwards; the wait itself never throws.
  */
-export async function automationStudioRunWait(options: { delay?: (ms: number, signal?: AbortSignal) => Promise<void>; signal?: AbortSignal }, waitMs: number): Promise<void> {
+export async function automationStudioRunWait(options: { delay?: (ms: number, signal?: AbortSignal) => Promise<void>; signal?: AbortSignal }, waitMs: number, observation?: ExecutionCallbackObservation): Promise<void> {
   if (!(waitMs > 0)) return;
-  if (options.delay) {
-    await options.delay(waitMs, options.signal);
+  if (observation && !hasObservedExecutionFrame(observation)) throw new Error("execution_observation.durable_frame_missing");
+  const delay = observedExecutionProperty(observation, options, "delay");
+  if (delay) {
+    try {
+      if (observation) AutomationStudioEnvironmentClockBindings.assert(delay);
+      if (delay === automationStudioNativeDelay) await delay.call(options, waitMs, options.signal);
+      else await invokeObservedExecutionCallbackSync(observation, { receiver: options, callback: delay, args: [waitMs, options.signal] });
+    } catch (error) {
+      if (observation) markObservedExecutionFrameUnknown(observation);
+      throw error;
+    }
     return;
   }
-  const signal = options.signal;
-  if (signal?.aborted) return;
-  await new Promise<void>((resolve) => {
-    const done = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", done);
-      resolve();
-    };
-    const timer: ReturnType<typeof setTimeout> = setTimeout(done, waitMs);
-    (timer as { unref?: () => void }).unref?.();
-    signal?.addEventListener("abort", done, { once: true });
-  });
+  await automationStudioNativeDelay(waitMs, options.signal);
 }

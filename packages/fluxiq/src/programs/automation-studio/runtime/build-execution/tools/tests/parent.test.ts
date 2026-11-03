@@ -2,8 +2,8 @@ import { expect, it } from "vitest";
 import { AdmissionTestSource } from "../../../../../../runtime/execution-admission/tests/source.ts";
 import type { PreparedExecutionCallback } from "../../../../../../runtime/execution-observation/index.ts";
 import { automationStudioHarnessOptionRegistry } from "../../../llm/harness-options/index.ts";
-import { bindAutomationStudioObservedBuildTools } from "../../bind-tools.ts";
-import { inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../index.ts";
+import { bindAutomationStudioObservedBuildTools } from "../../../../../../runtime/flow-authoring/execution/tools/index.ts";
+import { inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../../../../../runtime/flow-authoring/execution/tools/index.ts";
 import { buildToolFixture } from "./fixture.ts";
 import { BuildToolTestHost } from "./host.ts";
 

@@ -5,7 +5,7 @@ import {
   defaultAutomationStudioFlowSettingsMetadata,
   withAutomationStudioInterventionMode,
   type AutomationStudioInterventionMode
-} from "../flows.ts";
+} from "../../../../flows/authoring/settings/index.ts";
 
 describe("Automation Studio intervention mode compatibility", () => {
   // Changed on 2026-09-28. A new Flow used to default to `no_llm_intervention`

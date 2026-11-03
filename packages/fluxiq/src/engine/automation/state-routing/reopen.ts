@@ -1,4 +1,4 @@
-import { invokeObservedExecutionCallbackSync, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
+import { invokeObservedExecutionCallbackSync, observedExecutionProperty, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 // Back to the step that showed a control a later step found hidden (t661).
 //
 // A8 bigbox cart (`run-mvac0ddx-f52ba929`): step 4 opened a store picker, an
@@ -54,7 +54,9 @@ export function automationStudioStateReopenOpener(input: {
   const shownOn = automationStudioNodeRouteSignatures(input.node).before;
   if (!shownOn) return undefined;
   const opener = nearestRecordedActor(input.flow, input.node.id, input.attempts);
-  if (!opener || automationStudioNodeActLasts(opener, (input.resolveActionEffect ? invokeObservedExecutionCallbackSync(executionObservation, { receiver: input, callback: input.resolveActionEffect, args: [opener] }) : undefined))) return undefined;
+  if (!opener) return undefined;
+  const resolve = observedExecutionProperty(executionObservation, input, "resolveActionEffect");
+  if (automationStudioNodeActLasts(opener, resolve ? invokeObservedExecutionCallbackSync(executionObservation, { receiver: input, callback: resolve, args: [opener] }) : undefined)) return undefined;
   const left = automationStudioNodeRouteSignatures(opener).after!;
   return automationStudioCompareRouteSignatures(input.hostRuntime, left, shownOn, executionObservation).matches ? opener : undefined;
 }

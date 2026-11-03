@@ -16,3 +16,4 @@ export * from "./recording/index.ts";
 export * from "./compiled-plan/index.ts";
 export * from "./change/index.ts";
 export * from "./verification/index.ts";
+export * from "./evidence/index.ts";

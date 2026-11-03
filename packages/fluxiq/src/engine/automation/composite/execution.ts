@@ -11,7 +11,7 @@ import { runAutomationStudioChildWithBounds } from "./child-bounds.ts";
 import type { AutomationStudioCompositeFlow } from "./flow.ts";
 
 import { copyAutomationExecutionOptions } from "../execution-admission/index.ts";
-import { AutomationOrchestrationCallbacks, AutomationPureCallbacks, invokeAutomationCallbackSync, registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame } from "../execution-admission/kernel/index.ts";
+import { AutomationOrchestrationCallbacks, AutomationPureCallbacks, invokeAutomationCallbackSync, registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, automationCallbackObservation, automationObservedClock, AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 
 /** Executes pinned snapshots and owns the one private callback-registration set. */
 export class AutomationStudioCanonicalExecution {
@@ -25,12 +25,14 @@ export class AutomationStudioCanonicalExecution {
         return await invokeAutomationFrame(frame, { receiver: this, callback, args: [flow, snapshots, frame.options, deprecatedPublicationIds, onExecutedTrace] });
     }
     private static async runBody(flow: AutomationStudioCompositeFlow, snapshots: ExecutableFlowSnapshot[], options: AutomationStudioGraphExecutionOptions, deprecatedPublicationIds: Iterable<string>, onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void): Promise<AutomationStudioGraphExecutionTrace> {
-        await options.commandRun?.checkpoint();
+        await AutomationExecutionPorts.commandRun(options)?.checkpoint();
+        const observation = automationCallbackObservation(options);
+        const nativeNow = automationObservedClock(observation, {}, undefined);
         const boundDomains = new Set(options.authorizedDomainIds ?? []);
         const authorizedDomainIds = (flow.executionDefaults?.authorizedDomainIds ?? []).filter((domainId) => boundDomains.has(domainId));
         const composition = validateFlowComposition({ flow, publishedSnapshots: snapshots, deprecatedPublicationIds, authorizedDomainIds, ...(options.runtimeCapabilities ? { runtimeCapabilities: options.runtimeCapabilities } : {}) });
         if (!composition.ok)
-            return { status: "failed", startedAt: Date.now(), finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: `Invalid Flow composition: ${composition.issues.map((issue) => issue.code).join(", ")}` };
+            return { status: "failed", startedAt: nativeNow(), finishedAt: nativeNow(), attempts: [], values: {}, effects: [], message: `Invalid Flow composition: ${composition.issues.map((issue) => issue.code).join(", ")}` };
         const compiledRegions = compileAutomationStudioRegions({
             nodes: flow.nodes,
             edges: flow.edges,
@@ -39,7 +41,7 @@ export class AutomationStudioCanonicalExecution {
             ...(flow.regionHandoffs !== undefined ? { regionHandoffs: flow.regionHandoffs } : {})
         });
         if (!compiledRegions.ok)
-            return { status: "failed", startedAt: Date.now(), finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: `Invalid Flow regions: ${compiledRegions.issues.map((issue) => issue.code).join(", ")}` };
+            return { status: "failed", startedAt: nativeNow(), finishedAt: nativeNow(), attempts: [], values: {}, effects: [], message: `Invalid Flow regions: ${compiledRegions.issues.map((issue) => issue.code).join(", ")}` };
         const byId = new Map(snapshots.map((snapshot) => [`${snapshot.flowId}@${snapshot.version}`, snapshot]));
         // The trace each graph run executed, by the saved trace it returned. A trace
         // no graph run returned -- a deadline, a cancellation, a cycle -- has no entry
@@ -49,11 +51,12 @@ export class AutomationStudioCanonicalExecution {
         const runSnapshot = async (snapshot: ExecutableFlowSnapshot, inputs: Record<string, JsonValue>, stack: string[], executionOptions: AutomationStudioGraphExecutionOptions): Promise<AutomationStudioGraphExecutionTrace> => {
             const key = `${snapshot.flowId}@${snapshot.version}`;
             if (stack.includes(key))
-                return { status: "failed", startedAt: Date.now(), finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: `Composite Flow cycle detected at ${key}.` };
+                return { status: "failed", startedAt: nativeNow(), finishedAt: nativeNow(), attempts: [], values: {}, effects: [], message: `Composite Flow cycle detected at ${key}.` };
             return runDocument(snapshot, inputs, [...stack, key], executionOptions);
         };
         const runDocument = async (document: Pick<ExecutableGraph, "flowId" | "nodes" | "edges"> & Partial<Pick<AutomationStudioCompositeFlow, "scope" | "regions" | "regionHandoffs">>, inputs: Record<string, JsonValue>, stack: string[], executionOptions: AutomationStudioGraphExecutionOptions) => {
-            await executionOptions.commandRun?.checkpoint();
+            await AutomationExecutionPorts.commandRun(executionOptions)?.checkpoint();
+            const documentNow = automationObservedClock(automationCallbackObservation(executionOptions), {}, undefined);
             const compiled = compileAutomationStudioRegions({
                 nodes: document.nodes,
                 edges: document.edges,
@@ -62,7 +65,7 @@ export class AutomationStudioCanonicalExecution {
                 ...(document.regionHandoffs !== undefined ? { regionHandoffs: document.regionHandoffs } : {})
             });
             if (!compiled.ok)
-                return { status: "failed", startedAt: Date.now(), finishedAt: Date.now(), attempts: [], values: {}, effects: [], message: `Invalid Flow regions: ${compiled.issues.map((issue) => issue.code).join(", ")}` } satisfies AutomationStudioGraphExecutionTrace;
+                return { status: "failed", startedAt: documentNow(), finishedAt: documentNow(), attempts: [], values: {}, effects: [], message: `Invalid Flow regions: ${compiled.issues.map((issue) => issue.code).join(", ")}` } satisfies AutomationStudioGraphExecutionTrace;
             const compositeExecutor: NonNullable<AutomationStudioGraphExecutionOptions["compositeExecutor"]> = async ({ node, inputs: callInputs, options: parentOptions }) => {
                 const call = getCallFlowConfiguration(node);
                 if (!call)
@@ -110,7 +113,8 @@ export class AutomationStudioCanonicalExecution {
         };
         this.registered.add(runSubflow);
         AutomationOrchestrationCallbacks.register(runSubflow);
-        const startedAt = options.now?.() ?? Date.now();
+        const clock = automationObservedClock(observation, options, options);
+        const startedAt = clock();
         const ownDeadline = flow.executionDefaults?.timeoutMs ? startedAt + flow.executionDefaults.timeoutMs : undefined;
         const deadlineAt = Math.min(options.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);
         // The run's root frame and the holder its frames share, unless a caller framed it already (C1).
@@ -119,9 +123,9 @@ export class AutomationStudioCanonicalExecution {
         const trace = await runAutomationStudioChildWithBounds((signal) => {
             const bounded = copyAutomationExecutionOptions(rootOptions, { signal });
             return runDocument(flow, options.inputs ?? {}, [`${flow.flowId}@draft`], bounded);
-        }, Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, options.now, options.commandRun);
+        }, Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, observation ? clock : options.now, AutomationExecutionPorts.commandRun(options), options);
         if (trace.failure?.code !== "run.outcome_uncertain")
-            await options.commandRun?.checkpoint();
+            await AutomationExecutionPorts.commandRun(options)?.checkpoint();
         if (onExecutedTrace) invokeAutomationCallbackSync(rootOptions, { receiver: undefined, callback: onExecutedTrace, args: [executedTrace(trace), trace] });
         return trace;
     }

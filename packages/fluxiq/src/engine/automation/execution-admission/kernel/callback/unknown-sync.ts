@@ -9,6 +9,10 @@ export function markAutomationCallbackFrameUnknownSync(options: AutomationStudio
   const state = AutomationObservationBindings.read(observation);
   const callbacks = state.source.owner;
   if (!(callbacks instanceof ExecutionObservationSource)) throw new Error("execution_observation.foreign_automation_source");
-  if (!state.invocation) return;
-  callbacks.markFrameUnknown(callbacks.forParent(state.parent));
+  try {
+    callbacks.markFrameUnknown(callbacks.forParent(state.parent));
+  } catch (error) {
+    if (!state.invocation && error instanceof Error && error.message === "execution_observation.durable_frame_missing") return;
+    throw error;
+  }
 }

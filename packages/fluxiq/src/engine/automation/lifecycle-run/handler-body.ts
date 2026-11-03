@@ -1,3 +1,4 @@
+import { automationExecutionProperty, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
 // Running one handler's body in a handler frame (state-aware recovery plan, C5).
 //
 // This module owns the body run and reading how it ended. The body is
@@ -47,10 +48,10 @@ export async function runAutomationStudioHandlerBody(input: {
   priorAttemptCount?: number;
 }): Promise<AutomationStudioHandlerBodyRun> {
   const { run, parent, graph, bodyNodeId } = input;
-  const runner = run.runSubflow;
+  const runner = automationExecutionProperty(input.options, run, "runSubflow");
   if (!runner) return failed("This run has no way to run a handler's body.", 0);
   const frame: AutomationStudioInvocationFrame = {
-    invocationId: run.nextInvocationId(),
+    invocationId: invokeAutomationCallbackSync(input.options, { receiver: run, callback: automationExecutionProperty(input.options, run, "nextInvocationId"), args: [] }),
     parentInvocationId: parent.invocationId,
     subflowId: graph.subflowId,
     graphFlowId: graph.graph.flowId,
@@ -77,7 +78,7 @@ export async function runAutomationStudioHandlerBody(input: {
   let executed: AutomationStudioGraphExecutionTrace | undefined;
   // Runners take a Subflow id they do not read; a root graph that is no Subflow is named by its graph.
   const target = { subflowId: graph.subflowId ?? graph.graph.flowId, graph: graph.graph, graphRevision: graph.graphRevision, ...(graph.artifact ? { artifact: graph.artifact } : {}) };
-  const saved = await runner(target, bodyOptions, (trace) => { executed = trace; });
+  const saved = await invokeAutomationCallbackSync(input.options, { receiver: undefined, callback: runner, args: [target, bodyOptions, (trace) => { executed = trace; }] });
   return bodyEnding(executed ?? saved, saved);
 }
 

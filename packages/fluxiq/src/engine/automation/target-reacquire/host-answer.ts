@@ -4,6 +4,7 @@
 import type { JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../../../runtime/automation-host/index.ts";
 import type { AutomationStudioTargetReacquireAnswer, AutomationStudioTargetReacquireRequest } from "../../../runtime/automation-host/contracts/index.ts";
+import { observedExecutionProperty, invokeObservedExecutionCallback, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 
 /** What the host's answer comes to, with why it was read as `unmatched` when it was not one. */
 export type AutomationStudioReacquireHostReading =
@@ -19,11 +20,13 @@ export type AutomationStudioReacquireHostReading =
  */
 export async function automationStudioReacquireHostAnswer(
   host: AutomationStudioHostRuntimeBoundary,
-  request: AutomationStudioTargetReacquireRequest
+  request: AutomationStudioTargetReacquireRequest,
+  observation?: ExecutionCallbackObservation
 ): Promise<AutomationStudioReacquireHostReading> {
   let answer: unknown;
   try {
-    answer = await host.reacquireTarget?.(request);
+    const callback = observedExecutionProperty(observation, host, "reacquireTarget");
+    answer = callback ? await invokeObservedExecutionCallback(observation, { receiver: host, callback, args: [request] }, request.signal) : undefined;
   } catch {
     // The host's own failure text may quote the page, so only the fact that it failed is kept.
     return { outcome: "unmatched", reason: "host_failed" };

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { AutomationStudioSiteResetObservation } from "../../../flow-bootstrap/reset-observation/index.ts";
-import { AutomationStudioBuildToolFactories, AutomationStudioBuildToolCallbackScope, createAutomationStudioBuildToolObserver, inheritAutomationStudioBuildToolDescendant, invokeAutomationStudioBuildToolCallback, withAutomationStudioBuildToolCallbackScope } from "../index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioBuildToolCallbackScope, createAutomationStudioBuildToolObserver, inheritAutomationStudioBuildToolDescendant, invokeAutomationStudioBuildToolCallback, withAutomationStudioBuildToolCallbackScope } from "../../../../../../runtime/flow-authoring/execution/tools/index.ts";
 import { buildToolFixture } from "./fixture.ts";
 import { BuildToolTestHost } from "./host.ts";
 

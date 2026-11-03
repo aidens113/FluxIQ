@@ -10,6 +10,7 @@ import type { AutomationStudioSubflowCheckpoint } from "../lifecycle/index.ts";
 import { automationStudioSubflowContract } from "../lifecycle/index.ts";
 import type { AutomationStudioLifecycleRouteTarget } from "./dispatch/index.ts";
 import type { AutomationStudioRegisteredLifecycleGraph } from "./run-state.ts";
+import { observedExecutionProperty, invokeObservedExecutionCallbackSync, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 
 /**
  * The checkpoint `checkpointId` names, searched from the last frame of
@@ -25,7 +26,7 @@ export function automationStudioLifecycleRouteTarget(input: {
   checkpointId: string;
   values: Readonly<Record<string, JsonValue>>;
   valuesOf?: (invocationId: string) => Readonly<Record<string, JsonValue>> | undefined;
-}): { target: AutomationStudioLifecycleRouteTarget; checkpoint: AutomationStudioSubflowCheckpoint; requiresBound: boolean } | undefined {
+}, observation?: ExecutionCallbackObservation): { target: AutomationStudioLifecycleRouteTarget; checkpoint: AutomationStudioSubflowCheckpoint; requiresBound: boolean } | undefined {
   if (!input.checkpointId) return undefined;
   for (let depth = input.stack.length - 1; depth >= 0; depth -= 1) {
     const frame = input.stack[depth]!;
@@ -33,7 +34,8 @@ export function automationStudioLifecycleRouteTarget(input: {
     if (!graph) continue;
     const checkpoint = automationStudioSubflowContract(graph.graph).checkpoints.find((declared) => declared.id === input.checkpointId);
     if (!checkpoint) continue;
-    const values = depth === input.stack.length - 1 ? input.values : input.valuesOf?.(frame.invocationId) ?? {};
+    const valuesOf = depth === input.stack.length - 1 ? undefined : observedExecutionProperty(observation, input, "valuesOf");
+    const values = depth === input.stack.length - 1 ? input.values : valuesOf ? invokeObservedExecutionCallbackSync(observation, { receiver: input, callback: valuesOf, args: [frame.invocationId] }) ?? {} : {};
     const requiresBound = checkpoint.requires.every((name) => frame.inputs[name] !== undefined || values[name] !== undefined);
     return {
       target: { checkpointId: checkpoint.id, invocationId: frame.invocationId, graphFlowId: frame.graphFlowId, nodeId: checkpoint.nodeId },

@@ -11,7 +11,7 @@
 // own options appear beside them as soon as a host port is bound.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolCallback } from "../../../../../runtime/flow-authoring/execution/tools/forwarding/index.ts";
 import { automationStudioLlmBindingFieldOrigin } from "../binding-origin/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type {

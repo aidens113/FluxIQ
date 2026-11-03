@@ -5,6 +5,7 @@ import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/i
 import type { AutomationStudioHostRuntimeBoundary } from "../../../runtime/automation-host/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../index.ts";
 import type { AutomationStudioSourcePlaceAnswer, AutomationStudioSourcePlaceRequest } from "../../../runtime/automation-host/contracts/index.ts";
+import { observedExecutionProperty, invokeObservedExecutionCallback, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 
 const ANSWERS: ReadonlySet<string> = new Set<AutomationStudioSourcePlaceAnswer>(["same_place", "returned", "unavailable"]);
 
@@ -21,8 +22,9 @@ export async function automationStudioReacquireSourcePlace(input: {
   source: AutomationStudioFlowNode;
   attempts: readonly AutomationStudioNodeAttemptTrace[];
   signal?: AbortSignal | undefined;
-}): Promise<AutomationStudioSourcePlaceAnswer> {
-  const returnToSourcePlace = input.host?.returnToSourcePlace;
+}, observation?: ExecutionCallbackObservation): Promise<AutomationStudioSourcePlaceAnswer> {
+  const host = observedExecutionProperty(observation, input, "host");
+  const returnToSourcePlace = host ? observedExecutionProperty(observation, host, "returnToSourcePlace") : undefined;
   if (!returnToSourcePlace) return "same_place";
   const ran = latestAttemptOf(input.attempts, input.source.id);
   const request: AutomationStudioSourcePlaceRequest = {
@@ -32,7 +34,7 @@ export async function automationStudioReacquireSourcePlace(input: {
     ...(input.signal ? { signal: input.signal } : {})
   };
   try {
-    const answer: unknown = await returnToSourcePlace.call(input.host, request);
+    const answer: unknown = await invokeObservedExecutionCallback(observation, { receiver: host, callback: returnToSourcePlace, args: [request] }, input.signal);
     return typeof answer === "string" && ANSWERS.has(answer) ? answer as AutomationStudioSourcePlaceAnswer : "unavailable";
   } catch {
     // A host that could not say where the page is cannot be trusted to have got there.

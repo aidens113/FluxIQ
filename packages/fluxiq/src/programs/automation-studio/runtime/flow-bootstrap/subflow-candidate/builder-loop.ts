@@ -194,7 +194,7 @@ import { AutomationStudioSubflowScopedSubmissionController } from "./scoped-subm
 import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID } from "./submit-tool.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID, AutomationStudioSubflowTrialGate, type AutomationStudioSubflowTrialPreparingPort } from "./subflow-trial-gate.ts";
 import { inheritPartialTrialContext } from "../../candidate-trials/partial/index.ts";
-import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, bindAutomationStudioObservedBuildTools } from "../../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, bindAutomationStudioObservedBuildTools } from "../../../../../runtime/flow-authoring/execution/tools/index.ts";
 import { AuthoringExecutionScope } from "../../../../../runtime/flow-authoring/execution/observation/index.ts";
 
 /**

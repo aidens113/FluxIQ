@@ -3,12 +3,14 @@ import { automationStudioRefreshSnapshot } from "../parameter-refresh/index.ts";
 import type { AutomationStudioTargetRefreshPatch } from "../../../runtime/automation-host/contracts/index.ts";
 import type { AutomationStudioUnboundTargetReacquireAnswer } from "../../../runtime/automation-host/contracts/index.ts";
 import type { AutomationStudioUnboundTargetReacquireRequest } from "../../../runtime/automation-host/contracts/index.ts";
+import { observedExecutionProperty, invokeObservedExecutionCallback, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 
 /** One read-only lookup, parsed without getters or retained host/page error text. */
-export async function automationStudioUnboundReacquireAnswer(host: AutomationStudioHostRuntimeBoundary, request: AutomationStudioUnboundTargetReacquireRequest): Promise<AutomationStudioUnboundTargetReacquireAnswer | { outcome: "unmatched"; reason: "host_failed" | "malformed_answer" }> {
+export async function automationStudioUnboundReacquireAnswer(host: AutomationStudioHostRuntimeBoundary, request: AutomationStudioUnboundTargetReacquireRequest, observation?: ExecutionCallbackObservation): Promise<AutomationStudioUnboundTargetReacquireAnswer | { outcome: "unmatched"; reason: "host_failed" | "malformed_answer" }> {
   let raw: unknown;
   try {
-    raw = await host.reacquireUnboundTarget?.(request);
+    const callback = observedExecutionProperty(observation, host, "reacquireUnboundTarget");
+    raw = callback ? await invokeObservedExecutionCallback(observation, { receiver: host, callback, args: [request] }, request.signal) : undefined;
   } catch {
     return { outcome: "unmatched", reason: "host_failed" };
   }

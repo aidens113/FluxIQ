@@ -11,6 +11,7 @@ import type { AutomationStudioHandlerRegistration } from "../lifecycle/index.ts"
 import { automationStudioGraphHandlerRegistrations } from "../lifecycle/index.ts";
 import type { AutomationStudioRunFrames, AutomationStudioSubflowGraphSource } from "../frames/index.ts";
 import type { AutomationStudioLifecycleGraph, AutomationStudioLifecycleRunState, AutomationStudioRegisteredLifecycleGraph } from "./run-state.ts";
+import { observedExecutionProperty, invokeObservedExecutionCallbackSync, hasObservedExecutionFrame, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
 
 /**
  * Reads `graph` into the run's registry, or returns the copy already read.
@@ -39,10 +40,12 @@ export function automationStudioRegisterLifecycleGraph(state: AutomationStudioLi
  */
 export async function automationStudioActiveLifecycleRegistrations(
   run: AutomationStudioRunFrames,
-  subflowGraphs: AutomationStudioSubflowGraphSource | undefined
+  subflowGraphs: AutomationStudioSubflowGraphSource | undefined,
+  observation?: ExecutionCallbackObservation
 ): Promise<{ registrations: AutomationStudioHandlerRegistration[]; graphs: ReadonlyMap<string, AutomationStudioRegisteredLifecycleGraph> }> {
   const state = run.lifecycle;
-  const recovery = await recoveryGraph(state, subflowGraphs);
+  if (observation && !hasObservedExecutionFrame(observation)) throw new Error("execution_observation.durable_frame_missing");
+  const recovery = await recoveryGraph(state, subflowGraphs, observation);
   const graphs = new Map<string, AutomationStudioRegisteredLifecycleGraph>();
   for (const frame of run.stack) {
     const registered = state.graphs.get(frame.graphFlowId);
@@ -52,12 +55,13 @@ export async function automationStudioActiveLifecycleRegistrations(
   return { registrations: [...graphs.values()].flatMap((graph) => graph.registrations), graphs };
 }
 
-async function recoveryGraph(state: AutomationStudioLifecycleRunState, subflowGraphs: AutomationStudioSubflowGraphSource | undefined): Promise<AutomationStudioRegisteredLifecycleGraph | undefined> {
+async function recoveryGraph(state: AutomationStudioLifecycleRunState, subflowGraphs: AutomationStudioSubflowGraphSource | undefined, observation?: ExecutionCallbackObservation): Promise<AutomationStudioRegisteredLifecycleGraph | undefined> {
   if (state.recovery.loaded) return state.recovery.graph;
   state.recovery.loaded = true;
-  if (!subflowGraphs?.recovery) return undefined;
+  const recovery = subflowGraphs ? observedExecutionProperty(observation, subflowGraphs, "recovery") : undefined;
+  if (!recovery) return undefined;
   try {
-    const loaded = await subflowGraphs.recovery();
+    const loaded = await invokeObservedExecutionCallbackSync(observation, { receiver: subflowGraphs, callback: recovery, args: [] });
     if (!loaded) return undefined;
     state.recovery.graph = read(loaded);
   } catch (error) {

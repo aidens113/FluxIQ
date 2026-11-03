@@ -1,4 +1,4 @@
-import { automationCallbackObservation, invokeAutomationCallbackSync } from "../execution-admission/kernel/index.ts";
+import { automationCallbackObservation, invokeAutomationCallbackSync, automationExecutionProperty } from "../execution-admission/kernel/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowEdge } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
@@ -104,13 +104,13 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
   if (declared) {
     // Synthetic readiness skips have no resolved dispatch pass. Resolve current
     // raw slots conservatively, never a previous loop pass's node-id cache.
-    const resolver = input.options.resolveActionEffect;
+    const resolver = automationExecutionProperty(input.options, input.options, "resolveActionEffect");
     const actionEffect = resolver ? invokeAutomationCallbackSync(input.options, { receiver: input.options, callback: resolver, args: [input.node, input.node.parameterValues ?? {}] }) : undefined;
     const classifyLegacyStepAct = (node: Parameters<NonNullable<AutomationStudioGraphExecutionOptions["classifyLegacyStepAct"]>>[0]) => {
-      const host = input.options.hostRuntime;
-      const classifier = host?.classifyLegacyStepAct;
+      const host = automationExecutionProperty(input.options, input.options, "hostRuntime");
+      const classifier = host ? automationExecutionProperty(input.options, host, "classifyLegacyStepAct") : undefined;
       const classified = classifier ? invokeAutomationCallbackSync(input.options, { receiver: host, callback: classifier, args: [node] }) : undefined;
-      const fallback = input.options.classifyLegacyStepAct;
+      const fallback = automationExecutionProperty(input.options, input.options, "classifyLegacyStepAct");
       return classified ?? (fallback ? invokeAutomationCallbackSync(input.options, { receiver: input.options, callback: fallback, args: [node] }) : undefined);
     };
     return automationStudioSkippedStepDoesAct(input.node, actionEffect, classifyLegacyStepAct) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
@@ -121,9 +121,9 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
     .filter((candidate) => candidate.signatures.before !== undefined);
   const own = ownEffect(input.flow, input.node);
   // The step that showed a control this one found on the page but not shown (`./reopen.ts`, t661).
-  const opener = automationStudioStateReopenOpener({ flow: input.flow, node: input.node, attempt: input.attempt, attempts: input.attempts, hostRuntime: input.options.hostRuntime, resolveActionEffect: input.options.resolveActionEffect }, automationCallbackObservation(input.options));
+  const opener = automationStudioStateReopenOpener({ flow: input.flow, node: input.node, attempt: input.attempt, attempts: input.attempts, hostRuntime: automationExecutionProperty(input.options, input.options, "hostRuntime"), resolveActionEffect: automationExecutionProperty(input.options, input.options, "resolveActionEffect") }, automationCallbackObservation(input.options));
   if (!candidates.length && !own && !opener) return none("no_pre_states", 0);
-  const hostRuntime = input.options.hostRuntime;
+  const hostRuntime = automationExecutionProperty(input.options, input.options, "hostRuntime");
   const observation = await observeAutomationStudioRouteState({ hostRuntime, ...flowScope(input.flow), ...(input.options.signal ? { signal: input.options.signal } : {}) }, automationCallbackObservation(input.options));
   if (!observation.ok) return none("unobserved", candidates.length, observation.reason);
   const refused: AutomationStudioStateRouteRefusal[] = [];
@@ -304,7 +304,7 @@ function unboundRefusal(input: AutomationStudioStateRouteInput, toNodeId: string
 
 /** The second guard, for a backward route into `toNodeId`. */
 function repeatRefusal(input: AutomationStudioStateRouteInput, toNodeId: string, observed: JsonObject): Refused | undefined {
-  const act = automationStudioRepeatedLastingAct({ flow: input.flow, fromNodeId: input.node.id, toNodeId, attempts: input.attempts, hostRuntime: input.options.hostRuntime, observed, resolveActionEffect: input.options.resolveActionEffect }, automationCallbackObservation(input.options));
+  const act = automationStudioRepeatedLastingAct({ flow: input.flow, fromNodeId: input.node.id, toNodeId, attempts: input.attempts, hostRuntime: automationExecutionProperty(input.options, input.options, "hostRuntime"), observed, resolveActionEffect: automationExecutionProperty(input.options, input.options, "resolveActionEffect") }, automationCallbackObservation(input.options));
   if (!act) return undefined;
   const evidence = act.effect === "on_page" ? "the page shows its effect" : "nothing shows it did not take effect";
   return {

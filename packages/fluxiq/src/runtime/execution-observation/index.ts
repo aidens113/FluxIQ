@@ -5,6 +5,10 @@ export { invokeExecutionCallbackRoot, type ExecutionCallbackRootLifecycle, type 
 export { invokeObservedExecutionCallback } from "./invoke.ts";
 export { invokeObservedExecutionCallbackSync } from "./invoke-sync.ts";
 export { markObservedExecutionFrameUnknown } from "./mark-unknown.ts";
+export { executionPropertyDescriptor } from "./descriptor.ts";
+export { executionDataProperty } from "./data-property.ts";
+export { observedExecutionProperty } from "./observed-property.ts";
+export { hasObservedExecutionFrame } from "./frame.ts";
 export { ExecutionRetrySeriesOwner } from "./series.ts";
 export { ExecutionBackendAttempts } from "./backend.ts";
 export * from "./configuration/index.ts";

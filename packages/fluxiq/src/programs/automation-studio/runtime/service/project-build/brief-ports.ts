@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { bindAutomationStudioObservedBuildTools } from "../../build-execution/index.ts";
-import { AutomationStudioProjectBuildToolObservers, AutomationStudioBuildToolFactories, invokeAutomationStudioBuildToolCallback, withAutomationStudioBuildToolCallbackScope } from "../../build-execution/tools/index.ts";
+import { AutomationStudioProjectBuildToolObservers, AutomationStudioBuildToolFactories, invokeAutomationStudioBuildToolCallback, withAutomationStudioBuildToolCallbackScope } from "../../../../../runtime/flow-authoring/execution/tools/index.ts";
 import { AutomationStudioSiteResetCallbackPolicies, AutomationStudioSiteResetObservation, invokeAutomationStudioSiteResetCallback } from "../../flow-bootstrap/reset-observation/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
@@ -432,9 +432,10 @@ function placing<L extends { executeTool: Execute }>(loop: L, ledger: PlacedLedg
   const executeTool: Execute = async (call) => {
     const opening = isOpeningCall(call.callId);
     const signal = call.signal ?? options.signal;
-    if (options.capture && !opening) await reader.capture(signal);
+    const invocation = AutomationStudioSiteResetObservation.of(call) ? call : undefined;
+    if (options.capture && !opening) await (invocation ? reader.capture(signal, invocation) : reader.capture(signal));
     const ran = opening ? await inner(call) : await automationStudioSiteResetPlacedCall({ call, ledger, reader, signal, allTools: true, run: () => inner(call) });
-    if (options.capture && opening) await reader.capture(signal);
+    if (options.capture && opening) await (invocation ? reader.capture(signal, invocation) : reader.capture(signal));
     const receipts = ledger.destinationReceipts?.() ?? [];
     for (const receipt of receipts) if (!options.issued.has(receipt.ref)) options.issued.set(receipt.ref, { ref: receipt.ref, count: receipt.count });
     const answered = opening ? ran : settlementAnswer(call, ran, ledger, options.issued);

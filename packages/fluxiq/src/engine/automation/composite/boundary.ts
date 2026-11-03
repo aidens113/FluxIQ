@@ -12,6 +12,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import { automationStudioRuntimeRepeatStoppedTrace } from "../repeat/index.ts";
 import type { AutomationStudioInvocationOptions } from "../frames/index.ts";
 import { runAutomationStudioChildWithBounds } from "./child-bounds.ts";
+import { automationCallbackObservation, automationObservedClock, AutomationExecutionPorts } from "../execution-admission/kernel/index.ts";
 
 /** What one call hands across its boundary. */
 export type AutomationStudioCallBoundaryRequest = {
@@ -58,7 +59,9 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
     const value = callInputs[binding.valueKey];
     if (value !== undefined) childInputs[binding.targetPortId] = value;
   }
-  const now = parentOptions.now?.() ?? Date.now();
+  const observation = automationCallbackObservation(parentOptions);
+  const clock = automationObservedClock(observation, parentOptions, parentOptions);
+  const now = clock();
   const ownDeadline = contract.executionDefaults?.timeoutMs ? now + contract.executionDefaults.timeoutMs : undefined;
   const deadlineAt = Math.min(parentOptions.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);
   const boundedDeadline = Number.isFinite(deadlineAt) ? deadlineAt : undefined;
@@ -68,7 +71,9 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
   // "No start node is available in this flow." A partial run's stop node is the
   // root's too: a child node sharing its id runs on. And the parent's frame is
   // the parent's: the child runs as a frame of its own.
-  const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, invocation: _parentInvocation } = parentOptions;
+  if (!observation) {
+    const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, invocation: _parentInvocation } = parentOptions;
+  }
   const childBase = copyAutomationExecutionOptions(parentOptions);
   delete childBase.startNodeId;
   delete childBase.stopAfterNodeId;
@@ -80,24 +85,24 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
   let childFrame: AutomationStudioInvocationOptions | undefined;
   let childUncertain = false;
   for (let attempt = 0; attempt < Math.max(1, request.maxAttempts); attempt += 1) {
-    await parentOptions.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(parentOptions)?.checkpoint();
     const framed = childFrame = request.frame(childInputs);
     childTrace = await runAutomationStudioChildWithBounds((signal) => {
       const bounded = copyAutomationExecutionOptions(childOptions, { signal, ...(framed ? { invocation: framed } : {}) });
       return request.runChild(bounded);
-    }, boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun);
+    }, boundedDeadline, parentOptions.signal, observation ? clock : parentOptions.now, AutomationExecutionPorts.commandRun(parentOptions), parentOptions);
     childUncertain = childTrace.status === "failed" && childTrace.failure?.code === "run.outcome_uncertain";
     // The child already failed closed on an unresolved lasting act. A whole
     // child retry or a latched run's checkpoint cannot settle that act.
     if (childUncertain) break;
     // A real private no-progress stop is terminal before authored whole-child retries.
     if (automationStudioRuntimeRepeatStoppedTrace(childTrace, parentOptions.invocation)) break;
-    await parentOptions.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(parentOptions)?.checkpoint();
     if (childTrace.status === "succeeded" || childTrace.status === "waiting" || childTrace.status === "cancelled") break;
   }
   // The parent executes with what its child executed with. The attempt keeps
   // the child's saved trace.
-  if (!childUncertain) await parentOptions.commandRun?.checkpoint();
+  if (!childUncertain) await AutomationExecutionPorts.commandRun(parentOptions)?.checkpoint();
   const executedChild = request.executedTrace(childTrace);
   const outputs: Record<string, JsonValue> = {};
   const frameOutputs: Record<string, JsonValue> = {};

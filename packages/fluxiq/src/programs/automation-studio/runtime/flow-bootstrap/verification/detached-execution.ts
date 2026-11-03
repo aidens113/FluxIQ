@@ -6,7 +6,7 @@ import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResoluti
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
 import { automationStudioOptionalStepWayOn, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
 import { automationStudioReferenceNow } from "../../reference-now/index.ts";
-import { automationStudioRouterStatePaths, routeAutomationStudioRun } from "../../route-state/index.ts";
+import { automationStudioRouterStatePaths, routeAutomationStudioRunWithOptions } from "../../../../../engine/automation/router/index.ts";
 import type { AutomationStudioRouterExecutionResult } from "../../router-runtime.ts";
 import { normalizeAutomationStudioFlowBuildPlan } from "../adaptation.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../plan/index.ts";
@@ -73,8 +73,8 @@ export async function runAutomationStudioDetachedCandidate(input: {
       adaptationId: `candidate.${identity.projectId}.${identity.flowId}.${identity.revision}.${identity.digest}`,
       parentFlow: parent, buildPlan: candidate.buildPlan, sourceInstructionIds: [...input.sourceInstructionIds], now: startedAt
     });
-    const route = await routeAutomationStudioRun({ projectId: identity.projectId, flowId: identity.flowId, router: topology.router,
-      subflows: topology.subflows.map((entry) => entry.subflow), ...(options.inputs ? { inputs: options.inputs } : {}), callerState: {}, hostRuntime: options.hostRuntime, ...(signal ? { signal } : {}), now });
+    const route = await routeAutomationStudioRunWithOptions({ projectId: identity.projectId, flowId: identity.flowId, router: topology.router,
+      subflows: topology.subflows.map((entry) => entry.subflow), ...(options.inputs ? { inputs: options.inputs } : {}), callerState: {}, hostRuntime: options.hostRuntime, ...(signal ? { signal } : {}), now }, options);
     returnedRoute = route;
     if (!await fresh()) return { ...refused("candidate.execution_stale"), route };
     if (automationStudioRouterStatePaths(topology.router).length && (route.decision.metadata?.routeState as { observed?: boolean } | undefined)?.observed !== true) return { ...refused("candidate.routing_state_unavailable"), route };

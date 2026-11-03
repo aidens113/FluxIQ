@@ -5,8 +5,10 @@ import { markAutomationCallbackFrameUnknownSync } from "./unknown-sync.ts";
 import { assertAutomationClockCallback } from "./clock.ts";
 
 /** An observed read cannot evaluate a newly installed getter before callback admission. */
-export function automationExecutionProperty<T extends object, K extends keyof T>(options: AutomationStudioGraphExecutionOptions, receiver: T, key: K): T[K] {
-  if (!AutomationObservationBindings.of(options)) return receiver[key];
+export function automationExecutionProperty<T extends object, K extends keyof T>(options: AutomationStudioGraphExecutionOptions, receiver: T, key: K): T[K];
+export function automationExecutionProperty(options: AutomationStudioGraphExecutionOptions, receiver: object, key: PropertyKey): unknown;
+export function automationExecutionProperty(options: AutomationStudioGraphExecutionOptions, receiver: object, key: PropertyKey): unknown {
+  if (!AutomationObservationBindings.of(options)) return Reflect.get(receiver, key);
   try {
     const value = automationDataProperty(receiver, key);
     assertAutomationClockCallback(options, value);

@@ -4,7 +4,7 @@ import { createNativeExecutionAdmissionSource, type NativeManagedCompletionRegis
 import { createOutputExecutionAdmissionSource, type OutputGatewayTarget } from "../../../../runtime/output-dispatch/admission/index.ts";
 import { AutomationStudioCandidateTrialSource } from "../candidate-trials/authority/index.ts";
 import type { AutomationStudioExecutionAdmissionController, AutomationStudioExecutionAdmissionOptions } from "../service/execution-admission/index.ts";
-import { createAutomationStudioBuildToolObserver } from "./tools/index.ts";
+import { createAutomationStudioBuildToolObserver } from "../../../../runtime/flow-authoring/execution/tools/index.ts";
 
 /** One complete configured source cohort, before any build tool or trial can reserve. */
 export async function createAutomationStudioBuildExecution(

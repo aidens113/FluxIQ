@@ -89,9 +89,9 @@ import type { LearnedTaskModel } from "../learning/index.ts";
 import { compileFlowSource, convertCodeOwnedFlowToVisual, generateFlowTypeScript, verifyCodeOwnedFlowCompilation, type AutomationStudioFlowCompilation } from "../dsl/index.ts";
 import type { EvidenceClaim, EvidenceFact, EvidenceObservation, SignalMiningResult, StateActionCorrelation } from "../mining/index.ts";
 import { normalizeRecordingTimeline, selectActionContextStateEntryIds, type NormalizationOptions, type NormalizedTimeline } from "../normalization/index.ts";
-import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryBudget } from "./executor.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, runAutomationStudioGraph, routeAutomationStudioRunWithOptions, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryBudget } from "../../../engine/automation/index.ts";
 import { runCanonicalAutomationStudioFlow } from "./composite-executor.ts";
-import { routeAutomationStudioRun, startAutomationStudioBuildRouting } from "./route-state/index.ts";
+import { startAutomationStudioBuildRouting } from "./route-state/index.ts";
 import {
   behaviorForAutomationStudioTrainingMode,
   computeAutomationStudioStabilityMetrics,
@@ -2526,7 +2526,7 @@ export class AutomationStudioService {
       if (router) {
         const subflowPage = await this.listFlowSubflowSummaries({ projectId: input.projectId, flowId: runtimeCanonical.flowId, limit: 100, offset: 0 });
         const subflows = await Promise.all(subflowPage.subflows.map((item) => this.getFlowSubflow(input.projectId!, runtimeCanonical.flowId, item.subflowId)));
-        const route = await routeAutomationStudioRun({
+        const route = await routeAutomationStudioRunWithOptions({
           projectId: input.projectId,
           flowId: runtimeCanonical.flowId,
           router,
@@ -2535,7 +2535,7 @@ export class AutomationStudioService {
           callerState: jsonObjectFromUnknown((graphOptions.inputs as Record<string, unknown>).state),
           hostRuntime: this.hostRuntime, signal: abortController.signal,
           now: () => startedAt
-        });
+        }, graphOptions);
         const selectedFlowId = route.selectedSubflow?.graphFlowId ?? "";
         const loadSubflowGraph = (graphFlowId: string) => this.getFlow(input.projectId!, graphFlowId).then((flow) => this.materializeRecordingDerivedFlow(input.projectId!, flow)).catch(() => undefined);
         const selectedFlow = selectedFlowId ? await loadSubflowGraph(selectedFlowId) : undefined;

@@ -14,7 +14,7 @@ import { BuildToolTestHost } from "../build-execution/tools/tests/host.ts";
 import type { ExecutionCallbackOutcome, ExecutionCallbackSettlement } from "../../../../runtime/execution-observation/index.ts";
 import { OriginalExecutionPromiseReceipts } from "../../../../runtime/execution-observation/queue-completion/index.ts";
 import { AuthoringExecutionScope } from "../../../../runtime/flow-authoring/execution/observation/index.ts";
-import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolDelegate } from "../build-execution/tools/index.ts";
+import { AutomationStudioBuildToolFactories, AutomationStudioProjectBuildToolObservers, inheritAutomationStudioBuildToolRequest, invokeAutomationStudioBuildToolDelegate } from "../../../../runtime/flow-authoring/execution/tools/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../flow-bootstrap/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../action-permissions/index.ts";
 

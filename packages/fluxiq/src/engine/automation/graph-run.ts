@@ -1,3 +1,4 @@
+import { AutomationExecutionPorts } from "./execution-admission/kernel/index.ts";
 import type { JsonValue } from "../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowNode } from "../../flows/executable/graph/index.ts";
@@ -33,7 +34,7 @@ import { automationStudioRuntimeRepeatStoppedTrace } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatTraceProvenance } from "./repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "./repeat/index.ts";
 import { copyAutomationExecutionOptions } from "./execution-admission/index.ts";
-import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync, AutomationRetrySeries, hasAutomationExecutionObservation, automationExecutionProperty, automationExecutionClock } from "./execution-admission/kernel/index.ts";
+import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationCallbackSync, AutomationRetrySeries, hasAutomationExecutionObservation, automationExecutionProperty, automationExecutionClock, automationFailureTimestamp } from "./execution-admission/kernel/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -145,17 +146,17 @@ async function runGraphFromSeed(
   const referenceNow = automationStudioReferenceNow(seed?.referenceNow) ?? automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
   if (referenceNow !== undefined) executionOptions.referenceNow = referenceNow;
   try {
-    await options.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(options)?.checkpoint();
     // The run executes as its frame, pushed for exactly as long as it runs (`frames/graph-frame.ts`).
     return await runAutomationStudioGraphInFrame(flow, executionOptions, runAutomationStudioGraph, (framed) => runGraphToTrace(flow, framed, startedAt, seed, onExecutedTrace));
   } catch (error) {
-    await options.commandRun?.stop("executor.graph_stopped");
-    const fault = automationStudioFaultFromThrownError(error, { now: automationExecutionClock(options, "now", options), aborted: options.signal?.aborted === true });
+    await AutomationExecutionPorts.commandRun(options)?.stop("executor.graph_stopped");
+    const fault = automationStudioFaultFromThrownError(error, { now: automationFailureTimestamp(options), aborted: options.signal?.aborted === true });
     return {
       status: "failed",
       startedAt,
       ...(referenceNow !== undefined && referenceNow !== startedAt ? { referenceNow } : {}),
-      finishedAt: automationExecutionClock(options, "now", options),
+      finishedAt: automationFailureTimestamp(options),
       attempts: seed ? [...seed.attempts] : [],
       values: {},
       effects: [],
@@ -183,13 +184,13 @@ async function runGraphToTrace(
   // What lifecycle dispatch keeps for this frame's trace: handler bodies' attempts, and the run's records at its root.
   const lifecycle = automationStudioStepLifecycleFrame();
   const start = () => executeAutomationStudioGraph(flow, options, startedAt, withholding, runState, lifecycle, repeatTraceProvenance, seed);
-  const running = options.commandRun ? options.commandRun.own(start) : start();
+  const running = AutomationExecutionPorts.commandRun(options) ? AutomationExecutionPorts.commandRun(options)!.own(start) : start();
   const trace = await running;
   const executed = automationStudioTraceInFrame(options.referenceNow !== undefined && options.referenceNow !== trace.startedAt ? { ...trace, referenceNow: options.referenceNow } : trace, options.invocation);
   // The incident still open when the frame ends closes here; a Call Subflow child's goes to its node first (C7).
   automationStudioStepEndFrameIncident(options.invocation, executed);
   // A run stopped as Outcome uncertain keeps its trace: in a required run the latch that would refuse this checkpoint is why it stopped.
-  if (executed.failure?.code !== "run.outcome_uncertain") await options.commandRun?.checkpoint();
+  if (executed.failure?.code !== "run.outcome_uncertain") await AutomationExecutionPorts.commandRun(options)?.checkpoint();
   for (const attempt of executed.attempts) {
     const childWithheld = attempt.childTrace ? withheldBySavedTrace.get(attempt.childTrace) : undefined;
     if (childWithheld) withholding.include(childWithheld);
@@ -296,7 +297,14 @@ async function executeAutomationStudioGraph(
   repeatTraceProvenance: ReturnType<typeof automationStudioRuntimeRepeatTraceProvenance.frame>,
   seed?: AutomationStudioGraphRunSeed
 ): Promise<AutomationStudioGraphExecutionTrace> {
-  const now = () => automationExecutionClock(options, "now", undefined);
+  const now = () => {
+    try {
+      return automationExecutionClock(options, "now", undefined);
+    } catch (error) {
+      if (hasAutomationExecutionObservation(options) && attempts.at(-1)?.status === "failed") return automationFailureTimestamp(options);
+      throw error;
+    }
+  };
   const attempts: AutomationStudioNodeAttemptTrace[] = seed ? [...seed.attempts] : [];
   // A resumed run keeps what it had computed, with the caller's own inputs put
   // back over it: the seed comes from a saved trace, whose run inputs are
@@ -373,14 +381,14 @@ async function executeAutomationStudioGraph(
   // `stepsTaken` already counted, so it is not a second step either.
   for (let step = seed?.stepsTaken ?? 0; step < ctx.maxSteps; step += 1) {
     ctx.step = step;
-    await options.commandRun?.checkpoint();
+    await AutomationExecutionPorts.commandRun(options)?.checkpoint();
     if (options.signal?.aborted) return automationStudioEndedTrace(ctx, "cancelled", currentNode.id, "Run cancelled.");
     // A pause holds here, before the node executes, and never inside it. The run resumes at this same node with
     // everything it had computed; the hold and its release are each said once (`activity/hold.ts`).
-    const held = options.runControl?.checkpoint({ nodeId: currentNode.id, step });
+    const held = AutomationExecutionPorts.runControl(options)?.checkpoint({ nodeId: currentNode.id, step });
     if (held) {
-      const released = await automationStudioActivityHold(held, { nodeId: currentNode.id, label: currentNode.label, index: stepNumbers.numberOf(currentNode.id), count: stepNumbers.count, byPerson: options.runControl?.heldBy?.() === "person", signal: options.signal });
-      await options.commandRun?.checkpoint();
+      const released = await automationStudioActivityHold(held, { nodeId: currentNode.id, label: currentNode.label, index: stepNumbers.numberOf(currentNode.id), count: stepNumbers.count, byPerson: AutomationExecutionPorts.runControl(options)?.heldBy?.() === "person", signal: options.signal });
+      await AutomationExecutionPorts.commandRun(options)?.checkpoint();
       if (released.outcome === "stop" || options.signal?.aborted) {
         return automationStudioEndedTrace(ctx, "cancelled", currentNode.id, released.outcome === "stop" ? released.message : "Run cancelled.");
       }
@@ -449,13 +457,13 @@ async function executeAutomationStudioGraph(
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
-          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution", effect: runState.dispatchedActions.has(node.id) ? "ambiguous" : "unacted" } }), options.commandRun, automationExecutionProperty(options, options, "startTimer")
+          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution", effect: runState.dispatchedActions.has(node.id) ? "ambiguous" : "unacted" } }), AutomationExecutionPorts.commandRun(options), automationExecutionProperty(options, options, "startTimer"), options
         ));
       // A required command whose outcome stayed unknown latched the run, so no checkpoint is asked before it stops (`step-loop/uncertain-stop.ts`).
       const outcomeUnknown = executed.failure?.code === AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN.code;
       const childOutcomeUnknown = executed.childTrace?.status === "failed" && executed.childTrace.failure?.code === "run.outcome_uncertain";
       const childRepeatStopped = executed.childTrace !== undefined && automationStudioRuntimeRepeatStoppedTrace(executed.childTrace, options.invocation);
-      if (!outcomeUnknown && !childOutcomeUnknown) await options.commandRun?.checkpoint();
+      if (!outcomeUnknown && !childOutcomeUnknown) await AutomationExecutionPorts.commandRun(options)?.checkpoint();
       // What the ladder and the recorded state contributed is stamped once, here,
       // so every attempt carries it however the node was executed.
       const attempt: AutomationStudioNodeAttemptTrace = {

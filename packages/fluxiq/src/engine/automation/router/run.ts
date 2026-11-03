@@ -3,10 +3,13 @@ import { compileExecutableRouterPlan } from "./compile.ts";
 import { executableRouterFailureResult } from "./failure.ts";
 import { executableRouteDecisionMetadata } from "./metadata.ts";
 import { evaluateExecutableRouteCondition } from "./condition/index.ts";
+import { hasObservedExecutionFrame, type ExecutionCallbackObservation } from "../../../runtime/execution-observation/index.ts";
+import { automationObservedClock } from "../execution-admission/kernel/index.ts";
 
-export function runExecutableRouter<TRouter extends ExecutableRouter, TSubflow extends ExecutableSubflowTarget>(input: ExecutableRouterExecutionInput<TRouter, TSubflow>): ExecutableRouterExecutionResult<TSubflow> {
+export function runExecutableRouter<TRouter extends ExecutableRouter, TSubflow extends ExecutableSubflowTarget>(input: ExecutableRouterExecutionInput<TRouter, TSubflow>, observation?: ExecutionCallbackObservation): ExecutableRouterExecutionResult<TSubflow> {
+  if (observation && !hasObservedExecutionFrame(observation)) throw new Error("execution_observation.durable_frame_missing");
   const plan = compileExecutableRouterPlan({ router: input.router, subflows: input.subflows });
-  const decidedAt = input.now?.() ?? Date.now();
+  const decidedAt = automationObservedClock(observation, input, input)();
   const evaluations: ExecutableRouteRuleEvaluation[] = [];
   const rejectedRuleIds: string[] = [];
   if (plan.status === "failed") {

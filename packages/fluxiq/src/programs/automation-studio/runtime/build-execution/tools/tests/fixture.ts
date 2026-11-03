@@ -3,7 +3,7 @@ import { AdmissionTestPersistence } from "../../../../../../runtime/execution-ad
 import { AdmissionTestScopeOwner } from "../../../../../../runtime/execution-admission/tests/scope-owner.ts";
 import { ExecutionCallbackRootSource, ExecutionObservationSource } from "../../../../../../runtime/execution-observation/index.ts";
 import type { OrdinaryExecutionRunBindingReader } from "../../../../../../runtime/output-dispatch/admission/index.ts";
-import { createAutomationStudioBuildToolObserver } from "../index.ts";
+import { createAutomationStudioBuildToolObserver } from "../../../../../../runtime/flow-authoring/execution/tools/index.ts";
 
 export async function buildToolFixture(store = new AdmissionTestPersistence(), configure?: (source: ExecutionObservationSource) => void) {
   const scopes = new AdmissionTestScopeOwner();

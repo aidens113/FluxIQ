@@ -1,3 +1,6 @@
+import { withinAutomationStudioRunEnvironment } from "../../../../../runtime/environment/index.ts";
+import { observedExecutionProperty } from "../../../../../runtime/execution-observation/index.ts";
+import { automationCallbackFromObservation, automationObservedClock } from "../../../../../engine/automation/execution-admission/kernel/index.ts";
 // One trial of a submitted candidate: run it once, from its declared start,
 // through the normal runtime, and judge only what that run did (t339 design,
 // unit U2).
@@ -91,7 +94,7 @@
 
 import { createHash } from "node:crypto";
 import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
-import { bindTrialExecutorParent, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation, observeCandidateTrialCallback } from "../../candidate-trials/index.ts";
+import { bindTrialExecutorParent, candidateTrialExecutionObservation, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation, observeCandidateTrialCallback } from "../../candidate-trials/index.ts";
 import { bindCandidateTrialFrame } from "../../candidate-trials/authority/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
@@ -137,9 +140,10 @@ export type AutomationStudioCandidateTrialOutcome = {
  * (`./judging-fits.ts`).
  */
 export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioCandidateTrialOutcome> {
-  const environment = ports.environment ?? automationStudioLiveRunEnvironment;
+  const observation = automationCallbackFromObservation(candidateTrialExecutionObservation(request), candidateTrialObservationContext(request) !== undefined);
+  const environment = observedExecutionProperty(observation, ports, "environment") ?? automationStudioLiveRunEnvironment;
   // The trial's client work runs on its environment's channel; live, exactly as before (header, U7).
-  return await environment.within(() => trialIn(environment, request, ports, preparedStart, judgeInputTokens));
+  return await withinAutomationStudioRunEnvironment(environment, () => trialIn(environment, request, ports, preparedStart, judgeInputTokens), observation);
 }
 
 /** One trial, run inside its environment (header, U7). */
@@ -165,7 +169,8 @@ async function trialIn(environment: AutomationStudioRunEnvironment, request: Aut
 /** The trial's own run from its start, under `runId`: its session, the detached run, its end and its judgement (header). */
 async function runIn(environment: AutomationStudioRunEnvironment, request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, start: AutomationStudioCandidateTrialStart, runId: string): Promise<AutomationStudioCandidateTrialOutcome> {
   const { signal, candidate } = request;
-  const now = ports.now ?? environment.now;
+  const observation = automationCallbackFromObservation(candidateTrialExecutionObservation(request), candidateTrialObservationContext(request) !== undefined);
+  const now = automationObservedClock(observation, { now: observedExecutionProperty(observation, ports, "now") ?? observedExecutionProperty(observation, environment, "now") }, undefined);
   const answer = answerFor(request);
   const opened = await ports.openSession({ runId, metadata: { candidateTrial: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, start: start.status } } });
   const startedAt = now();

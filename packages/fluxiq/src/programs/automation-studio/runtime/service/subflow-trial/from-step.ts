@@ -1,3 +1,6 @@
+import { withinAutomationStudioRunEnvironment } from "../../../../../runtime/environment/index.ts";
+import { observedExecutionProperty } from "../../../../../runtime/execution-observation/index.ts";
+import { automationCallbackFromObservation, automationObservedClock } from "../../../../../engine/automation/execution-admission/kernel/index.ts";
 import { copyAutomationExecutionOptions } from "../../../../../engine/automation/execution-admission/index.ts";
 // A from-step run of a subflow builder's proposal (t804; the rule "a failed
 // test is repaired live on the failing step and checked by running from that
@@ -47,7 +50,7 @@ import { automationStudioCandidateFrameEvidence, automationStudioCandidateTrialF
 import { automationStudioSubflowFromStepOrder, automationStudioSubflowFromStepUnbound } from "./from-step-binding.ts";
 import { automationStudioSubflowTrialOwnAttempts, automationStudioSubflowTrialPassedKeys, automationStudioSubflowTrialStoppedAtKey } from "./stopped-at.ts";
 import type { AutomationStudioSubflowTrialPorts } from "./types.ts";
-import { bindTrialExecutorParent, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation } from "../../candidate-trials/index.ts";
+import { bindTrialExecutorParent, candidateTrialExecutionObservation, candidateTrialObservationContext, inheritCandidateTrialExecutorObservation } from "../../candidate-trials/index.ts";
 import { bindPartialTrialFrame, observePartialTrialCallback } from "../../candidate-trials/partial/index.ts";
 
 /** The executor's code for a frame that ended with nodes it never visited. */
@@ -68,13 +71,15 @@ export const AUTOMATION_STUDIO_SUBFLOW_FROM_STEP_WORDS = Object.freeze({
 
 /** Runs `request`'s proposal from its step `fromKey` (header); refusals answer `not_run` with nothing done on the site. */
 export async function runAutomationStudioSubflowFromStep(request: AutomationStudioSubflowFromStepRequest, ports: AutomationStudioSubflowTrialPorts): Promise<AutomationStudioSubflowFromStepResult> {
-  const environment = ports.environment ?? automationStudioLiveRunEnvironment;
-  return await environment.within(() => fromStepIn(request, ports));
+  const observation = automationCallbackFromObservation(candidateTrialExecutionObservation(request), candidateTrialObservationContext(request) !== undefined);
+  const environment = observedExecutionProperty(observation, ports, "environment") ?? automationStudioLiveRunEnvironment;
+  return await withinAutomationStudioRunEnvironment(environment, () => fromStepIn(request, ports), observation);
 }
 
 async function fromStepIn(request: AutomationStudioSubflowFromStepRequest, ports: AutomationStudioSubflowTrialPorts): Promise<AutomationStudioSubflowFromStepResult> {
   const { signal, scope, proposal, fromKey } = request;
-  const environment = ports.environment ?? automationStudioLiveRunEnvironment;
+  const observation = automationCallbackFromObservation(candidateTrialExecutionObservation(request), candidateTrialObservationContext(request) !== undefined);
+  const environment = observedExecutionProperty(observation, ports, "environment") ?? automationStudioLiveRunEnvironment;
   signal.throwIfAborted();
   const answer = answerFor(request);
   if (!proposalOf(scope, proposal)) return answer("not_run", { code: "subflow.trial_identity_mismatch", said: AUTOMATION_STUDIO_SUBFLOW_FROM_STEP_WORDS.notRun });
@@ -88,7 +93,7 @@ async function fromStepIn(request: AutomationStudioSubflowFromStepRequest, ports
   const identity = await identityOf(scope, proposal, ports);
   if (!identity) return answer("not_run", { code: "subflow.trial_build_gone", said: AUTOMATION_STUDIO_SUBFLOW_FROM_STEP_WORDS.notRun });
   const runId = ports.newRunId?.() ?? environment.newRunId("subflow-trial");
-  const now = ports.now ?? environment.now;
+  const now = automationObservedClock(observation, { now: observedExecutionProperty(observation, ports, "now") ?? observedExecutionProperty(observation, environment, "now") }, undefined);
   const marker = { buildId: scope.buildId, briefId: scope.briefId, subflowKey: scope.subflowKey, revision: proposal.revision, digest: proposal.digest, fromStep: fromKey };
   const opened = await ports.openSession({ runId, metadata: { subflowTrial: { ...marker } } });
   const startedAt = now();

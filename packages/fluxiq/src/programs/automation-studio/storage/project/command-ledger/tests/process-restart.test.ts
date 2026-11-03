@@ -9,8 +9,8 @@ type Packet = { phase: string; status?: string; state?: string; resultDigest?: s
 const built = path.resolve(fileURLToPath(new URL("../../../../../../../", import.meta.url)), "dist");
 function script(): string {
   const gateway = pathToFileURL(path.join(built, "client-gateway/service/command-ledger/index.js")).href;
-  const ledger = pathToFileURL(path.join(built, "programs/automation-studio/storage/project/command-ledger/index.js")).href;
-  const project = pathToFileURL(path.join(built, "programs/automation-studio/storage/project/index.js")).href;
+  const ledger = pathToFileURL(path.join(built, "framework/persistence/index.js")).href;
+  const project = ledger;
   return `
 import { appendFile } from 'node:fs/promises';
 import path from 'node:path';

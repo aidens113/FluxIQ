@@ -2,7 +2,7 @@
 // such state passes before a route or a model is shown it.
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../index.ts";
-import { invokeObservedExecutionCallback, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
+import { invokeObservedExecutionCallback, observedExecutionProperty, type ExecutionCallbackObservation } from "../../execution-observation/index.ts";
 
 export type AutomationStudioRouteStateObservation =
   | { ok: true; state: JsonObject }
@@ -16,11 +16,12 @@ export async function observeAutomationStudioRouteState(input: {
   signal?: AbortSignal;
 }, observation?: ExecutionCallbackObservation): Promise<AutomationStudioRouteStateObservation> {
   if (!input.projectId) return { ok: false, reason: "The execution supplied no host project scope to observe." };
-  const observe = input.hostRuntime?.observeRouteState;
+  const host = observedExecutionProperty(observation, input, "hostRuntime");
+  const observe = host ? observedExecutionProperty(observation, host, "observeRouteState") : undefined;
   if (!observe) return { ok: false, reason: "The host observes no state here, so only inputs.* can be tested." };
   let state: unknown;
   try {
-    state = await invokeObservedExecutionCallback(observation, { receiver: input.hostRuntime, callback: observe, args: [{
+    state = await invokeObservedExecutionCallback(observation, { receiver: host, callback: observe, args: [{
       projectId: input.projectId,
       flowId: input.flowId,
       ...(input.signal ? { signal: input.signal } : {})

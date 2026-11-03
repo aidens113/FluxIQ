@@ -46,11 +46,12 @@ import { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioRetryBacko
 import { automationStudioReacquireBeforeAttempt, automationStudioStaleTargetFailure } from "../target-reacquire/index.ts";
 
 import { bindAutomationExecutionObservation, type AutomationExecutionObservation } from "../execution-admission/index.ts";
-import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationBackend, invokeAutomationCallback, invokeAutomationCallbackSync, AutomationRetrySeries, AutomationPureCallbacks } from "../execution-admission/kernel/index.ts";
+import { registerAutomationExecutionKernel, prepareAutomationFrame, invokeAutomationFrame, invokeAutomationBackend, invokeAutomationCallback, invokeAutomationCallbackSync, automationExecutionProperty, automationCallbackObservation, automationObservedClock, AutomationRetrySeries, AutomationPureCallbacks } from "../execution-admission/kernel/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../contracts/index.ts";
+import { originalNativeClockFunctions } from "../../../framework/clock/native/index.ts";
 
 const observedRetryKernel = registerAutomationExecutionKernel(undefined, dispatchWithRetriesBody, "children");
-AutomationPureCallbacks.register(undefined, Date.now);
+if (typeof originalNativeClockFunctions.now === "function") AutomationPureCallbacks.register(undefined, originalNativeClockFunctions.now);
 AutomationPureCallbacks.register(undefined, unreferencedDelay);
 
 /** What one attempt answered: success, or a failure with the producer's record when it gave one. */
@@ -147,27 +148,30 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: NodeRetr
 async function dispatchWithRetriesBody<T>(input: NodeRetryInput<T>, options: AutomationStudioGraphExecutionOptions): Promise<AutomationStudioNodeRetryOutcome<T>> {
   const policy = AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY;
   const actionEffect = input.actionEffect === undefined ? undefined : readAutomationStudioResolvedActionEffect(input.actionEffect);
-  const now = input.now ?? Date.now;
-  const delay = input.delay ?? unreferencedDelay;
+  const observation = automationCallbackObservation(options);
+  const now = automationExecutionProperty(options, input, "now") ?? (observation ? undefined : Date.now);
+  const nativeNow = automationObservedClock(observation, {}, undefined);
+  const readNow = () => now ? invokeAutomationCallbackSync(options, { receiver: undefined, callback: now, args: [] }) : nativeNow();
+  const delay = automationExecutionProperty(options, input, "delay") ?? unreferencedDelay;
   const faults: AutomationStudioFaultAssessment[] = [];
   let waitedMs = 0;
   // Whether this attempt retries a confirmed no-effect attempt, as a graph run marks it.
   let repress = false;
   // The dispatch the attempts use: the caller's, or the one a re-acquire found the fresh target with.
-  let dispatch = input.dispatch;
+  let dispatch = automationExecutionProperty(options, input, "dispatch");
   let reacquire: AutomationStudioNodeRetryOutcome<T>["reacquire"];
   const reacquireBefore = automationStudioReacquireBeforeAttempt(policy.maxAttempts);
   const ended = (result: T, attempts: number, extra: Pick<AutomationStudioNodeRetryOutcome<T>, "lastingAct"> = {}): AutomationStudioNodeRetryOutcome<T> => ({ result, attempts, waitedMs, faults, ...extra, ...(reacquire ? { reacquire } : {}) });
   for (let attempt = 1; ; attempt += 1) {
-    const startedAt = invokeAutomationCallbackSync(options, { receiver: undefined, callback: now, args: [] });
+    const startedAt = readNow();
     const result = await invokeAutomationBackend(options, { receiver: undefined, callback: dispatch, args: [attempt] });
-    const reading = invokeAutomationCallbackSync(options, { receiver: input, callback: input.read, args: [result] });
+    const reading = invokeAutomationCallbackSync(options, { receiver: input, callback: automationExecutionProperty(options, input, "read"), args: [result] });
     if (reading.ok || (!reading.failure && actionEffect?.effectClass !== "commit")) return ended(result, attempt);
     const traced = failedAttempt(input.node, attempt, startedAt, reading.failure, repress);
-    const assessed = automationStudioAssessAttemptFault(traced, input.node, invokeAutomationCallbackSync(options, { receiver: undefined, callback: now, args: [] }), actionEffect);
+    const assessed = automationStudioAssessAttemptFault(traced, input.node, readNow(), actionEffect);
     repress = reading.failure?.certainNoEffect === true;
     // A lasting act whose failure left its effect unknown is checked, never blindly repeated (t359).
-    const settled = assessed?.actUncertain ? await automationStudioRunEffectCheck(input.checkEffect ? (value, index) => invokeAutomationCallback(options, { receiver: undefined, callback: input.checkEffect!, args: [value, index] }) : undefined, result, attempt) : undefined;
+    const settled = assessed?.actUncertain ? await automationStudioRunEffectCheck(automationExecutionProperty(options, input, "checkEffect") ? (value, index) => invokeAutomationCallback(options, { receiver: undefined, callback: automationExecutionProperty(options, input, "checkEffect")!, args: [value, index] }) : undefined, result, attempt) : undefined;
     if (assessed && (settled === "landed" || settled === "unknown")) {
       faults.push(assessed);
       return ended(result, attempt, { lastingAct: settled === "landed" ? "landed" : "uncertain" });
@@ -185,12 +189,13 @@ async function dispatchWithRetriesBody<T>(input: NodeRetryInput<T>, options: Aut
     waitedMs += wait.waitMs;
     if (input.signal?.aborted) return ended(result, attempt);
     // Immediately before the attempt it comes before, once, on a target lost without acting (t786).
-    if (!input.reacquire || reacquire || attempt + 1 !== reacquireBefore || !automationStudioStaleTargetFailure(traced)) continue;
+    const reacquireCallback = automationExecutionProperty(options, input, "reacquire");
+    if (!reacquireCallback || reacquire || attempt + 1 !== reacquireBefore || !automationStudioStaleTargetFailure(traced)) continue;
     if (!reading.failure) continue;
-    const found = await askReacquire(input.reacquire, { failure: reading.failure, attempt: attempt + 1, signal: input.signal }, options);
+    const found = await askReacquire(reacquireCallback, { failure: reading.failure, attempt: attempt + 1, signal: input.signal }, options);
     reacquire = found.outcome;
     if (found.outcome === "gone") return ended(found.result, attempt);
-    if (found.outcome === "found") dispatch = found.dispatch;
+    if (found.outcome === "found") dispatch = automationExecutionProperty(options, found, "dispatch");
   }
 }
 

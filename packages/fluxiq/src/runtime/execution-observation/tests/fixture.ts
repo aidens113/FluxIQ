@@ -17,5 +17,5 @@ export async function observationFixture() {
   const origin = root.origin();
   const reserved = await authority.consumer.reserve(scope, rootPorts.issuer.fromOrdinaryAdmission(root.admit(origin)));
   const parent = { reservation: reserved.reservation, parent: reserved.root };
-  return { store, authority, scope, root, rootPorts, source, origin, reserved, parent, observation: source.forParent(parent) };
+  return { store, scopes, authority, scope, root, rootPorts, source, origin, reserved, parent, observation: source.forParent(parent) };
 }
