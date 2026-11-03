@@ -3,6 +3,7 @@
 // model's stated reason held to what the chat may show.
 export { automationStudioActivityAction, type AutomationStudioActivityCallWords } from "./action.ts";
 export { automationStudioActivityActsSaid, type AutomationStudioActivityActSaid } from "./act-words.ts";
+export { automationStudioActivityControlOf } from "./control-reader.ts";
 export { automationStudioActivityCheckRefusalReasons, automationStudioActivityCompletionRefusal } from "./completion-refusal.ts";
 export { automationStudioActivityDecision } from "./decision.ts";
 export { automationStudioActivityDraftEditCard } from "./draft-edit-card.ts";

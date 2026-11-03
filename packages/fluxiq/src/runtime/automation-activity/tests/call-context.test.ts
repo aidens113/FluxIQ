@@ -1,10 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/index.ts";
 import { activityActionOf } from "../../../ui/index.ts";
 import { automationStudioActivityHub } from "../index.ts";
 import { observeAutomationStudioEvidenceLoop } from "../index.ts";
 import { runWithAutomationStudioActivity } from "../index.ts";
+
+vi.mock("../wording/control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../wording/tests/example-control.ts")).exampleActivityControlReader
+}));
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

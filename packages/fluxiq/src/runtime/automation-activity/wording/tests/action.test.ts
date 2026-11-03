@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { activityActionOf, activityActionVerb } from "../../../../ui/index.ts";
 import { automationStudioActivityAction } from "../index.ts";
+
+vi.mock("../control-reader.ts", async (original) => ({
+  ...(await original<object>()),
+  automationStudioActivityControlOf: (await import("../tests/example-control.ts")).exampleActivityControlReader
+}));
 
 // The wording recognizes verbs through the chat's action kinds, and a card
 // reads a step's verb back from the sentence the wording said. These hold the

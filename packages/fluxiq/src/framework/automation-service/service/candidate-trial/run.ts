@@ -113,6 +113,7 @@ import { automationStudioCandidateTrialSummary } from "./summary.ts";
 import { automationStudioTrialWayOuts } from "./way-outs.ts";
 import { automationStudioCandidateFrameEvidence } from "./frame-evidence.ts";
 import { automationStudioTrialJudgingShortfall } from "./judging-fits.ts";
+import { runWithAutomationStudioDomainReadings } from "../../../../runtime/domain-readings/index.ts";
 
 const NO_SPEND: AutomationStudioCandidateTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
 
@@ -136,7 +137,8 @@ export type AutomationStudioCandidateTrialOutcome = {
 export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioCandidateTrialOutcome> {
   const environment = ports.environment ?? automationStudioLiveRunEnvironment;
   // The trial's client work runs on its environment's channel; live, exactly as before (header, U7).
-  return await environment.within(() => trialIn(environment, request, ports, preparedStart, judgeInputTokens));
+  const trial = () => environment.within(() => trialIn(environment, request, ports, preparedStart, judgeInputTokens));
+  return await (ports.domainReadings ? runWithAutomationStudioDomainReadings(ports.domainReadings, trial) : trial());
 }
 
 /** One trial, run inside its environment (header, U7). */

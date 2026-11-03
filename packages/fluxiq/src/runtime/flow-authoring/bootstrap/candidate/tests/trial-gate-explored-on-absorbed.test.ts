@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapSubflow } from "../../plan/index.ts";
 import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../../site-reset/index.ts";
 import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioCandidateTrialPort, type AutomationStudioFlowCandidate } from "../index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 // t647: the whole-candidate gate has the subflow gate's gap (A8 bigbox debug, fix 6). A candidate build explores, the start
 // hook takes back what its exploration did before each trial, and a Flow with no step for that act meets a page the build

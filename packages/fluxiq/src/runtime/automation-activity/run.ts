@@ -1,4 +1,5 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
+import type { AutomationStudioDomainReadings } from "../domain-readings/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
 import { automationStudioActivityRunEnding, automationStudioActivityRunObjection, automationStudioActivityRunUncertainEnding } from "./wording/index.ts";
@@ -42,7 +43,7 @@ type AutomationStudioRunActivityOptions<T> = {
  * the live line show, and the row's text, which the chat shows under "Run
  * failed", so both say the same thing.
  */
-export async function withAutomationStudioRunActivity<T extends { status: string; metadata?: unknown; trace?: unknown }>(target: { projectId?: string | null | undefined; flowId?: string | undefined }, fn: () => Promise<T>, options: AutomationStudioRunActivityOptions<T> = {}): Promise<T> {
+export async function withAutomationStudioRunActivity<T extends { status: string; metadata?: unknown; trace?: unknown }>(target: { projectId?: string | null | undefined; flowId?: string | undefined; domainReadings?: Readonly<AutomationStudioDomainReadings> | undefined }, fn: () => Promise<T>, options: AutomationStudioRunActivityOptions<T> = {}): Promise<T> {
   if (!target.projectId) return await fn();
   const scope = { kind: "run" as const, id: "", projectId: target.projectId, ...(target.flowId ? { flowId: target.flowId } : {}) };
   return await runWithAutomationStudioActivity(scope, async () => {
@@ -73,7 +74,7 @@ export async function withAutomationStudioRunActivity<T extends { status: string
       ...(settled.stopped ? { stopped: true as const } : {})
     });
     return session;
-  }, { pending: true });
+  }, { pending: true, readings: target.domainReadings });
 }
 
 /**

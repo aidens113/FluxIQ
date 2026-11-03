@@ -282,6 +282,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
 
     const emptyCatalog = createService({ resolver });
     (emptyCatalog as any).nativeNodeRuntime = {
+      getTargetHooks: () => undefined,
       sdk: { nodes: new AutomationStudioNodeRegistry([]) },
       getRuntimeCapabilities: () => [],
       getRegistryResolution: (scope: unknown) => ({ scope, runtimeCapabilities: [], permissions: [] })

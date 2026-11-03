@@ -61,7 +61,8 @@ describe("a build's trial environment from the service's collaborators", () => {
     const { environment, calls } = environmentOf();
     await environment.processDatasets("run.3");
     expect(await environment.recordSets("run.3")).toEqual([]);
-    expect(calls).toEqual([{ name: "processEndedRunDatasets", args: [{ projectId: PROJECT, runId: "run.3" }] }]);
+    // A trial's result check reads the account whole: the tested cells a public read leaves out are its evidence (t841).
+    expect(calls).toEqual([{ name: "processEndedRunDatasets", args: [{ projectId: PROJECT, runId: "run.3" }] }, { name: "listRunDatasetsForVerification", args: [{ projectId: PROJECT, runId: "run.3" }] }]);
     expect(typeof environment.actionAttempts).toBe("function");
   });
 

@@ -12,7 +12,7 @@
 // candidate towels `run-mvam0lys-2d3eb090` step 0043) clause by clause: a
 // clause blaming such a step is refuted though another clause of the sentence
 // names a condition, which is weighed on its own.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
@@ -27,6 +27,12 @@ import {
   automationStudioResultRefutedReading,
   type AutomationStudioResultNoNarrowingStep
 } from "../index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 const BODY = "List every atlas in the library catalogue available to borrow today and rated 4 or higher, going through every page, with columns title, rating and url.";
 const REQUEST = `Goal\n${BODY}`;

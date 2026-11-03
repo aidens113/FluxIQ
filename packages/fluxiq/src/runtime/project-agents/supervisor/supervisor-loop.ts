@@ -138,6 +138,7 @@ import { automationStudioProjectSupervisorPlanTool } from "./plan-tool.ts";
 import { automationStudioProjectSupervisorPlanning } from "./planning.ts";
 import type { AutomationStudioProjectSupervisorPorts } from "./ports.ts";
 import { automationStudioProjectSupervisorReadTask } from "./read-task.ts";
+import { automationStudioProjectSupervisorRequestKeys } from "./request-keys/index.ts";
 import { automationStudioProjectSupervisorHostTools } from "./role-tools.ts";
 import { automationStudioProjectSupervisorStopReason } from "../stop-reason/index.ts";
 import { AutomationStudioProjectSupervisorState, type AutomationStudioProjectSupervisorCompletedOnPass, type AutomationStudioProjectSupervisorRecoveryShortfall, type AutomationStudioProjectSupervisorReliesOnRecovery } from "./state.ts";
@@ -264,7 +265,10 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
   const unusable = input.loop.unusableDecisions;
   const loopInput: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop,
-    requestContextKey: (toolId) => toolId === IDS.testCandidate ? automationStudioCandidateTestRequestKey(controller.latest()) : input.loop.requestContextKey?.(toolId),
+    // A test is keyed on the proposal it tests, a dispatch and an assemble on what their refusals read (`./request-keys/`, t849).
+    requestContextKey: (toolId) => toolId === IDS.testCandidate ? automationStudioCandidateTestRequestKey(controller.latest())
+      : toolId === IDS.dispatch ? automationStudioProjectSupervisorRequestKeys.dispatch(context)
+        : toolId === IDS.assemble ? automationStudioProjectSupervisorRequestKeys.assemble(context) : input.loop.requestContextKey?.(toolId),
     ...(unusable ? {
       unusableDecisions: {
         ...unusable,

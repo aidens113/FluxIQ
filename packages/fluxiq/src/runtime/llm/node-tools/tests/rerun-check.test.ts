@@ -12,7 +12,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 import { automationStudioFlowDraftEntry, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
-import { automationStudioNodeRerunAnswer } from "../rerun-check.ts";
+import { automationStudioNodeRerunAnswer as answerOf } from "../rerun-check.ts";
+
+/** The keys a domain with these steps' parameters declares in its bundle. No domain is named: these are this test's own. */
+const CONTROL_PARAMETER_KEYS: ReadonlySet<string> = new Set(["target", "selector", "element"]);
+const automationStudioNodeRerunAnswer = (input: Parameters<typeof answerOf>[0]) => answerOf({ controlParameterKeys: CONTROL_PARAMETER_KEYS, ...input });
 
 const tools = [{ toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true }];
 const PEOPLE = ["Amara", "Tom"];
@@ -188,7 +192,6 @@ describe("a rerun of a step whose act was already done while building", () => {
 // argument meant, in the words the domain gave for it before the reset.
 describe("a rerun refused on the page its step was put back to", () => {
   it("is answered with the page put back and the control the argument named", async () => {
-    const { automationStudioNodeRerunAnswer } = await import("../rerun-check.ts");
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: false, code: "target_unobserved", detail: { reason: "handle_not_in_packet", target: "t985" } }, effectApplied: false }));
     const replaces = { position: 7, id: "d7", iteration: 3, actionId: "web.output.dom-click", toolId: "core.run_node", input: { parameters: { target: { handle: "t974" } } }, effect: "mutate" as const, disposition: "kept" as const, replay: { from: { location: "item" } } };
     const { ran, took } = await automationStudioNodeRerunAnswer({
@@ -432,7 +435,7 @@ describe("a checked rerun that takes the new argument", () => {
     // No put-back is needed for this fixture: it isolates dependent test marks.
     delete seed[1]!.replay;
     const executeTool = async ({ value }: { value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: value.replay === "verify" ? "core.replay.verified" : "core.replay.replayed", effectApplied: value.replay !== "verify" });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed }, dryRun: false, lastingActs: async () => new Set(["a1"]), maxIterations: 4, maxToolCalls: 8 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed }, dryRun: false, lastingActs: async () => new Set(["a1"]), controlParameterKeys: CONTROL_PARAMETER_KEYS, maxIterations: 4, maxToolCalls: 8 });
     const steps = (result as { steps: AutomationStudioFlowDraftStep[] }).steps;
     expect(steps[0]!.replayed).toBeDefined();
     expect(steps[1]!.checkedCandidate).toBeDefined();
@@ -493,7 +496,6 @@ describe("a checked rerun that takes the new argument", () => {
   });
 
   it("leaves the step untested with it", async () => {
-    const { automationStudioNodeRerunAnswer } = await import("../rerun-check.ts");
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, code: "core.replay.verified" }, effectApplied: false, resultCode: "core.replay.verified" }));
     const replaces = {
       position: 6, id: "d6", iteration: 2, actionId: "web.click", toolId: "press", input: { target: "Confirm Amara", note: "hi" }, effect: "mutate" as const, effectApplied: true, disposition: "kept" as const, acts: ["a1"],
@@ -503,5 +505,52 @@ describe("a checked rerun that takes the new argument", () => {
     expect(took).toBe(true);
     expect(replaces.input).toEqual({ target: "Confirm Amara", note: "hello" });
     expect((replaces as { replayed?: unknown }).replayed).toBeUndefined();
+  });
+});
+
+// The rule keeps a lasting act on the control it ran on. A domain that declared
+// no control keys has not said which parameter names the control, so every
+// parameter is read as naming it: nothing new can slip through as "a new value".
+describe("a checked rerun with no control keys from the domain", () => {
+  const done = () => ({
+    position: 6, id: "d6", iteration: 2, actionId: "acme.press", toolId: "press", input: { handle: "Confirm Amara", note: "hi" },
+    ranWith: { locator: "#amara", note: "hi" }, effect: "mutate" as const, effectApplied: true, disposition: "kept" as const, acts: ["a1"]
+  });
+  const verified = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, code: "core.replay.verified" }, effectApplied: false, resultCode: "core.replay.verified" }));
+  const ask = (step: ReturnType<typeof done>, value: JsonObject, keys?: ReadonlySet<string>) => answerOf({
+    place: undefined, replaces: step, call: { callId: "rerun.6", toolId: "press", value }, executeTool: verified, lastingActs: new Set(["a1"]),
+    ...(keys ? { controlParameterKeys: keys } : {})
+  });
+
+  it("refuses a new value of any parameter, as another control, and keeps the step", async () => {
+    const step = done();
+    const before = structuredClone(step);
+    const { ran, took } = await ask(step, { note: "hello" });
+    expect(took).toBe(false);
+    expect(step).toEqual(before);
+    expect((ran as { evidence: { rerunCheck: { detail: string } } }).evidence.rerunCheck.detail).toContain("another control");
+  });
+
+  it("refuses a parameter the step never ran with", async () => {
+    const step = done();
+    const { took } = await ask(step, { extra: "x" });
+    expect(took).toBe(false);
+    expect(step.input).toEqual(done().input);
+  });
+
+  it("still takes the argument the step ran with", async () => {
+    const step = done();
+    const { took } = await ask(step, { handle: "Confirm Amara", note: "hi" });
+    expect(took).toBe(true);
+  });
+
+  it("takes a new value once the domain says which keys name the control, and refuses a new control", async () => {
+    const keys = new Set(["handle", "locator"]);
+    const value = done();
+    expect((await ask(value, { note: "hello" }, keys)).took).toBe(true);
+    expect((value as unknown as { ranWith: JsonObject }).ranWith).toEqual({ locator: "#amara", note: "hello" });
+    const control = done();
+    expect((await ask(control, { handle: "Confirm Tom" }, keys)).took).toBe(false);
+    expect(control.input).toEqual(done().input);
   });
 });

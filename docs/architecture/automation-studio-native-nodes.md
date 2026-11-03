@@ -47,7 +47,9 @@ redact credential-like keys before entering execution traces.
 and Code Nodes, recording mappers, target resolvers, comparators, custom
 schemas, and editor metadata. `AutomationStudioImporterImplementationBundle`
 binds implementation functions separately. Manifests are safe for compiler and
-editor surfaces; implementation functions remain host-only.
+editor surfaces; implementation functions remain host-only. The bundle also
+carries the domain's readings of its own fields: [runtime ownership](./runtime-ownership.md#hooks-on-the-implementation-bundle)
+lists each hook, who calls it and what happens with none.
 
 Definitions are filtered to the active project scope before reaching the node
 palette. Domain nodes cannot appear globally or in another domain. Code-owned
@@ -450,6 +452,14 @@ summary's `processing`): `collected` (= `filteredOut` + `duplicates` + `cut`
 + `kept`), `keptNone` when the answer is empty, `belowMinRows` when it fell
 short, and `passes`: one entry per batch with its node, its pass number per
 node, its rows and its `newRows` (rows that repeat no earlier collected row).
+
+Each `where` condition also accounts for the rows it alone excluded. Its optional
+tested-value evidence comes from the same processing evaluation over collected
+rows, before answer-column projection. Evidence is screened before it reaches a
+judge and is left out of every public dataset and run-detail read; it is not an
+assertion the model can author. Older accounts remain valid
+without it and retain their previous verification requirements. Duplicate row
+labels cannot merge conflicting observations into a measured exclusion.
 
 **Not yet.** The build's test does not process: `buildTest.stores` still
 counts every row each pass of a read returned

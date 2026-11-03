@@ -7,7 +7,7 @@
 // `leftOutOnlyByThis` named them: every judge said yes over a short result.
 // Each read now names those steps (`narrowedBefore`), and the judge's request
 // carries them. The fixture is a library catalogue, not a Lab scenario.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor/index.ts";
@@ -16,6 +16,12 @@ import { automationStudioResultNarrowedBefore } from "../narrowed-before.ts";
 import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
 import { verifyAutomationStudioRunResult } from "../verify.ts";
 import { datasetSummary, instruction, provider } from "./run-outcome-harness.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 const DENIED = ["html", "cookies", "selector"];
 const READ = "s7";

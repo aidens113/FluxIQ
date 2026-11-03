@@ -3,7 +3,7 @@
 //
 // **Which rows.** Each read condition's `leftOutOnlyByThis` row that Core did
 // not settle (`leftOutSettled`, `../value-readings/settled-rows.ts`), and each
-// record set's processing condition's: the rows a yes names one by one
+// record set's processing condition's, settled alike (t841): the rows a yes names one by one
 // (`unquoted-rows.ts`, `unaccounted-rows.ts`). A settled row needs no naming,
 // nor does a row whose item is also in the result (`leftOutAlsoInResult`,
 // `summary-with-also-in-result.ts`, t624, made first on the copy), and a withheld
@@ -49,7 +49,7 @@ export function automationStudioResultSummaryWithRowIds(summary: AutomationStudi
   });
   const recordSets = summary.recordSets.map((set): AutomationStudioResultRecordSetSummary => !set.processing?.conditions?.some((entry) => entry.leftOutOnlyByThis?.length) ? set : {
     ...set,
-    processing: { ...set.processing, conditions: set.processing.conditions.map((entry) => entry.leftOutOnlyByThis?.length ? { ...entry, leftOutOnlyByThis: said(entry.leftOutOnlyByThis) } : entry) }
+    processing: { ...set.processing, conditions: set.processing.conditions.map((entry) => entry.leftOutOnlyByThis?.length ? { ...entry, leftOutOnlyByThis: said(entry.leftOutOnlyByThis, entry.leftOutSettled) } : entry) }
   });
   return changed ? { ...summary, ...(reads ? { reads } : {}), recordSets } : summary;
 }

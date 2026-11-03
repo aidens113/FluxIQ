@@ -122,6 +122,7 @@ import { automationStudioTrialChangeAfterRead } from "../../../../runtime/flow-a
 import { automationStudioSubflowTrialPredecessorGap } from "./predecessor-gap.ts";
 import { automationStudioSubflowTrialStart } from "./start.ts";
 import { automationStudioSubflowTrialStoppedAtKey } from "./stopped-at.ts";
+import { runWithAutomationStudioDomainReadings } from "../../../../runtime/domain-readings/index.ts";
 import type { AutomationStudioSubflowTrialJudgeInput, AutomationStudioSubflowTrialPorts, AutomationStudioSubflowTrialRecord } from "./types.ts";
 
 const NO_SPEND: AutomationStudioSubflowTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
@@ -148,7 +149,8 @@ export type AutomationStudioSubflowTrialOutcome = {
 export async function runAutomationStudioSubflowTrial(request: AutomationStudioSubflowTrialRequest, ports: AutomationStudioSubflowTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart, judgeInputTokens?: number): Promise<AutomationStudioSubflowTrialOutcome> {
   const environment = ports.environment ?? automationStudioLiveRunEnvironment;
   // The trial's client work runs on its environment's channel; live, exactly as before (header, U7).
-  return await environment.within(() => trialIn(environment, request, ports, preparedStart, judgeInputTokens));
+  const trial = () => environment.within(() => trialIn(environment, request, ports, preparedStart, judgeInputTokens));
+  return await (ports.domainReadings ? runWithAutomationStudioDomainReadings(ports.domainReadings, trial) : trial());
 }
 
 /** One partial trial, run inside its environment (header, U7). */

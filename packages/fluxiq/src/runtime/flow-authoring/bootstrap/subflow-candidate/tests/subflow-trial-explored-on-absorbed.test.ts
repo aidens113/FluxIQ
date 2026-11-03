@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../../action-permission-requests/index.ts";
 import type { AutomationStudioFlowBootstrapSubflow } from "../../plan/index.ts";
 import { AutomationStudioSiteResetProjectLedger, automationStudioSiteResetProjectReset, type AutomationStudioSiteResetExplored } from "../../site-reset/index.ts";
 import { AutomationStudioSubflowTrialGate, type AutomationStudioSubflowProposal, type AutomationStudioSubflowTrialPreparingPort, type AutomationStudioSubflowTrialRequest, type AutomationStudioSubflowTrialResult } from "../index.ts";
 import { testScope } from "./subflow-fixture.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 // t647 (A8 bigbox debug `run-mv9zn5ob-d929084d`, fix 6): a builder changed the site while exploring, built on the page
 // that left, and every trial's start hook took the act back; no step did it, and nothing told the builder why each trial

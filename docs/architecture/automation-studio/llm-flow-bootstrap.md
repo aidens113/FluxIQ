@@ -599,8 +599,9 @@ because the structure audit's depth limit leaves no room below it:
   from the loop's memory only until the next call runs, a look included
   (`runtime/llm/refused-action-retest.ts`); with no call between, the identical
   request is still answered `llm_evidence_loop.already_answered`. The repeat
-  guard treats `trial_reset_required`, `trial_reset_unproved` and
-  `trial_start_differs` (`candidate.` or `project.`) as a precondition
+  guard treats `trial_starts_in_end_state`, `subflow.trial_from_step_first`, and
+  the retired `trial_reset_required`, `trial_reset_unproved` and
+  `trial_start_differs` (`candidate.` or `project.`), as a precondition
   (`runtime/llm/repeat-guard/outcomes.ts`, `PRECONDITIONS`): any later call that ran and
   was not refused lifts it on every page, so the retest after a settling look
   reaches the ledger even when the look left the page digest unchanged; the
@@ -611,7 +612,9 @@ because the structure audit's depth limit leaves no room below it:
   left says so with a typed field, `ownRetestBound: true`, and its gate (the
   candidate gate and the subflow gate) bounds the re-tests; the guard records no
   failure for that call, so the re-test is not refused as a repeat of the
-  trial it follows.
+  trial it follows. Once no re-test is left, a `not_judged` or an unprepared entry
+  no longer says to test again (t849): it says to change and resubmit, or to end
+  the brief.
 - **Every refusal says what can meet it (t743).** Every site-reset refusal is
   built by one constructor, `automationStudioSiteResetRefusal(code, answer)`
   (`runtime/flow-authoring/bootstrap/reset-answers/refusal.ts`). It takes a `candidate.*` code and
@@ -3194,6 +3197,25 @@ refused in one place. It never refuses:
   `run-musp39u8-9ac026ab` (t194-w79) read a list by an extraction handle no
   detect had minted, ran the detect, and was then refused the identical read
   four times.
+
+**A dispatch is keyed on the build too** (t849,
+`runtime/project-agents/supervisor/request-keys/`). The supervisor's own tools
+report no page and a builder moves the target unseen, so after one look the page
+in the key stood still. `project.brief_repeated`, `project.repair_unchanged` and
+`project.reset_repeated` each say what to do first; the model did that, sent the
+identical `project.dispatch`, and was refused unrun although Core's own check
+would have sent it. The tool's `requestContextKey` now holds what those checks
+read: the plan in force, the returns heard under it, what stands, what is left on
+the target and whether a reset came back last. Once one changes it is a new call;
+until then the identical call is refused unrun and counts in the same run of
+refusals. `project.assemble`, refused until the briefs it needs came back, is keyed
+on the plan and the returns in the same way. `project.dispatch_failed` changes none of it and no longer invites the
+call back: the dispatcher throws for a record it cannot read, hold or write, some of
+them after its builders ran, so it says to end honestly, and that ending is not held
+as too soon. A failure after any builder began also claims neither an unchanged
+target nor nothing applied ([failure control](failure-control.md)), and its briefs
+keep a blocked return, so the same brief is `project.brief_repeated` until what it
+starts from changes.
 
 **A part run is keyed on the draft too** (t195-w46,
 `runtime/llm/repeat-guard/draft-key.ts`). `core.run_flow` runs the draft again,

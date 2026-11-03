@@ -258,7 +258,8 @@ describe("a yes over rows a numeric bound left out, which Core settled", () => {
     const rating = summaryOf(true).reads![0]!.conditions![0]!;
     expect(rating.leftOutSettled).toEqual(["Copper Trowel — rating: 3.5 out of 5", "Steel Rake — rating: 2.9 out of 5"]);
     expect(rating.settled).toContain("each fails condition 1 (rating atLeast 4) as written");
-    expect(rating.settled).toContain("quote, once, in a sentence that names condition 1 (rating atLeast 4) or rating, the request's own words stating that bound");
+    // `rating` is one of the answer's columns, which names no settled condition (t790), so the sentence never offers it (lead decision, 2026-11-03, t841).
+    expect(rating.settled).toContain("quote, once, in a sentence that names condition 1 (rating atLeast 4), the request's own words stating that bound");
     // Text and presence conditions settle nothing.
     expect(summaryOf(true).reads![0]!.conditions!.slice(1).map((condition) => condition.leftOutSettled)).toEqual([undefined, undefined]);
   });
@@ -322,7 +323,7 @@ describe("the judge wording t574 adds", () => {
     const presence = automationStudioResultReadPresence({ field: "weight", is: "present" }, [], undefined)!;
     const condition = { field: "weight", atMost: 2 };
     expect(automationStudioRecordConditionHolds(condition, "3 kg")).toBe(false);
-    const settled = automationStudioResultSettledRows({ condition, column: "weight", number: 1, wording: "weight atMost 2", leftOut: [{ row: "Row A — weight: 3 kg", cell: { label: "Row A", value: "3 kg" } }] })!;
+    const settled = automationStudioResultSettledRows({ answerColumns: new Set(), condition, column: "weight", number: 1, wording: "weight atMost 2", leftOut: [{ row: "Row A — weight: 3 kg", cell: { label: "Row A", value: "3 kg" } }] })!;
     const deficient: AutomationStudioResultVerification = {
       schemaVersion: "automation-studio.result-verification.v1", verdict: "unsure", basis: "model_unconfirmed",
       code: "core.result.exclusion_evidence_missing", reason: "Unconfirmed.", observation: "One record.", exclusionEvidenceMissing: ["(Core's line)"]
@@ -331,13 +332,13 @@ describe("the judge wording t574 adds", () => {
     // t599: a presence and an absence test's settled sentences, each said with and without a known column.
     const witnessed = (state: "absent" | "present") => [{ row: "Row A", cell: undefined, witness: state === "absent" ? { source: "read" as const, page: 1, item: 1, state } : { source: "read" as const, page: 1, item: 1, state, value: "Seen" } }];
     const presenceSettled = [
-      automationStudioResultSettledRows({ condition: { field: "weight", is: "present" }, column: "weight", number: 1, wording: "weight is present", leftOut: witnessed("absent") })!.settled,
-      automationStudioResultSettledRows({ condition: { field: "value", is: "absent" }, column: undefined, number: 2, wording: undefined, leftOut: witnessed("present") })!.settled
+      automationStudioResultSettledRows({ answerColumns: new Set(), condition: { field: "weight", is: "present" }, column: "weight", number: 1, wording: "weight is present", leftOut: witnessed("absent") })!.settled,
+      automationStudioResultSettledRows({ answerColumns: new Set(), condition: { field: "value", is: "absent" }, column: undefined, number: 2, wording: undefined, leftOut: witnessed("present") })!.settled
     ];
     // t624: a text test's settled sentence, kept and left out by its words, with and without a known column; and the also-in-result sentence.
     const textSettled = [
-      automationStudioResultSettledRows({ condition: { field: "finish", contains: "Matte" }, column: "finish", number: 1, wording: "finish contains [\"Matte\"]", leftOut: witnessed("present") })!.settled,
-      automationStudioResultSettledRows({ condition: { field: "value", equals: "Seen", not: true }, column: undefined, number: 2, wording: undefined, leftOut: witnessed("present") })!.settled
+      automationStudioResultSettledRows({ answerColumns: new Set(), condition: { field: "finish", contains: "Matte" }, column: "finish", number: 1, wording: "finish contains [\"Matte\"]", leftOut: witnessed("present") })!.settled,
+      automationStudioResultSettledRows({ answerColumns: new Set(), condition: { field: "value", equals: "Seen", not: true }, column: undefined, number: 2, wording: undefined, leftOut: witnessed("present") })!.settled
     ];
     const summary: AutomationStudioRunResultSummary = {
       schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 1, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 1, flowShape: [], withheld: false,
@@ -347,10 +348,10 @@ describe("the judge wording t574 adds", () => {
     const alsoInResult = automationStudioResultSummaryWithAlsoInResult(summary).reads![0]!.conditions![0]!.alsoInResult!;
     // t636: a bound's row the read found empty, and a text test's rows whose witness found no value, each said with and without a known column.
     const emptySettled = [
-      automationStudioResultSettledRows({ condition, column: "weight", number: 1, wording: "weight atMost 2", leftOut: [{ row: "Row A — weight: (no value)", cell: undefined }] })!.settled,
-      automationStudioResultSettledRows({ condition, column: "weight", number: 1, wording: "weight atMost 2", leftOut: [{ row: "Row A — weight: 3 kg", cell: { label: "Row A", value: "3 kg" } }, { row: "Row B — weight: (no value)", cell: undefined }] })!.settled,
-      automationStudioResultSettledRows({ condition: { field: "finish", contains: "Matte" }, column: "finish", number: 1, wording: undefined, leftOut: witnessed("absent") })!.settled,
-      automationStudioResultSettledRows({ condition: { field: "value", contains: "Matte" }, column: undefined, number: 2, wording: undefined, leftOut: [...witnessed("absent"), { row: "Row B", cell: undefined, witness: { source: "read" as const, page: 1, item: 2, state: "present" as const, value: "Gloss" } }] })!.settled
+      automationStudioResultSettledRows({ answerColumns: new Set(), condition, column: "weight", number: 1, wording: "weight atMost 2", leftOut: [{ row: "Row A — weight: (no value)", cell: undefined }] })!.settled,
+      automationStudioResultSettledRows({ answerColumns: new Set(), condition, column: "weight", number: 1, wording: "weight atMost 2", leftOut: [{ row: "Row A — weight: 3 kg", cell: { label: "Row A", value: "3 kg" } }, { row: "Row B — weight: (no value)", cell: undefined }] })!.settled,
+      automationStudioResultSettledRows({ answerColumns: new Set(), condition: { field: "finish", contains: "Matte" }, column: "finish", number: 1, wording: undefined, leftOut: witnessed("absent") })!.settled,
+      automationStudioResultSettledRows({ answerColumns: new Set(), condition: { field: "value", contains: "Matte" }, column: undefined, number: 2, wording: undefined, leftOut: [...witnessed("absent"), { row: "Row B", cell: undefined, witness: { source: "read" as const, page: 1, item: 2, state: "present" as const, value: "Gloss" } }] })!.settled
     ];
     for (const text of [presence, settled.settled, ...presenceSettled, ...textSettled, ...emptySettled, alsoInResult, recheck, automationStudioResultConditionName(1, undefined)]) guarded(text);
   });

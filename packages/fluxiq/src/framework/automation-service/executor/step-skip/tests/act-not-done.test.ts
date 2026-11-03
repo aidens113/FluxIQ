@@ -1,7 +1,13 @@
 // Whether a step passed over does a lasting act (r4b F4), read off the node
 // alone, on a generic lending-library site.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { automationStudioSkippedStepDoesAct } from "../index.ts";
+
+// The words Core says about a control are the domain's reading of its parameters; these tests say them in Core's example shape.
+vi.mock("../../../../../runtime/domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../../runtime/domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
 
 const node = (words?: string, label?: string) => ({ ...(label ? { label } : {}), ...(words ? { parameterValues: { element: { visibleText: words } } } : {}) });
 

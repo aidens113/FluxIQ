@@ -53,4 +53,11 @@ export { automationStudioProjectSingleSubflowRebuild, type AutomationStudioProje
 export { automationStudioServiceWholeTrialPorts, type AutomationStudioServiceWholeTrialPortsInput } from "./service/trial-ports/index.ts";
 export type { AutomationStudioCandidateTrialPorts } from "./service/candidate-trial/index.ts";
 export { automationStudioGatewayTraceServiceStore } from "../../runtime/recording/gateway-trace/wiring/index.ts";
+// What a domain's reading of a recorded step and of a state path comes to, so the domain can prove its hooks against Core's own answer.
+export { supportingRecordingSteps } from "./service/instruction-led/index.ts";
+export { inferStateElementKind } from "./service/evidence/index.ts";
+export { automationStudioModelFacingControlWords } from "../../runtime/llm/model-facing/index.ts";
+export { automationStudioTrialStepControl } from "./service/candidate-trial/index.ts";
+export { automationStudioClassifyLegacyStepAct } from "./executor/compatibility/index.ts";
+export * from "../../runtime/domain-readings/index.ts";
 export * from "../../runtime/adaptation/training-modes.ts";

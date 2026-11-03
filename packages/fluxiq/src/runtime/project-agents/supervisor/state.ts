@@ -238,6 +238,8 @@ export class AutomationStudioProjectSupervisorState {
   private readonly returns = new Map<string, AutomationStudioProjectBuilderReturn>();
   /** A whole trial ran and did not pass. */
   wholeTrialFailed = false;
+  /** The latest `project.dispatch` failed with no return, which tells the model to end (`./dispatch-tool.ts`, t849); a dispatch that returned clears it. */
+  dispatchFailed = false;
   /**
    * The latest reset brief that came back not done, and what it left on the
    * target (`left`, a key the dispatch tool compares): a second reset sent

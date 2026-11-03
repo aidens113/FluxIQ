@@ -1,116 +1,140 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineEntry } from "../../../../../flows/authoring/model/index.ts";
 import { createRecordingSession } from "../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioRecordedStepReader, AutomationStudioRecordedStepReading } from "../../../nodes/index.ts";
 import { RECORDING_STEPS_MAX, supportingAutomationRecordings, supportingRecordingSteps } from "../index.ts";
 
+// Core's half: what it does with a domain's reading, and what it does with none.
+// A real domain's reading of its own recorded entries is tested in that domain.
+
+type Control = Partial<AutomationStudioRecordedStepReading> & { skip?: true };
+
 let sequence = 0;
-function event(eventType: string, element: Record<string, unknown>): TimelineEntry {
+function step(eventType: string, control: Control): TimelineEntry {
   sequence += 1;
-  return { id: `e${sequence}`, recordingId: "r", timestamp: sequence, monotonicOffsetMs: sequence, sequence, sourceId: "s", type: "domain_event", eventType, payload: { url: "https://shop.example/cart?session=SECRET123", element } } as TimelineEntry;
+  return { id: `e${sequence}`, recordingId: "r", timestamp: sequence, monotonicOffsetMs: sequence, sequence, sourceId: "s", type: "domain_event", eventType, payload: { held: "HELD-VALUE", control } } as unknown as TimelineEntry;
 }
-function action(actionType: string, fingerprint: Record<string, unknown>): TimelineEntry {
-  sequence += 1;
-  return { id: `a${sequence}`, recordingId: "r", timestamp: sequence, monotonicOffsetMs: sequence, sequence, sourceId: "s", type: "action", actionType, parameters: { text: "TYPED-SECRET" }, origin: "operator", startedAt: sequence, target: { type: "element", elementTarget: { kind: "element", fingerprint } } } as unknown as TimelineEntry;
-}
+
+/** A domain whose entries say what they are in so many words. */
+const read: AutomationStudioRecordedStepReader = ({ entry }) => {
+  const control = (entry as unknown as { payload: { control: Control } }).payload.control;
+  if (control.skip) return null;
+  return { secret: control.secret ?? false, identity: control.identity ?? [], label: control.label, role: control.role, entersValue: control.entersValue ?? false, undoes: control.undoes ?? false };
+};
 
 describe("the steps a recording shows the build model", () => {
-  it("keeps kind, label and role in order and drops values, addresses and page text", () => {
+  it("withholds every step and shows nothing with no domain reader", () => {
     const { steps, withheldSteps } = supportingRecordingSteps([
-      event("web.element.clicked", { name: "  Add to   cart ", role: "button", visibleText: "Add to cart for $19.99 today", selector: "#a" }),
-      event("web.element.input_changed", { name: "Quantity", role: "spinbutton", value: "7", inputValue: "7", visibleText: "7", text: "7" }),
-      event("web.page.navigated", {}),
-      event("web.element.focused", { name: "Quantity" }),
-      event("web.dom.mutated", {})
-    ]);
-    expect(steps).toEqual([
-      { kind: "clicked", label: "Add to cart", role: "button" },
-      { kind: "input_changed", label: "Quantity", role: "spinbutton", valueEntered: true },
-      { kind: "navigated" }
-    ]);
-    expect(withheldSteps).toBe(0);
-    const text = JSON.stringify(steps);
-    for (const leak of ["SECRET123", "shop.example", "$19.99", "\"7\""]) expect(text).not.toContain(leak);
-  });
-
-  it("omits password and payment steps entirely and counts them", () => {
-    const { steps, withheldSteps } = supportingRecordingSteps([
-      event("web.element.input_changed", { name: "Password", role: "textbox", attributes: { type: "password" } }),
-      event("web.element.input_changed", { name: "Number", role: "textbox", attributes: { autocomplete: "cc-number" } }),
-      event("web.element.input_changed", { name: "Card verification code", role: "textbox" }),
-      event("web.element.clicked", { name: "Sign in", role: "button" })
-    ]);
-    expect(steps).toEqual([{ kind: "clicked", label: "Sign in", role: "button" }]);
+      step("acme.pressed", { label: "Add to cart", role: "button" }),
+      step("acme.entered", { label: "Quantity", entersValue: true }),
+      step("acme.noticed", { skip: true })
+    ], undefined);
+    expect(steps).toEqual([]);
     expect(withheldSteps).toBe(3);
   });
 
-  it("labels an entering step by name alone and drops labels that look like addresses, emails or numbers", () => {
-    const { steps } = supportingRecordingSteps([
-      event("web.element.input_changed", { visibleText: "typed words", role: "textbox" }),
-      event("web.element.clicked", { visibleText: "https://x.example/a?token=1", role: "link" }),
-      event("web.element.clicked", { visibleText: "me@example.com", role: "link" }),
-      event("web.element.clicked", { visibleText: "x".repeat(300), role: "link" })
+  it("keeps the kind Core normalized, the label and the role, and leaves out what the domain says is no step", () => {
+    const seen: string[] = [];
+    const { steps, withheldSteps } = supportingRecordingSteps([
+      step("Acme.Thing.Pressed!", { label: "  Add to   cart ", role: "button" }),
+      step("acme.entered", { label: "Quantity", role: "spinbutton", entersValue: true }),
+      step("acme.noticed", { skip: true })
+    ], (input) => {
+      seen.push(input.kind);
+      return read(input);
+    });
+    expect(seen).toEqual(["pressed_", "entered", "noticed"]);
+    expect(steps).toEqual([
+      { kind: "pressed_", label: "Add to cart", role: "button" },
+      { kind: "entered", label: "Quantity", role: "spinbutton", valueEntered: true }
     ]);
-    expect(steps[0]).toEqual({ kind: "input_changed", role: "textbox", valueEntered: true });
-    expect(steps[1]).toEqual({ kind: "clicked", role: "link" });
-    expect(steps[2]).toEqual({ kind: "clicked", role: "link" });
+    expect(withheldSteps).toBe(0);
+    expect(JSON.stringify(steps)).not.toContain("HELD-VALUE");
+  });
+
+  it("withholds a step the domain calls secret, and one whose own words say so whatever the domain called it", () => {
+    const { steps, withheldSteps } = supportingRecordingSteps([
+      step("acme.entered", { secret: true, label: "Code", identity: ["Code"] }),
+      step("acme.entered", { label: "Word", identity: ["Password"] }),
+      step("acme.entered", { label: "Number", identity: ["cc-number"] }),
+      step("acme.entered", { label: "Verify", identity: ["Card verification code"] }),
+      step("acme.entered", { label: "Words", identity: ["one", "time"] }),
+      step("acme.pressed", { label: "Sign in", role: "button", identity: ["Sign in"] })
+    ], read);
+    expect(steps).toEqual([{ kind: "pressed", label: "Sign in", role: "button" }]);
+    expect(withheldSteps).toBe(5);
+  });
+
+  it("drops labels that read as addresses, emails or long numbers, and bounds the rest", () => {
+    const { steps } = supportingRecordingSteps([
+      step("acme.pressed", { label: "https://x.example/a?token=1", role: "link" }),
+      step("acme.pressed", { label: "me@example.com", role: "link" }),
+      step("acme.pressed", { label: "1234 5678 9012 3456", role: "link" }),
+      step("acme.pressed", { label: "x".repeat(300), role: "link" })
+    ], read);
+    expect(steps[0]).toEqual({ kind: "pressed", role: "link" });
+    expect(steps[1]).toEqual({ kind: "pressed", role: "link" });
+    expect(steps[2]).toEqual({ kind: "pressed", role: "link" });
     expect(steps[3]!.label!.length).toBeLessThanOrEqual(80);
   });
 
   it("marks a step a later one undid: a repeated toggle, a replaced entry, an explicit back", () => {
     const { steps } = supportingRecordingSteps([
-      action("click", { accessibleName: "Gift wrap", role: "checkbox" }),
-      action("click", { accessibleName: "Gift wrap", role: "checkbox" }),
-      action("type", { accessibleName: "Search", role: "searchbox" }),
-      action("type", { accessibleName: "Search", role: "searchbox" }),
-      action("click", { accessibleName: "Next", role: "button" }),
-      action("go_back", {})
+      step("acme.press", { label: "Gift wrap", role: "checkbox" }),
+      step("acme.press", { label: "Gift wrap", role: "checkbox" }),
+      step("acme.enter", { label: "Search", role: "searchbox", entersValue: true }),
+      step("acme.enter", { label: "Search", role: "searchbox", entersValue: true }),
+      step("acme.press", { label: "Next", role: "button" }),
+      step("acme.back", { undoes: true })
+    ], read);
+    expect(steps.map(each => [each.kind, each.undone ?? false, each.undoes ?? 0])).toEqual([
+      ["press", true, 0], ["press", false, 1], ["enter", true, 0], ["enter", false, 0], ["press", true, 0], ["back", false, 5]
     ]);
-    expect(steps.map(step => [step.kind, step.undone ?? false, step.undoes ?? 0])).toEqual([
-      ["click", true, 0], ["click", false, 1], ["type", true, 0], ["type", false, 0], ["click", true, 0], ["go_back", false, 5]
-    ]);
-    expect(JSON.stringify(steps)).not.toContain("TYPED-SECRET");
-  });
-
-  it("reads the labels where the web domain's recorded actions carry them: parameters.element, implicitRole", () => {
-    sequence += 1;
-    const recorded = (actionType: string, element: Record<string, unknown>): TimelineEntry => ({ id: `w${sequence += 1}`, recordingId: "r", timestamp: sequence, monotonicOffsetMs: sequence, sequence, sourceId: "s", type: "action", actionType, parameters: { selector: "#x", value: "TYPED-VALUE", element }, origin: "operator", startedAt: sequence }) as unknown as TimelineEntry;
-    const { steps } = supportingRecordingSteps([
-      recorded("web.dom.click", { tagName: "button", implicitRole: "button", accessibleName: "Remote", visibleText: "Remote 12 jobs" }),
-      recorded("web.dom.select", { tagName: "select", implicitRole: "combobox", name: "sort", accessibleName: "Sort by", label: "Sort by", attributes: { name: "sort" } }),
-      recorded("web.dom.scroll", {})
-    ]);
-    expect(steps).toEqual([
-      { kind: "click", label: "Remote", role: "button" },
-      { kind: "select", label: "Sort by", role: "combobox", valueEntered: true }
-    ]);
-    expect(JSON.stringify(steps)).not.toContain("TYPED-VALUE");
   });
 
   it("marks a picked item replaced from the same opener, and a different item between two picks of one", () => {
-    const click = (label: string, role: string) => action("web.dom.click", { accessibleName: label, role });
+    const press = (label: string, role: string) => step("acme.press", { label, role });
     const { steps } = supportingRecordingSteps([
-      click("Job type", "button"), click("Full-time", "link"),
-      click("Job type", "button"), click("Any job type", "link"),
-      click("date", "link"), click("relevance", "link"), click("Try again", "button"), click("date", "link")
-    ]);
-    expect(steps.map(step => [step.label, step.undone ?? false, step.undoes ?? 0])).toEqual([
+      press("Job type", "button"), press("Full-time", "link"),
+      press("Job type", "button"), press("Any job type", "link"),
+      press("date", "link"), press("relevance", "link"), press("Try again", "button"), press("date", "link")
+    ], read);
+    expect(steps.map(each => [each.label, each.undone ?? false, each.undoes ?? 0])).toEqual([
       ["Job type", false, 0], ["Full-time", true, 0], ["Job type", false, 0], ["Any job type", false, 2],
       ["date", false, 0], ["relevance", true, 0], ["Try again", false, 0], ["date", false, 6]
     ]);
   });
 
   it("caps the list and says so", () => {
-    const many = Array.from({ length: RECORDING_STEPS_MAX + 5 }, (_, index) => event("web.element.clicked", { name: `Item ${index}`, role: "button" }));
-    const result = supportingRecordingSteps(many);
+    const many = Array.from({ length: RECORDING_STEPS_MAX + 5 }, (_, index) => step("acme.pressed", { label: `Item ${index}`, role: "button" }));
+    const result = supportingRecordingSteps(many, read);
     expect(result.steps).toHaveLength(RECORDING_STEPS_MAX);
     expect(result.stepsTruncated).toBe(true);
   });
 
-  it("rides in the supporting projection beside the description", async () => {
-    const recording = createRecordingSession({ recordingId: "r", description: "Adds an item.", initialState: { timestamp: 1, namespaces: {} }, environment: { domainId: "web" }, metadata: { projectId: "p" } });
-    recording.timeline.push(event("web.element.clicked", { name: "Add", role: "button" }));
+  it("rides in the supporting projection beside the description, read by the recording's own domain", async () => {
+    const recording = createRecordingSession({ recordingId: "r", description: "Adds an item.", initialState: { timestamp: 1, namespaces: {} }, environment: { domainId: "acme" }, metadata: { projectId: "p" } });
+    recording.timeline.push(step("acme.pressed", { label: "Add", role: "button" }));
     recording.endedAt = 9;
-    const [projected] = await supportingAutomationRecordings("p", [{ linkedRecordingIds: ["r"] }], async () => recording);
-    expect(projected).toMatchObject({ description: "Adds an item.", authority: "untrusted_supplementary_demonstration", steps: [{ kind: "clicked", label: "Add", role: "button" }], stepsTruncated: false, withheldSteps: 0 });
+    const asked: string[] = [];
+    const [projected] = await supportingAutomationRecordings("p", [{ linkedRecordingIds: ["r"] }], async () => recording, undefined, (domainId) => {
+      asked.push(domainId);
+      return read;
+    });
+    expect(asked).toEqual(["acme"]);
+    expect(projected).toMatchObject({ description: "Adds an item.", authority: "untrusted_supplementary_demonstration", steps: [{ kind: "pressed", label: "Add", role: "button" }], stepsTruncated: false, withheldSteps: 0 });
+  });
+
+  it("withholds the projection's steps when the recording's domain has no reader, or the recording names no domain", async () => {
+    const recording = createRecordingSession({ recordingId: "r", description: "Adds an item.", initialState: { timestamp: 1, namespaces: {} }, environment: { domainId: "acme" }, metadata: { projectId: "p" } });
+    recording.timeline.push(step("acme.pressed", { label: "Add", role: "button" }));
+    recording.endedAt = 9;
+    const [noReader] = await supportingAutomationRecordings("p", [{ linkedRecordingIds: ["r"] }], async () => recording, undefined, () => undefined);
+    expect(noReader).toMatchObject({ steps: [], withheldSteps: 1 });
+    const [unbound] = await supportingAutomationRecordings("p", [{ linkedRecordingIds: ["r"] }], async () => recording);
+    expect(unbound).toMatchObject({ steps: [], withheldSteps: 1 });
+    recording.environment.domainId = null;
+    const [noDomain] = await supportingAutomationRecordings("p", [{ linkedRecordingIds: ["r"] }], async () => recording, undefined, () => read);
+    expect(noDomain).toMatchObject({ steps: [], withheldSteps: 1 });
   });
 });

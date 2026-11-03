@@ -409,7 +409,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       stateBefore = await digest(callId, decision.toolId);
       // The answer says where a rerun ran (`rerunPlace`; run `run-muqk713g` C6), and a rerun of a done lasting act is checked, not done again (R7).
       if (member) ran = await member.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
-      else ({ ran, took: rerunTook, checked: rerunChecked } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
+      else ({ ran, took: rerunTook, checked: rerunChecked } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, controlParameterKeys: input.controlParameterKeys, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
       if (!rerunChecked) rerunPlace = automationStudioNodeRerunPlaceOfStep(place); // The step it leaves keeps where it ran, for the judge of a lasting act's landing (t443).
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);

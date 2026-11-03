@@ -578,6 +578,33 @@ candidate and cannot promote it. The exact revision/digest may reuse its
 retained trial evidence for another judgement without repeating the graph.
 Actual refutations and strict row identity rules retain their existing gates.
 
+Output-processing filters retain evidence of the values Core actually tested,
+alongside their excluded-row account. The result summary screens that evidence
+under the same denied-key and credential rules as the rows themselves. Supported
+readings can use the existing measured-exclusion path, as native read filters do:
+the judge must still connect the condition to quoted words of the request, but
+need not explain each row separately where Core has established why it failed.
+Legacy, unavailable, conflicting or withheld evidence retains the original
+row-level obligations. Processing evidence does not supply a model approval or
+change the final verdict rules.
+
+A settled condition, on a native read or a processing filter alike, is accounted
+for only by a sentence that names it and itself quotes the request. This is
+deliberately stricter than an unsettled row: Core has measured that the rows fail
+the condition, so what is left to show is that the condition is the request's, and
+naming the rows beside a request quote does not show that. The settled sentence
+offers only what this rule accepts (lead decision, 2026-11-03): the condition's
+number, and its tested column only where the rule can read one and it is not one
+of the answer's own columns, which a reply lists routinely.
+
+The tested cells and the evaluated condition are the result check's evidence, and
+no public read returns them. No dataset endpoint returns a left-out row, so the
+store removes both in the one function that builds a dataset summary, which every
+list, page and run-detail read goes through. Only
+`listRunDatasetsForVerification`, which the result check's ports call and no
+endpoint does, returns the account whole. Exports hold the answer's rows and no
+account.
+
 Two codes and one status are historical. `core.result.no_records` and
 `core.result.nothing_to_judge` are produced by nothing and readable on runs
 recorded before 2026-09-24, and the `no_result` value of a run's

@@ -51,4 +51,22 @@ records no failure for that call, and only when `effectApplied` is true. Past
 the gate's limit the field is absent, and a call that did nothing is never
 exempt whatever it claims. The field is not in the evidence the model reads, and
 the answer's `retry_allowed` reason stays diagnostic: words still grant
-nothing.
+nothing. A `not_judged` or an unprepared entry no longer says to test again once
+no re-test is left.
+
+A refusal that tells the model to do something first is lifted by a fact too,
+never by its `retry_allowed`. A named precondition (`PRECONDITIONS` in
+`runtime/llm/repeat-guard/outcomes.ts`) is lifted by the call that meets it. A
+project supervisor's `project.dispatch` is keyed on what its refusals read
+(`runtime/project-agents/supervisor/request-keys/`, given to the loop as its
+`requestContextKey`): once the plan, the returns, what stands or what is left on
+the target changes it is a new call, and until then it is refused unrun like any
+repeat. `project.assemble` is keyed on the plan and the returns the same way.
+`project.dispatch_failed` has no such fact, so it no longer carries
+`retry_allowed` and says to end honestly rather than to try again. It also says
+what is known of the target. With no builder started, read from the build record,
+it answers `effectApplied: false` and `targetsUnchanged: true`. With any started
+it claims neither: `effectApplied: true`, `targetsUnchanged: false` and a failure
+of effect `ambiguous` that is not retryable, since a lasting act may have landed.
+That is no temporary failure to the guard, and Core keeps a blocked return for
+each such brief, so it is not sent again while nothing it starts from has changed.
