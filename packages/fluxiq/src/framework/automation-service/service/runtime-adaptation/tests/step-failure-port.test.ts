@@ -12,6 +12,12 @@ import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPa
 import { automationStudioStepFailureRepairPort, type AutomationStudioStepFailureRepairPortDependencies } from "../step-failure-port.ts";
 import { automationStudioReauthorProposed } from "./reauthor-proposal.ts";
 
+// The step's control is named through the bound domain's reader, in scope for a real run.
+vi.mock("../../../../../runtime/domain-readings/scope.ts", async (original) => {
+  const { exampleDomainReadings } = await import("../../../../../runtime/domain-readings/tests/example-readings.ts");
+  return { ...(await original<object>()), automationStudioDomainReadings: () => exampleDomainReadings };
+});
+
 const caller = { actorUserId: "user.one", actorSessionId: "session.one" };
 
 const flow: AutomationStudioFlowDocument = {
