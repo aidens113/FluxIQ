@@ -7,7 +7,6 @@ import {
   parseAutomationStudioRecordProcessing,
   parseAutomationStudioRecordSchema,
   automationStudioRecordProcessingAccountWithoutEvidence,
-  processAutomationStudioRecordRows,
   storedAutomationStudioRecordSchema,
   type AutomationStudioDatasetRunStatus,
   type AutomationStudioDatasetRunSummary,
@@ -26,6 +25,7 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administr
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import { automationStudioRecordSchemaOfColumns, automationStudioRunDatasetAnswer, type AutomationStudioRunDatasetCollectedRow, type AutomationStudioRunDatasetRowInsert } from "./run-dataset-answer/index.ts";
 
 /** One stored row: a JSON object keyed by the stored schema's field ids. */
 export type AutomationStudioRunDatasetRow = AutomationStudioRunDatasetPage["rows"][number];
@@ -124,14 +124,8 @@ type CatalogRow = { flow_id: string; dataset_id: string; label: string | null; l
 type AuditRow = { event_id: string; event_type: AutomationStudioRunDatasetAuditEventType; run_id: string; dataset_id: string | null; actor_id: string | null; format: AutomationStudioRunDatasetExportFormat | null; row_count: number; byte_count: number; created_at_ms: number };
 type BatchCountsRow = { row_count: number; invalid_count: number; truncated: number };
 type StoredRow = { ordinal: number; row_json: string };
-type CollectedRow = { attempt_id: string; batch_key: string; node_id: string; row_json: string };
-type RowInsert = { ordinal: number; attemptId: string; batchKey: string; rowJson: string };
 type RowsTable = "run_dataset_rows" | "run_dataset_answer_rows";
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, schema_json, process_json, processed_at_ms`;
-// Carries each collected row's source through processing: the pure function returns fresh
-// objects made by shallow copy, which keeps an own symbol key, and JSON never writes one.
-const SOURCE_ROW = Symbol("run dataset source row");
-
 /**
  * The rows runs capture per dataset, stored raw in `project.sqlite` (CD16) and
  * kept as long as the project unless deleted (CD17), with the project catalog
@@ -339,7 +333,7 @@ export class AutomationStudioProjectRunDatasetStore {
       const columns = dataset.processed_at_ms === null ? undefined : processDeclaration(dataset.process_json)?.columns;
       return {
         summary: summaryFromRow(dataset),
-        schema: columns === undefined ? schema : schemaOfColumns(schema, columns),
+        schema: columns === undefined ? schema : automationStudioRecordSchemaOfColumns(schema, columns),
         rows: pageRows.map(rowFromStored),
         nextCursor: stored.length > limit && last ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { ordinal: last.ordinal } }) : null
       };
@@ -495,7 +489,7 @@ export async function runDatasetSummariesForRun(sql: AutomationStudioSqlExecutor
   return rows.map(summaryFromRow);
 }
 
-async function insertRows(sql: AutomationStudioSqlExecutor, table: RowsTable, runId: string, datasetId: string, rows: readonly RowInsert[]): Promise<void> {
+async function insertRows(sql: AutomationStudioSqlExecutor, table: RowsTable, runId: string, datasetId: string, rows: readonly AutomationStudioRunDatasetRowInsert[]): Promise<void> {
   for (let offset = 0; offset < rows.length; offset += ROW_INSERT_CHUNK) {
     const chunk = rows.slice(offset, offset + ROW_INSERT_CHUNK);
     const params: unknown[] = [];
@@ -508,7 +502,7 @@ async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, d
   const dataset = await sql.get<RunDatasetDetailRow>(`select ${DETAIL_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
   if (!dataset) return;
   // Every row has its batch; the left join keeps a row whose batch is missing rather than drop it from the answer.
-  const collected = await sql.all<CollectedRow>(
+  const collected = await sql.all<AutomationStudioRunDatasetCollectedRow>(
     `select r.attempt_id, r.batch_key, coalesce(b.node_id, r.attempt_id) as node_id, r.row_json
      from run_dataset_rows r left join run_dataset_batches b on b.run_id = r.run_id and b.dataset_id = r.dataset_id and b.batch_key = r.batch_key
      where r.run_id = ? and r.dataset_id = ? order by r.ordinal`,
@@ -516,53 +510,12 @@ async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, d
   );
   // Relative dates are judged at the run's own start, the instant its page reads used, so processing again later (a repair re-run) keeps the same rows. A `now` the caller gives wins.
   const started = nowGiven ? undefined : await sql.get<{ started_at_ms: number | null }>("select started_at_ms from runtime_runs where run_id = ?", [runId]);
-  const answer = answerOf(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, processDeclaration(dataset.process_json), started?.started_at_ms ?? now);
+  const answer = automationStudioRunDatasetAnswer(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, processDeclaration(dataset.process_json), started?.started_at_ms ?? now);
   await sql.run("delete from run_dataset_answer_rows where run_id = ? and dataset_id = ?", [runId, datasetId]);
   await insertRows(sql, "run_dataset_answer_rows", runId, datasetId, answer.rows);
   await sql.run("update run_datasets set processing_json = ?, processed_at_ms = ? where run_id = ? and dataset_id = ?", [JSON.stringify(answer.account), now, runId, datasetId]);
   const saved = await sql.get<RunDatasetSummaryRow>(`select ${SUMMARY_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
   if (saved) await upsertCatalog(sql, saved, 0);
-}
-
-/**
- * The answer rows, each with its source row's attempt and batch, and the
- * account. With `columns` declared the pure function would build each row from
- * those keys alone and lose its source, so it is asked for whole rows under the
- * same default key (the stored fields narrowed to the columns, which is its key
- * when `columns` is set) and the rows are narrowed here, as it would narrow them.
- */
-function answerOf(collected: readonly CollectedRow[], schema: AutomationStudioRecordSchema, process: AutomationStudioRecordProcessing | undefined, now: number): { rows: RowInsert[]; account: AutomationStudioRecordProcessingAccount } {
-  const columns = process?.columns;
-  const whole: AutomationStudioRecordProcessing | undefined = process === undefined ? undefined : { ...process };
-  if (whole) delete whole.columns;
-  const result = processAutomationStudioRecordRows({
-    rows: collected.map((row) => ({ values: Object.assign(JSON.parse(row.row_json) as Record<string, unknown>, { [SOURCE_ROW]: row }), nodeId: row.node_id, batchKey: row.batch_key })),
-    schema: columns === undefined ? schema : schemaOfColumns(schema, columns),
-    ...(whole === undefined ? {} : { process: whole }),
-    now
-  });
-  const rows = result.rows.map((row, index): RowInsert => {
-    const source = (row as { [SOURCE_ROW]?: CollectedRow })[SOURCE_ROW];
-    if (source === undefined) throw new Error("Run dataset processing lost an answer row's source row.");
-    return { ordinal: index + 1, attemptId: source.attempt_id, batchKey: source.batch_key, rowJson: JSON.stringify(columns === undefined ? row : rowOfColumns(row, columns)) };
-  });
-  return { rows, account: result.account };
-}
-
-function rowOfColumns(values: Readonly<Record<string, unknown>>, columns: readonly string[]): Record<string, unknown> {
-  const row: Record<string, unknown> = {};
-  for (const column of columns) {
-    if (Object.prototype.hasOwnProperty.call(values, column)) row[column] = values[column];
-  }
-  return row;
-}
-
-/** The stored schema narrowed to `columns`, in their order; a primary key survives only when every id it names does. */
-function schemaOfColumns(schema: AutomationStudioRecordSchema, columns: readonly string[]): AutomationStudioRecordSchema {
-  const fields = columns.flatMap((column) => schema.fields.filter((field) => field.id === column));
-  const narrowed: AutomationStudioRecordSchema = { schemaVersion: schema.schemaVersion, fields };
-  if (schema.primaryKey && schema.primaryKey.every((id) => columns.includes(id))) narrowed.primaryKey = schema.primaryKey;
-  return narrowed;
 }
 
 function rowsTable(dataset: { processed_at_ms: number | null } | undefined): RowsTable {
