@@ -18,6 +18,13 @@ export type ActivityActionKind =
   | "wait"
   | "person_check"
   | "permission"
+  /**
+   * Any other question put to the person (a text question, a choice, a yes or
+   * no). It is no permission: its card read "Permission · Waiting for you" under
+   * a question that asked for no permission. The thread shows the question, so
+   * a chat draws no card for it.
+   */
+  | "question"
   | "draft"
   | "test"
   /**

@@ -497,6 +497,12 @@
 .composer-chip-remove { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1; padding: 0 4px; cursor: pointer; }
 .composer-chip-remove:hover:not(:disabled) { color: var(--text); }
 
+/* A host's action beside the attach button ("Show me how"): the buttons share a row under the box, which keeps the whole width. */
+.composer-field-tools { flex-wrap: wrap; align-items: center; padding: 7px 7px 7px 16px; }
+.composer-field-tools .composer-box { flex: 1 1 100%; }
+.composer-field-tools .composer-send { margin-left: auto; }
+.composer-field-tools .composer-attach { margin-left: -8px; }
+
 /* Stop: a real button above the composer, centred on the chat's column, with a stop mark (D9: it read as plain text). */
 .chat-stop-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; max-width: var(--chat-column); margin: 0 auto; padding: 6px 0 8px; }
 .chat-stop-control[hidden] { display: none; }
@@ -721,7 +727,7 @@
 .answer-lead { color: var(--muted); font-size: 13px; }
 .answer-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--divider); border-radius: 8px; }
 .answer-table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.answer-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+.answer-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .answer-table th, .answer-table td { border-bottom: 1px solid var(--divider); padding: 6px 10px; text-align: left; vertical-align: top; min-width: 7ch; max-width: 32ch; overflow-wrap: normal; word-break: normal; }
 .answer-table th { background: var(--surface-muted); color: var(--muted); font-weight: 650; white-space: nowrap; }
 .answer-row:last-child td { border-bottom: 0; }

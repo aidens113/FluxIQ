@@ -6,7 +6,7 @@
 
 import type { StepMessage } from "./messages.ts";
 
-const ASK_CARDS: ReadonlySet<string> = new Set(["person_check", "permission"]);
+const ASK_CARDS: ReadonlySet<string> = new Set(["person_check", "permission", "question"]);
 
 /** `messages` without any question's card, and without a message that held nothing else. */
 export function withoutAskCards(messages: readonly StepMessage[]): StepMessage[] {

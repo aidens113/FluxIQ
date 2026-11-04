@@ -124,6 +124,7 @@
 // Pure apart from the injected clock: no browser API, no network.
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { activityActionOf } from "../activity-action/index.ts";
 import type { ActivityDisplay } from "./activity-display.ts";
 import { cutAtWord } from "./cut-at-word.ts";
 import { activityWithoutHeadline } from "./headline-echo.ts";
@@ -455,7 +456,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
     preparing: preparation.preparing,
     resetting: unit.resetting,
     unconfirmed: unit.unconfirmed,
-    waitingOn: event.phase === "waiting_permission" ? "answer" : event.phase === "paused" ? "paused" : "check"
+    waitingOn: event.phase === "waiting_permission" ? (activityActionOf(event)?.kind === "person_check" ? "check" : "answer") : event.phase === "paused" ? "paused" : "check"
   });
   const sameUnit = previous !== null && previous.activityId === event.activityId;
   const said = sentenceFor(event, reading, because);
