@@ -116,7 +116,54 @@ The endings worker reports a slip of its own: a mutation script split multi-word
 
 ## Commands run and observed results
 
-@@RESULTS@@
+Core, on the tree committed as `de2cae627` (dev with t859, t862, t864 and t867 under it), with the Core libraries rebuilt first (`pnpm.cmd --filter @fluxiq/contracts --filter fluxiq --filter @fluxiq/client-gateway-websocket --filter @fluxiq/ui-components build` -> exit 0):
+
+```text
+(packages/fluxiq) pnpm.cmd exec vitest run src/framework/automation-service/service/answer-first src/runtime/answer-first
+  src/runtime/result-verification/flow-less src/runtime/llm/node-tools/run src/runtime/llm/provider-task/tests
+  src/runtime/llm/tests/flow-less-diagnosis.test.ts src/runtime/automation-activity/tests/build-answered.test.ts
+  src/runtime/automation-activity/tests/build-ending.test.ts src/runtime/conversations/commands/tests/answer-first-create-here.test.ts
+  src/framework/automation-service/service/flow-bootstrap-requests/tests/generate-answer-first.test.ts
+  src/runtime/flow-authoring/bootstrap/offline-first/tests/words.test.ts src/flows/authoring/model/authoring-mode/tests
+  src/runtime/llm/repeat-guard/loop-detection --minWorkers 1 --maxWorkers 2
+ Test Files  50 passed (50)
+      Tests  502 passed (502)
+
+(packages/fluxiq) pnpm.cmd exec vitest run src/runtime/flow-authoring/bootstrap/candidate/tests src/runtime/project-agents/supervisor/tests
+  src/framework/automation-service/service/project-build/tests --minWorkers 1 --maxWorkers 2
+ Test Files  95 passed (95)
+      Tests  638 passed (638)
+
+(root) pnpm.cmd --filter fluxiq check             exit 0, 0 "error TS" lines
+(root) node scripts/structure-audit.mjs           structure-audit: passed (494 warning(s), 1097 baselined).  exit 0
+(root) wc -l packages/fluxiq/src/framework/automation-service/service.ts    4304
+```
+
+The old-mode run predates only the removal of the round's time limit, which is in `answer-first/attempt/round.ts` and read by no old mode.
+
+Each acceptance check, by test (`SVC/answer-first/tests/`):
+
+| Acceptance check | Test |
+| --- | --- |
+| Reaches its result, rows from reads, one act record, no trial or reset, draft saved | `attempt`: "(a) reaches its result: rows from a read, read back, confirmed once, one act on the record, a draft saved, and no trial or reset" |
+| A failing step | `endings/tests/steps`: "a failing step is told to the model, and the task reaches its result" |
+| A judge's no | `endings/tests/judge`: "a judge's no goes back with its reason, and the task reaches its result" |
+| A stall | `endings/tests/stalls`: "a repeat-without-progress stall changes approach: ..." |
+| Provider errors | `endings/tests/stalls`: "a provider silent then back is waited out with backoff, said in chat, with no act repeated" |
+| All of those in one script | `endings/tests/stalls`: "a task with a failing step, a judge's no, a stall and provider errors all in one still reaches its result" |
+| Budget exhausted | `endings/tests/budget`: "budget exhaustion by the purse ends budget_out with the best result and the draft" |
+| A forward run acts on remaining rows only | `attempt`: "(b) a forward run acts on the rows not yet done, and an already-done row is not acted on again" |
+
+Extension, on `d0e608ea` (Extension dev merged under it), with `domain`, `test-contracts` and `test-evidence` rebuilt:
+
+```text
+(root) pnpm.cmd --filter @fluxiq-web-extension/domain check        exit 0, 0 "error TS" lines
+(root) pnpm.cmd --filter @fluxiq-web-extension/test-runner check   exit 0, 0 "error TS" lines
+(root) node scripts/structure-audit.mjs                            structure-audit: passed (235 warning(s), 553 baselined).  exit 0
+(packages/test-runner) node --test dist/live-llm/tests/authoring-mode-env.test.js    # pass 6, # fail 0
+```
+
+**One Extension test had to change, and this edit is not committed yet.** `packages/test-runner/src/live-llm/tests/authoring-mode-env.test.ts` asserted that `answer-first` is refused "until Core's resolver takes it". Core now takes it, so that test would have broken on this merge, and neither `check` catches it. I restored the old assertion for one run to confirm: `Missing expected exception`, 5 pass, 1 fail. It now asserts the mode is accepted and an unknown word is refused. It sits one file beside the path your brief named. **The Extension's whole test-runner suite was not run;** any other test holding the same "refused until" assumption would not have shown here. A grep of `src` for it found no other.
 
 ## Not verified
 
@@ -132,4 +179,4 @@ The endings worker reports a slip of its own: a mutation script split multi-word
 
 1. **`explore.ts`:** should "explore" answer too in this mode? It is a few lines.
 2. **A `same_act` slot in the contract's `loopsCaught`?** A contract change, so yours.
-3. **Extension worktree:** it has not had the latest dev since your last merge there. Tell me if you want checks re-run after that; the Lab's default stays yours to flip.
+3. **The Lab's default** stays `legacy` and yours to flip at merge. `labAuthoringModeValue([])` is still tested as `legacy`, so that test moves with the flip.
