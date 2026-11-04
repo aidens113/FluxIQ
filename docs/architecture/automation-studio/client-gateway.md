@@ -634,12 +634,13 @@ same capabilities. The ids are:
   re-run with it was judged to answer, `not_applied` otherwise), since a
   re-author is no Flow adaptation.
 - **A paired client spends its person's key.** A `client-gateway:` caller is
-  mapped to the approving person's live unlocked session
-  (`SecretKeysService.unlockedSessionFor`: the latest-expiring unlock that
-  opens at least one key). That mapping applies to the chat model and to every
-  registry call a command makes. Permissions stay the paired set. With no
-  unlocked session, a model call fails and the thread says the key is locked
-  and how far the command got.
+  mapped to that browser's own unlock, which lasts as long as its credential
+  (`docs/architecture/platform.md`, Model keys; `credentialCustody`). That
+  mapping applies to the chat model and to every registry call a command makes.
+  Permissions stay the paired set. With no unlock, a command that needs the
+  model shows a setup step instead of starting, and a task already running
+  waits for the person. `client.forget_pairing` ends the browser's trust from
+  the browser, when the person presses Forget.
   - This deliberately changes the rule above that a token never reaches the
     model. The product direction is that the extension's chat builds and runs
     automations (2026-09-30, t198).

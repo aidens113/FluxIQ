@@ -14,14 +14,16 @@
 // Secret Keys unlocks only a session the panel just signed in or validated in
 // this process, which is exactly when its raw id was remembered.
 
-import type { IdentitySessionRevocationListener, IdentitySessionRevoker } from "../../types.ts";
+import type { IdentitySessionEndListener, IdentitySessionRevocationListener, IdentitySessionRevoker } from "../../types.ts";
 
 export class IdentitySessionRevocations {
   private readonly listeners = new Set<IdentitySessionRevocationListener>();
+  private readonly endListeners = new Set<IdentitySessionEndListener>();
   private readonly rawIds = new Map<string, { sessionId: string; expiresAtMs: number }>();
 
-  constructor(listeners: readonly IdentitySessionRevocationListener[] = []) {
+  constructor(listeners: readonly IdentitySessionRevocationListener[] = [], endListeners: readonly IdentitySessionEndListener[] = []) {
     for (const listener of listeners) this.listeners.add(listener);
+    for (const listener of endListeners) this.endListeners.add(listener);
   }
 
   /** Adds a listener; the function returned removes it. */
@@ -45,7 +47,7 @@ export class IdentitySessionRevocations {
    * announced to no one. Every listener runs; a failure is thrown after, with
    * the session already revoked.
    */
-  async revoked(digests: readonly string[], revoker: IdentitySessionRevoker, presented?: string): Promise<void> {
+  async revoked(digests: readonly string[], revoker: IdentitySessionRevoker, presented?: string, wholeUserId?: string): Promise<void> {
     const sessionIds = new Set<string>(presented ? [presented] : []);
     for (const digest of digests) {
       const entry = this.rawIds.get(digest);
@@ -53,7 +55,10 @@ export class IdentitySessionRevocations {
       this.rawIds.delete(digest);
     }
     if (revoker.userId === null && !revoker.administrator) return;
-    const runs = [...sessionIds].flatMap((sessionId) => [...this.listeners].map(async (listener) => await listener(sessionId, revoker)));
+    const runs = [
+      ...[...sessionIds].flatMap((sessionId) => [...this.listeners].map(async (listener) => await listener(sessionId, revoker))),
+      ...[...this.endListeners].map(async (listener) => await listener({ digests, revoker, ...(wholeUserId === undefined ? {} : { wholeUserId }) }))
+    ];
     const failures = (await Promise.allSettled(runs)).flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
     if (failures.length) throw new AggregateError(failures, "The session was revoked, but a session-revocation subscriber failed.");
   }

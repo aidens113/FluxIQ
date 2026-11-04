@@ -1,5 +1,6 @@
 export * from "./contracts.ts";
 export * from "./service.ts";
+export type { ClientGatewayCredentialCustody, ClientGatewayCredentialHolder } from "./service/index.ts";
 export * from "./testing/index.ts";
 export * from "./trace/index.ts";
 export * from "./trace-replay/index.ts";

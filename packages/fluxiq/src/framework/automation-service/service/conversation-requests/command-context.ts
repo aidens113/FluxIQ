@@ -23,6 +23,9 @@ export function commandContext(
     conversationId: target.conversationId,
     sessionId: caller.sessionId,
     keyLocked: caller.keyLocked,
+    keyNeedsUnlock: caller.keyNeedsUnlock,
+    keyLockReason: caller.keyLockReason,
+    noteKeySetupStepTold: () => conversations.noteKeySetupStepTold(caller.userId),
     // The calls above run as the unlocked session, so a run the command starts says itself that a paired client asked (`commands/run-flow.ts`).
     paired: caller.paired,
     startLocation: target.startLocation,

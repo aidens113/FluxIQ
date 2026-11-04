@@ -18,11 +18,13 @@ export class SealUpgrades {
   private readonly store: SecretKeyStore;
   private readonly sealer: SecretValueSealer;
   private readonly heldKeys: HeldKeys;
+  private readonly onResealed: ((recordId: string, key: Buffer) => Promise<void>) | undefined;
 
-  constructor(options: { store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys }) {
+  constructor(options: { store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; onResealed?: (recordId: string, key: Buffer) => Promise<void> }) {
     this.store = options.store;
     this.sealer = options.sealer;
     this.heldKeys = options.heldKeys;
+    this.onResealed = options.onResealed;
   }
 
   /**
@@ -63,7 +65,11 @@ export class SealUpgrades {
     this.store.set({ ...current, sealed: next.sealed });
     this.predecessors.set(next.sealed, opened);
     this.heldKeys.replaceKey(recordId, next.key);
-    next.key.fill(0);
+    try {
+      await this.onResealed?.(recordId, next.key);
+    } finally {
+      next.key.fill(0);
+    }
     await this.store.persist(recordId);
   }
 }

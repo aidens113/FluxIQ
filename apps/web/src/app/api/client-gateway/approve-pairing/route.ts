@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   const pairingCode = typeof payload?.pairingCode === "string" ? payload.pairingCode : "";
   if (!pairingCode) return NextResponse.json({ ok: false, error: "Pairing reference is required." }, { status: 400 });
   try {
-    const session = await fluxiq.programs.clientGateway.approvePairing(pairingCode, { approvedByUserId: auth.user.id });
+    const session = await fluxiq.programs.clientGateway.approvePairing(pairingCode, { approvedByUserId: auth.user.id, approvedBySessionId: auth.session.id });
     if (!session) return NextResponse.json({ ok: false, error: "Pairing request is no longer available." }, { status: 404 });
     return NextResponse.json({ ok: true, payload: { session } });
   } catch (error) {

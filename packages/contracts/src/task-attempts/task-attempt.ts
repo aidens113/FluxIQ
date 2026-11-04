@@ -46,8 +46,10 @@ export type AutomationStudioTaskAttemptStatus = (typeof AUTOMATION_STUDIO_TASK_A
  * - `person_only_check`: something only a person can do on the page.
  * - `stuck_in_a_loop`: fresh approaches looped too, so it stopped spending and asked
  *   (plan, D14's last step). It keeps the best result so far and the draft.
+ * - `model_key_locked`: the person's model key cannot be opened where they are, so a
+ *   model call waits, spending nothing, until they unlock it. One action, then it resumes.
  */
-export const AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS = Object.freeze(["permission", "person_only_check", "stuck_in_a_loop"] as const);
+export const AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS = Object.freeze(["permission", "person_only_check", "stuck_in_a_loop", "model_key_locked"] as const);
 
 export type AutomationStudioTaskAttemptWaitReason = (typeof AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS)[number];
 

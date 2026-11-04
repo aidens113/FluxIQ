@@ -5,7 +5,7 @@ import { SECRETS_LOCKED_ERROR_CODE, isSecretsLockedError, secretsLockedMessage }
 
 describe("secrets.locked", () => {
   it("says the plan's sentence for the instance's host", () => {
-    expect(secretsLockedMessage("app.getfluxiq.com")).toBe("Sign in at app.getfluxiq.com to unlock your model key");
+    expect(secretsLockedMessage("app.getfluxiq.com")).toBe("Unlock your model key: open app.getfluxiq.com and enter your password once");
   });
 
   it("recognises the error and nothing else", () => {

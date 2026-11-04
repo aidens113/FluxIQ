@@ -26,6 +26,7 @@ const INSTRUCTION_TITLE_OPENING = 70;
 
 export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversationCommand = {
   background: true,
+  needsModelKey: true,
   capability: {
     id: "flow.improve",
     title: TITLE,
@@ -47,7 +48,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
   // An improvement is built from the Flow as it is, not from the page open now (`build.ts`), so no page is named.
   announce: ({ flowName }) => `I'll work out the change${flowName ? ` to "${flowName}"` : ""} by trying it on the website, then ${automationStudioConversationAuthorsCandidates() ? "test-run the changed Flow once from its start and ask you here whether to apply it" : "ask you here whether to apply it"}.`,
   async run(context, args) {
-    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
+    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLockReason);
     const flowId = automationStudioConversationCommandText(args, "flowId");
     if (!flowId) return progress.failed("I could not tell which Flow it is about");
     const said = await automationStudioConversationCommandInstruction(context, AUTOMATION_STUDIO_CONVERSATION_IMPROVE.capability, args, "change");

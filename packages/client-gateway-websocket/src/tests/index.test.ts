@@ -195,7 +195,7 @@ class FakeWebSocket implements FluxIQWebSocketLike {
   }
 
   send(data: string): void {
-    this.sent.push(data);
+    if ((JSON.parse(data) as { type?: string }).type !== "client.credential_received") this.sent.push(data);
   }
 
   close(code?: number, reason?: string): void {

@@ -33,6 +33,7 @@ export function automationStudioLlmProviderWithDomainInstructions(
   return {
     metadata: provider.metadata,
     runTask: async (request, execution) => await provider.runTask(stamped(request), execution),
+    ...(provider.whenReady ? { whenReady: async (request: AutomationStudioLlmTaskRequest, execution?: { signal?: AbortSignal }) => await provider.whenReady?.(stamped(request), execution) } : {}),
     ...(measureInput ? { measureInput: (request: AutomationStudioLlmTaskRequest) => measureInput.call(provider, stamped(request)) } : {}),
     ...(estimateCostUsd ? { estimateCostUsd: (tokens: { inputTokens: number; outputTokens: number }) => estimateCostUsd.call(provider, tokens) } : {})
   };

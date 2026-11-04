@@ -266,8 +266,9 @@ describe("ClientGatewayService", () => {
       operatorUserId: "user.alpha",
       trustedClientId: first.trustedClientId
     });
-    expect(await gateway.authorizeToken(first.token)).toBeNull();
     expect((await gateway.authorizeToken(rotated))?.sessionId).toBe(second.sessionId);
+    // Its use confirms it, and the one before is refused from here on.
+    expect(await gateway.authorizeToken(first.token)).toBeNull();
   });
 
   it("restores trusted clients after restart without persisting raw credentials", async () => {

@@ -25,7 +25,7 @@ import type {
   AutomationStudioConversationCommandOutcome
 } from "./command.ts";
 import { askToConfirmAutomationStudioConversationCommand } from "./confirmation.ts";
-import { automationStudioConversationCommandProgress } from "./progress.ts";
+import { automationStudioConversationCommandProgress, automationStudioModelKeySetupStep } from "./progress.ts";
 import { automationStudioConversationCommandWork } from "./work.ts";
 
 export async function executeAutomationStudioConversationCommand(input: {
@@ -35,6 +35,13 @@ export async function executeAutomationStudioConversationCommand(input: {
 }): Promise<AutomationStudioConversationCommandExecution> {
   const { command, context } = input;
   const capabilityId = command.capability.id;
+  // Found before anything is started or spent, so it is a step to take and not the tail of a failed task. Nothing failed, and nothing is left behind.
+  if (command.needsModelKey === true && context.keyNeedsUnlock === true) {
+    const summary = automationStudioModelKeySetupStep(context.keyLockReason);
+    await context.host.appendAutomationTurn({ projectId: context.projectId, conversationId: context.conversationId, text: summary, ask: null, attachment: null });
+    context.noteKeySetupStepTold?.();
+    return { capabilityId, status: "done", summary };
+  }
   const work = () => runInAutomationStudioConversation({ projectId: context.projectId, conversationId: context.conversationId }, () => settle(command, context, input.arguments));
   if (command.background) {
     automationStudioConversationCommandWork.track(work());
@@ -59,7 +66,7 @@ async function settle(command: AutomationStudioConversationCommand, context: Aut
   try {
     outcome = await command.run(context, args);
   } catch (error) {
-    outcome = automationStudioConversationCommandProgress(command.capability.title, context.keyLocked).failed(`something broke while doing it: ${error instanceof Error ? error.message : String(error)}`);
+    outcome = automationStudioConversationCommandProgress(command.capability.title, context.keyLockReason).failed(`something broke while doing it: ${error instanceof Error ? error.message : String(error)}`);
   }
   await context.host.appendAutomationTurn({
     projectId: context.projectId,

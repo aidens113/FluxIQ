@@ -6,6 +6,7 @@
 // a second one. So each command records every step that landed, and a failure
 // says why it stopped and how far it had got.
 
+import { modelKeyLockedWords, type ModelKeyLockReason } from "@fluxiq/contracts/automation";
 import { automationStudioActivityCheckRefusalReasons, automationStudioActivityIssueWords } from "../../automation-activity/index.ts";
 import { automationStudioActivityFailureCodeWords, automationStudioActivityRefusedStepIssues } from "../../automation-activity/wording/index.ts";
 import { automationStudioCandidateRefusalCodes } from "../../../framework/automation-service/service/candidate-failure/index.ts";
@@ -14,6 +15,11 @@ import type { AutomationStudioConversationCommandCallResult, AutomationStudioCon
 
 /** What the outcome carries however it ends: the ids made, and whose words an instruction it saved were. */
 type Ids = Pick<AutomationStudioConversationCommandOutcome, "flowId" | "runId" | "adaptationId" | "instructionFrom">;
+
+/** The setup step, before a task that needs the key: why, the one action, and that nothing has begun. */
+export function automationStudioModelKeySetupStep(reason: ModelKeyLockReason | null | undefined): string {
+  return `${modelKeyLockedWords(reason ?? "unknown")} Then ask again. Nothing has started and nothing was spent.`;
+}
 
 export type AutomationStudioConversationCommandProgress = {
   /** Records a step that landed, in words that finish "I ...". */
@@ -46,7 +52,7 @@ export type AutomationStudioConversationCommandProgress = {
   failed(cause: string, account?: { ending?: string | undefined; left?: string | undefined; kept?: string | undefined; told?: boolean | undefined }): AutomationStudioConversationCommandOutcome;
 };
 
-export function automationStudioConversationCommandProgress(_title: string, keyLocked: boolean): AutomationStudioConversationCommandProgress {
+export function automationStudioConversationCommandProgress(_title: string, keyLockReason: ModelKeyLockReason | null | undefined): AutomationStudioConversationCommandProgress {
   const steps: string[] = [];
   const ids: Ids = {};
   return {
@@ -56,7 +62,7 @@ export function automationStudioConversationCommandProgress(_title: string, keyL
     failed: (cause, account = {}) => {
       // What is stored is what an old thread shows again, so it is said plain however the cause was worded (t276).
       const plainCause = automationStudioConversationPlainCause(cause) || "something went wrong inside FluxIQ";
-      const locked = keyLocked ? " Your model key is locked for this browser: sign out of FluxIQ and sign in again, which unlocks your keys, then ask again." : "";
+      const locked = keyLockReason ? ` ${modelKeyLockedWords(keyLockReason)} Then ask again.` : "";
       if (account.told) {
         // The ending row said it (t753): what the Flow keeps, then what to do next, once.
         const left = account.left ?? (steps.length ? `Before that I ${joined(steps)}; the Flow's steps are unchanged.` : "The Flow's steps are unchanged.");

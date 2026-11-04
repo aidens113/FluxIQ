@@ -274,7 +274,7 @@ describe("conversation commands", () => {
     // `run-murdouox-c5294247`: "I could not build this Flow ... Before that I created the Flow").
     expect(result?.text).not.toContain("Before that I");
     expect(result?.text).toContain(NOTHING_KEPT);
-    expect(result?.text).toContain("Your model key is locked");
+    expect(result?.text).not.toMatch(/password|sign (out|in) again/iu);
   });
 
   // t195 `run-murdouox-c5294247` (09-failure-panel): the answer said the failure

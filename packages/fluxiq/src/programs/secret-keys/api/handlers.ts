@@ -9,13 +9,15 @@ import {
   type RevealSecretKeyRequest,
   type RotateSecretKeyRequest,
   type SecretKeyAuthorizationPayload,
+  type UnlockSecretKeysRequest,
   type UpdateSecretKeyRequest
 } from "./contracts.ts";
 import type { SecretKeyActorSession, SecretKeysService } from "../runtime/service.ts";
 
 // The acting user's id, never the payload, names whose password seals a value:
 // it becomes the seal's `sealedByUserId` on create, rotate, and an upgrading reveal.
-export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAccessService): void {
+// `keySessionOf` names the unlock a caller may use (a paired client's is its own) and the holder asking, for the readiness a snapshot carries.
+export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAccessService, keySessionOf?: (actor: ProgramApiActor) => { sessionId: string | null; holderId?: string | undefined }): void {
   // A key's owner is the user that created it (`createdBy`, stamped from the
   // acting user on create), so the service already records it and no separate
   // `recordOwner` is needed. An unknown key, or one with no creator, has no owner.
@@ -35,7 +37,26 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       ref: (item) => ({ kind: "key", keyId: (item as { id?: unknown }).id }),
       replace: (payload, kept) => ({ ...(payload as object), keys: kept })
     },
-    handler: async () => ({ ok: true, payload: await service.snapshot() })
+    handler: async (request) => ({ ok: true, payload: request.actor && keySessionOf ? await service.snapshotFor({ userId: request.actor.userId, ...keySessionOf(request.actor) }) : await service.snapshot() })
+  });
+  registry.register({
+    programId: "secret-keys",
+    endpoint: SECRET_KEYS_ENDPOINTS.unlock,
+    permission: "secrets.manage",
+    classification: "program-gated",
+    action: "secrets:Unlock",
+    accessLevel: "Write",
+    resource: endpointResource.workspace(),
+    handler: async (request) => {
+      const payload = request.payload as UnlockSecretKeysRequest | undefined;
+      if (!payload?.authorizationPassword) return { ok: false, error: "Your password is required." };
+      const authorization = await authorizeSecretMutation(identityAccess, payload);
+      if (!authorization.ok) return authorization;
+      const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
+      if (!actorSession) return { ok: false, error: "Sign in to FluxIQ to unlock your model keys." };
+      const { unlockedKeyCount } = await service.unlockSession({ sessionId: actorSession.sessionId, userId: actorSession.userId, authorizationPassword: payload.authorizationPassword, expiresAtMs: actorSession.expiresAtMs, unlockClients: true });
+      return { ok: true, payload: { unlockedKeyCount } };
+    }
   });
   registry.register({
     programId: "secret-keys",

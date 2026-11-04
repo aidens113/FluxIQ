@@ -12,7 +12,8 @@
 // concept and no examples about the page. No DOM.
 
 import type { ConversationMode } from "../conversation/index.ts";
-import type { ModelReadiness } from "../onboarding/index.ts";
+import { modelKeyLockedWords } from "fluxiq/ui";
+import { modelReadinessLockReason, type ModelReadiness } from "../onboarding/index.ts";
 import type { ChatWelcome, ChatWelcomeItem } from "../ports/index.ts";
 import type { ChatTarget } from "../target.ts";
 
@@ -24,7 +25,7 @@ export type EmptyStateModel = {
   title: string;
   line: string;
   starts: readonly EmptyStart[];
-  /** Says FluxIQ needs a model key, with Open FluxIQ beside it; null when it does not, or nobody knows. */
+  /** Says FluxIQ needs a model key, or the person's password for it, with Open FluxIQ beside it; null when it does not, or nobody knows. */
   keyLine: string | null;
   examples: readonly string[];
   /** A host's welcome lines, each with its icon; empty except in a welcome. */
@@ -44,6 +45,7 @@ export const ONBOARDING_CONCEPT =
 
 /** Said when no model key is enabled; Extract still works, because it needs no model. */
 export const MODEL_KEY_LINE = "FluxIQ needs a model key before it can build. Add one in FluxIQ.";
+
 
 const LATEST_STARTS: readonly EmptyStart[] = [
   { id: "describe", label: "Describe what you want" },
@@ -85,7 +87,7 @@ export function emptyStateModel(
         return {
           ...quiet(offers.welcome.title, offers.welcome.line),
           items: offers.welcome.items,
-          keyLine: target.kind === "latest" && readiness === "missing" ? MODEL_KEY_LINE : null
+          keyLine: target.kind === "latest" ? keyLineFor(readiness) : null
         };
       }
       if (automation !== undefined) {
@@ -99,7 +101,7 @@ export function emptyStateModel(
         title,
         line: ONBOARDING_CONCEPT,
         starts: offers.extract ? LATEST_STARTS : LATEST_STARTS.filter((start) => start.id !== "extract"),
-        keyLine: readiness === "missing" ? MODEL_KEY_LINE : null,
+        keyLine: keyLineFor(readiness),
         examples: LATEST_EXAMPLES,
         items: []
       };
@@ -110,6 +112,13 @@ export function emptyStateModel(
     default:
       return null;
   }
+}
+
+/** The line beside Open FluxIQ: no key, or a key this browser cannot open yet, with why (one action, before any task). */
+function keyLineFor(readiness: ModelReadiness): string | null {
+  if (readiness === "missing") return MODEL_KEY_LINE;
+  const reason = modelReadinessLockReason(readiness);
+  return reason === null ? null : modelKeyLockedWords(reason);
 }
 
 function quiet(title: string, line: string): EmptyStateModel {

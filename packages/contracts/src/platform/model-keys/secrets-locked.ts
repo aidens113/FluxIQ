@@ -4,8 +4,9 @@
  * this workspace holds the key the call needs -- after a restart, an
  * eviction, a sign-out or an administrator's session revoke. It replaces both
  * the raw "Secret key session unlock is unavailable" and the sign-out
- * sentence, before a build and mid-build alike. Category `auth_required`:
- * never retried, ended by the person signing in or re-unlocking.
+ * sentence. A call made for a person waits for them first, so this is the rare
+ * path where nothing can wake it. Category `auth_required`: never retried, ended
+ * by the person unlocking, which their password does once.
  */
 export const SECRETS_LOCKED_ERROR_CODE = "secrets.locked";
 
@@ -20,9 +21,9 @@ export type SecretsLockedError = {
   signInUrl?: string;
 };
 
-/** The sentence every locked path shows, naming the instance's host: "Sign in at app.getfluxiq.com to unlock your model key". */
+/** The sentence a locked call raises, naming the instance's host: "Unlock your model key: open app.getfluxiq.com and enter your password once". */
 export function secretsLockedMessage(instanceHost: string): string {
-  return `Sign in at ${instanceHost} to unlock your model key`;
+  return `Unlock your model key: open ${instanceHost} and enter your password once`;
 }
 
 /** True for a value carrying the `secrets.locked` code and a message. */

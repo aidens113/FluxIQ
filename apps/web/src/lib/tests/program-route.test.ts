@@ -232,6 +232,11 @@ describe("a paired client on the program route", () => {
     expect(projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload: { keys: [] } })).toEqual({ ok: true, payload: { keys: [] } });
   });
 
+  it("tells a paired client whether its person's key opens for it, and never which browsers are locked", () => {
+    const response = { ok: true, payload: { lockedClients: ["Chrome"], keys: [{ id: "secret:1", name: "Mine", kind: "llm", provider: "anthropic", enabled: true, unlocked: false, lockedBecause: "signed_out" }, { id: "secret:2", kind: "llm", enabled: true }] } };
+    expect(projectPairedClientResponse("secret-keys", "snapshot", response)).toEqual({ ok: true, payload: { keys: [{ kind: "llm", provider: "anthropic", enabled: true, unlocked: false, lockedBecause: "signed_out" }, { kind: "llm", provider: null, enabled: true }] } });
+  });
+
   it("answers the secret-keys snapshot with kind, provider and enabled only", () => {
     const response = {
       ok: true,

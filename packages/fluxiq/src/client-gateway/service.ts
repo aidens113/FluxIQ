@@ -29,6 +29,7 @@ import {
   ClientGatewaySessionRegistry,
   ClientGatewayTraceTap,
   ClientGatewayTransport,
+  ClientGatewayCredentialCustodian,
   ClientGatewayTrustedClientRegistry,
   ClientGatewayViews,
   resolveClientGatewayConfig,
@@ -103,10 +104,12 @@ export class ClientGatewayService {
     // override or a stub on a public method is still honoured.
     const facade: ClientGatewayFacadePorts = {
       ready: () => this.ready(),
-      disconnect: (sessionId, reason) => this.disconnect(sessionId, reason)
+      disconnect: (sessionId, reason) => this.disconnect(sessionId, reason),
+      revokeTrustedClient: (trustedClientId, reason) => this.revokeTrustedClient(trustedClientId, reason)
     };
-    const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, trace, facade });
-    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, trace, facade });
+    const custody = new ClientGatewayCredentialCustodian(options.credentialCustody, audit);
+    const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, trace, facade, custody });
+    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, trace, facade, custody });
     const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
@@ -118,7 +121,7 @@ export class ClientGatewayService {
     this.lifecycle = lifecycle;
     this.commands = commands;
     this.trace = trace;
-    this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, trace, facade });
+    this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, trace, facade, custody });
     this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, trace, facade });
     this.activity = new ClientGatewayActivityPublisher(sessions, transport);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
@@ -159,12 +162,17 @@ export class ClientGatewayService {
     return this.pairingFlow.create(input);
   }
 
-  async approvePairing(pairingCode: string, input: { approvedByUserId: string }): Promise<ClientGatewaySession | null> {
+  async approvePairing(pairingCode: string, input: { approvedByUserId: string; approvedBySessionId?: string | undefined }): Promise<ClientGatewaySession | null> {
     return this.pairingFlow.approve(pairingCode, input);
   }
 
   async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator"): Promise<boolean> {
     return this.access.revokeTrustedClient(trustedClientId, reason);
+  }
+
+  /** The trusted client a gateway session is paired as, connected or not; undefined for an unpaired or unknown session. No credential. */
+  trustedClientIdOf(sessionId: string): string | undefined {
+    return this.lifecycle.trustedClientIdOf(sessionId);
   }
 
   dismissPairing(pairingCode: string): boolean {

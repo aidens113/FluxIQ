@@ -78,11 +78,16 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
   const rotateDialog = useSecretDialog<{ key: SecretKeySummary; value: string; auth: AuthForm }>(current, revision, canOpen);
   const revealDialog = useSecretDialog<{ key: SecretKeySummary; auth: AuthForm; value?: string; revealedAt?: number }>(current, revision, canOpen);
   const removeDialog = useSecretDialog<{ key: SecretKeySummary; auth: AuthForm }>(current, revision, canOpen);
+  const unlockDialog = useSecretDialog<AuthForm>(current, revision, canOpen);
   const createAuthorization = createDialog.value;
   const exists = (draft: { key: SecretKeySummary } | null) => Boolean(draft && confirmedKeys.current.some(key => key.id === draft.key.id));
   const edit = exists(editDialog.value) ? editDialog.value : null;
   const rotate = exists(rotateDialog.value) ? rotateDialog.value : null;
   const remove = exists(removeDialog.value) ? removeDialog.value : null;
+  const unlock = unlockDialog.value;
+  // Core says, per key of this person's, whether their session opens it, and which of their paired browsers are locked.
+  const lockedClients = snapshot?.payload?.lockedClients ?? [];
+  const needsUnlock = lockedClients.length > 0 || (snapshot?.payload?.keys ?? []).some((key) => key.kind === "llm" && key.enabled && key.unlocked === false);
   useEffect(() => {
     const removed = Boolean(editDialog.value && !edit || rotateDialog.value && !rotate || removeDialog.value && !remove);
     if (editDialog.value && !edit) editDialog.close();
@@ -146,6 +151,18 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
       finally { if (pending.current === token) pending.current = null; }
     });
   }
+  async function unlockKeys() {
+    if (!unlock || !unlockDialog.sameDraft(unlock) || !canSubmitAuth(unlock, currentUser)) return;
+    const draft = unlock;
+    await mutate("unlock", () => unlockDialog.current(draft), async () => {
+      const result = await api.post("unlock", authPayload(draft));
+      if (!current() || !unlockDialog.current(draft)) return;
+      setStatus(result.ok ? "Your model keys are unlocked" : "That did not unlock your keys. Check your password and try again.");
+      if (!result.ok) return;
+      unlockDialog.close();
+      await refresh();
+    });
+  }
   async function createKey() {
     if (!createAuthorization || !createDialog.sameDraft(createAuthorization) || !canSubmitAuth(createAuthorization, currentUser, false)) return;
     const draft = createAuthorization;
@@ -205,6 +222,8 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
       <header className="program-inner-header"><div><strong>Secret Keys</strong><span>Encrypted credentials for LLM providers and custom integrations.</span></div><div className="inline-actions"><StatusText value={operation.activeOperation ? `Secret operation in progress: ${operation.activeOperation}` : status} /><button className="button" disabled={operation.busy || reading} onClick={() => void refresh()} type="button"><RefreshCcw size={14} aria-hidden />Refresh</button><button className="button button-primary" disabled={operation.busy} onClick={() => { if (current() && canOpen()) { wizard.current++; setCreateOpen(true); } }} type="button"><KeyRound size={14} aria-hidden />Add Key</button></div></header>
       {status ? <p role="status" aria-live="polite">{status}</p> : null}
       {readError ? <VisualAlert tone="warning" title="Metadata refresh failed" message={readError} /> : null}
+      {needsUnlock ? <div className="secret-modal-stack"><VisualAlert tone="warning" title="Your model key needs your password" message={lockedClients.length ? "Enter your password once and FluxIQ can use your key again in " + lockedClients.join(", ") + "." : "Enter your password once and FluxIQ can use your key again."} /><div className="modal-actions"><button className="button button-primary" onClick={() => unlockDialog.open({ ...emptyAuth })} type="button">Unlock</button></div></div> : null}
+      {unlock ? <Modal title="Unlock your model keys" description="FluxIQ keeps your keys sealed under your password. This opens them for you here and on your paired browsers." onClose={() => unlockDialog.close()}><div className="secret-modal-stack"><AuthorizationFields auth={unlock} currentUser={currentUser} onChange={(auth) => unlockDialog.change(auth)} /></div><div className="modal-actions"><button className="button" onClick={() => unlockDialog.close()} type="button">Cancel</button><button className="button button-primary" disabled={!canSubmitAuth(unlock, currentUser)} onClick={() => void unlockKeys()} type="button">Unlock</button></div></Modal> : null}
       {readError ? <button className="button" disabled={reading || operation.busy} onClick={() => void refresh()} type="button">Retry metadata</button> : null}
       <div className="secret-keys-list-detail">
         <Panel title="Saved Keys">

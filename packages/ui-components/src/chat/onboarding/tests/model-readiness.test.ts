@@ -47,3 +47,15 @@ test("a relay failure or an unpromised reply is unknown", async () => {
 test("a client with no models port is unknown, so the chat never claims a key is missing", async () => {
   assert.equal(await readModelReadiness(undefined), "unknown");
 });
+
+test("a person's key that this browser cannot open reads as locked, not missing and not ready", async () => {
+  assert.equal(await readModelReadiness(answering(keys([{ enabled: true, unlocked: false, lockedBecause: "signed_out" }])).models), "locked:signed_out");
+  // A reason this build does not know reads as a lock with nothing more to say.
+  assert.equal(await readModelReadiness(answering(keys([{ enabled: true, unlocked: false, lockedBecause: "new_reason" }])).models), "locked:unknown");
+  assert.equal(await readModelReadiness(answering(keys([{ enabled: true, unlocked: false }])).models), "locked:unknown");
+  assert.equal(await readModelReadiness(answering(keys([{ enabled: true, unlocked: false }, { enabled: true, unlocked: true }])).models), "ready");
+  // A disabled key's state says nothing: there is nothing to unlock.
+  assert.equal(await readModelReadiness(answering(keys([{ enabled: false, unlocked: false }])).models), "missing");
+  // A Core that does not say, or someone else's key, reads as it always did.
+  assert.equal(await readModelReadiness(answering(keys([{ enabled: true }])).models), "ready");
+});

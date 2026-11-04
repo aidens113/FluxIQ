@@ -7,7 +7,8 @@ export const SECRET_KEYS_ENDPOINTS = {
   updateKey: "update-key",
   rotateKey: "rotate-key",
   revealKey: "reveal-key",
-  deleteKey: "delete-key"
+  deleteKey: "delete-key",
+  unlock: "unlock"
 } as const;
 
 export type SecretKeyAuthorizationPayload = {
@@ -54,7 +55,15 @@ export type DeleteSecretKeyRequest = SecretKeyAuthorizationPayload & {
   id: string;
 };
 
-export type SecretKeysSnapshotResponse = SecretKeysSnapshot;
+/** The person's own unlock, with their password: this session, and any paired client of theirs that is locked. */
+export type UnlockSecretKeysRequest = SecretKeyAuthorizationPayload;
+
+export type UnlockSecretKeysResponse = { unlockedKeyCount: number };
+
+export type SecretKeysSnapshotResponse = SecretKeysSnapshot & {
+  /** The names of the caller's paired clients that are locked. */
+  lockedClients?: string[];
+};
 export type SecretKeyMutationResponse = SecretKeySummary;
 export type RevealSecretKeyResponse = {
   key: SecretKeySummary;

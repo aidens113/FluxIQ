@@ -1,5 +1,6 @@
 import type { ClientGatewayClientHello, ClientGatewayPairingChallenge, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
+import type { ClientGatewayCredentialCustodian, ClientGatewayCredentialHolder } from "./credential-custody.ts";
 import { ClientGatewayPairingCapacityError, clientGatewayPeerAuditFields, type ClientGatewayPeer } from "./security/index.ts";
 import type { ClientGatewayConfig } from "./config.ts";
 import { declaredDomainId } from "./declared-domain.ts";
@@ -25,7 +26,16 @@ type LifecycleCollaborators = {
   // Calls into the service's public surface go through this port, never
   // through the collaborator that owns the method. See ./facade-ports.ts.
   facade: ClientGatewayFacadePorts;
+  custody: ClientGatewayCredentialCustodian;
 };
+
+/** The holder custody knows a trusted client by. */
+export function clientGatewayCredentialHolder(client: { trustedClientId: string; approvedByUserId: string; expiresAt: number; name: string }): ClientGatewayCredentialHolder {
+  return { trustedClientId: client.trustedClientId, userId: client.approvedByUserId, expiresAtMs: client.expiresAt, name: client.name };
+}
+
+/** The reason an older session of a reconnecting client is closed for. */
+const SESSION_REPLACED = "replaced by newer session";
 
 /**
  * Connect, hello, and disconnect. These three are one collaborator because
@@ -42,6 +52,7 @@ export class ClientGatewayLifecycle {
   private readonly pairingFlow: ClientGatewayPairingFlow;
   private readonly facade: ClientGatewayFacadePorts;
   private readonly trace: ClientGatewayTraceTap;
+  private readonly custody: ClientGatewayCredentialCustodian;
 
   constructor(collaborators: LifecycleCollaborators) {
     this.config = collaborators.config;
@@ -53,6 +64,7 @@ export class ClientGatewayLifecycle {
     this.pairingFlow = collaborators.pairingFlow;
     this.facade = collaborators.facade;
     this.trace = collaborators.trace;
+    this.custody = collaborators.custody;
   }
 
   connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello; peer?: ClientGatewayPeer } = {}): ClientGatewaySession {
@@ -88,6 +100,18 @@ export class ClientGatewayLifecycle {
     return this.sessions.toPublic(session);
   }
 
+  /** A client says it stored the credential it was last sent: the one before it ends now. */
+  async credentialReceived(session: InternalSession): Promise<void> {
+    const trustedClient = session.trustedClientId ? this.trustedClients.get(session.trustedClientId) : undefined;
+    if (!trustedClient || !this.trustedClients.isActive(trustedClient)) return;
+    if (await this.trustedClients.confirmCurrent(trustedClient)) await this.custody.confirmed({ holder: clientGatewayCredentialHolder(trustedClient) });
+  }
+
+  /** The trusted client a session is paired as. */
+  trustedClientIdOf(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.trustedClientId;
+  }
+
   /** Whether `sessionId` was attached under a channel scope; false for a live or unknown session. */
   isScoped(sessionId: string): boolean {
     return this.sessions.get(sessionId)?.channelScope !== undefined;
@@ -106,6 +130,8 @@ export class ClientGatewayLifecycle {
     this.audit.record("session.disconnected", "Client disconnected.", { sessionId, reason });
     this.trace.lifecycle({ sessionId, clientId: next.clientId }, "session.disconnected", { reason });
     void this.events.emit({ type: "session.disconnected", session: this.sessions.toPublic(next) });
+    // What custody holds in memory for this client goes with its last socket, and its credential brings it back. A session a reconnect is replacing is not the last.
+    if (next.trustedClientId && reason !== SESSION_REPLACED && !this.sessions.findReadyByTrustedClient(next.trustedClientId)) this.custody.released(next.trustedClientId);
     return this.sessions.toPublic(next);
   }
 
@@ -177,11 +203,14 @@ export class ClientGatewayLifecycle {
       });
       return false;
     }
-    const rotatedToken = await this.trustedClients.rotateToken(trustedClient);
+    const holder = clientGatewayCredentialHolder(trustedClient);
+    // A client with its current credential has it confirmed; one with the credential before has not received what it was last sent.
+    if (this.trustedClients.isCurrentToken(trustedClient, token)) await this.custody.confirmed({ holder, credential: token });
+    const rotatedToken = await this.trustedClients.rotateToken(trustedClient, token, (nextCredential) => this.custody.rotating({ holder, previousCredential: token, nextCredential }));
     for (const existing of this.sessions.listReadyByTrustedClient(trustedClient.trustedClientId)) {
       if (existing.sessionId === session.sessionId) continue;
       await this.transport.send(existing.sessionId, this.transport.message("server.disconnect", { reason: "Client reconnected in a newer session." }, existing));
-      this.disconnect(existing.sessionId, "replaced by newer session");
+      this.disconnect(existing.sessionId, SESSION_REPLACED);
       this.audit.record("session.replaced", "A trusted client reconnected in a newer session; the older session was closed.", {
         sessionId: existing.sessionId,
         replacedBySessionId: session.sessionId,
@@ -191,6 +220,8 @@ export class ClientGatewayLifecycle {
       });
     }
     this.sessions.attachTrustedClient(session, trustedClient);
+    // Before the client is told it is ready, so its first request finds its key.
+    await this.custody.presented({ holder: clientGatewayCredentialHolder(trustedClient), credential: rotatedToken });
     await this.transport.send(session.sessionId, this.transport.message("server.session_ready", {
       sessionId: session.sessionId,
       token: rotatedToken,

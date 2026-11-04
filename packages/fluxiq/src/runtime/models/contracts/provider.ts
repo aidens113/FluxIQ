@@ -6,6 +6,13 @@ export type ModelProvider<Request extends ModelRequest = ModelRequest> = {
   metadata: AutomationStudioLlmProviderMetadata;
   runTask(request: Request, execution?: { signal?: AbortSignal }): Promise<unknown>;
   /**
+   * Waits until this provider can make the call, before an attempt starts its
+   * deadline (`../retry/call.ts`): a person's locked key waits for them here, with
+   * no clock running and nothing spent. Ends when `signal` aborts. Optional: a
+   * provider that does not say is always ready.
+   */
+  whenReady?(request: Request, execution?: { signal?: AbortSignal }): Promise<void>;
+  /**
    * The request measured the way `runTask` will measure it before sending.
    *
    * The harness refuses an oversize request itself, with its size, before a

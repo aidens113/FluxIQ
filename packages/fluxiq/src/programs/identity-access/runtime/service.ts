@@ -85,7 +85,7 @@ export class IdentityAccessService {
     this.repository = options.repository;
     this.kdf = createCredentialKdf(options.passwordKdf);
     this.credentialChangeSubscribers = [...(options.credentialChangeSubscribers ?? [])];
-    this.revocations = new IdentitySessionRevocations(options.sessionRevocationSubscribers);
+    this.revocations = new IdentitySessionRevocations(options.sessionRevocationSubscribers, options.sessionEndSubscribers);
   }
 
   /** Tells `listener` the raw id of every session revoked from now on (see `IdentitySessionRevocationListener`); returns its unsubscribe. */
@@ -448,7 +448,7 @@ export class IdentityAccessService {
     const digests = [...this.sessions.values()].filter((session) => session.userId === userId).map((session) => session.digest);
     const removed = await deleteStoredSessions(this.sessions, this.repository, digests);
     await this.persist();
-    await this.revocations.revoked(digests, { userId, administrator: false });
+    await this.revocations.revoked(digests, { userId, administrator: false }, undefined, userId);
     return removed;
   }
 

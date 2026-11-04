@@ -120,6 +120,20 @@ export type IdentitySessionTarget = string | { digest: string };
  */
 export type IdentitySessionRevocationListener = (sessionId: string, revoker: IdentitySessionRevoker) => void | Promise<void>;
 
+/**
+ * A session end by digest, for what is keyed by what is stored: it needs no raw
+ * id, so it reaches a listener for a session this process never saw.
+ * `wholeUserId` says every session of that person ended together, including any
+ * `digests` does not list. Announced with the same rule as
+ * `IdentitySessionRevocationListener`.
+ */
+export type IdentitySessionEnd = {
+  digests: readonly string[];
+  wholeUserId?: string | undefined;
+  revoker: IdentitySessionRevoker;
+};
+export type IdentitySessionEndListener = (end: IdentitySessionEnd) => void | Promise<void>;
+
 export type IdentityAccessServiceOptions = {
   repository?: Repository | undefined;
   roles?: Role[] | undefined;
@@ -128,4 +142,6 @@ export type IdentityAccessServiceOptions = {
   credentialChangeSubscribers?: readonly IdentityCredentialChangeSubscriber[] | undefined;
   /** Listeners told of every session revoked; more can join later with `subscribeSessionRevocation`. */
   sessionRevocationSubscribers?: readonly IdentitySessionRevocationListener[] | undefined;
+  /** Listeners told each session end by digest (`IdentitySessionEnd`), which reaches a session this process never saw. */
+  sessionEndSubscribers?: readonly IdentitySessionEndListener[] | undefined;
 };
