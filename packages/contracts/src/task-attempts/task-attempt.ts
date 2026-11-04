@@ -46,8 +46,10 @@ export type AutomationStudioTaskAttemptStatus = (typeof AUTOMATION_STUDIO_TASK_A
  * - `person_only_check`: something only a person can do on the page.
  * - `stuck_in_a_loop`: fresh approaches looped too, so it stopped spending and asked
  *   (plan, D14's last step). It keeps the best result so far and the draft.
+ * - `interrupted`: its Core restarted while it was working. Nobody chose that and its
+ *   budget is not gone, so it is not an ending: it waits to be carried on.
  */
-export const AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS = Object.freeze(["permission", "person_only_check", "stuck_in_a_loop"] as const);
+export const AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS = Object.freeze(["permission", "person_only_check", "stuck_in_a_loop", "interrupted"] as const);
 
 export type AutomationStudioTaskAttemptWaitReason = (typeof AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS)[number];
 
