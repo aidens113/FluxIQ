@@ -3,6 +3,8 @@
 // as the attempt's stores do (`../attempt-store/store-of.ts`). Tests set `sleep`, so a provider's
 // silence is waited out without waiting on the clock.
 
+import { automationStudioPersonWaitClock } from "../../../../../runtime/models/secrets/index.ts";
+
 export type AutomationStudioAnswerFirstAttemptPorts = {
   /** Waits for `ms`, or until `signal` aborts, whichever is first. Never rejects. */
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
@@ -16,7 +18,7 @@ const PORTS = new WeakMap<object, AutomationStudioAnswerFirstAttemptPorts>();
 export function automationStudioAnswerFirstAttemptPorts(owner: object): AutomationStudioAnswerFirstAttemptPorts {
   const known = PORTS.get(owner);
   if (known) return known;
-  const made: AutomationStudioAnswerFirstAttemptPorts = { sleep: wallClockSleep };
+  const made: AutomationStudioAnswerFirstAttemptPorts = { sleep: wallClockSleep, personHeldMs: (scope) => automationStudioPersonWaitClock.heldMs(scope) };
   PORTS.set(owner, made);
   return made;
 }
