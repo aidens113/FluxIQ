@@ -22,6 +22,21 @@
 // **Nothing here is kept in the clear.** A row's words and addresses are hashed, so what
 // is persisted beside a Flow holds no page text, and one read can still be matched
 // against a sentence that came before it.
+//
+// **The same row in another shape (`sameAs`, t870).** A by-hand read, a walker's pass and a
+// Flow's For Each each hold one row differently: keys renamed by a record output, a column
+// dropped, a handle minted, an address written whole or from the page's origin, a number
+// read back from text. So two rows are compared by their values, whatever key holds them:
+// they are the same row when every value of the one with fewer lies in the other, and a
+// value they share proves it, one with a letter in it or an address. A bare number or a
+// date proves nothing, since two different rows share those all the time. A kept column
+// that differs is a value that does not lie in the other, so those stay two rows.
+//
+// This leans the way the rule above does. A row with few columns left fits every row
+// holding those values, and it is then held done if any of them was acted on. What it cannot
+// see: a value written differently in the two shapes ("Nov 4" against "2026-11-04"), a
+// column split or merged, two rows sharing every value, and a row whose every value is a
+// bare number under renamed keys, which only an exact identity tells.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioAttemptActNotedRow } from "./contracts.ts";
@@ -33,6 +48,10 @@ const MOST_ROWS = 5_000;
 const FIELD_WORDS_NEEDED = 0.6;
 const HASH_LENGTH = 16;
 const MINTED_HANDLE = /^\$|handle/iu;
+/** An evidence reference is minted per read as a handle is (`./identity/fields.ts`), and no call names one. */
+const MINTED_REFERENCE = /evidence/iu;
+/** A value that is one number, whatever marks it: read back from text, `1,299.00` and `1299` are one value. */
+const ONE_NUMBER = /^[^\p{L}\p{N}]*\d[\d,]*(?:\.\d+)?[^\p{L}\p{N}]*$/u;
 const ADDRESS_OR_PATH = /^(?:[a-z][a-z\d+.-]*:\/\/|\/)/iu;
 const WORD = /[\p{L}\p{N}]+/gu;
 
@@ -57,8 +76,8 @@ export class AutomationStudioAttemptActRowTies {
     return hashed(trimmed.replace(/^[a-z][a-z\d+.-]*:\/\/[^/?#]+/iu, "").replace(/#.*$/u, "").replace(/\/+$/u, "") || "/");
   }
 
-  /** Holds `rows`, the newest kept where they run past the bound (`MOST_ROWS`). */
-  note(rows: readonly JsonObject[]): void {
+  /** Holds `rows`, the newest kept where they run past the bound (`MOST_ROWS`), and `acted` kept always: a row an act is on is what stops it happening twice. */
+  note(rows: readonly JsonObject[], acted: ReadonlySet<string> = new Set()): void {
     const merged = new Map(this.rows.map((row) => [row.row, row]));
     for (const row of rows) {
       const noted = notedRow(row);
@@ -66,7 +85,21 @@ export class AutomationStudioAttemptActRowTies {
       const known = merged.get(noted.row);
       merged.set(noted.row, known ? { ...known, handles: [...new Set([...known.handles, ...noted.handles])] } : noted);
     }
-    this.rows = [...merged.values()].slice(-MOST_ROWS);
+    let over = merged.size - MOST_ROWS;
+    this.rows = [...merged.values()].filter((row) => {
+      if (over <= 0 || acted.has(row.row)) return true;
+      over -= 1;
+      return false;
+    });
+  }
+
+  /** Which of `among` are this same row in another shape (header). */
+  sameAs(row: JsonObject, among: ReadonlySet<string>): string[] {
+    if (among.size === 0) return [];
+    const noted = notedRow(row);
+    if (!noted) return [];
+    const values = valuesOf(noted);
+    return this.rows.filter((held) => among.has(held.row) && sameRow(values, valuesOf(held))).map((held) => held.row);
   }
 
   /** The rows that printed `handle`. */
@@ -119,19 +152,54 @@ function noteValue(noted: AutomationStudioAttemptActNotedRow, key: string, value
     for (const [inner, item] of Object.entries(value)) noteValue(noted, inner, item);
     return;
   }
+  if (typeof value === "boolean") {
+    // Tells two rows apart as any value does, and is no word on the page: no sentence fits it and it proves nothing.
+    if (!MINTED_HANDLE.test(key) && !MINTED_REFERENCE.test(key)) noted.fields.push({ words: [hashed(String(value))], lettered: [] });
+    return;
+  }
   if (typeof value !== "string" && typeof value !== "number") return;
   const text = String(value);
   if (MINTED_HANDLE.test(key)) {
     if (text) noted.handles.push(text);
     return;
   }
+  if (MINTED_REFERENCE.test(key)) return;
   const path = AutomationStudioAttemptActRowTies.pathOf(text);
   if (path) {
     noted.paths.push(path);
     return;
   }
-  const words = text.toLowerCase().match(WORD) ?? [];
+  const words = plainNumber(text).toLowerCase().match(WORD) ?? [];
   if (words.length > 0) noted.fields.push({ words: words.map(hashed), lettered: words.filter((word) => /\p{L}/u.test(word)).map(hashed) });
+}
+
+/** A value that is one number as that number's own writing (`ONE_NUMBER`); anything else, or one too long to read exactly, as it stands. */
+function plainNumber(text: string): string {
+  if (!ONE_NUMBER.test(text)) return text;
+  const number = Number(text.replace(/[^\d.]/gu, ""));
+  return Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER ? String(number) : text;
+}
+
+/** A row's values, whatever key holds each, and whether each proves two rows the same (header). */
+function valuesOf(row: AutomationStudioAttemptActNotedRow): Map<string, boolean> {
+  const values = new Map<string, boolean>();
+  for (const field of row.fields) {
+    const value = `words:${field.words.join(" ")}`;
+    values.set(value, values.get(value) === true || field.lettered.length > 0);
+  }
+  for (const path of row.paths) values.set(`path:${path}`, true);
+  return values;
+}
+
+/** Whether every value of the row with fewer lies in the other, one of them proving it (header). */
+function sameRow(one: ReadonlyMap<string, boolean>, other: ReadonlyMap<string, boolean>): boolean {
+  const [fewer, more] = one.size <= other.size ? [one, other] : [other, one];
+  let proven = false;
+  for (const [value, proves] of fewer) {
+    if (!more.has(value)) return false;
+    proven ||= proves || more.get(value) === true;
+  }
+  return proven;
 }
 
 /**

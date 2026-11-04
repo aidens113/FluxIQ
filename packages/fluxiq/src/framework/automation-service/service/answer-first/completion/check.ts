@@ -20,6 +20,7 @@ import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime
 import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
 import { automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
+import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
 
 const NOTHING = "answer_first.nothing_to_judge";
 const SAME = "answer_first.same_evidence";
@@ -43,6 +44,8 @@ export type AutomationStudioAnswerFirstCompletionState = {
   checkedWhat?: string | undefined;
   /** The latest completion's own words. */
   answerText?: string | undefined;
+  /** The model's notes for the next attempt at this task, screened; never given to the judge. */
+  notes?: { worked?: string; failed?: string; quirks?: string } | undefined;
   /** The last judge's no or unsure, its digest and its words. */
   refused?: { verdict: "no" | "unsure"; digest: string; reason: string } | undefined;
   purseRefused: boolean;
@@ -70,6 +73,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
     check: async (result) => {
       const answerText = typeof result.answer === "string" && result.answer.trim() ? result.answer.trim() : undefined;
       if (answerText !== undefined) state.answerText = answerText;
+      const notes = automationStudioAnswerFirstScreenedNote(result.notes as { worked?: unknown; failed?: unknown; quirks?: unknown } | undefined);
+      if (notes) state.notes = notes;
       const rows = await input.rows();
       const acts = input.acts();
       if (rows.totalRows === 0 && acts.length === 0 && answerText === undefined) return refused(NOTHING, "You have nothing to check yet: no read has returned a row, no lasting act is on the record, and you gave no answer. Get the result first, and complete when you have it.");
