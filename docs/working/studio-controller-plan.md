@@ -21,17 +21,23 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 - **Chat is one package.** `@fluxiq/ui-components` renders the extension's chat and Core's panel route `/programs/automation-studio/chat`.
 - **Validated.** Full sweep: Core 21,940 tests passed, extension repository 9,954 passed, checks and builds passing. Live from the extension chat: both tasks passed, $6.31 across all the runs. The ledger has each one.
 
-**Follow-up in progress (user, 2026-11-03: "obviously fix the problems").** What this unit left unfinished was wrongly recorded here as the user's decision. None of it was; each is now being fixed in its own paired task, with reports under `studio-controller-plan/reports/followups/`:
+**Follow-up (user, 2026-11-03: "obviously fix the problems").** What this unit left unfinished was wrongly recorded here as the user's decision. None of it was. Reports are under `studio-controller-plan/reports/followups/`.
 
 | Task | Problem | State |
 | --- | --- | --- |
-| t841 | Correct results held as unsure: filtered-out rows carry no measured evidence | Merged with dev, being finished |
-| t848 | A repaired run's rows came out neither deduped nor sorted (`run-mw0jw263-0251c104`); cause not yet established | In progress |
-| t849 | Other refusals carrying `retry_allowed` may stay refused even when the model does as told | In progress |
-| t850 | The step log's page reader is process-wide mutable state | In progress |
-| t851 | Five Core modules still read browser fields | In progress |
-| t852 | Core's panel has two chat UIs; replace its own with the shared widget | In progress |
-| t853 | Framework and runtime code import `programs/_shared` | In progress; merges last, because it touches import lines everywhere |
+| t841 | Correct results held as unsure: filtered-out rows carried no measured evidence | On dev |
+| t848 | A repaired run's rows were stale, duplicated and out of order; a working repair could be thrown away | On dev |
+| t849 | Refusals stayed refused even when the model did as told; a failed dispatch misreported what it left | On dev |
+| t850 | The step log's page reader was process-wide mutable state | On dev |
+| t851 | Core read browser fields; the audit now covers all of Core, with named exceptions | On dev |
+| t852 | Core's panel had two chat UIs; it now has only the shared widget | On dev |
+| t853 | Framework and runtime imported from `programs/`; the audit now fails on it, the catalog excepted | On dev |
+| t854 | Re-author checks lasting acts before paying for a build; a read's override on a failed step; other refusing codes | In progress |
+| t855 | PIN verified where it is asked for; graph diffs draw; e2e seeding; composer takes text while a thread loads | In progress |
+
+**Kept in Core on purpose:** `locator-text.ts` (a safety screen that must not weaken) and `host-target-resolution.ts` (a closed allow-list that reads nothing from a page). Both are named exceptions in the audit, with reasons.
+
+**Not promoted yet.** The full sweep before `main` runs on 2026-11-04: today's two full runs are used, and a worker's mistaken whole-package filter started most of a third. A paid live round follows the follow-up lanes, because a fresh judge on t841's evidence and the repaired-run path are proven provider-free only.
 
 **Corrected record: the $5 refusal is not a limit and did not come from t843.** `assertLlmMaxCostWithinCeiling` (`packages/test-runner/src/live-llm/max-cost-within-ceiling.ts`, extension repository) refuses a typed `--llm-max-cost-usd` above the ceiling the run's Core resolves, instead of holding the run to a lower figure in silence. It dates from 2026-10-18, when twelve launches were held to a ceiling nobody typed and two builds stopped on it. It refuses before any provider call, costs nothing, and names `--llm-cost-ceiling-usd`, which raises the ceiling. No change needed.
 
