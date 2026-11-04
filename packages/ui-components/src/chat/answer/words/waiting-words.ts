@@ -13,5 +13,7 @@ export function waitingWords(waitingFor: WaitingFor, hasResult: boolean): { head
       return { headline: "Waiting for you", lead: "It reached something only you can do, such as a sign-in or a check. Finish it on the page, then press Continue." };
     case "stuck_in_a_loop":
       return { headline: "I keep getting stuck on this", lead: `I stopped spending to ask you. ${hasResult ? "Here is what I have so far." : "I have nothing to show yet."}` };
+    case "interrupted":
+      return { headline: "This was cut off", lead: `FluxIQ restarted while I was working on it. ${hasResult ? "Here is what I have so far." : "I have nothing to show yet."} Press Keep going to carry on.` };
   }
 }

@@ -56,12 +56,13 @@ export type ChatTaskAttemptFields = {
  * `AutomationStudioTaskAttempt`: one try at a task. `status` has no `failed`, on
  * purpose: a task ends only with its result, its budget gone, or a person stopping
  * it. So the chat has no failed ending to draw, only `budget_out`. A wait always says
- * what it waits for: `permission`, `person_only_check`, or `stuck_in_a_loop` when
- * fresh approaches looped too and it stopped spending to ask.
+ * what it waits for: `permission`, `person_only_check`, `stuck_in_a_loop` when
+ * fresh approaches looped too and it stopped spending to ask, or `interrupted` when
+ * its Core restarted while it was working.
  */
 export type ChatTaskAttempt = ChatTaskAttemptFields & (
   | { status: "working" | "achieved" | "budget_out" | "stopped_by_person" }
-  | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "stuck_in_a_loop" }
+  | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "stuck_in_a_loop" | "interrupted" }
 );
 
 /** `AutomationStudioTaskResultRows`: rows real reads stored, by the run and dataset that hold them. */
