@@ -32,7 +32,7 @@ describe("fakeTaskOutcomes", () => {
   it("cover every status, every wait, every result kind, every label and every saved state", () => {
     const outcomes: ChatTaskOutcome[] = Object.values(fakeTaskOutcomes());
     expect(new Set(outcomes.map((outcome) => outcome.attempt.status))).toEqual(new Set(["working", "waiting_for_person", "achieved", "budget_out", "stopped_by_person"]));
-    expect(new Set(outcomes.flatMap(({ attempt }) => (attempt.status === "waiting_for_person" ? [attempt.waitingFor] : [])))).toEqual(new Set(["permission", "person_only_check", "stuck_in_a_loop"]));
+    expect(new Set(outcomes.flatMap(({ attempt }) => (attempt.status === "waiting_for_person" ? [attempt.waitingFor] : [])))).toEqual(new Set(["permission", "person_only_check", "stuck_in_a_loop", "interrupted"]));
     expect(new Set(outcomes.flatMap((outcome) => outcome.result?.kind ?? []))).toEqual(new Set(["rows", "done_on_site", "plain_answer", "partial"]));
     expect(new Set(outcomes.flatMap((outcome) => outcome.result?.label ?? []))).toEqual(new Set(["confirmed", "refuted", "unverified"]));
     expect(new Set(outcomes.flatMap((outcome) => outcome.saved?.state ?? []))).toEqual(new Set(["ready", "partly_works", "notes_only", "needs_you"]));
