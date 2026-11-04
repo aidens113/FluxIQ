@@ -51,7 +51,7 @@ import {
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { automationStudioNodeReplayStepCall } from "../replay/replay.ts";
 import { automationStudioFlowDraftReplaySteps } from "../replay/draft.ts";
-import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayNodeOf } from "../replay/index.ts";
+import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayNodeOf } from "../replay/index.ts";
 
 /** What a part run needs: the draft, the model's argument, its call id and the loop's executor. */
 export type AutomationStudioFlowDraftPartRunInput = {
@@ -69,6 +69,12 @@ export type AutomationStudioFlowDraftPartRunInput = {
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   /** The scoped task part, so the partial replay writes the saved Flow's record output. */
   partOf?: AuthoringPartOfStep | undefined;
+  /**
+   * The forward run (t861, plan D2, `../replay/forward.ts`): the range runs on the rows not yet done, a lasting step
+   * acts for real on one, and the answer says what it did instead of calling itself a test. Absent, this is the
+   * part run it always was.
+   */
+  forward?: AutomationStudioFlowDraftReplayForward | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -102,6 +108,7 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
     ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
     ...(input.partOf ? { partOf: input.partOf } : {}),
+    ...(input.forward ? { forward: input.forward } : {}),
     // A step the Flow does not always run goes on, as the Flow would; one with
     // nothing to run it with stops the run whatever it says about when it runs.
     stopsAt: (step, excused) => !excused || unrunnable(step),
@@ -128,7 +135,8 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     ok: true, passed, from: range.from, to, steps: ran,
     ...(stoppedAt === undefined ? {} : { stoppedAt }),
     ...(shown ? { last: shown } : {}),
-    instruction: instructionOf(range.from, to, stoppedAt)
+    ...(input.forward && done.rows ? { rows: done.rows } : {}),
+    instruction: input.forward ? forwardInstructionOf(range.from, to, stoppedAt, done.rows) : instructionOf(range.from, to, stoppedAt)
   };
   return {
     kind: "llm_evidence_tool_execution",
@@ -155,6 +163,18 @@ function instructionOf(from: number, to: number, stoppedAt: number | undefined):
     ? `${part} ran on the target as it stood, and passed.`
     : `${part} ran on the target as it stood, and stopped at step ${stoppedAt}: the target is where that step left it.`;
   return `${outcome} This is not the Flow's test: the Flow is finished only once it has run whole from its start and been judged.`;
+}
+
+/**
+ * What the model is told after a forward run: where it ran, how many rows it did and left out, and where it stopped.
+ * Counts only; never that the Flow is tested or must be finished, because this is the work being done.
+ */
+function forwardInstructionOf(from: number, to: number, stoppedAt: number | undefined, rows: { done: number; skipped: number; failed: number } | undefined): string {
+  const part = from === to ? `Step ${from}` : `Steps ${from} to ${to}`;
+  const counted = rows ? ` Rows: ${rows.done} done, ${rows.skipped} skipped as already done, ${rows.failed} failed.` : "";
+  return stoppedAt === undefined
+    ? `${part} ran forward from where the page stood, on what was not done yet, and passed.${counted}`
+    : `${part} ran forward from where the page stood and stopped at step ${stoppedAt}: the page is where that step left it, and nothing after it was sent.${counted}`;
 }
 
 /**

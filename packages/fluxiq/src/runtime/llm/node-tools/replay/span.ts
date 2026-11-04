@@ -104,6 +104,7 @@ import type { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY } from "../../../result
 import type { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 import { screenAutomationStudioLlmEvidence } from "../../harness/index.ts";
 import { automationStudioLlmStepLogScope } from "../../step-log/index.ts";
+import type { AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayRowCounts } from "./forward.ts";
 import {
   AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY,
   AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES,
@@ -365,7 +366,8 @@ export type AutomationStudioFlowDraftReplaySpanRunInput = {
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   /** Which plan part each member serves, so the test writes the record output the saved Flow has (`../../flow-bootstrap/record-defaults/`). */
   partOf?: AuthoringPartOfStep | undefined;
-  modeOf(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftReplayMode;
+  /** `row` is the row of a list's pass, absent elsewhere; a forward run reads it (`./forward.ts`). */
+  modeOf(step: AutomationStudioFlowDraftStep, row?: JsonObject): AutomationStudioFlowDraftReplayMode;
   callIdOf(step: AutomationStudioFlowDraftStep): string;
   send(callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject): Promise<AutomationStudioFlowDraftReplayAnswer>;
   /** Whether a member with a pass that did not pass ends the whole walk there (a part run). Absent, every pass runs. */
@@ -374,6 +376,8 @@ export type AutomationStudioFlowDraftReplaySpanRunInput = {
   withheldBy?: number | undefined;
   /** What the steps before the span really produced in this test, as run state (see the header). */
   earlier?: Record<string, JsonValue> | undefined;
+  /** A forward run's questions (`./forward.ts`): a list's row already done is left out whole. Absent, every row runs, as always. */
+  forward?: Pick<AutomationStudioFlowDraftReplayForward, "rowDone" | "passed"> | undefined;
 };
 
 /** What a span answered: an outcome per member that ran, what the calls showed, the first page that did not pass, and whether the walk stops. */
@@ -382,6 +386,8 @@ export type AutomationStudioFlowDraftReplaySpanRunResult = {
   observations: AutomationStudioFlowDraftReplayObservation[];
   evidence?: { callId: string; toolId: string; value: JsonValue };
   stopped: boolean;
+  /** A forward run's list: the rows done, left out as already done, and failed on. Absent without `forward`, and for a repeat of no list. */
+  rows?: AutomationStudioFlowDraftReplayRowCounts;
 };
 
 /** Run a planned span, pass by pass (see the header). */
@@ -394,6 +400,9 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
   let stopped = false;
   let overBound = false;
   let count = 0;
+  let rowsDone = 0;
+  let skipped = 0;
+  let rowsFailed = 0;
   const observe = (step: AutomationStudioFlowDraftStep, callId: string, answer: AutomationStudioFlowDraftReplayAnswer, status: AutomationStudioFlowDraftReplayPass["status"], pass: number, mode: AutomationStudioFlowDraftReplayMode): void => {
     if (!answer.readable) return;
     // The rows this pass's read stored, beside its evidence and never in it (see the observation's type).
@@ -420,7 +429,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     // A member other than a do-while's last that answered `ended`: the list has no more pages, so no pass after this one can move it (see the header).
     let noMore = false;
     for (const member of plan.members) {
-      const mode = input.modeOf(member);
+      const mode = input.modeOf(member, row);
       const node = input.nodeOf?.(member.actionId);
       const earlier = { ...(input.earlier ?? {}), ...automationStudioFlowDraftStepOutputsState(produced) };
       const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId), input.partOf);
@@ -437,6 +446,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
         const status = ends ? "replayed" : answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
         answered = { pass, status, ...(answer.readable && answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}) };
         observe(member, callId, answer, status, pass, mode);
+        if (answer.readable) input.forward?.passed?.(member, row, answer.result);
         const outputs = automationStudioFlowDraftReplayProduced(answer, mode);
         if (outputs) produced.set(automationStudioFlowDraftStepId(member), outputs);
       }
@@ -452,7 +462,14 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     overBound = plan.rows.length > bound;
     for (const [at, row] of (overBound ? [] : plan.rows).entries()) {
       count = at + 1;
+      // A row that already took its act sends nothing: its pass is left out and counted (`./forward.ts`).
+      if (input.forward?.rowDone(row)) {
+        skipped += 1;
+        continue;
+      }
       const ran = await runPass(count, row);
+      if (ran === "stopped" || ran === "failed") rowsFailed += 1;
+      else rowsDone += 1;
       if (ran === "stopped") { stopped = true; break; }
       // A member that answered `ended` is never sent again: the list it moves has no more pages (see the header).
       if (ran === "no_more") break;
@@ -497,7 +514,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     if (stopped && !list.length) continue;
     outcomes.push(memberOutcome(member, list, input.modeOf(member), overBound, input.withheldBy));
   }
-  return { outcomes, observations, ...(evidence ? { evidence } : {}), stopped };
+  return { outcomes, observations, ...(evidence ? { evidence } : {}), stopped, ...(input.forward && plan.kind === "list" ? { rows: { done: rowsDone, skipped, failed: rowsFailed } } : {}) };
 }
 
 /** One member's outcome from its passes: its first pass that did not pass, else `replayed` (see the header). */

@@ -8,6 +8,9 @@
 import { automationStudioLlmEvidenceValidTools } from "../evidence-loop-decision.ts";
 import { automationStudioLlmRunFlowBinding } from "./run/flow.ts";
 
+/** What a forward run asks of its caller: the loop input `forwardRun` (`./replay/forward.ts`), exported here so the loop reads it from the barrel. */
+export type { AutomationStudioFlowDraftReplayForward } from "./replay/index.ts";
+
 type RunFlowBinding = ReturnType<typeof automationStudioLlmRunFlowBinding>;
 
 export type AutomationStudioLlmEvidenceLoopToolSet = {

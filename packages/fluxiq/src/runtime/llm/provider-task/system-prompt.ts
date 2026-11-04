@@ -80,6 +80,9 @@ export function automationStudioLlmTaskSystemPrompt(request: AutomationStudioLlm
   return prose.length ? `${rules}\n\n${domainText}\n\n${prose.join(" ")}` : `${rules}\n\n${domainText}`;
 }
 
+/** The sentence of the decision instruction that is a build's and not the answer-first exploration's. */
+const A_BUILDS_GOAL = "Your goal is to produce the final structured result, not to execute the workflow that result describes. ";
+
 /** Core's answer-format and injection rules, and the schema instruction for this task. Never a domain's to replace. */
 function coreRules(request: AutomationStudioLlmTaskRequest): string {
   if (request.taskKind === "flow_bootstrap") return `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_SCHEMA_INSTRUCTION}`;
@@ -101,7 +104,8 @@ function coreTaskProse(request: AutomationStudioLlmTaskRequest): string[] {
     // override would not be an override. The schema and injection-defence
     // constants stay: those are not stage prose and are not a domain's to
     // replace.
-    if (request.context.stage === undefined) prose.push(AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION);
+    // The answer-first exploration's work is to do the task, so it is not told that a build's goal is not to (`../../answer-first/guidance/`).
+    if (request.context.stage === undefined) prose.push(request.domainInstructions?.domainId === "fluxiq.answer-first" ? AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION.replace(A_BUILDS_GOAL, "") : AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION);
     // Not stage prose, so a staged request is told them too.
     prose.push(AUTOMATION_STUDIO_LIST_AUTHORING_INSTRUCTION, AUTOMATION_STUDIO_EFFICIENCY_INSTRUCTION);
     prose.push(AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION);
@@ -120,7 +124,7 @@ function coreTaskProse(request: AutomationStudioLlmTaskRequest): string[] {
   // of opening the channel: the schema permits the object, and this is what
   // makes a model fill it rather than putting everything into the summary.
   // A verification is told how to read a build's test only when it judges one (run-murwd8le's Cause 9).
-  if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) prose.push(automationStudioDiagnosisPromptInstruction(request.taskKind, { buildTest: request.context.resultSummary?.buildTest !== undefined }));
+  if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) prose.push(automationStudioDiagnosisPromptInstruction(request.taskKind, { buildTest: request.context.resultSummary?.buildTest !== undefined, flowLess: request.metadata?.source === "answerFirstJudge" }));
   // An evidence decision is told it whether or not this call carries reusable
   // context: the context is looked up again for each decision's fresh evidence,
   // so it can appear between one call and the next, and a system message that
