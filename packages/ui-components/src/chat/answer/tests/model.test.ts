@@ -10,6 +10,13 @@ import { answerModel, type AnswerModel } from "../model/index.ts";
 const REAL = { reportsSpend: true, canAddBudget: true };
 const NO_SPEND = { reportsSpend: false, canAddBudget: true };
 
+test("an outcome derived from a run reads as a port that reports no spend, never a made-up $0.00", () => {
+  for (const outcome of [fakeTaskOutcomes().rowsChecked, fakeTaskOutcomes().budgetOutPartial]) {
+    assert.deepEqual(modelOf({ ...outcome, spendUnknown: true }), modelOf(outcome, NO_SPEND));
+  }
+  assert.equal(modelOf({ ...fakeTaskOutcomes().budgetOutPartial, spendUnknown: true }).addBudget?.words, "Add budget and carry on");
+});
+
 function modelOf(outcome: ChatTaskOutcome, options = REAL): AnswerModel {
   const model = answerModel(outcome, options);
   assert.notEqual(model, undefined);

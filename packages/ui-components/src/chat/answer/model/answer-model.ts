@@ -59,7 +59,9 @@ function lastingActs(result: ChatTaskResult | undefined): boolean {
 }
 
 /** The answer turn for `outcome`; none while it is still working, or before an ended attempt has a result. */
-export function answerModel(outcome: ChatTaskOutcome, options: AnswerModelOptions): AnswerModel | undefined {
+export function answerModel(outcome: ChatTaskOutcome, given: AnswerModelOptions): AnswerModel | undefined {
+  // A thread can hold both kinds of outcome, so the port's one flag cannot speak for this one.
+  const options = { ...given, reportsSpend: given.reportsSpend && outcome.spendUnknown !== true };
   const start = opening(outcome, options);
   if (start === undefined) return undefined;
   const { attempt, result, saved } = outcome;
