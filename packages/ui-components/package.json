@@ -1,6 +1,6 @@
 {
   "name": "@fluxiq/ui-components",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "FluxIQ's chat UI as plain DOM and CSS, for any client to mount through ports.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",

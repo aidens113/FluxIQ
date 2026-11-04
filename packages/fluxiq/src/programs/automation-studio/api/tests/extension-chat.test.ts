@@ -54,6 +54,7 @@ import { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-no
 import type { AutomationStudioLlmProviderResolverInput } from "../../../../framework/automation-service/service.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
 import { automationStudioReplayingBinding } from "../../../../framework/automation-service/tests/replaying-binding.ts";
+import { automationStudioFlowGraphDiffAttachment } from "../../../../runtime/conversations/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_EXPLORE, automationStudioConversationCommandWork } from "../../../../runtime/conversations/commands/index.ts";
 
 const OPEN_ID = "domain.example.open";
@@ -435,6 +436,14 @@ describe("the extension's chat, end to end in Core", () => {
     expect((await world.service.getFlowBootstrapAdaptation(world.project.id, flow.flowId, declined.adaptationId))!.status).toBe("rejected");
 
     const accepted = await improveOnce();
+    // The change as the panel draws it: a real reference to the real proposal, read through the endpoint.
+    const shown = await world.service.conversations.appendAutomationTurn({ projectId: world.project.id, conversationId: world.conversationId, text: "The change.", ask: null, attachment: automationStudioFlowGraphDiffAttachment(flow.flowId, accepted.adaptationId) });
+    const drawn = await world.call("get-conversation-attachment", { projectId: world.project.id, conversationId: world.conversationId, turnId: shown.turnId });
+    expect(drawn.ok, drawn.error).toBe(true);
+    const diff = (drawn.payload as { attachment: { payload: { flowId: unknown; added: unknown[]; removed: unknown[]; changed: Array<{ id: string; label: string }> } } }).attachment.payload;
+    expect(diff.flowId).toBeNull();
+    expect(diff.added.length + diff.removed.length + diff.changed.length).toBeGreaterThan(0);
+    expect(JSON.stringify(diff)).not.toContain("builtin.");
     const grant = await world.call("answer-ask", { projectId: world.project.id, askId: accepted.askId, kind: "grant" });
     expect(grant.ok, grant.error).toBe(true);
     expect((grant.payload as { execution: Record<string, unknown> | null }).execution).toMatchObject({ status: "done" });

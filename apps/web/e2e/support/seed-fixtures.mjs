@@ -53,7 +53,6 @@ const fixtureProfiles = Object.freeze({
 });
 const markerPath = path.join(fixtureRoot, ".fluxiq-e2e-fixture-root");
 const fastStudioOnly = process.env.FLUXIQ_E2E_FAST_STUDIO === "true";
-const chatOnly = process.env.FLUXIQ_E2E_CHAT_ONLY === "true";
 
 await resetOwnedFixtureRoot();
 
@@ -70,7 +69,7 @@ const emptyProject = await studio.createProject({
   categoryId: category.id,
 });
 
-const phase8EmptyProject = chatOnly ? summarizeProject(emptyProject) : await seedPhase8Project("empty", phase8Contract.profiles.empty, category.id);
+const phase8EmptyProject = await seedPhase8Project("empty", phase8Contract.profiles.empty, category.id);
 
 const smallProject = await seedProject({
   name: "UI Fixture - Small",
@@ -136,25 +135,14 @@ process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
 
 async function seedProject({ name, description, categoryId, fixture: fixtureOptions }) {
   const project = await studio.createProject({ name, description, categoryId });
-  // The Flow fixtures below predate Core's Subflow-graph rule (a top-level Flow may not own nodes, a Subflow needs its
-  // graph Flow first) and no longer save. The chat checks need projects, not Flows, so `FLUXIQ_E2E_CHAT_ONLY=true`
-  // seeds bare projects and leaves the Flow corpus out.
-  if (chatOnly) return { ...summarizeProject(project), flowIds: [], recordingIds: [], timelineRecordingId: null, counts: {} };
-  const fixture = namespaceLargeFixtureIdentifiers(createAutomationStudioLargeProjectFixture({
+  const generated = namespaceLargeFixtureIdentifiers(createAutomationStudioLargeProjectFixture({
     ...fixtureOptions,
     projectId: project.id,
     nowMs: FIXED_NOW_MS,
   }), project.id);
 
   const graphNodeCount = fixtureOptions.graphNodeCount ?? 0;
-  if (graphNodeCount > 0 && fixture.flows[0]) {
-    fixture.flows[0] = withStressGraph(fixture.flows[0], graphNodeCount);
-  }
-
-  for (const artifact of fixture.flows) {
-    await studio.saveFlow({ projectId: project.id, flow: ownedFixtureFlow(project.id, artifact) });
-  }
-  for (const subflow of fixture.subflows) await studio.saveFlowSubflow(subflow);
+  const { fixture, stressGraphFlowId } = await saveFixtureFlows(project.id, generated, graphNodeCount);
   for (const router of fixture.routers) await studio.saveFlowRouter(router);
   for (const instruction of fixture.instructions) await studio.saveFlowInstruction(project.id, instruction);
   for (const proposal of fixture.changeProposals) await studio.saveFlowChangeProposal(proposal);
@@ -179,6 +167,7 @@ async function seedProject({ name, description, categoryId, fixture: fixtureOpti
   return {
     ...summarizeProject(project),
     flowIds: fixture.flows.map((flow) => flow.flowId),
+    stressGraphFlowId,
     recordingIds: timelineRecordingId ? [timelineRecordingId] : [],
     timelineRecordingId,
     counts: {
@@ -208,7 +197,7 @@ async function seedPhase8Project(profileName, counts, categoryId) {
     description: `Storage-seeded ${profileName} release fixture.`,
     categoryId,
   });
-  const fixture = namespaceLargeFixtureIdentifiers(createAutomationStudioLargeProjectFixture({
+  const generated = namespaceLargeFixtureIdentifiers(createAutomationStudioLargeProjectFixture({
     projectId: project.id,
     nowMs: FIXED_NOW_MS,
     flowCount,
@@ -219,29 +208,27 @@ async function seedPhase8Project(profileName, counts, categoryId) {
     recordingCount: counts.recordings,
   }), project.id);
   if (counts.subflows === 0) {
-    fixture.subflows.length = 0;
-    fixture.routers.length = 0;
-    fixture.instructions.length = 0;
-    fixture.changeProposals.length = 0;
-    fixture.policies.length = 0;
-    fixture.adaptations.length = 0;
-    fixture.runDetails.length = 0;
-    fixture.flows[0] = withStressGraph({ ...fixture.flows[0], expansion: {} }, counts.activeGraphNodes);
+    generated.subflows.length = 0;
+    generated.routers.length = 0;
+    generated.instructions.length = 0;
+    generated.changeProposals.length = 0;
+    generated.policies.length = 0;
+    generated.adaptations.length = 0;
+    generated.runDetails.length = 0;
+    generated.flows[0] = { ...generated.flows[0], expansion: {} };
   } else {
-    fixture.flows[0] = withStressGraph(fixture.flows[0], counts.activeGraphNodes);
-    expandRoutes(fixture.routers, fixture.subflows, counts.routes);
-    expandRunEvents(fixture.runDetails, counts.runEvents);
+    expandRoutes(generated.routers, generated.subflows, counts.routes);
+    expandRunEvents(generated.runDetails, counts.runEvents);
   }
 
-  const recordingIds = fixture.recordings.map((_, index) =>
+  const recordingIds = generated.recordings.map((_, index) =>
     projectOwnedRecordingId(project.id, `phase8-${profileName}-${index}`)
   );
-  const recordingLabels = fixture.recordings.map((recording, index) =>
+  const recordingLabels = generated.recordings.map((recording, index) =>
     String(recording.metadata?.title ?? recording.metadata?.name ?? `Recording ${index + 1}`)
   );
 
-  for (const artifact of fixture.flows) await studio.saveFlow({ projectId: project.id, flow: ownedFixtureFlow(project.id, artifact) });
-  for (const subflow of fixture.subflows) await studio.saveFlowSubflow(subflow);
+  const { fixture, stressGraphFlowId } = await saveFixtureFlows(project.id, generated, counts.activeGraphNodes);
   for (const router of fixture.routers) await studio.saveFlowRouter(router);
   for (const instruction of fixture.instructions) await studio.saveFlowInstruction(project.id, instruction);
   for (const detail of fixture.runDetails) await studio.saveFlowRunDetail(detail);
@@ -292,6 +279,7 @@ async function seedPhase8Project(profileName, counts, categoryId) {
   const summary = {
     ...summarizeProject(project),
     flowIds: fixture.flows.map((flow) => flow.flowId),
+    stressGraphFlowId,
     runIds: fixture.runDetails.map((detail) => detail.summary.runId),
     recordingIds,
     recordingLabels,
@@ -311,6 +299,37 @@ function includesPhase8Profile(profile) {
 
 function ownedFixtureFlow(projectId, flow) {
   return { ...flow, ownerKind: "project", ownerId: projectId };
+}
+
+/**
+ * Saves the fixture's Flows the way Core holds them: a top-level Flow owns no nodes, and each Subflow has a graph Flow
+ * that only `createFlowSubflow` can make, under an id Core mints. So the parents are saved first, the Subflows are
+ * created, and every reference to a generated Subflow id in the rest of the fixture is rewritten to the real one. The
+ * stress graph goes on the first Flow's primary Subflow, where a Flow's steps live.
+ */
+async function saveFixtureFlows(projectId, generated, stressNodeCount) {
+  for (const flow of generated.flows) await studio.saveFlow({ projectId, flow: ownedFixtureFlow(projectId, { ...flow, expansion: {} }) });
+  const realIds = new Map();
+  let stressGraphFlowId = null;
+  for (const subflow of generated.subflows) {
+    const created = await studio.createFlowSubflow({ projectId, flowId: subflow.flowId, name: subflow.name, role: subflow.role, routeTags: subflow.routeTags });
+    realIds.set(subflow.subflowId, created.subflowId);
+    stressGraphFlowId ??= created.graphFlowId;
+  }
+  const fixture = withRealIds(generated, realIds);
+  for (const flow of fixture.flows) await studio.saveFlow({ projectId, flow: ownedFixtureFlow(projectId, flow) });
+  if (stressNodeCount > 0) {
+    if (!stressGraphFlowId) throw new Error("A stress graph needs a Subflow to live on.");
+    const graph = await studio.getFlow(projectId, stressGraphFlowId);
+    await studio.saveFlow({ projectId, flow: withStressGraph(graph, stressNodeCount) });
+  }
+  return { fixture, stressGraphFlowId };
+}
+
+function withRealIds(value, realIds) {
+  if (Array.isArray(value)) return value.map((entry) => withRealIds(entry, realIds));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, withRealIds(nested, realIds)]));
+  return typeof value === "string" ? realIds.get(value) ?? value : value;
 }
 
 function namespaceLargeFixtureIdentifiers(fixture, namespace) {
@@ -438,6 +457,7 @@ async function seedStressRecording(projectId, entryCount) {
     projectId,
     recordingId,
     taskId: "task.ui-stress-timeline",
+    description: "A long recorded timeline, for the UI stress checks.",
     startedAt: FIXED_NOW_MS,
     environment: {
       id: "environment.ui-fixture",
@@ -483,6 +503,7 @@ async function persistFixtureRecording(projectId, recording, purpose) {
     projectId,
     recordingId,
     ...(recording.taskId ? { taskId: `${recording.taskId}.${projectId}` } : {}),
+    description: "A recorded fixture task, for the UI checks.",
     startedAt: recording.startedAt,
     environment: recording.environment,
     sources: recording.sources,

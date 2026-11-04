@@ -24,6 +24,7 @@
 // Everything else runs straight away: the person asking is the permission.
 
 import { randomUUID } from "node:crypto";
+import { AUTOMATION_STUDIO_PANEL_COMMAND_ASK_PREFIX } from "../answer-pin.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_COMMANDS } from "../commands/index.ts";
 import { automationStudioConversationSiteName } from "../site-name.ts";
@@ -89,7 +90,7 @@ export async function respondToAutomationStudioConversationTurn(input: Automatio
     return { turnId: turn.turnId, askId: null, runNow: false };
   }
   const consequences = invocation.consequences.filter(isAutomationStudioActionConsequence);
-  const askId = `panel-command.${randomUUID()}`;
+  const askId = `${AUTOMATION_STUDIO_PANEL_COMMAND_ASK_PREFIX}${randomUUID()}`;
   const text = `${lead}You asked me to "${invocation.title}"${target}. That would ${joined(consequences)}, and it cannot be undone, so confirm it here with your PIN, or cancel.${readingNotes(invocation)}`;
   const turn = await input.host.appendAutomationTurn({
     ...base,

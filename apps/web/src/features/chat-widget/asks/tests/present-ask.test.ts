@@ -31,20 +31,22 @@ describe("a question in the panel's words", () => {
     expect(presented.takesText).toBe(false);
   });
 
-  it("offers one action per option, and asks for the PIN only on a destructive one", () => {
-    const presented = presentAsk({
-      askId: "ask.2",
-      kind: "choice",
-      status: "pending",
-      parks: true,
-      options: [
-        { optionId: "opt.keep", label: "Keep the draft", description: "Nothing changes." },
-        { optionId: "opt.delete", label: "Delete the draft", destructive: true }
-      ]
-    })!;
+  const options = [
+    { optionId: "opt.keep", label: "Keep the draft", description: "Nothing changes." },
+    { optionId: "opt.delete", label: "Delete the draft", destructive: true }
+  ];
+
+  it("offers one action per option, and asks no PIN when the ask names no class Core checks", () => {
+    const presented = presentAsk({ askId: "ask.2", kind: "choice", status: "pending", parks: true, options })!;
     expect(presented.actions[0]).toMatchObject({ id: "opt.keep", label: "Keep the draft", description: "Nothing changes.", kind: "choice", value: "opt.keep", tone: "secondary" });
     expect(presented.actions[0]).not.toHaveProperty("reauthorize");
-    expect(presented.actions[1]).toMatchObject({ id: "opt.delete", tone: "danger", kind: "choice", value: "opt.delete", reauthorize: { title: "Confirm this answer" } });
+    expect(presented.actions[1]).toMatchObject({ id: "opt.delete", tone: "danger", kind: "choice", value: "opt.delete" });
+    expect(presented.actions[1]).not.toHaveProperty("reauthorize");
+  });
+
+  it("asks for the PIN on every option of a choice a run waits on that names a gated class", () => {
+    const presented = presentAsk({ askId: "ask.2", kind: "choice", status: "pending", parks: true, consequences: ["delete"], options })!;
+    for (const action of presented.actions) expect(action).toMatchObject({ reauthorize: { title: "Confirm this answer" } });
   });
 
   it("confirms without inventing a consequence the ask did not carry", () => {
@@ -55,9 +57,15 @@ describe("a question in the panel's words", () => {
     expect(presented.actions[1]).not.toHaveProperty("reauthorize");
   });
 
-  it("asks for the PIN to confirm what has a consequence, as a danger", () => {
-    const presented = presentAsk({ askId: "ask.5", kind: "confirm", status: "pending", parks: false, consequences: ["delete"] })!;
+  it("asks for the PIN to confirm what the panel then runs with it, as a danger", () => {
+    const presented = presentAsk({ askId: "panel-command.5", kind: "confirm", status: "pending", parks: false, consequences: ["delete"] })!;
     expect(presented.actions[1]).toMatchObject({ label: "Confirm", tone: "danger", reauthorize: { title: "Confirm this answer", actionLabel: "Confirm" } });
+  });
+
+  it("asks no PIN to confirm what nothing acts on, however it is worded", () => {
+    const presented = presentAsk({ askId: "declaration-cross-check:delete:1", kind: "confirm", status: "pending", parks: false, consequences: ["delete"] })!;
+    expect(presented.actions[1]).toMatchObject({ label: "Confirm", tone: "danger" });
+    expect(presented.actions[1]).not.toHaveProperty("reauthorize");
   });
 
   it("takes words for an open ask, up to the conversation's length limit", () => {

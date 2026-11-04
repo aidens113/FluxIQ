@@ -32,8 +32,8 @@
 // because `send_or_publish` was not gated then; lane D (t195) gated it again
 // and the test here still granted a publish by typing (t201).
 
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "../../action-permission-requests/client/index.ts";
-import type { AutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "../../action-permission-requests/client/index.ts";
+import { automationStudioConversationAskGatedClasses } from "../answer-pin.ts";
 import type { AutomationStudioConversationAsk } from "../ask.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
 import { automationStudioConversationAnswerFromWords } from "./answer-words.ts";
@@ -73,7 +73,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_ANSWER_ASK: AutomationStudioConversa
     if (ask.status !== "pending") return progress.failed("that question has already been answered");
     const answer = automationStudioConversationAnswerFromWords(ask, words);
     if (!answer) return progress.failed(unreadable(ask));
-    const gated = gatedClasses(ask);
+    const gated = automationStudioConversationAskGatedClasses(ask);
     if (answer.kind !== "deny" && gated.length) {
       return progress.failed(`answering that would ${gated.map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]).join(", or ")}, which is confirmed with your PIN on the question itself, not by typing`);
     }
@@ -143,16 +143,6 @@ function waitingAsk(ask: AutomationStudioConversationAsk, question: string | nul
     ? `a choice${about} between ${(ask.options ?? []).map((option) => `"${option.label}"`).join(", ")}`
     : ask.kind === "open" ? `a question${about} that takes your own words` : `a yes-or-no question${about}`;
   return question ? `"${question}", ${kind}` : kind;
-}
-
-/**
- * The classes Core gates that answering this ask would commit, in Core's
- * order. A permission ask commits what it lacks (`missing`); any other ask
- * commits what it says it does.
- */
-function gatedClasses(ask: AutomationStudioConversationAsk): AutomationStudioActionConsequence[] {
-  const classes = ask.kind === "permission" ? (ask.missing ?? ask.consequences ?? []) : (ask.consequences ?? []);
-  return AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES.filter((consequence) => classes.includes(consequence));
 }
 
 function unreadable(ask: AutomationStudioConversationAsk): string {

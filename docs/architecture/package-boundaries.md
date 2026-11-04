@@ -137,6 +137,33 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): `answer-ask` checks the PIN on an answer that is the authority for an act, and a Flow change can be drawn (`fluxiq`, `@fluxiq/ui-components`)
+
+- `answer-ask` from a signed-in person now refuses a yes without their right PIN
+  when the ask names a class a person has to be asked about (`move_money`,
+  `delete`, `send_or_publish`) and an act depends on the answer: a permission ask,
+  an ask a run waits on, or a `panel-command.` confirmation. The refusal is the
+  same as a destructive endpoint's, `Invalid PIN`, and the ask stays pending. A
+  refusal, an answer in words to anything else, and a resend of a settled answer
+  take none. `automationStudioConversationAnswerNeedsPin` is the decision.
+  A host that answers these asks through the registry as a person must send
+  `authorizationPin` and `authSessionId`; `conversations.answerAsk` itself is
+  unchanged, and a `paired-client` caller is not asked: it has no PIN to give.
+  The endpoint stays `authoring`, so its IAM declaration does not change.
+- `get-conversation-attachment` now serves `flow-graph-diff`, whose reference is
+  `automationStudioFlowGraphDiffAttachment(flowId, adaptationId)`, and
+  `panel-capability-result`. Any other kind is still refused by name.
+  `AutomationStudioConversations.getAttachment` takes an optional resolver.
+  `flow.improve` writes a `flow-graph-diff` turn before its question for a caller
+  that is not a paired client.
+- `registerAutomationStudioConversationEndpoints` takes `identityAccess`, and its
+  `service` also needs `getFlowBootstrapAdaptation` and `getFlow`.
+- `createComposer` no longer disables the box while a thread's first read is on
+  its way: `scopeState: "loading"` holds a send instead (`.composer-held` says so),
+  and only `"error"` disables it. A host's driver that waits for
+  `data-fluxiq-chat-scope-state="ready"` before typing is unaffected.
+- A picked thread is read at once, not after a read of the previous thread lands.
+
 ### 0.27.0: Automation Studio is a controller, and the runtime has its own entry (`fluxiq`, `@fluxiq/contracts`)
 
 Read this entry if a domain or client imports from `fluxiq/automation-studio` or

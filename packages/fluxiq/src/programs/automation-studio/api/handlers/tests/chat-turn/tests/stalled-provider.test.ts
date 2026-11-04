@@ -111,6 +111,8 @@ async function sendTurn(fetchImpl: typeof fetch) {
       assertProjectDomainAccess: async () => undefined,
       listProjects: async () => ({ projects: [] }),
       listFlows: async () => [],
+      getFlowBootstrapAdaptation: async () => null,
+      getFlow: async () => ({ nodes: [], edges: [] }),
       conversations
     };
     registerAutomationStudioConversationEndpoints({ registry, service });

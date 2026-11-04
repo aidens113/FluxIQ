@@ -207,18 +207,18 @@ export class AutomationStudioConversations {
   }
 
   /**
-   * A turn's attachment, with what it refers to when a resolver is configured.
-   * Null when the thread holds no such turn, or the turn shows nothing.
-   * Throws, rather than answering an empty payload, when nothing here can
-   * serve the reference: a reader must be able to tell "shows nothing" from
-   * "shows something this deployment cannot fetch".
+   * A turn's attachment, with what it refers to when a resolver is given, by
+   * the caller or at construction. Null when the thread holds no such turn, or
+   * the turn shows nothing. Throws, rather than answering an empty payload, when
+   * nothing here can serve the reference: a reader must be able to tell "shows
+   * nothing" from "shows something this deployment cannot fetch".
    */
-  async getAttachment(input: AutomationStudioConversationAttachmentRequest): Promise<AutomationStudioConversationAttachmentAnswer | null> {
+  async getAttachment(input: AutomationStudioConversationAttachmentRequest, resolve: AutomationStudioConversationAttachmentResolver | undefined = this.resolveAttachment): Promise<AutomationStudioConversationAttachmentAnswer | null> {
     const turn = await this.withStore(input.projectId, (store) => store.getTurn(input.conversationId, input.turnId));
     if (!turn || !turn.attachment) return null;
-    if (!this.resolveAttachment) throw new Error(`This deployment cannot serve a conversation attachment of kind ${turn.attachment.kind}.`);
+    if (!resolve) throw new Error(`This deployment cannot serve a conversation attachment of kind ${turn.attachment.kind}.`);
     const attachment = turn.attachment;
-    return { attachment, payload: await this.resolveAttachment({ projectId: input.projectId, conversationId: input.conversationId, turnId: input.turnId, attachment }) };
+    return { attachment, payload: await resolve({ projectId: input.projectId, conversationId: input.conversationId, turnId: input.turnId, attachment }) };
   }
 
   /**

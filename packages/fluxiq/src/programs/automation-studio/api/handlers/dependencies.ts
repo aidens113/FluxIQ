@@ -14,11 +14,10 @@ export type AutomationStudioApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
   readonly service: AutomationStudioService;
   /**
-   * No endpoint group reads this any more: the PIN for a `destructive`
+   * No endpoint group on this record reads this: the PIN for a `destructive`
    * endpoint is taken by `GlobalProgramApiRegistry.call()`, not by a handler.
-   * It stays on the record because `registerAutomationStudioApi` accepts it as
-   * a positional parameter, and dropping that parameter would renumber every
-   * caller. Remove both together.
+   * `registerAutomationStudioApi` hands it to the conversation endpoints, whose
+   * own record it is on, because only some answers to a question take a PIN.
    */
   readonly identityAccess: IdentityAccessService | undefined;
   readonly clientGatewayBridge: AutomationStudioClientGatewayBridge | undefined;
