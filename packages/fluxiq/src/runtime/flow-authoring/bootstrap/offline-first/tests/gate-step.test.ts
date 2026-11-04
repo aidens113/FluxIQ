@@ -18,6 +18,26 @@ const inconclusive = (why: string) => ({
   logged: { outcome: "inconclusive" }
 });
 
+describe("the gap the step log keeps", () => {
+  const gapped = (gap: unknown) => step({ kind: "live", note: { outcome: "inconclusive", why: "argument_mismatch" }, checked: { matched: 1, recorded: 3, gap } });
+
+  it("carries it to the log, and never to the note or the evidence", () => {
+    const gap = { code: "argument_mismatch", cause: "mismatch", ordinal: 2, action: "example.read", fields: ["parameters.where"], step: 4 };
+    const outcome = gapped(gap);
+    expect(outcome).toMatchObject({ kind: "live", logged: { outcome: "inconclusive", matchedOperations: 1, recordedOperations: 3, gap } });
+    expect(JSON.stringify(outcome.kind === "live" ? outcome.evidence : {})).not.toContain("parameters.where");
+    expect(JSON.stringify(outcome.kind === "live" ? outcome.note : {})).not.toContain("parameters.where");
+  });
+
+  it("drops a gap it cannot read, or the parts that are not plain codes, and the trial still runs live as it would have", () => {
+    expect(gapped("page text")).toMatchObject({ kind: "live", note: { outcome: "inconclusive", why: "argument_mismatch" } });
+    expect(gapped("page text").logged.gap).toBeUndefined();
+    expect(gapped({ code: "Not A Code", cause: "mismatch", ordinal: 1, action: "a", fields: [] }).logged.gap).toBeUndefined();
+    const named = gapped({ code: "argument_mismatch", cause: "mismatch", ordinal: 1, action: "page said 42.99", fields: ["page said 42.99", "parameters.ok"] }).logged.gap;
+    expect(named).toEqual({ code: "argument_mismatch", cause: "mismatch", ordinal: 1, action: "", fields: ["parameters.ok"] });
+  });
+});
+
 describe("automationStudioTrialOfflineFirstStep: a kept answer", () => {
   it("keeps a recorded no in place of the site trial, as a copy, with checkedAgainst and the kept words", () => {
     const answered = result("no");

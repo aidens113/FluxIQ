@@ -15,6 +15,12 @@ const OUTCOME_WORDS: Readonly<Record<string, string>> = {
   not_tried: "it was not tried"
 };
 
+/** A gap's reason, its cause or an action type: a plain code, never page text. */
+const GAP_CODE = /^[A-Za-z][A-Za-z0-9_.-]{0,59}$/u;
+/** Where a command differed: a field path, never what it held. */
+const GAP_FIELD = /^[A-Za-z0-9_$.-]{1,120}$/u;
+const MAX_GAP_FIELDS = 20;
+
 /**
  * What an offline trial's `describe` says of its answer: codes and counts only.
  * Any other field of the object is dropped, so no trace id, run id, page text or
@@ -27,6 +33,8 @@ export type AutomationStudioLlmStepLogOfflineTrialOutcome = {
   step?: number;
   matchedOperations?: number;
   recordedOperations?: number;
+  /** The gap the check stopped at, whatever its outcome: why it was inconclusive. Codes, counts and field paths only. */
+  gap?: { code: string; cause: string; ordinal: number; action: string; fields: readonly string[]; step?: number };
 };
 
 /**
@@ -34,8 +42,9 @@ export type AutomationStudioLlmStepLogOfflineTrialOutcome = {
  * against a recorded run instead of the site (trace plan P6). The folder holds
  * `meta.json` alone -- kind `offline_trial`, `trialToolId`, the scope's part,
  * round, phase and agent, `status` (`ok` or `threw`), `outcome` (whitelisted
- * code), `gapStep`, the operation counts and a plain-words `summary`. Never the
- * trace, its id, a run id, page data or a typed value. `run` itself, with no
+ * code), `gapStep`, `gap` (the reason's code and cause, the command's place and
+ * action type, the differing field paths), the operation counts and a plain-words
+ * `summary`. Never the trace, its id, a run id, page data or a typed value. `run` itself, with no
  * step, when the step log is off.
  *
  * Either way `run` runs as a check against the recorded run
@@ -81,12 +90,30 @@ function outcomeCode(value: unknown): string | null {
   return /^refused:[A-Za-z0-9_.-]{1,60}$/u.test(value) ? value : null;
 }
 
-function wording(outcome: string | null, gapStep: number | null): string {
+function wording(outcome: string | null, gapStep: number | null, gapCode: string | null): string {
   const lead = "Checked against the recorded run (not the site): ";
   if (outcome === null) return `${lead}no outcome`;
   if (outcome.startsWith("refused:")) return `${lead}refused (${outcome.slice("refused:".length)})`;
   const words = OUTCOME_WORDS[outcome] ?? outcome;
-  return outcome === "gap" && gapStep !== null ? `${lead}${words} at step ${gapStep}` : `${lead}${words}`;
+  if (outcome === "gap" && gapStep !== null) return `${lead}${words} at step ${gapStep}`;
+  if (outcome === "inconclusive" && gapCode !== null) return `${lead}${words} (${gapCode}${gapStep === null ? "" : ` at step ${gapStep}`})`;
+  return `${lead}${words}`;
+}
+
+/** The gap as the step keeps it, each part whitelisted; a description carrying anything else has that part dropped. */
+function gapOf(value: unknown): { code: string; cause: string | null; ordinal: number | null; action: string | null; fields: readonly string[]; step: number | null } | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const { code, cause, ordinal, action, fields, step } = value as Readonly<Record<string, unknown>>;
+  if (typeof code !== "string" || !GAP_CODE.test(code)) return null;
+  const paths = Array.isArray(fields) ? fields.filter((path): path is string => typeof path === "string" && GAP_FIELD.test(path)).slice(0, MAX_GAP_FIELDS) : [];
+  return {
+    code,
+    cause: typeof cause === "string" && GAP_CODE.test(cause) ? cause : null,
+    ordinal: count(ordinal),
+    action: typeof action === "string" && GAP_CODE.test(action) ? action : null,
+    fields: paths,
+    step: count(step)
+  };
 }
 
 function offlineStep(directory: string, trialToolId: string): ((described: AutomationStudioLlmStepLogOfflineTrialOutcome | undefined, error: unknown) => void) | undefined {
@@ -104,14 +131,16 @@ function offlineStep(directory: string, trialToolId: string): ((described: Autom
     try {
       const finished = Date.now();
       const outcome = error === undefined ? outcomeCode(described?.outcome) : null;
-      const gapStep = error === undefined ? count(described?.step) : null;
-      const summary = error === undefined ? wording(outcome, gapStep) : "Checked against the recorded run (not the site): it stopped with an error";
+      const gap = error === undefined ? gapOf(described?.gap) : null;
+      const gapStep = error === undefined ? count(described?.step) ?? gap?.step ?? null : null;
+      const summary = error === undefined ? wording(outcome, gapStep, gap?.code ?? null) : "Checked against the recorded run (not the site): it stopped with an error";
       automationStudioLlmStepLogWriter(folder.path).meta({
         step: folder.step, kind: "offline_trial", trialToolId, callId: null, toolId: null,
         startedAt: new Date(started).toISOString(), finishedAt: new Date(finished).toISOString(), ms: finished - started,
         part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind("offline_trial"),
         role: scope?.role ?? null, briefId: scope?.briefId ?? null,
         status: error === undefined ? "ok" : "threw", outcome, gapStep,
+        gap: gap === null ? null : { code: gap.code, cause: gap.cause, ordinal: gap.ordinal, action: gap.action, fields: gap.fields },
         matchedOperations: error === undefined ? count(described?.matchedOperations) : null,
         recordedOperations: error === undefined ? count(described?.recordedOperations) : null,
         summary

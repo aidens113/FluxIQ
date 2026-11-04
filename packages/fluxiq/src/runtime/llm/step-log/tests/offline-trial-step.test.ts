@@ -63,6 +63,32 @@ describe("an offline trial step", () => {
     expect(readFileSync(path.join(directory, "index.md"), "utf8")).not.toContain("SECRET");
   });
 
+  it("says why a check was inconclusive: the gap's code, cause, step, command and field paths, each whitelisted", async () => {
+    await automationStudioLlmStepLogOfflineTrial(
+      { trialToolId: "core.test_subflow" },
+      async () => 1,
+      () => ({
+        outcome: "inconclusive", matchedOperations: 14, recordedOperations: 16,
+        gap: { code: "argument_mismatch", cause: "mismatch", ordinal: 15, action: "example.read", fields: ["parameters.where.0.field", "page said 42.99"], step: 5 }
+      }),
+      env()
+    );
+    const text = readFileSync(path.join(directory, "0001-offline", "meta.json"), "utf8");
+    expect(text).not.toContain("42.99");
+    expect(JSON.parse(text)).toMatchObject({
+      outcome: "inconclusive", gapStep: 5, matchedOperations: 14, recordedOperations: 16,
+      gap: { code: "argument_mismatch", cause: "mismatch", ordinal: 15, action: "example.read", fields: ["parameters.where.0.field"] },
+      summary: "Checked against the recorded run (not the site): it was inconclusive (argument_mismatch at step 5)"
+    });
+  });
+
+  it("keeps no gap whose code is not a plain code", async () => {
+    await automationStudioLlmStepLogOfflineTrial({ trialToolId: "t" }, async () => 1, () => ({ outcome: "inconclusive", gap: { code: "page said 42.99", cause: "mismatch", ordinal: 1, action: "a", fields: [] } }), env());
+    const meta = json(path.join(directory, "0001-offline", "meta.json"));
+    expect(meta).toMatchObject({ outcome: "inconclusive", gapStep: null, gap: null, summary: "Checked against the recorded run (not the site): it was inconclusive" });
+    expect(JSON.stringify(meta)).not.toContain("42.99");
+  });
+
   it("accepts a refusal code and words each outcome plainly", async () => {
     for (const outcome of ["kept_no", "kept_failed", "passed", "inconclusive", "not_tried", "refused:no_trace"]) {
       await automationStudioLlmStepLogOfflineTrial({ trialToolId: "t" }, async () => 0, () => ({ outcome }), env());

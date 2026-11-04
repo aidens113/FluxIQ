@@ -55,6 +55,42 @@ function stepOf(answer: unknown) {
   return step;
 }
 
+describe("why a check that stayed inconclusive was inconclusive", () => {
+  // The web domain restates a gap's code as its own unknown failure on the way to the
+  // feedback, so no feedback step names it: every saved check on a real site read this way.
+  const restated = () => trial("execution_failed", "failed", { steps: [{ step: 1, status: "succeeded" }, { step: 4, status: "failed", failureCode: "web.action.unknown" }] });
+
+  it("hands the step log the matcher's first gap and the step the run stopped at, and leaves the note alone", () => {
+    const first: ClientGatewayTraceMatcherGap = { ...gap(3, "argument_mismatch"), fields: ["parameters.where.0.field", "target.selector"] };
+    const answer = automationStudioOfflineFirstAnswer(ran(restated(), matcher(5, [1, 2], [first, gap(4, "missing_transition", "after_gap")])));
+
+    expect(answer).toEqual({
+      kind: "live",
+      note: { outcome: "inconclusive", why: "argument_mismatch" },
+      checked: { matched: 2, recorded: 5, gap: { code: "argument_mismatch", cause: "mismatch", ordinal: 3, action: "example.read", fields: ["parameters.where.0.field", "target.selector"], step: 4 } }
+    });
+    const step = stepOf(answer);
+    expect(step).toMatchObject({
+      kind: "live",
+      logged: { outcome: "inconclusive", matchedOperations: 2, recordedOperations: 5, gap: { code: "argument_mismatch", cause: "mismatch", ordinal: 3, step: 4 } }
+    });
+    // The gate's evidence, which the model reads, is the note as it was.
+    expect(step).toMatchObject({ evidence: { offlineCheck: { outcome: "inconclusive", why: "argument_mismatch" } } });
+    expect(JSON.stringify(step.kind === "live" ? step.evidence : {})).not.toContain("parameters.where");
+  });
+
+  it("says nothing of a step when the feedback names none, and still gives the gap", () => {
+    const answer = automationStudioOfflineFirstAnswer(ran(trial("not_judged", "failed"), matcher(5, [1], [gap(2, "missing_transition")])));
+    expect(answer).toMatchObject({ kind: "live", checked: { matched: 1, recorded: 5, gap: { code: "missing_transition", ordinal: 2 } } });
+    expect(answer.kind === "live" ? answer.checked?.gap?.step : 0).toBeUndefined();
+  });
+
+  it("gives no gap when the run left no gap", () => {
+    const answer = automationStudioOfflineFirstAnswer(ran(trial("yes", "succeeded"), matcher(1, [1])));
+    expect(answer).toEqual({ kind: "live", note: { outcome: "passed" }, checked: { matched: 1, recorded: 1 } });
+  });
+});
+
 describe("a refused offline trial", () => {
   it("runs live, not tried, under the refusal's reason", () => {
     const refusal: AutomationStudioOfflineTrialRefusal = { status: "refused", reasonCode: "incomplete_capture", detail: "the trace recorded no session view" };
@@ -115,7 +151,10 @@ describe("an offline trial that left recorded support (T09)", () => {
 
     const answer = automationStudioOfflineFirstAnswer(ran(trial("execution_failed", "failed", feedback), matcher(2, [1], [gap(2, "argument_mismatch")])));
 
-    expect(answer).toEqual({ kind: "live", note: { outcome: "gap", step: 3, why: "argument_mismatch" }, checked: { matched: 1, recorded: 2 } });
+    expect(answer).toEqual({
+      kind: "live", note: { outcome: "gap", step: 3, why: "argument_mismatch" },
+      checked: { matched: 1, recorded: 2, gap: { code: "argument_mismatch", cause: "mismatch", ordinal: 2, action: "example.read", fields: [], step: 3 } }
+    });
     const step = stepOf(answer);
     expect(step).toMatchObject({ kind: "live", logged: { outcome: "gap", step: 3 } });
     expect(step.kind === "live" ? step.note.said : "").toContain(WORDS.reasons.argument_mismatch);
@@ -124,7 +163,10 @@ describe("an offline trial that left recorded support (T09)", () => {
   it("is inconclusive under the gap's reason when no step names it", () => {
     const answer = automationStudioOfflineFirstAnswer(ran(trial("yes", "succeeded", { steps: [{ step: 1, status: "succeeded" }] }), matcher(2, [1, 2], [gap(0, "missing_artifact", "failed_delivery")])));
 
-    expect(answer).toEqual({ kind: "live", note: { outcome: "inconclusive", why: "missing_artifact" }, checked: { matched: 2, recorded: 2 } });
+    expect(answer).toEqual({
+      kind: "live", note: { outcome: "inconclusive", why: "missing_artifact" },
+      checked: { matched: 2, recorded: 2, gap: { code: "missing_artifact", cause: "failed_delivery", ordinal: 0, action: "", fields: [] } }
+    });
     expect(stepOf(answer).kind).toBe("live");
   });
 
