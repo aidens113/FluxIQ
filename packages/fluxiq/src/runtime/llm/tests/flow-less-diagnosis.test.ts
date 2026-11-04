@@ -1,0 +1,29 @@
+// The judge of an attempt with no Flow is told nothing of a Flow's shape or steps, and every other
+// verification is told exactly what it always was (t861). The digests are of the text as it stood
+// before the branch: an edit to a judge's words is a decision, and this makes it a visible one.
+import { createHash } from "node:crypto";
+import { describe, expect, it } from "vitest";
+import { automationStudioDiagnosisPromptInstruction } from "../diagnosis-instructions.ts";
+
+const digest = (text: string): string => createHash("sha256").update(text).digest("hex");
+
+describe("the Flow-less branch of a verification's instruction", () => {
+  it("says nothing of a Flow, its steps or a test, and keeps the fields and the order", () => {
+    const said = automationStudioDiagnosisPromptInstruction("loop_verification", { flowLess: true });
+    expect(said).not.toMatch(/flowShape|buildTest|\bFlow\b|\bsteps?\b|\btrial\b/u);
+    expect(said).toContain("answersRequest");
+    expect(said).toContain("Your verdict is read from the diagnosis");
+    expect(said).toContain("answerText the model's own words");
+  });
+
+  it("wins over a build test's words, which no attempt has", () => {
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification", { flowLess: true, buildTest: true })).toBe(automationStudioDiagnosisPromptInstruction("loop_verification", { flowLess: true }));
+  });
+
+  it("leaves every other call's text byte for byte", () => {
+    expect(digest(automationStudioDiagnosisPromptInstruction("loop_verification"))).toBe("6da50f6aa1c3b5e412e6ba8066f7fa55b915975e731c6c1a8bfd8b913b1a3117");
+    expect(digest(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true }))).toBe("865141b54cc33e016154f164198de73abe715a3fa25b3df268b339055d2b9f11");
+    expect(digest(automationStudioDiagnosisPromptInstruction("runtime_diagnosis"))).toBe("e7b43626fd5b1a784513f5dfd9bf3e4884160a553736ca8f1b9536b5dc63e39b");
+    expect(automationStudioDiagnosisPromptInstruction("runtime_diagnosis", { flowLess: true })).toBe(automationStudioDiagnosisPromptInstruction("runtime_diagnosis"));
+  });
+});

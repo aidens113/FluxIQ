@@ -36,6 +36,7 @@
 // supervisor ended, whose row said so: it is told too. An improvement is a
 // candidate build in every mode, with no such row.
 
+import { parseAutomationStudioTaskAttempt, parseAutomationStudioTaskResult, type AutomationStudioTaskAttempt, type AutomationStudioTaskResult } from "@fluxiq/contracts/automation";
 import { resolveAutomationStudioAuthoringMode, resolveAutomationStudioBuildAuthoringMode } from "../../../flows/authoring/model/authoring-mode/index.ts";
 import { parseAutomationStudioCandidateAuthoringResult, parseAutomationStudioCandidateProposalResult, type AutomationStudioCandidateAuthoringResult } from "../../flow-authoring/bootstrap/authoring-result/index.ts";
 import { parseAutomationStudioFlowBootstrapCandidateKept, type AutomationStudioFlowBootstrapCandidateKept } from "../../flow-authoring/bootstrap/generation-failure/index.ts";
@@ -179,7 +180,9 @@ export async function buildAutomationStudioFlowFromConversation(
 ): Promise<AutomationStudioConversationBuildResult> {
   // Core's configured mode for this build (`project` builds through the project supervisor); an extend in project mode
   // is a candidate build, by the same rule the API applies to a `configured` request (`resolveAutomationStudioBuildAuthoringMode`).
-  const authoringMode = resolveAutomationStudioBuildAuthoringMode(input.mode);
+  // A caller here wants a Flow's steps in, and answer-first answers a task (`automationStudioConversationAnswerFirstAttempt`), so it stays a candidate build.
+  const configured = resolveAutomationStudioBuildAuthoringMode(input.mode);
+  const authoringMode = configured === "answer-first" ? "candidate" : configured;
   const candidateMode = authoringMode !== "legacy";
   const response = await context.port.call("generate-flow-bootstrap-adaptation", {
     projectId: context.projectId,
@@ -193,14 +196,7 @@ export async function buildAutomationStudioFlowFromConversation(
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }),
     ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls })
   });
-  if (!response.ok) {
-    const cancelled = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true;
-    const ending = cancelled ? "Build stopped. Nothing was put into the Flow." : buildEnding(response);
-    const endingKind = cancelled ? undefined : buildEndingKind(response);
-    const told = !cancelled && failureTold(response);
-    const candidateKept = keptCandidate(response, told);
-    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), ...(ending && endingKind ? { endingKind } : {}), kept: keptDraft(response), ...(candidateKept ? { candidateKept } : {}), ...(told ? { told } : {}) };
-  }
+  if (!response.ok) return failedBuild(response);
   if (candidateMode) {
     const subject = { projectId: context.projectId, flowId: input.flowId };
     // A proposal counts only with the candidate and trial behind it: one without is never applied.
@@ -219,6 +215,43 @@ export async function buildAutomationStudioFlowFromConversation(
     return { ok: false, cause: "the build answered without the change it made", kept: false };
   }
   return { ok: true, status: "proposed", adaptationId: adaptation.adaptationId, awaitingPermission: Boolean(adaptation.permissionRequest) };
+}
+
+/** A build the call refused or that failed, as the commands read it. */
+function failedBuild(response: AutomationStudioConversationCommandCallResult): Extract<AutomationStudioConversationBuildResult, { ok: false }> {
+  const cancelled = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true;
+  const ending = cancelled ? "Build stopped. Nothing was put into the Flow." : buildEnding(response);
+  const endingKind = cancelled ? undefined : buildEndingKind(response);
+  const told = !cancelled && failureTold(response);
+  const candidateKept = keptCandidate(response, told);
+  return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), ...(ending && endingKind ? { endingKind } : {}), kept: keptDraft(response), ...(candidateKept ? { candidateKept } : {}), ...(told ? { told } : {}) };
+}
+
+/** What an attempt answered, read through the contract: a record that does not parse is not one the chat can tell. */
+export type AutomationStudioConversationAnswered = { ok: true; status: "answered"; attempt: AutomationStudioTaskAttempt; result?: AutomationStudioTaskResult; candidateId?: string };
+
+/**
+ * One attempt at a task, in answer-first mode (`../../../model/authoring-mode/`), asked for as
+ * `configured`: the API's contract names no such mode, and Core resolves it. A budget-out and a
+ * person's Stop come back as answers too, so this fails only where the call itself did.
+ */
+export async function automationStudioConversationAnswerFirstAttempt(context: AutomationStudioConversationCommandContext, input: { flowId: string }): Promise<AutomationStudioConversationAnswered | Extract<AutomationStudioConversationBuildResult, { ok: false }>> {
+  const response = await context.port.call("generate-flow-bootstrap-adaptation", {
+    projectId: context.projectId,
+    flowId: input.flowId,
+    authSessionId: context.sessionId,
+    evidenceGuided: true,
+    authoringMode: "configured",
+    ...(context.startLocation ? { startLocation: context.startLocation } : {}),
+    ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }),
+    ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls })
+  });
+  if (!response.ok) return failedBuild(response);
+  const answered = (response.payload as { answered?: { attempt?: unknown; result?: unknown; candidateId?: unknown } } | undefined)?.answered;
+  const attempt = parseAutomationStudioTaskAttempt(answered?.attempt);
+  const result = answered?.result === undefined ? undefined : parseAutomationStudioTaskResult(answered.result);
+  if (!attempt.ok || (result && !result.ok)) return { ok: false, cause: "the task's answer could not be read", kept: false };
+  return { ok: true, status: "answered", attempt: attempt.attempt, ...(result?.ok ? { result: result.result } : {}), ...(typeof answered?.candidateId === "string" ? { candidateId: answered.candidateId } : {}) };
 }
 
 /**

@@ -267,13 +267,25 @@ const AUTOMATION_STUDIO_BUILD_TEST_VERIFICATION_INSTRUCTION = "When resultSummar
 // (`deepseek/verdict-before-cut.ts`). It asks for an order, not a length.
 const AUTOMATION_STUDIO_RESULT_VERIFICATION_ORDER_INSTRUCTION = "Write the reply's members in the order the outputSchema lists them: kind first, then the whole diagnosis object with answersRequest and every field you answer, closed, and summary last. Your verdict is read from the diagnosis, and a reply cut off before its diagnosis closes gives none, so decide and write the verdict before you explain it in summary.";
 
+// The judge of an attempt with no Flow behind it (t861, answer-first plan D9,
+// `../result-verification/flow-less/`). Every sentence above reads a Flow's shape,
+// its steps or its test, and there is none here: told "a Flow with no step that
+// could have narrowed", a judge has something to say no to that the attempt never
+// claimed, and a spurious no spends real budget. It is the same verdict and the same
+// reading of a yes, about what came back alone, and the shared fields sentence is
+// left out too since it reads a step's result. Its words name no kind of site.
+const AUTOMATION_STUDIO_FLOW_LESS_FIELDS_INSTRUCTION = "Put your reading in the diagnosis object, not only in the summary: answersRequest as one of yes, no or unknown, and expected, observed and changed in at most 500 characters each.";
+const AUTOMATION_STUDIO_FLOW_LESS_VERIFICATION_INSTRUCTION = "This call judges what one attempt at a person's request got, not a failure. Read the instructions as the request, and resultSummary as what came back: recordSets the rows real reads returned, with their own values; acts the lasting acts Core recorded, each with its state; answerText the model's own words, which are a claim and never evidence; endView how the target looked at the end, and witnesses the same reading before the first lasting act and at the end, where given, so that a change is judged by the difference and not by the total after. Answer answersRequest with yes only when what came back is what was asked for, every condition and every act of it; no when a row, a value or an act shows it is not, listing each defect in diagnosis.defects and naming the rows it rests on; unknown when what is here cannot settle it, saying in diagnosis.observed what would. Nothing is wrong because it is not shown: judge what is here, and a request for an act is met by the act on the record, whatever the rows say. An empty record set is a right answer only when the request's own words allow nothing to match and what is here shows it looked. In expected, observed and changed, write only what the person's request and these values say.";
+
 /**
  * The instruction a diagnosis-shaped task is given: the fields, plus what this
  * particular call is for. A verification of a build's test (`buildTest`) is
- * also told how to read one; a finished run's is not.
+ * also told how to read one; a finished run's is not. One with no Flow behind it
+ * (`flowLess`) is told neither, and nothing of a Flow's shape.
  */
-export function automationStudioDiagnosisPromptInstruction(taskKind: AutomationStudioLlmTaskKind, judged: { buildTest?: boolean } = {}): string {
+export function automationStudioDiagnosisPromptInstruction(taskKind: AutomationStudioLlmTaskKind, judged: { buildTest?: boolean; flowLess?: boolean } = {}): string {
   if (!automationStudioLlmTaskExpectsDiagnosis(taskKind) || taskKind !== "loop_verification") return AUTOMATION_STUDIO_DIAGNOSIS_FIELDS_INSTRUCTION;
+  if (judged.flowLess) return `${AUTOMATION_STUDIO_FLOW_LESS_FIELDS_INSTRUCTION} ${AUTOMATION_STUDIO_RESULT_VERIFICATION_ORDER_INSTRUCTION} ${AUTOMATION_STUDIO_FLOW_LESS_VERIFICATION_INSTRUCTION}`;
   const verification = `${AUTOMATION_STUDIO_DIAGNOSIS_FIELDS_INSTRUCTION} ${AUTOMATION_STUDIO_RESULT_VERIFICATION_ORDER_INSTRUCTION} ${AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION}`;
   return judged.buildTest ? `${verification} ${AUTOMATION_STUDIO_BUILD_TEST_VERIFICATION_INSTRUCTION}` : verification;
 }

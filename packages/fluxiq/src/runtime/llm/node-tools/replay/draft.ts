@@ -113,6 +113,7 @@ import {
   automationStudioNodeReplayStatus,
   automationStudioNodeReplayToolId
 } from "./replay.ts";
+import type { AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayRowCounts } from "./forward.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE,
   automationStudioFlowDraftReplayPassCall,
@@ -268,6 +269,11 @@ export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlo
   stopsAt?: ((step: AutomationStudioFlowDraftStep, excused: boolean) => boolean) | undefined;
   /** Every answer a step's call came back with that could be read, in the order they came. */
   answered?: ((step: AutomationStudioFlowDraftStep, result: Extract<AutomationStudioFlowDraftReplayAnswer, { readable: true }>["result"]) => void) | undefined;
+  /**
+   * A forward run (`./forward.ts`): a lasting step runs for real where its row, or the step itself, is not done yet,
+   * and a list's row already done is left out. Absent, nothing here changes.
+   */
+  forward?: AutomationStudioFlowDraftReplayForward | undefined;
 };
 
 /** What a run of steps done again answered: one outcome per step, in order, and what the first that did not replay left. */
@@ -275,6 +281,8 @@ export type AutomationStudioFlowDraftReplayStepsResult = Pick<AutomationStudioFl
   outcomes: AutomationStudioFlowDraftReplayOutcome[];
   /** The step the run stopped at, when `stopsAt` stopped it. */
   stoppedAt?: number;
+  /** A forward run's rows, summed over the lists it walked; absent without `forward` or when no list was walked. */
+  rows?: AutomationStudioFlowDraftReplayRowCounts;
 };
 
 /**
@@ -306,9 +314,20 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
   const asked = new Map<AutomationStudioFlowDraftStep, { answer: ReplayAnswer; mode: AutomationStudioFlowDraftReplayMode }>();
   // What each step really produced in this walk, by its id, for a later step's `$step` binding (see the header).
   const produced = new Map<string, JsonObject>();
-  const send = async (callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject, excusable?: AutomationStudioFlowDraftExcusedReason): Promise<ReplayAnswer> => {
+  // A forward run turns a lasting step into a real one where nothing says it is done (`./forward.ts`); otherwise the draft's own rule.
+  const modeFor = (step: AutomationStudioFlowDraftStep, row?: JsonObject): AutomationStudioFlowDraftReplayMode => {
+    const own = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
+    if (!input.forward || own === "replay") return own;
+    return row === undefined && input.forward.stepDone(step) ? "verify" : "replay";
+  };
+  let rows: AutomationStudioFlowDraftReplayRowCounts | undefined;
+  const send = async (callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject, excusable?: AutomationStudioFlowDraftExcusedReason, forwarded = true): Promise<ReplayAnswer> => {
     const answer = await call(input, callId, automationStudioNodeReplayToolId(step), value, excusable);
-    if (answer.readable) input.answered?.(step, answer.result);
+    if (answer.readable) {
+      input.answered?.(step, answer.result);
+      // A pass of a list reports itself, with its row (`./span.ts`); a step outside one reports here.
+      if (forwarded) input.forward?.passed?.(step, undefined, answer.result);
+    }
     return answer;
   };
   let stoppedAt: number | undefined;
@@ -326,9 +345,10 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
         nodeOf: input.nodeOf,
         definitionOf: input.definitionOf,
         partOf: input.partOf,
-        modeOf: (member) => automationStudioFlowDraftStepReplayMode(member, input.lastingActs),
+        modeOf: modeFor,
         callIdOf: input.callIdOf,
-        send: (callId, member, value) => send(callId, member, value, passExcusable),
+        send: (callId, member, value) => send(callId, member, value, passExcusable, false),
+        ...(input.forward ? { forward: input.forward } : {}),
         ...(input.stopsAt ? { stops: (member: AutomationStudioFlowDraftStep) => input.stopsAt!(member, false) } : {}),
         withheldBy,
         earlier: automationStudioFlowDraftStepOutputsState(produced)
@@ -337,11 +357,12 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       outcomes.push(...span.outcomes);
       observations.push(...span.observations);
       if (!evidence && span.evidence) evidence = span.evidence;
+      if (span.rows) rows = { done: (rows?.done ?? 0) + span.rows.done, skipped: (rows?.skipped ?? 0) + span.rows.skipped, failed: (rows?.failed ?? 0) + span.rows.failed };
       if (span.stopped) stoppedAt = span.outcomes.at(-1)?.step;
       index += plan.members.length - 1;
       continue;
     }
-    const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
+    const mode = modeFor(step);
     const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId), input.partOf);
     const unresolved = built !== undefined && "unresolved" in built;
     const value = built && "value" in built ? built.value : undefined;
@@ -406,7 +427,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     // A part run is the exception: it stops where the Flow would, and leaves the target there.
     if (input.stopsAt?.(step, excused(stepId) || checks.has(stepId))) stoppedAt = step.position;
   }
-  return { outcomes, observations, ...(evidence ? { evidence } : {}), ...(stoppedAt === undefined ? {} : { stoppedAt }) };
+  return { outcomes, observations, ...(evidence ? { evidence } : {}), ...(stoppedAt === undefined ? {} : { stoppedAt }), ...(rows ? { rows } : {}) };
 }
 
 function verdictOf(

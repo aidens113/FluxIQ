@@ -27,7 +27,7 @@ import type { AuthoringPartOfStep } from "../../../flow-authoring/bootstrap/reco
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { runAutomationStudioFlowDraftPart } from "./flow-part.ts";
-import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayNodeOf } from "../replay/index.ts";
+import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayNodeOf } from "../replay/index.ts";
 
 /** The tool that runs part of the Flow. */
 export const AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID = "core.run_flow";
@@ -44,11 +44,24 @@ const DESCRIPTION = [
   "It is never the Flow's test: the Flow is finished only once it has run whole from its start and been judged, and any change after that needs another whole run."
 ].join(" ");
 
-/** `core.run_flow` as the loop offers it: a fresh copy each time, so no loop can change what the next one offers. */
-export function automationStudioLlmRunFlowTool(): AutomationStudioLlmEvidenceTool {
+/**
+ * The same tool as the forward run (t861, plan D2): what you wrote, run on the rows not yet done. It is the work,
+ * not a test, so it never says the Flow must be finished or judged.
+ */
+const FORWARD_DESCRIPTION = [
+  "Run what you wrote forward, from step `from` to step `to` (or to its last step), numbered as the draft shows them, from where the page is now:",
+  "nothing is reset and it never starts from the top.",
+  "A list in the range is read again as the page stands, and each step runs on the rows not done yet, with exactly the arguments the Flow runs it with.",
+  "A row already done is left out and nothing is sent for it; a step whose effect lasts really acts on a row not done yet.",
+  "Do the first row by hand first, so a wrong loop shows after one row.",
+  "A step that does not pass stops the run there and the page is left where it stopped; the answer counts the rows done, skipped and failed."
+].join(" ");
+
+/** `core.run_flow` as the loop offers it: a fresh copy each time, so no loop can change what the next one offers. `forward` is the forward run's wording. */
+export function automationStudioLlmRunFlowTool(forward = false): AutomationStudioLlmEvidenceTool {
   return {
     toolId: AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID,
-    description: DESCRIPTION,
+    description: forward ? FORWARD_DESCRIPTION : DESCRIPTION,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -77,6 +90,8 @@ type RunFlowLoop = {
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   /** The scoped task part, shared with the whole dry run's record defaults. */
   partOf?: AuthoringPartOfStep | undefined;
+  /** The forward run (`../replay/forward.ts`): `core.run_flow` is then offered with the dry run off, and runs forward. */
+  forward?: AutomationStudioFlowDraftReplayForward | undefined;
 };
 
 /**
@@ -96,10 +111,10 @@ export function automationStudioLlmRunFlowBinding(loop: RunFlowLoop): {
     && !tools.some((tool) => tool.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID);
   const executeTool = loop.executeTool;
   return {
-    tools: adds ? [...tools, automationStudioLlmRunFlowTool()] : tools,
+    tools: adds ? [...tools, automationStudioLlmRunFlowTool(loop.forward !== undefined)] : tools,
     executeTool: adds
       ? async (input) => input.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
-        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}), ...(loop.partOf ? { partOf: loop.partOf } : {}) })
+        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}), ...(loop.partOf ? { partOf: loop.partOf } : {}), ...(loop.forward ? { forward: loop.forward } : {}) })
         : executeTool(input)
       : executeTool,
     offered: (tool) => !adds || tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID

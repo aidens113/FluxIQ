@@ -21,6 +21,12 @@
 // executor's own fallbacks. The live `random` is left unset, a rule kept in
 // `../../environment/executor-options.ts`: the Wait node reads a missing one as
 // no jitter at all, so setting it would change every live run's pauses.
+//
+// **A real run's carried acts (t861, plan D6).** A run of a Flow an attempt just saved
+// names `carryActs`, and only such a run: it is then asynchronous, since the record is
+// read, and taken once, from beside the Flow. With nothing to carry its options are
+// exactly these, by the same object. A trial never names it: a trial is judged on what
+// it really does (`../answer-first/run-acts/`).
 
 import type { IoRegistry } from "../../../../io/index.ts";
 import type { RuntimeService } from "../../../../runtime/index.ts";
@@ -29,9 +35,10 @@ import { type AutomationStudioGraphExecutionOptions } from "../../executor/index
 import { automationStudioReferenceNow } from "../../../../runtime/reference-time/index.ts";
 import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "../../io-policy.ts";
 import type { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
+import { AutomationStudioAttemptActRecord } from "../../../../runtime/answer-first/act-record/index.ts";
+import { automationStudioAnswerFirstRunActGate, automationStudioAnswerFirstRunActStoreOf } from "../answer-first/run-acts/index.ts";
 
-/** One run's executor options: what reaches the world, and where its rows and questions go. */
-export function automationStudioRunGraphOptions(input: {
+type RunGraphOptionsInput = {
   inputs?: Record<string, any> | undefined;
   /** The enclosing session's persisted start, separate from its live clock. */
   referenceNow?: number;
@@ -47,7 +54,28 @@ export function automationStudioRunGraphOptions(input: {
   parking?: AutomationStudioGraphExecutionOptions["parking"];
   /** Where the run's clock, waits and randomness come from; absent, the live environment. */
   environment?: AutomationStudioRunEnvironment | undefined;
-}): AutomationStudioGraphExecutionOptions {
+};
+
+/** What a real run names to carry an attempt's acts: the service whose store holds them, and which Flow and run. */
+type CarryActs = Parameters<typeof automationStudioAnswerFirstRunActStoreOf>[1] & { owner: object; projectId: string | null | undefined; flowId: string; runId: string; runStatus?: (runId: string) => Promise<string | undefined> };
+
+/** A real run's executor options, gated by the acts an attempt left for it to carry (header). */
+export function automationStudioRunGraphOptions(input: RunGraphOptionsInput & { carryActs: CarryActs }): Promise<AutomationStudioGraphExecutionOptions>;
+/** One run's executor options: what reaches the world, and where its rows and questions go. */
+export function automationStudioRunGraphOptions(input: RunGraphOptionsInput): AutomationStudioGraphExecutionOptions;
+export function automationStudioRunGraphOptions(input: RunGraphOptionsInput & { carryActs?: CarryActs }): AutomationStudioGraphExecutionOptions | Promise<AutomationStudioGraphExecutionOptions> {
+  const options = runGraphOptions(input);
+  return input.carryActs ? carrying(options, input.carryActs, input.nativeNodeRuntime) : options;
+}
+
+async function carrying(options: AutomationStudioGraphExecutionOptions, carry: CarryActs, native: AutomationStudioNativeNodeRuntime | undefined): Promise<AutomationStudioGraphExecutionOptions> {
+  if (!carry.projectId) return options;
+  const seed = await automationStudioAnswerFirstRunActStoreOf(carry.owner, carry).forRun(carry.projectId, carry.flowId, carry.runId, carry.runStatus);
+  if (!seed) return options;
+  return automationStudioAnswerFirstRunActGate(options, { record: new AutomationStudioAttemptActRecord({ seed }), ...(native ? { definitions: () => native.listDefinitions() } : {}) });
+}
+
+function runGraphOptions(input: RunGraphOptionsInput): AutomationStudioGraphExecutionOptions {
   const options: AutomationStudioGraphExecutionOptions = { inputs: input.inputs ?? {}, signal: input.signal };
   const referenceNow = automationStudioReferenceNow(input.referenceNow);
   if (referenceNow !== undefined) options.referenceNow = referenceNow;

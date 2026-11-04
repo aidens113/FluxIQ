@@ -1,0 +1,14 @@
+import type { AutomationStudioTaskAttempt, AutomationStudioTaskResult, AutomationStudioTriedRecord } from "@fluxiq/contracts/automation";
+import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
+
+/** One attempt as it is kept beside its Flow (`./store.ts`). */
+export type AutomationStudioAnswerFirstAttemptRecord = {
+  attempt: AutomationStudioTaskAttempt;
+  /** Absent only until there is one; a budget-out or an achieved attempt has one. */
+  result?: AutomationStudioTaskResult;
+  tried: AutomationStudioTriedRecord;
+  /** The steps the attempt wrote, where they could not be assembled into a saved draft, and what a carry-on seeds from. */
+  steps?: readonly AutomationStudioFlowDraftStep[];
+  /** The draft saved through the candidate store, where it could be assembled. */
+  candidateId?: string;
+};
