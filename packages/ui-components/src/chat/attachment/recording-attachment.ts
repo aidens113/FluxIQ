@@ -1,4 +1,4 @@
-// The composer's recording attachment: a button beside Send that lists the
+// The composer's recording attachment: a button beside the text box that lists the
 // project's finished, described recordings, and the chip that shows the one
 // chosen. One recording per message. The list is read from the transport's
 // `recordings.list` each time it opens; nothing is cached.
@@ -9,7 +9,7 @@ import { attachableRecordings, type AttachableRecording } from "./attachable-rec
 
 export const ATTACH_LABEL = "Attach a recording";
 export const REMOVE_LABEL = "Remove attached recording";
-export const NO_RECORDINGS = "No finished recordings yet. Press Start recording, describe what you will show, then stop.";
+export const NO_RECORDINGS = "No recordings yet. Show FluxIQ how to do the task, and it will be here.";
 const LIST_FAILED = "Couldn't read your recordings. Try again.";
 /** Core lists the whole domain newest first; this many covers a project's ten after the others are dropped. */
 const LIST_SIZE = 100;

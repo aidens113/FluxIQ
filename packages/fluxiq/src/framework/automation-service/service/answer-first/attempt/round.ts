@@ -20,7 +20,7 @@ import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } 
 import { automationStudioPersonNeededToolCalls } from "../../../../../runtime/automation-parking/index.ts";
 import { automationStudioInstructedActs } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioFlowDraftStepCopy } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftReplayClearedCode, automationStudioLlmProviderWithDomainInstructions, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../../../../runtime/llm/index.ts";
+import { automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftReplayClearedCode, automationStudioLlmProviderWithDomainInstructions, automationStudioNodeReplayStatus, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA } from "../completion/index.ts";
 import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstDecide } from "./decide.ts";
@@ -86,7 +86,13 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     // One record across the attempt (t859), and how many of one act the person asked for: the request's number, whichever act the decision names.
     attemptRecord: run.tried,
     askedRepeats: (act) => run.asked(act.act),
-    forwardRun: automationStudioAttemptActForward(run.record),
+    forwardRun: {
+      ...automationStudioAttemptActForward(run.record),
+      // How far forward runs got, for the attempt's path (`./path.ts`): a pass answered as one, whether it ran or checked a step already done.
+      passed: (step, _row, answer) => {
+        if (automationStudioNodeReplayStatus(answer.resultCode, "replay") === "replayed" || automationStudioNodeReplayStatus(answer.resultCode, "verify") === "replayed") run.forwardReached = Math.max(run.forwardReached, step.position);
+      }
+    },
     lastingActs: () => (lasting ??= run.permissions.instructedLastingActs(automationStudioInstructedActs(input.instructionText))),
     draft: {
       maxAmendments: input.limits.loop.maxIterations,
@@ -110,7 +116,7 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   };
   const signalled = automationStudioAnswerFirstLoopSignal({ askPerson: () => { run.askPerson = true; } });
   try {
-    const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => run.completion.check(result) });
+    const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => checked(run, result) });
     run.steps = result.steps.map((step) => automationStudioFlowDraftStepCopy(step));
     automationStudioAnswerFirstAddLoopsCaught(run.loopsCaught, result.trace);
     return { kind: "loop", result };
@@ -121,6 +127,13 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   } finally {
     run.personEnded = person.ended();
   }
+}
+
+/** The completion check. A carried-on attempt's rows were copied in as a run's are, so a judge's no takes away their standing, as it does a run's: otherwise a wrong list found earlier would outrank the right one forever. */
+async function checked(run: AutomationStudioAnswerFirstAttemptRun, result: JsonObject): ReturnType<AutomationStudioAnswerFirstAttemptRun["completion"]["check"]> {
+  const answer = await run.completion.check(result);
+  if (run.prior && run.completion.state.refused?.verdict === "no") run.sink.runRowsRefused();
+  return answer;
 }
 
 function personWaiting(run: AutomationStudioAnswerFirstAttemptRun): (state: "started" | "ended", waitedMs: number) => void {

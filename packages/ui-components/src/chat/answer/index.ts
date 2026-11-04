@@ -5,4 +5,4 @@
 export { answerModel, hasAnswerTurn, type AnswerKind, type AnswerModel, type AnswerModelOptions } from "./model/index.ts";
 export { createAnswerReader, type AnswerReader } from "./reader.ts";
 export { createAnswerView, type AnswerHost, type AnswerView } from "./view/index.ts";
-export { durationWords, usdWords } from "./words/index.ts";
+export { durationWords, usdWords, usingSavedFor } from "./words/index.ts";

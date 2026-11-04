@@ -136,4 +136,4 @@ Where the caller knows the domain, it asks `getTargetHooks` and passes the hook 
 
 ## Distribution
 
-The packages are `fluxiq@0.27.0`, `@fluxiq/contracts@0.7.0` and `@fluxiq/ui-components@0.1.0`. Downstream consumers rebuild against the matching Core version before compiling against these subpaths.
+The packages are `fluxiq`, `@fluxiq/contracts` and `@fluxiq/ui-components`. Downstream consumers rebuild against the matching Core version before compiling against these subpaths.

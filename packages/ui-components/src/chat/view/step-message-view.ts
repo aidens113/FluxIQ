@@ -43,7 +43,7 @@ import { ACTIVITY_ACTION_ICONS } from "fluxiq/ui";
 import { createElement } from "../../dom/index.ts";
 import { lucideIcon } from "../../icons/index.ts";
 import { parseAssistantText, renderTextBlocks } from "../format/index.ts";
-import type { StepMessage } from "../stream/index.ts";
+import { FROM_SAVED_STEPS, WORKED_OUT_AGAIN, type StepMessage } from "../stream/index.ts";
 import type { ProjectCardWords } from "../stream/step/index.ts";
 import { createActionCardView, type ActionCardView } from "./action-card-view.ts";
 import { createDoneAgainView, type DoneAgainView } from "./done-again-view.ts";
@@ -68,7 +68,9 @@ export function createStepMessageView(meta?: TurnMeta): StepMessageView {
   const body = createElement("div", { className: "chat-step-body", hidden: true });
   const cards = createElement("div", { className: "chat-cards", hidden: true });
   const lane = createElement("p", { className: "chat-step-lane", hidden: true });
-  const element = createElement("li", { className: "chat-entry chat-step-msg" }, [lane, line, body, cards]);
+  const using = createElement("p", { className: "chat-step-using", hidden: true });
+  const origin = createElement("p", { className: "chat-step-origin", hidden: true });
+  const element = createElement("li", { className: "chat-entry chat-step-msg" }, [using, lane, origin, line, body, cards]);
   let bodyText = "";
   // Made only for a project message, which every other message never needs.
   let project: ProjectCardView | undefined;
@@ -83,6 +85,11 @@ export function createStepMessageView(meta?: TurnMeta): StepMessageView {
       setAttr(element, "data-role", message.agent?.role ?? null);
       // A step of an agent working on a brief sits under that brief; the brief itself is the header.
       setAttr(element, "data-brief", message.agent?.briefId !== undefined && message.kind !== "project" ? "true" : null);
+      setText(using, message.usingSaved ?? "");
+      if (using.hidden !== (message.usingSaved === undefined)) using.hidden = message.usingSaved === undefined;
+      const marked = message.origin === undefined ? "" : message.origin === "saved" ? FROM_SAVED_STEPS : WORKED_OUT_AGAIN;
+      setText(origin, marked);
+      if (origin.hidden !== (marked === "")) origin.hidden = marked === "";
       setText(lane, message.lane ?? "");
       if (lane.hidden !== (message.lane === undefined)) lane.hidden = message.lane === undefined;
       if (message.project !== undefined && project === undefined) {

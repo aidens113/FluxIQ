@@ -422,6 +422,19 @@ test("Core's person-needed ask at a robot check shows at once, whole, as the wai
   expect([shown?.display.headline, shown?.display.detail, shown?.display.outcome, shown?.display.working], "Continue and Stop are pressed in the panel").toStrictEqual([TEST_HOST_WORDS.answer, ask, "waiting", false]);
 });
 
+test("a person-only check heads as a check and any other question as an answer, told by the ask the row names", () => {
+  const ask = (title: string, label: string) => event({ phase: "waiting_permission", label, detail: { kind: "ask", title, status: "started", ref: "ask-1" } });
+  const check = harness();
+  check.pacer.accept(ask("Asked the person to complete a check", "FluxIQ needs you: complete the check on this page, then press Continue."));
+  expect(check.pacer.display()?.headline, "a check the page holds is not a question").toBe(TEST_HOST_WORDS.check);
+  const question = harness();
+  question.pacer.accept(ask("Asked a question (open)", "Waiting for an answer before going on"));
+  expect(question.pacer.display()?.headline, "a text question is an answer").toBe(TEST_HOST_WORDS.answer);
+  const permission = harness();
+  permission.pacer.accept(ask("Asked a question (permission)", "Waiting for an answer before going on"));
+  expect(permission.pacer.display()?.headline, "a permission is an answer").toBe(TEST_HOST_WORDS.answer);
+});
+
 // A model provider outage (live run `run-muq05kas-058193f0`): the live line said
 // "Thinking about the next step" for as long as anyone watched. Core now ends
 // the build after three unanswered requests; its final event stops the line.

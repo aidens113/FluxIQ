@@ -21,6 +21,7 @@ import { automationStudioLlmProviderUnanswered, automationStudioLlmUnusableDecis
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderErrorCode } from "../../../../../runtime/models/failures/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA } from "../completion/index.ts";
+import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
@@ -53,7 +54,10 @@ export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFir
       counted(run, decision);
       if (decision.ok && decision.response?.kind === "evidence_tool_decision") {
         run.backoffs = 0;
+        run.decidedAfterRun = true;
         run.claim = decision.response.decision.kind === "tool_call" ? decision.response.decision.act : undefined;
+        // What this spent is on the row before it can act, so a process that dies leaves it counted.
+        await automationStudioAnswerFirstKeep(run);
         return automationStudioActivityDecisionReason.attach({ ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) }, decision.response.summary);
       }
       const codes = decision.diagnostics.filter((diagnostic) => diagnostic.severity === "error").map((diagnostic) => diagnostic.code);

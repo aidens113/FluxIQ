@@ -13,6 +13,8 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["wait", "hourglass"],
   ["person_check", "shield-check"],
   ["permission", "hand"],
+  // The generic action's icon, so no client has to draw a new one.
+  ["question", "circle-dot"],
   ["draft", "pencil"],
   ["test", "flask-conical"],
   // A look at the plan before it is tested: the look's icon, as a result check has.

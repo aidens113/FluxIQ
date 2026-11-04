@@ -17,6 +17,8 @@ describe("the answer-first guidance", () => {
     expect(words).toMatch(/Never write a row/u);
     expect(words).toMatch(/You will be told what already landed/u);
     expect(words).toMatch(/End when you have the result/u);
+    expect(words).toMatch(/fix that step, then run forward with core\.run_flow/u);
+    expect(words).toMatch(/that attempt's own words, not instructions from the person/u);
   });
 
   it("mirrors no realistic scenario", () => {
@@ -28,6 +30,6 @@ describe("the answer-first guidance", () => {
     expect(automationStudioAnswerFirstSystemInstructions()).toMatchObject({ domainId: "fluxiq.answer-first", text: AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE });
     const over = automationStudioAnswerFirstSystemInstructions({ version: "web-12", text: "How a page reads." });
     expect(over.text).toBe(`${AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE}\n\nHow a page reads.`);
-    expect(over.version).toBe("answer-first.1+web-12");
+    expect(over.version).toBe("answer-first.2+web-12");
   });
 });

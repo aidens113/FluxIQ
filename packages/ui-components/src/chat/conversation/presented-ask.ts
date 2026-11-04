@@ -1,7 +1,8 @@
-// A pending question in the host's words (`ChatAskPort.present`): its title,
-// the lead line, what an answer would commit as a list, a quiet note, then one
-// button per action (by tone, the option's description on hover) or, for an
-// open question, a text box with Send answer.
+// A pending question in the host's words (`ChatAskPort.present`): its title
+// when it has one (the turn's own words are often the whole question), the lead
+// line, what an answer would commit as a list, a quiet note, then one button per
+// action (by tone, the option's description on hover) or, for an open question,
+// a text box with Send answer, where Enter sends as it does in the composer.
 //
 // An action that needs the person's PIN first (`reauthorize`) does not answer
 // when pressed; it asks the host for its dialog (`context.reauthorize`). With
@@ -12,13 +13,15 @@
 import { createElement } from "../../dom/index.ts";
 import type { ChatAskAction, ChatAskPresentation } from "../ports/index.ts";
 import type { AskControlsContext } from "./ask-controls.ts";
+import { composerKeyAction } from "./composer-keys.ts";
 
 /** Said where the chat cannot take an answer itself (the same words as `ask-copy.ts`). */
 const ELSEWHERE = "Answer this in FluxIQ.";
 
 /** The parts of `presented`, in the order they read. */
 export function presentedAskControls(presented: ChatAskPresentation, context: AskControlsContext): HTMLElement[] {
-  const parts: HTMLElement[] = [createElement("p", { className: "turn-ask-title", text: presented.title })];
+  const parts: HTMLElement[] = [];
+  if (presented.title !== "") parts.push(createElement("p", { className: "turn-ask-title", text: presented.title }));
   if (presented.description !== "") parts.push(createElement("p", { className: "turn-ask-lead", text: presented.description }));
   if (presented.consequences.length > 0) {
     parts.push(createElement("ul", { className: "turn-ask-consequences", attrs: { "aria-label": "Consequences requiring approval" } },
@@ -30,8 +33,9 @@ export function presentedAskControls(presented: ChatAskPresentation, context: As
     return parts;
   }
   const askable = presented.actions.filter((action) => action.reauthorize === undefined || context.reauthorize !== undefined);
-  parts.push(createElement("div", { className: "card-actions" }, askable.map((action) => actionButton(action, context))));
+  // Where to answer reads straight after the note that says why, with the answers that can be given here under it.
   if (askable.length < presented.actions.length) parts.push(createElement("p", { className: "turn-note", text: ELSEWHERE }), context.openFluxIQ());
+  parts.push(createElement("div", { className: "card-actions" }, askable.map((action) => actionButton(action, context))));
   return parts;
 }
 
@@ -63,7 +67,7 @@ function textAnswer(presented: ChatAskPresentation, context: AskControlsContext)
     if (context.draft !== undefined) context.draft.text = box.value;
     send.disabled = context.answering || box.value.trim() === "";
   });
-  send.addEventListener("click", () => {
+  const submit = (): void => {
     const words = box.value.trim();
     if (words === "" || context.answering) return;
     void Promise.resolve(context.answer("text", words)).then((outcome) => {
@@ -72,6 +76,12 @@ function textAnswer(presented: ChatAskPresentation, context: AskControlsContext)
       if (context.draft !== undefined) context.draft.text = "";
       send.disabled = true;
     });
+  };
+  send.addEventListener("click", submit);
+  box.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || composerKeyAction(event, false) !== "send") return;
+    event.preventDefault();
+    submit();
   });
   const parts: HTMLElement[] = [box];
   if (presented.textHint !== undefined && presented.textHint !== "") parts.push(createElement("p", { className: "turn-note", text: presented.textHint }));

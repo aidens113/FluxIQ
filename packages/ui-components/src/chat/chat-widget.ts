@@ -76,7 +76,7 @@ import type { ClientGatewayActivity } from "fluxiq/ui";
 import { createRecordingAttachment } from "./attachment/index.ts";
 import { createComposer, createConversationController, createReadNotice, type ConversationController } from "./conversation/index.ts";
 import { createAnswerReader, type AnswerHost, type AnswerReader } from "./answer/index.ts";
-import { createWorkHeaderView, meterOfOutcomes, type WorkMeter } from "./work-header/index.ts";
+import { askOffersStop, createWorkHeaderView, meterOfOutcomes, savedOfOutcomes, type WorkMeter } from "./work-header/index.ts";
 import { createActivityFeed, threadRefreshWanted } from "./feed/index.ts";
 import { sameTarget } from "./same-target.ts";
 import { sameThread } from "./same-thread.ts";
@@ -526,7 +526,10 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       activity: live,
       sending: state.sending,
       questionElsewhere: answerIn !== null && !state.turns.some((turn) => turn.ask?.status === "pending"),
-      ...spread(meterOfOutcomes(reader.outcomes(), owner.transport.results))
+      questionHere: state.turns.some((turn) => turn.ask?.status === "pending"),
+      askHasStop: state.turns.some((turn) => turn.ask?.status === "pending" && askOffersStop(turn.ask)),
+      ...spread(meterOfOutcomes(reader.outcomes(), owner.transport.results)),
+      ...usingSaved(savedOfOutcomes(reader.outcomes()))
     });
     const anything = inStream || state.sending || display?.working === true || display?.outcome === "waiting";
     banner?.update(fallbackShown ? undefined : state.turns.filter((turn) => turn.ask?.status === "pending").at(-1)?.turnId);
@@ -656,6 +659,9 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     focusComposer() {
       composer.focus();
     },
+    fillComposer(text) {
+      composer.fill(text);
+    },
     attachLatestRecording: () => attachment?.attachLatest() ?? Promise.resolve(false),
     open,
     updateAutomationName(automation) {
@@ -689,6 +695,10 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
 }
 
 /** `{ meter }` when there is a meter, so the header's update never holds an explicit `undefined`. */
+function usingSaved(line: string | undefined): { usingSaved?: string } {
+  return line === undefined ? {} : { usingSaved: line };
+}
+
 function spread(meter: WorkMeter | undefined): { meter?: WorkMeter } {
   return meter === undefined ? {} : { meter };
 }

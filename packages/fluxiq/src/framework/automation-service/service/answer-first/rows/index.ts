@@ -2,6 +2,7 @@
 // them under the run, the rule for which dataset is the result, and the session
 // they sit under. The directory's driver exports it (`../index.ts`, not here).
 export { automationStudioAnswerFirstReadColumns } from "./carried-columns.ts";
+export { automationStudioAnswerFirstCopyRows } from "./copied-rows.ts";
 export { automationStudioAnswerFirstReadDatasetId } from "./dataset-of-read.ts";
 export { automationStudioAnswerFirstReadSchema } from "./derived-schema.ts";
 export { automationStudioAnswerFirstSession } from "./exploration-session.ts";

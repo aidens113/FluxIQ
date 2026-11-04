@@ -1,0 +1,82 @@
+/* The tasks screen. Uses the chat's tokens (`styles/tokens.css`); fits 360px; no colour but a token. */
+.tasks-screen { display: grid; gap: var(--space-3); min-width: 0; color: var(--text); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.tasks-screen [hidden] { display: none !important; }
+.tasks-body { display: grid; gap: var(--space-3); min-width: 0; align-content: start; }
+.tasks-body > * { margin: 0; min-width: 0; }
+
+/* Buttons (the answer turn's own buttons are `.small-button` too, so they match). */
+.tasks-screen .small-button {
+  min-height: 32px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface-raised);
+  color: var(--text); padding: 6px 12px; font-size: 12px; font-weight: 700;
+}
+.tasks-screen .small-button:hover:not(:disabled) { background: var(--hover); }
+.tasks-screen .small-button:focus-visible, .task-row:focus-visible, .tasks-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.tasks-screen .small-button:disabled { opacity: .6; }
+.tasks-screen .small-button[data-tone="primary"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.tasks-screen .small-button[data-tone="danger"] { border-color: var(--danger); color: var(--danger-text); }
+.tasks-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+
+/* The list. */
+.tasks-group { display: grid; gap: 6px; }
+.tasks-group-heading { margin: 0; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.tasks-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--divider); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.tasks-list > li + li { border-top: 1px solid var(--divider); }
+.task-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); width: 100%;
+  box-sizing: border-box; border: 0; background: transparent; color: var(--text); padding: 10px var(--space-3); text-align: left; font: inherit;
+}
+.task-row:hover { background: var(--hover); }
+.task-row:focus-visible { outline-offset: -2px; }
+.task-row-text { display: grid; gap: 2px; min-width: 0; }
+.task-row-title { font-size: 13px; font-weight: 650; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.task-row-state, .task-state, .attempt-ended { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 5px; margin: 0; font-size: 12px; font-weight: 650; color: var(--muted); }
+.tasks-screen [data-tone="good"] { color: var(--success); }
+.tasks-screen [data-tone="attention"] { color: var(--warning-text); }
+.tasks-screen [data-tone="quiet"] { color: var(--muted); font-weight: 500; }
+.task-row-mark { font-weight: 700; }
+.task-row-line, .task-row-saved { color: var(--muted); font-size: 12px; }
+.task-row-go { color: var(--muted); font-size: 18px; line-height: 1; }
+
+/* Plain lines, notices, errors. */
+.tasks-line { margin: 0; color: var(--muted); font-size: 12.5px; }
+.tasks-empty:focus-visible, .tasks-note:focus-visible, .task-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tasks-notice { display: grid; gap: 6px; justify-items: start; border-left: 3px solid var(--warning); border-radius: 4px; padding: 8px 10px; background: var(--warning-soft); color: var(--warning-text); font-size: 12px; }
+.tasks-notice-text { margin: 0; }
+.tasks-error { margin: 0; color: var(--danger-text); font-size: 12.5px; }
+
+/* An open task. */
+.tasks-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; }
+.task-title { margin: 0; font-size: 16px; font-weight: 750; line-height: 1.3; }
+.task-progress { margin: 0; font-size: 13px; }
+.task-actions { margin-top: 2px; }
+.task-rename { display: grid; gap: 6px; }
+.task-rename-label { color: var(--muted); font-size: 12px; font-weight: 650; }
+.tasks-input { box-sizing: border-box; width: 100%; min-height: 34px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); color: var(--text); padding: 6px 10px; font: inherit; }
+.tasks-confirm { display: grid; gap: 6px; border: 1px solid var(--divider); border-radius: var(--radius); background: var(--surface); padding: 10px 12px; }
+.tasks-confirm > * { margin: 0; }
+.tasks-confirm-question { font-weight: 700; }
+.tasks-wait { display: grid; gap: 4px; border: 1px solid var(--warning); border-radius: var(--radius); background: var(--warning-soft); padding: 10px 12px; }
+.tasks-wait > * { margin: 0; }
+.tasks-wait .tasks-line { color: var(--warning-text); }
+.tasks-answer { margin: 0; padding: 0; list-style: none; }
+
+/* Attempts and steps. */
+.tasks-attempts { display: grid; gap: 6px; }
+.tasks-section-heading { margin: 0; font-size: 13px; font-weight: 700; }
+.attempts-list, .steps-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.attempt-item { display: grid; gap: 4px; justify-items: start; border-left: 2px solid var(--divider); padding: 2px 0 10px 10px; margin-left: 4px; }
+.attempt-item > * { margin: 0; }
+.attempt-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 12.5px; }
+.attempt-when { font-weight: 650; }
+.attempt-took, .attempt-compared { color: var(--muted); font-size: 12px; }
+.steps-area { display: grid; gap: 6px; width: 100%; }
+.steps-list { gap: 8px; }
+.step-item { display: grid; gap: 2px; border-left: 2px solid var(--divider); padding-left: 10px; }
+.step-item > * { margin: 0; }
+.step-kind { margin-top: 4px; color: var(--accent-text); font-size: 11.5px; font-weight: 700; }
+.step-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; font-weight: 650; }
+.step-time { color: var(--muted); font-size: 11.5px; font-weight: 400; }
+.step-reason { color: var(--muted); font-size: 12.5px; }
+.step-result { font-size: 12.5px; }
+.step-quiet { display: grid; gap: 6px; justify-items: start; }
+.steps-quiet-list { padding-left: 8px; }
