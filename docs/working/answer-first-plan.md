@@ -1,7 +1,7 @@
 # Answer First
 
 Status: Active
-Status detail: Plan shown to the user on 2026-11-03 and waiting for their review; no code changed for it yet. Standing rules change only once they agree.
+Status detail: Steps approved by the user on 2026-11-03, with the hard rule that a task ends only with its result or its budget gone. Lanes starting; no paid run yet.
 Created: 2026-11-03
 Last updated: 2026-11-03
 Owner: Senior supervisor agent
@@ -21,8 +21,11 @@ Related: [discovery](./answer-first-plan/reports/discovery.md), [simulation stud
 - "We're going to fully focus on the extension/fluxiq ui components package & extension UI/UX for now." The web panel will change later, "but we'll discuss that later".
 - "we need a system for actually detecting when we're repeating a known subflow. And subflows will need to be easily searchable, runnable, etc within a project flow... they may have a subflow that includes one site, that then calls a sub sub flow for a specific action on that site."
 - "I'm trying to make 'one-shot'/two shot systems that adapt and get more efficient over time."
+- **The one hard requirement:** "it needs to actually GET the final result, not just return a failed response (except for run out of budget on that task)... The only hard requriement is it NEEDS to keep retrying until final result achieved or budget out"
+- "NO PIN FOR ANY NORMAL ACTIONS. Maybe just a pin to do dangerous actions ONLY THE FIRST TIME A USER DOES IT, AND NEVER IN THE MIDDLE OF A FLOW, ONLY WHEN FIRST STARTING A FLOW/CHAT."
+- On the tester: "It likely needs imprvovement/full development, i have no idea if its even really been built."
 
-**State.** Planned and not started. The user's words above are theirs. Everything else here is the lead's proposal unless marked "user".
+**State.** The user approved the steps on 2026-11-03 ("ok steps are good"). The user's words above are theirs. Other detail here is the lead's design unless marked "user". t856 (taking the PIN back out of the middle of a Flow), the truth pass and the engine go/no-go are starting. No paid run has happened or is planned before the Exploration lane reaches it.
 
 **What the studies established:**
 
@@ -37,7 +40,7 @@ Related: [discovery](./answer-first-plan/reports/discovery.md), [simulation stud
 9. **Nesting already runs, but nothing can be shared, searched or run alone.** Every subflow belongs to one Flow, and a saved one records no purpose, site or start.
 10. **The extension tells the story of building a Flow, not of doing the task.** Failure is the common case (2 of 14 Lab runs since 2026-10-30) and reads worst.
 
-**Blockers.** The user's review and the Open Questions. Nothing runs before that except what is already authorised: finishing t854, and tomorrow's sweep of the fixes.
+**Blockers.** None. The user answered questions 4 and 6 and the tester question. The lead is going ahead on its own recommendations for questions 1, 2, 3 and 5, and the user can overrule any of them.
 
 ## The Loop
 
@@ -51,9 +54,11 @@ Every attempt, first or fiftieth, is the same five stages.
 | 4. Improve | Test and repair the draft in simulation against that recording. No site, no second live run | The same, against this attempt's recording |
 | 5. Save | Best-attempt Flow, notes, recording, acts, attempt record, subflow cards | The same; trust rises or falls |
 
-A task becomes **one-shot** when attempt 1 gets the right answer, **two-shot** when attempt 2 does at the latest, and **deterministic** when an attempt gets the right answer with no model calls. **Getting more efficient** means model calls, tokens, dollars, live steps and time per attempt fall on the same task. These definitions are the lead's, for the user to confirm.
+A task becomes **one-shot** when attempt 1 gets the right answer, **two-shot** when attempt 2 does at the latest, and **deterministic** when an attempt gets the right answer with no model calls. **Getting more efficient** means model calls, tokens, dollars, live steps and time per attempt fall on the same task. The user confirmed these definitions on 2026-11-03.
 
 **The Flow is never forgotten and never a gate.** Every attempt tries to leave a better Flow, and no attempt withholds the result because the Flow is not ready.
+
+**The one hard requirement (user, 2026-11-03).** A task keeps going until it has its final result or its budget is gone. There is no third ending that reports failure. See "Keep Going Until The Result".
 
 ## Decisions
 
@@ -71,7 +76,7 @@ A task becomes **one-shot** when attempt 1 gets the right answer, **two-shot** w
 
 **D7. One path: a single loop (lead; user question 1).** One exploration means one loop. The Claude numbers that exist are from the single loop: 10 to 16 decisions and $1.12 to $1.89 a build. The project supervisor, its builders and their per-part tests exist to cut work into separately tested parts, which this design replaces, so it stops being the default. Its code stays, and it may return for large multi-site builds once the library exists. This also means no paid comparison of `project` against `legacy` is needed before starting: money is better spent on the new loop.
 
-**D8. One budget per attempt, in order (lead; user question 2).** One purse wraps the attempt. A reserve is kept for finishing and for the judge, using the mechanism the judge's reserve already has. Near the limit the person sees it coming. A refused call ends with what it has, labelled partial, and the draft is still saved.
+**D8. One budget per task attempt (lead; user question 2).** One purse wraps the attempt, and running out is the only failure ending there is (user). So the default should be generous enough that it rarely decides the outcome: $5 per attempt in the Lab and the product, set in settings, with a visible meter. A reserve is kept for the judge, using the mechanism that already exists. Near the limit the person sees it coming. At the limit they get the best result so far, what was saved, and a one-press way to add budget and carry on from where it stopped, and the draft is still saved.
 
 **D9. Honest labels (lead).** Reuse `confirmed`, `refuted` and `unverified`, and say where a result came from. One judge call says it was checked once, because one yes once finished a build on wrong rows (t296). Rows come only from real reads; a model never writes a row. A plain-language answer is labelled as the model's words. The judge needs a Flow-less summary (rows, acts, end view), which is the largest single change in verification.
 
@@ -81,9 +86,35 @@ A task becomes **one-shot** when attempt 1 gets the right answer, **two-shot** w
 
 **D12. Recording in the product (lead).** Tracing is off in the product today, and page captures pass through secret screening unscreened. Before product use: record explorations only, screen captures, keep the latest recording per Flow with a retention rule, and say so in settings. Recordings stay on the person's FluxIQ. Hosted needs sealing. Firefox has no page capture, so it can use recorded results only.
 
+**D13. Dangerous actions and the PIN (user; lead for how).** "NO PIN FOR ANY NORMAL ACTIONS. Maybe just a pin to do dangerous actions ONLY THE FIRST TIME A USER DOES IT, AND NEVER IN THE MIDDLE OF A FLOW, ONLY WHEN FIRST STARTING A FLOW/CHAT." Normal actions never ask for a PIN. Dangerous means the three gated classes that exist today: moving money, deleting and sending. The first time a person starts a chat or Flow that can do one, the PIN is asked once at the start, and it leaves a standing grant, so they are not asked again. Nothing ever asks for a PIN once a Flow is running. If a dangerous act comes up mid-Flow with no grant yet, it stays a one-press Allow, as the extension has it today (lead's reading; the user said "maybe" about the PIN at all, so this is easy to drop). t855's mid-run PIN check, which the lead caused, comes out in t856.
+
+## Keep Going Until The Result
+
+The user's hard requirement, as a design. Exploration ends when its result is judged achieved, or when the budget is gone, or when the person presses Stop. A person's Stop always wins. Everything else that ends a build or run today stops being an ending.
+
+| What ends a task today | What it becomes |
+| --- | --- |
+| `not_doable`, `not_finished`, no candidate assembled, a verdict of no or unsure, draft kept | Not endings. A judge's no goes back to exploration with its reason, and it keeps going |
+| Run failed at a step, refuted, repairs exhausted (3 attempts), failed-step re-author once per run | Exploration carries on from the page as it stands |
+| 30-minute limit, rounds limit, no-progress guard, replies unreadable, trial limits | Not endings. A stall makes it change approach: a fresh, small context from the page as it stands, with the notes and the act record, so it does not loop on the same thing. The repeat guard still refuses an identical failing call |
+| An uncertain lasting act (`run.outcome_uncertain`) | Look at the page to settle it, then continue. It never repeats the act blind |
+| A permission the person declined | It looks for another way without that act, within the budget |
+| A person-only check | It waits for the person, as now |
+| Provider silent or unavailable | Retry with backoff, costing nothing, and say so in chat. The person can press Stop |
+| Refused before any model call (about 35 codes, such as `pending_adaptation_exists`) | Each one is either resolved automatically or becomes a setup step that says what to do. None is reported as a failed task |
+| **Budget gone, including an empty balance** | **The only failure ending:** the best result so far, what was saved, and add budget and carry on |
+
+**What "achieved" means.** A judged yes, or Core's own checks where those suffice. An unsure judge keeps it looking for evidence. The best result so far is kept throughout, so even a budget-out shows what was found, labelled as not confirmed.
+
+**Retrying never means repeating a lasting act.** The act record (D6) carries across every retry and change of approach. The rule against repeating acts stands alongside this one.
+
+**A consequence to be plain about.** A task that truly cannot be done spends its whole budget before ending, because nothing is allowed to decide it is impossible. That is what the $5 default bounds.
+
+**Proof.** A provider-free test for each row of the table, driven through the real loop with a scripted model. The Lab fails any task that ends without its result unless its budget is gone or a person stopped it.
+
 ## The Simulation
 
-The user's "internal state engine" is the offline trial machinery with its cursor replaced. It reuses the socket, intake, virtual clock, id translation, trace admission and the rule that a simulated pass is never proof. Full detail is in the [simulation study](./answer-first-plan/reports/study-simulation.md).
+The user's "internal state engine" is the offline trial machinery with its cursor replaced, as the user confirmed on 2026-11-03. It exists but is weak today, and this is full development rather than a tweak: it only answers computation-only changes, and across 12 saved runs it avoided 2 of 61 live test windows. It reuses the socket, intake, virtual clock, id translation, trace admission and the rule that a simulated pass is never proof. Full detail is in the [simulation study](./answer-first-plan/reports/study-simulation.md).
 
 ```text
 RECORDING  one exploration's calls, its result, kept acts, end state, witnesses.
@@ -153,7 +184,7 @@ Full detail, with evidence per screen, is in the [extension study](./answer-firs
 
 Its kinds: rows; done on the site, from Core's act record and never the model's prose; a plain answer; partial. Three check states: checked, not sure with no tick, failed.
 
-**Failure has one shape:** "I couldn't finish this. Why. What I got. What I saved. Next: Try again." Never a code, never a cut sentence.
+**Budget out is the only failure, and it has one shape:** "I reached this task's budget. What I got. What I saved. Next: Add budget and carry on." Never a code, never a cut sentence. Everything else that goes wrong shows as a step while it keeps working.
 
 **The second attempt is visible.** "Using what I saved from Tuesday." Steps marked from saved or worked out again. `This time 18s and $0.00. First time 3m 14s and $1.12.`
 
@@ -177,6 +208,7 @@ Interfaces are fixed by the lead before dispatch, and lanes run in parallel, eac
 
 **Exploration lane (Core).**
 1. New single-loop path: no trial, reset or dry run; every asked row and page, with D2; row sink; witnesses before the first lasting act and at the end; ends with the result; generic guidance.
+1a. **Keep going until the result:** every ending in "Keep Going Until The Result" converted, each with its own provider-free test. This is the plan's hard requirement.
 2. One act record. Proof: a repeat refused across stages; a provider-free probe that "run it" straight after a build no longer repeats silently.
 3. One purse per attempt with its reserve.
 4. Result record, Flow-less judge, labels, the answer event to chat.
@@ -229,13 +261,14 @@ Cut for parallel lanes, each date with its real constraint. MVP deadline: 2026-1
 
 ## Standing Rules This Changes
 
-Nothing here is changed until the user agrees. Then `AGENTS.md`, memory and any code comments change together.
+The user agreed on 2026-11-03. `AGENTS.md` carries the new rules now, and memory and code comments follow as each lane lands.
 
 | Rule | Today | Proposed |
 | --- | --- | --- |
 | "Build the whole Flow first; test it whole only when it should work" | A live whole test inside the build | One live exploration; the draft is tested in simulation; the first whole live run is the next real attempt |
 | "A finished Flow needs one judged whole run" | Stands | Stands, and moves to attempt 2 (D4) |
 | "A failed test is repaired live on the failing step" | In the build | Stands for live attempts; a draft's test failure is repaired in simulation |
+| "Not doable only if absolutely no way" | A build may end as not doable | Gone: only the result or the budget ends a task |
 | "Every node retries", "stale target found again", "judge the change", permission gates, ten realistic scenarios, guidance never teaches to the test, lasting acts never repeated | Stand | Stand, and matter more |
 | Claude live tests "$5 per build" | Per build | Per attempt (user question 2) |
 | "Only a few tasks run fully end to end" | About one per site | Stands, as two attempts per task |
@@ -244,7 +277,8 @@ Nothing here is changed until the user agrees. Then `AGENTS.md`, memory and any 
 ## Risks
 
 - **Repeating a lasting act.** The highest consequence. D1, D2, D6, the Lab's oracle. An undeclared lasting press can still slip through, and this stays disclosed until covered.
-- **Exploration not reaching the result.** The purse and 30-minute limit may stop it short. Then the person gets the partial result and a saved draft, and D2 is what keeps long tasks affordable. Unknown until the first paid round.
+- **Exploration not reaching the result.** The budget may run out first. Then the person gets the best result so far and a saved draft, and D2 is what keeps long tasks affordable. Unknown until the first paid round.
+- **Spending the whole budget on the impossible.** A consequence of the hard requirement. The meter and the $5 default bound it, and repeated stalls are visible in chat, so a person can press Stop.
 - **The simulation rule may not validate.** The go/no-go exists for that, and the loop still works without it.
 - **Attempt 2 failing often.** Live time moves rather than vanishes: live trials were 31% of build time, and a failure costs the person a second real run. The simulated-pass, live-fail rate will show it.
 - **A wrong answer shown as right.** D9. A pure verdict can also pass a Flow that repeats exploration's mistake, since the reference rests on one live judgement.
@@ -265,13 +299,12 @@ Nothing here is changed until the user agrees. Then `AGENTS.md`, memory and any 
 
 ## Open Questions
 
-For the user. The lead's recommendation comes first in each.
+**Answered by the user, 2026-11-03:** question 4 (no PIN on normal actions; see D13), question 6 (the definitions are right), and that "internal state engine" means the offline tester.
+
+**Going ahead on the lead's recommendation unless the user overrules it:** questions 1, 2, 3 and 5 below.
 
 1. **Stop using the project supervisor by default, in favour of one exploration loop?** Recommended: yes, keeping its code for large multi-site builds later (D7).
-2. **What should a budget cover, and at what default?** Recommended: per attempt, covering everything; $5 in the Lab; $2 in the product, from the $1.12-$1.89 measured, with a visible meter. Today AGENTS.md says $5 per build and the product default is $0.25.
+2. **What should a budget cover, and at what default?** Going with: per attempt, covering everything, $5 in the Lab and the product, with a visible meter. The lead first suggested $2 for the product, but budget is now the only failure ending, and $1.12-$1.89 was measured, so $2 would decide too many outcomes. Today AGENTS.md says $5 per build and the product default is $0.25.
 3. **How should subflows get cut?** Recommended: the model marks them as it writes, and a person can say "save this". Scoped to one project for now.
-4. **Should the extension ask for a PIN on money, delete and send?** Recommended: yes, as the web panel does. Today one press grants them in the extension.
 5. **Words and tabs.** Recommended: "task" for what was asked, "automation" for what is saved, "subflow" as the user says it, lifting today's ban on that word; and keeping the two tabs from 2026-09-29, Chat and Automations, rather than the slide-over the study proposed.
-6. **Do the one-shot, two-shot and deterministic definitions under The Loop match what the user means?**
-
-Decided by the user's message of 2026-11-03, recorded here so it is not asked again: a result does not need a finished Flow, and there is no live re-test inside attempt 1. Going ahead on the lead's reading of "internal state engine": the offline trial machinery with a state engine in place of its cursor.
+Decided by the user's messages of 2026-11-03, recorded here so it is not asked again: a result does not need a finished Flow, there is no live re-test inside attempt 1, and a task ends only with its result or its budget gone.
