@@ -34,6 +34,9 @@ export type AutomationStudioAttemptActAdmission =
   /** May have landed and no look since: refuse, no dispatch. */
   | { kind: "look_first"; act: AutomationStudioAttemptAct };
 
+/** Whether a lasting call may now be sent (`../record.ts`, `begun`). `not_written`: it is not on the persisted record, so it must not be. */
+export type AutomationStudioAttemptActBegun = "not_lasting" | "on_record" | "not_written";
+
 /** What became of a call that ran. */
 export type AutomationStudioAttemptActOutcome = {
   effectApplied: boolean;
@@ -45,6 +48,8 @@ export type AutomationStudioAttemptActOutcome = {
   ranWith?: { actionId?: string; parameters?: JsonObject };
   /** The caller's sentence naming the item of a list the act was on, when it said one. Hashed before it is kept. */
   actedOn?: string;
+  /** The Flow step that made it, in a real run: what `doubted` names it by. */
+  step?: string;
 };
 
 /** Where a call's answer left the page: what ties a later by-hand act to a row. */

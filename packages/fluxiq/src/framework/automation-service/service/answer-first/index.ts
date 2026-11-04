@@ -10,3 +10,6 @@ export * from "./rows/index.ts";
 export * from "./run-acts/index.ts";
 export * from "./setup/index.ts";
 export * from "./witnesses/index.ts";
+export * from "./route/index.ts";
+export * from "./task-key/index.ts";
+export * from "./task-memory/index.ts";
