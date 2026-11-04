@@ -3,12 +3,12 @@
 // Borrowed from the adaptation review, which is the nearest thing the panel
 // already has to "the model proposes, the person approves": the copy for each
 // action is data, `destructive` is a flag in that data rather than a judgement
-// the component makes, and anything with a lasting effect is re-authorized
-// before it is sent. What is deliberately not borrowed is where the review put
-// the buttons -- on the fifth tab of a detail pane. An answer lives in the turn
-// that asked for it.
+// the component makes, and an answer that is the person's authority for an act
+// is re-authorized before it is sent. What is deliberately not borrowed is where
+// the review put the buttons -- on the fifth tab of a detail pane. An answer
+// lives in the turn that asked for it.
 
-import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "fluxiq/automation/action-permissions";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "fluxiq/automation/action-permissions";
 import type { AutomationStudioActionConsequence, ConversationAnswer, ConversationAsk } from "./contracts";
 
 export type ConversationAnswerAction = {
@@ -16,7 +16,7 @@ export type ConversationAnswerAction = {
   label: string;
   description: string | null;
   variant: "primary" | "secondary" | "danger";
-  /** Lasting effect: the answer is re-authorized before it is sent. */
+  /** Core checks the person's PIN on this answer, so it is asked for before it is sent. */
   destructive: boolean;
   answer: ConversationAnswer;
 };
@@ -42,8 +42,23 @@ export function conversationAskConsequences(ask: ConversationAsk): AutomationStu
   return ask.kind === "permission" ? ask.missing : ask.consequences;
 }
 
+/** The ask id prefix of a confirmation whose invocation the panel runs with the PIN. */
+const PANEL_COMMAND_ASK_PREFIX = "panel-command.";
+
+/**
+ * Whether Core checks the PIN on a yes to this ask: Core's own decision
+ * (`runtime/conversations/answer-pin.ts`), read here so the dialog appears exactly
+ * where Core would refuse without it. `thread-model.test.ts` holds the two
+ * together, because that module is server code and cannot reach the browser.
+ */
+function conversationAskTakesPin(ask: ConversationAsk): boolean {
+  if (!conversationAskConsequences(ask).some((consequence) => AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES.includes(consequence))) return false;
+  return ask.kind === "permission" || ask.parks || ask.askId.startsWith(PANEL_COMMAND_ASK_PREFIX);
+}
+
 export function conversationAskPresentation(ask: ConversationAsk): ConversationAskPresentation {
   const granted = conversationAskConsequences(ask);
+  const takesPin = conversationAskTakesPin(ask);
   const consequencePhrases = granted.map((consequence: AutomationStudioActionConsequence) =>
     AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]
   );
@@ -69,7 +84,7 @@ export function conversationAskPresentation(ask: ConversationAsk): ConversationA
           label: "Allow",
           description: null,
           variant: "primary",
-          destructive: true,
+          destructive: takesPin,
           answer: { askId: ask.askId, kind: "grant", consequences: [...granted] }
         }
       ]
@@ -95,7 +110,7 @@ export function conversationAskPresentation(ask: ConversationAsk): ConversationA
           label: "Confirm",
           description: null,
           variant: consequencePhrases.length ? "danger" : "primary",
-          destructive: consequencePhrases.length > 0,
+          destructive: takesPin,
           answer: { askId: ask.askId, kind: "grant", consequences: [...granted] }
         }
       ]
@@ -112,7 +127,7 @@ export function conversationAskPresentation(ask: ConversationAsk): ConversationA
         label: option.label,
         description: option.description,
         variant: option.destructive ? ("danger" as const) : ("secondary" as const),
-        destructive: option.destructive,
+        destructive: takesPin,
         answer: { askId: ask.askId, kind: "choice", optionId: option.optionId }
       }))
     };
@@ -127,11 +142,10 @@ export function conversationAskPresentation(ask: ConversationAsk): ConversationA
 }
 
 /**
- * Whether sending this answer needs the person to prove who they are again.
- * Granting a consequence class and picking a destructive option both change
- * something lasting; refusing, cancelling and answering a question in words do
- * not, and demanding a PIN for them would train people to type it without
- * reading.
+ * Whether sending this answer needs the person to prove who they are again:
+ * only where Core checks it. Refusing and cancelling commit nothing, and an ask
+ * no act depends on has nothing to protect; demanding a PIN for those would
+ * train people to type it without reading.
  */
 export function conversationAnswerNeedsReauthorization(action: ConversationAnswerAction): boolean {
   return action.destructive;

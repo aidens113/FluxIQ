@@ -118,6 +118,28 @@ describe("conversation commands", () => {
     vi.unstubAllEnvs();
   });
 
+  it("shows what a confirmed change does just before asking, where the client can draw it", async () => {
+    const conversations = openConversations();
+    const conversationId = await chat(conversations);
+    const context = contextFor(conversations, conversationId, fakePort({}).port);
+    const said = (paired: boolean) => executeAutomationStudioConversationCommand({
+      command: {
+        background: false,
+        capability: { id: "flow.show", title: "Show", summary: "Shows.", group: "Flows", control: "", arguments: [], phrases: [], consequences: [], reauthorizes: false },
+        run: async () => ({ status: "done", summary: "Worked it out.", confirm: { text: "Apply it?", capabilityId: "adaptation.apply", arguments: { flowId: "flow.1", adaptationId: "adaptation.1" }, consequences: ["modify_existing"], control: "Apply", shows: { text: "The change.", attachment: { kind: "flow-graph-diff", ref: "flow.1:adaptation.1" } } } })
+      },
+      context: { ...context, paired },
+      arguments: {}
+    });
+    await said(false);
+    let turns = await turnsOf(conversations, conversationId);
+    expect(turns.map((turn) => turn.text).slice(-2)).toEqual(["The change.", "Apply it?"]);
+    expect(turns.at(-2)!.attachment).toEqual({ kind: "flow-graph-diff", ref: "flow.1:adaptation.1" });
+    await said(true);
+    turns = await turnsOf(conversations, conversationId);
+    expect(turns.filter((turn) => turn.text === "The change.")).toHaveLength(1);
+  });
+
   it("creates a Flow here in the background: create, save, explore from the page, approve and apply", async () => {
     const conversations = openConversations();
     const conversationId = await chat(conversations);
@@ -381,8 +403,9 @@ describe("conversation commands", () => {
     expect(calls[1]).toEqual({ endpoint: "generate-flow-bootstrap-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", evidenceGuided: true, mode: "extend" } });
     expect(calls.map((call) => call.endpoint)).not.toContain("review-flow-adaptation");
 
-    const [result, question] = (await turnsOf(conversations, conversationId)).filter(turn => turn.attachment || turn.ask);
+    const [result, change, question] = (await turnsOf(conversations, conversationId)).filter(turn => turn.attachment || turn.ask);
     expect(result?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.improve" });
+    expect(change?.attachment).toEqual({ kind: "flow-graph-diff", ref: "flow.kettle:adaptation.extend" });
     expect(question?.ask).toMatchObject({ kind: "confirm", parks: false, status: "pending", consequences: ["modify_existing"] });
     expect(question?.ask?.askId.startsWith(AUTOMATION_STUDIO_CONVERSATION_COMMAND_ASK_PREFIX)).toBe(true);
     expect(question?.attachment?.kind).toBe(AUTOMATION_STUDIO_CONVERSATION_COMMAND_ATTACHMENT);

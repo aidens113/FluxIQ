@@ -48,6 +48,39 @@ test("latest -> automation -> latest: each shows its own thread, found by its su
   assert.deepEqual(texts(controller), ["Find cheap lamps"]);
 });
 
+test("a thread picked while another read is on its way is read at once, not after that read lands", async () => {
+  const core = twoThreads();
+  let hold = false;
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const held: unknown[] = [];
+  const controller = controllerOver(async (message) => {
+    if (hold && held.length === 0) {
+      held.push(message);
+      await gate;
+    }
+    return core.request(message);
+  }, () => undefined);
+  controller.setConnected(true);
+  await controller.refresh();
+  hold = true;
+  void controller.refresh();
+  await Promise.resolve();
+  assert.equal(held.length, 1, "the read of the latest chat is on its way, and does not land");
+  const before = core.sent.length;
+
+  controller.setTarget(AUTOMATION);
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  assert.deepEqual(texts(controller), ["Price tracker is ready."], "the picked thread was read while the old read was still out");
+  assert.ok(core.sent.length > before);
+  assert.equal(controller.state().reading, false);
+
+  release();
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  assert.deepEqual(texts(controller), ["Price tracker is ready."], "the old read lands nowhere");
+  assert.equal(controller.state().reading, false);
+});
+
 test("sending goes to the thread on screen, and an automation's message says the Flow is on screen", async () => {
   const core = twoThreads();
   const controller = await connected(core);

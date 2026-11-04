@@ -18,6 +18,7 @@
 import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText } from "./argument.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
+import { automationStudioFlowGraphDiffAttachment } from "../attachments/flow-graph-diff.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
 const TITLE = "Improve a Flow that already has steps";
@@ -70,7 +71,8 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
         capabilityId: "adaptation.apply",
         arguments: { flowId, adaptationId: built.adaptationId },
         consequences: ["modify_existing"],
-        control: "Apply the suggested change"
+        control: "Apply the suggested change",
+        shows: { text: "This is what the change does to the Flow's steps.", attachment: automationStudioFlowGraphDiffAttachment(flowId, built.adaptationId) }
       }
     };
   }

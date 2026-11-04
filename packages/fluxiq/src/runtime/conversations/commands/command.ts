@@ -114,6 +114,8 @@ export type AutomationStudioConversationCommandConfirmation = {
   consequences: AutomationStudioActionConsequence[];
   /** What the question is about, as the person would name it. */
   control: string;
+  /** What a client that can draw it shows just before the question: the change itself. */
+  shows?: { text: string; attachment: { kind: string; ref: string } };
 };
 
 /** What one command came to. `summary` is what the thread says. */

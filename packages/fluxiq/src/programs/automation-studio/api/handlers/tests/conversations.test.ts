@@ -53,7 +53,7 @@ function conversationApi(overrides: Record<string, unknown> = {}) {
   const listProjects = vi.fn().mockResolvedValue({ projects: [{ id: "project.one" }, { id: "project.two" }] });
   const listFlows = vi.fn().mockResolvedValue([{ flow: { flowId: "flow.kettle", name: "Kettle price checker" } }]);
   const registry = new GlobalProgramApiRegistry();
-  registerAutomationStudioConversationEndpoints({ registry, service: { assertProjectDomainAccess, listProjects, listFlows, conversations: conversations as unknown as AutomationStudioConversations } });
+  registerAutomationStudioConversationEndpoints({ registry, service: { assertProjectDomainAccess, listProjects, listFlows, getFlowBootstrapAdaptation: vi.fn(), getFlow: vi.fn(), conversations: conversations as unknown as AutomationStudioConversations } });
   return { registry, conversations, assertProjectDomainAccess, listProjects, listFlows };
 }
 
@@ -310,7 +310,7 @@ describe("Automation Studio conversation API", () => {
     const pending = { askId: "conversation-command.1", conversationId: "conversation.one", turnId: "turn.q", kind: "confirm", status: "pending", answer: null };
     const answered = { ...pending, status: "answered", answer: { kind: "grant" } };
     const { registry, conversations } = conversationApi({
-      getAsk: vi.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(answered),
+      getAsk: vi.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(pending).mockResolvedValue(answered),
       answerAsk: vi.fn().mockResolvedValue(answered),
       getTurn: vi.fn().mockResolvedValue({ turnId: "turn.q", attachment: { kind: AUTOMATION_STUDIO_CONVERSATION_COMMAND_ATTACHMENT, ref } })
     });
@@ -351,6 +351,7 @@ describe("Automation Studio conversation API", () => {
           assertProjectDomainAccess: vi.fn().mockResolvedValue(undefined),
           listProjects: vi.fn().mockResolvedValue({ projects: [] }),
           listFlows: vi.fn().mockResolvedValue([{ flow: { flowId: "flow.kettle", name: "Kettle price checker" } }, { flow: { flowId: "flow.toaster", name: "Toaster stock watch" } }]),
+          getFlowBootstrapAdaptation: vi.fn(), getFlow: vi.fn(),
           conversations
         }
       });
@@ -396,7 +397,7 @@ describe("Automation Studio conversation API", () => {
       const registry = new GlobalProgramApiRegistry();
       registerAutomationStudioConversationEndpoints({
         registry,
-        service: { assertProjectDomainAccess: vi.fn().mockResolvedValue(undefined), listProjects: vi.fn().mockResolvedValue({ projects: [] }), listFlows: vi.fn().mockResolvedValue([{ flow: { flowId: "flow.kettle", name: "Kettle price checker" } }]), conversations }
+        service: { assertProjectDomainAccess: vi.fn().mockResolvedValue(undefined), listProjects: vi.fn().mockResolvedValue({ projects: [] }), listFlows: vi.fn().mockResolvedValue([{ flow: { flowId: "flow.kettle", name: "Kettle price checker" } }]), getFlowBootstrapAdaptation: vi.fn(), getFlow: vi.fn(), conversations }
       });
       const runs: Array<{ sessionId: string | undefined; payload: unknown }> = [];
       registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, permission: "runtime.control", classification: "authoring", handler: (request) => { runs.push({ sessionId: request.actor?.sessionId, payload: request.payload }); return { ok: true, payload: { runtimeSession: { runId: "run.1", status: "completed" }, terminalReason: "completed" } }; } });

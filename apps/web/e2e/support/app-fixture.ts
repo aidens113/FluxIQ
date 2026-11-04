@@ -28,6 +28,8 @@ export type FixtureProject = {
   id: string;
   name: string;
   flowIds?: string[];
+  /** The Subflow graph that holds the stress nodes: a top-level Flow owns none. */
+  stressGraphFlowId?: string | null;
   recordingIds?: string[];
   recordingLabels?: string[];
   counts?: Record<string, number>;

@@ -16,10 +16,12 @@
 // entitlement the `projects` endpoint grants.
 //
 // Reads take `programs.read`; writing a turn or answering an ask takes
-// `programs.write` and is `authoring`, not `destructive`: answering is how a
-// person authorises a consequential act, and the act itself is still gated
-// where it happens. Making the answer itself PIN-gated would put the
-// ceremony on the wrong side of the question.
+// `programs.write` and is `authoring`, not `destructive`, because most answers
+// commit nothing and a refusal never does. The answers that are the person's
+// authority for an act take their PIN, checked here before the answer is written
+// so a wrong one leaves the question waiting: which ones is Core's one decision
+// (`runtime/conversations/answer-pin.ts`). A paired client has no PIN to give:
+// the person's press in the client they approved stands, as it always has.
 //
 // This module registers against its own dependency record rather than
 // `AutomationStudioApiDependencies`: it needs the domain-scope check, the
@@ -28,10 +30,17 @@
 // service. `register.ts` builds the record from the service's `conversations`
 // field in one line.
 
+import { authorizeProgramPin, type ProgramPinAuthorizationPayload } from "../../../_shared/authorization.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
+import type { IdentityAccessService } from "../../../identity-access/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../../../../api-contracts/automation.ts";
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import type { AutomationStudioConversations } from "../../../../framework/automation-service/index.ts";
+import {
+  automationStudioConversationAnswerNeedsPin,
+  automationStudioConversationAttachmentResolver,
+  type AutomationStudioConversationAttachmentReads
+} from "../../../../runtime/conversations/index.ts";
 import {
   answerConversationAskForRequest,
   appendConversationTurnForRequest,
@@ -53,12 +62,15 @@ import {
  */
 export type AutomationStudioConversationApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
-  readonly service: AutomationStudioConversationRequestService;
+  readonly service: AutomationStudioConversationRequestService & AutomationStudioConversationAttachmentReads;
+  /** What checks the PIN on an answer that needs one. Absent, such an answer is refused, as a destructive endpoint is. */
+  readonly identityAccess?: IdentityAccessService | undefined;
 };
 
 export function registerAutomationStudioConversationEndpoints(dependencies: AutomationStudioConversationApiDependencies): void {
   const { registry, service } = dependencies;
   const conversations = (): AutomationStudioConversations => service.conversations;
+  const resolveAttachment = automationStudioConversationAttachmentResolver(service);
 
   registry.register({
     programId: "automation-studio",
@@ -171,6 +183,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationAnswerRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      if (request.actor?.channel !== "paired-client") await authorizeAnswer(dependencies, projectId, payload);
       return { ok: true, payload: await answerConversationAskForRequest(dependencies, request, projectId, payload) };
     }
   });
@@ -191,10 +204,17 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
         projectId,
         conversationId: String(payload.conversationId ?? ""),
         turnId: String(payload.turnId ?? "")
-      });
+      }, resolveAttachment);
       return { ok: true, payload: { attachment } };
     }
   });
+}
+
+/** Checks the PIN of an answer that is the person's authority for an act. One already settled commits nothing, so a resend is not asked again. */
+async function authorizeAnswer(dependencies: AutomationStudioConversationApiDependencies, projectId: string, payload: Partial<ConversationAnswerRequest>): Promise<void> {
+  const ask = await dependencies.service.conversations.getAsk({ projectId, askId: String(payload.askId ?? "") });
+  if (ask?.status !== "pending" || !automationStudioConversationAnswerNeedsPin(ask, String(payload.kind ?? ""))) return;
+  await authorizeProgramPin(dependencies.identityAccess, payload as ProgramPinAuthorizationPayload);
 }
 
 function conversationPayload<TRequest>(payload: unknown): Partial<TRequest> {

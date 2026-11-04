@@ -27,6 +27,9 @@ transport is optional, and without it the widget does not offer that feature:
   to `conversation.answer` and is held nowhere.
 - `attachments`: what a turn carries beside its words, drawn by the host's
   renderers, and the host's own records told apart from the person's words.
+- The composer takes words at once. While a thread's first read is on its way a
+  send is held, with a line saying so, and goes when the read lands; changing the
+  words lets go of it, and a read that fails says so and keeps them.
 - `welcome`, `fallback`, `history`, `turnMeta`, `pendingBanner` and `composer`: the
   words of the empty chat and its fallback, how many turns are kept, who said each
   turn and when, the banner over a question nobody answered, and the composer's

@@ -72,6 +72,8 @@ async function shot(page: Page, name: string, testInfo: { project: { name: strin
 test("D1: the launcher is on the landing screen with no project, fixed, on screen", async ({ page }, info) => {
   await page.goto("/programs/automation-studio", { waitUntil: "domcontentloaded" });
   await expect(launcher(page)).toBeVisible({ timeout: SLOW });
+  // It grows to say "Needs you" once the thread list lands, so it is measured after that.
+  await expect(launcher(page)).toHaveAttribute("data-waiting", "true", { timeout: 60_000 });
   const box = (await launcher(page).boundingBox())!;
   const viewport = page.viewportSize()!;
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
@@ -95,7 +97,7 @@ test("V8: on the landing screen the window lists every project's threads, with n
   await expect(panel(page)).not.toContainText(seeded.projectId);
 });
 
-test("D2-D6, V1, V2, V7, T3, U2, U4, U6: the window in a project", async ({ page }, info) => {
+test("D2-D6, V1, V2, V7, T3, U2, U5, U6: the window in a project", async ({ page }, info) => {
   await openProject(page, seeded.projectId);
   // D2, D3: collapsed but still reading, so the badge lights without opening.
   await expect(launcher(page)).toHaveAttribute("data-waiting", "true", { timeout: 60_000 });
@@ -154,8 +156,14 @@ test("D2-D6, V1, V2, V7, T3, U2, U4, U6: the window in a project", async ({ page
   expect(await record.evaluate((el) => !el.closest("[class*='bubble']"))).toBe(true);
   expect(await panel(page).getByText("Please show me what the proposed change does.").evaluate((el) => !!el.closest("[class*='bubble']"))).toBe(true);
 
-  // U4: the graph diff reference cannot be resolved here (Core wires no attachment resolver); it says so.
-  await expect(panel(page).getByText("Proposed Flow change could not be read here.")).toBeVisible();
+  // U5: a real reference to a real proposal, resolved by Core and drawn: what it adds, in words, with no id on screen.
+  const diff = panel(page).getByRole("table", { name: "Structural changes" });
+  await expect(diff).toBeVisible({ timeout: 30_000 });
+  await expect(diff).toContainText("Start the post");
+  await expect(diff).toContainText("Finish the post");
+  await expect(diff.getByRole("row").filter({ hasText: "Added" })).toHaveCount(3);
+  await expect(diff).not.toContainText("builtin.");
+  await diff.screenshot({ path: path.join(webRoot, "test-results", `chat-${info.project.name}-graph-diff-table.png`) });
   // U6: an adaptation reference opens the Adaptations view.
   await panel(page).locator(".chat-attachment", { hasText: "adaptation:adaptation.e2e.1" }).getByRole("button", { name: /open/iu }).click();
   await expect(page.getByText("Adaptation Inbox", { exact: true })).toBeVisible({ timeout: 30_000 });
@@ -192,25 +200,16 @@ test("A1, A3, A4, A6: the permission ask, the PIN dialog, wrong then right PIN",
   await expect(launcher(page)).toHaveAttribute("aria-expanded", "true");
   if (!(await dialog.isVisible())) await chat.getByRole("button", { name: "Allow", exact: true }).click();
 
-  // Core's answer-ask endpoint does not check the PIN of a plain permission ask (the act is gated where it runs), so a
-  // wrong PIN cannot be produced by typing one here: the server's refusal is stood in for by a routed 403, to see what
-  // the dialog does with a refusal. The answer is not sent to the server while it is refused.
-  let refusals = 0;
-  await page.route("**/answer-ask", async (route) => {
-    refusals += 1;
-    await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ ok: false, code: "reauthorization_failed", error: "The security PIN was not accepted." }) });
-  });
+  // A real wrong PIN, checked by Core: refused with its reason, the dialog open and the question still waiting.
   const pin = dialog.getByLabel(/pin/iu).first();
   await pin.fill("000000");
   await dialog.getByRole("button", { name: /allow/iu }).last().click();
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText("The security PIN was not accepted.", { timeout: 30_000 });
-  expect(refusals).toBe(1);
+  await expect(dialog.getByRole("alert")).toContainText("Invalid PIN", { timeout: 30_000 });
   // Behind a modal the window is out of the accessibility tree, so it is found by its class here.
   await expect(page.locator(".chat-window-panel")).toBeVisible();
   await expect(page.locator(".chat-window-panel button", { hasText: /^Allow$/u })).toBeVisible();
   await shot(page, "pin-refused", info);
-  await page.unroute("**/answer-ask");
 
   await pin.fill(manifest.credentials.securityPin);
   await dialog.getByRole("button", { name: /allow/iu }).last().click();
@@ -230,6 +229,10 @@ test("A1, A3, A4: a choice ask with destructive options needs the PIN; Cancel se
   await chat.getByRole("button", { name: "Clear the oldest" }).click();
   const dialog = pinDialog(page, "Confirm this answer");
   await expect(dialog).toBeVisible();
+  // A real wrong PIN here too, on a question a run waits on.
+  await dialog.getByLabel(/pin/iu).first().fill("000000");
+  await dialog.getByRole("button", { name: "Clear the oldest" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Invalid PIN", { timeout: 30_000 });
   await dialog.getByRole("button", { name: /cancel/iu }).click();
   await expect(dialog).toBeHidden();
   await expect(chat.getByRole("button", { name: "Clear the oldest" })).toBeVisible();
@@ -307,6 +310,41 @@ test("C4, C1: nothing from the conversation is kept in browser storage; a typed 
   await expect(panel(page).getByText(text)).toBeVisible({ timeout: 60_000 });
   expect(await stored()).not.toContain(text);
   await shot(page, "typed-send", info);
+});
+
+test("the composer takes words while a thread's first read is on its way, and a held send goes when it lands", async ({ page }, info) => {
+  await page.goto("/programs/secret-keys", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => enabledKeys, { timeout: 60_000 }).not.toBeNull();
+  test.skip(enabledKeys !== false, "A model key is enabled in the fixture root: no send is made.");
+  await openProject(page, seeded.projectId);
+  await openChat(page);
+  await expect(panel(page).getByRole("combobox", { name: "Thread" })).toBeVisible({ timeout: 60_000 });
+  // Every read of a thread waits until this test lets it go, so the new thread stays on its first read.
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/get-conversation*", async (route) => {
+    await gate;
+    await route.continue().catch(() => undefined);
+  });
+  try {
+    // The window opens on the thread still waiting, so this one is a thread it has not read yet.
+    await pickThread(page, seeded.threads.permission);
+    const box = panel(page).getByRole("textbox", { name: "Message to FluxIQ" });
+    await expect(box).toBeEnabled();
+    const text = "Typed before the thread was read";
+    await box.fill(text);
+    await box.press("Enter");
+    await expect(panel(page).getByText("This goes as soon as the conversation is ready.")).toBeVisible();
+    await expect(box).toHaveValue(text);
+    await shot(page, "composer-held", info);
+    release();
+    await expect(panel(page).getByText(text)).toBeVisible({ timeout: 60_000 });
+    await expect(box).toHaveValue("");
+    await expect(panel(page).getByText("This goes as soon as the conversation is ready.")).toBeHidden();
+  } finally {
+    release();
+    await page.unroute("**/get-conversation*");
+  }
 });
 
 test("V4: an empty project welcomes, under the project's own name", async ({ page }, info) => {
