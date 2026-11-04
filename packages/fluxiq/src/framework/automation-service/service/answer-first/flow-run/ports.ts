@@ -32,7 +32,7 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
   runId: string;
   record: AutomationStudioAttemptActRecord;
   sink: Pick<AutomationStudioAnswerFirstRowSink, "recordBatch">;
-  permissions: Pick<AutomationStudioFlowBootstrapActionPermissions, "planStep">;
+  permissions: Pick<AutomationStudioFlowBootstrapActionPermissions, "planStep" | "shown">;
   /** One call really reached the target. */
   stepped(): void;
   /** The run moved the page, so the attempt carries on from where it left it. */

@@ -14,6 +14,11 @@
 // assembled or the engine would not start: the attempt is an exploration, as it would have been.
 //
 // **A failure here never stops a task.** Whatever is thrown leaves the rounds to go on.
+//
+// **A carried-on attempt never comes here**: the Flow is never run again from its start.
+//
+// **The row is written once the first step goes out**, so a process that dies mid-run leaves an
+// attempt that can be seen and carried on. Not before: a run that sent nothing did not happen.
 
 import { automationStudioFlowDraftDeclaresLasting, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunEngineOf } from "../flow-run/index.ts";
@@ -30,7 +35,7 @@ const WHOLE_RUN = "The saved Flow ran from its start to its end.";
 /** The stage's ending, or nothing where the rounds go on. Never throws. */
 export async function automationStudioAnswerFirstFlowStage(run: AutomationStudioAnswerFirstAttemptRun): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { route } = run;
-  if (route.kind !== "use" || run.input.creation.purse.ceilingUsd <= 0) return undefined;
+  if (route.kind !== "use" || run.prior || run.input.creation.purse.ceilingUsd <= 0) return undefined;
   const staged = await automationStudioAnswerFirstBestEffort(() => stage(run, route.saved));
   if (staged.ok) return staged.value;
   run.path = run.flowRun?.wentOut ? "run_flow_then_repair" : "explore";
@@ -44,7 +49,10 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: { steps:
   run.path = "run_flow";
   const outcome = await automationStudioAnswerFirstFlowRun({
     input, runId: run.runId, record: run.record, sink: run.sink, permissions: run.permissions,
-    stepped: () => { run.liveSteps += 1; },
+    stepped: () => {
+      run.liveSteps += 1;
+      if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);
+    },
     arrived: () => { run.arrived = true; },
     engine: () => automationStudioAnswerFirstFlowRunEngineOf(input)
   }, { steps: saved.steps, stepsDigest: saved.stepsDigest });

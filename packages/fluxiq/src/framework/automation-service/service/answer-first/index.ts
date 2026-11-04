@@ -4,8 +4,10 @@
 // already has: `../../service.ts` has a line limit, and this loads the loop's modules.
 export * from "./attempt/index.ts";
 export * from "./attempt-store/index.ts";
+export * from "./carry-on/index.ts";
 export * from "./completion/index.ts";
 export * from "./flow-run/index.ts";
+export * from "./interrupted/index.ts";
 export * from "./loop-signal/index.ts";
 export * from "./rows/index.ts";
 export * from "./run-acts/index.ts";

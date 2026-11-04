@@ -4,7 +4,8 @@
 //
 // A task with nothing saved, in its first round, is told nothing at all: that round is what a
 // first attempt always was. From there on every round is told again what the task brought with it,
-// since a round starts with an empty evidence window.
+// since a round starts with an empty evidence window. A carried-on attempt is told so, and what
+// stands (`../carry-on/`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioAnswerFirstToldTried } from "../loop-signal/index.ts";
@@ -16,6 +17,7 @@ const DECLINED = "A person said no to a lasting act in the saved Flow, so it did
 const NOT_ASSEMBLED = "The saved steps could not be made into a Flow on this site as it stands, so they did not run. They are your draft: fix what no longer fits.";
 const WHOLE_NOT_ACCEPTED = "The saved Flow ran from its start to its end, and that was not accepted as the result yet.";
 const THE_PAGE = "The page is where it left it. Fix that step, then run forward.";
+const CARRIED_ON = "This task was cut off earlier and has been carried on. Nothing starts over and the Flow does not run again from its start: the acts, the rows kept and the draft here stand. Look at the page as it is, and do what is left.";
 
 /** The note for a round: what the keep-going table said of the last one (`base`), and what the attempt holds. Nothing where there is nothing to tell. */
 export function automationStudioAnswerFirstRoundNote(run: AutomationStudioAnswerFirstAttemptRun, base: JsonObject | undefined): JsonObject | undefined {
@@ -37,6 +39,7 @@ function broughtWith(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
   const flowRun = flowRunTold(run);
   const notes = run.route.notes.map(({ worked, failed, quirks }) => ({ ...(worked ? { worked } : {}), ...(failed ? { failed } : {}), ...(quirks ? { quirks } : {}) }));
   return {
+    ...(run.prior ? { carriedOn: true, standing: CARRIED_ON } : {}),
     ...(flowRun ? { flowRun } : {}),
     ...(run.route.kind === "build" && run.route.related ? { draftStart: RELATED_DRAFT } : {}),
     ...(notes.length ? { notes: { whose: NOTES_ARE, words: notes } } : {})
@@ -44,6 +47,7 @@ function broughtWith(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
 }
 
 function flowRunTold(run: AutomationStudioAnswerFirstAttemptRun): JsonObject | undefined {
+  if (run.prior) return undefined;
   if (run.route.kind === "repair") return { happened: NOT_ASSEMBLED };
   const outcome = run.flowRun?.outcome;
   if (!outcome || outcome.kind === "stopped") return undefined;

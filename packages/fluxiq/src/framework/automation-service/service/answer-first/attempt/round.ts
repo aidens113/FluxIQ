@@ -116,7 +116,7 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   };
   const signalled = automationStudioAnswerFirstLoopSignal({ askPerson: () => { run.askPerson = true; } });
   try {
-    const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => run.completion.check(result) });
+    const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => checked(run, result) });
     run.steps = result.steps.map((step) => automationStudioFlowDraftStepCopy(step));
     automationStudioAnswerFirstAddLoopsCaught(run.loopsCaught, result.trace);
     return { kind: "loop", result };
@@ -127,6 +127,13 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   } finally {
     run.personEnded = person.ended();
   }
+}
+
+/** The completion check. A carried-on attempt's rows were copied in as a run's are, so a judge's no takes away their standing, as it does a run's: otherwise a wrong list found earlier would outrank the right one forever. */
+async function checked(run: AutomationStudioAnswerFirstAttemptRun, result: JsonObject): ReturnType<AutomationStudioAnswerFirstAttemptRun["completion"]["check"]> {
+  const answer = await run.completion.check(result);
+  if (run.prior && run.completion.state.refused?.verdict === "no") run.sink.runRowsRefused();
+  return answer;
 }
 
 function personWaiting(run: AutomationStudioAnswerFirstAttemptRun): (state: "started" | "ended", waitedMs: number) => void {

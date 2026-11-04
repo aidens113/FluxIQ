@@ -54,7 +54,7 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
   if (!assembly.ok) return { kind: "not_assembled", codes: assembly.codes };
   const watch = automationStudioAnswerFirstFlowRunWatch(ports.stepped);
   try {
-    const declined = await automationStudioAnswerFirstFlowRunPermission(ports, assembly);
+    const declined = await automationStudioAnswerFirstFlowRunPermission(ports, assembly, saved.steps);
     if (stopped()) return { kind: "stopped" };
     if (declined) return { kind: "permission_declined", consequences: declined };
     const ended = await run(ports, assembly, saved.stepsDigest, watch, signal);

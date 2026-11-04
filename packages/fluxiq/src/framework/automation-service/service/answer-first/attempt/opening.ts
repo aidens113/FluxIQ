@@ -10,10 +10,14 @@
 // Flow each time. The Flow's own rows are read too, so a memory that could not be written does not
 // start the count again.
 //
-// **What it must not do again.** The act record of the task's last attempt, wherever that lived,
-// through `automationStudioAttemptActSeed`'s table. A Flow holds one record, its latest attempt's,
-// so when another attempt has run on that Flow since, what is there is not this task's and nothing
-// is seeded. An attempt with no row yet died before its first write, and counts as unfinished.
+// **What it must not do again.** The act record of the task's last attempt, through
+// `automationStudioAttemptActSeed`'s table, from the task's own memory, which holds it whatever has
+// run on its Flow since. A Flow holds one record, its latest attempt's, so where the memory has
+// none the Flow's is read only when its latest row is this task's last attempt. An attempt with no
+// row yet died before its first write, and counts as unfinished.
+//
+// **Rows are read through the facade** (`../interrupted/`), so one a restart cut off reads as what
+// it is before anything is taken from it.
 
 import { automationStudioAttemptActSeed, type AutomationStudioAttemptActRecordData } from "../../../../../runtime/answer-first/act-record/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
@@ -39,7 +43,7 @@ export type AutomationStudioAnswerFirstOpening = {
   startedFrom?: AutomationStudioAnswerFirstAttemptProvenance["startedFrom"];
 };
 
-type Stores = { store: AutomationStudioAnswerFirstAttemptStore; acts: AutomationStudioAnswerFirstRunActStore };
+type Stores = { store: Pick<AutomationStudioAnswerFirstAttemptStore, "list">; acts: AutomationStudioAnswerFirstRunActStore };
 
 /** Reads what the task kept (header). */
 export async function automationStudioAnswerFirstOpening(input: AutomationStudioAnswerFirstAttemptInput, stores: Stores): Promise<AutomationStudioAnswerFirstOpening> {
@@ -82,6 +86,11 @@ function ordinalOf(taskId: string, kept: AutomationStudioAnswerFirstTaskMemory |
 }
 
 async function seedOf(projectId: string, kept: AutomationStudioAnswerFirstTaskMemory | undefined, stores: Stores): Promise<AutomationStudioAttemptActRecordData | undefined> {
+  const held = kept?.acts;
+  if (held) {
+    const rows = (await readOrNothing(() => stores.store.list(projectId, held.flowId))) ?? [];
+    return automationStudioAttemptActSeed({ status: rows.find((each) => each.attempt.attemptId === held.attemptId)?.attempt.status ?? "working", data: held.data });
+  }
   const last = kept?.attempts.at(-1);
   if (!last) return undefined;
   const rows = (await readOrNothing(() => stores.store.list(projectId, last.flowId))) ?? [];

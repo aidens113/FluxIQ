@@ -50,6 +50,7 @@ function wholeRunYes(run: AutomationStudioAnswerFirstAttemptRun): boolean {
 
 /** The Flow as it was saved did not do the task on the site as it stands. A person's Stop, or a run that never went out, says nothing of the Flow. */
 function flowFailedLive(run: AutomationStudioAnswerFirstAttemptRun): boolean {
+  if (run.prior?.flowFailedLive) return true;
   const flowRun = run.flowRun;
   if (!flowRun?.wentOut || flowRun.outcome.kind !== "ran") return false;
   return !flowRun.outcome.reachedEnd || flowRun.judged === "no";
@@ -78,7 +79,7 @@ function whatFailed(run: AutomationStudioAnswerFirstAttemptRun, ending: Automati
 function originsOf(run: AutomationStudioAnswerFirstAttemptRun): AutomationStudioAnswerFirstStepOrigin[] {
   const startedWith = new Set(run.startedWith.map(oneStep));
   const outcome = run.flowRun?.outcome;
-  const ran = new Map(outcome?.kind === "ran" ? outcome.steps.map((step) => [step.position, step.ran]) : []);
+  const ran = new Map(outcome?.kind === "ran" ? outcome.steps.map((step) => [step.position, step.ran]) : (run.prior?.origins ?? []).flatMap((origin) => (origin.ran ? [[origin.position, origin.ran] as const] : [])));
   return run.steps.filter(automationStudioFlowDraftStepIsProposed).map((step) => {
     const saved = startedWith.has(oneStep(step));
     const went = saved ? ran.get(step.position) : undefined;

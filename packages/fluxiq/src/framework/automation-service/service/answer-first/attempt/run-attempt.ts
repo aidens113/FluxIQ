@@ -6,6 +6,13 @@
 // runs live and judged first (`./flow-stage.ts`), and the rounds carry on to the result if that was
 // not it. A task with nothing saved goes straight to the rounds, as the first attempt always did.
 //
+// **A carry-on is this same attempt going on** (`../carry-on/`): the same
+// ids, act record, tried record, steps and counts, with a new session and run, the rows found so
+// far copied into it. It goes to the rounds and never runs the Flow from its start again.
+//
+// **Live from before it opens until it has ended, however it ends** (`../interrupted/`): a row
+// nobody is working on any more reads as interrupted, and a throw must not leave one reading live.
+//
 // **Its own gate.** The common path's permission gate wraps the domain directly, and this one must
 // wrap the act gate and the row sink too (permission gate -> act gate -> row sink), with no clock
 // on its question. It is made here from the same input, as a project build's briefs make theirs.
@@ -20,7 +27,7 @@
 import { randomUUID } from "node:crypto";
 import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
+import { AutomationStudioAttemptActRecord, type AutomationStudioAttemptActRecordData } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioAnswerFirstAskedRepeats } from "../../../../../runtime/answer-first/asked-count/index.ts";
 import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime/answer-first/attempt-purse/index.ts";
 import { automationStudioLlmLoopAttemptRecord } from "../../../../../runtime/llm/repeat-guard/index.ts";
@@ -29,11 +36,14 @@ import { automationStudioFlowBootstrapActionPermissions, flowBootstrapPhaseFailu
 import { automationStudioFlowLessJudge, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step-log/index.ts";
 import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
+import { automationStudioAnswerFirstCarriedOpening, automationStudioAnswerFirstCarryOnScope, type AutomationStudioAnswerFirstCarriedOpening, type AutomationStudioAnswerFirstCarryOnHold } from "../carry-on/index.ts";
 import { automationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
 import { automationStudioEndViewLook } from "../../end-view/index.ts";
+import { automationStudioAnswerFirstAttemptsRead, automationStudioAnswerFirstLiveAttemptsOf } from "../interrupted/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
-import { automationStudioAnswerFirstRowSink, automationStudioAnswerFirstSession } from "../rows/index.ts";
+import { automationStudioAnswerFirstCopyRows, automationStudioAnswerFirstRowSink, automationStudioAnswerFirstSession } from "../rows/index.ts";
 import { automationStudioAnswerFirstRunActStoreOf } from "../run-acts/index.ts";
+import { automationStudioAnswerFirstTaskMemoryOf } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstCallChain } from "./call-chain.ts";
@@ -53,17 +63,26 @@ import { automationStudioAnswerFirstHoldAnswer } from "./stop-answer.ts";
 
 export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
   if (!input.binding?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
-  const run = await opened(input);
-  automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
-  // The common path's purse is opened as a repair's, whose part it would write: this is an attempt's creation.
-  const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => stagedThenRounds(run));
-  if (ending === "setup_needed") {
-    await endedUntried(run);
-    throw run.setupRefusal;
+  const held = automationStudioAnswerFirstCarryOnScope.getStore();
+  const hold = held && !held.opened && held.projectId === input.projectId && held.flowId === input.flowId ? held : undefined;
+  const attemptId = hold?.attemptId ?? `attempt.${randomUUID()}`;
+  const live = automationStudioAnswerFirstLiveAttemptsOf(input.owner);
+  live.claim(attemptId);
+  try {
+    const run = await opened(input, attemptId, hold);
+    automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
+    // The common path's purse is opened as a repair's, whose part it would write: this is an attempt's creation.
+    const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => stagedThenRounds(run));
+    if (ending === "setup_needed") {
+      await endedUntried(run, hold);
+      throw run.setupRefusal;
+    }
+    const answer = await automationStudioAnswerFirstFinish(run, ending);
+    automationStudioAnswerFirstHoldAnswer(input.request, answer);
+    return answer;
+  } finally {
+    live.release(attemptId);
   }
-  const answer = await automationStudioAnswerFirstFinish(run, ending);
-  automationStudioAnswerFirstHoldAnswer(input.request, answer);
-  return answer;
 }
 
 /** The saved Flow's run where there is one, then the rounds if that did not end it. */
@@ -72,9 +91,10 @@ async function stagedThenRounds(run: AutomationStudioAnswerFirstAttemptRun): Pro
   return ended ?? await automationStudioAnswerFirstRounds(run, automationStudioAnswerFirstRoundNote(run, undefined));
 }
 
-/** Nothing was tried, so nothing is kept of it but the session it opened, which says so. A session not written costs that record, and the person is still told what to do. */
-async function endedUntried(run: AutomationStudioAnswerFirstAttemptRun): Promise<void> {
-  await automationStudioAnswerFirstBestEffort(() => run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, attempts: current.attempts.filter((each) => each.attemptId !== run.attemptId) })));
+/** Nothing was tried, so nothing is kept of it but the session it opened, which says so. A session not written costs that record, and the person is still told what to do. A carry-on tried nothing either: its press hands the row back as it was (`../carry-on/carry-on.ts`). */
+async function endedUntried(run: AutomationStudioAnswerFirstAttemptRun, hold: AutomationStudioAnswerFirstCarryOnHold | undefined): Promise<void> {
+  if (hold) hold.opened = false;
+  else await automationStudioAnswerFirstBestEffort(() => run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, attempts: current.attempts.filter((each) => each.attemptId !== run.attemptId) })));
   try {
     await run.session.end("cancelled");
   } catch {
@@ -82,18 +102,26 @@ async function endedUntried(run: AutomationStudioAnswerFirstAttemptRun): Promise
   }
 }
 
-async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioAnswerFirstAttemptRun> {
+async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId: string, hold: AutomationStudioAnswerFirstCarryOnHold | undefined): Promise<AutomationStudioAnswerFirstAttemptRun> {
   const { projectId, flowId, stores, cancellation } = input;
-  const attemptId = `attempt.${randomUUID()}`;
+  if (hold) hold.opened = true;
   const runId = `explore.${randomUUID()}`;
   const store = automationStudioAnswerFirstAttemptStoreOf(input.owner, stores);
   const acts = automationStudioAnswerFirstRunActStoreOf(input.owner, stores);
-  const opening = await automationStudioAnswerFirstOpening(input, { store, acts });
+  const carried = hold ? automationStudioAnswerFirstCarriedOpening(hold) : undefined;
+  const opening = hold && carried
+    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, actsHeldHere: true, startedFrom: carried.startedFrom }
+    : await automationStudioAnswerFirstOpening(input, { store: automationStudioAnswerFirstAttemptsRead(input.owner, stores), acts });
   // The instruction is the person's: Core refuses to save or count one written from a command's argument (`../../flow-bootstrap-commands/save-goal.ts`, `../../instruction-led/task.ts`).
   const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
   // The same answer as the loop's `askedRepeats` (`./round.ts`), so the record and the detector agree on how many of one act the person asked for.
-  const record = new AutomationStudioAttemptActRecord({ ...(opening.seed ? { seed: opening.seed } : {}), persist: (data) => acts.save(projectId, flowId, data), asked: () => asked(run.claim) });
-  const tried = automationStudioLlmLoopAttemptRecord();
+  // The Flow's store must take it, since a press with no record of it is refused; the task's memory is what outlives another task on this Flow, and a write it misses is made by the next.
+  const persist = async (data: AutomationStudioAttemptActRecordData): Promise<void> => {
+    await acts.save(projectId, flowId, data);
+    await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => ({ ...current, acts: { attemptId, flowId, data } })));
+  };
+  const record = new AutomationStudioAttemptActRecord({ ...(opening.seed ? { seed: opening.seed } : {}), persist, asked: () => asked(run.claim) });
+  const tried = automationStudioLlmLoopAttemptRecord(carried?.tried);
   const session = await automationStudioAnswerFirstSession({ openSession: stores.openSession, writeSession: stores.writeSession, runId, attemptId });
   let sessionEnded = false;
   const ending = {
@@ -128,6 +156,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
     witnesses: () => witnesses.readings(),
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
+    ...(carried?.result ? { seed: { timesChecked: carried.result.timesChecked } } : {}),
     judge: (summary) => automationStudioFlowLessJudge({
       personHeldMs: () => run.waitedMs + (run.ports.personHeldMs?.({ projectId, flowId }) ?? 0),
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
@@ -167,18 +196,44 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
     } : undefined,
     executeTool: cancellation.tool(chain)
   });
+  const now = Date.now();
+  // A carried-on attempt that has been on the site goes on from the page as it stands, and only one that never got there goes to the start location.
+  const arrived = (carried?.prior.liveSteps ?? 0) > 0;
   const run: AutomationStudioAnswerFirstAttemptRun = {
     input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store, memory: opening.memory,
-    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: opening.steps, path: "explore", forwardReached: 0,
-    attemptId, ordinal: opening.ordinal, runId, startedAtMs: Date.now(),
-    record, tried, asked, sink, session: ending, witnesses, completion, permissions, options: input.harnessOptions,
+    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardReached: 0,
+    attemptId, ordinal: opening.ordinal, runId, startedAtMs: carried?.startedAtMs ?? now, segmentStartedAtMs: now, ...(carried ? { prior: carried.prior } : {}),
+    record, tried, asked, sink, session: ending, witnesses, completion, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
     steps: [...opening.steps], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    liveSteps: 0, arrived: false, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
+    liveSteps: carried?.prior.liveSteps ?? 0, arrived, loopsCaught: carried?.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
   };
   // The Flow holds one record, and from here it reads as this attempt's: without this, one that presses nothing would leave an earlier attempt's acts to be read as its own.
-  if (opening.seed || opening.actsHeldHere) await automationStudioAnswerFirstBestEffort(() => acts.save(projectId, flowId, record.data()));
-  await automationStudioAnswerFirstRecordOpening(run);
+  if (opening.seed || opening.actsHeldHere) await automationStudioAnswerFirstBestEffort(() => persist(record.data()));
+  if (carried) await carriedOn(run, carried);
+  else await automationStudioAnswerFirstRecordOpening(run);
   return run;
+}
+
+/** What only a carried-on attempt does at its opening: it still has what it said and the rows it found, and its row says so at once. */
+async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: AutomationStudioAnswerFirstCarriedOpening): Promise<void> {
+  const { projectId, stores } = run.input;
+  const { datasets } = stores;
+  const { state } = run.completion;
+  state.answerText = carried.result?.answerText?.text;
+  state.checkedWhat = carried.result?.checkedWhat;
+  const lastRun = carried.runId;
+  const copied = await automationStudioAnswerFirstCopyRows({
+    sink: run.sink,
+    shown: carried.result?.rows,
+    stored: datasets.available && lastRun !== undefined ? {
+      runId: lastRun,
+      list: () => datasets.listRunDatasetsForVerification({ projectId, runId: lastRun }),
+      page: ({ datasetId, limit, cursor }) => datasets.getRunDatasetPage({ projectId, runId: lastRun, datasetId, limit, ...(cursor === undefined ? {} : { cursor }) })
+    } : undefined
+  });
+  if (!copied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I am carrying on, but some of the rows found so far could not be brought along. I will read them again if I need them.");
+  automationStudioAnswerFirstSay("Carrying on", "Carrying on from where it got to.");
+  await automationStudioAnswerFirstKeep(run);
 }
 
 /** A look that failed reads as none, and says so to nobody: an unread page proves nothing either way. */

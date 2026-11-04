@@ -1,6 +1,7 @@
-// The attempt's stored row as it stands, and the two records it is made of. Written between
-// rounds and at every wait, so a process that dies leaves the best result so far and the draft
-// rather than nothing, and written at the ending (`./ending.ts`) through the contract's own check.
+// The attempt's stored row as it stands, and the two records it is made of. Written at every
+// decision, every wait and between rounds, so a process that dies leaves the best result so far,
+// what it spent and the draft rather than nothing, and written at the ending (`./ending.ts`)
+// through the contract's own check. A carried-on attempt's counts are what it had and this segment's.
 
 import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioTaskAttempt, type AutomationStudioTaskAttemptPath, type AutomationStudioTaskResult, type AutomationStudioTaskResultRows, type AutomationStudioTaskResultSource } from "@fluxiq/contracts/automation";
 import { automationStudioAnswerFirstResult } from "../../../../../runtime/answer-first/result/index.ts";
@@ -17,6 +18,7 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
   const ended = status.status === "achieved" || status.status === "budget_out" || status.status === "stopped_by_person";
   const purse = run.input.creation.purse;
   const { usage: authority } = run.input.authority;
+  const prior = run.prior;
   return {
     taskId: run.taskId,
     attemptId: run.attemptId,
@@ -27,13 +29,14 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
     path: run.path,
     ...status,
     spend: {
-      calls: purse.spentCalls(),
-      inputTokens: run.usage.inputTokens + authority.inputTokens,
-      outputTokens: run.usage.outputTokens + authority.outputTokens,
-      usd: Math.max(0, purse.spentUsd()),
-      ms: Math.max(0, now - run.startedAtMs)
+      calls: (prior?.spend.calls ?? 0) + purse.spentCalls(),
+      inputTokens: (prior?.spend.inputTokens ?? 0) + run.usage.inputTokens + authority.inputTokens,
+      outputTokens: (prior?.spend.outputTokens ?? 0) + run.usage.outputTokens + authority.outputTokens,
+      usd: (prior?.spend.usd ?? 0) + Math.max(0, purse.spentUsd()),
+      ms: (prior?.spend.ms ?? 0) + Math.max(0, now - run.segmentStartedAtMs)
     },
-    budget: { usd: purse.ceilingUsd },
+    // A carry-on's is what the press made it, less whatever the host's total held the purse below that: it says what the attempt really has.
+    budget: { usd: prior ? prior.budgetUsd - Math.max(0, prior.askedUsd - purse.ceilingUsd) : purse.ceilingUsd },
     liveSteps: run.liveSteps,
     loopsCaught: run.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(),
     startedAtMs: run.startedAtMs,

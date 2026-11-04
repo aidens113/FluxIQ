@@ -9,6 +9,7 @@
 // dropped. Notes keep the last 10, attempts the last 100. With no data root it lives in memory.
 
 import { rename } from "node:fs/promises";
+import { parseAutomationStudioAttemptActRecordData } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { safeSegment, ProgramJsonStore, ProgramStateReadError } from "../../../../persistence/program-state/storage.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioProjectPaths } from "../../paths/index.ts";
@@ -180,7 +181,16 @@ function readHeld(value: JsonObject, projectId: string, taskId: string): Held | 
   for (const flow of [memory.best, memory.latest]) {
     if (flow !== undefined && (typeof flow !== "object" || flow === null || !Array.isArray(flow.steps) || typeof flow.flowId !== "string" || typeof flow.stepsDigest !== "string")) return undefined;
   }
-  return { kind: "answer_first_task_memory", schemaVersion: 1, projectId, memory: memory as AutomationStudioAnswerFirstTaskMemory };
+  return { kind: "answer_first_task_memory", schemaVersion: 1, projectId, memory: withReadableActs(memory as AutomationStudioAnswerFirstTaskMemory) };
+}
+
+/** Acts that do not read are left off and the rest of the memory stands: the driver then falls back on the Flow's own record, or refuses. */
+function withReadableActs(memory: AutomationStudioAnswerFirstTaskMemory): AutomationStudioAnswerFirstTaskMemory {
+  if (memory.acts === undefined) return memory;
+  const data = typeof memory.acts === "object" && memory.acts !== null ? parseAutomationStudioAttemptActRecordData(memory.acts.data) : undefined;
+  if (data?.ok && typeof memory.acts.attemptId === "string" && typeof memory.acts.flowId === "string") return { ...memory, acts: { ...memory.acts, data: data.data } };
+  const { acts: _unreadable, ...rest } = memory;
+  return rest;
 }
 
 function readIndexed(value: JsonObject, projectId: string): Index | undefined {

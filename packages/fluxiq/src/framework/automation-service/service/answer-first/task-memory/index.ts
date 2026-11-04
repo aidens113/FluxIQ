@@ -9,4 +9,5 @@ export type { AutomationStudioAnswerFirstStepOrigin } from "./step-origin.ts";
 export { automationStudioAnswerFirstStepsDigest } from "./steps-digest.ts";
 export { automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstTaskMemoryPorts } from "./store-of.ts";
 export { AutomationStudioAnswerFirstTaskMemoryStore } from "./store.ts";
+export type { AutomationStudioAnswerFirstTaskActs } from "./task-acts.ts";
 export type { AutomationStudioAnswerFirstTaskNote } from "./task-note.ts";

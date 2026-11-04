@@ -12,9 +12,17 @@
 // asked about too, in Core's plain words. Only moving money, deleting and sending or publishing
 // reach a person (`../../../../../runtime/action-permission-requests/destructive.ts`), and a grant
 // holds for the attempt, so a repeat over a hundred rows asks once.
+//
+// **Naming the control.** The gate names a control only when the attempt has shown it the name, and
+// a saved Flow's run asks before showing anything. So before each step's declarations go to the
+// check, the step's own recorded words (the control it acted on) are given to the gate to show
+// (`shown`, screened by `./control-words.ts`). That is display only: the same declarations are put in the same order,
+// and a step with no usable words is asked in the same plain words as before.
 
 import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration } from "../../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioFlowBootstrapNode } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
+import { automationStudioAnswerFirstFlowRunControlWords } from "./control-words.ts";
 import type { AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
 import type { AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
 
@@ -23,10 +31,13 @@ const UNNAMED_STEP = "a saved step of this task";
 const PLAIN_VERB = "run";
 
 /** The classes refused, or `undefined` when the Flow may run. */
-export async function automationStudioAnswerFirstFlowRunPermission(ports: Pick<AutomationStudioAnswerFirstFlowRunPorts, "permissions">, assembly: Extract<AutomationStudioAnswerFirstFlowRunAssembly, { ok: true }>): Promise<readonly string[] | undefined> {
-  for (const subflow of assembly.buildPlan.plan.subflows) {
-    for (const node of subflow.nodes) {
+export async function automationStudioAnswerFirstFlowRunPermission(ports: Pick<AutomationStudioAnswerFirstFlowRunPorts, "permissions">, assembly: Extract<AutomationStudioAnswerFirstFlowRunAssembly, { ok: true }>, saved: readonly AutomationStudioFlowDraftStep[] = []): Promise<readonly string[] | undefined> {
+  for (const [subflowIndex, subflow] of assembly.buildPlan.plan.subflows.entries()) {
+    for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const ref = `${subflow.key}.${node.key}`;
+      const place = assembly.locator?.nodes[`${subflowIndex}.${nodeIndex}`];
+      const step = place?.draftStepId !== undefined ? saved.find((candidate) => candidate.id === place.draftStepId) : place?.draftStep !== undefined ? saved.find((candidate) => candidate.position === place.draftStep) : undefined;
+      if (step) ports.permissions.shown?.(automationStudioAnswerFirstFlowRunControlWords(step));
       const check = ports.permissions.planStep({ definitionId: node.definitionId, ref });
       for (const declaration of declarationsOf(node, assembly.declared.get(ref))) {
         const verdict = await check(declaration);

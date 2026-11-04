@@ -193,7 +193,9 @@ describe("a later attempt at the same task", () => {
     const second = await lane.attempt({ maxTotalEstimatedCostUsd: 0.01, costUsd: 0.04 });
     expect(second.judgeCalls).toHaveLength(0);
     expect(second.decisions).toHaveLength(0);
-    expect(second.answer.attempt).toMatchObject({ status: "budget_out", path: "run_flow_then_explore" });
+    // No round decided anything after the run, so nothing was worked out: it says so.
+    expect(second.answer.attempt).toMatchObject({ status: "budget_out", path: "run_flow" });
+    expect(second.answer.result?.source).toBe("flow");
     expect(second.answer.result?.rows?.totalRows).toBe(3);
     expect((await lane.kept())?.notes.at(-1)).toMatchObject({ from: "core", failed: "The budget ran out before the result was confirmed." });
   });
@@ -212,7 +214,7 @@ describe("a later attempt at the same task", () => {
     const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"] });
     expect(stopping).toBe(true);
     expect(second.decisions).toHaveLength(0);
-    expect(second.answer.attempt.status).toBe("stopped_by_person");
+    expect(second.answer.attempt).toMatchObject({ status: "stopped_by_person", path: "run_flow" });
     expect((await lane.kept(CARD_TASK))?.best?.stepsDigest).toBe(proofBefore);
   });
 
@@ -250,13 +252,17 @@ describe("what carries between attempts", () => {
     expect(second.answer.result?.acts).toEqual([expect.objectContaining({ state: "landed" })]);
   });
 
-  // What this leaves open: the task's own act went with the record another task replaced, so the card is pressed again here. See the driver's report.
-  it("the attempt before it was another task's on the Flow: what is there is not carried", async () => {
+  it("another task ran on the Flow since: its record is not carried, and this task's own acts still are, so nothing is pressed twice", async () => {
     const lane = await laterAttempts(cleanups);
     await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], maxTotalEstimatedCostUsd: 0.1, costUsd: 0.04, keepLooking: true, script: [readLoans(), pressCard()] });
+    expect(lane.target.library.renewals.card).toBe(1);
     await lane.attempt({ instruction: "Renew the card again on my library account.", permittedConsequences: ["modify_existing"], script: [runNode("other", RENEW_LOAN, { title: "Atlas of Rivers" }, ["modify_existing"], { add: true }), complete("Renewed.")] });
+    expect((await lane.actsOn())?.acts.map((act) => act.rowIdentity ?? act.id)).not.toContain("card");
     const third = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"] });
+    // The double press this closes: the Flow's one record had gone to the other task.
+    expect(lane.target.library.renewals.card).toBe(1);
     expect(third.answer.result?.acts).toEqual([expect.objectContaining({ state: "landed" })]);
+    expect(third.answer.result?.acts.map((act) => act.what).join(" ")).not.toContain("Atlas");
     expect(third.answer.attempt.ordinal).toBe(2);
   });
 

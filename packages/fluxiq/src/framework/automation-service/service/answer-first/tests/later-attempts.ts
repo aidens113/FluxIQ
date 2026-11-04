@@ -16,7 +16,7 @@ import { caller, judgeReply, mockProvider } from "../../../tests/service-bootstr
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
 import { automationStudioAnswerFirstAttemptPorts, automationStudioAnswerFirstAttemptStoreOf, automationStudioAnswerFirstRunActStoreOf, automationStudioAnswerFirstTaskMemoryOf } from "../index.ts";
-import { libraryTarget, libraryTargetNodes, LOANS_OUTPUT } from "./fake-library-engine.ts";
+import { libraryTarget, libraryTargetNodes, LOANS_OUTPUT, type LibraryTarget } from "./fake-library-engine.ts";
 import { fakeLibraryBinding, LOOK_TOOL, READ_LOANS, runNode, toolCall, type FakeLibraryFault } from "./fake-library.ts";
 
 export const TASK = "List every loan on my library account.";
@@ -41,13 +41,18 @@ export type LaterAttemptOptions = {
   costUsd?: number;
   /** Past the script's end the model keeps looking, for a purse to end it. */
   keepLooking?: boolean;
+  /** The resolver's other extras, for a host whose limits refuse before any model call. */
+  resolver?: { timeoutMs?: number };
 };
 
+/** A Core that restarted: a new service over what an earlier lane left, on the same library. */
+export type LaterAttemptsRestart = { dataDir: string; projectId: string; target: LibraryTarget; flows: readonly string[] };
+
 /** One service and one library, to run attempts on one after another. */
-export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[] } = {}) {
-  const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-later-attempts-"));
-  const target = libraryTarget(options.titles);
-  const current: { script: readonly Decision[]; judge: unknown[]; decided: number; keepLooking: boolean; stop?: () => void; costUsd?: number | undefined; resolver: { maxTotalEstimatedCostUsd?: number } } = { script: [], judge: [], decided: 0, keepLooking: false, resolver: {} };
+export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart } = {}) {
+  const dataDir = options.restart?.dataDir ?? await mkdtemp(path.join(os.tmpdir(), "fluxiq-later-attempts-"));
+  const target = options.restart?.target ?? libraryTarget(options.titles);
+  const current: { script: readonly Decision[]; judge: unknown[]; decided: number; keepLooking: boolean; stop?: () => void; costUsd?: number | undefined; resolver: { maxTotalEstimatedCostUsd?: number; timeoutMs?: number } } = { script: [], judge: [], decided: 0, keepLooking: false, resolver: {} };
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const scripted = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
@@ -71,12 +76,14 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
   });
   service.bindNativeNodeRuntime(libraryTargetNodes(target));
   automationStudioAnswerFirstAttemptPorts(service).sleep = async () => undefined;
-  cleanups.push(async () => {
+  // A restarted lane closes first, since the lane it restarted removes the directory they share.
+  if (options.restart) cleanups.unshift(async () => await service.close());
+  else cleanups.push(async () => {
     await service.close();
     await rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
-  const project = await service.createProject({ name: "Library", domainId: "library" });
-  const flows = new Set<string>();
+  const project = options.restart ? { id: options.restart.projectId } : await service.createProject({ name: "Library", domainId: "library" });
+  const flows = new Set<string>(options.restart?.flows ?? []);
   const owned = service as unknown as { projectPaths: AutomationStudioProjectPaths; flowPaths: AutomationStudioFlowPaths; projects: AutomationStudioProjectStore };
   const stores = { paths: owned.projectPaths, flows: owned.flowPaths, projects: owned.projects };
   const memory = automationStudioAnswerFirstTaskMemoryOf(service, stores);
@@ -95,7 +102,7 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
       schemaVersion: "0.1", instructionId: "instruction.task", title: "The task", body: given.instruction ?? TASK,
       scope: { kind: "flow", projectId: project.id, flowId }, priority: 100, status: "active", requirement: "required", tags: ["generation"], createdAt: now, updatedAt: now
     });
-    Object.assign(current, { script: given.script ?? [], judge: [...(given.judge ?? [])], decided: 0, keepLooking: given.keepLooking === true, costUsd: given.costUsd, resolver: given.maxTotalEstimatedCostUsd === undefined ? {} : { maxTotalEstimatedCostUsd: given.maxTotalEstimatedCostUsd } });
+    Object.assign(current, { script: given.script ?? [], judge: [...(given.judge ?? [])], decided: 0, keepLooking: given.keepLooking === true, costUsd: given.costUsd, resolver: { ...given.resolver, ...(given.maxTotalEstimatedCostUsd === undefined ? {} : { maxTotalEstimatedCostUsd: given.maxTotalEstimatedCostUsd }) } });
     let ranOut = false;
     current.stop = () => {
       ranOut = true;
@@ -120,6 +127,8 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
 
   return {
     service, target, said, seen, memory, projectId: project.id, stores,
+    /** What a new service over the same data needs. */
+    restart: (): LaterAttemptsRestart => ({ dataDir, projectId: project.id, target, flows: [...flows] }),
     attempt: start,
     /** What the task kept, once an attempt has said which task it is. */
     kept: async (instruction: string = TASK) => await memory.get(project.id, taskIds.get(instruction) ?? "task.none"),

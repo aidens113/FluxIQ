@@ -214,9 +214,9 @@ describe("permission, once, before the run", () => {
     expect(fixture.asked).toEqual([]);
     expect(await ran(fixture, destroying())).toEqual({ kind: "permission_declined", consequences: ["delete"] });
     expect(fixture.asked).toHaveLength(1);
-    // The gate names only what this attempt has shown, and a run shows nothing first: the open question in `reports/second-attempt/flow-run.md`.
+    // The gate names only what it was shown: the step's own words are shown first (`./permission-words.test.ts`).
     expect(fixture.asked[0]).toMatch(/press/u);
-    expect(fixture.asked[0]).toContain("a control it cannot name here");
+    expect(fixture.asked[0]).toContain("Cancel card");
   });
 
   it("nobody to ask is the same: nothing is sent on a question nobody can answer", async () => {

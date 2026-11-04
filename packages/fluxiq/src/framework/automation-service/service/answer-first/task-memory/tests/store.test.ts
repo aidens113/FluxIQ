@@ -1,6 +1,6 @@
 // What a task remembers: kept on disk and in memory, safe against an unreadable file and against
 // two writes at once, capped, with its notes screened, and an index from attempt to task.
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -108,6 +108,18 @@ describe("the task memory", () => {
     await expect(store.attemptLocation("project.1", "attempt.none")).resolves.toBeUndefined();
     await expect(store.provenance("project.1", "attempt.1")).resolves.toMatchObject({ attemptId: "attempt.1", route: "build" });
     await expect(store.provenance("project.1", "attempt.none")).resolves.toBeUndefined();
+  });
+
+  it("keeps a task's acts, and leaves off only acts that do not read: the rest of its memory stands", async () => {
+    const { store, tasks } = await onDisk();
+    const data = { kind: "attempt_act_record" as const, schemaVersion: 1 as const, acts: [], rows: [] };
+    await store.update("project.1", "task.a", (memory) => ({ ...withAttempt("attempt.1")(memory), acts: { attemptId: "attempt.1", flowId: "flow.1", data } }));
+    await expect(store.get("project.1", "task.a")).resolves.toMatchObject({ acts: { attemptId: "attempt.1", flowId: "flow.1", data } });
+    const file = path.join(tasks, "task.a.json");
+    await writeFile(file, (await readFile(file, "utf8")).replace("\"attempt_act_record\"", "\"something else\""));
+    const read = await store.get("project.1", "task.a");
+    expect(read?.acts).toBeUndefined();
+    expect(read?.attempts.map((attempt) => attempt.attemptId)).toEqual(["attempt.1"]);
   });
 
   it("is one store per service owner", () => {
