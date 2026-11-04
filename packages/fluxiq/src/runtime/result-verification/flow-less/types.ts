@@ -38,6 +38,10 @@ export type AutomationStudioFlowLessJudgeInput = {
    */
   deniedEvidenceKeys: readonly string[];
   timeoutMs?: number | undefined;
+  /** The whole check's deadline. Absent, the verification deadline for `timeoutMs`. */
+  deadlineMs?: number | undefined;
+  /** How long this work has waited for a person: the deadline does not count it. Absent, nothing. */
+  personHeldMs?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
 };
 

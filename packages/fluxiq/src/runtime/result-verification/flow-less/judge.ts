@@ -43,11 +43,36 @@ const NO_ANSWER = "The check answered without saying whether this is what was as
 /** The harness's refusals of a call by what its purse or run budget holds: a request too large for the model is another matter. */
 const PURSE_CODES: ReadonlySet<string> = new Set(["llm_budget.run_cost_limit", "llm_budget.run_call_limit", "llm_budget.run_total_limit", "llm_budget.run_output_limit", "llm_budget.allowance_unavailable"]);
 
+/** Calls `expired` once `deadlineMs` has passed, not counting what `heldMs` grew by. Answers how to stop it. */
+function automationStudioFlowLessJudgeDeadline(deadlineMs: number, heldMs: (() => number) | undefined, expired: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let counted = heldMs?.() ?? 0;
+  const arm = (ms: number): void => {
+    timer = setTimeout(() => {
+      const held = heldMs?.() ?? 0;
+      if (held <= counted) {
+        expired();
+        return;
+      }
+      const owed = held - counted;
+      counted = held;
+      arm(owed);
+    }, ms);
+    timer.unref?.();
+  };
+  arm(deadlineMs);
+  return () => clearTimeout(timer);
+}
+
 export async function automationStudioFlowLessJudge(input: AutomationStudioFlowLessJudgeInput): Promise<AutomationStudioFlowLessJudgement> {
   const { read, sent } = automationStudioFlowLessJudgedSummary(input.summary, input.deniedEvidenceKeys);
+  // Today's race leaves a call running behind its deadline, and a call waiting on a locked key would then be paid for with nobody to read it. This deadline stops the call, and gives back what a person was waited for.
+  const expiry = new AbortController();
+  const signal = input.signal ? AbortSignal.any([input.signal, expiry.signal]) : expiry.signal;
+  const disarm = automationStudioFlowLessJudgeDeadline(input.deadlineMs ?? automationStudioResultVerificationDeadlineMs(input.timeoutMs), input.personHeldMs, () => expiry.abort());
   const bounded = await automationStudioResultVerificationWithinDeadline({
-    deadlineMs: automationStudioResultVerificationDeadlineMs(input.timeoutMs),
-    signal: input.signal,
+    deadlineMs: 0,
+    signal,
     judge: () => input.run({
       taskKind: "loop_verification",
       projectId: input.projectId,
@@ -58,14 +83,14 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
       deniedEvidenceKeys: input.deniedEvidenceKeys,
       provider: input.provider,
       ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-      ...(input.signal ? { signal: input.signal } : {}),
+      signal,
       metadata: { source: SOURCE, expectedOutput: "diagnosis" }
     })
-  });
+  }).finally(disarm);
   if (input.signal?.aborted) throw input.signal.reason ?? cancelled();
-  if (!bounded.settled) {
-    if (bounded.reason === "threw" && isCancellation(bounded.error)) throw bounded.error;
-    return unanswered(read, bounded.reason === "timed_out" ? "llm.provider_timeout" : undefined);
+  if (!bounded.settled || expiry.signal.aborted) {
+    if (!expiry.signal.aborted && !bounded.settled && bounded.reason === "threw" && isCancellation(bounded.error)) throw bounded.error;
+    return unanswered(read, expiry.signal.aborted ? "llm.provider_timeout" : undefined);
   }
   return reading(bounded.value, read, input.summary);
 }

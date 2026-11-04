@@ -65,6 +65,11 @@ describe("flow.createHere in answer-first mode", () => {
     expect(AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.announce?.({ place: "this page" } as unknown as Parameters<NonNullable<typeof AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.announce>>[0])).toBe("I'll do this on this page and show you the result here. I'll save how I did it, so next time is quicker.");
   });
 
+  it("says what a person must do before it can start, as a setup step and not a failure", async () => {
+    const { context } = contextFor({ ok: true, payload: { setupNeeded: { status: "setup_needed", code: "flow_bootstrap.provider_resolver_unavailable", say: "Add a model key in settings." } } });
+    await expect(automationStudioConversationAnswerFirstAttempt(context, { flowId: "flow.1" })).resolves.toEqual({ ok: true, status: "setup_needed", say: "Add a model key in settings." });
+  });
+
   it("keeps a caller that wants a Flow's steps in on a candidate build", async () => {
     const { context, calls } = contextFor({ ok: false, error: "No." });
     await buildAutomationStudioFlowFromConversation(context, { flowId: "flow.1", mode: "create" });

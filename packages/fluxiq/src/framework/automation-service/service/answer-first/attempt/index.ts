@@ -3,5 +3,6 @@
 export { automationStudioAnswerFirstCeilingUsd } from "./ceiling.ts";
 export type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
 export { automationStudioAnswerFirstAttemptPorts, type AutomationStudioAnswerFirstAttemptPorts } from "./ports.ts";
+export { automationStudioAnswerFirstSay } from "./say.ts";
 export { runAutomationStudioAnswerFirstAttempt } from "./run-attempt.ts";
 export { automationStudioAnswerFirstAnswerOnStop } from "./stop-answer.ts";

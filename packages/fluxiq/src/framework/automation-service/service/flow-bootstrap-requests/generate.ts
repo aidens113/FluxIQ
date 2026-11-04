@@ -13,6 +13,7 @@ import { parseAutomationStudioPermittedConsequences, type AutomationStudioAction
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailedBuilds } from "../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
+import { automationStudioAnswerFirstSetupOf } from "../answer-first/setup/index.ts";
 import { boundedIdentifier } from "./bounded-identifier.ts";
 import { flowBootstrapGenerationReadiness } from "./readiness.ts";
 import { sanitizedFlowBootstrapGeneration } from "./sanitized-generation.ts";
@@ -143,6 +144,9 @@ export async function generateFlowBootstrapAdaptationForRequest(
   failedBuilds.ended(projectId, flowId, undefined);
   // An attempt's answer is a normal return however it ended (`../answer-first/`), and its records were each parsed by the contract as it ended; the Flow is untouched, so nothing here is a change to review. The API contract's list stays as it is: the chat reads this by its own shape (`runtime/conversations/commands/build.ts`).
   if (generated.status === "answered") return candidateAuthoring === "answer-first" ? { ok: true, payload: { answered: generated } } : { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
+  // What a person must do before an attempt can start: no attempt began, and nothing failed (`../answer-first/setup/`).
+  const setupNeeded = automationStudioAnswerFirstSetupOf(generated);
+  if (setupNeeded) return candidateAuthoring === "answer-first" ? { ok: true, payload: { setupNeeded } } : { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
   // Candidate mode ends as a draft or, after a trial judged yes twice, as a proposal naming that candidate and trial (t340); legacy mode only ever proposes, and never names a candidate.
   const consistent = candidateAuthoring ? generated.status === "draft" || generated.candidate !== undefined : generated.status === "proposed" && generated.candidate === undefined;
   if (!consistent) return { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };

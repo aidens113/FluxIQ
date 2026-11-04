@@ -15,6 +15,14 @@
 // The repeat is refused whatever the repeat itself declared: a model told an act is done
 // must not get it through by declaring nothing the second time.
 //
+// **A task that asks for an act several times** ("add three of this") has that many landings
+// of the identical act, and the next is refused. How many comes from the person's request
+// alone (`asked`, `../asked-count/`), read once at the act's first landing and kept, as loop
+// detection reads `askedRepeats`, so the two agree and nothing a model says later raises it. A
+// call about a row is one per row whatever is asked: a count there is another row's business.
+// A landing that may have happened counts as may have: it holds the act to a look first, and
+// only a landing the answer says happened uses up the count.
+//
 // **The disclosed limit (D6).** A press that declared nothing cannot be told from one
 // that only opens a page. It is recorded `may_have_landed`, marked `undeclared`, shown to
 // the model and the judge, and left out of a result's acts and out of every refusal. A
@@ -59,8 +67,9 @@ export class AutomationStudioAttemptActRecord {
   private readonly now: () => number;
   private writing: Promise<void> = Promise.resolve();
   private failure: { error: unknown } | undefined;
+  private readonly asked: ((call: AutomationStudioAttemptActCall) => number | undefined) | undefined;
 
-  constructor(options: { seed?: AutomationStudioAttemptActRecordData; persist?: (data: AutomationStudioAttemptActRecordData) => Promise<void>; now?: () => number } = {}) {
+  constructor(options: { seed?: AutomationStudioAttemptActRecordData; persist?: (data: AutomationStudioAttemptActRecordData) => Promise<void>; now?: () => number; asked?: (call: AutomationStudioAttemptActCall) => number | undefined } = {}) {
     const seed = options.seed === undefined ? undefined : parseAutomationStudioAttemptActRecordData(options.seed);
     if (seed && !seed.ok) throw new TypeError(`An act record's seed was not readable: ${seed.issues.join(", ")}.`);
     this.entries = seed?.ok ? seed.data.acts : [];
@@ -68,12 +77,14 @@ export class AutomationStudioAttemptActRecord {
     this.place = seed?.ok ? seed.data.place : undefined;
     this.persist = options.persist;
     this.now = options.now ?? Date.now;
+    this.asked = options.asked;
   }
 
   /** Whether this call may be dispatched (header). */
   admit(call: AutomationStudioAttemptActCall): AutomationStudioAttemptActAdmission {
-    const matching = this.matching(this.identityOf(call.actionId, call.parameters, call.row)).filter((entry) => !entry.undeclared);
-    const landed = matching.find((entry) => entry.state === "landed");
+    const identity = this.identityOf(call.actionId, call.parameters, call.row);
+    const matching = this.matching(identity).filter((entry) => !entry.undeclared);
+    const landed = matching.find((entry) => entry.state === "landed" && !hasRoom(entry, identity));
     if (landed) return { kind: "already_done", act: contractAct(landed) };
     const blind = matching.find((entry) => entry.state === "may_have_landed" && !entry.lookedSince);
     return blind ? { kind: "look_first", act: contractAct(blind) } : { kind: "run" };
@@ -92,11 +103,14 @@ export class AutomationStudioAttemptActRecord {
     const state = lasting && !uncertain ? "landed" : "may_have_landed";
     const known = this.matching(called).find((entry) => lasting || entry.undeclared);
     if (known) {
+      const wasUndeclared = known.undeclared === true;
       this.absorb(known, frozen, called, lasting ? declaredClasses(call) : undefined, state);
+      if (wasUndeclared && lasting) this.readCount(known, call, called);
       this.changed();
       return contractAct(known);
     }
     const entry = this.newEntry(call, outcome, called, frozen, state, lasting);
+    if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);
     this.changed();
     return contractAct(entry);
@@ -121,7 +135,8 @@ export class AutomationStudioAttemptActRecord {
 
   /** Whether a step's non-row lasting act already landed. A may-have-landed one counts: a step so held is checked, never sent again. */
   stepDone(call: Pick<AutomationStudioAttemptActCall, "actionId" | "parameters" | "row">): boolean {
-    return this.matching(this.identityOf(call.actionId, call.parameters, call.row)).some(stands);
+    const identity = this.identityOf(call.actionId, call.parameters, call.row);
+    return this.matching(identity).some((entry) => stands(entry) && !(entry.state === "landed" && hasRoom(entry, identity)));
   }
 
   /** The act a real run must not do again (`SVC/answer-first/run-acts/`), read by the Flow node's own action, parameters, row and step names. */
@@ -164,7 +179,7 @@ export class AutomationStudioAttemptActRecord {
     return {
       rule: MODEL_RULE,
       acts: this.entries.map((entry) => ({
-        id: entry.id, what: entry.what, where: entry.where, classes: [...entry.classes], state: entry.state,
+        id: entry.id, what: whatOf(entry), where: entry.where, classes: [...entry.classes], state: entry.state,
         ...(entry.rows.length > 0 ? { onARow: true } : {}),
         ...(entry.undeclared ? { undeclared: true } : {}),
         ...(entry.state === "may_have_landed" ? { lookedSince: entry.lookedSince } : {})
@@ -208,7 +223,8 @@ export class AutomationStudioAttemptActRecord {
     entry.handleKeys = [...new Set([...entry.handleKeys, ...called.handleKeys])];
     const controls = [...new Set([...(entry.controls ?? []), ...(frozen?.controls ?? []), ...(called.controls ?? [])])];
     if (controls.length > 0) entry.controls = controls;
-    if (entry.state !== "landed") {
+    if (entry.state !== "landed" || entry.asked !== undefined) {
+      if (entry.asked !== undefined && state === "landed") entry.landings = (entry.landings ?? 0) + 1;
       entry.state = state;
       entry.lookedSince = false;
       // A new landing is a new thing for a run to carry (`SVC/answer-first/run-acts/store.ts`).
@@ -247,6 +263,15 @@ export class AutomationStudioAttemptActRecord {
     };
   }
 
+  /** The count the request asks for this act, read once, at its first landing. A call about a row has none: it is one per row. */
+  private readCount(entry: AutomationStudioAttemptActEntry, call: AutomationStudioAttemptActCall, called: Identity): void {
+    if (called.rows.length > 0) return;
+    const asked = this.asked?.(call);
+    if (asked === undefined || !Number.isSafeInteger(asked) || asked < 2) return;
+    entry.asked = asked;
+    entry.landings = entry.state === "landed" ? 1 : 0;
+  }
+
   private tieLate(entry: AutomationStudioAttemptActEntry): void {
     const named = entry.actedOnWords ? this.ties.ofWords(entry.actedOnWords) : [];
     const rows = named.length > 0 ? named : entry.placePath ? this.ties.ofPath(entry.placePath) : [];
@@ -280,6 +305,17 @@ function declaredClasses(call: AutomationStudioAttemptActCall): AutomationStudio
   return readAttemptActClasses(call.consequences.filter((word) => readAttemptActClasses([word]) !== null).slice(0, 10)) ?? [];
 }
 
+/** Whether the request asks for this act more times than it has landed, for a call that is about no row (header). */
+function hasRoom(entry: AutomationStudioAttemptActEntry, identity: Identity): boolean {
+  return identity.rows.length === 0 && entry.asked !== undefined && (entry.landings ?? 0) < entry.asked;
+}
+
+/** An act's words, with how many times it landed where the request asked for several: a judge and a person read this as the record of them all. */
+function whatOf(entry: AutomationStudioAttemptActEntry): string {
+  const landings = entry.landings ?? 0;
+  return entry.asked !== undefined && landings > 1 ? `${entry.what} (${landings} times)` : entry.what;
+}
+
 /** Whether an entry holds an act that happened or may have, and that a refusal may rest on. */
 function stands(entry: AutomationStudioAttemptActEntry): boolean {
   return !entry.undeclared && (entry.state === "landed" || entry.state === "may_have_landed");
@@ -297,7 +333,7 @@ function matches(entry: AutomationStudioAttemptActEntry, identity: Identity): bo
 /** An entry as the contract's act, with nothing it does not name. */
 function contractAct(entry: AutomationStudioAttemptActEntry): AutomationStudioAttemptAct {
   return {
-    id: entry.id, what: entry.what, where: entry.where, classes: [...entry.classes], state: entry.state,
+    id: entry.id, what: whatOf(entry), where: entry.where, classes: [...entry.classes], state: entry.state,
     ...(entry.rowIdentity !== undefined ? { rowIdentity: entry.rowIdentity } : {}),
     ...(entry.undo ? { undo: { how: entry.undo.how } } : {})
   };

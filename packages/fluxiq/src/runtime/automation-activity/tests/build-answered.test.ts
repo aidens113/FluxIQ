@@ -22,6 +22,11 @@ describe("what an answer-first attempt's activity says", () => {
     expect(labels).toEqual(["Working on your task", ending]);
   });
 
+  it("says a setup step is not a Flow being ready", async () => {
+    const labels = await labelsOf({ projectId: "p1", authoringMode: "answer-first" }, { status: "setup_needed", say: "Add a model key in settings." });
+    expect(labels).toEqual(["Working on your task", "Before I can start"]);
+  });
+
   it("leaves any other build's words as they were", async () => {
     expect(await labelsOf({ projectId: "p1" }, { status: "proposed" })).toEqual(["Building the Flow", "Your Flow is ready"]);
   });

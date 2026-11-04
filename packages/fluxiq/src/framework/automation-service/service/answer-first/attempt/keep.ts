@@ -4,6 +4,7 @@
 
 import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioTaskAttempt, type AutomationStudioTaskResult, type AutomationStudioTaskResultRows } from "@fluxiq/contracts/automation";
 import { automationStudioAnswerFirstResult } from "../../../../../runtime/answer-first/result/index.ts";
+import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
@@ -63,7 +64,7 @@ export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswe
   try {
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
     const result = automationStudioAnswerFirstResultAs(run, run.sink.summary());
-    await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: run.tried.data(), steps: run.steps });
+    await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps });
     return { ok: true };
   } catch (error) {
     return { ok: false, errorName: error instanceof Error ? error.name : "unknown" };

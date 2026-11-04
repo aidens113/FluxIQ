@@ -17,7 +17,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
+import { automationStudioAnswerFirstAskedRepeats } from "../../../../../runtime/answer-first/asked-count/index.ts";
 import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime/answer-first/attempt-purse/index.ts";
+import { automationStudioLlmLoopAttemptRecord } from "../../../../../runtime/llm/repeat-guard/index.ts";
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS } from "../../../../../runtime/automation-parking/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, flowBootstrapPhaseFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioFlowLessJudge, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
@@ -39,7 +41,6 @@ import { automationStudioAnswerFirstRounds } from "./rounds.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 import { automationStudioAnswerFirstHoldAnswer } from "./stop-answer.ts";
-import { AutomationStudioAnswerFirstTriedLog } from "./tried-log.ts";
 
 export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
   if (!input.binding?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
@@ -47,9 +48,22 @@ export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStu
   automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
   // The common path's purse is opened as a repair's, whose part it would write: this is an attempt's creation.
   const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => automationStudioAnswerFirstRounds(run));
+  if (ending === "setup_needed") {
+    await endedUntried(run);
+    throw run.setupRefusal;
+  }
   const answer = await automationStudioAnswerFirstFinish(run, ending);
   automationStudioAnswerFirstHoldAnswer(input.request, answer);
   return answer;
+}
+
+/** Nothing was tried, so nothing is kept of it but the session it opened, which says so. A session not written costs that record, and the person is still told what to do. */
+async function endedUntried(run: AutomationStudioAnswerFirstAttemptRun): Promise<void> {
+  try {
+    await run.session.end("cancelled");
+  } catch {
+    automationStudioAnswerFirstSay("Part of the record was not written", "Nothing was done, but part of what goes with that could not be written down.");
+  }
 }
 
 async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioAnswerFirstAttemptRun> {
@@ -58,8 +72,11 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
   const runId = `explore.${randomUUID()}`;
   const store = automationStudioAnswerFirstAttemptStoreOf(input.owner, stores);
   const acts = automationStudioAnswerFirstRunActStoreOf(input.owner, stores);
-  const record = new AutomationStudioAttemptActRecord({ persist: (data) => acts.save(projectId, flowId, data) });
-  const tried = new AutomationStudioAnswerFirstTriedLog();
+  // The instruction is the person's: Core refuses to save or count one written from a command's argument (`../../flow-bootstrap-commands/save-goal.ts`, `../../instruction-led/task.ts`).
+  const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
+  // The same answer as the loop's `askedRepeats` (`./round.ts`), so the record and the detector agree on how many of one act the person asked for.
+  const record = new AutomationStudioAttemptActRecord({ persist: (data) => acts.save(projectId, flowId, data), asked: () => asked(run.claim) });
+  const tried = automationStudioLlmLoopAttemptRecord();
   const session = await automationStudioAnswerFirstSession({ openSession: stores.openSession, writeSession: stores.writeSession, runId, attemptId });
   let sessionEnded = false;
   const ending = {
@@ -95,6 +112,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
     judge: (summary) => automationStudioFlowLessJudge({
+      personHeldMs: () => run.waitedMs + (run.ports.personHeldMs?.({ projectId, flowId }) ?? 0),
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
       ...(input.provider.timeoutMs !== undefined ? { timeoutMs: input.provider.timeoutMs } : {}),
       ...(cancellation.signal() ? { signal: cancellation.signal() } : {}),
@@ -111,7 +129,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
   const describe = input.binding?.describeCall?.bind(input.binding);
   const chain = automationStudioAnswerFirstCallChain({
     domain: (call) => run.options.executeTool(call),
-    record, sink, tried, witnesses,
+    record, sink, witnesses,
     readRowsKey: input.binding?.readRowsKey,
     describe: describe ? (call) => describe({ projectId, flowId, ...call }) : undefined,
     stepped: () => { run.liveSteps += 1; },
@@ -136,7 +154,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
     input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store,
     taskId: `task.${createHash("sha256").update(input.instructionText).digest("hex").slice(0, 40)}`,
     attemptId, ordinal: await nextOrdinal(store, projectId, flowId), runId, startedAtMs: Date.now(),
-    record, tried, sink, session: ending, witnesses, completion, permissions, options: input.harnessOptions,
+    record, tried, asked, sink, session: ending, witnesses, completion, permissions, options: input.harnessOptions,
     steps: [], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     liveSteps: 0, arrived: false, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
   };

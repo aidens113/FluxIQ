@@ -172,6 +172,30 @@ describe("a call that gave nothing", () => {
     expect(await judged).toMatchObject(notJudged);
   });
 
+  // A locked key can hold a call for hours (t865). A call the deadline gave up on must not go on to be paid for with nobody to read it.
+  it("stops the call it gave up on, so nothing is spent behind its deadline", async () => {
+    vi.useFakeTimers();
+    let stopped = false;
+    const provider: AutomationStudioLlmProvider = { metadata: { provider: "mock", model: "debug-model" }, runTask: (_request, execution) => new Promise(() => { execution?.signal?.addEventListener("abort", () => { stopped = true; }); }) };
+    const judged = judge(provider, { deadlineMs: 1_000 });
+    await vi.advanceTimersByTimeAsync(1_001);
+    expect(await judged).toMatchObject(notJudged);
+    expect(stopped).toBe(true);
+  });
+
+  it("does not count time spent waiting for a person against its deadline", async () => {
+    vi.useFakeTimers();
+    let held = 0, stopped = false;
+    const provider: AutomationStudioLlmProvider = { metadata: { provider: "mock", model: "debug-model" }, runTask: (_request, execution) => new Promise(() => { execution?.signal?.addEventListener("abort", () => { stopped = true; }); }) };
+    const judged = judge(provider, { deadlineMs: 1_000, personHeldMs: () => held });
+    held = 5_000;
+    await vi.advanceTimersByTimeAsync(1_001);
+    expect(stopped).toBe(false);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(stopped).toBe(true);
+    expect(await judged).toMatchObject(notJudged);
+  });
+
   it("is not judged on a refused key", async () => {
     const { provider, seen } = scripted({ thrown: new AutomationStudioLlmProviderError("llm.provider_auth_failed", "Key refused.", false, 401) });
     expect(await judge(provider)).toMatchObject(notJudged);

@@ -12,8 +12,9 @@ import type { AutomationStudioAnswerFirstCompletionCheck } from "../completion/i
 import type { AutomationStudioAnswerFirstRowSink, AutomationStudioAnswerFirstSession } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
+import type { AutomationStudioLlmLoopAttemptRecord } from "../../../../../runtime/llm/repeat-guard/index.ts";
+import type { AutomationStudioAnswerFirstAskedRepeats } from "../../../../../runtime/answer-first/asked-count/index.ts";
 import type { AutomationStudioAnswerFirstAttemptPorts } from "./ports.ts";
-import type { AutomationStudioAnswerFirstTriedLog } from "./tried-log.ts";
 
 export type AutomationStudioAnswerFirstAttemptRun = {
   input: AutomationStudioAnswerFirstAttemptInput;
@@ -25,7 +26,12 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   runId: string;
   startedAtMs: number;
   record: AutomationStudioAttemptActRecord;
-  tried: AutomationStudioAnswerFirstTriedLog;
+  /** One per attempt, handed to every round (t859): what was tried and how, across fresh rounds. */
+  tried: AutomationStudioLlmLoopAttemptRecord;
+  /** How many landings of one act the person's request asks for (`../../../../../runtime/answer-first/asked-count/`). */
+  asked: AutomationStudioAnswerFirstAskedRepeats;
+  /** The act of the request the latest decision says its call does, for `asked`: which act, never how many. */
+  claim?: string | undefined;
   sink: AutomationStudioAnswerFirstRowSink;
   session: AutomationStudioAnswerFirstSession;
   witnesses: AutomationStudioAnswerFirstWitnesses;
@@ -48,6 +54,8 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   askPerson: boolean;
   /** Set by a round whose person-only check ended it. */
   personEnded?: "stopped" | "timed_out" | "unreachable" | "cancelled" | "asks_exhausted" | undefined;
+  /** The refusal the rounds ended on where no model call was ever made: thrown on, to become a setup step (`../setup/`). */
+  setupRefusal?: unknown;
   /** What the attempt waits for right now, for its stored row. */
   waitingFor?: "permission" | "person_only_check" | "stuck_in_a_loop" | undefined;
 };

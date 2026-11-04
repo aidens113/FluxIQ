@@ -33,6 +33,12 @@ describe("a generation request in answer-first mode", () => {
     expect(response).toEqual({ ok: true, payload: { answered: ANSWERED } });
   });
 
+  it("answers a setup step as an answer, not a failure", async () => {
+    const needed = { projectId: "project.1", flowId: "flow.1", status: "setup_needed", code: "flow_bootstrap.provider_resolver_unavailable", say: "Add a model key in settings." };
+    const { deps } = dependencies(needed);
+    expect(await generateFlowBootstrapAdaptationForRequest(deps, { actor: ACTOR, payload: payload({ authoringMode: "configured" }) })).toEqual({ ok: true, payload: { setupNeeded: needed } });
+  });
+
   it("takes it by name", async () => {
     const { asked, deps } = dependencies(ANSWERED);
     await generateFlowBootstrapAdaptationForRequest(deps, { actor: ACTOR, payload: payload({ authoringMode: "answer-first" }) });

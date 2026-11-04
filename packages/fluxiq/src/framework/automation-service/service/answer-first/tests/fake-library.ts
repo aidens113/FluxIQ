@@ -4,11 +4,13 @@
 // never happened. `scriptedAttempt` drives one attempt through the real service with a scripted
 // model. Extend it with what a test needs: `script` is the model, `over` the service's options.
 
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
+import { automationStudioActivityHub } from "../../../../../runtime/activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
@@ -55,8 +57,17 @@ function isReset(value: JsonObject): boolean {
   return value.replay === "reset";
 }
 
+/** A call the target answers its own way, or throws on: nothing, and it answers as a library does. */
+export type FakeLibraryFault = (call: { toolId: string; value: JsonObject }, library: FakeLibrary) => AutomationStudioLlmEvidenceToolExecutionResult | undefined;
+
 /** The domain: a free look, and a library of three nodes that act on the state above. */
-export function fakeLibraryBinding(library: FakeLibrary): AutomationStudioLlmEvidenceRuntimeBinding {
+export function fakeLibraryBinding(library: FakeLibrary, fault?: FakeLibraryFault): AutomationStudioLlmEvidenceRuntimeBinding {
+  // Each call says the state it found and left, as a real domain's does: the loop's guards judge only what they can name.
+  const stated = async (call: Parameters<AutomationStudioLlmEvidenceRuntimeBinding["executeTool"]>[0]): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+    const before = stateOf(library);
+    const answered = await answerOf(library, fault, call);
+    return { ...answered, stateDigests: { before, after: stateOf(library) } };
+  };
   return {
     domainId: "library",
     deniedEvidenceKeys: [],
@@ -65,27 +76,35 @@ export function fakeLibraryBinding(library: FakeLibrary): AutomationStudioLlmEvi
     tools: [{ toolId: LOOK_TOOL, description: "Look at the account page.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
     runsNodes: {},
     resolvePlanNodeParameters: ({ parameters }) => ({ status: "resolved", parameters }),
-    executeTool: async ({ toolId, value, permission }) => {
-      library.calls.push({ toolId, value: structuredClone(value) });
-      if (toolId === LOOK_TOOL) return answer({ page: page(library) }, { actionId: LOOK_TOOL, effect: "observe", proposes: false });
-      const nodeId = String(value.node);
-      const ran = { node: nodeId, parameters: (value.parameters ?? {}) as JsonObject, consequences: (value.consequences ?? []) as string[] };
-      const draft = { actionId: nodeId, input: value, ranWith: ran, replay: { from: { location: "library://account" } }, proposes: true };
-      if (value.replay === "verify") return { kind: "llm_evidence_tool_execution", evidence: { page: page(library) }, effectApplied: false, resultCode: "core.replay.verified" };
-      if (isReset(value)) return { kind: "llm_evidence_tool_execution", evidence: { reset: true }, effectApplied: false, resultCode: "core.replay.replayed" };
-      const code = value.replay === "step" ? { resultCode: "core.replay.replayed" } : {};
-      if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: library.loans.map((loan) => ({ ...loan })) }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: library.loans.map((loan) => ({ ...loan })) }, ...code };
-      const declared = ran.consequences;
-      if (declared.length && permission) {
-        const verdict = await permission({ consequences: declared as AutomationStudioActionConsequence[], control: { name: nodeId === RENEW_CARD ? "Renew card" : `Renew ${String(ran.parameters.title ?? "a loan")}`, kind: "button" }, verb: "press" });
-        if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required", declined: verdict.declined === true }, effectApplied: false, resultCode: "permission_required", draft: { ...draft, effect: "mutate" } };
-      }
-      const row = (value.item ?? {}) as JsonObject;
-      const subject = nodeId === RENEW_CARD ? "card" : String(row.title ?? ran.parameters.title ?? "");
-      library.renewals[subject] = (library.renewals[subject] ?? 0) + 1;
-      return { ...answer({ ok: true, actedOn: subject, pageChanged: true, page: page(library) }, { ...draft, effect: "mutate" }, true), ...code };
-    }
+    executeTool: stated
   };
+}
+
+async function answerOf(library: FakeLibrary, fault: FakeLibraryFault | undefined, { toolId, value, permission }: Parameters<AutomationStudioLlmEvidenceRuntimeBinding["executeTool"]>[0]): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
+  library.calls.push({ toolId, value: structuredClone(value) });
+  const faulted = fault?.({ toolId, value }, library);
+  if (faulted) return faulted;
+  if (toolId === LOOK_TOOL) return answer({ page: page(library) }, { actionId: LOOK_TOOL, effect: "observe", proposes: false });
+  const nodeId = String(value.node);
+  const ran = { node: nodeId, parameters: (value.parameters ?? {}) as JsonObject, consequences: (value.consequences ?? []) as string[] };
+  const draft = { actionId: nodeId, input: value, ranWith: ran, replay: { from: { location: "library://account" } }, proposes: true };
+  if (value.replay === "verify") return { kind: "llm_evidence_tool_execution", evidence: { page: page(library) }, effectApplied: false, resultCode: "core.replay.verified" };
+  if (isReset(value)) return { kind: "llm_evidence_tool_execution", evidence: { reset: true }, effectApplied: false, resultCode: "core.replay.replayed" };
+  const code = value.replay === "step" ? { resultCode: "core.replay.replayed" } : {};
+  if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: library.loans.map((loan) => ({ ...loan })) }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: library.loans.map((loan) => ({ ...loan })) }, ...code };
+  const declared = ran.consequences;
+  if (declared.length && permission) {
+    const verdict = await permission({ consequences: declared as AutomationStudioActionConsequence[], control: { name: nodeId === RENEW_CARD ? "Renew card" : `Renew ${String(ran.parameters.title ?? "a loan")}`, kind: "button" }, verb: "press" });
+    if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required", declined: verdict.declined === true }, effectApplied: false, resultCode: "permission_required", draft: { ...draft, effect: "mutate" } };
+  }
+  const row = (value.item ?? {}) as JsonObject;
+  const subject = nodeId === RENEW_CARD ? "card" : String(row.title ?? ran.parameters.title ?? "");
+  library.renewals[subject] = (library.renewals[subject] ?? 0) + 1;
+  return { ...answer({ ok: true, actedOn: subject, pageChanged: true, page: page(library) }, { ...draft, effect: "mutate" }, true), ...code };
+}
+
+function stateOf(library: FakeLibrary): string {
+  return createHash("sha256").update(JSON.stringify(page(library))).digest("hex").slice(0, 32);
 }
 
 function page(library: FakeLibrary): JsonObject {
@@ -130,11 +149,22 @@ export type ScriptedAttemptOptions = {
   /** Replaces the scripted provider's call, for a test of a provider that is silent or refuses. */
   wrapProvider?: (provider: AutomationStudioLlmProvider, requests: AutomationStudioLlmTaskRequest[]) => AutomationStudioLlmProvider;
   /** The resolver's extras: a total, or a per-call limit. */
-  resolver?: { maxTotalEstimatedCostUsd?: number; maxCallsPerRun?: number };
+  resolver?: { maxTotalEstimatedCostUsd?: number; maxCallsPerRun?: number; timeoutMs?: number; tokenLimits?: { maxInputTokens: number; maxOutputTokens: number; maxTotalTokens: number } };
   over?: Partial<AutomationStudioServiceOptions>;
   /** Called with the service before the attempt, to set ports (`../attempt/ports.ts`). */
   before?: (service: AutomationStudioService, project: { projectId: string; flowId: string }) => void | Promise<void>;
+  /** A call the target answers its own way, or throws on. */
+  fault?: FakeLibraryFault;
+  /** What the model says of each decision, which the chat shows: its summary, in place of a plain word. */
+  saying?: string;
+  /** The Flow is given no instruction: nothing has been asked yet. */
+  noInstruction?: boolean;
 };
+
+/** How long an attempt may take before the test stops it as a person would: nothing else can end one, and the test's own clock does not. */
+const HANG_GUARD_MS = 90_000;
+/** How many decisions it may ask for, for the same reason. */
+const MOST_DECISIONS = 400;
 
 /** One attempt through the real service, with a scripted model and the fake target. */
 export async function scriptedAttempt(options: ScriptedAttemptOptions, cleanups: (() => Promise<void>)[]) {
@@ -143,8 +173,15 @@ export async function scriptedAttempt(options: ScriptedAttemptOptions, cleanups:
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const judged = [...(options.judge ?? [])];
   let decided = 0;
-  const ran = { out: false };
+  const ran = { out: false, hung: false };
   let ids: { projectId: string; flowId: string } | undefined;
+  const stopHung = (): void => {
+    ran.hung = true;
+    if (ids) service.buildCancellation.cancel(ids.projectId, ids.flowId);
+  };
+  const said: string[] = [];
+  const stopListening = automationStudioActivityHub.subscribe((event) => { said.push(`${event.label ?? ""} | ${JSON.stringify(event.detail ?? null)}`); });
+  const guard = setTimeout(stopHung, HANG_GUARD_MS);
   const scripted = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: options.usage ?? USAGE };
@@ -154,25 +191,28 @@ export async function scriptedAttempt(options: ScriptedAttemptOptions, cleanups:
       ran.out = true;
       service.buildCancellation.cancel(ids.projectId, ids.flowId);
     }
+    if (decided >= MOST_DECISIONS) stopHung();
     decided += 1;
-    return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? next(request) : next }, usage: options.usage ?? USAGE };
+    return { response: { kind: "evidence_tool_decision", summary: options.saying ?? "Scripted.", decision: typeof next === "function" ? next(request) : next }, usage: options.usage ?? USAGE };
   });
   const provider = options.wrapProvider ? options.wrapProvider(scripted, requests) : scripted;
   const service = new AutomationStudioService({
     dataDir,
     llmProviderResolver: () => ({ provider, ...(options.resolver ?? {}) }),
-    llmEvidenceRuntime: fakeLibraryBinding(library),
+    llmEvidenceRuntime: fakeLibraryBinding(library, options.fault),
     ...(options.over ?? {})
   });
   service.bindNativeNodeRuntime(fakeLibraryNodes());
   cleanups.push(async () => {
+    clearTimeout(guard);
+    stopListening();
     await service.close();
     await rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
   const project = await service.createProject({ name: "Library", domainId: "library" });
   const flow = await service.createFlow({ projectId: project.id, flowId: "flow.loans", name: "Loans" });
   const now = Date.now();
-  await service.saveFlowInstruction(project.id, {
+  if (!options.noInstruction) await service.saveFlowInstruction(project.id, {
     schemaVersion: "0.1", instructionId: "instruction.task", title: "The task", body: options.instruction ?? "List every loan on my library account.",
     scope: { kind: "flow", projectId: project.id, flowId: flow.flowId }, priority: 100, status: "active", requirement: "required", tags: ["generation"], createdAt: now, updatedAt: now
   });
@@ -182,5 +222,7 @@ export async function scriptedAttempt(options: ScriptedAttemptOptions, cleanups:
     projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
     permittedConsequences: options.permittedConsequences ?? []
   });
-  return { service, dataDir, library, requests, answered, projectId: project.id, flowId: flow.flowId, scriptRanOut: ran.out };
+  clearTimeout(guard);
+  stopListening();
+  return { service, dataDir, library, requests, answered, said, projectId: project.id, flowId: flow.flowId, scriptRanOut: ran.out, hung: ran.hung };
 }

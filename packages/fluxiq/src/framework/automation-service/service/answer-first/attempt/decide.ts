@@ -53,6 +53,7 @@ export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFir
       counted(run, decision);
       if (decision.ok && decision.response?.kind === "evidence_tool_decision") {
         run.backoffs = 0;
+        run.claim = decision.response.decision.kind === "tool_call" ? decision.response.decision.act : undefined;
         return automationStudioActivityDecisionReason.attach({ ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) }, decision.response.summary);
       }
       const codes = decision.diagnostics.filter((diagnostic) => diagnostic.severity === "error").map((diagnostic) => diagnostic.code);

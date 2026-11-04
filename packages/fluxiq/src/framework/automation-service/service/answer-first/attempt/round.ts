@@ -22,15 +22,19 @@ import { automationStudioInstructedActs } from "../../../../../runtime/flow-auth
 import { automationStudioFlowDraftStepCopy } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftReplayClearedCode, automationStudioLlmProviderWithDomainInstructions, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA } from "../completion/index.ts";
-import { automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
+import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstDecide } from "./decide.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "./person-wait.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
-/** The loop's guard stopped the round: it holds the draft as it stood, as a failure would. */
+/** The loop's guard stopped the round: it holds the rows the round wrote, as a failure would. */
 class AutomationStudioAnswerFirstRoundStalled extends Error {
   readonly name = "AutomationStudioAnswerFirstRoundStalled";
+
+  constructor(readonly trace: readonly { resultCode?: string | undefined; resultReason?: string | undefined }[]) {
+    super("The round's guard stopped it.");
+  }
 }
 
 /** What the table reads of a round the guard stopped: the same words as a loop that repeated itself. */
@@ -60,7 +64,7 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   const loop: AutomationStudioLlmEvidenceLoopInput = {
     ...input.limits.loop,
     // The purse's cost is what is told, and the only cost ending; a person's or a silence's wait is not the round's time.
-    budget: { ...input.limits.loop.budget, maxCostUsd: Math.max(input.creation.purse.ceilingUsd, Number.MIN_VALUE), now: () => Date.now() - run.waitedMs },
+    budget: { ...input.limits.loop.budget, maxCostUsd: Math.max(input.creation.purse.ceilingUsd, Number.MIN_VALUE), now: () => Date.now() - run.waitedMs - (run.ports.personHeldMs?.({ projectId: input.projectId, flowId: input.flowId }) ?? 0) },
     purse: input.creation.purse,
     tools: options.tools,
     observedStateKeys: options.observedStateKeys,
@@ -75,9 +79,12 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     propagateDecisionErrors: true,
     unusableDecisions: {
       maxConsecutive: input.limits.maxConsecutiveUnusableDecisions,
-      stalled: () => new AutomationStudioAnswerFirstRoundStalled("The round's guard stopped it.")
+      stalled: ({ trace }) => new AutomationStudioAnswerFirstRoundStalled(trace)
     },
     dryRun: false,
+    // One record across the attempt (t859), and how many of one act the person asked for: the request's number, whichever act the decision names.
+    attemptRecord: run.tried,
+    askedRepeats: (act) => run.asked(act.act),
     forwardRun: automationStudioAttemptActForward(run.record),
     lastingActs: () => (lasting ??= run.permissions.instructedLastingActs(automationStudioInstructedActs(input.instructionText))),
     draft: {
@@ -100,16 +107,16 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     }),
     executeTool: input.routing.recording(person.executeTool)
   };
-  const signalled = automationStudioAnswerFirstLoopSignal({
-    caught: (seen) => caughtLoop(run, seen),
-    askPerson: () => { run.askPerson = true; }
-  });
+  const signalled = automationStudioAnswerFirstLoopSignal({ askPerson: () => { run.askPerson = true; } });
   try {
     const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => run.completion.check(result) });
     run.steps = result.steps.map((step) => automationStudioFlowDraftStepCopy(step));
+    automationStudioAnswerFirstAddLoopsCaught(run.loopsCaught, result.trace);
     return { kind: "loop", result };
   } catch (error) {
-    return error instanceof AutomationStudioAnswerFirstRoundStalled ? STALLED : { kind: "thrown", error };
+    if (!(error instanceof AutomationStudioAnswerFirstRoundStalled)) return { kind: "thrown", error };
+    automationStudioAnswerFirstAddLoopsCaught(run.loopsCaught, error.trace);
+    return STALLED;
   } finally {
     run.personEnded = person.ended();
   }
@@ -121,12 +128,4 @@ function personWaiting(run: AutomationStudioAnswerFirstAttemptRun): (state: "sta
     run.waitedMs += waitedMs;
     void automationStudioAnswerFirstKeep(run);
   };
-}
-
-/** Counted by the contract's own patterns: one it has no word for is on the tried record instead. */
-function caughtLoop(run: AutomationStudioAnswerFirstAttemptRun, seen: { kind: "change_approach" | "ask_person"; pattern: string }): void {
-  const counts = (run.loopsCaught as Record<string, { changeApproach: number; askPerson: number } | undefined>)[seen.pattern];
-  if (!counts) return;
-  if (seen.kind === "ask_person") counts.askPerson += 1;
-  else counts.changeApproach += 1;
 }

@@ -10,6 +10,7 @@
 
 import { automationStudioAnswerFirstEnding } from "../../../../../runtime/answer-first/result/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
+import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
 import { automationStudioAnswerFirstSaveDraft } from "./draft-save.ts";
 import { automationStudioAnswerFirstAttemptAs, automationStudioAnswerFirstResultAs } from "./keep.ts";
@@ -73,7 +74,7 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
     await run.store.save(run.input.projectId, run.input.flowId, {
       attempt: checked.attempt,
       ...(checked.result ? { result: checked.result } : {}),
-      tried: run.tried.data(),
+      tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()),
       ...(candidateId === undefined ? {} : { candidateId }),
       // The steps stay where nothing else holds them, and for an attempt that can still be carried on.
       ...(candidateId === undefined || checked.attempt.status !== "achieved" ? { steps: run.steps } : {})

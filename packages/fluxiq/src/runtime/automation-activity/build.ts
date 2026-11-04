@@ -69,7 +69,9 @@ function endedAsDraft(built: unknown): boolean {
  * answer turn's (`../conversations/`). Absent for any other build.
  */
 function answeredEnding(built: unknown): { phase: "done" | "failed"; label: string } | undefined {
-  if (!built || typeof built !== "object" || (built as { status?: unknown }).status !== "answered") return undefined;
+  const ended = built && typeof built === "object" ? (built as { status?: unknown }).status : undefined;
+  if (ended === "setup_needed") return { phase: "done", label: "Before I can start" };
+  if (ended !== "answered") return undefined;
   const status = (built as { attempt?: { status?: unknown } }).attempt?.status;
   if (status === "budget_out") return { phase: "failed", label: "Reached this task's budget" };
   if (status === "stopped_by_person") return { phase: "done", label: "Stopped" };

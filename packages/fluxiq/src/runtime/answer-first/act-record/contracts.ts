@@ -69,6 +69,10 @@ export type AutomationStudioAttemptActEntry = AutomationStudioAttemptAct & {
   steps?: string[];
   /** Whether an observation ran since it may have landed. */
   lookedSince: boolean;
+  /** How many landings of this act the person's request asks for, where it asks for more than one (`../asked-count/`). Read at its first landing and kept. */
+  asked?: number;
+  /** How many of those the answers say happened. Present with `asked`. */
+  landings?: number;
   at: number;
   /** Hashed words of the sentence naming its item, for a read that comes after it. */
   actedOnWords?: string[];

@@ -6,7 +6,7 @@ import { parseAutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { AutomationStudioAttemptActEntry, AutomationStudioAttemptActNotedRow, AutomationStudioAttemptActRecordData } from "./contracts.ts";
 
 const RECORD_KEYS: ReadonlySet<string> = new Set(["kind", "schemaVersion", "acts", "rows", "place"]);
-const ENTRY_KEYS: ReadonlySet<string> = new Set(["id", "what", "where", "classes", "state", "rowIdentity", "undo", "undeclared", "stage", "actions", "keys", "handleKeys", "rows", "controls", "steps", "lookedSince", "at", "actedOnWords", "placePath"]);
+const ENTRY_KEYS: ReadonlySet<string> = new Set(["id", "what", "where", "classes", "state", "rowIdentity", "undo", "undeclared", "stage", "actions", "keys", "handleKeys", "rows", "controls", "steps", "lookedSince", "at", "actedOnWords", "placePath", "asked", "landings"]);
 const CONTRACT_KEYS: ReadonlySet<string> = new Set(["id", "what", "where", "classes", "state", "rowIdentity", "undo"]);
 const ROW_KEYS: ReadonlySet<string> = new Set(["row", "handles", "fields", "paths"]);
 const FIELD_KEYS: ReadonlySet<string> = new Set(["words", "lettered"]);
@@ -40,7 +40,9 @@ function entryRead(value: unknown, issues: Set<string>): value is AutomationStud
     && typeof value.lookedSince === "boolean" && typeof value.at === "number" && Number.isFinite(value.at)
     && (value.undeclared === undefined || value.undeclared === true)
     && (value.controls === undefined || strings(value.controls)) && (value.placePath === undefined || typeof value.placePath === "string")
-    && (value.steps === undefined || strings(value.steps)) && (value.actedOnWords === undefined || strings(value.actedOnWords));
+    && (value.steps === undefined || strings(value.steps)) && (value.actedOnWords === undefined || strings(value.actedOnWords))
+    && (value.asked === undefined || (Number.isSafeInteger(value.asked) && (value.asked as number) >= 2))
+    && (value.landings === undefined || (Number.isSafeInteger(value.landings) && (value.landings as number) >= 0));
 }
 
 function rowRead(value: unknown): value is AutomationStudioAttemptActNotedRow {

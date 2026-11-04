@@ -61,7 +61,8 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
     ...(typeof evidence?.actedOn === "string" ? { actedOn: evidence.actedOn } : {}),
     ...(typeof evidence?.location === "string" ? { location: evidence.location } : {}),
     pageUnchanged: evidence?.pageChanged === false,
-    rows: [...rowsAt(evidence, readRowsKey), ...rowsIn(result?.outputs)]
+    // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).
+    rows: refused || result?.failure !== undefined ? [] : [...rowsAt(evidence, readRowsKey), ...rowsIn(result?.outputs)]
   };
 }
 

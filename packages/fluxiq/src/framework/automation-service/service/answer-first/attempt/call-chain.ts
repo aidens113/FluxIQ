@@ -20,7 +20,6 @@ import { automationStudioFlowDraftDeclaresLasting } from "../../../../../runtime
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
-import type { AutomationStudioAnswerFirstTriedLog } from "./tried-log.ts";
 
 type Execute = AutomationStudioHarnessOptionLoopBinding["executeTool"];
 
@@ -32,7 +31,6 @@ export function automationStudioAnswerFirstCallChain(input: {
   domain: Execute;
   record: AutomationStudioAttemptActRecord;
   sink: Pick<AutomationStudioAnswerFirstRowSink, "fromCall">;
-  tried: Pick<AutomationStudioAnswerFirstTriedLog, "note">;
   witnesses: Pick<AutomationStudioAnswerFirstWitnesses, "beforeFirstLastingAct">;
   readRowsKey: string | undefined;
   describe: ((call: { toolId: string; value: JsonObject }) => { target?: string | undefined } | undefined) | undefined;
@@ -44,7 +42,6 @@ export function automationStudioAnswerFirstCallChain(input: {
   const stored: Execute = async (call) => {
     input.stepped();
     const answer = await input.domain(call);
-    input.tried.note(call, answer);
     if (!refusedAnswer(answer)) input.answered();
     if (isExecution(answer)) await input.sink.fromCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer);
     return answer;

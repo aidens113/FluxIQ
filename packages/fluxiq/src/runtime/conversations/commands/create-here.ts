@@ -83,7 +83,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     if (answersFirst()) {
       const answered = await automationStudioConversationAnswerFirstAttempt(context, { flowId });
       if (!answered.ok) return progress.failed(answered.cause, { ending: answered.ending, left: automationStudioConversationCreateHereLeft(name, answered, said.from), told: answered.told });
-      return progress.succeeded(automationStudioConversationAttemptSaid(answered));
+      return progress.succeeded(answered.status === "setup_needed" ? answered.say : automationStudioConversationAttemptSaid(answered));
     }
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
     // A build that failed leaves the Flow it was making empty, and the ending

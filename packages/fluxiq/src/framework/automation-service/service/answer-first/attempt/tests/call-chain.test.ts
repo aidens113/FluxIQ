@@ -6,13 +6,11 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioAttemptActRecord } from "../../../../../../runtime/answer-first/act-record/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../../runtime/llm/index.ts";
 import { automationStudioAnswerFirstCallChain } from "../call-chain.ts";
-import { AutomationStudioAnswerFirstTriedLog } from "../tried-log.ts";
 
 function chain() {
   const events: string[] = [];
   const stored: JsonObject[] = [];
   const counts = { stepped: 0, answered: 0 };
-  const tried = new AutomationStudioAnswerFirstTriedLog();
   const execute = automationStudioAnswerFirstCallChain({
     domain: async (call): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
       events.push(`domain:${call.toolId}`);
@@ -26,7 +24,6 @@ function chain() {
         return undefined;
       }
     },
-    tried,
     witnesses: {
       beforeFirstLastingAct: async () => {
         events.push("witness");
@@ -38,7 +35,7 @@ function chain() {
     stepped: () => { counts.stepped += 1; },
     answered: () => { counts.answered += 1; }
   });
-  return { execute, events, stored, counts, tried };
+  return { execute, events, stored, counts };
 }
 
 const PRESS = { callId: "press", toolId: "press", value: { target: { handle: "t1" }, consequences: ["delete"] } };
@@ -63,11 +60,10 @@ describe("the attempt's call chain", () => {
     expect(events.filter((event) => event === "domain:press")).toHaveLength(1);
   });
 
-  it("does not take a refused answer for having arrived, and notes it as tried", async () => {
-    const { execute, counts, tried } = chain();
+  it("does not take a refused answer for having arrived", async () => {
+    const { execute, counts } = chain();
     await execute({ callId: "no", toolId: "refuse", value: { reason: "first words" } });
     await execute({ callId: "no.2", toolId: "refuse", value: { reason: "other words" } });
     expect(counts).toEqual({ stepped: 2, answered: 0 });
-    expect(tried.data().tried).toEqual([expect.objectContaining({ kind: "call", toolId: "refuse", outcome: "failed", times: 2 })]);
   });
 });

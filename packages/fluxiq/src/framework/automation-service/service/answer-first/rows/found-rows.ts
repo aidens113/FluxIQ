@@ -6,13 +6,15 @@
 // a read's rows. That is all this looks at: never the call's input, never a
 // `complete` decision's result, never a field a model wrote (answer-first plan
 // D9: rows come only from real reads, and a model never writes a row). A
-// failed call has no rows.
+// failed call has no rows, whichever way it says so: a failure record, or an
+// answer refused with `ok: false`, as `web.action.rejected.output_not_observed`
+// is, which may hold what a read came back with and did not keep.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 
 /** The list a read's answer holds as its rows (each entry as the read gave it), or `undefined` when the answer holds none. */
 export function automationStudioAnswerFirstReadRows(answer: AutomationStudioLlmEvidenceToolExecutionResult, readRowsKey: string | undefined): unknown[] | undefined {
-  if (answer.failure !== undefined) return undefined;
+  if (answer.failure !== undefined || (isObject(answer.evidence) && answer.evidence.ok === false)) return undefined;
   const live = atKey(answer.evidence, readRowsKey);
   if (live) return live;
   const records = answer.outputs?.records;

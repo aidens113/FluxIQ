@@ -230,12 +230,15 @@ function failedBuild(response: AutomationStudioConversationCommandCallResult): E
 /** What an attempt answered, read through the contract: a record that does not parse is not one the chat can tell. */
 export type AutomationStudioConversationAnswered = { ok: true; status: "answered"; attempt: AutomationStudioTaskAttempt; result?: AutomationStudioTaskResult; candidateId?: string };
 
+/** Something a person must do before an attempt can start, in Core's words: no attempt began, and nothing failed. */
+export type AutomationStudioConversationSetupNeeded = { ok: true; status: "setup_needed"; say: string };
+
 /**
  * One attempt at a task, in answer-first mode (`../../../model/authoring-mode/`), asked for as
  * `configured`: the API's contract names no such mode, and Core resolves it. A budget-out and a
  * person's Stop come back as answers too, so this fails only where the call itself did.
  */
-export async function automationStudioConversationAnswerFirstAttempt(context: AutomationStudioConversationCommandContext, input: { flowId: string }): Promise<AutomationStudioConversationAnswered | Extract<AutomationStudioConversationBuildResult, { ok: false }>> {
+export async function automationStudioConversationAnswerFirstAttempt(context: AutomationStudioConversationCommandContext, input: { flowId: string }): Promise<AutomationStudioConversationAnswered | AutomationStudioConversationSetupNeeded | Extract<AutomationStudioConversationBuildResult, { ok: false }>> {
   const response = await context.port.call("generate-flow-bootstrap-adaptation", {
     projectId: context.projectId,
     flowId: input.flowId,
@@ -247,6 +250,8 @@ export async function automationStudioConversationAnswerFirstAttempt(context: Au
     ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls })
   });
   if (!response.ok) return failedBuild(response);
+  const setup = (response.payload as { setupNeeded?: { say?: unknown } } | undefined)?.setupNeeded?.say;
+  if (typeof setup === "string" && setup.trim()) return { ok: true, status: "setup_needed", say: setup.trim() };
   const answered = (response.payload as { answered?: { attempt?: unknown; result?: unknown; candidateId?: unknown } } | undefined)?.answered;
   const attempt = parseAutomationStudioTaskAttempt(answered?.attempt);
   const result = answered?.result === undefined ? undefined : parseAutomationStudioTaskResult(answered.result);

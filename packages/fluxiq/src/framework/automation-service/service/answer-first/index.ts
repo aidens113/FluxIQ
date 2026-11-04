@@ -8,4 +8,5 @@ export * from "./completion/index.ts";
 export * from "./loop-signal/index.ts";
 export * from "./rows/index.ts";
 export * from "./run-acts/index.ts";
+export * from "./setup/index.ts";
 export * from "./witnesses/index.ts";
