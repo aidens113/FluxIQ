@@ -24,6 +24,7 @@ import {
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE, automationStudioLlmStepLogAnswer } from "../step-log/index.ts";
+import { automationStudioLlmEvidenceLoopAmended, automationStudioLlmEvidenceLoopAmendmentKey, automationStudioLlmEvidenceLoopCheckAmendment } from "./loop-check.ts";
 import { automationStudioLlmEvidenceRefusedOfAKind } from "./refusal-run.ts";
 import { automationStudioLlmEvidenceRepeatStop } from "./refused-repeat.ts";
 import { automationStudioLlmEvidenceAnswerKey, automationStudioLlmEvidenceTellRerunSameResult } from "./rerun-result.ts";
@@ -60,7 +61,8 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // live run `run-muwaobm2-882cadd9`, iterations 19-24).
   const signature = automationStudioLlmDecisionContextSignature(decision);
   const draftBefore = automationStudioLlmEvidenceDraftKey(draftSteps);
-  const sameAs = context.repeats.amendmentBlocks(signature, draftBefore);
+  const loopKey = automationStudioLlmEvidenceLoopAmendmentKey(decision.amendments);
+  const sameAs = context.repeats.amendmentBlocks(signature, draftBefore) ?? automationStudioLlmEvidenceLoopCheckAmendment(context, loopKey, draftBefore); // The guard's refusal first; then the same fix the ladder is refusing (`./loop-check.ts`).
   if (sameAs) return refusedUnrun(context, iteration, decision, signature, sameAs);
   counters.draftAmendments += 1;
   counters.unusableInARow = 0;
@@ -130,6 +132,8 @@ export function automationStudioLlmEvidenceHandleAmendment(
     { iteration, decision: "amend_draft", resultCode: rerun.request ? "llm_evidence_loop.draft_rerun" : sameDraftAs !== undefined ? "llm_evidence_loop.draft_amendment_undone" : amended.applied ? "llm_evidence_loop.draft_amended" : "llm_evidence_loop.draft_unchanged", amended: amended.applied, ...(refused.length ? { amendmentsRefused: refused } : {}), ...(decision.usage ? { usage: decision.usage } : {}) },
     { draftChanged: Boolean(amended.applied || rerun.request), draftChange }
   );
+  // What it comes to is the detector's too, once a rerun has settled where there is one (`./loop-check.ts`).
+  if (!rerun.request) automationStudioLlmEvidenceLoopAmended(context, iteration, { key: loopKey, draftBefore, draftAfter: automationStudioLlmEvidenceDraftKey(draftSteps), applied: amended.applied, undone: sameDraftAs !== undefined, changes: decision.amendments.map((amendment) => ({ step: amendment.step, change: amendment.change })) });
   // An edit is progress on the draft and never on the evidence, so an edit
   // that landed neither clears the no-progress guard nor is spent by it --
   // and an edit that changed nothing does count, because that guard is the
@@ -209,7 +213,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   const held: AutomationStudioLlmEvidenceRerunHeld | undefined = rerunReplaces
     ? {
       amendments: split, nodeId: rerunReplaces.actionId, applied: amended.applied, refusals: split.held.length ? refusals : [], ...(split.held.length && moved.length ? { moved } : {}), ...(split.held.length && unreached.length ? { unreached } : {}), ...(rerun.request.retained ? { retained: rerun.request.retained } : {}),
-      before: { signature, draft: draftBefore, observed: observedBy(rerunReplaces), answer: automationStudioLlmEvidenceAnswerKey(context.evidence, rerunReplaces.callId) }
+      before: { signature, draft: draftBefore, observed: observedBy(rerunReplaces), answer: automationStudioLlmEvidenceAnswerKey(context.evidence, rerunReplaces.callId), loopKey }
     }
     : undefined;
   return { kind: "rerun", decision: { kind: "tool_call", callId: rerun.request.callId, toolId: rerun.request.toolId, input: rerun.request.input }, replaces: rerunReplaces, ...(held ? { held } : {}) };
@@ -258,6 +262,7 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   const changed = draftAfter !== held.before.draft || (tookItsPlace && observedBy(rerun) !== held.before.observed);
   // Another argument that found exactly what the step had found (`./rerun-result.ts`, R3-2).
   const sameResult = tookItsPlace && changed && held.before.answer !== undefined && held.before.answer === automationStudioLlmEvidenceAnswerKey(context.evidence, attempt.callId);
+  automationStudioLlmEvidenceLoopAmended(context, iteration, { key: held.before.loopKey, draftBefore: held.before.draft, draftAfter, applied: changed ? 1 : 0, undone: false });
   if (tookItsPlace && !changed) correctRerunRow(context, iteration, held.applied + settled.applied);
   if (sameResult) automationStudioLlmEvidenceTellRerunSameResult(context, iteration, rerun.position);
   context.history.settleAmendment(iteration, {

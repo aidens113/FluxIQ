@@ -23,6 +23,7 @@ import {
   automationStudioLlmEvidenceRepeatRefusalNote,
   type AutomationStudioLlmEvidenceRepeatedOutcome
 } from "../repeat-guard/index.ts";
+import { automationStudioLlmEvidenceLoopRaise } from "./loop-signal.ts";
 import { automationStudioLlmEvidenceRefusedOfAKind } from "./refusal-run.ts";
 import { automationStudioLlmEvidenceStallRecovery, type AutomationStudioLlmEvidenceStallOutcome } from "./stall-recovery.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
@@ -41,8 +42,10 @@ export function automationStudioLlmEvidenceHandleRefusedRepeat(
   const issueCodes = [AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE];
   history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
   context.recordRow({ iteration, decision: "tool_call", toolId: decision.toolId, resultCode: AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE, resultReason: earlier.outcome, ...(decision.usage ? { usage: decision.usage } : {}) });
+  // One more for the detector when the guard refused it; the ladder counted its own (`./loop-check.ts`).
+  if (earlier.repeats === undefined) context.loops.guardRefused(decision.toolId, decision.input, context.contextOf(decision.toolId), context.repeats.state());
   const inARow = context.repeats.refusedAgain(iteration);
-  const stop = automationStudioLlmEvidenceRepeatStop(context, inARow, undefined, iteration);
+  const stop = automationStudioLlmEvidenceRepeatStop(context, inARow, undefined, iteration) ?? automationStudioLlmEvidenceLoopOverdue(context, iteration);
   if (stop) return stop;
   // A loop that drafts nothing -- a project's supervisor, a reset -- is never told a Flow so far is tested and judged (t591).
   const candidate = context.input.discoveryOnly === true;
@@ -111,9 +114,42 @@ export function automationStudioLlmEvidenceRepeatStop(
   issueCode: string = AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE,
   recoverAt?: number
 ): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> | undefined {
-  const { input, trace, accounting, draftSteps, noProgress } = context;
+  const { noProgress } = context;
   noProgress.stepped();
   if (inARow < AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW && !noProgress.reached()) return undefined;
+  // A caller on the single-loop path takes the stall as its cue to change approach or ask (`./loop-check.ts`); one that does not ends as it always has.
+  if (context.input.loopSignal && automationStudioLlmEvidenceLoopRaise(context, recoverAt ?? context.accounting.iterations, context.loops.stalling()) === "continue") {
+    context.repeats.stallRecovered();
+    noProgress.cleared();
+    return undefined;
+  }
+  return automationStudioLlmEvidenceRepeatStall(context, issueCode, recoverAt);
+}
+
+/**
+ * The ladder's next step once refusing has not worked, whether or not its
+ * refusals came in a row: nothing, or how the round stops. Only a caller on the
+ * single-loop path acts on it: with no `loopSignal` a loop keeps steer and
+ * refuse, and ends only the ways it always could. A lane adds no new way to end.
+ */
+export function automationStudioLlmEvidenceLoopOverdue(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> | undefined {
+  if (!context.input.loopSignal) return undefined;
+  const signal = context.loops.due();
+  if (!signal || automationStudioLlmEvidenceLoopRaise(context, iteration, signal) === "continue") return undefined;
+  return automationStudioLlmEvidenceRepeatStall(context, undefined, iteration);
+}
+
+/**
+ * How the round stops: the error its caller built for a stall, the call its
+ * caller recovers the stall with (`./stall-recovery.ts`), or the loop's own
+ * ending where it built neither. The one way a refused run ends.
+ */
+export function automationStudioLlmEvidenceRepeatStall(
+  context: AutomationStudioLlmEvidenceDecisionHandlerContext,
+  issueCode: string = AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE,
+  recoverAt?: number
+): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> {
+  const { input, trace, accounting, draftSteps } = context;
   if (input.unusableDecisions) {
     const stall = recoverAt === undefined ? { kind: "stall" as const, issueCodes: [issueCode] } : automationStudioLlmEvidenceStallRecovery(context, recoverAt, [issueCode]);
     if (stall.kind === "recover") return stall;

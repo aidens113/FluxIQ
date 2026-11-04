@@ -249,6 +249,12 @@
 // so the identical call runs once more; a second refusal there is recorded as
 // any refusal is. Nothing else about a refusal is read as an invitation.
 //
+// **A call the words alone got past this guard is the loop detector's.** This
+// guard keys a call on its whole input, so a call whose `reason` or `summary` was
+// reworded is new to it. `./loop-detection/` keys on what the call asks, and its
+// ladder refuses through the same path. It lifts nothing refused here, and what
+// this guard has lifted starts again from nothing there.
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
@@ -338,8 +344,13 @@ export type AutomationStudioLlmEvidenceRepeatedOutcome = {
    * `same_amendment`: the same `amend_draft` decision ran its rerun on this same
    * draft and changed nothing (`run-muwaobm2-882cadd9`), or its rerun did not
    * work (`rerunFailed`); `callId` is that rerun's call.
+   * `near_repeat`, `cycle`, `no_progress`, `same_fix`, `same_act`: refused by the loop
+   * detector's ladder (`./loop-detection/`), not by this guard's own memory.
    */
-  outcome: "failed" | "changed_nothing" | "same_result" | "same_answer" | "same_draft" | "same_amendment";
+  outcome: "failed" | "changed_nothing" | "same_result" | "same_answer" | "same_draft" | "same_amendment" | "near_repeat" | "cycle" | "no_progress" | "same_fix" | "same_act";
+  /** A loop's pattern only (`./loop-detection/`): how many times, and which tools; never a value. */
+  repeats?: number;
+  toolIds?: readonly string[];
   resultCode?: string;
   resultReason?: string;
   /** It failed only because a handle it names was never shown on this page; a later call that shows handles lifts it. */

@@ -30,7 +30,7 @@ import type { AutomationStudioLlmEvidenceLoopDraftChange } from "./draft-change.
 import type { AutomationStudioLlmEvidenceLoopDraftShown } from "./draft-shown.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID, type AutomationStudioLlmEvidenceLoopProgress } from "../evidence-progress/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID } from "../draft-amendment-feedback/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID } from "../repeat-guard/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID } from "../repeat-guard/index.ts";
 import { automationStudioLlmStepLogAnswer, type AutomationStudioLlmStepLogAnswerStep, type AutomationStudioLlmStepLogCoreEntry } from "../step-log/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID } from "../unusable-decision.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID } from "./answered-request.ts";
@@ -214,6 +214,7 @@ const CORE_ANSWER_TOOL_IDS: ReadonlySet<string> = new Set([
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID
 ]);
