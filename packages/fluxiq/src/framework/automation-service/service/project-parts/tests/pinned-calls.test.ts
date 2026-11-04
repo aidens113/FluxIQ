@@ -98,7 +98,7 @@ describe("pinned calls to a saved part", () => {
       await writeBare("part.one", [{ partId: "part.two", version: 1 }]);
       await writeBare("part.two", [{ partId: "part.one", version: 1 }]);
       const answer = await harness.parts.run({ projectId: PROJECT, partId: "part.one", inputs: {} }) as AutomationStudioProjectPartRunRefusal;
-      expect(answer).toMatchObject({ ok: false, code: "part.calls_not_available", callBound: "part.call_cycle" });
+      expect(answer).toMatchObject({ ok: false, code: "part.call_cycle" });
       expect(harness.domain.asked).toEqual([]);
       expect(await harness.parts.graphs(PROJECT, "flow.caller").refusal({ partId: "part.one", version: 1 })).toMatchObject({ code: "part.call_cycle" });
     });
@@ -116,7 +116,7 @@ describe("pinned calls to a saved part", () => {
     it("depth is refused at the run, one past the bound, and a chain at the bound runs its reads", async () => {
       for (let level = 9; level >= 1; level -= 1) await writeBare(`part.level${level}`, level === 9 ? [] : [{ partId: `part.level${level + 1}`, version: 1 }]);
       const answer = await harness.parts.run({ projectId: PROJECT, partId: "part.level1", inputs: {} }) as AutomationStudioProjectPartRunRefusal;
-      expect(answer).toMatchObject({ ok: false, code: "part.calls_not_available", callBound: "part.call_too_deep" });
+      expect(answer).toMatchObject({ ok: false, code: "part.call_too_deep" });
       expect(await harness.parts.graphs(PROJECT, "flow.caller").refusal({ partId: "part.level1", version: 1 })).toMatchObject({ code: "part.call_too_deep" });
       expect(await harness.parts.graphs(PROJECT, "flow.caller").refusal({ partId: "part.level2", version: 1 }), "eight deep is within the bound").toBeUndefined();
     });

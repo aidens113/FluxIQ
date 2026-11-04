@@ -86,11 +86,28 @@ async function versionsOf(stores: AutomationStudioProjectPartStores, partId: str
   return entries;
 }
 
+/**
+ * Who calls a part. A Flow is one caller however many of its graphs hold a row: an attempt's draft keeps
+ * its own graph ids, and the same step applied later adds rows under the real ones. The newest version it pins speaks for it.
+ */
 async function callersOf(stores: AutomationStudioProjectPartStores, partId: string): Promise<ProjectPartCaller[]> {
-  return (await stores.parts.listCallsTo({ partId })).map((call): ProjectPartCaller =>
-    call.callerKind === "flow_graph"
-      // The Flow a person opened. The graph that holds the step stays in the store, and no screen reads it.
-      ? { kind: "flow", flowId: call.callerFlowId ?? call.callerId, nodeId: call.callerNodeId, version: call.version }
-      : { kind: "part", partId: call.callerId, callerVersion: call.callerVersion, nodeId: call.callerNodeId, version: call.version }
-  );
+  const flows = new Map<string, Extract<ProjectPartCaller, { kind: "flow" }>>();
+  const callers: ProjectPartCaller[] = [];
+  for (const call of await stores.parts.listCallsTo({ partId })) {
+    if (call.callerKind !== "flow_graph") {
+      callers.push({ kind: "part", partId: call.callerId, callerVersion: call.callerVersion, nodeId: call.callerNodeId, version: call.version });
+      continue;
+    }
+    // The Flow a person opened. The graph that holds the step stays in the store, and no screen reads it.
+    const flowId = call.callerFlowId ?? call.callerId;
+    const known = flows.get(flowId);
+    if (known) {
+      if (call.version > known.version) Object.assign(known, { nodeId: call.callerNodeId, version: call.version });
+      continue;
+    }
+    const caller: Extract<ProjectPartCaller, { kind: "flow" }> = { kind: "flow", flowId, nodeId: call.callerNodeId, version: call.version };
+    flows.set(flowId, caller);
+    callers.push(caller);
+  }
+  return callers;
 }

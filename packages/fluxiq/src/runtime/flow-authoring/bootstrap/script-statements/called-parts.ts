@@ -20,11 +20,27 @@
 // Nothing crosses into a part but its inputs, and nothing out but its outputs:
 // a `$step` binding stays in its own block, and a part's step reads what it was
 // given as `$input.<name>`. Each refusal names the line it is about.
+//
+// **A row across a call.** A part that acts on one row of a list its caller goes through
+// declares `input: row`, and the step that calls it inside `repeat over:` says `row: $row`.
+// The frame's input is `item`, the name a loop's row takes, so the part's steps are handed
+// that row exactly as a loop's own steps are (`engine/automation/frames/`): a press stays in
+// it, and it is found again before each press (`engine/automation/target-reacquire/frame-row.ts`).
+// `$row` is all the line may say, since anything else in `item` would not be a row.
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptBlock, AutomationStudioFlowScriptOutput, AutomationStudioFlowScriptStep } from "../authoring/index.ts";
 import { automationStudioFlowScriptPartPortName } from "./part-port-name.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";
+
+/** The input a part declares to take one row of its caller's list (header). */
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_ROW_INPUT = "row";
+const WHOLE_ROW = "$row";
+
+/** The port an input declared under `name` is: its own name, but for the row, which goes by the name a loop's row takes. */
+export function automationStudioFlowScriptPartInputPort(name: string): string {
+  return name === AUTOMATION_STUDIO_FLOW_SCRIPT_ROW_INPUT ? "item" : name;
+}
 
 /** One part: the block a step calls, by index, and its interface as written. */
 export type AutomationStudioFlowScriptPart = {
@@ -111,7 +127,11 @@ export function automationStudioFlowScriptCallStep(step: AutomationStudioFlowScr
       return [];
     }
     given.add(name);
-    return [{ ...entry, key: `inputs.${name}` }];
+    if (name === AUTOMATION_STUDIO_FLOW_SCRIPT_ROW_INPUT && entry.lines.join("\n").trim() !== WHOLE_ROW) {
+      issues.push(scriptStatementRefusal("flow_script.invalid_binding", `${at}, whose input "${name}" is the row a repeat over a list is on, and the line at ${entry.line} gives it something else. Inside \`repeat over:\`, write \`${name}: ${WHOLE_ROW}\`; for any other value, give the input another name.`, entry.line));
+      return [];
+    }
+    return [{ ...entry, key: `inputs.${automationStudioFlowScriptPartInputPort(name)}` }];
   });
   const missing = part.inputs.filter((name) => !given.has(name));
   if (missing.length) {

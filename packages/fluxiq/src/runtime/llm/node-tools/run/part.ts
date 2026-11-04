@@ -43,6 +43,8 @@ export type AutomationStudioLlmRunPartAnswer<Act> =
     landed: readonly Act[];
     partId: string;
     version: number;
+    /** What the model should do instead, where this part as called could not work: it leaves no step in the draft, since a Flow holding it would stop there too. */
+    instruction?: string | undefined;
   };
 
 export type AutomationStudioLlmRunPartPort<Act> = {
@@ -105,6 +107,7 @@ export function automationStudioLlmRunPartBundle<Act>(input: { port: AutomationS
         }
         // The acts are handed over; what the loop's gate records for this call is no act of its own (header).
         await call.permission({ consequences: [], control: { name: "a saved part" }, verb: "run", effect: "observe" });
+        if (answer.instruction) return answered(answer);
         return { ...answered(answer), draft: { actionId: AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID, effect: "mutate", ranWith: { part: { partId: answer.partId, version: answer.version }, inputs: asked.inputs } } };
       }
     }
@@ -130,7 +133,8 @@ function answered(answer: Exclude<AutomationStudioLlmRunPartAnswer<unknown>, { r
   const finished = answer.status === "succeeded";
   const evidence: JsonObject = {
     ok: finished, status: answer.status, outputs: answer.outputs, acts: [...answer.classes],
-    ...(answer.stoppedAt ? { stoppedAt: { step: answer.stoppedAt.stepLabel, reason: answer.stoppedAt.reason } } : {})
+    ...(answer.stoppedAt ? { stoppedAt: { step: answer.stoppedAt.stepLabel, reason: answer.stoppedAt.reason } } : {}),
+    ...(answer.instruction ? { instruction: answer.instruction } : {})
   };
   return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, resultCode: finished ? "core.run_part.ran" : "core.run_part.stopped" };
 }

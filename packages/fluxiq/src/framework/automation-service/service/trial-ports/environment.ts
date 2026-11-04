@@ -2,7 +2,7 @@ import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResoluti
 import { readRecordSets } from "../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioPrepareCandidateStart } from "../candidate-trial/index.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "../project-build/index.ts";
-import { automationStudioRunGraphOptions } from "../runtime-session/index.ts";
+import { automationStudioRunGraphOptions, automationStudioSubflowGraphSource } from "../runtime-session/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../summaries/index.ts";
 import type { AutomationStudioServiceTrialCollaborators } from "./collaborators.ts";
 
@@ -43,11 +43,14 @@ export function automationStudioServiceTrialEnvironment(collaborators: Automatio
     graphOptions: ({ runId, signal }) => {
       const datasets = collaborators.runDatasets();
       const conversations = collaborators.conversations();
-      return automationStudioRunGraphOptions({
+      const options = automationStudioRunGraphOptions({
         signal, ...collaborators.executor(), authorizedDomainIds: [],
         ...(datasets.available ? { onRecordBatch: datasets.recordBatchHandler(projectId, runId) } : {}),
         ...(conversations.available ? { parking: conversations.parkingPort({ projectId, subject: { kind: "run", id: runId } }) } : {})
       });
+      // A step that pins a saved part runs what a real run would. This source answers a pin and nothing else, and a trial's own Subflows stay its own (`../../../../runtime/flow-authoring/bootstrap/verification/candidate-graphs.ts`).
+      const library = collaborators.partLibrary?.(projectId, flowId);
+      return library ? { ...options, subflowGraphs: automationStudioSubflowGraphSource({ subflows: [], parentFlowId: flowId, loadGraph: async () => undefined, representationOf: () => undefined, library }) } : options;
     },
     processDatasets: (runId) => collaborators.runDatasets().processEndedRunDatasets({ projectId, runId }),
     recordSets: (runId) => {

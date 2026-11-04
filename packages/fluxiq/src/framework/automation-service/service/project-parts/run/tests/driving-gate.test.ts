@@ -6,6 +6,7 @@ import type { RunProjectPartResponse } from "../../../../../../api-contracts/aut
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourcePort } from "../../../../../../runtime/automation-host/index.ts";
 import { AutomationStudioHostLeaseScope, automationStudioProjectHostLeaseScope } from "../../../../../../runtime/project-agents/index.ts";
+import { AUTOMATION_STUDIO_PAGE_HELD_MESSAGE } from "../../../runtime-session/index.ts";
 import { automationStudioProjectBuildRunPartBundle } from "../../index.ts";
 import { openRowsHarness, PROJECT, rowGraph, SESSION_AT, type RowsHarness } from "./part-rows-harness.ts";
 
@@ -50,7 +51,7 @@ describe("a part run while another run drives the project", () => {
     const partId = await open();
     harness.otherRuns.list = async () => [SESSION_AT(status)];
     const answer = await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED });
-    expect(answer).toMatchObject({ ok: false, code: "part.run_in_progress", message: expect.stringContaining("Another run") });
+    expect(answer).toMatchObject({ ok: false, code: "part.run_in_progress", message: AUTOMATION_STUDIO_PAGE_HELD_MESSAGE });
     expect(JSON.stringify(answer)).not.toMatch(/session|lease|host/iu);
     untouched();
   });

@@ -31,6 +31,15 @@ describe("candidate calls are rooted in actual entry graphs", () => {
     expect(automationStudioFlowBootstrapRouteIssues(unknown)).toEqual([expect.objectContaining({ code: "bootstrap.unknown_call_target", path: "plan.subflows.0.nodes.0.parameters.subflowId" })]);
   });
 
+  it("refuses a call naming neither a Subflow nor a saved part, and lets a pin through unread", () => {
+    const named = plan([part("main", "foreign")]);
+    named.subflows[0]!.nodes[0]!.parameters = { inputs: {} };
+    expect(automationStudioFlowBootstrapRouteIssues(named)).toEqual([expect.objectContaining({ code: "bootstrap.unknown_call_target", path: "plan.subflows.0.nodes.0.parameters.subflowId" })]);
+    const pinned = plan([part("main", "foreign")]);
+    pinned.subflows[0]!.nodes[0]!.parameters = { part: { partId: "part.a", version: 1 }, inputs: {} };
+    expect(automationStudioFlowBootstrapRouteIssues(pinned)).toEqual([]);
+  });
+
   it("refuses a dynamic candidate target while leaving runtime input bindings separate", () => {
     const dynamic = plan([part("main", "ignored")]);
     dynamic.subflows[0]!.nodes[0]!.parameters = { subflowId: { $state: { path: "run.target" } }, inputs: { value: { $state: { path: "run.value" } } } };

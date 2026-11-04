@@ -109,7 +109,7 @@ describe("a row that crosses a call", () => {
     const partId = await harness.save([actionGraph("act"), siteGraph("site", { subflowId: "subflow.act" }, { given: {} })]);
     harness.page.rows = [{ key: "a", words: "first" }];
     const answer = await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED }) as RunProjectPartResponse;
-    expect(answer).toMatchObject({ status: "stopped", acts: [], stoppedAt: { reason: expect.stringContaining("could not be read again") } });
+    expect(answer).toMatchObject({ status: "stopped", acts: [], stoppedAt: { reason: expect.stringContaining("was not handed the item") } });
     expect(harness.domain.pressed).toEqual([]);
   });
 

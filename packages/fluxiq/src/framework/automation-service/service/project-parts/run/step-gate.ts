@@ -24,6 +24,10 @@
 // A gate cannot take a written `on failed:` route, so one is not taken here: the run stops
 // and says so, which is the side a mistake should fall on.
 //
+// **In a task's attempt the act record may stop the run too** (`stopFor`, asked at the door a
+// step's resolved values reach, `./settled-calls.ts`): its stop holds here, like any other, so
+// no later step and no written `on failed:` route goes past it.
+//
 // A person's own pause holds first, and says so; a hold this gate makes for itself
 // is said nowhere, since no person holds the run.
 import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
@@ -33,13 +37,13 @@ import type { ProjectPartRecheckStop } from "./recheck.ts";
 import type { ProjectPartStepClasses } from "./step-classes.ts";
 
 /** Why the gate stopped a run, in a closed word. */
-export type ProjectPartGateStopReason = ProjectPartRecheckStop | "not_allowed" | "unknown_step" | "row_gone" | "row_unclear" | "row_unread";
+export type ProjectPartGateStopReason = ProjectPartRecheckStop | "not_allowed" | "unknown_step" | "row_gone" | "row_unclear" | "row_unread" | "row_not_handed" | "act_done" | "act_may_have_landed";
 export type ProjectPartGateStop = { node: AutomationStudioFlowNode | undefined; reason: ProjectPartGateStopReason };
 
 const GO: AutomationStudioRunCheckpointOutcome = { outcome: "resume", afterManualAction: false };
 const STOP: AutomationStudioRunCheckpointOutcome = { outcome: "stop", message: "This part stopped before its next step, and that step was not done." };
 
-export type ProjectPartStepGate = AutomationStudioRunControlGate & { stopped(): ProjectPartGateStop | undefined };
+export type ProjectPartStepGate = AutomationStudioRunControlGate & { stopped(): ProjectPartGateStop | undefined; stopFor(node: AutomationStudioFlowNode, reason: ProjectPartGateStopReason): void };
 
 export function projectPartStepGate(input: {
   person: AutomationStudioRunControlGate;
@@ -64,7 +68,7 @@ export function projectPartStepGate(input: {
     if (row.outcome === "done") return GO;
     if (row.outcome === "gone") return stopping(node, "row_gone");
     if (row.outcome === "unmatched") return stopping(node, "row_unclear");
-    if (row.outcome === "unavailable") return stopping(node, "row_unread");
+    if (row.outcome === "unavailable") return stopping(node, row.reason === "row_not_handed" ? "row_not_handed" : "row_unread");
     if (row.outcome === "found") {
       const stopped = await input.recheck(node, row);
       return stopped ? stopping(node, stopped) : GO;
@@ -78,6 +82,9 @@ export function projectPartStepGate(input: {
   };
   return {
     stopped: () => stop,
+    stopFor: (node, reason) => {
+      stopping(node, reason);
+    },
     heldBy: () => input.person.heldBy?.() ?? null,
     heldQuietly: () => ownHold,
     checkpoint(at) {

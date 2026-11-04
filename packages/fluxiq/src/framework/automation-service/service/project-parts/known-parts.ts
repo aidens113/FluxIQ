@@ -66,7 +66,7 @@ type AttemptOffer = {
 };
 
 /** Where an attempt hands the library its act record, once it has made one. Nothing runs a part before that. */
-export type AutomationStudioAnswerFirstPartActs = { use(record: Pick<AutomationStudioAttemptActRecord, "settled">): void };
+export type AutomationStudioAnswerFirstPartActs = { use(record: Pick<AutomationStudioAttemptActRecord, "admit" | "settled">): void };
 
 /**
  * The attempt's input with the library offered, or the same input untouched when nothing can be offered
@@ -75,7 +75,8 @@ export type AutomationStudioAnswerFirstPartActs = { use(record: Pick<AutomationS
  *
  * A part a run lands acts through is held to one run per version and values for the attempt, as a build holds it (`done`).
  * The attempt's act record is told each of its lasting steps with the node's own action, parameters and row, as it happens, so
- * the first real run of that part knows them when it reaches the same step (`../answer-first/run-acts/run-gate.ts`).
+ * the first real run of that part knows them when it reaches the same step (`../answer-first/run-acts/run-gate.ts`). It is also asked
+ * before each of them (`admit`, `./run/step-gate.ts`), so an act the task already did by hand, or that may have landed, stops the part there.
  */
 export async function automationStudioAnswerFirstKnownParts<Input extends AttemptOffer>(input: Input): Promise<Input> {
   const { parts } = input;
@@ -87,11 +88,12 @@ export async function automationStudioAnswerFirstKnownParts<Input extends Attemp
     askedClasses: input.permissionGround.permittedConsequences ?? []
   });
   if (!known) return input;
-  let record: Pick<AutomationStudioAttemptActRecord, "settled"> | undefined;
+  let record: Pick<AutomationStudioAttemptActRecord, "admit" | "settled"> | undefined;
   const bundle = automationStudioProjectBuildRunPartBundle({
     parts, permittedConsequences: input.permissionGround.permittedConsequences ?? [], done: new Set(), landed: () => undefined,
     // The words are left to the record, which says an act by its class: a step's label may hold page text.
-    settled: (call, outcome) => { record?.settled({ ...call, stage: "exploration" }, { ...outcome, words: { what: "", where: "" } }); }
+    settled: (call, outcome) => { record?.settled({ ...call, stage: "exploration" }, { ...outcome, words: { what: "", where: "" } }); },
+    admit: (call) => record?.admit({ ...call, stage: "exploration" }).kind ?? "run"
   });
   const offering = (base: AutomationStudioHarnessOptionLoopBinding) => withRunPart(base, bundle, { projectId: input.projectId, flowId: input.flowId, resolution: input.resolution });
   let told = false;

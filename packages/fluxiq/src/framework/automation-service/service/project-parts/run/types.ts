@@ -10,7 +10,8 @@ import type { AutomationStudioPartCaller } from "../../../../../runtime/project-
 import type { AutomationStudioCandidateTrialLandedAct } from "../../candidate-trial/index.ts";
 import type { AutomationStudioServiceTrialCollaborators } from "../../trial-ports/index.ts";
 import type { AutomationStudioProjectPartDrivingPorts } from "./driving-gate.ts";
-import type { ProjectPartSettled } from "./settled-calls.ts";
+import type { ProjectPartAdmit, ProjectPartSettled } from "./settled-calls.ts";
+import type { ProjectPartGateStopReason } from "./step-gate.ts";
 
 /** A run as the service holds it: where a person pauses and stops it, closed when the run ends. */
 export type AutomationStudioProjectPartOpenRun = { gate: AutomationStudioRunControlGate; close(): void };
@@ -39,6 +40,8 @@ export type AutomationStudioProjectPartRunInput = RunProjectPartRequest & {
   repeated?: ((key: { partId: string; version: number }) => boolean) | undefined;
   /** Told each lasting step's call and what became of it, as it happens (`./settled-calls.ts`). */
   settled?: ProjectPartSettled | undefined;
+  /** Inside a task's attempt: whether its act record lets a lasting step go, asked before each (`./settled-calls.ts`). A person's own run names none. */
+  admit?: ProjectPartAdmit | undefined;
 };
 
 /** A part that was not run, as the library answers it. The handler turns it into `RunProjectPartRefusal`. */
@@ -46,8 +49,6 @@ export type AutomationStudioProjectPartRunRefusal = {
   ok: false;
   code: RunProjectPartRefusal["code"];
   message: string;
-  /** Which bound a part's calls broke, where `code` is `part.calls_not_available` because of one. A stable word. */
-  callBound?: "part.call_cycle" | "part.call_too_deep";
   classes?: AutomationStudioAttemptActClass[];
 };
 
@@ -57,4 +58,6 @@ export type AutomationStudioProjectPartRunResult = {
   landedActs: readonly AutomationStudioCandidateTrialLandedAct[];
   partId: string;
   version: number;
+  /** Why the gate stopped it, in its closed word, where it did: `response.stoppedAt.reason` is the sentence a person reads. */
+  stoppedFor?: ProjectPartGateStopReason | undefined;
 };

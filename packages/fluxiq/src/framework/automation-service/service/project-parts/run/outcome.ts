@@ -20,6 +20,9 @@ const GATE_WORDS: Readonly<Record<ProjectPartGateStopReason, string>> = {
   row_gone: "The item this step was for is gone from the page, so it was not done, and the items after it were not tried.",
   row_unclear: "The item this step was for could not be told apart from another on the page, so it was not done.",
   row_unread: "The list this step's item came from could not be read again just before it, so it was not done.",
+  row_not_handed: "This part runs once for each item of a list but was not handed the item, so it could not tell which item this step was for, and it was not done.",
+  act_done: "This step was already done in this task, so it was not done again.",
+  act_may_have_landed: "This step may already have happened in this task, so it was not tried again.",
   not_allowed: "This step would do something that was not asked for, so it was not done.",
   unknown_step: "This step is not one the part saved, so it was not done."
 };

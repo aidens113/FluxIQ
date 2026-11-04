@@ -779,7 +779,7 @@ function scriptStep(entry: AutomationStudioFlowDraftRoutedStep, label: string | 
     ...(label ? { label } : {}),
     description: entry.written.description,
     ...(entry.written.node ? { node: entry.written.node } : {}),
-    entries: entry.written.entries ?? [],
+    entries: entry.written.entries ?? [], ...(entry.step.toolId === "core.run_part" ? { derivedParameters: {} } : {}), // A saved part's call stays one pinned step (`llm/node-tools/run/part.ts`): the grammar's own node, which a written step may not name but Core may.
     branches: [],
     // Which draft step this is, so the node it becomes can be traced back to
     // it. The joins and loops this module adds carry none.

@@ -45,8 +45,8 @@ import type { AutomationStudioProjectPartRunInput, AutomationStudioProjectPartRu
 
 const UNAVAILABLE: AutomationStudioProjectPartRunRefusal = { ok: false, code: "parts.unavailable", message: "This project's library of saved parts is not available right now." };
 const CALLS_NOT_AVAILABLE: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.calls_not_available", message: "This part calls another part that is not available, so it was not run." };
-const CALL_CYCLE: AutomationStudioProjectPartRunRefusal = { ...CALLS_NOT_AVAILABLE, callBound: "part.call_cycle", message: "This part ends up calling itself, so it was not run: it would never come back out." };
-const CALL_TOO_DEEP: AutomationStudioProjectPartRunRefusal = { ...CALLS_NOT_AVAILABLE, callBound: "part.call_too_deep", message: "This part calls parts that call parts too many levels deep, so it was not run." };
+const CALL_CYCLE: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.call_cycle", message: "This part ends up calling itself, so it was not run: it would never come back out." };
+const CALL_TOO_DEEP: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.call_too_deep", message: "This part calls parts that call parts too many levels deep, so it was not run." };
 const REPEAT_REFUSED: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.repeat_refused", message: "This part already did its lasting acts in this build, so it was not run again." };
 const RUN_ID_REFUSED: AutomationStudioProjectPartRunRefusal = { ok: false, code: "parts.run_id_refused", message: "That run id cannot be used for a new run." };
 const DEFAULT_CONTROL_KEYS: ReadonlySet<string> = new Set(["target"]);
@@ -143,7 +143,7 @@ async function executed(
     ...(datasets.available ? { onRecordBatch: datasets.recordBatchHandler(projectId, runId) } : {}),
     ...(conversations.available ? { parking: conversations.parkingPort({ projectId, subject: { kind: "run", id: runId } }) } : {})
   });
-  const doors = input.settled ? projectPartSettledCalls(base, { classesOf, settled: input.settled }) : base;
+  const doors = input.settled || input.admit ? projectPartSettledCalls(base, { classesOf, settled: input.settled, admit: input.admit, held: (node, answer) => gate.stopFor(node, answer === "already_done" ? "act_done" : "act_may_have_landed") }) : base;
   const options: AutomationStudioGraphExecutionOptions = {
     ...doors, runControl: gate, subflowGraphs: graphs.source, allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], recoveryBudget: failedRouteBudget(graphs.root)
   };
@@ -173,7 +173,7 @@ async function executed(
   await withProjectPartStores(deps.pool, projectId, async (stores) => {
     await stores.parts.recordRun({ partId: card.partId, version: card.version, runId, outcome: outcome.status === "succeeded" ? "succeeded" : outcome.status === "failed" ? "failed" : "stopped", modelCalls: 0, finishedAtMs });
   });
-  return { response: { runId, ...outcome, ...(rows ? { rows } : {}), modelCalls: 0 }, landedActs: landed, partId: card.partId, version: card.version };
+  return { response: { runId, ...outcome, ...(rows ? { rows } : {}), modelCalls: 0 }, landedActs: landed, partId: card.partId, version: card.version, ...(gate.stopped() ? { stoppedFor: gate.stopped()!.reason } : {}) };
 }
 
 /** A person's run has a gate of its own; a build hands in the check its own gate makes, so one gate holds both. */

@@ -20,17 +20,17 @@
 // The session itself is written later, once the guard has passed, since a refused part leaves
 // none. What stops two parts passing together in between is the lease.
 //
-// **What this does not stop:** a Flow run a person starts during a part. Starting one asks
-// nothing of parts (`service.ts`, `admitAutomationStudioRuntimeSession` holds adaptive runs
-// only), so it starts; it is the lease that then refuses its commands.
+// **A Flow run a person starts during a part** is refused at its start, in these same words:
+// `admitAutomationStudioRuntimeSession` asks `../../runtime-session/page-held.ts` (the lease
+// held, or a part run's session active) before it writes the run's session.
 import type { AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioHostResourcePort } from "../../../../../runtime/automation-host/index.ts";
 import { AutomationStudioHostLeaseScope, automationStudioProjectHostLeaseScope } from "../../../../../runtime/project-agents/index.ts";
 import type { AutomationStudioPartCaller } from "../../../../../runtime/project-parts/index.ts";
-import { admitAutomationStudioRuntimeSession } from "../../runtime-session/index.ts";
+import { admitAutomationStudioRuntimeSession, AUTOMATION_STUDIO_PAGE_HELD_MESSAGE } from "../../runtime-session/index.ts";
 import type { AutomationStudioProjectPartRunRefusal } from "./types.ts";
 
-const PROJECT_PART_RUN_IN_PROGRESS: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.run_in_progress", message: "Another run is using this project's page right now, so this part was not run and nothing changed. Try again when that run has ended." };
+const PROJECT_PART_RUN_IN_PROGRESS: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.run_in_progress", message: AUTOMATION_STUDIO_PAGE_HELD_MESSAGE };
 
 /** How long a port is given to grant a lease nothing holds, past which it is not going to. */
 const LEASE_ASK_MS = 1_000;

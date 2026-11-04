@@ -120,7 +120,7 @@ export type RunProjectPartRefusal = {
   refused: true;
   code:
     | "part.not_found" | "part.wrong_site" | "part.not_at_start" | "part.input_missing" | "part.input_unknown" | "part.act_not_allowed" | "part.confirm_repeat"
-    | "part.calls_not_available" | "part.repeat_refused" | "part.run_in_progress" | "parts.unavailable" | "parts.run_id_refused";
+    | "part.calls_not_available" | "part.call_cycle" | "part.call_too_deep" | "part.repeat_refused" | "part.run_in_progress" | "parts.unavailable" | "parts.run_id_refused";
   message: string;
   /** The lasting classes the refusal is about. */
   classes?: AutomationStudioAttemptActClass[];
