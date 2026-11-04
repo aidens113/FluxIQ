@@ -112,6 +112,9 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "list-flow-adaptations",
     // Downloading a run's captured rows, `read`. No stored row holds an encrypted field: the store refuses an `encrypt` schema until record keys exist (K11).
     "export-run-dataset",
+    // A task's attempts, read back into its chat thread (t869), `read`. Not projected: a result's rows are what `export-run-dataset` already answers.
+    "get-task-attempt",
+    "list-conversation-task-attempts",
     // Running a saved Flow, `authoring`. Narrowed: a stored Flow by id, with no LLM, no inputs and no side-effect authorization.
     "run-runtime-session",
     // Turning a finished recording into a Flow proposal, `authoring`. Narrowed: the direct mapper only, never the LLM-assisted one.

@@ -1061,9 +1061,21 @@ the best result and the draft, then resumes.
 
 **Money.** One purse per attempt, with no creation record, at $5 by default
 (`runtime/answer-first/attempt-purse/`). It is held to an explicit Flow limit, a
-Lab-scoped ceiling and the resolver's total, and a judge call is kept back. A Flow limit of
-exactly $0.25 is read as the old default, not a choice. A refused call ends with the best
-result so far and the draft.
+Lab-scoped ceiling and the resolver's total, and a judge call is kept back. New Flows store
+$0.25 as a default, so a limit counts only when a person chose it: a Flow's
+`adaptationPolicySettings` carries `maxEstimatedCostUsdPerRunChosen: true` when a settings
+save changed the limit's value or named that field (the form resends every field, so a save
+of another setting does not mark it), and any stored value other than $0.25 (an older Flow's,
+or the Lab's test-scoped ceiling) counts too. A stored $0.25 with no marker reads as $5; a
+chosen $0.25 holds (`attempt-purse/explicit-limit.ts`). Other modes read the stored value as
+it is. A refused call ends with the best result so far and the draft.
+
+**Eviction.** A waiting attempt may hold no project database and its gateway session may
+have gone, so a per-service count of attempts entered and not ended
+(`service/answer-first/attempt-in-flight/`, bumped around the whole attempt in
+`flow-bootstrap-requests/generate.ts`) is reported as
+`GlobalProgramRuntimeActivity.taskAttemptsInFlight`, and the web workspace manager's
+`instanceBusy` includes it, with tracing on or off.
 
 **The clocks.** The build's nine minutes are taken off this path's rounds, so a wait of
 any length costs a round nothing. The one clock left on it is the judge's deadline, which
@@ -1081,6 +1093,40 @@ attempt row, and the attempt says so.
 is never refused for that, and stays out of a result's acts. An act's identity between a
 real read's rows and a run's For Each item is unproven until live runs. Fixtures and
 guidance use a library's loans, of no kind of site the Lab measures.
+
+### Reading an attempt back
+
+A task typed in the chat runs from a command (`runtime/conversations/commands/`:
+`flow.createHere` and `flow.explore` alike) through the registry to the generation
+endpoint, which answers `{ answered }` or `{ setupNeeded }`. The thread gets one line of how
+it stands, and a client reads the rest back by route:
+
+| Route | Request | Answer |
+| --- | --- | --- |
+| `get-task-attempt` | `{ projectId, attemptId }` | `{ outcome }`, or a refusal saying it could not find it |
+| `list-conversation-task-attempts` | `{ projectId, conversationId }` | `{ outcomes }`, oldest first, a `working` row included; none is an empty list |
+
+An outcome is `{ attempt, result?, saved?, comparedTo? }`, each record answered through the
+contract's parser and the pair checked by `checkAutomationStudioTaskAttemptResult`. `saved`
+is what the record says: a saved draft is `partly_works`, `unproven`, and no draft says
+nothing. `comparedTo` is the latest earlier attempt at the same task on this Flow that ended.
+
+Both take `programs.read`, assert the project's domain access because a result holds rows,
+and are on the paired token's allowlist (`apps/web/src/lib/program-route.ts`). A file that
+is there and cannot be read is a refusal in its own words (`task_attempt.unreadable`), never
+`task_attempt.not_found` or an empty list.
+
+**Where they are.** Attempts are kept per Flow, and these ask by attempt or by thread, so
+`service/answer-first/attempt-store/locator.ts` joins them in
+`<project>/indexes/answer-attempts.json`: an attempt's Flow, noted with the attempt's row, and
+the Flows a thread holds. The command names its thread on the generation request
+(`conversationId`), and the endpoint notes it before the attempt starts, so a thread lists
+its attempt from the first saved row. A note that cannot be written costs the thread its
+card and never the task: the answer carries `threadNotNoted`, and the thread's one line says
+where the result is. A thread holds a Flow until another thread takes it, so a saved
+Flow picked up from a new thread shows its later attempts there alone. An attempt with no
+entry stays readable by Flow (`store.get`) and is `not_found` by id. A file that does not
+read is kept aside as `.unreadable` by the next write, as the attempts file is.
 
 ## Explicit candidate authoring
 

@@ -65,6 +65,8 @@ describe("a paired client on the program route", () => {
         "get-flow-run-detail",
         "list-flow-adaptations",
         "export-run-dataset",
+        "get-task-attempt",
+        "list-conversation-task-attempts",
         "run-runtime-session",
         "generate-recording-proposal",
         "review-recording-flow-proposal",

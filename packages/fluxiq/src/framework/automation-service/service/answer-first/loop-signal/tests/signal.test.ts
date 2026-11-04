@@ -24,7 +24,7 @@ describe("the attempt's answer to a loop signal", () => {
 });
 
 describe("what an attempt counts", () => {
-  it("sums rounds, and counts same_act under exact_repeat", () => {
+  it("sums rounds, and counts same_act under its own slot", () => {
     const total = automationStudioTaskAttemptNoLoopsCaught();
     const rows = [
       { resultCode: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_STEERED_CODE, resultReason: "same_act" },
@@ -33,7 +33,8 @@ describe("what an attempt counts", () => {
     ];
     automationStudioAnswerFirstAddLoopsCaught(total, rows);
     automationStudioAnswerFirstAddLoopsCaught(total, rows);
-    expect(total.exact_repeat.steered).toBe(2);
+    expect(total.same_act.steered).toBe(2);
+    expect(total.exact_repeat.steered).toBe(0);
     expect(total.near_repeat.changeApproach).toBe(2);
     expect(total.cycle.askPerson).toBe(2);
   });
@@ -52,7 +53,7 @@ describe("what the attempt row and a fresh round hold of the record", () => {
     record.approachChanged();
     const read = parseAutomationStudioTriedRecord(automationStudioAnswerFirstTriedAsContract(record.data()));
     expect(read.ok).toBe(true);
-    expect(read.ok ? read.record.tried[0]?.pattern : undefined).toBe("exact_repeat");
+    expect(read.ok ? read.record.tried[0]?.pattern : undefined).toBe("same_act");
     expect(read.ok ? read.record.approaches : undefined).toBe(1);
   });
 

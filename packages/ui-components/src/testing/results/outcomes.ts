@@ -16,7 +16,8 @@ export function fakeNoLoopsCaught(): ChatTaskAttempt["loopsCaught"] {
     near_repeat: { ...NO_LOOPS },
     cycle: { ...NO_LOOPS },
     no_progress: { ...NO_LOOPS },
-    same_fix: { ...NO_LOOPS }
+    same_fix: { ...NO_LOOPS },
+    same_act: { ...NO_LOOPS }
   };
 }
 

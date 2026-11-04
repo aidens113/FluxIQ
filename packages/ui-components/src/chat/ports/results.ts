@@ -47,7 +47,7 @@ export type ChatTaskAttemptFields = {
   budget: { usd: number };
   liveSteps: number;
   simulation?: { verdict: "passed" | "failed" | "inconclusive" | "not_run"; flags: number };
-  loopsCaught: Record<"exact_repeat" | "near_repeat" | "cycle" | "no_progress" | "same_fix", ChatAttemptLoopCount>;
+  loopsCaught: Record<"exact_repeat" | "near_repeat" | "cycle" | "no_progress" | "same_fix" | "same_act", ChatAttemptLoopCount>;
   startedAtMs: number;
   endedAtMs?: number;
 };
@@ -118,6 +118,11 @@ export type ChatTaskOutcome = {
   saved?: ChatSavedState;
   /** The earlier attempt this one is told against ("This time 18s and $0.00. First time 3m 14s and $1.12."). Absent on a first attempt. */
   comparedTo?: ChatTaskAttempt;
+  /**
+   * This one outcome carries no real spend: a run a client read from a dataset, beside attempts
+   * whose spend is real. Its `spend` is zeros and nothing is said of its cost. Not part of the contract's records.
+   */
+  spendUnknown?: true;
 };
 
 /** Which outcomes a thread holds. */
