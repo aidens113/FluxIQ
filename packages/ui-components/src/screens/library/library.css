@@ -1,0 +1,93 @@
+/* The subflow library screen. Uses the chat's tokens (`styles/tokens.css`).
+   Everything it draws is styled here under `.library-screen`; nothing outside it is touched. */
+
+:where(.library-screen), :where(.library-screen) *, :where(.library-screen) *::before, :where(.library-screen) *::after { box-sizing: border-box; }
+:where(.library-screen) button, :where(.library-screen) input { font: inherit; }
+:where(.library-screen) button { cursor: pointer; }
+:where(.library-screen) button:disabled { cursor: default; opacity: .6; }
+:where(.library-screen) h2, :where(.library-screen) h3, :where(.library-screen) p, :where(.library-screen) ul, :where(.library-screen) ol { margin: 0; }
+:where(.library-screen) button:focus-visible, :where(.library-screen) input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.library-screen {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--chat-font);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.library-screen [hidden] { display: none !important; }
+.library-list, .library-detail, .library-run { display: grid; align-content: start; gap: var(--space-3); width: 100%; max-width: 560px; margin: 0 auto; }
+
+/* The tree. */
+.library-site { display: grid; gap: var(--space-2); }
+.library-site-name { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font-size: 13px; font-weight: 750; }
+.library-site-count { color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.library-tree { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.library-tree-nested { margin: var(--space-2) 0 0 var(--space-3); padding-left: var(--space-3); border-left: 2px solid var(--divider); }
+.library-item { min-width: 0; }
+.library-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px var(--space-3);
+  text-align: left;
+}
+button.library-row:hover { background: var(--hover); }
+.library-row-context { background: var(--surface-muted); }
+.library-row-gone { color: var(--muted); font-style: italic; }
+.library-row-text { display: grid; gap: 2px; min-width: 0; }
+.library-row-name { font-size: 13px; font-weight: 650; }
+.library-row-line { color: var(--muted); font-size: 12px; }
+.library-row-warn { color: var(--warning-text); font-weight: 600; }
+.library-row-go { color: var(--muted); font-size: 18px; line-height: 1; }
+
+/* Notes, quiet lines and links. */
+.library-quiet { color: var(--muted); }
+.library-note { border: 1px solid var(--divider); border-radius: 8px; background: var(--warning-soft); color: var(--warning-text); padding: var(--space-2) var(--space-3); }
+.library-link { border: 0; background: none; color: var(--accent-text); padding: 2px 0; font-weight: 650; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+.library-link:hover:not(:disabled) { color: var(--accent); }
+
+/* The details and the run. */
+.library-header { display: grid; gap: 2px; }
+.library-back { justify-self: start; min-height: 32px; border: 0; background: none; color: var(--accent-text); padding: 4px 0; font-weight: 700; }
+.library-title { font-size: 16px; font-weight: 750; }
+.library-title-line { color: var(--muted); font-size: 12px; }
+.library-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.library-primary, .library-secondary { min-height: 36px; border-radius: 8px; padding: 6px var(--space-4); font-size: 13px; font-weight: 700; }
+.library-primary { border: 1px solid var(--send); background: var(--send); color: var(--send-text); }
+.library-primary:hover:not(:disabled) { opacity: .88; }
+.library-secondary { border: 1px solid var(--divider); background: var(--surface-raised); color: var(--text); }
+.library-secondary:hover:not(:disabled) { background: var(--hover); }
+.library-group { display: grid; gap: var(--space-3); }
+.library-section { display: grid; gap: var(--space-1); padding-top: var(--space-2); border-top: 1px solid var(--divider); }
+.library-section-title { color: var(--muted); font-size: 12px; font-weight: 700; }
+.library-lines { display: grid; gap: 2px; padding-left: var(--space-4); }
+.library-steps { display: grid; gap: 2px; padding-left: var(--space-4); }
+
+/* Running it. */
+.library-form { display: grid; gap: var(--space-3); }
+.library-field { display: grid; gap: 4px; }
+.library-label { font-weight: 650; }
+.library-label-note { color: var(--muted); font-weight: 500; }
+.library-input { width: 100%; min-height: 36px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); color: var(--text); padding: 6px var(--space-3); }
+.library-input[aria-invalid="true"] { border-color: var(--danger); }
+.library-field-note { color: var(--danger-text); font-size: 12px; font-weight: 600; }
+.library-result { display: grid; gap: var(--space-2); }
+.library-result-heading { font-size: 14px; font-weight: 700; }
+.library-result-heading:focus { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.library-screen), :where(.library-screen) * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

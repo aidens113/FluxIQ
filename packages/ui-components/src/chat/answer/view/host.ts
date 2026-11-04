@@ -14,4 +14,6 @@ export type AnswerHost = {
   onStop?: ((attemptId: string) => void) | undefined;
   /** Something changed on the host's side (budget added, run started): re-read the thread's outcomes. */
   onChanged?: (() => void) | undefined;
+  /** The time now in ms; the real clock by default. A test fixes it so a saved day reads the same. */
+  now?: (() => number) | undefined;
 };

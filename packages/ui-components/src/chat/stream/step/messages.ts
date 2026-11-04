@@ -124,6 +124,10 @@ export type StepMessage = {
   lane?: string;
   /** On a `project` message: the card of the supervisor's work, in words. */
   project?: ProjectWords;
+  /** Set only where the records prove it, in an attempt that used saved work (`../saved-marks.ts`): a saved step played, or a step worked out again. */
+  origin?: "saved" | "again";
+  /** Set on the first message of an attempt that used saved work: "Using what I saved from Tuesday." */
+  usingSaved?: string;
 };
 
 /** Where a card lives: its message and its place among the message's cards. */

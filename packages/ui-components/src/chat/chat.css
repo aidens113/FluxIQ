@@ -190,6 +190,9 @@
    presentation): an agent's lane named where it changes, the steps of an
    agent working on a brief indented under that brief, and the supervisor's
    plan listed under its card. */
+/* An attempt that works from what was saved: one line at its start, and a quiet mark on the steps the records prove. */
+.chat-step-using { margin: 0; color: var(--muted); font-size: 12.5px; }
+.chat-step-origin { margin: 0; color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: .02em; }
 .chat-step-lane { margin: 0; color: var(--muted); font-size: 12px; font-weight: 600; }
 .chat-step-msg[data-brief="true"] { margin-left: var(--space-2); padding-left: var(--space-3); border-left: 2px solid var(--divider); }
 .chat-project-rows { display: grid; gap: 2px; padding-left: var(--space-3); font-size: 13px; line-height: 1.45; }
@@ -494,6 +497,12 @@
 .composer-chip-remove { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1; padding: 0 4px; cursor: pointer; }
 .composer-chip-remove:hover:not(:disabled) { color: var(--text); }
 
+/* A host's action beside the attach button ("Show me how"): the buttons share a row under the box, which keeps the whole width. */
+.composer-field-tools { flex-wrap: wrap; align-items: center; padding: 7px 7px 7px 16px; }
+.composer-field-tools .composer-box { flex: 1 1 100%; }
+.composer-field-tools .composer-send { margin-left: auto; }
+.composer-field-tools .composer-attach { margin-left: -8px; }
+
 /* Stop: a real button above the composer, centred on the chat's column, with a stop mark (D9: it read as plain text). */
 .chat-stop-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; max-width: var(--chat-column); margin: 0 auto; padding: 6px 0 8px; }
 .chat-stop-control[hidden] { display: none; }
@@ -568,6 +577,7 @@
 .chat-work-header:has(.chat-hold-control:not([hidden])) .chat-work-controls { grid-column: 1 / -1; justify-content: flex-start; }
 .chat-work-now { grid-column: 1 / -1; margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .chat-work-header[data-state="waiting"] .chat-work-now { color: var(--text); }
+.chat-work-saved { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
 .chat-work-action {
   grid-column: 1 / -1; justify-self: start; min-height: 32px; margin-top: 4px; border: 1px solid var(--divider); border-radius: 999px;
   background: var(--surface); color: var(--text); padding: 4px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -717,7 +727,7 @@
 .answer-lead { color: var(--muted); font-size: 13px; }
 .answer-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--divider); border-radius: 8px; }
 .answer-table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.answer-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+.answer-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .answer-table th, .answer-table td { border-bottom: 1px solid var(--divider); padding: 6px 10px; text-align: left; vertical-align: top; min-width: 7ch; max-width: 32ch; overflow-wrap: normal; word-break: normal; }
 .answer-table th { background: var(--surface-muted); color: var(--muted); font-weight: 650; white-space: nowrap; }
 .answer-row:last-child td { border-bottom: 0; }
@@ -744,3 +754,39 @@
   .answer-table th, .answer-table td { padding: 5px 8px; }
 }
 /* === end answer turn === */
+
+/* === asks (src/chat/conversation, and a host's PIN dialog): a question, asked once, in one place. Tokens only; fits 360px. === */
+.chat-answer .turn-ask .small-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.chat-answer .turn-ask .small-button:disabled { opacity: .6; }
+.chat-answer .turn-ask-lead + .turn-ask-consequences { margin-top: -4px; }
+.chat-answer .turn-ask .open-fluxiq { justify-self: start; }
+.ask-pin {
+  box-sizing: border-box; width: min(320px, calc(100vw - 32px)); margin: auto; padding: 16px;
+  border: 1px solid var(--divider); border-radius: var(--radius); background: var(--surface); color: var(--text);
+  font-size: 14px; line-height: 1.45; overflow-wrap: anywhere;
+}
+.ask-pin::backdrop { background: rgb(0 0 0 / .4); }
+.ask-pin-form { display: grid; gap: 10px; }
+.ask-pin-title { margin: 0; font-size: 15px; font-weight: 650; }
+.ask-pin-lead { margin: 0; color: var(--muted); font-size: 13px; }
+.ask-pin-label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.ask-pin-field {
+  box-sizing: border-box; width: 100%; min-height: 36px; padding: 6px 10px; font: inherit; letter-spacing: .1em;
+  border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); color: var(--text);
+}
+.ask-pin-field:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.ask-pin-refusal { margin: 0; color: var(--danger-text); font-size: 13px; }
+.ask-pin-refusal:empty { display: none; }
+.ask-pin-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.ask-pin-button {
+  min-height: 32px; padding: 4px 14px; font: inherit; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--divider); border-radius: 999px; background: var(--surface); color: var(--text);
+}
+.ask-pin-button:hover:not(:disabled) { background: var(--hover); }
+.ask-pin-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.ask-pin-button:disabled { opacity: .6; cursor: default; }
+.ask-pin-button[data-tone="danger"] { border-color: var(--danger); color: var(--danger-text); }
+/* === end asks === */
+
+/* A question that offers its own Stop puts the header's away (`conversation/ask-offers-stop.ts`). */
+.chat-work-controls[data-ask-has-stop="true"] .chat-stop { display: none; }

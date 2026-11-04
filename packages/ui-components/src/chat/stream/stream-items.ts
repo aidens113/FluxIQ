@@ -19,7 +19,8 @@ import type { ClientGatewayActivity } from "fluxiq/ui";
 import { hasAnswerTurn } from "../answer/index.ts";
 import type { CoreTurn } from "../conversation/index.ts";
 import type { ChatTaskOutcome } from "../ports/index.ts";
-import { stepMessages, withoutPersonCheck, type StepMessage } from "./step/index.ts";
+import { markSavedSteps } from "./saved-marks.ts";
+import { stepMessages, withoutAskCards, type StepMessage } from "./step/index.ts";
 import type { StampedTurn } from "./turn-clock.ts";
 
 /** The most step messages the chat keeps, the newest: several long builds' worth. */
@@ -43,12 +44,13 @@ export function buildChatStream(
   turns: readonly StampedTurn[],
   events: readonly ClientGatewayActivity[],
   limit = CHAT_STEP_MESSAGE_LIMIT,
-  outcomes: readonly ChatTaskOutcome[] = []
+  outcomes: readonly ChatTaskOutcome[] = [],
+  nowMs: number = Date.now()
 ): ChatStream {
   const items: ChatStreamItem[] = [
     ...turns.map(({ turn, at }): ChatStreamItem => ({ kind: "turn", key: `turn:${turn.turnId}`, at, turn })),
     ...requestTurns(turns, events),
-    ...withoutPersonCheck(stepMessages(events, limit)).map((message): ChatStreamItem => ({ kind: "step", key: message.key, at: message.at, message }))
+    ...markSavedSteps(withoutAskCards(stepMessages(events, limit)), events, outcomes, nowMs).map((message): ChatStreamItem => ({ kind: "step", key: message.key, at: message.at, message }))
   ];
   // Array sort is stable: equal times keep turns first, each in its own order.
   items.sort(byTime);

@@ -11,4 +11,9 @@ export type ChatComposerOptions = {
   keepDraft?: boolean;
   /** Said on hover over the send button. */
   sendHint?: string;
+  /**
+   * A control the host draws beside the attach button ("Show me how"). Its presence moves the buttons to a row
+   * under the box, so the box keeps the chat's whole width. The host owns its label, state and press.
+   */
+  action?: HTMLElement;
 };

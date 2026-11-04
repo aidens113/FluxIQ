@@ -9,7 +9,7 @@ TypeScript runtime loader.
 | `@fluxiq/contracts` | JSON primitives, program API schemas, client-gateway protocol, and the shared automation contract (`@fluxiq/contracts/automation`: failure records, actionability, record sets, recording capture) | Browser and Node.js | `zod` |
 | `fluxiq` | Domain-neutral framework runtime, global programs, storage, migrations, and host integration | Node.js 22 or newer | contracts, QR generation, and native SQLite |
 | `@fluxiq/client-gateway-websocket` | The client half of the client gateway: WebSocket transport, reconnecting connection, offline outbox, in-flight command reconciliation, host-lease fencing, storage-area port, and the session-picking rule | Browser and Node.js 22 or newer | contracts only |
-| `@fluxiq/ui-components` | FluxIQ's chat UI as plain TypeScript DOM and CSS with no UI framework. It is the only chat UI: the web panel and the web extension both mount it. A client mounts `createChatWidget`, and `createChatWindow` for a launcher and window, and supplies the ports (`ChatTransport` for conversation, live activity, run controls, recordings, model keys and the change feed; `ChatWidgetOptions` for what only the host can do: the thread list, the PIN dialog, attachment renderers, navigation). Entries `.`, `./dom`, `./icons`, `./testing` and the stylesheets `./styles/tokens.css` and `./styles/chat.css` | Browser; no Node built-in and no browser-extension API | `fluxiq` |
+| `@fluxiq/ui-components` | FluxIQ's chat UI as plain TypeScript DOM and CSS with no UI framework. It is the only chat UI: the web panel and the web extension both mount it. A client mounts `createChatWidget`, and `createChatWindow` for a launcher and window, and supplies the ports (`ChatTransport` for conversation, live activity, run controls, recordings, model keys and the change feed; `ChatWidgetOptions` for what only the host can do: the thread list, the PIN dialog, attachment renderers, navigation). It also draws two screens beside the chat, a person's tasks and their subflow library (`createTasksScreen`, `createLibraryScreen`), over ports the client supplies ([the screens](#the-screens-beside-the-chat)). Entries `.`, `./dom`, `./icons`, `./testing` and the stylesheets `./styles/tokens.css`, `./styles/chat.css`, `./styles/tasks.css` and `./styles/library.css` | Browser; no Node built-in and no browser-extension API | `fluxiq` |
 
 The contracts package is the dependency seam between browser clients and the
 framework. It must not import the runtime. The WebSocket client must not pull
@@ -56,6 +56,36 @@ Its `addBudgetAndCarryOn` is optional too. That package does not depend on
 contract's parsers before it answers. `@fluxiq/ui-components/testing` adds
 `createFakeChatResultsPort` and `fakeTaskOutcomes`, for building the answer turn with
 no Core behind it.
+
+### The screens beside the chat
+
+`@fluxiq/ui-components` draws two screens a client mounts next to its chat
+(`src/screens/`, exported from `.`). Each draws from a port and holds nothing of a
+client's own; a client that supplies no port draws no screen, so nothing dead shows.
+A request through a port never throws: a failure is a failed `ChatResult`.
+
+- **Tasks.** `createTasksScreen({ port, results?, memory?, projectId, onOpenInChat?,
+  onRestored? })` returns a `TasksScreen` (`element`, `setActive`, `restore`, `search`,
+  `onMatches`, `onOpenChange`, `back`, `isOpen`). `TasksPort` is `list` and `read`, with
+  `readSteps`, `carryOn`, `rename` and `remove` optional (an absent method's control is not
+  drawn). Add budget, Run again and the rows export are the chat's `ChatResultsPort`, passed
+  as `results`. `TasksMemory` (`read`, `write`) holds which task is open so a panel that closed
+  reopens on it; where it is stored stays the client's. No record or status in it reads as
+  failed: a spent budget is the one ending that is not a result, and an attempt a restart cut off
+  is `waiting_for_person` with `waitingFor: "interrupted"`.
+- **Library.** `createLibraryScreen({ port, host })` returns a `LibraryScreen`. `SubflowLibraryPort`
+  is `list`, `read` and `run`, each answering a value or a `SubflowRefusal` with a closed code.
+  `LibraryHost.askAbout(text)` is how its "Ask about it" reaches the chat: the client fills the
+  composer with `ChatWidget.fillComposer(text)` and shows its Chat, and nothing is sent.
+
+Their styles are separate entries, `@fluxiq/ui-components/styles/tasks.css` and
+`@fluxiq/ui-components/styles/library.css`, beside `tokens.css` and `chat.css`: a client that
+mounts a screen imports its stylesheet.
+
+An attempt's outcome can say where its steps came from. `ChatTaskOutcome.provenance`
+(`ChatAttemptProvenance`: `route`, `startedFrom` and `steps`, each with a `position`, a `label`,
+`from: "saved" | "worked_out"` and `ran`) is optional; the chat's stream and the tasks screen mark
+a step "From saved steps" or "Worked out again" only from it, and with none they mark nothing.
 
 ### Automation entries of `fluxiq`
 
@@ -143,7 +173,7 @@ paths, and browser-bundles the WebSocket client while checking its dependency
 graph. CI repeats the checks on Node 22 for Windows and Linux.
 
 `@fluxiq/contracts` is at version `0.7.0`, `fluxiq` at `0.27.0`,
-`@fluxiq/client-gateway-websocket` at `0.1.1` and `@fluxiq/ui-components` at `0.1.0`. Before 1.0, compatible
+`@fluxiq/client-gateway-websocket` at `0.1.1` and `@fluxiq/ui-components` at `0.6.0`. Before 1.0, compatible
 changes increment the patch version and intentional API breaks increment the
 minor version with a note under [Migration Notes](#migration-notes).
 "Compatible" is judged on what a consumer observes, not on the type surface: a
@@ -159,6 +189,21 @@ publication, tags, signing, provenance, the final legal licensor identity, and
 commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
+
+### 0.6.0: the tasks and library screens, two stylesheets, a step's provenance and `fillComposer` (`@fluxiq/ui-components`)
+
+Added only; nothing a client already imports changed shape.
+
+- `createTasksScreen` and `createLibraryScreen`, with `TasksPort`, `TasksMemory`,
+  `SubflowLibraryPort` and `LibraryHost` ([the screens](#the-screens-beside-the-chat)). A client that
+  mounts neither is unchanged.
+- The stylesheet entries `@fluxiq/ui-components/styles/tasks.css` and `.../styles/library.css`. A
+  client mounting a screen imports its entry; one that does not need not.
+- `ChatTaskOutcome.provenance` (`ChatAttemptProvenance`), optional. A client's results port that
+  fills it makes the stream and the tasks screen mark where steps came from; one that does not
+  fills nothing and sees no mark.
+- `ChatWidget.fillComposer(text)`: replaces the composer's text for the person to change or send,
+  caret at its end, and sends nothing.
 
 ### Next patch (unreleased): Answer First's shared records and an optional results port (`@fluxiq/contracts`, `@fluxiq/ui-components`)
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { createRecordingAttachment } from "../../attachment/index.ts";
+import { createElement } from "../../../dom/index.ts";
 import { fake, withFakeDocument } from "../../../testing/index.ts";
 import { recordingsOver } from "../../tests/message-transport.ts";
 import { createComposer } from "../composer.ts";
@@ -64,5 +65,28 @@ test("a message with nothing attached sends no recording id", async () => {
     composer.fill("hello");
     fake(composer.element).descendants().find((node) => node.id === "conversationSendButton")!.dispatch("click");
     assert.deepEqual(calls, [["hello"]]);
+  });
+});
+
+const none = recordingsOver(async () => ({ ok: true, value: { recordings: { items: [] } } }));
+
+test("a host action sits between the attach button and Send, and the field takes the buttons-row layout", async () => {
+  await withFakeDocument(async () => {
+    const action = createElement("button", { id: "hostAction", text: "Show me how", attrs: { type: "button", "aria-label": "Start recording" } });
+    const composer = createComposer(() => Promise.resolve(true), createRecordingAttachment(none, () => "p1"), { action, keepDraft: false });
+    composer.render(ready);
+    const field = fake(composer.element).descendants().find((node) => node.className.includes("composer-field"))!;
+    assert.equal(field.className.includes("composer-field-tools"), true);
+    const ids = field.children.map((node) => node.id || node.getAttribute("aria-label"));
+    assert.deepEqual(ids, ["conversationInput", "conversationAttachButton", "hostAction", "conversationSendButton"]);
+  });
+});
+
+test("without a host action the field is unchanged", async () => {
+  await withFakeDocument(async () => {
+    const composer = createComposer(() => Promise.resolve(true), createRecordingAttachment(none, () => "p1"), { keepDraft: false });
+    const field = fake(composer.element).descendants().find((node) => node.className.includes("composer-field"))!;
+    assert.equal(field.className.includes("composer-field-tools"), false);
+    assert.equal(field.children.length, 3);
   });
 });
