@@ -1,9 +1,11 @@
 // Why the state rule could not answer a command from one exploration's recording.
 //
-// This is the go/no-go harness's own vocabulary. It repeats the trace matcher's
-// reasons it shares and adds the rule's own; nothing live reads it, and the
-// matcher's list (`../trace-matcher/gap-reasons.ts`) and U5's stay as they are
-// until the rule is wired in, which is when these are added there by deliberate edit.
+// The state rule's own vocabulary. It repeats the trace matcher's reasons it shares and
+// adds the rule's own. The matcher never gives the rule's own, so its list stays as it is
+// (`../trace-matcher/gap-reasons.ts`), and with it what a gate's words must cover. U5 knows
+// them by deliberate edit (`flows/authoring/model/offline-trial/vocabulary.ts`), so a state
+// trial's gaps are its reason codes as they stand; the drift test is
+// `framework/automation-service/service/offline-trial/tests/gap-vocabulary.test.ts`.
 //
 // Shared with the matcher:
 // - `missing_transition`: no recorded call of this kind holds this input;
