@@ -32,6 +32,27 @@ test("it stays red with no later pass, after an unconfirmed result, for another 
   assert.equal(cardWords(calmSupersededFailures([message(1, passedCheck(2)), message(3, failedStep(4))])[1]!.actions[0]!, false).state, "failed");
 });
 
+// A routine retry is quiet (answer-first plan, "Working"): the same act done later gets past the failure.
+const press = (sequence: number, outcome: "failed" | "done", activityId = "run-1"): ActionCard =>
+  ({ ...base, kind: "click", name: "Click", target: "Next", outcome, why: outcome === "failed" ? "the site asked FluxIQ to slow down" : null, key: `action:${activityId}#${sequence}` });
+
+test("a failed step is neutral once the same act on the same thing was done later in its unit, and keeps its words", () => {
+  const read: ActionCard = { ...base, kind: "read", name: "Read list", target: "name and 3 more", outcome: "done", key: "action:run-1#4" };
+  const [failed] = calmSupersededFailures([message(1, press(2, "failed"), "run-1"), message(3, read, "run-1"), message(5, press(6, "done"), "run-1")]);
+  const words = cardWords(failed!.actions[0]!, false);
+  assert.equal(failed!.actions[0]!.superseded, true);
+  assert.equal(words.state, "settled", "not red");
+  assert.equal(words.outcome, "Didn't work: the site asked FluxIQ to slow down");
+});
+
+test("a failed step stays red when nothing later did the same act, or another thing, or another unit's did", () => {
+  assert.equal(cardWords(calmSupersededFailures([message(1, press(2, "failed"), "run-1")])[0]!.actions[0]!, false).state, "failed");
+  const other: ActionCard = { ...press(4, "done"), target: "Previous" };
+  assert.equal(cardWords(calmSupersededFailures([message(1, press(2, "failed"), "run-1"), message(3, other, "run-1")])[0]!.actions[0]!, false).state, "failed");
+  assert.equal(cardWords(calmSupersededFailures([message(1, press(2, "failed"), "run-1"), message(3, press(4, "done", "run-2"), "run-2")])[0]!.actions[0]!, false).state, "failed");
+  assert.equal(cardWords(calmSupersededFailures([message(1, press(2, "done"), "run-1"), message(3, press(4, "failed"), "run-1")])[1]!.actions[0]!, false).state, "failed", "a success before it gets past nothing");
+});
+
 test("a run's own step failure is never calmed, only a test's", () => {
   const { testing: _test, ...run } = failedStep(2);
   assert.equal(cardWords(calmSupersededFailures([message(1, run), message(3, passedCheck(4))])[0]!.actions[0]!, false).state, "failed");

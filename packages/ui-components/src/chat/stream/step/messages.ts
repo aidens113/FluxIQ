@@ -67,8 +67,8 @@
 // is no new card: the card it repeats counts it (`card-repeats.ts`). A step
 // that didn't work and then did when the run tried it again is one card that
 // says on which try (`retried.ts`). Steps
-// done again before a retry, already shown as done, are one card that holds
-// them (`done-again.ts`).
+// done again before a retry, already shown as done, are one quiet line that holds
+// no cards (`done-again.ts`); each was told once where it happened.
 //
 // A build with several agents keeps each agent's decisions apart: what a
 // unit of work remembers (the decision its next actions belong to, the run
@@ -430,7 +430,7 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
 
   // Repeated refusals and failures are one card each that counts them (U-8, R2-U-7, `card-repeats.ts`),
   // a step that worked when tried again is one card that says on which try (lane D finding 2,
-  // `retried.ts`), and steps done again before a retry are one line that holds them (D7, `done-again.ts`).
+  // `retried.ts`), and steps done again before a retry are one quiet line (D7, `done-again.ts`).
   const folded = calmSupersededFailures(foldDoneAgain(foldRetriedCards(foldRepeatedCards(drafts))));
   const kept = limit > 0 ? folded.slice(-limit) : [];
   const newest = new Map<string, StepMessage>();

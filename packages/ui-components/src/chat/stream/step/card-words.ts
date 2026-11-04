@@ -57,9 +57,9 @@
 //            1003, C13), and never "Done" or "Working on it", whatever outcome
 //            the card carries: a refusal is no work (U-8 of the
 //            run-muw60j7c-bb7c9a62 UI review). Identical refusals and
-//            failures repeated with nothing new between them are one card
-//            that says how many ("Not done (3 times): ...", "Didn't work (3
-//            times): ...", `card-repeats.ts`); nothing for an action that never said it ended
+//            failures repeated with nothing new between them are one card, said once
+//            with no count (`card-repeats.ts`);
+//            nothing for an action that never said it ended
 //            once the work moved on
 //   label    all three in one line, for the card's accessible name, with the
 //            whole target
@@ -123,11 +123,11 @@ function outcomeOf(card: ActionCard, current: boolean): [CardWords["state"], str
   // A decision Core declined is no work, done or under way, whatever its outcome says.
   if (card.refused !== undefined && card.outcome !== "waiting") {
     const { all, because } = card.refused;
-    if (all) return ["refused", joined(counted("Not done", card.times), because)];
+    if (all) return ["refused", joined("Not done", because)];
     // What landed first, then what did not and why: the refusal alone read as the work done
     // ("Only partly done: that step is already in the Flow", run-mux6naez-6c20f26e, moment 05).
     const landed = resultOf(card);
-    return ["done", landed === undefined ? joined(counted("Only partly done", card.times), because) : `${counted("Only partly done", card.times)}: ${lowerFirst(landed)}${because.trim() ? `; not done: ${lowerFirst(because.trim())}` : ""}`];
+    return ["done", landed === undefined ? joined("Only partly done", because) : `Only partly done: ${lowerFirst(landed)}${because.trim() ? `; not done: ${lowerFirst(because.trim())}` : ""}`];
   }
   switch (card.outcome) {
     case "working":
@@ -137,17 +137,16 @@ function outcomeOf(card: ActionCard, current: boolean): [CardWords["state"], str
       // `cancelled` when the work stops first), never the work moving on.
       return ["waiting", "Waiting for you"];
     case "done":
-      // Identical successful cards in a row are one that counts them (`card-repeats.ts`): "Done (5 times)".
-      if (card.answer !== undefined) return ["done", `${counted("Done", card.times)}. ${card.answer}`];
+      if (card.answer !== undefined) return ["done", `Done. ${card.answer}`];
       // A step whose act this run had already done: skipped, and no failure (`already-done.ts`).
-      if (card.already) return ["done", counted("Already done", card.times)];
-      if (card.tested !== undefined) return ["done", resultOf(card) === undefined ? counted(card.tested, card.times) : `${counted(card.tested, card.times)} — ${resultOf(card)}`];
+      if (card.already) return ["done", "Already done"];
+      if (card.tested !== undefined) return ["done", resultOf(card) === undefined ? card.tested : `${card.tested} — ${resultOf(card)}`];
       if (card.retried !== undefined) return ["done", retriedWords(card.retried, resultOf(card))];
-      return ["done", card.check ? joined(counted("Passed", card.times), card.said) : joined(counted("Done", card.times), resultOf(card))];
+      return ["done", card.check ? joined("Passed", card.said) : joined("Done", resultOf(card))];
     case "failed":
       if (card.unconfirmed) return ["unconfirmed", joined("Not confirmed", card.said)];
-      if (card.why === null && card.answer !== undefined) return ["failed", `${counted("Didn't work", card.times)}. ${card.answer}`];
-      return [card.superseded ? "settled" : "failed", joined(counted(card.check ? "Didn't pass" : "Didn't work", card.times), card.why ?? card.said)];
+      if (card.why === null && card.answer !== undefined) return ["failed", `Didn't work. ${card.answer}`];
+      return [card.superseded ? "settled" : "failed", joined(card.check ? "Didn't pass" : "Didn't work", card.why ?? card.said)];
   }
 }
 
@@ -169,23 +168,9 @@ function ordinal(count: number): string {
   return `${count}${suffix}`;
 }
 
-/**
- * What a finished action came to, as Core said it; undefined when it said
- * nothing. A card standing for several identical ones says it is each one's
- * result: "Done (2 times): 7 rows from 1 page" read as one read of one page,
- * when the playback had read two pages, one per read (t785,
- * `run-mvskodlp-9966d618`), so it reads "Done (2 times): each time, 7 rows
- * from 1 page".
- */
+/** What a finished action came to, as Core said it; undefined when it said nothing. */
 function resultOf(card: ActionCard): string | undefined {
-  const said = card.result?.trim();
-  if (!said) return undefined;
-  return card.times !== undefined && card.times > 1 ? `each time, ${lowerFirst(said)}` : said;
-}
-
-/** "Not done (3 times)", "Didn't work (3 times)" for a card standing for several identical ones (`card-repeats.ts`). */
-function counted(head: string, times: number | undefined): string {
-  return times !== undefined && times > 1 ? `${head} (${times} times)` : head;
+  return card.result?.trim() || undefined;
 }
 
 /** A test's typing step's target, the words typed and then the field (Core's `activityActionOf`): '"3" into Quantity'. */

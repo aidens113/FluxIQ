@@ -55,6 +55,7 @@ export function leaseTransport(transport: ChatTransport, valid: () => boolean): 
     ...(changes === undefined ? {} : { changes: { subscribe: (listener) => changes.subscribe(listener) } }),
     ...(results === undefined ? {} : {
       results: {
+        ...(results.reportsSpend === undefined ? {} : { reportsSpend: results.reportsSpend }),
         readThread: leased(valid, (query) => results.readThread(query)),
         readAttempt: leased(valid, (query) => results.readAttempt(query)),
         exportRows: leased(valid, (query) => results.exportRows(query)),
