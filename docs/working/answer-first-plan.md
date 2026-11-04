@@ -23,6 +23,7 @@ Related: [discovery](./answer-first-plan/reports/discovery.md), [simulation stud
 - "I'm trying to make 'one-shot'/two shot systems that adapt and get more efficient over time."
 - **The one hard requirement:** "it needs to actually GET the final result, not just return a failed response (except for run out of budget on that task)... The only hard requriement is it NEEDS to keep retrying until final result achieved or budget out"
 - "NO PIN FOR ANY NORMAL ACTIONS. Maybe just a pin to do dangerous actions ONLY THE FIRST TIME A USER DOES IT, AND NEVER IN THE MIDDLE OF A FLOW, ONLY WHEN FIRST STARTING A FLOW/CHAT."
+- "i want built in agent call loop detection. If an agent keeps doing the same thing over and over that needs to be detected and steered/stopped"
 - On the tester: "It likely needs imprvovement/full development, i have no idea if its even really been built."
 
 **State.** The user approved the steps on 2026-11-03 ("ok steps are good"). The user's words above are theirs. Other detail here is the lead's design unless marked "user". t856 (taking the PIN back out of the middle of a Flow), the truth pass and the engine go/no-go are starting. No paid run has happened or is planned before the Exploration lane reaches it.
@@ -88,6 +89,31 @@ A task becomes **one-shot** when attempt 1 gets the right answer, **two-shot** w
 
 **D13. Dangerous actions and the PIN (user; lead for how).** "NO PIN FOR ANY NORMAL ACTIONS. Maybe just a pin to do dangerous actions ONLY THE FIRST TIME A USER DOES IT, AND NEVER IN THE MIDDLE OF A FLOW, ONLY WHEN FIRST STARTING A FLOW/CHAT." Normal actions never ask for a PIN. Dangerous means the three gated classes that exist today: moving money, deleting and sending. The first time a person starts a chat or Flow that can do one, the PIN is asked once at the start, and it leaves a standing grant, so they are not asked again. Nothing ever asks for a PIN once a Flow is running. If a dangerous act comes up mid-Flow with no grant yet, it stays a one-press Allow, as the extension has it today (lead's reading; the user said "maybe" about the PIN at all, so this is easy to drop). t855's mid-run PIN check, which the lead caused, comes out in t856.
 
+## Loop Detection
+
+**D14. Every agent's calls are watched for loops (user, 2026-11-03; lead for how).** "i want built in agent call loop detection. If an agent keeps doing the same thing over and over that needs to be detected and steered/stopped" It is built into Core's evidence loop, so every agent role gets it, costs no model call, and sits beside the existing guard in `runtime/llm/repeat-guard/`.
+
+**What exists.** One guard refuses a call whose tool, input and page match an earlier call that failed or changed nothing. It was built after a cookie button was pressed 20 times. A recovery's own loop also has a progress guard. Neither sees the rest of the table.
+
+| Pattern | What it looks like | Today |
+| --- | --- | --- |
+| Exact repeat | The same call on the same page, which failed or changed nothing | Caught |
+| Near repeat | The same call with only free text changed, such as its reason or summary | Missed: rewording gets past the guard |
+| Cycle | A B A B, such as open and close, or next and back, across pages | Missed |
+| No progress | Calls that each "succeed" while no new page state, row, landed act or draft change appears | Missed outside recovery |
+| The same fix again | A draft edit undone and redone, or a repair already tried, after a fresh start or on a later attempt | Missed: fresh contexts forget |
+
+**What is not a loop.** Working through rows or pages. A repeated call that brings new rows, a new row identity or a new page state is progress. That is the false positive that matters most, so progress is measured from those facts rather than by counting calls.
+
+**What it does, in order, each step only if the last did not work:**
+
+1. **Steer.** Tell the model plainly what it has repeated, how many times and what has not changed, in generic words. It also shows in chat as a step.
+2. **Refuse** the repeating call before it runs.
+3. **Change approach.** A fresh, small context from the page as it stands, with the notes, the act record and a list of what was already tried, so the same fix cannot simply come back.
+4. **Stop spending and ask the person (lead's reading of "stopped").** If fresh approaches loop too, it stops, keeps the best result so far and the draft, and asks: "I keep getting stuck on this. Here is what I have." Keep going, tell it more, or stop. This is not a failed ending, because the task waits and resumes with its remaining budget, and it stops a loop eating the whole budget. It is the one place a task pauses short of its budget, so the user may overrule it. Under the Lab's hard rule a task that ends this way without its result still fails.
+
+**Proof, with no paid run.** Replay the detector over the saved step logs. It must catch the recorded loops, including `run-muq310ht-ab80eed0`'s 20 presses and eight re-reads, and fire on nothing in runs that worked through rows and passed. A scripted-model test per pattern and per step of the ladder. The attempt row and the Lab's report count loops caught, so it can be seen falling over time.
+
 ## Keep Going Until The Result
 
 The user's hard requirement, as a design. Exploration ends when its result is judged achieved, or when the budget is gone, or when the person presses Stop. A person's Stop always wins. Everything else that ends a build or run today stops being an ending.
@@ -96,7 +122,7 @@ The user's hard requirement, as a design. Exploration ends when its result is ju
 | --- | --- |
 | `not_doable`, `not_finished`, no candidate assembled, a verdict of no or unsure, draft kept | Not endings. A judge's no goes back to exploration with its reason, and it keeps going |
 | Run failed at a step, refuted, repairs exhausted (3 attempts), failed-step re-author once per run | Exploration carries on from the page as it stands |
-| 30-minute limit, rounds limit, no-progress guard, replies unreadable, trial limits | Not endings. A stall makes it change approach: a fresh, small context from the page as it stands, with the notes and the act record, so it does not loop on the same thing. The repeat guard still refuses an identical failing call |
+| 30-minute limit, rounds limit, no-progress guard, replies unreadable, trial limits | Not endings. A stall goes to loop detection (D14), which steers it and changes approach |
 | An uncertain lasting act (`run.outcome_uncertain`) | Look at the page to settle it, then continue. It never repeats the act blind |
 | A permission the person declined | It looks for another way without that act, within the budget |
 | A person-only check | It waits for the person, as now |
@@ -208,6 +234,7 @@ Interfaces are fixed by the lead before dispatch, and lanes run in parallel, eac
 
 **Exploration lane (Core).**
 1. New single-loop path: no trial, reset or dry run; every asked row and page, with D2; row sink; witnesses before the first lasting act and at the end; ends with the result; generic guidance.
+1b. **Loop detection** (D14), on its own task, because "keep going" depends on it.
 1a. **Keep going until the result:** every ending in "Keep Going Until The Result" converted, each with its own provider-free test. This is the plan's hard requirement.
 2. One act record. Proof: a repeat refused across stages; a provider-free probe that "run it" straight after a build no longer repeats silently.
 3. One purse per attempt with its reserve.
@@ -278,7 +305,8 @@ The user agreed on 2026-11-03. `AGENTS.md` carries the new rules now, and memory
 
 - **Repeating a lasting act.** The highest consequence. D1, D2, D6, the Lab's oracle. An undeclared lasting press can still slip through, and this stays disclosed until covered.
 - **Exploration not reaching the result.** The budget may run out first. Then the person gets the best result so far and a saved draft, and D2 is what keeps long tasks affordable. Unknown until the first paid round.
-- **Spending the whole budget on the impossible.** A consequence of the hard requirement. The meter and the $5 default bound it, and repeated stalls are visible in chat, so a person can press Stop.
+- **Spending the whole budget on the impossible.** A consequence of the hard requirement. The meter and the $5 default bound it, loop detection (D14) stops the worst of it, and stalls are visible in chat, so a person can press Stop.
+- **Loop detection firing on real work.** Stopping a legitimate long job would be worse than the loop. Progress is measured from new state and rows, and the detector is replayed over saved runs before it ships.
 - **The simulation rule may not validate.** The go/no-go exists for that, and the loop still works without it.
 - **Attempt 2 failing often.** Live time moves rather than vanishes: live trials were 31% of build time, and a failure costs the person a second real run. The simulated-pass, live-fail rate will show it.
 - **A wrong answer shown as right.** D9. A pure verdict can also pass a Flow that repeats exploration's mistake, since the reference rests on one live judgement.
