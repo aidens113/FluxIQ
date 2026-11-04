@@ -43,7 +43,9 @@ export function clientGatewayTraceStateRecording(input: {
   receipts?: ReadonlyMap<number, ClientGatewayTraceStateReceipt>;
   layerActsAreReceipted?: boolean;
 }): ClientGatewayTraceStateRecording {
-  const { calls, domain } = input;
+  const { domain } = input;
+  const handles = domain.handleScope();
+  const calls = input.calls.map((call) => ({ ...call, operation: handles(call.operation) }));
   const readings = calls.map((call) => domain.readAnswer(call.answer));
   const kinds = calls.map((call) => domain.labelCall(call.operation));
   const entries: ClientGatewayTraceStateEntry[] = [];

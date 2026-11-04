@@ -9,6 +9,7 @@ export * from "./gap-reasons.ts";
 export * from "./operation/index.ts";
 export * from "./contract-compatibility.ts";
 export * from "./gap-answer.ts";
+export * from "./recorded-feed.ts";
 export * from "./command-id-translation.ts";
 export * from "./recorded-deliveries.ts";
 export * from "./trace-admission.ts";
