@@ -46,7 +46,9 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     consequences: ["create_new"],
     reauthorizes: false
   },
-  announce: ({ place }) => `I'll do this on ${place} and show you the result here. I'll save how I did it, so next time is quicker.`,
+  announce: ({ place }) => automationStudioConversationAuthorsCandidates()
+    ? `I'll make you a new automation for this, working out its steps by trying them on ${place} and then test-running the whole Flow once from the start. I'll say here when it is ready, or why it is not.`
+    : `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when it is ready.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const said = await automationStudioConversationCommandInstruction(context, AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability, args, "instruction");
