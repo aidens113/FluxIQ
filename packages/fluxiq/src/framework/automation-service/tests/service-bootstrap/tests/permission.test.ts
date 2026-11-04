@@ -113,7 +113,7 @@ describe("building a Flow that needs an action a person has not allowed", () => 
       },
       evidenceLoop: { toolCallCount: 1 }
     });
-    expect(diagnostic.permissionRequest!.sentence).toContain("each time it runs");
+    expect(diagnostic.permissionRequest!.sentence).toContain("each time this runs");
     expect(run.requests).toHaveLength(1);
     await expect(run.instance.listFlowAdaptationSummaries({ projectId: run.project.id, limit: 10, offset: 0 })).resolves.toMatchObject({ total: 0 });
   });

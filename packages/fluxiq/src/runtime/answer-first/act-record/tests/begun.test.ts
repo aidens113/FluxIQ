@@ -144,6 +144,7 @@ describe("what an answer makes of a begun act", () => {
   it("is put back as it stood when the act was already held: a retry after a look that did nothing is held to another look", async () => {
     const record = new AutomationStudioAttemptActRecord();
     record.settled(call(), { effectApplied: false, uncertain: true, words: WORDS });
+    expect(record.admit(call()).kind).toBe("look_first");
     record.looked();
     expect(record.admit(call()).kind).toBe("run");
     const retry = call();

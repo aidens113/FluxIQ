@@ -2,9 +2,16 @@
 // attempt goes through it, a forward pass among them, since a forward run sends each
 // pass through the loop's executor (`S/runtime/llm/node-tools/replay/forward.ts`).
 //
-//   before dispatch   `admit`. A refusal dispatches nothing. `already_done` is told as a
-//                     result, not a failure: it happened, carry on. `look_first` says to
-//                     look where its effect would show. A lasting call is then `begun`,
+//   before dispatch   `foresee` asks what the domain says the call would be, and `admit`
+//                     reads that beside the call. A refusal dispatches nothing. `already_done`
+//                     is told as a result, not a failure: it happened, carry on. `look_first`
+//                     says to look where its effect would show, and only a look after that
+//                     opens the act: one before it, the round's own opening look among them,
+//                     does not (`../record.ts`). That refusal invites its own resend
+//                     (`diagnostics.resend`), since the loop's repeat guard would otherwise
+//                     refuse the identical press on a page the look left as it was, and the
+//                     way this refusal offers would be one it could never take. A lasting
+//                     call is then `begun`,
 //                     and this waits for that write: from here until its answer it is on
 //                     the persisted record as may have landed (`../record.ts`), so a
 //                     process that dies mid-press leaves it held to a look. A write that
@@ -23,7 +30,8 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
-import type { AutomationStudioAttemptActCall } from "../contracts.ts";
+import type { AutomationStudioLlmEvidenceResendInvitation } from "../../../llm/repeat-guard/index.ts";
+import type { AutomationStudioAttemptActCall, AutomationStudioAttemptActForeseen } from "../contracts.ts";
 import { automationStudioAttemptActHasTarget } from "../identity/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../record.ts";
 import { automationStudioAttemptActAnswerRead, type AutomationStudioAttemptActAnswerRead } from "./read-answer.ts";
@@ -33,6 +41,8 @@ const ALREADY_DONE_CODE = "attempt.act_already_done";
 const LOOK_FIRST_CODE = "attempt.act_look_first";
 const ALREADY_DONE_SAID = "This act already happened in this task, so it was not done again. Count it as done and carry on with what is left.";
 const LOOK_FIRST_SAID = "This act may already have happened, so it was not done again. Look at the page where its effect would show: if it is there, count it as done; if it is not, it may be tried again.";
+/** A look-first refusal's one resend, read by the repeat guard (`S/runtime/llm/repeat-guard/resend-admission.ts`). */
+const RESEND_ONCE: AutomationStudioLlmEvidenceResendInvitation = "accepted_once";
 const NOT_RECORDED_CODE = "attempt.act_not_recorded";
 const NOT_RECORDED_SAID = "This act was not done, because the record of what this task did could not be saved first. Nothing was sent, and it may be tried again.";
 
@@ -49,15 +59,19 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
   wordsOf?: (call: Call, answer: Result | undefined) => Words;
   /** Where the domain's read keeps its rows (`design.md`, `readRowsKey`). */
   readRowsKey?: string;
+  /** What the domain says this call would be, before it is sent. Must not throw: the caller answers nothing instead. */
+  foresee?: (call: Call) => AutomationStudioAttemptActForeseen | undefined;
 }): (call: Call) => Promise<Result | AutomationStudioLlmEvidenceToolExecutionResult> {
   const { record } = input;
   return async (call) => {
     const read = automationStudioAttemptActCallRead(call);
     let begunWords: { what: string; where: string } | undefined;
     if (read.kind === "act") {
+      const foreseen = input.foresee?.(call);
+      if (foreseen) read.act.foreseen = foreseen;
       const admission = record.admit(read.act);
       if (admission.kind === "already_done") return refusal(ALREADY_DONE_CODE, ALREADY_DONE_SAID, admission.act);
-      if (admission.kind === "look_first") return refusal(LOOK_FIRST_CODE, LOOK_FIRST_SAID, admission.act);
+      if (admission.kind === "look_first") return refusal(LOOK_FIRST_CODE, LOOK_FIRST_SAID, admission.act, { diagnostics: { resend: RESEND_ONCE } });
       if (record.lasting(read.act)) {
         begunWords = wordsFor(input.wordsOf?.(call, undefined));
         if (await record.begun(read.act, begunWords) === "not_written") return notRecorded();
@@ -77,7 +91,8 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
     if (read.kind === "look" ? said.looked || !said.applied : said.looked) record.looked();
     if (read.kind === "act") {
       if (recordable(read.act, said)) record.settled(read.act, {
-        effectApplied: said.applied, uncertain: said.uncertain, words: begunWords ?? wordsFor(input.wordsOf?.(call, answer)),
+        // A press may only say what it pressed once it has answered, so words still blank are asked for again with the answer in hand.
+        effectApplied: said.applied, uncertain: said.uncertain, words: begunWords?.what ? begunWords : wordsFor(input.wordsOf?.(call, answer)),
         ...(said.ranWith ? { ranWith: said.ranWith } : {}), ...(said.actedOn !== undefined ? { actedOn: said.actedOn } : {})
       });
       const url = read.act.parameters.url;
@@ -116,10 +131,10 @@ function notRecorded(): AutomationStudioLlmEvidenceToolExecutionResult {
 }
 
 /** A refusal: no dispatch, nothing changed, the act named by its screened words. */
-function refusal(code: string, instruction: string, act: { what: string; where: string; state: string }): AutomationStudioLlmEvidenceToolExecutionResult {
+function refusal(code: string, instruction: string, act: { what: string; where: string; state: string }, more: JsonObject = {}): AutomationStudioLlmEvidenceToolExecutionResult {
   return {
     kind: "llm_evidence_tool_execution",
-    evidence: { ok: false, code, instruction, act: { what: act.what, where: act.where, state: act.state } },
+    evidence: { ok: false, code, instruction, act: { what: act.what, where: act.where, state: act.state }, ...more },
     effectApplied: false,
     targetsUnchanged: true,
     resultCode: code

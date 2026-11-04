@@ -2,6 +2,7 @@
 // `./attempt/` drives it, over its rows and witnesses, the act record's run gate, the completion
 // check and the attempt store. The service reaches this by a dynamic import, on the lines it
 // already has: `../../service.ts` has a line limit, and this loads the loop's modules.
+export * from "./apply-proven/index.ts";
 export * from "./attempt/index.ts";
 export * from "./attempt-store/index.ts";
 export * from "./carry-on/index.ts";

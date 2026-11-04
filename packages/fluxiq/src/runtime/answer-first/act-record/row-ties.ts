@@ -37,6 +37,12 @@
 // see: a value written differently in the two shapes ("Nov 4" against "2026-11-04"), a
 // column split or merged, two rows sharing every value, and a row whose every value is a
 // bare number under renamed keys, which only an exact identity tells.
+//
+// **Words about a control, before it is pressed (`ofControlWords`, t870).** The domain can say
+// what a call names before it is sent, and those words are read as an answer's sentence is. They
+// are about a control rather than an item, so words every row holds (a column repeating the
+// control's own name) name no row at all: held as naming all of them, one acted row would refuse
+// a press on every other.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioAttemptActNotedRow } from "./contracts.ts";
@@ -102,6 +108,13 @@ export class AutomationStudioAttemptActRowTies {
     return this.rows.filter((held) => among.has(held.row) && sameRow(values, valuesOf(held))).map((held) => held.row);
   }
 
+  /** Which of `among` are these held rows in another shape: a handle a read printed names the row as that read held it, and a run may have acted on it as a Flow's For Each holds it. */
+  sameAsHeld(rows: readonly string[], among: ReadonlySet<string>): string[] {
+    if (among.size === 0 || rows.length === 0) return [];
+    const named = this.rows.filter((held) => rows.includes(held.row)).map(valuesOf);
+    return this.rows.filter((held) => among.has(held.row) && named.some((values) => sameRow(values, valuesOf(held)))).map((held) => held.row);
+  }
+
   /** The rows that printed `handle`. */
   ofHandle(handle: string): string[] {
     return this.rows.filter((row) => row.handles.includes(handle)).map((row) => row.row);
@@ -127,6 +140,14 @@ export class AutomationStudioAttemptActRowTies {
       found.push(row.row);
     }
     return found;
+  }
+
+  /** `ofWords`, for words about a control: none where they fit every row and there is more than one row to tell apart (header). */
+  ofControlWords(sentence: readonly string[]): string[] {
+    const found = this.ofWords(sentence);
+    if (found.length < 2 || found.length < this.rows.length) return found;
+    const first = valuesOf(this.rows[0]!);
+    return this.rows.every((row) => sameRow(first, valuesOf(row))) ? found : [];
   }
 
   data(): AutomationStudioAttemptActNotedRow[] {

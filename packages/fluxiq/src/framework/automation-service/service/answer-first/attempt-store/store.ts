@@ -63,6 +63,18 @@ export class AutomationStudioAnswerFirstAttemptStore {
     });
   }
 
+  /**
+   * Takes back a row whose attempt never started: a setup step found before any model call, where
+   * nothing was tried, so no attempt happened and none may be left showing as working.
+   */
+  async remove(projectId: string, flowId: string, attemptId: string): Promise<void> {
+    await this.queued(projectId, flowId, async () => {
+      const stored = await this.read(projectId, flowId);
+      if (!stored?.attempts.some((each) => each.attempt.attemptId === attemptId)) return;
+      await this.write({ ...stored, attempts: stored.attempts.filter((each) => each.attempt.attemptId !== attemptId) });
+    });
+  }
+
   private async read(projectId: string, flowId: string): Promise<Stored | undefined> {
     if (!this.paths.root) return this.memory.get(JSON.stringify([projectId, flowId]));
     let value: JsonObject;

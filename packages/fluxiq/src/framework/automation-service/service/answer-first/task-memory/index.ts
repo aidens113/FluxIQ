@@ -1,5 +1,6 @@
 // What a task remembers between attempts: its best and latest Flow, notes and provenance.
 export { automationStudioAnswerFirstBetterFlow } from "./better-flow.ts";
+export type { AutomationStudioAnswerFirstFlowBase } from "./flow-base.ts";
 export type { AutomationStudioAnswerFirstTaskMemory } from "./memory.ts";
 export type { AutomationStudioAnswerFirstAttemptProvenance } from "./provenance.ts";
 export type { AutomationStudioAnswerFirstSavedFlow } from "./saved-flow.ts";

@@ -1,3 +1,4 @@
+import type { AutomationStudioAnswerFirstFlowBase } from "./flow-base.ts";
 import type { AutomationStudioAnswerFirstAttemptProvenance } from "./provenance.ts";
 import type { AutomationStudioAnswerFirstSavedFlow } from "./saved-flow.ts";
 import type { AutomationStudioAnswerFirstTaskActs } from "./task-acts.ts";
@@ -16,4 +17,6 @@ export type AutomationStudioAnswerFirstTaskMemory = {
   attempts: AutomationStudioAnswerFirstAttemptProvenance[];
   /** What the task's latest attempt that acted has done on the site, whatever has run on its Flow since. */
   acts?: AutomationStudioAnswerFirstTaskActs;
+  /** Each Flow this task saved under, newest last, the last 20: what its steps were last known against (`./flow-base.ts`). */
+  flowBases?: AutomationStudioAnswerFirstFlowBase[];
 };

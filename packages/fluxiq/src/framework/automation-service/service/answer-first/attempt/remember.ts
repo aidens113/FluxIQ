@@ -44,8 +44,9 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
   });
 }
 
+/** A run that sent nothing proves nothing: every step of it may have been refused as already done, and it is judged all the same. */
 function wholeRunYes(run: AutomationStudioAnswerFirstAttemptRun): boolean {
-  return run.flowRun?.judged === "yes";
+  return run.flowRun?.judged === "yes" && run.flowRun.wentOut;
 }
 
 /** The Flow as it was saved did not do the task on the site as it stands. A person's Stop, or a run that never went out, says nothing of the Flow. */

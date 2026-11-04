@@ -12,6 +12,17 @@ import type { JsonObject } from "../../../core/index.ts";
 
 export type AutomationStudioAttemptActStage = "exploration" | "forward" | "trial" | "run";
 
+/**
+ * What the domain says a call would be, before it is sent: never what happened. It only ever adds
+ * to what `admit` refuses and to what an act answers to (`./record.ts`, "Before it is sent").
+ */
+export type AutomationStudioAttemptActForeseen = {
+  /** The words a person reads for what the call names. Hashed before they are compared, and never kept. */
+  words?: string;
+  /** The frozen parameters it would run with, opaque, read by shape as `ranWith` is (`./identity/target-keys.ts`). */
+  parameters?: JsonObject;
+};
+
 /** One call about to run, or that ran. */
 export type AutomationStudioAttemptActCall = {
   /** The node or tool that acts. */
@@ -25,13 +36,15 @@ export type AutomationStudioAttemptActCall = {
   /** The row, when it acts per row. */
   row?: JsonObject;
   stage: AutomationStudioAttemptActStage;
+  /** What the domain says it would be, for a call that names its target by a handle. */
+  foreseen?: AutomationStudioAttemptActForeseen;
 };
 
 export type AutomationStudioAttemptActAdmission =
   | { kind: "run" }
   /** Identical and landed: refuse, no dispatch. */
   | { kind: "already_done"; act: AutomationStudioAttemptAct }
-  /** May have landed and no look since: refuse, no dispatch. */
+  /** May have landed and no look since it was last refused: refuse, no dispatch. Saying this is the refusal (`./record.ts`, "A look lifts a hold"). */
   | { kind: "look_first"; act: AutomationStudioAttemptAct };
 
 /** Whether a lasting call may now be sent (`../record.ts`, `begun`). `not_written`: it is not on the persisted record, so it must not be. */
@@ -72,7 +85,7 @@ export type AutomationStudioAttemptActEntry = AutomationStudioAttemptAct & {
   controls?: string[];
   /** A Flow step it is known by (`step:` or `node:`), where a source named only that. */
   steps?: string[];
-  /** Whether an observation ran since it may have landed. */
+  /** Whether an observation ran since a call was refused for it. */
   lookedSince: boolean;
   /** How many landings of this act the person's request asks for, where it asks for more than one (`../asked-count/`). Read at its first landing and kept. */
   asked?: number;
@@ -81,7 +94,7 @@ export type AutomationStudioAttemptActEntry = AutomationStudioAttemptAct & {
   at: number;
   /** Hashed words of the sentence naming its item, for a read that comes after it. */
   actedOnWords?: string[];
-  /** A hashed path of the page it was made on, for a read that comes after it. */
+  /** A hashed path of the page it was made on: for a read that comes after it, and to tell it from the same control on another page. */
   placePath?: string;
 };
 

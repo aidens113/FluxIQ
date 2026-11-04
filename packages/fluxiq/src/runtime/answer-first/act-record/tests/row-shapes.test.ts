@@ -70,6 +70,30 @@ describe("the same row in another shape", () => {
     expect(dispatched).toEqual(["read", "press"]);
   });
 
+  it("reads a by-hand press on a handle a read printed as done, where a run pressed that row in another shape", async () => {
+    const record = new AutomationStudioAttemptActRecord();
+    const dispatched: string[] = [];
+    const execute = automationStudioAttemptActGate({
+      record,
+      executeTool: async (call: { callId: string; toolId: string; value: JsonObject }) => {
+        dispatched.push(call.callId);
+        return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, read: { extracted: [BY_HAND] } }, effectApplied: false, draft: { effect: "observe" as const, proposes: false } };
+      }
+    });
+    // The Flow's For Each held it with what a record output kept, and its pass is on the record.
+    record.settled(renew({ title: "The Long Winter", member: "Ann Lee" }), landed);
+    await execute({ callId: "read", toolId: "core.run_node", value: { node: "library.read", parameters: {}, consequences: [] } });
+    await expect(execute({ callId: "press", toolId: "core.run_node", value: { node: "library.press", parameters: { target: { handle: "t3" } }, consequences: ["modify_existing"] } })).resolves.toMatchObject({ resultCode: "attempt.act_already_done" });
+    expect(dispatched).toEqual(["read"]);
+  });
+
+  it("does not hold another row's printed handle as done", () => {
+    const record = new AutomationStudioAttemptActRecord();
+    record.settled(renew({ title: "The Long Winter", member: "Ann Lee" }), landed);
+    record.noteReadRows([{ title: "Old Roads", member: "Ann Lee", $handle: "t4" }]);
+    expect(record.admit({ actionId: "library.press", parameters: { target: { handle: "t4" } }, consequences: ["modify_existing"], stage: "exploration" }).kind).toBe("run");
+  });
+
   it("holds across a record seeded from what the last one wrote", () => {
     const seed = parseAutomationStudioAttemptActRecordData(JSON.parse(JSON.stringify(acted(BY_HAND).data())));
     expect(seed.ok).toBe(true);
