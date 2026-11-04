@@ -218,6 +218,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // and `deleteUser` each tell Secret Keys the raw id and who revoked it, and
   // Secret Keys drops the unlock only for its own user or an administrator.
   identityAccess.subscribeSessionRevocation((sessionId, revoker) => {
+    if (revoker.passwordChanged) secretKeys.credentialUnlocks.noteEndedByPasswordChange(sessionId);
     secretKeys.revokeSessionUnlock(sessionId, revoker);
   });
   // The registry, not each handler, asks for the operator's PIN before a
@@ -255,7 +256,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   };
   const callerUnlock = (userId: string, callerSessionId?: string): string | null => {
     if (callerSessionId?.startsWith(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX)) return pairedUnlockOf(userId, callerSessionId);
-    if (callerSessionId?.startsWith(PAIRED_CLIENT_UNLOCK_PREFIX)) return null;
+    if (callerSessionId?.startsWith(PAIRED_CLIENT_UNLOCK_PREFIX) || !secretKeys.credentialUnlocks.mayFallBack(callerSessionId)) return null;
     return secretKeys.unlockedSessionFor(userId);
   };
   const sessionKeyPorts: AutomationStudioSessionKeyPorts = {
@@ -462,8 +463,8 @@ function secretKeysCredentialCustody(secretKeys: SecretKeysService): ClientGatew
     async issued({ holder: client, credential, approvedBySessionId }) {
       await secretKeys.credentialUnlocks.presentCredential(holder(client, approvedBySessionId ? secretKeySessionDigest(approvedBySessionId) : undefined), credential, { verified: true });
     },
-    async confirmed({ holder: client, credential }) {
-      await secretKeys.credentialUnlocks.confirmCredential({ holderId: secretKeyPairedHolderId(client.trustedClientId), userId: client.userId, credential });
+    async confirmed({ holder: client, credentialDigest }) {
+      await secretKeys.credentialUnlocks.confirmCredential({ holderId: secretKeyPairedHolderId(client.trustedClientId), userId: client.userId, credentialDigest });
     },
     async rotating({ holder: client, previousCredential, nextCredential }) {
       await secretKeys.credentialUnlocks.rotateCredential({ holderId: secretKeyPairedHolderId(client.trustedClientId), userId: client.userId, previousCredential, nextCredential });

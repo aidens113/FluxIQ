@@ -78,6 +78,45 @@ describe("database manager record writes", () => {
     });
   });
 
+  describe("what proves who a person is", () => {
+    const proof = (harness: Awaited<ReturnType<typeof createHarness>>) => ({ authSessionId: harness.sessionId, authorizationPassword: DEFAULT_ADMIN_PASSWORD });
+
+    it.each(["credential:user.person", "session:digest.person", " credential:user.person", "Credential:user.person"])("refuses a put of %j, proof or no proof", async (id) => {
+      const harness = await createHarness();
+      const answer = await harness.call(DATABASE_MANAGER_ENDPOINTS.putRecord, { kind: "identity.users", id, data: { note: "changed" }, ...proof(harness) });
+      expect(answer.ok).toBe(false);
+      expect(harness.log.puts).toEqual([]);
+    });
+
+    it.each(["credential:user.person", "session:digest.person"])("refuses a delete of %j, proof or no proof", async (id) => {
+      const harness = await createHarness();
+      const answer = await harness.call(DATABASE_MANAGER_ENDPOINTS.deleteRecord, { kind: "identity.users", id, ...proof(harness) });
+      expect(answer.ok).toBe(false);
+      expect(harness.log.deletes).toEqual([]);
+    });
+
+    it.each(["credential", "session"])("refuses a row that would read as a %s, whatever it is called", async (recordType) => {
+      const harness = await createHarness();
+      const answer = await harness.call(DATABASE_MANAGER_ENDPOINTS.putRecord, { kind: " Identity.Users ", id: "anything", data: { recordType }, ...proof(harness) });
+      expect(answer.ok).toBe(false);
+      expect(harness.log.puts).toEqual([]);
+    });
+
+    it("leaves the rest of that store as it was: a recheck reaches it", async () => {
+      const harness = await createHarness();
+      const answer = await harness.call(DATABASE_MANAGER_ENDPOINTS.putRecord, { kind: "identity.users", id: "user:someone", data: { recordType: "user" }, ...proof(harness) });
+      expect(answer.ok).toBe(true);
+    });
+
+    it("refuses the same through a store grant", async () => {
+      const harness = await createHarness();
+      const grantId = await harness.issueGrant("identity.users", {});
+      const answer = await harness.call(DATABASE_MANAGER_ENDPOINTS.putRecord, { kind: "identity.users", id: "credential:user.person", data: { note: "changed" }, grantId, scope: {} });
+      expect(answer.ok).toBe(false);
+      expect(harness.log.puts).toEqual([]);
+    });
+  });
+
   describe("the credential unlock store", () => {
     it("is not read without a recheck", async () => {
       const harness = await createHarness();

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore } from "../../index.ts";
 import type { ClientGatewayCredentialCustody } from "../credential-custody.ts";
@@ -236,16 +237,16 @@ describe("replaying an old credential once the new one is confirmed", () => {
 });
 
 describe("what credential custody hears of it", () => {
-  it("hears a confirmation by the client's word with no credential, and by use with the one used", async () => {
-    const heard: Array<{ credential?: string | undefined }> = [];
+  it("hears a confirmation by the client's word and by use, each naming the credential that is now in use", async () => {
+    const heard: Array<{ credentialDigest: string }> = [];
     const custody: ClientGatewayCredentialCustody = {
       issued: async () => undefined,
       rotating: async () => undefined,
       presented: async () => undefined,
       released: () => undefined,
       forgotten: async () => undefined,
-      confirmed: async ({ credential }) => {
-        heard.push({ credential });
+      confirmed: async ({ credentialDigest }) => {
+        heard.push({ credentialDigest });
       }
     };
     const clock = { now: 1_000_000 };
@@ -256,7 +257,7 @@ describe("what credential custody hears of it", () => {
     const second = await hello(gateway, token);
     heard.length = 0;
     await gateway.receive(second.sessionId, clientMessage("client.credential_received", {}));
-    expect(heard).toEqual([{ credential: undefined }]);
+    expect(heard).toEqual([{ credentialDigest: createHash("sha256").update(second.sent ?? "", "utf8").digest("hex") }]);
     // Said twice, it has nothing more to confirm.
     await gateway.receive(second.sessionId, clientMessage("client.credential_received", {}));
     expect(heard).toHaveLength(1);
@@ -265,6 +266,6 @@ describe("what credential custody hears of it", () => {
     const third = await hello(gateway, second.sent ?? "");
     heard.length = 0;
     await gateway.authorizeToken(third.sent ?? "");
-    expect(heard).toEqual([{ credential: third.sent }]);
+    expect(heard).toEqual([{ credentialDigest: createHash("sha256").update(third.sent ?? "", "utf8").digest("hex") }]);
   });
 });

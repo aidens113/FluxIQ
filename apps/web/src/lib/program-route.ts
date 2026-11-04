@@ -357,6 +357,8 @@ export function projectPairedClientResponse<TResponse extends { ok: boolean; pay
   return {
     ...response,
     payload: {
+      // What starts this browser's own unlock, when nobody has unlocked it yet. No use without its person's password.
+      ...(typeof payloadRecord(response.payload)?.unlockTicket === "string" ? { unlockTicket: payloadRecord(response.payload)?.unlockTicket } : {}),
       keys: keys.map((key) => {
           const summary = payloadRecord(key) ?? {};
           return {

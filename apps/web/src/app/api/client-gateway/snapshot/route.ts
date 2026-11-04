@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireFluxIQUser } from "../../../../lib/auth";
 import { getFluxIQ, getFluxIQWebRuntimeStatus } from "../../../../lib/fluxiq";
 import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor, panelRouteActor } from "../../../../lib/app-route-iam";
+import { projectForPairedClient } from "../../../../lib/paired-client-project";
 
 const ROUTE = appRouteIamContract("GET", "/api/client-gateway/snapshot");
 
@@ -16,11 +17,14 @@ export async function GET(request: NextRequest) {
     if (!actor) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
     const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "paired-client", actor);
     if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
+    const webRuntime = getFluxIQWebRuntimeStatus(clientSession.operatorUserId);
+    const declaredDomain = typeof clientSession.metadata?.domainId === "string" ? clientSession.metadata.domainId : null;
+    const activeProjectId = webRuntime.automationStudio.activeProjectId ?? await projectForPairedClient(fluxiq.programs.automationStudio, declaredDomain);
     return NextResponse.json({
       ok: true,
       payload: {
         ...fluxiq.programs.clientGateway.snapshot(),
-        webRuntime: getFluxIQWebRuntimeStatus(clientSession.operatorUserId)
+        webRuntime: { ...webRuntime, automationStudio: { ...webRuntime.automationStudio, activeProjectId } }
       }
     });
   }

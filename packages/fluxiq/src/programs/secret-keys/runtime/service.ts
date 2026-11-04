@@ -484,7 +484,9 @@ export class SecretKeysService {
     await this.credentialUnlocks.load();
     const held = caller.sessionId === null ? undefined : this.heldKeys.session(caller.sessionId);
     const live = held?.userId === caller.userId && held.expiresAtMs > this.now() ? held : undefined;
+    const unlockTicket = caller.holderId === undefined ? undefined : this.credentialUnlocks.unlockTicketFor(caller.holderId);
     return {
+      ...(unlockTicket === undefined ? {} : { unlockTicket }),
       keys: keys.map((key) => {
         if (key.createdBy !== undefined && key.createdBy !== caller.userId) return key;
         const unlocked = live?.decryptionKeys.get(key.id)?.keyUpdatedAtMs === key.updatedAtMs;

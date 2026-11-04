@@ -17,8 +17,8 @@ export type ClientGatewayCredentialHolder = {
 export type ClientGatewayCredentialCustody = {
   /** A person approved this client, in `approvedBySessionId` when the caller knows it. It starts locked: a proof, not the approval, opens anything for it. */
   issued(input: { holder: ClientGatewayCredentialHolder; credential: string; approvedBySessionId?: string | undefined }): Promise<void>;
-  /** A credential is confirmed in use, so what any other could open ends: `credential` names it, or, absent, the client said it stored the newest. */
-  confirmed(input: { holder: ClientGatewayCredentialHolder; credential?: string | undefined }): Promise<void>;
+  /** The credential with this digest is confirmed in use, so what its predecessor could open ends. Told only of one that has really become the client's. */
+  confirmed(input: { holder: ClientGatewayCredentialHolder; credentialDigest: string }): Promise<void>;
   /** Written ahead of the new credential's digest, so a crash either side of it leaves the accepted credential able to open what custody keeps. */
   rotating(input: { holder: ClientGatewayCredentialHolder; previousCredential: string; nextCredential: string }): Promise<void>;
   /** The client spoke with this credential: a socket's hello or a request's bearer token. Called on every request, so it must be cheap when nothing changed. */

@@ -125,6 +125,8 @@ export type IdentityCredentialChangeSubscriber = {
 export type IdentitySessionRevoker = {
   userId: string | null;
   administrator: boolean;
+  /** Ended because its person changed their password: what it started has no claim on anything of theirs. */
+  passwordChanged?: boolean;
 };
 
 /** A session to revoke: its raw id, or (administrators only) the digest the panel lists it by. */

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { ClientGatewayTrustEndedError } from "./trust-ended-error.ts";
 import type { ClientGatewayTrustedClient, ClientGatewayTrustedClientView } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "./config.ts";
@@ -6,14 +6,14 @@ import type { ClientGatewayConfig } from "./config.ts";
 /** How often a client in steady use has its credential's life extended and stored: its next message would do, so this only saves writes. */
 const RENEW_EVERY_MS = 24 * 60 * 60_000;
 
-/** How many retired credentials a client remembers. A browser reconnecting all day moves past some, so this is days of them, and the store stays small. */
-const RETIRED_TOKENS_KEPT = 32;
+/** A request sent just before its client stored the next credential can still arrive. A hello is never excused this way: a client stores what it was sent before it says hello again. */
+const REQUEST_IN_FLIGHT_MS = 2 * 60_000;
 
-/** How long after retiring a credential its use is only refused: a request sent with it just before the client stored the next can still be in flight. */
-const REUSE_GRACE_MS = 2 * 60_000;
+/** How much of a credential's signature it carries. */
+const CREDENTIAL_SIGNATURE_BYTES = 16;
 
 /** The fields a rotation or a renewal changes, kept so a store that refuses the write can put them back. */
-type LifetimeFields = Pick<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "previousValidUntil" | "retiredTokens" | "updatedAt" | "lastUsedAt" | "expiresAt">;
+type LifetimeFields = Pick<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "previousValidUntil" | "lastMovedOnAt" | "updatedAt" | "lastUsedAt" | "expiresAt">;
 
 /**
  * Owns durable client trust: the trusted-client map, the token-hash index that
@@ -30,10 +30,13 @@ type LifetimeFields = Pick<ClientGatewayTrustedClient, "tokenHash" | "previousTo
  * by using it), and no longer than `credentialConfirmGraceMs`. Once confirmed, the old
  * one is refused for good.
  *
- * **Reuse is detected.** A credential this client moved past is remembered as a digest.
- * Only someone holding a copy can present one, so that revokes the trust: the real
- * browser pairs again, and the thief is out too. Renewal has no upper bound, and this is
- * what covers it. A credential still in the lost-reply window is not a reuse.
+ * **Reuse is detected.** A credential names its client and is signed under a key that
+ * client alone keeps, so Core can tell one it issued from noise with nothing remembered
+ * per credential. One of this client's that is neither its current one nor the one before
+ * can only be a copy, so that revokes the trust: the real browser pairs again, and whoever
+ * holds a copy is out too. Renewal has no upper bound, and this is what covers it. A
+ * credential still in the lost-reply window is not a reuse, and nor is a request already
+ * on its way as its credential moved on.
  */
 export class ClientGatewayTrustedClientRegistry {
   private readonly clients = new Map<string, ClientGatewayTrustedClient>();
@@ -73,7 +76,7 @@ export class ClientGatewayTrustedClientRegistry {
 
   /** The trusted-client view callers outside the gateway see: no token hash. */
   toView(client: ClientGatewayTrustedClient): ClientGatewayTrustedClientView {
-    const { tokenHash: _tokenHash, previousTokenHash: _previousTokenHash, retiredTokens: _retiredTokens, ...view } = client;
+    const { tokenHash: _tokenHash, previousTokenHash: _previousTokenHash, reuseKey: _reuseKey, ...view } = client;
     const status = client.revokedAt ? "revoked" : client.expiresAt <= this.config.now() ? "expired" : "active";
     return { ...view, status };
   }
@@ -94,19 +97,21 @@ export class ClientGatewayTrustedClientRegistry {
   }
 
   /**
-   * The active client this credential was retired from, when presenting it is a reuse:
-   * one it moved past (and not moments ago, which a request in flight explains), or the
-   * one before whose bound has passed.
+   * The active client this credential was issued to, when presenting it is a reuse: one it
+   * has moved on from, or the one before whose bound has passed. `request` says it came on a
+   * request rather than a hello, which may just have been on its way. A credential that
+   * merely names a client, unsigned, is noise, so nobody can end someone's trust by naming it.
    */
-  reuseOf(token: string): ClientGatewayTrustedClient | undefined {
+  reuseOf(token: string, options: { request?: boolean } = {}): ClientGatewayTrustedClient | undefined {
+    const trustedClientId = token.split(".", 1)[0] ?? "";
+    const client = this.clients.get(trustedClientId);
+    if (!client?.reuseKey || !this.isActive(client) || !signedFor(client, token)) return undefined;
     const tokenHash = this.hashToken(token);
-    const trustedClientId = this.idByTokenHash.get(tokenHash);
-    const client = trustedClientId ? this.clients.get(trustedClientId) : undefined;
-    if (!client || !this.isActive(client) || client.tokenHash === tokenHash) return undefined;
+    if (client.tokenHash === tokenHash) return undefined;
     const now = this.config.now();
-    if (client.previousTokenHash === tokenHash) return (client.previousValidUntil ?? 0) > now ? undefined : client;
-    const retired = client.retiredTokens?.find((entry) => entry.hash === tokenHash);
-    return retired && now - retired.retiredAt >= REUSE_GRACE_MS ? client : undefined;
+    if (client.previousTokenHash === tokenHash && (client.previousValidUntil ?? 0) > now) return undefined;
+    if (options.request === true && now - (client.lastMovedOnAt ?? 0) < REQUEST_IN_FLIGHT_MS) return undefined;
+    return client;
   }
 
   /** True when `token` is this client's current credential, not the one before it. */
@@ -134,10 +139,13 @@ export class ClientGatewayTrustedClientRegistry {
     approvedByUserId: string;
     domainId: string | null;
   }): Promise<{ trustedClient: ClientGatewayTrustedClient; token: string }> {
-    const token = this.config.createToken();
     const now = this.config.now();
+    const trustedClientId = randomUUID();
+    const reuseKey = randomBytes(32).toString("base64url");
+    const token = issuedCredential(trustedClientId, reuseKey, this.config.createToken());
     const trustedClient: ClientGatewayTrustedClient = {
-      trustedClientId: randomUUID(),
+      trustedClientId,
+      reuseKey,
       clientId: input.clientId,
       clientType: input.clientType,
       name: input.name,
@@ -173,7 +181,9 @@ export class ClientGatewayTrustedClientRegistry {
    * (`./credential-custody.ts`).
    */
   async rotateToken(trustedClient: ClientGatewayTrustedClient, presented: string, beforeCommit?: (token: string) => Promise<void>): Promise<string> {
-    const token = this.config.createToken();
+    // A client paired before credentials named it gets its key here.
+    const reuseKey = trustedClient.reuseKey ?? randomBytes(32).toString("base64url");
+    const token = issuedCredential(trustedClient.trustedClientId, reuseKey, this.config.createToken());
     await beforeCommit?.(token);
     // The write ahead took a moment, and the trust may have ended in it.
     if (!this.isActive(trustedClient)) throw new ClientGatewayTrustEndedError();
@@ -181,13 +191,15 @@ export class ClientGatewayTrustedClientRegistry {
     const now = this.config.now();
     const presentedHash = this.hashToken(presented);
     if (presentedHash === before.tokenHash) {
-      if (before.previousTokenHash) this.retire(trustedClient, before.previousTokenHash, now);
+      if (before.previousTokenHash) this.idByTokenHash.delete(before.previousTokenHash);
       trustedClient.previousTokenHash = presentedHash;
       trustedClient.previousValidUntil = now + this.config.credentialConfirmGraceMs;
     } else {
       // The one before came back, so the reply sent to it did not arrive here. If it is ever presented, someone else had it.
-      this.retire(trustedClient, before.tokenHash, now);
+      this.idByTokenHash.delete(before.tokenHash);
     }
+    trustedClient.reuseKey = reuseKey;
+    trustedClient.lastMovedOnAt = now;
     trustedClient.tokenHash = this.hashToken(token);
     trustedClient.updatedAt = now;
     trustedClient.lastUsedAt = now;
@@ -210,7 +222,8 @@ export class ClientGatewayTrustedClientRegistry {
     const before = lifetimeFields(trustedClient);
     delete trustedClient.previousTokenHash;
     delete trustedClient.previousValidUntil;
-    this.retire(trustedClient, previous, this.config.now());
+    trustedClient.lastMovedOnAt = this.config.now();
+    this.idByTokenHash.delete(previous);
     try {
       await this.persist();
     } catch (error) {
@@ -244,7 +257,6 @@ export class ClientGatewayTrustedClientRegistry {
     trustedClient.updatedAt = now;
     this.idByTokenHash.delete(trustedClient.tokenHash);
     if (trustedClient.previousTokenHash) this.idByTokenHash.delete(trustedClient.previousTokenHash);
-    for (const retired of trustedClient.retiredTokens ?? []) this.idByTokenHash.delete(retired.hash);
     try {
       await this.persist();
     } catch (error) {
@@ -256,14 +268,6 @@ export class ClientGatewayTrustedClientRegistry {
     }
   }
 
-  /** Remembers a credential this client moved past, oldest forgotten first. */
-  private retire(trustedClient: ClientGatewayTrustedClient, hash: string, retiredAt: number): void {
-    const retired = [...(trustedClient.retiredTokens ?? []), { hash, retiredAt }];
-    for (const dropped of retired.splice(0, Math.max(0, retired.length - RETIRED_TOKENS_KEPT))) this.idByTokenHash.delete(dropped.hash);
-    trustedClient.retiredTokens = retired;
-    this.idByTokenHash.set(hash, trustedClient.trustedClientId);
-  }
-
   private restore(trustedClient: ClientGatewayTrustedClient, before: LifetimeFields): void {
     trustedClient.tokenHash = before.tokenHash;
     trustedClient.updatedAt = before.updatedAt;
@@ -273,15 +277,14 @@ export class ClientGatewayTrustedClientRegistry {
     else trustedClient.previousTokenHash = before.previousTokenHash;
     if (before.previousValidUntil === undefined) delete trustedClient.previousValidUntil;
     else trustedClient.previousValidUntil = before.previousValidUntil;
-    if (before.retiredTokens === undefined) delete trustedClient.retiredTokens;
-    else trustedClient.retiredTokens = before.retiredTokens;
+    if (before.lastMovedOnAt === undefined) delete trustedClient.lastMovedOnAt;
+    else trustedClient.lastMovedOnAt = before.lastMovedOnAt;
     this.index(trustedClient);
   }
 
   private index(client: ClientGatewayTrustedClient): void {
     this.idByTokenHash.set(client.tokenHash, client.trustedClientId);
     if (client.previousTokenHash) this.idByTokenHash.set(client.previousTokenHash, client.trustedClientId);
-    for (const retired of client.retiredTokens ?? []) this.idByTokenHash.set(retired.hash, client.trustedClientId);
   }
 
   private async load(): Promise<void> {
@@ -301,12 +304,29 @@ export class ClientGatewayTrustedClientRegistry {
   }
 }
 
+function credentialSignature(trustedClientId: string, reuseKey: string, secret: string): string {
+  return createHmac("sha256", reuseKey).update(`${trustedClientId}.${secret}`, "utf8").digest().subarray(0, CREDENTIAL_SIGNATURE_BYTES).toString("base64url");
+}
+
+function issuedCredential(trustedClientId: string, reuseKey: string, secret: string): string {
+  return `${trustedClientId}.${secret}.${credentialSignature(trustedClientId, reuseKey, secret)}`;
+}
+
+/** Whether Core issued this credential to this client: it names the client and carries a signature only that client's key makes. */
+function signedFor(client: ClientGatewayTrustedClient, token: string): boolean {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts[0] !== client.trustedClientId || !client.reuseKey) return false;
+  const expected = Buffer.from(credentialSignature(client.trustedClientId, client.reuseKey, parts[1] ?? ""), "utf8");
+  const given = Buffer.from(parts[2] ?? "", "utf8");
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
 function lifetimeFields(client: ClientGatewayTrustedClient): LifetimeFields {
   return {
     tokenHash: client.tokenHash,
     ...(client.previousTokenHash === undefined ? {} : { previousTokenHash: client.previousTokenHash }),
     ...(client.previousValidUntil === undefined ? {} : { previousValidUntil: client.previousValidUntil }),
-    ...(client.retiredTokens === undefined ? {} : { retiredTokens: [...client.retiredTokens] }),
+    ...(client.lastMovedOnAt === undefined ? {} : { lastMovedOnAt: client.lastMovedOnAt }),
     updatedAt: client.updatedAt,
     lastUsedAt: client.lastUsedAt,
     expiresAt: client.expiresAt

@@ -552,6 +552,34 @@ describe("IdentityAccessService password attempts at a recheck", () => {
   });
 });
 
+describe("IdentityAccessService a password change", () => {
+  async function twoSessions() {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    const identity = createService(repository);
+    const own = await identity.authenticate({ username: "user-one", password: PASSWORD });
+    const other = await identity.authenticate({ username: "user-one", password: PASSWORD });
+    const change = (password: string) => identity.setPasswordAuthorized({ userId: "user.one", password: NEW_PASSWORD, sessionId: own.session.id, authorizationPassword: password, authorizationPin: undefined, authorizationTotp: undefined });
+    return { identity, own, other, change };
+  }
+
+  it("ends every other session of theirs and keeps the one that made it", async () => {
+    const { identity, own, other, change } = await twoSessions();
+    await change(PASSWORD);
+    await expect(identity.validateSession(other.session.id)).resolves.toBeNull();
+    await expect(identity.validateSession(own.session.id)).resolves.toMatchObject({ user: { id: "user.one" } });
+  });
+
+  it("is not held back by wrong guesses made on another session", async () => {
+    const { identity, other, change } = await twoSessions();
+    for (let guess = 0; guess < 9; guess += 1) {
+      await expect(identity.authorizeSessionCredentials({ sessionId: other.session.id, password: WRONG_PASSWORD, pin: undefined, totp: undefined, requirePin: false })).rejects.toThrow();
+    }
+    await expect(identity.authorizeSessionCredentials({ sessionId: other.session.id, password: PASSWORD, pin: undefined, totp: undefined, requirePin: false })).rejects.toThrow("Too many password attempts");
+    await expect(change(PASSWORD)).resolves.toBeDefined();
+  });
+});
+
 describe("IdentityAccessService ending a session", () => {
   it("tells what is keyed by digest while the session is still stored, so a crash between the two leaves a lock", async () => {
     const repository = new MemoryIdentityRepository();

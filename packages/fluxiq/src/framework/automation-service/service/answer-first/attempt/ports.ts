@@ -3,13 +3,9 @@
 // as the attempt's stores do (`../attempt-store/store-of.ts`). Tests set `sleep`, so a provider's
 // silence is waited out without waiting on the clock.
 
-import { automationStudioPersonWaitClock } from "../../../../../runtime/models/secrets/index.ts";
-
 export type AutomationStudioAnswerFirstAttemptPorts = {
   /** Waits for `ms`, or until `signal` aborts, whichever is first. Never rejects. */
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
-  /** How long this Flow has spent waiting for a person outside the attempt's own waits, such as a locked key: no limit counts it. Absent, nothing. */
-  personHeldMs?: ((scope: { projectId: string; flowId: string }) => number) | undefined;
 };
 
 const PORTS = new WeakMap<object, AutomationStudioAnswerFirstAttemptPorts>();
@@ -18,7 +14,7 @@ const PORTS = new WeakMap<object, AutomationStudioAnswerFirstAttemptPorts>();
 export function automationStudioAnswerFirstAttemptPorts(owner: object): AutomationStudioAnswerFirstAttemptPorts {
   const known = PORTS.get(owner);
   if (known) return known;
-  const made: AutomationStudioAnswerFirstAttemptPorts = { sleep: wallClockSleep, personHeldMs: (scope) => automationStudioPersonWaitClock.heldMs(scope) };
+  const made: AutomationStudioAnswerFirstAttemptPorts = { sleep: wallClockSleep };
   PORTS.set(owner, made);
   return made;
 }

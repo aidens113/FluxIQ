@@ -160,7 +160,7 @@ describe("a paired browser's unlock lasts as long as its credential", () => {
     const { service, keyId, holder } = await paired(repos);
     await expect(service.credentialUnlocks.rotateCredential({ holderId: holder.holderId, userId: USER, previousCredential: CREDENTIAL, nextCredential: NEXT_CREDENTIAL })).resolves.toBe(true);
     await service.credentialUnlocks.presentCredential(holder, NEXT_CREDENTIAL, { verified: true });
-    await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credential: NEXT_CREDENTIAL });
+    await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credentialDigest: digest(NEXT_CREDENTIAL) });
     service.close();
 
     const restarted = boot(repos);
@@ -178,10 +178,10 @@ describe("a paired browser's unlock lasts as long as its credential", () => {
     const restarted = boot(repos);
     await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL, { verified: true });
     expect(await release(restarted, handle(restarted, holder), keyId)).toBe(KEY_VALUE);
-    await restarted.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credential: CREDENTIAL });
-    // The generation for a credential nobody ever received is gone.
+    // The generation for a credential nobody ever received goes with the next rotation.
+    await restarted.credentialUnlocks.rotateCredential({ holderId: holder.holderId, userId: USER, previousCredential: CREDENTIAL, nextCredential: OTHER_CREDENTIAL });
     const stored = repos.unlocks.stored(holder.holderId) as unknown as SecretKeyCredentialUnlockRecord;
-    expect(stored.pending).toBeUndefined();
+    expect(unwrapCredentialUnlockPrivateKey(stored.pending!.wrap, NEXT_CREDENTIAL, { holderId: holder.holderId, userId: USER })).toBeNull();
   });
 
   it("reaches a key the person adds later, while the browser is away, with no credential present", async () => {

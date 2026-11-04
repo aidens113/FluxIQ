@@ -55,8 +55,11 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       if (!authorization.ok) return authorization;
       const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
       if (!actorSession) return { ok: false, error: "Sign in to FluxIQ to unlock your model keys." };
-      const { unlockedKeyCount } = await service.unlockSession({ sessionId: actorSession.sessionId, userId: actorSession.userId, authorizationPassword: payload.authorizationPassword, expiresAtMs: actorSession.expiresAtMs, unlockClients: Array.isArray(payload.clientIds) ? payload.clientIds.filter((id) => typeof id === "string") : [], passwordVerified: true });
-      return { ok: true, payload: { unlockedKeyCount } };
+      const named = Array.isArray(payload.clientIds) ? payload.clientIds.filter((id) => typeof id === "string") : [];
+      const lifts = await service.credentialUnlocks.liftable(actorSession.userId, named, typeof payload.unlockTicket === "string" ? payload.unlockTicket : undefined);
+      const { unlockedKeyCount } = await service.unlockSession({ sessionId: actorSession.sessionId, userId: actorSession.userId, authorizationPassword: payload.authorizationPassword, expiresAtMs: actorSession.expiresAtMs, unlockClients: [...lifts], passwordVerified: true });
+      const stillLocked = new Set((await service.credentialUnlocks.lockedClientsFor(actorSession.userId)).map((client) => client.holderId));
+      return { ok: true, payload: { unlockedKeyCount, stillLocked: named.filter((id) => stillLocked.has(id)) } };
     }
   });
   registry.register({

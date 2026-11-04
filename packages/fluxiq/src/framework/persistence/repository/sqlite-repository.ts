@@ -176,6 +176,8 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   async delete(id: string, scope: RepositoryScope = {}): Promise<boolean> {
     return this.withDatabase(scope, async (db) => {
       const result = await run(db, `delete from ${this.tableName} where id = ?`, [id]);
+      // What was deleted is still in the write-ahead log until a checkpoint. One that other connections hold up stays until the next.
+      if (this.secureDelete && result.changes > 0) await exec(db, "pragma wal_checkpoint(TRUNCATE)");
       return result.changes > 0;
     });
   }

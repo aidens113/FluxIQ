@@ -14,6 +14,7 @@ import type { InternalSession } from "./types.ts";
 import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 import { clientGatewayCredentialHolder } from "./lifecycle.ts";
 
+import type { ClientGatewayTrustedClient } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
 /**
@@ -200,6 +201,7 @@ export class ClientGatewayPairingFlow {
       await this.trustedClients.revoke(trustedClient, "pairing session ended before approval completed");
       throw lateRefusal;
     }
+    await this.endEarlierTrust(trustedClient);
     const now = trustedClient.approvedAt;
     pairing.consumedAt = now;
     pairing.sessionId = sessionId;
@@ -228,6 +230,22 @@ export class ClientGatewayPairingFlow {
     });
     await this.events.emit({ type: "session.ready", session: this.sessions.toPublic(session) });
     return this.sessions.toPublic(session);
+  }
+
+  /**
+   * The person approved this client id again, so a trust they gave it before is not this browser's
+   * any more, and anyone still holding its credential is out. Only their own: a client id is
+   * whatever a client says, so nobody ends another person's trust by saying theirs.
+   */
+  private async endEarlierTrust(approved: ClientGatewayTrustedClient): Promise<void> {
+    for (const earlier of this.trustedClients.list()) {
+      if (earlier.trustedClientId === approved.trustedClientId || earlier.clientId !== approved.clientId || earlier.approvedByUserId !== approved.approvedByUserId || !this.trustedClients.isActive(earlier)) continue;
+      try {
+        await this.facade.revokeTrustedClient(earlier.trustedClientId, "the same browser was approved again");
+      } catch (error) {
+        this.audit.record("trust.revoke_failed", "An earlier trust of a browser approved again could not be ended; it still ends on any copy of its credential being used.", { trustedClientId: earlier.trustedClientId, error: error instanceof Error ? error.name : "unknown" });
+      }
+    }
   }
 
   /** Why a session cannot take this approval now, or nothing when it is waiting for it. */

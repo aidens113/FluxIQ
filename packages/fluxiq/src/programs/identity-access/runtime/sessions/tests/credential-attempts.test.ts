@@ -14,6 +14,21 @@ async function failTimes(attempts: IdentityCredentialAttempts, userId: string, t
   for (let attempt = 0; attempt < times; attempt += 1) await expect(attempts.guard(userId, wrong)).rejects.toThrow("Invalid");
 }
 
+describe("password attempts sent together", () => {
+  it("run no more than the limit, counted as they start", async () => {
+    const attempts = new IdentityCredentialAttempts(() => 1_000);
+    let started = 0;
+    const answered = await Promise.allSettled(Array.from({ length: 200 }, () => attempts.guard("session.one", async () => {
+      started += 1;
+      await new Promise((resolve) => setImmediate(resolve));
+      throw new Error("Invalid username or credentials");
+    })));
+    expect(started).toBeLessThanOrEqual(8);
+    expect(answered.every((result) => result.status === "rejected")).toBe(true);
+    await expect(attempts.guard("session.one", async () => undefined)).rejects.toThrow(CREDENTIAL_ATTEMPTS_EXCEEDED);
+  });
+});
+
 describe("password attempts at a recheck", () => {
   it("stops a guesser after a bounded number, without even checking the password", async () => {
     let clock = 1_000;
@@ -25,6 +40,16 @@ describe("password attempts at a recheck", () => {
     clock += 16 * MINUTE;
     await expect(attempts.guard("user.one", async () => { checked += 1; })).resolves.toBeUndefined();
     expect(checked).toBe(1);
+  });
+
+  it("holds back for a while from the last wrong guess, not only until the window ends", async () => {
+    let clock = 1_000;
+    const attempts = new IdentityCredentialAttempts(() => clock);
+    await failTimes(attempts, "user.one", 7);
+    clock += 14 * MINUTE;
+    await failTimes(attempts, "user.one", 1);
+    clock += 2 * MINUTE;
+    await expect(attempts.guard("user.one", async () => undefined)).rejects.toThrow(CREDENTIAL_ATTEMPTS_EXCEEDED);
   });
 
   it("the right password clears the count", async () => {

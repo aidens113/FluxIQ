@@ -59,6 +59,31 @@ describe("a task whose person's key locks mid-way", () => {
   });
 });
 
+describe("a task whose key locks, as its own provider says", () => {
+  it("tells what listens to this provider when a call starts and stops waiting, and on a Stop too", async () => {
+    const service = new SecretKeysService({ passwordKdf: WEAK_KDF });
+    const key = await service.createKey({ name: "DeepSeek", value: "dummy-wait-key", authorizationPassword: PASSWORD_A, createdBy: "user.hold" });
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: service, flowSecretKeyId: () => key.id });
+    const provider = resolve({ projectId: "project.hold", flowId: "flow.hold", caller: { actorUserId: "user.hold", actorSessionId: "session.hold" } })!.provider;
+    const heard: string[] = [];
+    const stop = provider.observeHolds!((state) => void heard.push(state));
+    const waiting = provider.whenReady!(request());
+    await vi.waitFor(() => expect(heard).toEqual(["started"]));
+    await service.unlockSession({ sessionId: "session.hold", userId: "user.hold", authorizationPassword: PASSWORD_A, expiresAtMs: Date.now() + 60_000 });
+    await waiting;
+    expect(heard).toEqual(["started", "ended"]);
+    service.revokeSessionUnlock("session.hold", { userId: "user.hold", administrator: false });
+    const aborted = new AbortController();
+    const stopped = provider.whenReady!(request(), { signal: aborted.signal });
+    await vi.waitFor(() => expect(heard).toEqual(["started", "ended", "started"]));
+    aborted.abort();
+    await stopped;
+    expect(heard).toEqual(["started", "ended", "started", "ended"]);
+    stop();
+    service.close();
+  });
+});
+
 describe("session-key provider resolver", () => {
   it("makes a model call with no grant, on the caller's own key, released to their session", async () => {
     const reveals: Array<{ sessionId: string; userId: string }> = [];

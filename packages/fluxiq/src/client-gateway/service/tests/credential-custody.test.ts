@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage } from "../../index.ts";
 import type { ClientGatewayCredentialCustody } from "../credential-custody.ts";
@@ -17,7 +18,7 @@ function listening(options: { failing?: boolean } = {}): { custody: ClientGatewa
     heard,
     custody: {
       issued: async ({ holder, credential, approvedBySessionId }) => hear({ step: "issued", trustedClientId: holder.trustedClientId, credential, approvedBySessionId }),
-      confirmed: async ({ holder, credential }) => hear({ step: "confirmed", trustedClientId: holder.trustedClientId, credential }),
+      confirmed: async ({ holder, credentialDigest }) => hear({ step: "confirmed", trustedClientId: holder.trustedClientId, credential: credentialDigest }),
       rotating: async ({ holder, previousCredential, nextCredential }) => hear({ step: "rotating", trustedClientId: holder.trustedClientId, previousCredential, nextCredential }),
       presented: async ({ holder, credential }) => hear({ step: "presented", trustedClientId: holder.trustedClientId, credential }),
       released: (trustedClientId) => hear({ step: "released", trustedClientId }),
@@ -62,7 +63,7 @@ describe("credential custody", () => {
     const rotated = credentialIn(gateway, next.sessionId);
     expect(rotated).not.toBe(token);
     expect(heard).toEqual([
-      { step: "confirmed", trustedClientId, credential: token },
+      { step: "confirmed", trustedClientId, credential: createHash("sha256").update(token, "utf8").digest("hex") },
       { step: "rotating", trustedClientId, previousCredential: token, nextCredential: rotated },
       { step: "presented", trustedClientId, credential: rotated }
     ]);

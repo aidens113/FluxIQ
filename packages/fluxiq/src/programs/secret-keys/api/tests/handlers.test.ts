@@ -61,12 +61,32 @@ describe("secret-keys endpoints", () => {
       runtime.secretKeys.close();
     });
 
-    it("hands on only the holders named, and only as strings", async () => {
+    it("lifts a browser nobody has unlocked only with what that browser alone can read", async () => {
       const { runtime, login, call } = await withPinAndKey();
+      const holder = { holderKind: "paired-client" as const, holderId: "paired-client:one", userId: login.user.id, expiresAtMs: Date.now() + 60_000, label: "Chrome" };
+      await runtime.secretKeys.credentialUnlocks.presentCredential(holder, "dummy-credential-one", { verified: true });
       const proved = vi.spyOn(runtime.secretKeys.credentialUnlocks, "personProved");
+      const lifted = () => [...(proved.mock.calls.at(-1)?.[2]?.lift ?? [])];
       await call({ authorizationPassword: "admin", clientIds: ["paired-client:one", 7, null] });
-      expect(proved.mock.calls.at(-1)?.[0]).toBe(login.user.id);
-      expect([...(proved.mock.calls.at(-1)?.[2]?.lift ?? [])]).toEqual(["paired-client:one"]);
+      expect(lifted()).toEqual([]);
+      const unlockTicket = runtime.secretKeys.credentialUnlocks.unlockTicketFor(holder.holderId);
+      await call({ authorizationPassword: "admin", clientIds: ["paired-client:one"], unlockTicket: "paired-client:one.dummy" });
+      expect(lifted()).toEqual([]);
+      expect(unlockTicket?.startsWith(holder.holderId)).toBe(true);
+      await call({ authorizationPassword: "admin", clientIds: ["paired-client:one"], unlockTicket });
+      expect(lifted()).toEqual(["paired-client:one"]);
+      runtime.secretKeys.close();
+    });
+
+    it("a ticket is not given to a panel, and not for a browser unlocked before", async () => {
+      const { runtime, login } = await withPinAndKey();
+      const holder = { holderKind: "paired-client" as const, holderId: "paired-client:one", userId: login.user.id, expiresAtMs: Date.now() + 60_000, label: "Chrome" };
+      await runtime.secretKeys.credentialUnlocks.presentCredential(holder, "dummy-credential-one", { verified: true });
+      runtime.secretKeys.credentialUnlocks.bindVouch(() => true);
+      expect((await runtime.secretKeys.snapshotFor({ userId: login.user.id, sessionId: login.session.id }) as { unlockTicket?: string }).unlockTicket).toBeUndefined();
+      expect((await runtime.secretKeys.snapshotFor({ userId: login.user.id, sessionId: null, holderId: holder.holderId }) as { unlockTicket?: string }).unlockTicket).toBeDefined();
+      await runtime.secretKeys.credentialUnlocks.lock(holder.holderId, "signed_out");
+      expect(runtime.secretKeys.credentialUnlocks.unlockTicketFor(holder.holderId)).toBeUndefined();
       runtime.secretKeys.close();
     });
 

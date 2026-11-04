@@ -8,6 +8,7 @@ import type { ClientGatewayCredentialCustody } from "../credential-custody.ts";
 
 const DAY = 24 * 60 * 60_000;
 const MINUTE = 60_000;
+const SECOND = 1_000;
 const CLIENT_ID = "extension.reuse";
 
 function clientMessage<TType extends ClientGatewayClientMessage["type"]>(type: TType, payload: Extract<ClientGatewayClientMessage, { type: TType }>["payload"]): Extract<ClientGatewayClientMessage, { type: TType }> {
@@ -96,7 +97,7 @@ describe("a retired credential presented", () => {
   it("on a hello ends the trust, so the current credential stops working too, and audits it by client", async () => {
     const { gateway, clock, retired, current, heard } = await rotatedAndConfirmed();
     const trustedClientId = trust(gateway)?.trustedClientId;
-    clock.now += 3 * MINUTE;
+    clock.now += SECOND;
     expect((await hello(gateway, retired)).status).toBe("pairing_required");
     expect(trust(gateway)?.status).toBe("revoked");
     await expect(gateway.authorizeToken(current)).resolves.toBeNull();
@@ -137,25 +138,57 @@ describe("a retired credential presented", () => {
     expect(trust(gateway)?.status).toBe("revoked");
   });
 
-  it("from a thief who took over: the real browser's dead credential ends it for both", async () => {
-    // Someone with a copy of the current credential reconnects and confirms the next one.
-    const { gateway, clock, current: stolen } = await rotatedAndConfirmed();
-    clock.now += 3 * MINUTE;
-    const thief = await hello(gateway, stolen);
-    expect(thief.status).toBe("ready");
-    await gateway.receive(thief.sessionId, clientMessage("client.credential_received", {}));
-    clock.now += 3 * MINUTE;
-    // The real browser comes back with what it holds, which is now retired.
-    expect((await hello(gateway, stolen)).status).toBe("pairing_required");
-    await expect(gateway.authorizeToken(thief.sent ?? "")).resolves.toBeNull();
+  it("by a browser whose credential someone else moved on, the moment it comes back: it ends for both", async () => {
+    const { gateway, clock, current: copied, sessionId } = await rotatedAndConfirmed();
+    const other = await hello(gateway, copied);
+    expect(other.status).toBe("ready");
+    await gateway.receive(other.sessionId, clientMessage("client.credential_received", {}));
+    expect(gateway.snapshot().sessions.find((session) => session.sessionId === sessionId)?.status).toBe("disconnected");
+    clock.now += SECOND;
+    expect((await hello(gateway, copied)).status).toBe("pairing_required");
     expect(trust(gateway)?.status).toBe("revoked");
+    await expect(gateway.authorizeToken(other.sent ?? "")).resolves.toBeNull();
+    expect((await hello(gateway, other.sent ?? "")).status).toBe("pairing_required");
+    expect(gateway.snapshot().auditLog.some((entry) => entry.type === "credential.reuse_detected")).toBe(true);
   });
 
-  it("within the grace for requests already in flight is refused but ends nothing", async () => {
+  it("however many times the credential has moved on since, and however long ago", async () => {
+    const { gateway, clock, current: copied } = await rotatedAndConfirmed();
+    let held = copied;
+    for (let round = 0; round < 40; round += 1) {
+      const next = await hello(gateway, held);
+      await gateway.receive(next.sessionId, clientMessage("client.credential_received", {}));
+      gateway.disconnect(next.sessionId, "socket closed");
+      held = next.sent ?? "";
+    }
+    clock.now += 10 * MINUTE;
+    expect((await hello(gateway, copied)).status).toBe("pairing_required");
+    expect(trust(gateway)?.status).toBe("revoked");
+    await expect(gateway.authorizeToken(held)).resolves.toBeNull();
+  });
+
+  it("across a Core restart too, however many times it has moved on", async () => {
+    const store = new MemoryStore();
+    const { gateway, current: copied } = await rotatedAndConfirmed(store);
+    let held = copied;
+    for (let round = 0; round < 40; round += 1) {
+      const next = await hello(gateway, held);
+      await gateway.receive(next.sessionId, clientMessage("client.credential_received", {}));
+      gateway.disconnect(next.sessionId, "socket closed");
+      held = next.sent ?? "";
+    }
+    const { gateway: restarted } = harness(store);
+    expect((await hello(restarted, copied)).status).toBe("pairing_required");
+    expect(trust(restarted)?.status).toBe("revoked");
+  });
+
+  it("on a request just after the move is only refused, since one can be in flight, and a hello is not so excused", async () => {
     const { gateway, retired, current } = await rotatedAndConfirmed();
     await expect(gateway.authorizeToken(retired)).resolves.toBeNull();
     expect(trust(gateway)?.status).toBe("active");
     await expect(gateway.authorizeToken(current)).resolves.not.toBeNull();
+    expect((await hello(gateway, retired)).status).toBe("pairing_required");
+    expect(trust(gateway)?.status).toBe("revoked");
   });
 
   it("is ordinary noise when it was never a credential of this client", async () => {
@@ -164,6 +197,17 @@ describe("a retired credential presented", () => {
     await expect(gateway.authorizeToken("dummy-credential-never-issued")).resolves.toBeNull();
     expect(trust(gateway)?.status).toBe("active");
     await expect(gateway.authorizeToken(current)).resolves.not.toBeNull();
+  });
+
+  it("ends nothing when it merely names a client: only a credential Core issued can", async () => {
+    const { gateway, current } = await rotatedAndConfirmed();
+    const named = trust(gateway)?.trustedClientId ?? "";
+    for (const forged of [`${named}.dummy`, `${named}.dummy.dummy`, `${named}.${current.split(".")[1]}.dummy`, `${named}`]) {
+      expect((await hello(gateway, forged)).status).toBe("pairing_required");
+      await expect(gateway.authorizeToken(forged)).resolves.toBeNull();
+    }
+    expect(trust(gateway)?.status).toBe("active");
+    expect((await hello(gateway, current)).status).toBe("ready");
   });
 });
 
@@ -196,14 +240,15 @@ describe("what is not a reuse", () => {
   });
 });
 
-describe("how much is remembered", () => {
-  it("a bounded number of digests, never the credentials, and none in what the panel reads", async () => {
+describe("what is kept", () => {
+  it("no credential, nothing that grows with use, and nothing secret in what the panel reads", async () => {
     const store = new MemoryStore();
     const { gateway, clock } = harness(store);
     const { sessionId, token } = await pair(gateway);
     gateway.disconnect(sessionId, "socket closed");
     let credential = token;
     const seen: string[] = [token];
+    const sizes: number[] = [];
     for (let round = 0; round < 60; round += 1) {
       clock.now += 1_000;
       const next = await hello(gateway, credential);
@@ -211,12 +256,43 @@ describe("how much is remembered", () => {
       gateway.disconnect(next.sessionId, "socket closed");
       credential = next.sent ?? "";
       seen.push(credential);
+      sizes.push(JSON.stringify(store.clients).length);
     }
-    const stored = store.clients[0];
-    expect(stored?.retiredTokens?.length).toBeLessThanOrEqual(32);
+    expect(sizes.at(-1)).toBe(sizes[1]);
     const text = JSON.stringify(store.clients);
     for (const raw of seen) expect(text).not.toContain(raw);
-    expect(JSON.stringify(gateway.snapshot().trustedClients)).not.toContain("retiredTokens");
+    const shown = gateway.snapshot().trustedClients[0] as unknown as Record<string, unknown>;
+    expect(Object.keys(shown).filter((key) => /token|key|hash/iu.test(key))).toEqual([]);
+  });
+});
+
+describe("the same browser approved again", () => {
+  async function approve(gateway: ClientGatewayService, approvedByUserId: string): Promise<{ sessionId: string; token: string }> {
+    const session = gateway.connect();
+    await gateway.receive(session.sessionId, clientMessage("client.hello", { clientId: CLIENT_ID, clientType: "extension", name: "Chrome" }));
+    const pairingCode = gateway.snapshot().pairings.find((pairing) => pairing.requestedBySessionId === session.sessionId)?.pairingCode ?? "";
+    await gateway.approvePairing(pairingCode, { approvedByUserId });
+    return { sessionId: session.sessionId, token: sentToken(gateway, session.sessionId) };
+  }
+
+  it("ends what that person had trusted under that client id, which someone else may still hold", async () => {
+    const { gateway, heard } = harness();
+    const first = await approve(gateway, "user.web");
+    const second = await approve(gateway, "user.web");
+    const trusts = gateway.snapshot().trustedClients.filter((client) => client.clientId === CLIENT_ID);
+    expect(trusts.map((client) => client.status).sort()).toEqual(["active", "revoked"]);
+    await expect(gateway.authorizeToken(first.token)).resolves.toBeNull();
+    await expect(gateway.authorizeToken(second.token)).resolves.not.toBeNull();
+    expect(heard).toContain("forgotten");
+  });
+
+  it("does not touch another person's trust, whose client id anyone could say", async () => {
+    const { gateway } = harness();
+    const theirs = await approve(gateway, "user.other");
+    gateway.disconnect(theirs.sessionId, "socket closed");
+    await approve(gateway, "user.web");
+    expect(gateway.snapshot().trustedClients.map((client) => client.status)).toEqual(["active", "active"]);
+    expect((await hello(gateway, theirs.token)).status).toBe("ready");
   });
 });
 

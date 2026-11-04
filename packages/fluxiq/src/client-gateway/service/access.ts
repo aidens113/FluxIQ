@@ -66,7 +66,7 @@ export class ClientGatewayAccess {
     await this.facade.ready();
     const normalizedToken = typeof token === "string" ? token.trim() : "";
     if (!normalizedToken) return null;
-    await this.lifecycle.refuseReuse(normalizedToken);
+    await this.lifecycle.refuseReuse(normalizedToken, { request: true });
     const trustedClient = this.trustedClients.resolveByToken(normalizedToken);
     if (!trustedClient || !this.trustedClients.isActive(trustedClient)) return null;
     const session = this.sessions.findReadyByTrustedClient(trustedClient.trustedClientId);
@@ -93,7 +93,7 @@ export class ClientGatewayAccess {
   private async notedCurrentUse(trustedClient: ClientGatewayTrustedClient, token: string): Promise<void> {
     if (!this.trustedClients.isCurrentToken(trustedClient, token)) return;
     try {
-      if (await this.trustedClients.confirmCurrent(trustedClient)) await this.custody.confirmed({ holder: clientGatewayCredentialHolder(trustedClient), credential: token });
+      if (await this.trustedClients.confirmCurrent(trustedClient)) await this.custody.confirmed({ holder: clientGatewayCredentialHolder(trustedClient), credentialDigest: trustedClient.tokenHash });
       await this.trustedClients.renew(trustedClient);
     } catch (error) {
       this.audit.record("trust.renew_failed", "A trusted client's credential could not be renewed; it stays valid until it expires.", { trustedClientId: trustedClient.trustedClientId, error: error instanceof Error ? error.name : "non_error" });

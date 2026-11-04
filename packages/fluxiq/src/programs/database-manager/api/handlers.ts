@@ -10,7 +10,7 @@ import {
   type DatabaseManagerStoreRequest
 } from "./contracts.ts";
 import type { DatabaseManagerService } from "../runtime/service.ts";
-import { isOwnerWrittenDatabaseKind, isSensitiveDatabaseKind } from "../sensitive-stores.ts";
+import { isOwnerWrittenDatabaseRecord, isSensitiveDatabaseKind } from "../sensitive-stores.ts";
 import type { RepositoryScope } from "../../../framework/persistence/repository/types.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 
@@ -102,7 +102,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
       const scope = payload.scope ?? request.scope;
       const authorization = await authorizeSensitiveStore(identityAccess, payload, scope, sensitiveGrants, request.actor?.userId);
       if (!authorization.ok) return authorization;
-      if (isOwnerWrittenDatabaseKind(payload.kind)) return { ok: false, error: "This store is written only by the program that owns it." };
+      if (isOwnerWrittenDatabaseRecord(payload.kind, payload.id, payload.data)) return { ok: false, error: "This is written only by the program that owns it." };
       if (!isJsonObject(payload.data)) return { ok: false, error: "data must be a JSON object" };
       return { ok: true, payload: await service.putRecord(payload.kind, payload.id, payload.data, scope) };
     }
@@ -121,7 +121,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
       const scope = payload.scope ?? request.scope;
       const authorization = await authorizeSensitiveStore(identityAccess, payload, scope, sensitiveGrants, request.actor?.userId);
       if (!authorization.ok) return authorization;
-      if (isOwnerWrittenDatabaseKind(payload.kind)) return { ok: false, error: "This store is written only by the program that owns it." };
+      if (isOwnerWrittenDatabaseRecord(payload.kind, payload.id)) return { ok: false, error: "This is written only by the program that owns it." };
       return { ok: true, payload: { deleted: await service.deleteRecord(payload.kind, payload.id, scope) } };
     }
   });

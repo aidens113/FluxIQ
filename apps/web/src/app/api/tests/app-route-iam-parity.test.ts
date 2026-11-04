@@ -33,6 +33,8 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/client-gateway/approve-pairing": needs("runtime.control"),
   "POST /api/client-gateway/dismiss-pairing": needs("runtime.control"),
   "POST /api/client-gateway/automation-studio-context": needs("runtime.control"),
+  // A credential is the whole of the proof, and it can only end its own trust.
+  "POST /api/client-gateway/forget-pairing": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   "GET /api/client-gateway/snapshot": ["allowed", "allowed", "allowed", "allowed"],
   "PUT /api/client-gateway/trace-artifacts/[sha256]": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   "GET /api/framework/setup": COOKIE_ONLY_READ,

@@ -166,9 +166,6 @@ describe("a person's model key across a Core restart, through the real wiring", 
       await current.clientGateway.receive(again.gatewaySessionId, clientMessage("client.credential_received", {}));
       await expect(current.clientGateway.authorizeToken(paired.token)).resolves.toBeNull();
       await expect(current.clientGateway.authorizeToken(lost.token)).resolves.toBeNull();
-      const replay = current.clientGateway.connect();
-      await current.clientGateway.receive(replay.sessionId, clientMessage("client.hello", { clientId: CLIENT_ID, clientType: "extension", name: "Chrome", token: paired.token }));
-      expect(current.clientGateway.snapshot().sessions.find((session) => session.sessionId === replay.sessionId)?.status).toBe("pairing_required");
       // The newest still opens it, after another restart, and the old one's wrap is gone: even with the store, it opens nothing.
       const trustedClientId = current.clientGateway.snapshot().trustedClients.find((client) => client.clientId === CLIENT_ID)?.trustedClientId ?? "";
       shutDown(current);
@@ -177,6 +174,11 @@ describe("a person's model key across a Core restart, through the real wiring", 
       await expect(current.secretKeys.credentialUnlocks.presentCredential(holder, paired.token)).resolves.toEqual({ unlockedKeyCount: 0 });
       const newest = await reconnect(current, again.token);
       expect(await keyReleasedTo(current, newest.gatewaySessionId, login.user.id, keyId)).toBe(KEY_VALUE);
+      // One it has moved on from, said in a hello, can only be a copy: it ends the trust, and the key with it.
+      const replay = current.clientGateway.connect();
+      await current.clientGateway.receive(replay.sessionId, clientMessage("client.hello", { clientId: CLIENT_ID, clientType: "extension", name: "Chrome", token: paired.token }));
+      expect(current.clientGateway.snapshot().sessions.find((session) => session.sessionId === replay.sessionId)?.status).toBe("pairing_required");
+      expect(await keyReleasedTo(current, newest.gatewaySessionId, login.user.id, keyId)).toBeNull();
     } finally {
       shutDown(current);
     }
@@ -335,6 +337,24 @@ describe("a person's model key across a Core restart, through the real wiring", 
       expect(await keyReleasedTo(runtime, paired.gatewaySessionId, login.user.id, key.id)).toBeNull();
       const actor = { userId: login.user.id, sessionId: `client-gateway:${paired.gatewaySessionId}` };
       expect(runtime.automationStudio.conversations.callerFor(actor)).toMatchObject({ keyNeedsUnlock: true, keyLockReason: "password_changed" });
+    } finally {
+      shutDown(runtime);
+    }
+  });
+
+  it("a person changing their own password ends their other sessions, and nothing started from one draws on the session that changed it", async () => {
+    const paths = pathsAt(root);
+    const runtime = boot(paths);
+    try {
+      const login = await signIn(runtime);
+      const elsewhere = await runtime.identityAccess.authenticate({ username: "admin", password: PASSWORD });
+      await runtime.secretKeys.createKey({ name: "Model", value: KEY_VALUE, authorizationPassword: PASSWORD, createdBy: login.user.id, actorSession: { sessionId: login.session.id, userId: login.user.id, expiresAtMs: login.session.expiresAtMs } });
+      const other = { userId: login.user.id, sessionId: elsewhere.session.id };
+      await runtime.identityAccess.setPasswordAuthorized({ userId: login.user.id, password: "dummy-admin-password-2", sessionId: login.session.id, authorizationPassword: PASSWORD, authorizationPin: undefined, authorizationTotp: undefined });
+      await expect(runtime.identityAccess.validateSession(elsewhere.session.id)).resolves.toBeNull();
+      await expect(runtime.identityAccess.validateSession(login.session.id)).resolves.not.toBeNull();
+      expect(runtime.automationStudio.conversations.callerFor(other).keyNeedsUnlock).toBe(true);
+      expect(runtime.automationStudio.conversations.callerFor({ userId: login.user.id, sessionId: login.session.id }).keyNeedsUnlock).toBe(false);
     } finally {
       shutDown(runtime);
     }

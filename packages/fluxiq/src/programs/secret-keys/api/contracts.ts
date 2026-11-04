@@ -56,11 +56,19 @@ export type DeleteSecretKeyRequest = SecretKeyAuthorizationPayload & {
 };
 
 /** The person's own unlock, with their password: this session, and the locked paired clients they chose, by `holderId`. Named or not lifted: never one they did not choose. */
-export type UnlockSecretKeysRequest = SecretKeyAuthorizationPayload & { clientIds?: string[] };
+export type UnlockSecretKeysRequest = SecretKeyAuthorizationPayload & {
+  /** The paired clients the person chose. */
+  clientIds?: string[];
+  /** From a browser nobody has unlocked yet, starting its own unlock (`CredentialUnlocks.unlockTicketFor`). */
+  unlockTicket?: string;
+};
 
-export type UnlockSecretKeysResponse = { unlockedKeyCount: number };
+/** `stillLocked`: those named that this did not lift. */
+export type UnlockSecretKeysResponse = { unlockedKeyCount: number; stillLocked: string[] };
 
 export type SecretKeysSnapshotResponse = SecretKeysSnapshot & {
+  /** For a paired client only: what starts its own unlock, when nobody has unlocked it yet. */
+  unlockTicket?: string;
   /** The caller's paired clients that are locked, to choose among. */
   lockedClients?: SecretKeyLockedClient[];
 };

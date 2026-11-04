@@ -35,6 +35,7 @@ import { automationStudioAnswerFirstCallChain } from "./call-chain.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
 import { automationStudioAnswerFirstFinish } from "./ending.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
+import { automationStudioAnswerFirstWatchKeyWaits } from "./key-wait.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "./person-wait.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "./ports.ts";
 import { automationStudioAnswerFirstRounds } from "./rounds.ts";
@@ -47,14 +48,18 @@ export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStu
   const run = await opened(input);
   automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
   // The common path's purse is opened as a repair's, whose part it would write: this is an attempt's creation.
-  const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => automationStudioAnswerFirstRounds(run));
-  if (ending === "setup_needed") {
-    await endedUntried(run);
-    throw run.setupRefusal;
+  try {
+    const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => automationStudioAnswerFirstRounds(run));
+    if (ending === "setup_needed") {
+      await endedUntried(run);
+      throw run.setupRefusal;
+    }
+    const answer = await automationStudioAnswerFirstFinish(run, ending);
+    automationStudioAnswerFirstHoldAnswer(input.request, answer);
+    return answer;
+  } finally {
+    run.keyWaits?.stop();
   }
-  const answer = await automationStudioAnswerFirstFinish(run, ending);
-  automationStudioAnswerFirstHoldAnswer(input.request, answer);
-  return answer;
 }
 
 /** Nothing was tried, so nothing is kept of it but the session it opened, which says so. A session not written costs that record, and the person is still told what to do. */
@@ -112,7 +117,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
     judge: (summary) => automationStudioFlowLessJudge({
-      personHeldMs: () => run.waitedMs + (run.ports.personHeldMs?.({ projectId, flowId }) ?? 0),
+      personHeldMs: () => run.keyWaits?.heldMs() ?? run.waitedMs,
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
       ...(input.provider.timeoutMs !== undefined ? { timeoutMs: input.provider.timeoutMs } : {}),
       ...(cancellation.signal() ? { signal: cancellation.signal() } : {}),
@@ -158,6 +163,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
     steps: [], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     liveSteps: 0, arrived: false, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
   };
+  run.keyWaits = automationStudioAnswerFirstWatchKeyWaits({ run, provider: input.provider.provider, keep: () => void automationStudioAnswerFirstKeep(run) });
   return run;
 }
 

@@ -9,7 +9,7 @@ import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
 /** The attempt as it stands, by status. */
-export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswerFirstAttemptRun, status: { status: "working" | "achieved" | "budget_out" | "stopped_by_person" } | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "stuck_in_a_loop" }): AutomationStudioTaskAttempt {
+export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswerFirstAttemptRun, status: { status: "working" | "achieved" | "budget_out" | "stopped_by_person" } | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "stuck_in_a_loop" | "model_key_locked" }): AutomationStudioTaskAttempt {
   const now = Date.now();
   const ended = status.status === "achieved" || status.status === "budget_out" || status.status === "stopped_by_person";
   const purse = run.input.creation.purse;

@@ -107,7 +107,7 @@ export class ClientGatewayLifecycle {
     if (!trustedClient || !this.trustedClients.isActive(trustedClient)) return;
     // Only for the credential this session was sent: a concurrent reconnect's is not this client's to confirm.
     if (session.sentCredentialHash !== trustedClient.tokenHash) return;
-    if (await this.trustedClients.confirmCurrent(trustedClient)) await this.custody.confirmed({ holder: clientGatewayCredentialHolder(trustedClient) });
+    if (await this.trustedClients.confirmCurrent(trustedClient)) await this.custody.confirmed({ holder: clientGatewayCredentialHolder(trustedClient), credentialDigest: trustedClient.tokenHash });
   }
 
   /** The trusted client a session is paired as. */
@@ -209,7 +209,7 @@ export class ClientGatewayLifecycle {
     }
     const holder = clientGatewayCredentialHolder(trustedClient);
     // A client with its current credential has it confirmed; one with the credential before has not received what it was last sent.
-    if (this.trustedClients.isCurrentToken(trustedClient, token)) await this.custody.confirmed({ holder, credential: token });
+    if (this.trustedClients.isCurrentToken(trustedClient, token)) await this.custody.confirmed({ holder, credentialDigest: trustedClient.tokenHash });
     let rotatedToken: string;
     try {
       rotatedToken = await this.trustedClients.rotateToken(trustedClient, token, (nextCredential) => this.custody.rotating({ holder, previousCredential: token, nextCredential }));
@@ -250,8 +250,8 @@ export class ClientGatewayLifecycle {
   }
 
   /** A credential this client moved past was presented: only someone holding a copy can, so its trust ends, and the real browser pairs again. */
-  async refuseReuse(token: string): Promise<void> {
-    const reused = this.trustedClients.reuseOf(token);
+  async refuseReuse(token: string, options: { request?: boolean } = {}): Promise<void> {
+    const reused = this.trustedClients.reuseOf(token, options);
     if (!reused) return;
     this.audit.record("credential.reuse_detected", "A retired credential was presented, so this client's trust was revoked.", { trustedClientId: reused.trustedClientId, clientId: reused.clientId });
     await this.facade.revokeTrustedClient(reused.trustedClientId, "credential reuse detected");

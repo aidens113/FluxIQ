@@ -109,6 +109,8 @@ import type { ChatWidget, ChatWidgetOptions } from "./widget/index.ts";
 export type { ChatWidget, ChatWidgetOptions };
 
 const THREAD_REFRESH_DEBOUNCE_MS = 300;
+/** How often an empty chat that read its key as fine reads it again, so a lock shows without reopening. */
+const READY_RECHECK_MS = 15_000;
 
 /** Creates the chat, talking to FluxIQ through `transport`. */
 export function createChatWidget(transport: ChatTransport, options: ChatWidgetOptions = {}): ChatWidget {
@@ -171,6 +173,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   const keyOpener = options.openControl?.({ label: "Open FluxIQ", look: "small", purpose: "model-key", canOpen: () => owner.current() && actionsAllowed() });
   let readiness: ModelReadiness = "unknown";
   let readinessAsk: object | null = null;
+  let readinessAskedAtMs = 0;
   // The read of the keys on its way, if any, so typing never queues one per key press.
   let readinessReading: object | null = null;
   let empty = createEmptyState(() => undefined);
@@ -375,7 +378,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       // line: R4a's start card said no key was set while the build ran with
       // one (`run-mv2nlh9l-52e476da`, moment 1). Asked again only while the
       // empty latest chat is on screen and still says the key is missing.
-      if ((readiness === "missing" || modelReadinessLockReason(readiness) !== null) && readinessAsk !== null) askReadiness();
+      // A key that was fine can lock while the chat is open (a sign-out elsewhere): the step must show without reopening, so that is read too, less often.
+      if (readinessAsk !== null && (readiness === "missing" || modelReadinessLockReason(readiness) !== null || Date.now() - readinessAskedAtMs >= READY_RECHECK_MS)) askReadiness();
     }, readBeatMs(background, owner.transport.changes !== undefined));
   }
   function resetOwner(next: ChatOwner, initial: boolean): void {
@@ -582,6 +586,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   function askReadiness(): void {
     const ask = {};
     readinessAsk = ask;
+    readinessAskedAtMs = Date.now();
     const captured = owner;
     readinessReading = ask;
     void readModelReadiness(captured.transport.models).then((next) => {

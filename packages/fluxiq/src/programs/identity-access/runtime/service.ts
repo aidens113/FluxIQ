@@ -230,8 +230,8 @@ export class IdentityAccessService {
       currentPassword: selfService ? params.authorizationPassword : undefined,
       newPassword: params.password
     }, resetSealedCredential);
-    // Someone else's password: their sessions end, as provisioning's reset does, so a live one cannot outlive it.
-    if (!selfService) await this.revokeUserSessions(params.userId);
+    // Someone else's password: their sessions end, as provisioning's reset does. Their own: every session but the one that made it.
+    await this.revokeUserSessions(params.userId, selfService ? params.sessionId : undefined);
     return changed;
   }
 
@@ -381,7 +381,7 @@ export class IdentityAccessService {
   async authorizeSessionCredentials(params: { sessionId: string | undefined; password: string | undefined; pin: string | undefined; totp: string | undefined; requirePin?: boolean }): Promise<User> {
     const context = await this.validateSession(params.sessionId);
     if (!context) throw new Error("Authentication required");
-    await this.verifyCredentialGate(context.user.id, {
+    await this.verifyCredentialGate(context.user.id, context.session.id, {
       password: params.password ?? "",
       pin: params.pin ?? "",
       totp: params.totp,
@@ -393,7 +393,7 @@ export class IdentityAccessService {
   async authorizeSessionPasswordPin(params: { sessionId: string | undefined; password: string | undefined; pin: string | undefined }): Promise<User> {
     const context = await this.validateSession(params.sessionId);
     if (!context) throw new Error("Authentication required");
-    await this.verifyCredentialGate(context.user.id, {
+    await this.verifyCredentialGate(context.user.id, context.session.id, {
       password: params.password ?? "",
       pin: params.pin ?? "",
       requireTotp: false
@@ -438,15 +438,16 @@ export class IdentityAccessService {
     return removed > 0;
   }
 
-  /** Revokes every session of `userId`, stored here or by another process, and tells listeners each raw id this process saw. */
-  async revokeUserSessions(userId: string): Promise<number> {
+  /** Revokes every session of `userId` but `keepSessionId`, stored here or by another process, and tells listeners each raw id this process saw. */
+  async revokeUserSessions(userId: string, keepSessionId?: string): Promise<number> {
     await this.load();
     await this.reloadFromStore();
-    const digests = [...this.sessions.values()].filter((session) => session.userId === userId).map((session) => session.digest);
-    const endFailures = await this.revocations.ending(digests, { userId, administrator: false }, userId);
+    const kept = keepSessionId === undefined ? undefined : digestSessionId(keepSessionId);
+    const digests = [...this.sessions.values()].filter((session) => session.userId === userId && session.digest !== kept).map((session) => session.digest);
+    const endFailures = await this.revocations.ending(digests, { userId, administrator: false }, kept === undefined ? userId : undefined);
     const removed = await deleteStoredSessions(this.sessions, this.repository, digests);
     await this.persist();
-    await this.revocations.revoked(digests, { userId, administrator: false }, undefined, endFailures);
+    await this.revocations.revoked(digests, { userId, administrator: false, ...(kept === undefined ? {} : { passwordChanged: true }) }, undefined, endFailures);
     return removed;
   }
 
@@ -684,8 +685,8 @@ export class IdentityAccessService {
     });
   }
 
-  private verifyCredentialGate(userId: string, params: { password: string; pin: string; totp?: string | undefined; requireTotp?: boolean; requirePin?: boolean }): Promise<void> {
-    return this.credentialAttempts.guard(userId, async () => {
+  private verifyCredentialGate(userId: string, sessionId: string, params: { password: string; pin: string; totp?: string | undefined; requireTotp?: boolean; requirePin?: boolean }): Promise<void> {
+    return this.credentialAttempts.guard(sessionId, async () => {
       const credential = await this.unlockCredential(userId, params.password);
       const pinOk = (params.requirePin ?? true) && credential.pinHash ? await this.verifyPin(userId, credential, params.pin) : true;
       const requireTotp = params.requireTotp ?? true;

@@ -13,6 +13,12 @@ export type ModelProvider<Request extends ModelRequest = ModelRequest> = {
    */
   whenReady?(request: Request, execution?: { signal?: AbortSignal }): Promise<void>;
   /**
+   * Tells `listener` as this provider's own calls begin and end waiting for a person in
+   * `whenReady`, with how long each waited. Answers how to stop listening. Optional: a
+   * provider that never waits has nothing to say.
+   */
+  observeHolds?(listener: (state: "started" | "ended", heldMs: number) => void): () => void;
+  /**
    * The request measured the way `runTask` will measure it before sending.
    *
    * The harness refuses an oversize request itself, with its size, before a

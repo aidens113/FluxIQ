@@ -8,6 +8,7 @@ import type { HeldKeys, HeldSessionUnlock } from "../held-keys.ts";
 import type { SecretKeyStore } from "../key-store.ts";
 import { RecordWriteQueue } from "../record-write-queue.ts";
 import type { SecretValueSealer } from "../value-sealer.ts";
+import { SecretKeyUnlockTickets } from "./unlock-tickets.ts";
 import { boxCredentialUnlockKey, newCredentialUnlockKeyPair, openCredentialUnlockBox, unwrapCredentialUnlockPrivateKey, wrapCredentialUnlockPrivateKey, type CredentialUnlockHolderBinding } from "./crypto.ts";
 
 /** The SHA-256 digest Identity Access stores a session under (`identity-access/runtime/session-digest.ts`); a runtime test pins the two together. */
@@ -78,6 +79,11 @@ export class CredentialUnlocks {
   private readonly forgotten = new Set<string>();
   /** Sessions a person is proving themselves on now, and how many proofs are running on each. */
   private readonly proofsRunning = new Map<string, number>();
+  private readonly unlockTickets: SecretKeyUnlockTickets;
+  /** Sessions ended by their person's password change. Work one of them started may not fall back on the person's other unlocks. */
+  private readonly endedByPasswordChange = new Set<string>();
+  /** Locks in memory whose write the store refused. */
+  private readonly locksUnwritten = new Set<string>();
   private loading: Promise<void> | undefined;
 
   constructor(options: { repository: Repository | undefined; kind: string; store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; now: () => number; vouch?: SecretKeyHolderVouch | undefined }) {
@@ -87,6 +93,7 @@ export class CredentialUnlocks {
     this.sealer = options.sealer;
     this.heldKeys = options.heldKeys;
     this.now = options.now;
+    this.unlockTickets = new SecretKeyUnlockTickets(options.now);
     this.vouch = options.vouch;
   }
 
@@ -117,6 +124,16 @@ export class CredentialUnlocks {
     };
   }
 
+  /** This session ended because its person changed their password. Remembered for this process, which is as long as anything it started can run. */
+  noteEndedByPasswordChange(sessionId: string): void {
+    this.endedByPasswordChange.add(sessionId);
+  }
+
+  /** Whether work started from this session may still use another unlock of the person's. A plain sign-out may; a password change, which often means they suspect someone, may not. */
+  mayFallBack(sessionId: string | undefined): boolean {
+    return sessionId === undefined || !this.endedByPasswordChange.has(sessionId);
+  }
+
   /** The id a paired client's unlock is held under in this process. Random, so no one can name another person's. */
   heldHandleFor(holderId: string): string {
     return this.heldKeys.pairedHandle(holderId);
@@ -135,6 +152,7 @@ export class CredentialUnlocks {
   async presentCredential(holder: SecretKeyCredentialHolder, credential: string, options: { verified?: boolean | undefined } = {}): Promise<{ unlockedKeyCount: number }> {
     await this.store.load();
     await this.load();
+    if (this.locksUnwritten.size > 0) await this.writeUnwrittenLocks();
     const nowMs = this.now();
     if (holder.expiresAtMs <= nowMs || this.forgotten.has(holder.holderId)) return { unlockedKeyCount: 0 };
     const binding: CredentialUnlockHolderBinding = { holderId: holder.holderId, userId: holder.userId };
@@ -221,7 +239,7 @@ export class CredentialUnlocks {
         key.fill(0);
       }
       const base = opened.generation === "pending" ? promoted(record) : record;
-      this.records.set(record.id, { ...base, pending: { publicKey: pair.publicKey, wrap: wrapCredentialUnlockPrivateKey(pair.privateKeyDer, input.nextCredential, binding), boxes }, updatedAtMs: this.now() });
+      this.records.set(record.id, { ...base, pending: { publicKey: pair.publicKey, wrap: wrapCredentialUnlockPrivateKey(pair.privateKeyDer, input.nextCredential, binding), boxes, credentialDigest: secretKeySessionDigest(input.nextCredential) }, updatedAtMs: this.now() });
     } finally {
       pair.privateKeyDer.fill(0);
       opened.privateKeyDer.fill(0);
@@ -231,25 +249,16 @@ export class CredentialUnlocks {
   }
 
   /**
-   * The client's credential is confirmed in use: any other generation goes, so a
-   * credential it replaced opens nothing from here on. `credential` names the
-   * confirmed one; without it, the newest written, which is what a client that says
-   * it received its credential received.
+   * The credential with this digest is confirmed in use. When it is the generation written
+   * ahead, that becomes the record, so the one it replaced opens nothing from here on. Any
+   * other digest changes nothing: a generation written ahead is not this client's until its
+   * own credential says so, and the next rotation replaces one that never was.
    */
-  async confirmCredential(input: { holderId: string; userId: string; credential?: string | undefined }): Promise<void> {
+  async confirmCredential(input: { holderId: string; userId: string; credentialDigest: string }): Promise<void> {
     await this.load();
     const record = this.records.get(input.holderId);
-    if (record?.userId !== input.userId || !record.pending) return;
-    let generation: OpenedGeneration["generation"] | undefined = "pending";
-    if (input.credential !== undefined) {
-      const opened = openingGeneration(record, input.credential, { holderId: input.holderId, userId: input.userId });
-      opened?.privateKeyDer.fill(0);
-      generation = opened?.generation;
-    }
-    if (!generation) return;
-    const next = generation === "pending" ? promoted(record) : { ...record };
-    delete next.pending;
-    this.records.set(record.id, { ...next, updatedAtMs: this.now() });
+    if (record?.userId !== input.userId || record.pending?.credentialDigest !== input.credentialDigest) return;
+    this.records.set(record.id, { ...promoted(record), updatedAtMs: this.now() });
     await this.persist(record.id);
   }
 
@@ -278,8 +287,19 @@ export class CredentialUnlocks {
     const next: SecretKeyCredentialUnlockRecord = { ...record, boxes: {}, lockedAtMs: nowMs, lockReason: reason, updatedAtMs: nowMs };
     if (next.pending) next.pending = { ...next.pending, boxes: {} };
     this.records.set(holderId, next);
-    await this.persist(holderId);
+    // What the person was told has happened, so one the store refused is tried again on each next presentation.
     this.heldKeys.notifyChanged(record.userId);
+    this.locksUnwritten.add(holderId);
+    await this.persist(holderId);
+    this.locksUnwritten.delete(holderId);
+  }
+
+  /** Locks a store refused, tried again. A store still refusing leaves them for the next time. */
+  private async writeUnwrittenLocks(): Promise<void> {
+    for (const holderId of [...this.locksUnwritten]) {
+      await this.persist(holderId);
+      this.locksUnwritten.delete(holderId);
+    }
   }
 
   /**
@@ -342,7 +362,8 @@ export class CredentialUnlocks {
     const failures: unknown[] = [];
     await attempt(failures, () => this.drop(secretKeyPanelHolderId(digest)));
     for (const record of [...this.records.values()]) {
-      if (record.holderKind !== "paired-client") continue;
+      // Already locked says why it locked first.
+      if (record.holderKind !== "paired-client" || record.lockedAtMs !== undefined) continue;
       const approvedHere = record.approvingSessionDigest === digest;
       const ownSignOut = !end.administrator && end.revokerUserId === record.userId;
       const linkEnded = record.approvingSessionDigest === undefined || (end.liveSessionDigests !== undefined && !end.liveSessionDigests.has(record.approvingSessionDigest));
@@ -358,9 +379,9 @@ export class CredentialUnlocks {
    * a lock, so a browser that was signed out stays locked until they choose it.
    */
   async personProved(userId: string, keys: SecretKeyProvedKeys, reach: ProofReach = {}): Promise<void> {
-    // A password that opened nothing proved nothing, unless the caller checked it.
-    if (keys.size === 0 && reach.passwordVerified !== true) return;
     await this.load();
+    // A password that opened nothing proved nothing, unless the caller checked it and the person has nothing it should have opened.
+    if (keys.size === 0 && (reach.passwordVerified !== true || this.hasKeysItShouldOpen(userId))) return;
     const vouched = await this.vouchedHolders(userId);
     const changed: string[] = [];
     for (const record of [...this.records.values()]) {
@@ -433,18 +454,53 @@ export class CredentialUnlocks {
     await Promise.all(changed.map((id) => this.persist(id)));
   }
 
+  /**
+   * A browser nobody has unlocked yet proves it is the person's own by starting its unlock
+   * from itself: only it can read this, so a browser paired by someone else with a stolen
+   * cookie is never offered to the person as theirs to unlock. Undefined for any other.
+   */
+  unlockTicketFor(holderId: string): string | undefined {
+    const record = this.records.get(holderId);
+    if (record?.lockedAtMs === undefined || record.lockReason !== "first_unlock") return undefined;
+    return this.unlockTickets.for(holderId);
+  }
+
+  /** Which of the holders a person named they may lift: one unlocked before, or one nobody has whose ticket came with the ask, which it uses up. */
+  async liftable(userId: string, clientIds: readonly string[], ticket: string | undefined): Promise<Set<string>> {
+    await this.load();
+    const lifts = new Set<string>();
+    for (const holderId of clientIds) {
+      const record = this.records.get(holderId);
+      if (record?.userId !== userId) continue;
+      if (record.lockReason === "first_unlock" && !this.unlockTickets.redeem(holderId, ticket)) continue;
+      lifts.add(holderId);
+    }
+    return lifts;
+  }
+
   /** A person's paired clients that are locked, for them to choose among. Only ones the host vouches for. */
   async lockedClientsFor(userId: string): Promise<SecretKeyLockedClient[]> {
     await this.load();
     const vouched = await this.vouchedHolders(userId);
     return [...this.records.values()]
       .filter((record) => record.userId === userId && record.holderKind === "paired-client" && record.lockedAtMs !== undefined && vouched.has(record.holderId))
-      .map((record) => ({ holderId: record.holderId, label: record.label ?? "A paired client", ...(record.lastUsedAtMs === undefined ? {} : { lastUsedAtMs: record.lastUsedAtMs }) }));
+      .map((record) => ({
+        holderId: record.holderId,
+        label: record.label ?? "A paired client",
+        ...(record.pairedAtMs === undefined ? {} : { pairedAtMs: record.pairedAtMs }),
+        ...(record.lastUsedAtMs === undefined ? {} : { lastUsedAtMs: record.lastUsedAtMs }),
+        ...(record.lockReason === "first_unlock" ? { neverUnlocked: true } : {})
+      }));
   }
 
   /** Forgets who is connected, for a shutdown. */
   closeConnections(): void {
     this.connected.clear();
+  }
+
+  /** They have sealed keys, and no reset explains why a password of theirs opens none of them. */
+  private hasKeysItShouldOpen(userId: string): boolean {
+    return this.store.sealedFor(userId).length > 0 && this.people.get(userId)?.passwordResetAtMs === undefined;
   }
 
   /** The holders of this person the host stands behind, asked before any box is written. */
@@ -543,6 +599,7 @@ export class CredentialUnlocks {
         boxes: {},
         ...(approvingSessionDigest ? { approvingSessionDigest } : {}),
         ...(label ? { label } : {}),
+        pairedAtMs: previous?.pairedAtMs ?? nowMs,
         ...(options.locked || previous?.lockedAtMs !== undefined ? { lockedAtMs: previous?.lockedAtMs ?? nowMs } : {}),
         ...(lockReason !== undefined ? { lockReason } : {}),
         lastUsedAtMs: nowMs,
@@ -609,7 +666,7 @@ function openingGeneration(record: SecretKeyCredentialUnlockRecord, credential: 
   return pendingKey ? { generation: "pending", boxes: record.pending.boxes, privateKeyDer: pendingKey } : null;
 }
 
-/** The record with its pending generation as its current one. */
+/** The record with its pending generation as its current one, and none pending. */
 function promoted(record: SecretKeyCredentialUnlockRecord): SecretKeyCredentialUnlockRecord {
   const { pending, ...rest } = record;
   return pending ? { ...rest, publicKey: pending.publicKey, wrap: pending.wrap, boxes: pending.boxes } : rest;

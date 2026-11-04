@@ -888,14 +888,19 @@ paired browser (its gateway credential) or a signed-in panel session (its cookie
   person, a panel row a live session of theirs. A stored row alone proves nothing, and
   with no answer bound nothing is boxed. The store is sensitive
   (`programs/database-manager/sensitive-stores.ts`, the one list): read only after a
-  recheck, written only by its owner, recheck or not. Its deletes overwrite the row
-  (`secure_delete`).
+  recheck, written only by its owner, recheck or not, and so are the rows of `identity.users`
+  that prove who a person is (`credential`, `session`), by their id or by what they say
+  they are. Its deletes overwrite the row (`secure_delete`) and checkpoint the write-ahead log.
+- A lift does not stand on a password that opened nothing when the person has sealed keys
+  and no recorded reset: that password is not theirs to prove with.
 - A paired unlock is held in memory under a random per-process handle, never its public
   id, so nothing can name another person's. A Flow's standing result-check authorization
   cannot draw on one, and no client write can set that authorization.
 - A rotated credential gets a whole new key pair, written beside the old one as
   `pending` until it is confirmed, so an old credential with an old copy of the row
-  opens nothing written since.
+  opens nothing written since. A confirmation names the credential by its digest, and only
+  the generation written for that credential is promoted: one written ahead for a reconnect
+  still in flight is not the client's until its own credential says so.
 - The gateway reports each moment it handles a credential it verified
   (`client-gateway/service/credential-custody.ts`, `credentialCustody`): `issued` at
   approval, `rotating` written ahead of a rotated credential's digest so a crash on
@@ -906,14 +911,18 @@ paired browser (its gateway credential) or a signed-in panel session (its cookie
   A revoke landing during a reconnect stands: the gateway checks the trust again after
   each wait, and a holder forgotten in this process cannot come back from a presentation
   already in flight.
-- **A retired credential coming back ends the trust.** The trust record keeps a bounded
-  list of digests of credentials it has retired (32). Presenting one, on a hello or a
-  request, revokes that trusted client, forgets its unlock and audits
-  `credential.reuse_detected` with its id: whoever had it, thief or real browser, the
-  thief is out and the real browser pairs again. The credential before the current one
-  is not a reuse while it is in its lost-reply window (at most 14 days until confirmed),
-  and a request already in flight gets 2 minutes' grace. A credential's life slides with
-  use and has no upper bound, because reuse detection is what covers a stolen one.
+- **A credential of a client's that is no longer its own ends the trust.** A credential
+  names its trusted client and is signed under a key that client alone keeps, so Core can
+  tell one it issued from noise with nothing remembered per credential. One that is neither
+  the client's current one nor the one before revokes that trusted client, forgets its
+  unlock and audits `credential.reuse_detected` with its id: whoever had it, a copy or the
+  real browser, the copy is out and the real browser pairs again. A credential merely naming
+  a client, unsigned, ends nothing. The credential before the current one is not a reuse
+  while it is in its lost-reply window (at most 14 days until confirmed). A request, not a
+  hello, is only refused just after its credential moved on, since it can still have been on
+  its way; a client stores what it was sent before it says hello again. Approving the same
+  client id again ends the trust that same person gave it before. A credential's life slides
+  with use and has no upper bound, because this is what covers a stolen one.
 - Held keys keep their invariant: a box is opened, the key it holds is checked against
   the record's current seal, and a box that no longer opens it is dropped.
 
@@ -930,31 +939,38 @@ memory; `lockedAtMs` keeps it locked):
 | `revokeUserSessions`, a disabled or deleted account, including `updateUser` with `enabled: false` | Every browser of that person locks, and every key of theirs leaves memory (`IdentitySessionEnd.wholeUserId`). |
 | Deleting a key | Its box goes from every holder. |
 | Rotating a key | Its boxes go. The old key cannot open the new seal. The new value reaches the rotator's own browsers because they proved their password for it; nobody else's. |
-| A password change with the current password | Re-boxed under the new seals, only for the session making the change and the browsers it approved. Everything else of theirs locks with `password_changed`, because a change often means they suspect someone; a Flow running elsewhere waits. |
+| A password change with the current password | Re-boxed under the new seals, only for the session making the change and the browsers it approved. Everything else of theirs locks with `password_changed`, because a change often means they suspect someone, and every other session of theirs ends. Work one of those started draws on nothing else of theirs; work that is theirs waits. |
 | A password reset nobody proved the old password for | Every browser of that person locks, and their live unlocks go. |
 | An administrator setting someone else's password | That person's sessions end, as provisioning's reset does. |
-| A retired credential presented | The trusted client is revoked and its record deleted. |
+| A credential of a client's that is no longer its own, presented | The trusted client is revoked and its record deleted. |
+| The same client id approved again by the same person | The earlier trust is revoked. |
 
 A lock is attempted on every holder even when a write fails, keys leave memory first,
-and the failures are raised together. Identity tells these listeners before it deletes
-the session, so a crash between the two leaves a lock and a live session rather than a
-dead session and no lock. What remains: a write that failed, followed by a restart
-before anyone retried it.
+and the failures are raised together. A lock the store refused is written again on each
+next presentation. Identity tells these listeners before it deletes the session, so a crash
+between the two leaves a lock and a live session rather than a dead session and no lock.
+What remains: a store that refuses a lock's write and keeps refusing until a restart.
 
 Only the person's own explicit unlock lifts a lock: the `secret-keys` `unlock` endpoint
 with `clientIds`, from the panel's Secret Keys page. It lifts the named holders and no
-others. With one locked browser the page names it ("Unlock Chrome on Windows"); with
-several it lists them with their label and last use, and the person picks. An ordinary
-sign-in boxes keys to their unlocked browsers but leaves a locked one locked, so signing
-in elsewhere, or unlocking a new laptop, never undoes signing out on a lost one. The proof
-is what sign-in asks, a password and the 2FA code where one is set, and never a PIN.
-Rechecks of a password against a session are limited per person
-(`identity-access/runtime/sessions/credential-attempts.ts`).
+others. With one browser unlocked before the page names it ("Unlock Chrome on Windows");
+with several it lists them with their label and last use, and the person picks. **A browser
+nobody has ever unlocked is not offered at all from the page**, because anyone with a stolen
+cookie can pair one under any name. Its unlock starts from the browser itself: its Open
+FluxIQ button carries a ticket only that browser can read (`unlockTicketFor`, in the
+address's fragment), and without one the page only says it exists, when it was paired, and
+how to revoke it. An ordinary sign-in boxes keys to their unlocked browsers but leaves a
+locked one locked, so signing in elsewhere, or unlocking a new laptop, never undoes signing
+out on a lost one. The proof is what sign-in asks, a password and the 2FA code where one is
+set, and never a PIN. Rechecks of a password are limited per session and counted as they
+start (`identity-access/runtime/sessions/credential-attempts.ts`), so guesses on a stolen
+session do not hold the person back on their own.
 
 **A locked key is found before a task starts.** `secret-keys` `snapshot` says of each
 of the caller's own keys whether their unlock opens it (`unlocked`), and the chat's
 readiness read (`readModelReadiness`) answers `locked`: the empty state shows one line
-with Open FluxIQ, which opens that page. A command that needs the model
+with Open FluxIQ, which opens that page. An open empty chat reads it again as it polls,
+so a key that locks later shows the step without reopening. A command that needs the model
 (`needsModelKey`: create-here, explore, improve) shows the same step instead of
 starting, and spends nothing; `keyNeedsUnlock` on the effective caller decides it, and
 is false for a person with no key at all. A saved Flow still runs.
@@ -966,10 +982,13 @@ The session-key provider waits there while the key is locked
 (`runtime/models/secrets/locked-wait.ts`), wakes when something the person holds
 changes, tells the thread the work came from, and ends on the call's own signal when
 the person presses Stop. It is reported as `waiting_for_person` with the closed reason
-`model_key_locked`. Time spent waiting is no part of what a retry may spend, and it
-is recorded against the Flow (`runtime/models/secrets/person-wait-clock.ts`), so a
-limit on that Flow's work can read a clock that stands still while it waits. The
-limits above a model call do not read it yet, so a long wait can still end there:
+`model_key_locked`, and an attempt's stored row says so for as long as it lasts: the
+attempt listens to its own provider (`observeHolds`, `answer-first/attempt/key-wait.ts`), so
+only its own waits count, and a judge's deadline leaves out only those. Time spent waiting
+is no part of what a retry may spend, and it is recorded against the Flow
+(`runtime/models/secrets/person-wait-clock.ts`), so a limit on that Flow's work can read a
+clock that stands still while it waits. The limits above a model call on the older build
+path do not read it yet, so a long wait can still end there:
 `docs/working/answer-first-plan/reports/model-key-unlock.md` lists each one.
 
 **Every sentence about a locked key comes from one place**

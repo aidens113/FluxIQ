@@ -134,7 +134,8 @@ export type SecretKeyCredentialUnlockRecord = SecretKeyCredentialUnlockGeneratio
   holderKind: SecretKeyCredentialHolderKind;
   userId: string;
   expiresAtMs: number;
-  pending?: SecretKeyCredentialUnlockGeneration | undefined;
+  pairedAtMs?: number;
+  pending?: SecretKeyCredentialUnlockGeneration & { credentialDigest: string } | undefined;
   /** The digest of the panel session that approved this holder, so that session's sign-out locks it. */
   approvingSessionDigest?: string | undefined;
   /** A person-facing name for the holder, such as a browser's; never a secret. */
@@ -159,7 +160,14 @@ export type SecretKeyUnlockPersonRecord = {
 };
 
 /** A locked paired client as its person chooses among them. */
-export type SecretKeyLockedClient = { holderId: string; label: string; lastUsedAtMs?: number };
+export type SecretKeyLockedClient = {
+  holderId: string;
+  label: string;
+  pairedAtMs?: number;
+  lastUsedAtMs?: number;
+  /** No proof has ever reached this browser: its unlock starts from the browser itself, never from a list. */
+  neverUnlocked?: boolean;
+};
 
 /**
  * A holder as the caller verified it. `heldAs` is a panel session's own id, which is

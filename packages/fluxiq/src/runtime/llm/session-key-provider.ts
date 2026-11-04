@@ -128,24 +128,36 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
         return secret;
       }
     });
+    const holdListeners = new Set<(state: "started" | "ended", heldMs: number) => void>();
     const provider: AutomationStudioLlmProvider = {
       ...adapter,
+      observeHolds: (listener) => {
+        holdListeners.add(listener);
+        return () => holdListeners.delete(listener);
+      },
       whenReady: async (request, execution) => {
         const flowKeyId = (await options.flowSecretKeyId?.({ projectId: input.projectId, flowId: input.flowId })) ?? metadataKeyId(input.metadata);
         // What a limit on this Flow's work should not count (`../models/secrets/person-wait-clock.ts`).
         let endHold: (() => void) | undefined;
+        let heldSince: number | undefined;
         try {
           await waitWhileAutomationStudioSessionKeyLocked(options.ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
             provider: providerId, model,
             ...(flowKeyId ? { flowKeyId } : {}),
             ...(execution?.signal ? { signal: execution.signal } : {}),
             onWait: (event) => {
-              if (event.phase === "waiting") endHold = automationStudioPersonWaitClock.begin({ projectId: input.projectId, flowId: input.flowId });
+              if (event.phase === "waiting") {
+                endHold = automationStudioPersonWaitClock.begin({ projectId: input.projectId, flowId: input.flowId });
+                heldSince = Date.now();
+                for (const listener of holdListeners) listener("started", 0);
+              }
               return options.onKeyWait?.({ ...event, projectId: input.projectId, flowId: input.flowId, userId: caller.actorUserId, sessionId: caller.actorSessionId });
             }
           });
         } finally {
           endHold?.();
+          // Ended by an unlock or by a Stop, what listened hears it.
+          if (heldSince !== undefined) for (const listener of holdListeners) listener("ended", Date.now() - heldSince);
         }
         void request;
       },

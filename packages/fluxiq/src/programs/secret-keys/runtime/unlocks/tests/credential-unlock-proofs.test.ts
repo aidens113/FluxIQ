@@ -332,6 +332,91 @@ describe("a lock with a store that fails", () => {
   });
 });
 
+describe("a proof that opened nothing", () => {
+  it("lifts no lock from someone whose keys it could not open", async () => {
+    const repos = repositories();
+    const { service } = await withKey(repos);
+    const holder = browser("new");
+    await service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
+    await service.unlockSession({ sessionId: "session.other", userId: USER, authorizationPassword: "dummy-other-password", expiresAtMs: NOW + DAY, nowMs: clock, unlockClients: [holder.holderId], passwordVerified: true });
+    expect((await service.credentialUnlocks.lockedClientsFor(USER)).map((client) => client.holderId)).toEqual([holder.holderId]);
+    await signIn(service, "session.later");
+    expect(storedRow(repos, holder).boxes).toEqual({});
+  });
+
+  it("still lifts for someone with no keys yet, whose first key then reaches that browser", async () => {
+    const repos = repositories();
+    const service = boot(repos);
+    const holder = browser("new");
+    await service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
+    await service.unlockSession({ sessionId: SESSION, userId: USER, authorizationPassword: PASSWORD, expiresAtMs: NOW + DAY, nowMs: clock, unlockClients: [holder.holderId], passwordVerified: true });
+    const key = await service.createKey({ name: "Model", value: KEY_VALUE, authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock });
+    expect(await release(service, handle(service, holder), key.id)).toBe(KEY_VALUE);
+  });
+
+  it("still lifts after a recorded reset, whose old keys no password opens", async () => {
+    const repos = repositories();
+    const { service } = await withKey(repos);
+    await service.credentialUnlocks.lockPerson(USER, "password_reset");
+    const holder = browser("new");
+    await service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
+    await service.unlockSession({ sessionId: "session.after", userId: USER, authorizationPassword: "dummy-new-password", expiresAtMs: NOW + DAY, nowMs: clock, unlockClients: [holder.holderId], passwordVerified: true });
+    expect(await service.credentialUnlocks.lockedClientsFor(USER)).toEqual([]);
+  });
+});
+
+describe("a credential's confirmation while another is only written ahead", () => {
+  it("does not give up the generation of the credential Core still accepts", async () => {
+    const repos = repositories();
+    const { service, keyId } = await withKey(repos);
+    const holder = await unlockedBrowser(service, "one", CREDENTIAL_ONE);
+    await service.credentialUnlocks.rotateCredential({ holderId: holder.holderId, userId: USER, previousCredential: CREDENTIAL_ONE, nextCredential: CREDENTIAL_NEXT });
+    await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credentialDigest: secretKeySessionDigest(CREDENTIAL_ONE) });
+    service.close();
+    const restarted = boot(repos);
+    await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
+    expect(await release(restarted, handle(restarted, holder), keyId)).toBe(KEY_VALUE);
+    expect(storedRow(repos, holder).lockedAtMs).toBeUndefined();
+  });
+
+  it("promotes the one it names, once that is the one in use", async () => {
+    const repos = repositories();
+    const { service, keyId } = await withKey(repos);
+    const holder = await unlockedBrowser(service, "one", CREDENTIAL_ONE);
+    await service.credentialUnlocks.rotateCredential({ holderId: holder.holderId, userId: USER, previousCredential: CREDENTIAL_ONE, nextCredential: CREDENTIAL_NEXT });
+    await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credentialDigest: secretKeySessionDigest(CREDENTIAL_NEXT) });
+    expect(storedRow(repos, holder).pending).toBeUndefined();
+    service.close();
+    const restarted = boot(repos);
+    await expect(restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE)).resolves.toEqual({ unlockedKeyCount: 0 });
+    await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_NEXT, { verified: true });
+    expect(await release(restarted, handle(restarted, holder), keyId)).toBe(KEY_VALUE);
+  });
+});
+
+describe("a lock the store refused", () => {
+  it("is written as soon as the store takes writes again, so a restart then finds it locked", async () => {
+    const repos = repositories();
+    const refused = new Set<string>();
+    const inner = repos.unlocks.repository;
+    const repository = { ...inner, put: async (record: RecordEnvelope) => {
+      if (refused.has(record.id)) throw new Error("dummy store refused the write");
+      return await inner.put(record);
+    } };
+    const { service, keyId } = await withKey({ keys: repos.keys, unlocks: { ...repos.unlocks, repository } });
+    const holder = await unlockedBrowser(service, "one", CREDENTIAL_ONE);
+    refused.add(holder.holderId);
+    await expect(service.credentialUnlocks.lock(holder.holderId, "signed_out")).rejects.toThrow("dummy store refused");
+    refused.clear();
+    await service.credentialUnlocks.presentPanelSession({ sessionId: SESSION, userId: USER, expiresAtMs: NOW + DAY });
+    expect(storedRow(repos, holder).lockedAtMs).toBeDefined();
+    service.close();
+    const restarted = boot(repos);
+    await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
+    expect(await release(restarted, handle(restarted, holder), keyId)).toBeNull();
+  });
+});
+
 describe("a forget and a reconnect in flight", () => {
   it("a verified credential presented after the forget brings nothing back", async () => {
     const repos = repositories();
@@ -351,7 +436,7 @@ describe("a rotated credential and an old copy of its row", () => {
     const holder = await unlockedBrowser(service, "one", CREDENTIAL_ONE);
     const oldCopy = storedRow(repos, holder);
     await service.credentialUnlocks.rotateCredential({ holderId: holder.holderId, userId: USER, previousCredential: CREDENTIAL_ONE, nextCredential: CREDENTIAL_NEXT });
-    await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credential: CREDENTIAL_NEXT });
+    await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credentialDigest: secretKeySessionDigest(CREDENTIAL_NEXT) });
     const added = await service.createKey({ name: "Added", value: "dummy-added-value", authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock + 1 });
     const now = storedRow(repos, holder);
     expect(now.publicKey).not.toBe(oldCopy.publicKey);
@@ -369,7 +454,7 @@ describe("a rotated credential and an old copy of its row", () => {
     const holder = await unlockedBrowser(service, "one", CREDENTIAL_ONE);
     await service.credentialUnlocks.rotateCredential({ holderId: holder.holderId, userId: USER, previousCredential: CREDENTIAL_ONE, nextCredential: CREDENTIAL_NEXT });
     const added = await service.createKey({ name: "Added", value: "dummy-added-value", authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock + 1 });
-    await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credential: CREDENTIAL_ONE });
+    await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credentialDigest: secretKeySessionDigest(CREDENTIAL_ONE) });
     service.close();
     const restarted = boot(repos);
     await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
@@ -434,7 +519,7 @@ describe("after setup, a normal person is not asked again", () => {
     for (let round = 0; round < 5; round += 1) {
       const next = `dummy-browser-credential-round-${round}-000000000000000`;
       await service.credentialUnlocks.rotateCredential({ holderId: holder.holderId, userId: USER, previousCredential: credential, nextCredential: next });
-      await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credential: next });
+      await service.credentialUnlocks.confirmCredential({ holderId: holder.holderId, userId: USER, credentialDigest: secretKeySessionDigest(next) });
       service.credentialUnlocks.release(holder.holderId);
       await service.credentialUnlocks.presentCredential(holder, next, { verified: true });
       credential = next;
