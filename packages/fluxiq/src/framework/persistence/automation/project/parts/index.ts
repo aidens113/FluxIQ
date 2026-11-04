@@ -13,6 +13,7 @@ export type {
   AutomationStudioProjectPartRunOutcome,
   AutomationStudioProjectPartRunRecord,
   AutomationStudioProjectPartVersionRecord,
+  AutomationStudioProjectPartVersionSource,
   AutomationStudioProjectPartWrite,
   AutomationStudioProjectPartWriteResult
 } from "./types.ts";

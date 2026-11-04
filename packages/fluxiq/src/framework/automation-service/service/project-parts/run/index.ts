@@ -2,6 +2,7 @@
 export { runProjectPart } from "./lazy-run.ts";
 export { automationStudioOpenPartRun } from "./open-run.ts";
 export { automationStudioProjectBuildRunPartBundle } from "./build-tool.ts";
+export type { AutomationStudioProjectPartDrivingPorts } from "./driving-gate.ts";
 export type {
   AutomationStudioProjectPartOpenRun,
   AutomationStudioProjectPartRunInput,

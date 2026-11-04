@@ -21,6 +21,7 @@ import { automationStudioStopAfterNode } from "./partial-run/index.ts";
 import { automationStudioEndedTrace, automationStudioStepArrival, automationStudioStepAskOrPark, automationStudioStepBeforeNext, automationStudioStepCheckpointRoute, automationStudioStepChildOutcomeStop, automationStudioStepEndFrameIncident, automationStudioStepEntry, automationStudioStepFailedAttempt, automationStudioStepFrameSucceeded, automationStudioStepLearnInterruption, automationStudioStepLifecycle, automationStudioStepLifecycleFrame, automationStudioStepLifecycleRegister, automationStudioStepRequiredOutcomeStop, automationStudioStepRetryBeforeRouting, automationStudioStepSaidAlreadyInState, automationStudioStepStateRoute, automationStudioTraceWithLifecycle, type AutomationStudioStepLifecycleFrame, type AutomationStudioStepLifecycleOutcome, type AutomationStudioStepLoopContext } from "./step-loop/index.ts";
 import { AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN } from "./command-scope/index.ts";
 import { automationStudioStepAlreadyDone } from "./step-loop/index.ts";
+import { automationStudioCheckpointRow } from "./target-reacquire/index.ts";
 import { automationStudioRepeatNoProgress } from "./repeat-progress/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace/index.ts";
 import { automationStudioExecutedLocations } from "./executed-locations/index.ts";
@@ -367,7 +368,8 @@ async function executeAutomationStudioGraph(
     if (options.signal?.aborted) return automationStudioEndedTrace(ctx, "cancelled", currentNode.id, "Run cancelled.");
     // A pause holds here, before the node executes, and never inside it. The run resumes at this same node with
     // everything it had computed; the hold and its release are each said once (`activity/hold.ts`).
-    const held = options.runControl?.checkpoint({ nodeId: currentNode.id, step });
+    const checkpointNode: AutomationStudioFlowNode = currentNode;
+    const held = options.runControl?.checkpoint({ nodeId: checkpointNode.id, step, recheckRow: () => automationStudioCheckpointRow(ctx, checkpointNode) });
     if (held) {
       const released = options.runControl?.heldQuietly?.() ? await held : await automationStudioActivityHold(held, { nodeId: currentNode.id, label: currentNode.label, index: stepNumbers.numberOf(currentNode.id), count: stepNumbers.count, byPerson: options.runControl?.heldBy?.() === "person", signal: options.signal });
       await options.commandRun?.checkpoint();

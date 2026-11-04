@@ -31,6 +31,9 @@ export type AutomationStudioProjectPartVersionRecord = {
   createdAtMs: number;
 };
 
+/** A graph a version came from: the Flow graph and the revision of it that was saved, or none where the save knew no revision. */
+export type AutomationStudioProjectPartVersionSource = { graphFlowId: string; revision: number | null };
+
 /** A call from a caller to one version of a part. A Flow's graph has caller version 0. */
 export type AutomationStudioProjectPartCall = {
   callerKind: "part_version" | "flow_graph";

@@ -10,6 +10,10 @@
 //   is read, never stored) and the snapshot object holding the graph and its
 //   start and end checks. Update and delete are refused by triggers: a repair
 //   makes the next version and never edits one.
+// - `project_part_version_sources`: every graph a version came from. A save of the
+//   same shape from another Flow's copy, or from the applied copy of a part first
+//   saved from a draft, adds its graph here and writes no version, so the judged runs of
+//   every copy reach the version's trust. Add-only.
 // - `project_part_facets`: the exact filters, one row per site, input, output
 //   and lasting class of a version.
 // - `part_calls`: which caller (a part version or a Flow's graph) calls which
@@ -59,6 +63,14 @@ export const AUTOMATION_STUDIO_PROJECT_PARTS_MIGRATION: AutomationStudioSchemaMi
     `create trigger project_part_versions_no_delete before delete on project_part_versions begin
       select raise(abort, 'A part version is immutable.');
     end`,
+    `create table project_part_version_sources (
+      part_id text not null,
+      version integer not null,
+      graph_flow_id text not null,
+      revision integer check (revision is null or revision > 0)
+    )`,
+    "create unique index project_part_version_sources_unique_idx on project_part_version_sources (part_id, version, graph_flow_id, ifnull(revision, 0))",
+    "create index project_part_version_sources_graph_idx on project_part_version_sources (graph_flow_id, revision)",
     `create table project_part_facets (
       part_id text not null,
       version integer not null,

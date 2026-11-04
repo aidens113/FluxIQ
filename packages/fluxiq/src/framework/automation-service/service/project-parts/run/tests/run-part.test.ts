@@ -142,7 +142,8 @@ describe("runProjectPart", () => {
           conversations: () => ({ available: false }) as unknown as ReturnType<Collaborators["conversations"]>
         }),
         openRun: () => ({ gate: { checkpoint: () => personGate.stop ? Promise.resolve({ outcome: "stop" as const, message: "Stopped by a person." }) : null }, close: () => undefined }),
-        getRuntimeSession: async () => null
+        getRuntimeSession: async () => null,
+        driving: { admissions: new Set(), listRuntimeSessions: async () => [] }
       }
     });
   });

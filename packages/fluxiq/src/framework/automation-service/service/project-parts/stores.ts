@@ -57,7 +57,16 @@ function storesOf(parts: AutomationStudioProjectPartStore, judgements: Automatio
   return {
     parts,
     async cardOf(version) {
-      const rows = version.sourceGraphRevision === null ? [] : (await judgementsOf(version.sourceGraphFlowId)).filter((row) => row.revisionNumber === version.sourceGraphRevision);
+      // Every graph the version was saved from: judged runs of a second Flow's copy, or of the applied copy of a part first saved from a draft, are its evidence too.
+      const sources = [{ graphFlowId: version.sourceGraphFlowId, revision: version.sourceGraphRevision }, ...(await parts.listVersionSources(version.partId, version.version))];
+      const rows: AutomationStudioFlowGraphJudgementRecord[] = [];
+      const seen = new Set<string>();
+      for (const source of sources) {
+        const key = `${source.graphFlowId}@${source.revision}`;
+        if (source.revision === null || seen.has(key)) continue;
+        seen.add(key);
+        rows.push(...(await judgementsOf(source.graphFlowId)).filter((row) => row.revisionNumber === source.revision));
+      }
       const runs = await parts.listRuns({ partId: version.partId, version: version.version });
       const completed = completeAutomationStudioPartCard(version.card, [...automationStudioPartTrustEvidenceFromJudgements(rows), ...automationStudioPartTrustEvidenceFromRuns(runs)]);
       return completed.ok ? completed.card : undefined;

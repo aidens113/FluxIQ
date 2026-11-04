@@ -1,5 +1,7 @@
-// The last look before a part's first lasting step, with no wait in it: the step's own
-// target is shown on the page, and the page is the one the step recorded when it has one.
+// The last look before a part's lasting step, with no wait in it: the step's own target is
+// shown on the page, and the page is the one the step recorded when it has one. A step with
+// no list row is looked at once, before the first; a step bound to a row before every press,
+// with the target it would press on that row (`./row-target.ts`).
 // It asks `visible`, not `exists`: a host answers `exists` for a target matching several
 // things, as a row's control does on a list of look-alikes, and `visible` is then `unknown`.
 //
@@ -19,6 +21,8 @@ export type ProjectPartRecheckStop = "no_target" | "target_gone" | "not_read" | 
 
 export async function projectPartRecheck(input: {
   node: AutomationStudioFlowNode;
+  /** The target this row's press would act on, when the step is bound to a row. It stops as no target when there is none. */
+  rowTarget?: JsonObject | "none" | undefined;
   hostRuntime: AutomationStudioHostRuntimeBoundary | undefined;
   controlKeys: ReadonlySet<string>;
   inputs: Readonly<Record<string, JsonValue>>;
@@ -26,7 +30,7 @@ export async function projectPartRecheck(input: {
   flowId: string;
   signal?: AbortSignal | undefined;
 }): Promise<ProjectPartRecheckStop | undefined> {
-  const target = targetOf(input.node, input.controlKeys, input.inputs);
+  const target = input.rowTarget === "none" ? undefined : input.rowTarget ?? targetOf(input.node, input.controlKeys, input.inputs);
   if (!target) return "no_target";
   const context = { inputs: input.inputs, nodeId: input.node.id, ...(input.signal ? { signal: input.signal } : {}) };
   const observed = await observeAutomationStudioFacts({ hostRuntime: input.hostRuntime, groups: [{ key: "target", conditions: [{ fact: "visible", op: "visible", target }] }], context });

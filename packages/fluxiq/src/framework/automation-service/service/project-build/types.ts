@@ -45,6 +45,6 @@ export type AutomationStudioProjectBuildPorts = {
   personAsk: { port: AutomationStudioParkingPort } | undefined;
   runHarness(request: AutomationStudioLlmHarnessInput): Promise<AutomationStudioLlmTaskResult>;
   trialEnvironment: AutomationStudioProjectBuildTrialEnvironment;
-  /** The project's library, where this build may run its parts (`core.run_part`, `../project-parts/run/build-tool.ts`). Absent, the tool is not on offer. */
-  parts?: Pick<AutomationStudioProjectParts, "runAs"> | undefined;
+  /** The project's library, where this build may run its parts (`core.run_part`, `../project-parts/run/build-tool.ts`). Absent, or with no part that can be offered (`../project-parts/known-parts.ts`), the tool is not on offer. */
+  parts?: Pick<AutomationStudioProjectParts, "runAs" | "shortlist"> | undefined;
 };

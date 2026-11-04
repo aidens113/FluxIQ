@@ -27,6 +27,7 @@ import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step
 import { AutomationStudioAnswerFirstAttemptsUnreadable, automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
 import { automationStudioEndViewLook } from "../../end-view/index.ts";
+import { automationStudioAnswerFirstKnownParts } from "../../project-parts/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstRowSink, automationStudioAnswerFirstSession } from "../rows/index.ts";
 import { automationStudioAnswerFirstRunActStoreOf } from "../run-acts/index.ts";
@@ -42,7 +43,9 @@ import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 import { automationStudioAnswerFirstHoldAnswer } from "./stop-answer.ts";
 
-export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
+export async function runAutomationStudioAnswerFirstAttempt(given: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
+  // The library is offered here, once, before anything runs: no part that can be offered leaves `given` as it is (`../../project-parts/known-parts.ts`).
+  const input = await automationStudioAnswerFirstKnownParts(given);
   if (!input.binding?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
   const run = await opened(input);
   automationStudioAnswerFirstKeepBackJudge(input.creation.purse);

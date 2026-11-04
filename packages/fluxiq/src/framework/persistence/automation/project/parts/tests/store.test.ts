@@ -163,4 +163,28 @@ describe("AutomationStudioProjectPartStore", () => {
     await store.close();
     await pool.closeAll();
   });
+
+  it("remembers every graph a version came from, on a same-shape save too, and never writes another version", async () => {
+    const { pool, store } = await open("project.sources");
+    const first = await store.writeVersion(write());
+    expect(first.status).toBe("created");
+    expect(await store.listVersionSources("part.one", 1)).toEqual([{ graphFlowId: "flow.a.graph", revision: 3 }]);
+    // The applied copy of a part first saved from a draft, a second Flow's copy under another part id, and a save that knew no revision.
+    const copy = await store.writeVersion(write({ partId: "part.copy", sourceGraphFlowId: "flow.b.graph", sourceGraphRevision: 7 }));
+    expect(copy.status).toBe("existing");
+    expect(copy.version.partId).toBe("part.one");
+    expect((await store.writeVersion(write({ sourceGraphFlowId: "flow.c.graph", sourceGraphRevision: null }))).status).toBe("existing");
+    await store.writeVersion(write({ sourceGraphFlowId: "flow.c.graph", sourceGraphRevision: null }));
+    await store.writeVersion(write({ sourceGraphFlowId: "flow.b.graph", sourceGraphRevision: 7 }));
+    expect(await store.listVersionSources("part.one", 1)).toEqual([
+      { graphFlowId: "flow.a.graph", revision: 3 },
+      { graphFlowId: "flow.b.graph", revision: 7 },
+      { graphFlowId: "flow.c.graph", revision: null }
+    ]);
+    expect((await store.listVersions("part.one")).map((version) => version.version)).toEqual([1]);
+    expect(await count(pool, "project.sources", "project_part_versions")).toBe(1);
+    expect(await store.getVersion("part.one", 1)).toMatchObject({ sourceGraphFlowId: "flow.a.graph", sourceGraphRevision: 3 });
+    await store.close();
+    await pool.closeAll();
+  });
 });

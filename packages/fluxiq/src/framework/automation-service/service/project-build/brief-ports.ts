@@ -15,7 +15,7 @@ import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomation
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
 import { automationStudioProjectBuildBriefTold as told, automationStudioProjectBuildEvidenceBeside as beside } from "../project-build-notes/index.ts";
-import { automationStudioProjectBuildRunPartBundle } from "../project-parts/index.ts";
+import { automationStudioProjectBuildKnownParts, automationStudioProjectBuildRunPartBundle } from "../project-parts/index.ts";
 import { automationStudioProjectBuildEntryNote } from "./entry-note.ts";
 import { AutomationStudioProjectBuildPermissions } from "./permissions.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
@@ -278,7 +278,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
     const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution });
     const permittedActs: readonly string[] = request.brief.permittedActs;
     const permittedConsequences = (project.permissions.permittedConsequences ?? []).filter((consequence) => permittedActs.includes(consequence)) as AutomationStudioActionConsequence[];
-    const runPart = project.parts ? automationStudioProjectBuildRunPartBundle({ parts: project.parts, permittedConsequences, done: partsRun, landed: (acts, runId) => {
+    // Offered only where the library has a part that can be offered, read once for the build (`../project-parts/known-parts.ts`).
+    const runPart = project.parts && await automationStudioProjectBuildKnownParts(project, { projectId, startLocation }) ? automationStudioProjectBuildRunPartBundle({ parts: project.parts, permittedConsequences, done: partsRun, landed: (acts, runId) => {
       request.ledger.trialRan(acts, runId);
       input.acts.trialRan(acts, runId);
     } }) : undefined;

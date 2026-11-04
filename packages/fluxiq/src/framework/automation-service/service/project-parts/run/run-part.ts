@@ -32,9 +32,11 @@ import { automationStudioProjectPartControlKeys } from "../control-keys.ts";
 import type { AutomationStudioProjectPartsDependencies } from "../library-types.ts";
 import { withProjectPartStores } from "../stores.ts";
 import { readProjectPartRunClosure, type ProjectPartRunEntry } from "./closure.ts";
+import { projectPartWhileDriving } from "./driving-gate.ts";
 import { projectPartRunOutcome } from "./outcome.ts";
 import { readProjectPartPage } from "./page-read.ts";
 import { projectPartRecheck } from "./recheck.ts";
+import { projectPartRowTarget } from "./row-target.ts";
 import { projectPartRunOnlyGraphs } from "./run-only-graphs.ts";
 import { projectPartStepClasses } from "./step-classes.ts";
 import { projectPartStepGate } from "./step-gate.ts";
@@ -53,9 +55,21 @@ export async function runProjectPartNow(deps: AutomationStudioProjectPartsDepend
   if ("ok" in closure) return UNAVAILABLE;
   if (closure.kind === "calls_not_available") return CALLS_NOT_AVAILABLE;
   const inputs: Record<string, JsonValue> = { ...(input.inputs ?? {}) };
-  const asked = { caller: input.caller, inputs, permittedConsequences: input.permittedConsequences, acknowledgedRepeat: input.acknowledgedRepeat };
   const part = closure.kind === "found" ? closure.root : undefined;
   const executor = collaborators.executor();
+  // A part that is not there is answered as one: nothing asks who is on the page for it.
+  if (!part) return await guarded(deps, input, closure, inputs);
+  return await projectPartWhileDriving({
+    hostResources: executor.hostRuntime?.hostResources, holder: input.newRunId ?? randomUUID(), ports: deps.run.driving, projectId: input.projectId, caller: input.caller,
+    work: async () => await guarded(deps, input, closure, inputs)
+  });
+}
+
+/** From the read of the page on: asked while the run holds the host, so nothing moves the page under the guard's answer. */
+async function guarded(deps: AutomationStudioProjectPartsDependencies, input: AutomationStudioProjectPartRunInput, closure: Exclude<Awaited<ReturnType<typeof readProjectPartRunClosure>>, { kind: "calls_not_available" }>, inputs: Record<string, JsonValue>): Promise<AutomationStudioProjectPartRunResult | AutomationStudioProjectPartRunRefusal> {
+  const part = closure.kind === "found" ? closure.root : undefined;
+  const asked = { caller: input.caller, inputs, permittedConsequences: input.permittedConsequences, acknowledgedRepeat: input.acknowledgedRepeat };
+  const executor = deps.run!.collaborators()!.executor();
   const page = part
     ? await readProjectPartPage({ hostRuntime: executor.hostRuntime, sites: part.card.sites, conditions: part.snapshot.start.conditions, inputs, signal: input.signal })
     : { origin: undefined, startFacts: [] };
@@ -111,7 +125,11 @@ async function executed(
     classesOf,
     permitted: new Set(input.permittedConsequences ?? []),
     permission,
-    recheck: (node) => projectPartRecheck({ node, hostRuntime: executor.hostRuntime, controlKeys: automationStudioProjectPartControlKeys(deps.run) ?? DEFAULT_CONTROL_KEYS, inputs, projectId, flowId: graphs.root.flowId, signal: abort.signal })
+    recheck: async (node, row) => {
+      const controlKeys = automationStudioProjectPartControlKeys(deps.run) ?? DEFAULT_CONTROL_KEYS;
+      const rowTarget = row ? (await projectPartRowTarget({ native, node, row, controlKeys, signal: abort.signal })) ?? "none" : undefined;
+      return await projectPartRecheck({ node, rowTarget, hostRuntime: executor.hostRuntime, controlKeys, inputs, projectId, flowId: graphs.root.flowId, signal: abort.signal });
+    }
   });
   const datasets = collaborators.runDatasets();
   const conversations = collaborators.conversations();

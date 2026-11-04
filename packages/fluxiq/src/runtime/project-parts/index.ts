@@ -3,3 +3,4 @@
 export * from "./card/index.ts";
 export * from "./trust/index.ts";
 export * from "./guard/index.ts";
+export * from "./shortlist/index.ts";

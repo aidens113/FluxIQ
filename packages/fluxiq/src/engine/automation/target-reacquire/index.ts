@@ -7,6 +7,7 @@ export * from "./gone-code.ts";
 export * from "./host-answer.ts";
 export * from "./lineage.ts";
 export * from "./read-only-source.ts";
+export * from "./row-recheck.ts";
 export * from "./source-place.ts";
 export * from "./source-rerun.ts";
 export * from "./stale-failure.ts";

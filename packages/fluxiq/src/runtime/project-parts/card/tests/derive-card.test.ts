@@ -47,16 +47,20 @@ describe("deriveAutomationStudioPartCard", () => {
 
   it("lists what a step types, and a control's words only when the person's request holds them too", () => {
     expect(derived().card.fixedValues).toEqual(["red shoes"]);
-    // The domain says which words name a control; with none said, a control's text is neither listed nor compared.
+    // The domain may say which words name a control; with none said, every string leaf of the target is read, and only to compare (`target-leaves.test.ts`).
     const words = (target: Record<string, unknown>) => {
       const fingerprint = target.fingerprint as { visibleText?: string } | undefined;
       return fingerprint?.visibleText ? [fingerprint.visibleText] : [];
     };
     const request = "press the PAGEWORD-button-Go-Fetch one";
-    expect(derived({ requestWords: request }).card.fixedValues).toEqual(["red shoes"]);
+    // Every leaf of the target is compared, its id and tag name too, so a word of the request that one of them holds is listed beside the control's own text.
+    expect(derived({ requestWords: request }).card.fixedValues).toEqual(expect.arrayContaining(["red shoes", PAGE_TEXT.buttonText]));
+    expect(derived({ requestWords: "find me some shoes" }).card.fixedValues).toEqual(["red shoes"]);
     expect(derived({ requestWords: request, targetWords: words }).card.fixedValues).toEqual(["red shoes", PAGE_TEXT.buttonText]);
     expect(derived({ requestWords: "nothing like it", targetWords: words }).card.fixedValues).toEqual(["red shoes"]);
-    expect(deriveAutomationStudioPartCard(input({ graph: partGraphFixture({ consequences: ["create_new"], typed: null }), requestWords: request, targetWords: words }))).toEqual({ skipped: "part.fixed_value_from_request" });
+    // A lasting step's own label is the control it presses, not an item: the fixture names its press by the control's text, so it is not counted (`target-leaves.test.ts`).
+    expect(deriveAutomationStudioPartCard(input({ graph: partGraphFixture({ consequences: ["create_new"], typed: null }), requestWords: request, targetWords: words }))).not.toHaveProperty("skipped");
+    expect(deriveAutomationStudioPartCard(input({ graph: partGraphFixture({ consequences: ["create_new"], typed: null, renamed: true }), requestWords: request, targetWords: words }))).toEqual({ skipped: "part.fixed_value_from_request" });
     expect(derived({ graph: partGraphFixture({ typed: null }) }).card.fixedValues).toEqual([]);
   });
 

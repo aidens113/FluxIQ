@@ -16,6 +16,7 @@ import { PART_DEFAULT_CONTROL_KEYS, type AutomationStudioPartControlReading } fr
 import { partEndCheckOf } from "./end-check.ts";
 import { partFixedValuesOf } from "./fixed-values.ts";
 import { partLastingClassesOf } from "./lasting-classes.ts";
+import { partTargetLeavesOf } from "./target-leaves.ts";
 import { partSitesOf } from "./origins.ts";
 import { partPortsOf } from "./ports.ts";
 import { partShapeHashOf } from "./shape-hash.ts";
@@ -42,7 +43,7 @@ export function deriveAutomationStudioPartCard(input: AutomationStudioPartCardIn
   const inputs = partPortsOf(input.graph.interface.inputs);
   const outputs = partPortsOf(input.graph.interface.outputs);
   if (!inputs || !outputs) return { skipped: "part.port_unusable" };
-  const control: AutomationStudioPartControlReading = { controlKeys: new Set(input.controlParameterKeys ?? PART_DEFAULT_CONTROL_KEYS), targetWords: input.targetWords ?? (() => []) };
+  const control: AutomationStudioPartControlReading = { controlKeys: new Set(input.controlParameterKeys ?? PART_DEFAULT_CONTROL_KEYS), targetWords: input.targetWords ?? partTargetLeavesOf };
   const fixed = partFixedValuesOf(steps, input.requestWords, control);
   if (fixed.problem) return { skipped: fixed.problem };
   const lasting = partLastingClassesOf(steps, callees);

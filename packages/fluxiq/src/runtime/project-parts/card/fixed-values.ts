@@ -10,6 +10,7 @@
 // never stored and never shown.
 import type { JsonValue } from "../../../core/index.ts";
 import { isAutomationNodeParameterStateBinding } from "../../../components/automation/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY } from "../../../engine/automation/defensive/index.ts";
 import { PART_SECRET_KEY, PART_VALUE_KEYS, type AutomationStudioPartControlReading } from "./parameter-keys.ts";
 import type { AutomationStudioPartStep } from "./steps.ts";
 
@@ -29,9 +30,9 @@ export function partFixedValuesOf(steps: readonly AutomationStudioPartStep[], re
   const request = normalised(requestWords);
   const values: string[] = [];
   let fromRequest = false;
-  const keep = (text: string, shownAnyway: boolean): void => {
+  const keep = (text: string, shownAnyway: boolean, whole = false): void => {
     if (!text) return;
-    const inRequest = request.length > 0 && normalised(text).length >= 2 && request.includes(normalised(text));
+    const inRequest = request.length > 0 && normalised(text).length >= 2 && (whole ? occursWhole(request, normalised(text)) : request.includes(normalised(text)));
     if (inRequest) fromRequest = true;
     if ((shownAnyway || inRequest) && !values.includes(text)) values.push(text);
   };
@@ -39,7 +40,7 @@ export function partFixedValuesOf(steps: readonly AutomationStudioPartStep[], re
     if (!step.acting || step.isCall) continue;
     for (const [key, value] of Object.entries(step.params)) {
       if (control.controlKeys.has(key)) {
-        for (const text of targetTexts(value, control)) keep(text, false);
+        for (const text of targetTexts(value, control)) if (!isOwnLabelOfLastingStep(step, text)) keep(text, false, true);
         continue;
       }
       const literals = literalsOf(value);
@@ -67,6 +68,19 @@ function literalsOf(value: JsonValue | undefined): string[] {
 function targetTexts(target: JsonValue | undefined, control: AutomationStudioPartControlReading): string[] {
   if (!target || typeof target !== "object" || Array.isArray(target) || isAutomationNodeParameterStateBinding(target)) return [];
   return control.targetWords(target).map((text) => text.trim()).filter((text) => text.length > 0 && text.length <= VALUE_MAX);
+}
+
+/** The step acts lastingly and the text is part of its own label: the control it presses, not an item it picks. */
+function isOwnLabelOfLastingStep(step: AutomationStudioPartStep, text: string): boolean {
+  const declared = step.node.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
+  const label = normalised(step.node.label ?? "");
+  return Array.isArray(declared) && declared.length > 0 && label.length > 0 && occursWhole(label, normalised(text));
+}
+
+/** The text sits in the words as whole words, not inside a longer one. Both are already normalised. */
+function occursWhole(words: string, text: string): boolean {
+  const escaped = text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(String.raw`(?<![\p{L}\p{N}])` + escaped + String.raw`(?![\p{L}\p{N}])`, "u").test(words);
 }
 
 function looksLikeSecret(text: string): boolean {

@@ -40,7 +40,7 @@ export type AutomationStudioPartCardInput = {
   startLocation?: string | undefined;
   /** The parameters that name a step's control, from the domain's implementation bundle. Default: `target`. */
   controlParameterKeys?: readonly string[] | undefined;
-  /** The words a person would call a control by, read from its target by the domain. Default: none, so no control text is listed or compared. */
+  /** The words a person would call a control by, read from its target by the domain. Default: every string leaf of the target (`./target-leaves.ts`), read only to compare with the request. */
   targetWords?: ((target: Record<string, unknown>) => readonly string[]) | undefined;
   /** The parts this one calls, by the Subflow id or `partId@version` its call steps name. */
   callees?: Readonly<Record<string, AutomationStudioPartCallee>> | undefined;

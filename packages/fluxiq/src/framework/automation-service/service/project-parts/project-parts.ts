@@ -11,10 +11,13 @@ import type {
   SaveProjectPartResponse
 } from "../../../../api-contracts/automation.ts";
 import { AutomationStudioProjectPartControlKeys, automationStudioProjectPartControlKeys } from "./control-keys.ts";
+import type { AutomationStudioKnownParts } from "../../../../runtime/project-parts/index.ts";
 import { getProjectPart } from "./get.ts";
 import type { AutomationStudioProjectPartsDependencies, AutomationStudioProjectPartsRefusal } from "./library-types.ts";
 import { listProjectParts, type AutomationStudioListProjectPartsInput } from "./list.ts";
 import { keepProjectPart } from "./keep.ts";
+import { saveProjectPartsOfDraft, type AutomationStudioSaveProjectPartsOfDraftInput } from "./draft-parts.ts";
+import { shortlistProjectParts, type AutomationStudioProjectPartsShortlistInput } from "./shortlist.ts";
 import { runProjectPart, type AutomationStudioProjectPartRunInput, type AutomationStudioProjectPartRunRefusal, type AutomationStudioProjectPartRunResult } from "./run/index.ts";
 
 export class AutomationStudioProjectParts {
@@ -36,6 +39,16 @@ export class AutomationStudioProjectParts {
   /** A person's "save this": saved, or why not in plain words with its code. */
   save(input: SaveProjectPartRequest): Promise<SaveProjectPartResponse | AutomationStudioProjectPartsRefusal> {
     return keepProjectPart(this.dependencies, input);
+  }
+
+  /** The parts that may fit a request, up to five, or none: what the opening look of a build or an attempt offers (`./shortlist.ts`). Never throws. */
+  shortlist(input: AutomationStudioProjectPartsShortlistInput): Promise<AutomationStudioKnownParts | undefined> {
+    return shortlistProjectParts(this.dependencies.pool, input);
+  }
+
+  /** The parts of an answer-first attempt's saved draft, kept in the library; a failure is reported on the result and never thrown (`./draft-parts.ts`). */
+  saveDraft(input: AutomationStudioSaveProjectPartsOfDraftInput): ReturnType<typeof saveProjectPartsOfDraft> {
+    return saveProjectPartsOfDraft(this.dependencies.pool, input);
   }
 
   /** A person's run of one part, with no model, or why it was not run. */

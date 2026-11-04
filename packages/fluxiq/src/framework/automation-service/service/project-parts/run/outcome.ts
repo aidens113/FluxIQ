@@ -17,6 +17,9 @@ const GATE_WORDS: Readonly<Record<ProjectPartGateStopReason, string>> = {
   target_gone: "The page changed: this step's control is no longer on it, so it was not done.",
   not_read: "This step's control could not be told apart on the page just before it, so it was not done.",
   other_page: "The page changed: it is not the one this step runs on, so it was not done.",
+  row_gone: "The item this step was for is gone from the page, so it was not done, and the items after it were not tried.",
+  row_unclear: "The item this step was for could not be told apart from another on the page, so it was not done.",
+  row_unread: "The list this step's item came from could not be read again just before it, so it was not done.",
   not_allowed: "This step would do something that was not asked for, so it was not done.",
   unknown_step: "This step is not one the part saved, so it was not done."
 };
@@ -40,7 +43,7 @@ export function projectPartRunOutcome(input: {
   const stoppedAt = (reason: string, node: AutomationStudioFlowNode | undefined): ProjectPartRunStop => ({ stepLabel: labelOf(node), reason });
   const nodeOfFailing = failing ? input.nodeOf(failing.nodeId) : undefined;
   const base = { outputs: outputsOf(input.executed, input.outputIds), acts: classesOf(input.landed) };
-  if (gate) return { ...base, status: "stopped", stoppedAt: stoppedAt(GATE_WORDS[gate.reason], gate.node) };
+  if (gate && !input.aborted) return { ...base, status: "stopped", stoppedAt: stoppedAt(GATE_WORDS[gate.reason], gate.node) };
   if (input.aborted || trace?.status === "cancelled") return { ...base, status: "cancelled", stoppedAt: stoppedAt(CANCELLED, nodeOfFailing) };
   if (hasUncertain(trace)) return { ...base, status: "stopped", stoppedAt: stoppedAt(UNCERTAIN, nodeOfFailing) };
   if (trace?.status === "waiting") return { ...base, status: "stopped", stoppedAt: stoppedAt(NEEDS_PERSON, nodeOfFailing) };

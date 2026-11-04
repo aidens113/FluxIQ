@@ -12,19 +12,28 @@
 //
 // **In order, for a lasting step:** the classes it names are ones that were asked for;
 // the same permission check `core.run_node` passes a domain answers it (`permission`);
-// and, the first time, the page is checked (`recheck`). The first no stops the run: the
-// step is not dispatched, and every later ask stops as well, so nothing retries past it.
+// and the page is checked (`recheck`): the first time for a step with no list row, and
+// for a step bound to a row before every ask, since each row is its own lasting act and a
+// page shifts as acts land. The row is found again first, by what it is, from the step that
+// read it (`at.recheckRow`). The first no stops the run: the step is not dispatched, and
+// every later ask stops as well, so nothing retries past it.
+//
+// **A row found gone stops the run, and the rows after it are not done.** That is where the
+// engine's own gone path ends a lasting step with no way on written for it: `executor.target.gone`
+// is not retried, and a lasting act that failed is not walked past (`defensive/continuation.ts`).
+// A gate cannot take a written `on failed:` route, so one is not taken here: the run stops
+// and says so, which is the side a mistake should fall on.
 //
 // A person's own pause holds first, and says so; a hold this gate makes for itself
 // is said nowhere, since no person holds the run.
 import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../../../../runtime/action-permission-requests/index.ts";
-import type { AutomationStudioRunCheckpointOutcome, AutomationStudioRunControlGate } from "../../../../../runtime/automation-host/index.ts";
+import type { AutomationStudioRunCheckpoint, AutomationStudioRunCheckpointOutcome, AutomationStudioRunCheckpointRow, AutomationStudioRunControlGate } from "../../../../../runtime/automation-host/index.ts";
 import type { ProjectPartRecheckStop } from "./recheck.ts";
 import type { ProjectPartStepClasses } from "./step-classes.ts";
 
 /** Why the gate stopped a run, in a closed word. */
-export type ProjectPartGateStopReason = ProjectPartRecheckStop | "not_allowed" | "unknown_step";
+export type ProjectPartGateStopReason = ProjectPartRecheckStop | "not_allowed" | "unknown_step" | "row_gone" | "row_unclear" | "row_unread";
 export type ProjectPartGateStop = { node: AutomationStudioFlowNode | undefined; reason: ProjectPartGateStopReason };
 
 const GO: AutomationStudioRunCheckpointOutcome = { outcome: "resume", afterManualAction: false };
@@ -38,7 +47,8 @@ export function projectPartStepGate(input: {
   classesOf(node: AutomationStudioFlowNode): ProjectPartStepClasses;
   permitted: ReadonlySet<string>;
   permission(node: AutomationStudioFlowNode, classes: ProjectPartStepClasses): ReturnType<AutomationStudioActionPermissionCheck>;
-  recheck(node: AutomationStudioFlowNode): Promise<ProjectPartRecheckStop | undefined>;
+  /** The look at the page; `row` is the row found again, for a step bound to one. */
+  recheck(node: AutomationStudioFlowNode, row?: Extract<AutomationStudioRunCheckpointRow, { outcome: "found" }>): Promise<ProjectPartRecheckStop | undefined>;
 }): ProjectPartStepGate {
   let stop: ProjectPartGateStop | undefined;
   let rechecked = false;
@@ -47,9 +57,18 @@ export function projectPartStepGate(input: {
     stop ??= { node, reason };
     return STOP;
   };
-  const decide = async (node: AutomationStudioFlowNode, classes: ProjectPartStepClasses): Promise<AutomationStudioRunCheckpointOutcome> => {
+  const decide = async (node: AutomationStudioFlowNode, classes: ProjectPartStepClasses, at: AutomationStudioRunCheckpoint): Promise<AutomationStudioRunCheckpointOutcome> => {
     if (classes.classes.some((each) => !input.permitted.has(each))) return stopping(node, "not_allowed");
     if (!(await input.permission(node, classes)).permitted) return stopping(node, "not_allowed");
+    const row: AutomationStudioRunCheckpointRow = (await at.recheckRow?.()) ?? { outcome: "no_row" };
+    if (row.outcome === "done") return GO;
+    if (row.outcome === "gone") return stopping(node, "row_gone");
+    if (row.outcome === "unmatched") return stopping(node, "row_unclear");
+    if (row.outcome === "unavailable") return stopping(node, "row_unread");
+    if (row.outcome === "found") {
+      const stopped = await input.recheck(node, row);
+      return stopped ? stopping(node, stopped) : GO;
+    }
     if (!rechecked) {
       const stopped = await input.recheck(node);
       if (stopped) return stopping(node, stopped);
@@ -77,7 +96,7 @@ export function projectPartStepGate(input: {
           const released = await held;
           if (released.outcome === "stop") return released;
         }
-        return await decide(node, classes);
+        return await decide(node, classes, at);
       })();
     }
   };

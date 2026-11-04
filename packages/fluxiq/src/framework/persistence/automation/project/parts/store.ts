@@ -12,11 +12,11 @@
 // always finds it as it was.
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
 import { AutomationStudioProjectContentStore } from "../content-store.ts";
-import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../database.ts";
+import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
 import { decodePartCursor, encodePartCursor } from "./cursor.ts";
 import { partQuerySql } from "./query.ts";
-import { callFromRow, partFromRow, runFromRow, versionFromRow, type PartCallRow, type PartRow, type PartRunRow, type PartVersionRow } from "./rows.ts";
+import { callFromRow, partFromRow, runFromRow, versionFromRow, versionSourceFromRow, type PartCallRow, type PartRow, type PartRunRow, type PartVersionRow, type PartVersionSourceRow } from "./rows.ts";
 import type {
   AutomationStudioProjectPartCall,
   AutomationStudioProjectPartMatch,
@@ -25,6 +25,7 @@ import type {
   AutomationStudioProjectPartRecord,
   AutomationStudioProjectPartRunRecord,
   AutomationStudioProjectPartVersionRecord,
+  AutomationStudioProjectPartVersionSource,
   AutomationStudioProjectPartWrite,
   AutomationStudioProjectPartWriteResult
 } from "./types.ts";
@@ -59,7 +60,10 @@ export class AutomationStudioProjectPartStore {
   async writeVersion(input: AutomationStudioProjectPartWrite): Promise<AutomationStudioProjectPartWriteResult> {
     const partId = requiredId(input.partId, "part");
     const known = await this.findByShapeHash(input.shapeHash, partId);
-    if (known) return { status: "existing", part: await this.requirePart(known.partId), version: known };
+    if (known) {
+      await this.lease.database.transaction((sql) => addSource(sql, known, input));
+      return { status: "existing", part: await this.requirePart(known.partId), version: known };
+    }
     const now = Math.trunc(input.now ?? Date.now());
     const snapshot = await this.putSnapshot(input.snapshot, partId, now);
     return this.lease.database.transaction(async (sql) => {
@@ -67,6 +71,7 @@ export class AutomationStudioProjectPartStore {
       if (raced) {
         const part = await sql.get<PartRow>("select * from project_parts where part_id = ?", [raced.part_id]);
         if (!part) throw new Error(`Part ${raced.part_id} has a version and no row.`);
+        await addSource(sql, versionFromRow(raced), input);
         return { status: "existing" as const, part: partFromRow(part), version: versionFromRow(raced) };
       }
       const current = await sql.get<PartRow>("select * from project_parts where part_id = ?", [partId]);
@@ -77,6 +82,7 @@ export class AutomationStudioProjectPartStore {
          values (?, ?, ?, ?, ?, ?, ?, ?)`,
         [partId, version, JSON.stringify(card), input.shapeHash, snapshot.objectId, requiredId(input.sourceGraphFlowId, "graph flow"), input.sourceGraphRevision ?? null, now]
       );
+      await addSource(sql, { partId, version }, input);
       if (current) await sql.run("update project_parts set latest_version = ?, updated_at_ms = ? where part_id = ?", [version, now, partId]);
       else await sql.run("insert into project_parts (part_id, latest_version, source_flow_id, source_subflow_id, created_at_ms, updated_at_ms) values (?, ?, ?, ?, ?, ?)", [partId, version, requiredId(input.sourceFlowId, "flow"), requiredId(input.sourceSubflowId, "subflow"), now, now]);
       for (const facet of ["site", "input", "output", "lasting"] as const) {
@@ -112,6 +118,15 @@ export class AutomationStudioProjectPartStore {
   async listVersions(partId: string): Promise<AutomationStudioProjectPartVersionRecord[]> {
     const rows = await this.lease.database.all<PartVersionRow>("select * from project_part_versions where part_id = ? order by version desc", [requiredId(partId, "part")]);
     return rows.map(versionFromRow);
+  }
+
+  /** Every graph a version was saved from, the one that wrote it first. Add-only: a same-shape save from another copy adds its graph and writes no version. */
+  async listVersionSources(partId: string, version: number): Promise<AutomationStudioProjectPartVersionSource[]> {
+    const rows = await this.lease.database.all<PartVersionSourceRow>(
+      "select graph_flow_id, revision from project_part_version_sources where part_id = ? and version = ? order by graph_flow_id, ifnull(revision, 0)",
+      [requiredId(partId, "part"), Math.trunc(version)]
+    );
+    return rows.map(versionSourceFromRow);
   }
 
   /** The version with this shape in this project, preferring `preferPartId`'s own. */
@@ -211,6 +226,14 @@ export class AutomationStudioProjectPartStore {
       await content.close();
     }
   }
+}
+
+/** Records the graph a save came from as a source of the version it landed on, once. */
+async function addSource(sql: AutomationStudioSqlExecutor, version: { partId: string; version: number }, input: AutomationStudioProjectPartWrite): Promise<void> {
+  await sql.run(
+    "insert or ignore into project_part_version_sources (part_id, version, graph_flow_id, revision) values (?, ?, ?, ?)",
+    [version.partId, version.version, requiredId(input.sourceGraphFlowId, "graph flow"), input.sourceGraphRevision ?? null]
+  );
 }
 
 function requiredId(value: string, kind: string): string {

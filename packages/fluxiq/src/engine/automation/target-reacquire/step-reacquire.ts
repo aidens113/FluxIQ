@@ -56,7 +56,7 @@ export async function automationStudioStepReacquire(
   if (!lineage && !ctx.options.hostRuntime?.reacquireUnboundTarget) return undefined;
   ctx.arrival.reacquired = true;
   if (!lineage) ctx.arrival.identityReacquired = true;
-  const record = lineage ? await reacquire(ctx, node, lineage, retried) : await automationStudioUnboundReacquire(ctx, node, retried);
+  const record = lineage ? await automationStudioReacquireFromSource(ctx, node, lineage, retried.failure!) : await automationStudioUnboundReacquire(ctx, node, retried);
   if (!lineage && (ctx.options.signal?.aborted || actCompleted(ctx, node))) {
     delete ctx.arrival.parameterOverlay;
     return undefined;
@@ -68,11 +68,11 @@ export async function automationStudioStepReacquire(
 }
 
 /** The re-run, the match and the rebinding; every way it can stop short is an `unavailable` or `unmatched` record. */
-async function reacquire(
+export async function automationStudioReacquireFromSource(
   ctx: AutomationStudioStepLoopContext,
   node: AutomationStudioFlowNode,
   lineage: AutomationStudioTargetLineage,
-  retried: AutomationStudioNodeAttemptTrace
+  failure: NonNullable<AutomationStudioNodeAttemptTrace["failure"]>
 ): Promise<AutomationStudioTargetReacquireRecord> {
   const { options, values } = ctx;
   const ended = (outcome: AutomationStudioTargetReacquireRecord["outcome"], reason?: string, returned?: boolean): AutomationStudioTargetReacquireRecord => ({
@@ -92,7 +92,7 @@ async function reacquire(
   const candidates = automationStudioReacquireCandidates(lineage, outputs, bound.field);
   if (!candidates) return ended("unavailable", "no_candidates", returned);
   const answer = await automationStudioReacquireHostAnswer(host, {
-    node, source, lineage, stale: bound.stale, candidates, failure: retried.failure!, ...(options.signal ? { signal: options.signal } : {})
+    node, source, lineage, stale: bound.stale, candidates, failure, ...(options.signal ? { signal: options.signal } : {})
   });
   if (answer.outcome === "unmatched") return ended("unmatched", answer.reason, returned);
   if (answer.outcome === "gone") return ended("gone", undefined, returned);

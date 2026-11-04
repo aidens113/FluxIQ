@@ -49,6 +49,13 @@ export function automationStudioTargetLineage(flow: AutomationStudioFlowDocument
   return { kind: "output", sourceNodeId: chosen.output.nodeId, outputKey: chosen.output.rest.split(".")[0]!, parameterPath: chosen.binding.parameterPath };
 }
 
+/** The innermost For Each handing `node` its row, whether or not the step that read the list is in this graph. */
+export function automationStudioRowLoopOf(flow: AutomationStudioFlowDocument, node: AutomationStudioFlowNode): string | undefined {
+  const bindings: Binding[] = [];
+  collectBindings(flow, node.parameterValues ?? {}, [], 0, bindings);
+  return innermostRowLoop(flow, node, bindings, new Map(flow.nodes.map((candidate) => [candidate.id, candidate])));
+}
+
 /** The row lineage: the innermost For Each handing the step its row, and the node its `items` came from. */
 function rowLineage(
   flow: AutomationStudioFlowDocument,
@@ -56,6 +63,18 @@ function rowLineage(
   bindings: readonly Binding[],
   nodesById: ReadonlyMap<string, AutomationStudioFlowNode>
 ): AutomationStudioTargetLineage | undefined {
+  const loopNodeId = innermostRowLoop(flow, node, bindings, nodesById);
+  if (!loopNodeId) return undefined;
+  const source = itemsSource(flow, nodesById.get(loopNodeId)!, nodesById);
+  return source ? { kind: "row", sourceNodeId: source.nodeId, outputKey: source.rest.split(".")[0]!, loopNodeId } : undefined;
+}
+
+function innermostRowLoop(
+  flow: AutomationStudioFlowDocument,
+  node: AutomationStudioFlowNode,
+  bindings: readonly Binding[],
+  nodesById: ReadonlyMap<string, AutomationStudioFlowNode>
+): string | undefined {
   const loops = automationStudioActivityLoops(flow, FOR_EACH);
   const handing = new Set<string>();
   for (const edge of flow.edges) {
@@ -72,9 +91,7 @@ function rowLineage(
   if (!handing.size) return undefined;
   // The innermost loop's body is inside every loop around it, so it has the fewest members.
   const size = (loopId: string): number => loops.find((loop) => loop.repeatId === loopId)?.members.size ?? Number.POSITIVE_INFINITY;
-  const loopNodeId = [...handing].sort((left, right) => size(left) - size(right))[0]!;
-  const source = itemsSource(flow, nodesById.get(loopNodeId)!, nodesById);
-  return source ? { kind: "row", sourceNodeId: source.nodeId, outputKey: source.rest.split(".")[0]!, loopNodeId } : undefined;
+  return [...handing].sort((left, right) => size(left) - size(right))[0];
 }
 
 /** The node output a For Each's `items` come from: a wired edge into `items`, else a binding its `items` parameter holds. */

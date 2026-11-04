@@ -4,6 +4,7 @@ export { deriveAutomationStudioPartCard } from "./derive-card.ts";
 export { partShapeHashOf as automationStudioPartShapeHash } from "./shape-hash.ts";
 export { partOriginOf as automationStudioPartOrigin } from "./origins.ts";
 export { partCalleeOf as automationStudioPartCallee } from "./calls.ts";
+export { partTargetLeavesOf as automationStudioPartTargetLeaves } from "./target-leaves.ts";
 export { screenedPartWords as automationStudioScreenedPartWords } from "./words.ts";
 export { partControlTargetOf as automationStudioPartControlTarget } from "./control-target.ts";
 export { partStepsOf as automationStudioPartSteps, type AutomationStudioPartStep } from "./steps.ts";

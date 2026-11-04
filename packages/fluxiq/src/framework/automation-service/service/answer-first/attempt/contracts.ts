@@ -7,6 +7,7 @@ import type { AutomationStudioFlowCandidateDraftStore } from "../../candidate-dr
 import type { AutomationStudioBuildRouting } from "../../../route-state/index.ts";
 import type { AutomationStudioRunDatasets } from "../../datasets/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
+import type { AutomationStudioProjectParts } from "../../project-parts/index.ts";
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
 import type { AutomationStudioBuildCancellation, AutomationStudioFlowBootstrapCreationPurse } from "../../flow-bootstrap-commands/index.ts";
 import type { automationStudioFlowBootstrapInstructionAuthority } from "../../instruction-authority.ts";
@@ -63,4 +64,6 @@ export type AutomationStudioAnswerFirstAttemptInput = {
   nodeDescriptions: AutomationStudioLlmNodeDescriptions;
   baseDependencyDigest: string;
   baseSettingsRevision: number;
+  /** The project's library of saved parts: offered in the opening look and kept from the draft (`../../project-parts/known-parts.ts`). Absent, neither happens. */
+  parts?: Pick<AutomationStudioProjectParts, "runAs" | "shortlist" | "saveDraft"> | undefined;
 };

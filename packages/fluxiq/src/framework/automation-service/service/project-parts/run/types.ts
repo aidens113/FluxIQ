@@ -9,6 +9,7 @@ import type { AutomationStudioRunControlGate } from "../../../../../runtime/auto
 import type { AutomationStudioPartCaller } from "../../../../../runtime/project-parts/index.ts";
 import type { AutomationStudioCandidateTrialLandedAct } from "../../candidate-trial/index.ts";
 import type { AutomationStudioServiceTrialCollaborators } from "../../trial-ports/index.ts";
+import type { AutomationStudioProjectPartDrivingPorts } from "./driving-gate.ts";
 
 /** A run as the service holds it: where a person pauses and stops it, closed when the run ends. */
 export type AutomationStudioProjectPartOpenRun = { gate: AutomationStudioRunControlGate; close(): void };
@@ -20,6 +21,8 @@ export type AutomationStudioProjectPartRunPorts = {
   /** Registers the run so a person can pause and stop it as they can any other. */
   openRun(projectId: string, runId: string, abort: AbortController): AutomationStudioProjectPartOpenRun;
   getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null>;
+  /** Who else is running in the project (`./driving-gate.ts`). */
+  driving: AutomationStudioProjectPartDrivingPorts;
 };
 
 /**

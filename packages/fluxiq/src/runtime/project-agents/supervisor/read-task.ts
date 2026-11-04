@@ -12,7 +12,8 @@ import { automationStudioProjectSupervisorToolAnswer as answer } from "./tool-an
  * a later one for the same Flow, reads first, as an agent here reads `Current
  * State` -- the money it can still give builders beside what it keeps back for
  * the judged whole run, the lasting acts still on the target (those no call
- * can check or put back counted apart, t743), and how to work.
+ * can check or put back counted apart, t743), the saved parts of this project that
+ * may fit (`knownParts`, only when there are some; the library's read never rejects), and how to work.
  */
 export async function automationStudioProjectSupervisorReadTask(context: AutomationStudioProjectSupervisorContext): Promise<AutomationStudioLlmEvidenceToolExecutionResult> {
   const { ports } = context;
@@ -21,6 +22,7 @@ export async function automationStudioProjectSupervisorReadTask(context: Automat
   const inPlace = ports.projectLedger.snapshot().acts.filter((act) => act.inPlace).length;
   // Left on the target, though no reset can undo them (`./left-on-target.ts`, t743).
   const unsettleable = automationStudioProjectSupervisorLeftOnTarget(ports).acts.filter((act) => act.unsettleable === true).length;
+  const known = await ports.knownParts?.();
   const evidence: JsonObject = {
     ok: true,
     instructions: ports.sources.map((source) => ({ sourceId: source.sourceId, text: source.text })),
@@ -28,6 +30,7 @@ export async function automationStudioProjectSupervisorReadTask(context: Automat
     money: purse ? { canGiveUsd: usd(purse.allocatableUsd()), keptBackUsd: usd(purse.keptBackUsd()), leftUsd: usd(purse.leftUsd()), ...calls(purse.allocatableCalls()) } : null,
     lastingActsInPlace: inPlace,
     ...(unsettleable ? { lastingActsUnsettleable: unsettleable } : {}),
+    ...(known ? { knownParts: known } : {}),
     howToWork: GUIDANCE.howToWork,
     example: GUIDANCE.example
   };
