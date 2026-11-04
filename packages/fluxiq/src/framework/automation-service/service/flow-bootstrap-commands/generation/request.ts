@@ -29,8 +29,8 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
   permittedConsequences: AutomationStudioActionConsequence[];
   /** Whether this build writes the Flow or adds to the one already there. */
   mode: AutomationStudioBootstrapAdaptationMode;
-  /** `candidate` or `project` (`../../../model/authoring-mode/`); absent is legacy. */
-  authoringMode?: "candidate" | "project";
+  /** `candidate`, `project` or `answer-first` (`../../../model/authoring-mode/`); absent is legacy. */
+  authoringMode?: "candidate" | "project" | "answer-first";
   startLocation?: string;
   /** What the chat's reading of the message cost, carried into the creation purse. Absent when none was sent. */
   interpretationCostUsd?: number;
@@ -51,7 +51,7 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
   if (unsafeInput.useReusableContext !== undefined && unsafeInput.useReusableContext !== true) throw new Error("Reusable-context generation flag is invalid.");
   if (unsafeInput.useReusableContext === true && unsafeInput.evidenceGuided !== true) throw new Error("Reusable context requires evidence-guided generation with a fresh inspection.");
   if (unsafeInput.mode !== undefined && unsafeInput.mode !== "create" && unsafeInput.mode !== "extend") throw new Error("Flow Bootstrap generation mode is invalid.");
-  if (unsafeInput.authoringMode !== undefined && ((unsafeInput.authoringMode !== "candidate" && unsafeInput.authoringMode !== "project") || unsafeInput.evidenceGuided !== true)) throw new Error("Candidate authoring requires evidence-guided generation.");
+  if (unsafeInput.authoringMode !== undefined && ((unsafeInput.authoringMode !== "candidate" && unsafeInput.authoringMode !== "project" && unsafeInput.authoringMode !== "answer-first") || unsafeInput.evidenceGuided !== true)) throw new Error("Candidate authoring requires evidence-guided generation.");
   // A project build writes a Flow from nothing; extending one is not yet a project build's (automation-project-agents-plan, A7).
   if (unsafeInput.authoringMode === "project" && unsafeInput.mode === "extend") throw new Error("Project authoring cannot extend a Flow yet.");
   const mode: AutomationStudioBootstrapAdaptationMode = unsafeInput.mode === "extend" ? "extend" : "create";
@@ -75,7 +75,8 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
     projectId: requiredBootstrapCommandId(unsafeInput.projectId, "project"),
     flowId: requiredBootstrapCommandId(unsafeInput.flowId, "Flow"),
     mode,
-    ...(unsafeInput.authoringMode === "candidate" || unsafeInput.authoringMode === "project" ? { authoringMode: unsafeInput.authoringMode } : {}),
+    // An extend in answer-first mode builds as a candidate until a saved Flow's later attempt lands (`../../../model/authoring-mode/build-authoring-mode.ts`).
+    ...(unsafeInput.authoringMode === "answer-first" ? { authoringMode: mode === "extend" ? "candidate" as const : "answer-first" as const } : unsafeInput.authoringMode === "candidate" || unsafeInput.authoringMode === "project" ? { authoringMode: unsafeInput.authoringMode } : {}),
     ...(startLocation === undefined ? {} : { startLocation }),
     ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
     ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),

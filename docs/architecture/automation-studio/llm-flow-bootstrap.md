@@ -33,9 +33,15 @@ adding an executable binding or granting a positive judgement.
 
 How the product's own creation and improvement builds are authored is one runtime
 setting with one owner, `flows/authoring/model/authoring-mode/`: `FLUXIQ_AUTHORING_MODE` in the
-Core process environment, `project` (the default since 2026-10-16), `candidate`
-or `legacy`. Any other value refuses instead of falling back. Nothing else holds a
+Core process environment, `project` (the default since 2026-10-16), `candidate`,
+`legacy` or `answer-first`. Any other value refuses instead of falling back. Nothing else holds a
 mode literal of its own.
+
+- `answer-first` (opt-in, Answer First plan; t861) is one live exploration that must
+  reach the person's result. It has no trial, reset or dry run inside it and proposes
+  no adaptation: see [The answer-first attempt](#the-answer-first-attempt). An extend in this
+  mode builds as `candidate` until a saved Flow's later attempt lands. The chat reaches
+  it as `authoringMode: "configured"`, resolved in `flow-bootstrap-requests/generate.ts`.
 
 - `legacy` is the explicit opt-out for the evidence-guided draft behavior
   (Core `e9b7d691` through the parent of t330's merge `66a310cc`). The chat's
@@ -1001,6 +1007,80 @@ and their separate zero-model replays passed. Setting `FLUXIQ_AUTHORING_MODE=leg
 retains the prior product path; no environment file is rewritten by this change.
 Raw API omitted-mode behavior remains legacy for compatibility. Submission alone,
 a mode setting and an unverified stored draft still grant no outcome acceptance.
+
+## The answer-first attempt
+
+The user's rule (2026-11-03): a task ends only with its result, its budget gone, or a
+person's Stop. `framework/automation-service/service/answer-first/` is that path, and
+`runtime/answer-first/` holds what it reads. Its records are
+`@fluxiq/contracts/automation`'s (`task-attempts/`). Nothing in the path can write a
+`failed` status, because the contract has none.
+
+**One attempt, many rounds.** A round is one evidence loop with the dry run off, no
+trial port, no site reset and no project supervisor. Every tool call goes through the
+permission gate, then the act gate, then the row sink. A round that ends any way but a
+result is read by the keep-going table (`runtime/answer-first/keep-going/`), whose order
+is: a person's Stop, an achieved result, budget gone or an empty balance, provider silent
+(a backoff of 5 s doubling to 60 s, said in chat and costing nothing), and everything
+else, which starts a fresh round from the page as it stands with the same draft, act
+record and tried record. Every loop failure code is mapped, and a new one fails compile.
+A round has no time limit. Its limit on turns bounds a round and never a task.
+
+**Its result.** A `complete` decision carries `{ summary, answer? }` and never rows. Core
+builds a Flow-less summary from the rows it stored, its act record, the end view and the
+witnesses, and asks one judge call (`runtime/result-verification/flow-less/`). A yes is
+`confirmed` and checked once. A no or an unsure goes back to the model with its reason.
+The same evidence is refused without a second call. The ending goes through
+`checkAutomationStudioTaskAttemptResult`. The call answers `status: "answered"` however
+it ended, a budget-out included, so a task's ending is never a thrown failure. A
+pre-model refusal is a table entry (`runtime/answer-first/pre-model/`): resolved, or a
+normal `status: "setup_needed"` saying what to do, with no attempt started.
+
+**Rows** come only from a read's answer, through `recordBatchHandler`, under a session
+opened as a trial's is and marked `explorationAttempt`. A model never writes one.
+
+**One act record** (`runtime/answer-first/act-record/`) merges the project ledger, the
+build record, the trial ledger and a run's completed acts into the contract's shape. It
+is persisted per Flow (`attempt-acts.json`) and carried across rounds. An identical
+landed act is refused, a may-have-landed act only after a look, and a row is done by the
+digest of its own fields. The person may ask for an act several times in their own words
+(`runtime/answer-first/asked-count/`): digits, the number words two to twelve, "twice"
+and "thrice". A model's words never lift the rule. The first Flow run after an attempt
+carries the record (`service/answer-first/run-acts/`) and does not press what landed,
+saying so; a later run acts normally, because a person asking again means it. A first run
+that does not succeed gives its acts back.
+
+**Forward runs.** With `forwardRun` on the loop input, `core.run_flow` runs what the model
+wrote forward from the page it is on, on rows not yet done, with lasting steps really
+acting. It sends no reset. These calls are in the Flow's own wire form, which the state
+engine needs: against an exploration's own calls it answers too little to settle anything.
+
+**Loop detection** is wired through `attemptRecord`, `loopSignal` and `askedRepeats`.
+`change_approach` takes a fresh round; `ask_person` waits with `stuck_in_a_loop`, keeping
+the best result and the draft, then resumes.
+
+**Money.** One purse per attempt, with no creation record, at $5 by default
+(`runtime/answer-first/attempt-purse/`). It is held to an explicit Flow limit, a
+Lab-scoped ceiling and the resolver's total, and a judge call is kept back. A Flow limit of
+exactly $0.25 is read as the old default, not a choice. A refused call ends with the best
+result so far and the draft.
+
+**The clocks.** The build's nine minutes are taken off this path's rounds, so a wait of
+any length costs a round nothing. The one clock left on it is the judge's deadline, which
+cannot end an attempt: a check it cuts off is not judged, and the model is asked again.
+That deadline stops its call, so nothing is paid for with nobody to read it. A project
+build's 30 minutes, a recovery's and an exploration's 10 minutes and a child Flow's bound
+are other paths'.
+
+**The draft** is saved on every ending, best effort, as `candidate-draft.json`,
+`verification: "not_performed"`. It is not a finished Flow: the whole-run rule stands and
+moves to the next real attempt (plan, D4). Steps that could not assemble stay on the
+attempt row, and the attempt says so.
+
+**Disclosed limits.** An undeclared press with an effect is recorded as may-have-landed,
+is never refused for that, and stays out of a result's acts. An act's identity between a
+real read's rows and a run's For Each item is unproven until live runs. Fixtures and
+guidance use a library's loans, of no kind of site the Lab measures.
 
 ## Explicit candidate authoring
 

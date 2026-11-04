@@ -48,8 +48,10 @@ export type AutomationStudioTaskAttemptStatus = (typeof AUTOMATION_STUDIO_TASK_A
  *   (plan, D14's last step). It keeps the best result so far and the draft.
  * - `model_key_locked`: the person's model key cannot be opened where they are, so a
  *   model call waits, spending nothing, until they unlock it. One action, then it resumes.
+ * - `interrupted`: its Core restarted while it was working. Nobody chose that and its
+ *   budget is not gone, so it is not an ending: it waits to be carried on.
  */
-export const AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS = Object.freeze(["permission", "person_only_check", "stuck_in_a_loop", "model_key_locked"] as const);
+export const AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS = Object.freeze(["permission", "person_only_check", "stuck_in_a_loop", "model_key_locked", "interrupted"] as const);
 
 export type AutomationStudioTaskAttemptWaitReason = (typeof AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS)[number];
 

@@ -122,7 +122,7 @@ describe("what a waiting attempt waits for", () => {
   const { endedAtMs: _endedAtMs, status: _status, ...open } = VALID;
 
   it("takes each closed reason, and keeps it", () => {
-    expect(AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS).toEqual(["permission", "person_only_check", "stuck_in_a_loop", "model_key_locked"]);
+    expect(AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS).toEqual(["permission", "person_only_check", "stuck_in_a_loop", "model_key_locked", "interrupted"]);
     for (const waitingFor of AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS) {
       const attempt = { ...open, status: "waiting_for_person", waitingFor };
       expect(parseAutomationStudioTaskAttempt(attempt)).toEqual({ ok: true, attempt });

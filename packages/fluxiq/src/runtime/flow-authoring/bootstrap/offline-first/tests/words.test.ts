@@ -5,6 +5,9 @@ import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as WORDS } from "../index.t
 // Generic words only (trace plan D36, "model guidance never teaches to the
 // test"): never an id, a trace, or a realistic site's or task's words.
 
+/** The state engine's rule-only reasons (t864), spelled as plain strings for the same reason. */
+const AUTOMATION_STUDIO_OFFLINE_STATE_RULE_REASONS = ["state_changed_by_act", "other_position", "would_repeat_act", "after_unrecorded_act", "after_unrecorded_move", "other_row", "act_out_of_order", "wait_longer_than_recorded", "wait_shorter_than_recorded"];
+
 /** The matcher's gap reasons, spelled as plain strings: this module never imports the trace code. */
 const GAP_REASONS = ["missing_transition", "argument_mismatch", "ambiguous_context", "missing_artifact", "incomplete_capture", "incompatible_contract", "redacted_input", "snapshot_unavailable", "dynamic_content"];
 
@@ -20,6 +23,13 @@ describe("AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS", () => {
 
   it("says every live note ran on the site", () => {
     for (const said of [WORDS.passed, WORDS.inconclusive, WORDS.notTried, WORDS.gap(2, "argument_mismatch")]) expect(said).toMatch(/ran on the site/u);
+  });
+
+  it("words every reason the state engine can give, keyed by its plain code", () => {
+    for (const code of AUTOMATION_STUDIO_OFFLINE_STATE_RULE_REASONS) {
+      expect(WORDS.gap(3, code)).toContain(WORDS.reasons[code]!);
+      expect(WORDS.gap(3, code)).not.toContain(code);
+    }
   });
 
   it("words every matcher gap reason, keyed by its plain code", () => {

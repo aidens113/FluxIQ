@@ -308,8 +308,14 @@ export class ClientGatewayService {
   reconcileAction(commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
     return this.commands.reconcileAction(commandId);
   }
-  /** Finish pending action accounting and leased durable ports before program storage shuts down. */
-  close(): Promise<void> { return this.commands.close(); }
+  /** Finish pending action accounting, leased durable ports and the trusted clients' first read before program storage shuts down. */
+  async close(): Promise<void> {
+    try {
+      await this.commands.close();
+    } finally {
+      await this.trustedClients.settled();
+    }
+  }
 
   async sendPing(sessionId: string): Promise<void> {
     await this.commands.sendPing(sessionId);

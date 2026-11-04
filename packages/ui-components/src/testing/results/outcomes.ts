@@ -351,6 +351,11 @@ function stuckInALoop(): ChatTaskOutcome {
 }
 
 /** A person pressed Stop: nothing to show, and nothing claimed. */
+/** Its Core restarted while it was working. Not an ending: it carries on from what it kept. */
+function interruptedByRestart(): ChatTaskOutcome {
+  return waiting("interrupted", "restart", fakeNoLoopsCaught());
+}
+
 function stoppedByPerson(): ChatTaskOutcome {
   const ms = 44_000;
   return {
@@ -394,6 +399,7 @@ export function fakeTaskOutcomes() {
     waitingForPermission: waitingForPermission(),
     waitingForModelKey: waitingForModelKey(),
     stuckInALoop: stuckInALoop(),
+    interruptedByRestart: interruptedByRestart(),
     stoppedByPerson: stoppedByPerson()
   };
 }

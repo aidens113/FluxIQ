@@ -24,7 +24,7 @@ import type { AutomationStudioLlmLoopAskedRepeats, AutomationStudioLlmLoopAttemp
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
 import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-authoring/draft/scheduled-candidate/index.ts";
-import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
+import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioRunEnvironment } from "../../framework/automation-service/environment/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import { automationStudioLlmEvidenceLoopConfigurationIssue as issue, type AutomationStudioLlmEvidenceLoopConfigurationIssue } from "./configuration-issue/index.ts";
@@ -419,6 +419,13 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * between "each step worked when I took it" and "these steps work as a Flow".
    */
   dryRun?: false;
+  /**
+   * The forward run (t861, plan D2): the model does the first row by hand, writes the loop, and `core.run_flow` then
+   * runs it on the rows not yet done, from the page as it stands, never from the top. With it the tool is offered
+   * even with `dryRun: false`, says so, and a lasting step really acts on a row not done yet (`./node-tools/replay/forward.ts`).
+   * No reset, no re-anchor. Absent, the loop is what it always was.
+   */
+  forwardRun?: AutomationStudioFlowDraftReplayForward;
   /**
    * This loop authors a Flow that is finished only once a run of the whole
    * Flow from its start was judged to do what was asked (user, 2026-10-02,

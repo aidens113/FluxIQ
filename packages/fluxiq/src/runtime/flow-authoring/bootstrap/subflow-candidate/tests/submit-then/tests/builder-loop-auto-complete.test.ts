@@ -30,7 +30,7 @@ describe("a builder whose latest revision passed its test (t811)", () => {
     const last = run.decisions.at(-1) as { kind: string; result: unknown };
     expect(last).toEqual({ kind: "complete", result: { subflowKey: "find_listing", revision: 1, digest: run.outcome.proposal!.digest } });
     expect(automationStudioActivityDecisionReason.isCoreWritten(last)).toBe(true);
-    expect(automationStudioActivityDecisionReason.of(last)).toBe("Core finished this part of the task because the latest version passed its test, so nothing was left to decide.");
+    expect(automationStudioActivityDecisionReason.of(last)).toBe("FluxIQ finished this part of the task because the latest version passed its test, so nothing was left to decide.");
     expect(run.outcome.trial).toMatchObject({ verdict: "yes" });
     expect(run.outcome.ended).toBeUndefined();
   });

@@ -16,5 +16,7 @@ export function waitingWords(waitingFor: WaitingFor, hasResult: boolean): { head
       return { headline: "Waiting for your password", lead: `${modelKeyLockedWords("unknown")} It carries on from here once you do.` };
     case "stuck_in_a_loop":
       return { headline: "I keep getting stuck on this", lead: `I stopped spending to ask you. ${hasResult ? "Here is what I have so far." : "I have nothing to show yet."}` };
+    case "interrupted":
+      return { headline: "This was cut off", lead: `FluxIQ restarted while I was working on it. ${hasResult ? "Here is what I have so far." : "I have nothing to show yet."} Press Keep going to carry on.` };
   }
 }

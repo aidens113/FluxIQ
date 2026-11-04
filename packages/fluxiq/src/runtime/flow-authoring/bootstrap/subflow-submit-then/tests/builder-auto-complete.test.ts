@@ -24,7 +24,7 @@ describe("a builder's decide answered by Core (t811)", () => {
     const made = await wrapped(request(2, true));
     expect(made).toEqual({ kind: "complete", result: receipt });
     expect(automationStudioActivityDecisionReason.isCoreWritten(made)).toBe(true);
-    const line = "Core finished this part of the task because the latest version passed its test, so nothing was left to decide.";
+    const line = "FluxIQ finished this part of the task because the latest version passed its test, so nothing was left to decide.";
     expect(automationStudioActivityDecisionReason.of(made)).toBe(line);
     // The chat says it whole: the observer screens a decision's reason this way (`../../../activity/observer.ts`).
     expect(automationStudioActivityReasonText(line, undefined, { decision: true })).toBe(line);

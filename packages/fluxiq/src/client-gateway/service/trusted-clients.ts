@@ -54,6 +54,15 @@ export class ClientGatewayTrustedClientRegistry {
     if (this.loadError) throw this.loadError;
   }
 
+  /**
+   * Resolves once the load this registry started when it was made has ended, however it ended.
+   * A close waits for it: that read holds the database file open, and whoever closed this
+   * instance may remove the file next (t867).
+   */
+  async settled(): Promise<void> {
+    await this.loaded;
+  }
+
   hashToken(token: string): string {
     return createHash("sha256").update(token, "utf8").digest("hex");
   }
