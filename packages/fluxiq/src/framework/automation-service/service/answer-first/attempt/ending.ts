@@ -1,7 +1,8 @@
 // Every ending, the same way, a budget-out and a person's Stop among them (design, "The shape"):
 // the last look at the site, the act record flushed so the first real run sees every act, the
 // session ended and its rows processed and read back, the draft saved best-effort, the attempt
-// and its result checked against each other, and both stored.
+// and its result checked against each other, both stored, and then what the task keeps of it
+// (`./remember.ts`).
 //
 // **Nothing past the rounds may lose the result.** Each step here is either one that cannot
 // throw or is held so a failure says so and goes on: the person's answer is what this returns.
@@ -14,6 +15,8 @@ import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
 import { automationStudioAnswerFirstSaveDraft } from "./draft-save.ts";
 import { automationStudioAnswerFirstAttemptAs, automationStudioAnswerFirstResultAs } from "./keep.ts";
+import { automationStudioAnswerFirstPathAtEnding } from "./path.ts";
+import { automationStudioAnswerFirstRemember } from "./remember.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -25,6 +28,7 @@ const SESSION_END = { achieved: "succeeded", budget_out: "failed", stopped_by_pe
 
 export async function automationStudioAnswerFirstFinish(run: AutomationStudioAnswerFirstAttemptRun, ending: AutomationStudioAnswerFirstRoundsEnding): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
   const { input } = run;
+  run.path = automationStudioAnswerFirstPathAtEnding(run, ending);
   await run.witnesses.atEnd();
   const flushed = await flushedRecord(run);
   const sessionEnded = await endedSession(run, ending);
@@ -36,7 +40,9 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: "person_only_check" as const } : { status: ending };
   const checked = automationStudioAnswerFirstEnding({ attempt: automationStudioAnswerFirstAttemptAs(run, status), result: automationStudioAnswerFirstResultAs(run, rows, missing) });
   const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined);
-  if (!flushed.ok || !sessionEnded.ok || !saved.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I have the result, but part of what goes with it could not be written down.");
+  const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;
+  const remembered = await automationStudioAnswerFirstRemember(run, ending, { label: checked.result?.label ?? "unverified", candidateId, spend: { calls: checked.attempt.spend.calls, usd: checked.attempt.spend.usd }, atMs: checked.attempt.endedAtMs ?? Date.now() });
+  if (!flushed.ok || !sessionEnded.ok || !saved.ok || !remembered.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I have the result, but part of what goes with it could not be written down.");
   return {
     projectId: input.projectId,
     flowId: input.flowId,
@@ -76,8 +82,8 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
       ...(checked.result ? { result: checked.result } : {}),
       tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()),
       ...(candidateId === undefined ? {} : { candidateId }),
-      // The steps stay where nothing else holds them, and for an attempt that can still be carried on.
-      ...(candidateId === undefined || checked.attempt.status !== "achieved" ? { steps: run.steps } : {})
+      // Always: they are what the next attempt seeds from, and what a carry-on goes on from.
+      steps: run.steps
     });
     return { ok: true };
   } catch (error) {

@@ -2,11 +2,14 @@
 // rounds and at every wait, so a process that dies leaves the best result so far and the draft
 // rather than nothing, and written at the ending (`./ending.ts`) through the contract's own check.
 
-import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioTaskAttempt, type AutomationStudioTaskResult, type AutomationStudioTaskResultRows } from "@fluxiq/contracts/automation";
+import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioTaskAttempt, type AutomationStudioTaskAttemptPath, type AutomationStudioTaskResult, type AutomationStudioTaskResultRows, type AutomationStudioTaskResultSource } from "@fluxiq/contracts/automation";
 import { automationStudioAnswerFirstResult } from "../../../../../runtime/answer-first/result/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
+
+/** Where a result came from, by how the attempt went: the contract's word for each path. */
+const SOURCE_OF_PATH: Readonly<Record<AutomationStudioTaskAttemptPath, AutomationStudioTaskResultSource>> = { explore: "exploration", run_flow: "flow", run_flow_then_repair: "both", run_flow_then_explore: "both" };
 
 /** The attempt as it stands, by status. */
 export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswerFirstAttemptRun, status: { status: "working" | "achieved" | "budget_out" | "stopped_by_person" } | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "stuck_in_a_loop" }): AutomationStudioTaskAttempt {
@@ -21,7 +24,7 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
     projectId: run.input.projectId,
     flowId: run.input.flowId,
     runId: run.runId,
-    path: "explore",
+    path: run.path,
     ...status,
     spend: {
       calls: purse.spentCalls(),
@@ -42,7 +45,7 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
 export function automationStudioAnswerFirstResultAs(run: AutomationStudioAnswerFirstAttemptRun, rows: AutomationStudioAnswerFirstRowsSummary, missingWhat?: string): AutomationStudioTaskResult {
   const { state } = run.completion;
   const label = state.achieved ? "confirmed" : state.refused?.verdict === "no" ? "refuted" : "unverified";
-  return automationStudioAnswerFirstResult({
+  const result = automationStudioAnswerFirstResult({
     attemptId: run.attemptId,
     label,
     timesChecked: state.timesChecked,
@@ -52,6 +55,7 @@ export function automationStudioAnswerFirstResultAs(run: AutomationStudioAnswerF
     ...(state.checkedWhat !== undefined ? { checkedWhat: state.checkedWhat } : {}),
     ...(missingWhat !== undefined ? { missingWhat } : {})
   });
+  return { ...result, source: SOURCE_OF_PATH[run.path] };
 }
 
 function rowsOf(run: AutomationStudioAnswerFirstAttemptRun, rows: AutomationStudioAnswerFirstRowsSummary): AutomationStudioTaskResultRows | undefined {

@@ -2,6 +2,10 @@
 // run from the generation path once the common path has made its binding, provider and
 // instruction authority. `./rounds.ts` drives it, and `./ending.ts` ends it.
 //
+// A later attempt at the same task starts from what the task kept (`./opening.ts`): its saved Flow
+// runs live and judged first (`./flow-stage.ts`), and the rounds carry on to the result if that was
+// not it. A task with nothing saved goes straight to the rounds, as the first attempt always did.
+//
 // **Its own gate.** The common path's permission gate wraps the domain directly, and this one must
 // wrap the act gate and the row sink too (permission gate -> act gate -> row sink), with no clock
 // on its question. It is made here from the same input, as a project build's briefs make theirs.
@@ -13,7 +17,7 @@
 // end does. Before that a read-back answers the rows as they were collected, which is what a
 // completion is judged on.
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
@@ -24,20 +28,25 @@ import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS } from "../../../../../runt
 import { automationStudioFlowBootstrapActionPermissions, flowBootstrapPhaseFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioFlowLessJudge, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step-log/index.ts";
-import { AutomationStudioAnswerFirstAttemptsUnreadable, automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
+import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
 import { automationStudioEndViewLook } from "../../end-view/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstRowSink, automationStudioAnswerFirstSession } from "../rows/index.ts";
 import { automationStudioAnswerFirstRunActStoreOf } from "../run-acts/index.ts";
 import { automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
+import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstCallChain } from "./call-chain.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
 import { automationStudioAnswerFirstFinish } from "./ending.ts";
+import { automationStudioAnswerFirstFlowStage } from "./flow-stage.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
+import { automationStudioAnswerFirstRecordOpening } from "./opening-row.ts";
+import { automationStudioAnswerFirstOpening } from "./opening.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "./person-wait.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "./ports.ts";
-import { automationStudioAnswerFirstRounds } from "./rounds.ts";
+import { automationStudioAnswerFirstRoundNote } from "./round-note.ts";
+import { automationStudioAnswerFirstRounds, type AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 import { automationStudioAnswerFirstHoldAnswer } from "./stop-answer.ts";
@@ -47,7 +56,7 @@ export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStu
   const run = await opened(input);
   automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
   // The common path's purse is opened as a repair's, whose part it would write: this is an attempt's creation.
-  const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => automationStudioAnswerFirstRounds(run));
+  const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => stagedThenRounds(run));
   if (ending === "setup_needed") {
     await endedUntried(run);
     throw run.setupRefusal;
@@ -57,8 +66,15 @@ export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStu
   return answer;
 }
 
+/** The saved Flow's run where there is one, then the rounds if that did not end it. */
+async function stagedThenRounds(run: AutomationStudioAnswerFirstAttemptRun): Promise<AutomationStudioAnswerFirstRoundsEnding | "setup_needed"> {
+  const ended = await automationStudioAnswerFirstFlowStage(run);
+  return ended ?? await automationStudioAnswerFirstRounds(run, automationStudioAnswerFirstRoundNote(run, undefined));
+}
+
 /** Nothing was tried, so nothing is kept of it but the session it opened, which says so. A session not written costs that record, and the person is still told what to do. */
 async function endedUntried(run: AutomationStudioAnswerFirstAttemptRun): Promise<void> {
+  await automationStudioAnswerFirstBestEffort(() => run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, attempts: current.attempts.filter((each) => each.attemptId !== run.attemptId) })));
   try {
     await run.session.end("cancelled");
   } catch {
@@ -72,10 +88,11 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
   const runId = `explore.${randomUUID()}`;
   const store = automationStudioAnswerFirstAttemptStoreOf(input.owner, stores);
   const acts = automationStudioAnswerFirstRunActStoreOf(input.owner, stores);
+  const opening = await automationStudioAnswerFirstOpening(input, { store, acts });
   // The instruction is the person's: Core refuses to save or count one written from a command's argument (`../../flow-bootstrap-commands/save-goal.ts`, `../../instruction-led/task.ts`).
   const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
   // The same answer as the loop's `askedRepeats` (`./round.ts`), so the record and the detector agree on how many of one act the person asked for.
-  const record = new AutomationStudioAttemptActRecord({ persist: (data) => acts.save(projectId, flowId, data), asked: () => asked(run.claim) });
+  const record = new AutomationStudioAttemptActRecord({ ...(opening.seed ? { seed: opening.seed } : {}), persist: (data) => acts.save(projectId, flowId, data), asked: () => asked(run.claim) });
   const tried = automationStudioLlmLoopAttemptRecord();
   const session = await automationStudioAnswerFirstSession({ openSession: stores.openSession, writeSession: stores.writeSession, runId, attemptId });
   let sessionEnded = false;
@@ -151,13 +168,16 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
     executeTool: cancellation.tool(chain)
   });
   const run: AutomationStudioAnswerFirstAttemptRun = {
-    input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store,
-    taskId: `task.${createHash("sha256").update(input.instructionText).digest("hex").slice(0, 40)}`,
-    attemptId, ordinal: await nextOrdinal(store, projectId, flowId), runId, startedAtMs: Date.now(),
+    input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store, memory: opening.memory,
+    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: opening.steps, path: "explore", forwardReached: 0,
+    attemptId, ordinal: opening.ordinal, runId, startedAtMs: Date.now(),
     record, tried, asked, sink, session: ending, witnesses, completion, permissions, options: input.harnessOptions,
-    steps: [], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    steps: [...opening.steps], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     liveSteps: 0, arrived: false, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
   };
+  // The Flow holds one record, and from here it reads as this attempt's: without this, one that presses nothing would leave an earlier attempt's acts to be read as its own.
+  if (opening.seed || opening.actsHeldHere) await automationStudioAnswerFirstBestEffort(() => acts.save(projectId, flowId, record.data()));
+  await automationStudioAnswerFirstRecordOpening(run);
   return run;
 }
 
@@ -168,15 +188,5 @@ async function automationStudioAnswerFirstEndViewRead(look: () => Promise<Automa
     return view ? { view } : {};
   } catch (error) {
     return { errorName: error instanceof Error ? error.name : "unknown" };
-  }
-}
-
-/** Which attempt at this Flow this is. A file nobody can read holds no count anyone can use, and must not stop the task. */
-async function nextOrdinal(store: AutomationStudioAnswerFirstAttemptRun["store"], projectId: string, flowId: string): Promise<number> {
-  try {
-    return (await store.list(projectId, flowId)).length + 1;
-  } catch (error) {
-    if (error instanceof AutomationStudioAnswerFirstAttemptsUnreadable) return 1;
-    throw error;
   }
 }
