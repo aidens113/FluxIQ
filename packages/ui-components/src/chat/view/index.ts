@@ -9,8 +9,6 @@ export { createDoneAgainView, type DoneAgainView } from "./done-again-view.ts";
 export { createEarlierTurns, type EarlierTurns } from "./earlier-turns.ts";
 export { createEmptyState, type EmptyState, type EmptyStateHooks } from "./empty-state.ts";
 export { emptyStateModel, MODEL_KEY_LINE, ONBOARDING_CONCEPT, type EmptyStart, type EmptyStateModel } from "./empty-state-model.ts";
-export { createLiveLine, type LiveLine } from "./live-line.ts";
-export { liveLineModel, type LiveLineModel } from "./live-line-model.ts";
 export { createMessageView, type MessageOptions, type MessageView } from "./message-view.ts";
 export { createNoticeLine, type NoticeLine } from "./notice-line.ts";
 export { createPendingBanner, type PendingBanner } from "./pending-banner.ts";

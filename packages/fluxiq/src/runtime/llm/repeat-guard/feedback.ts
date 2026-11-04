@@ -6,6 +6,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { automationStudioLlmEvidenceCandidateRepeatInstruction } from "./candidate-feedback.ts";
 import { automationStudioLlmEvidenceRepeatCoveredRefused } from "./covered-refused.ts";
+import { automationStudioLlmLoopRefusalInstruction } from "./loop-detection/feedback.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
 import { automationStudioLlmEvidenceRepeatPermissionRefused } from "./permission-refused.ts";
 
@@ -128,6 +129,10 @@ function undrafted(instruction: string): string {
   return UNDRAFTED_WORDS.reduce((words, [said, instead]) => words.split(said).join(instead), instruction);
 }
 
+/** Whether a refusal is the loop detector's rather than this guard's own (`./loop-detection/`). */
+const refusedOnALoop = (earlier: AutomationStudioLlmEvidenceRepeatedOutcome): earlier is AutomationStudioLlmEvidenceRepeatedOutcome & { outcome: "near_repeat" | "cycle" | "no_progress" | "same_fix" | "same_act" } =>
+  earlier.outcome === "near_repeat" || earlier.outcome === "cycle" || earlier.outcome === "no_progress" || earlier.outcome === "same_fix" || earlier.outcome === "same_act";
+
 /** The note shown for one refused repeat. */
 export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   toolId: string;
@@ -140,7 +145,8 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   /** The loop drafts nothing (`draft: false`) and is no candidate: no draft to amend, and nothing tested or judged when its round ends (`UNDRAFTED_WORDS`). */
   undrafted?: boolean | undefined;
 }): JsonObject {
-  const candidate = input.candidate === true
+  const loop = refusedOnALoop(input.earlier) ? automationStudioLlmLoopRefusalInstruction({ pattern: input.earlier.outcome, repeats: input.earlier.repeats, toolIds: input.earlier.toolIds }, input.candidate === true || input.undrafted === true ? "undrafted" : "drafted") : undefined;
+  const candidate = input.candidate === true && !loop
     ? automationStudioLlmEvidenceCandidateRepeatInstruction({ toolId: input.toolId, earlier: input.earlier, inARow: input.inARow, maxInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW })
     : undefined;
   return {
@@ -159,6 +165,6 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
     refusedInARow: input.inARow,
     maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
     // A loop that drafts nothing has no draft to change first, though its tools may be keyed on what they test or dispatch (t849).
-    instruction: candidate ? candidate.instruction : input.undrafted === true ? undrafted(instructionFor(input.earlier.outcome === "same_draft" ? { ...input.earlier, outcome: "changed_nothing" } : input.earlier, input.rerunStep)) : instructionFor(input.earlier, input.rerunStep)
+    instruction: loop ?? (candidate ? candidate.instruction : input.undrafted === true ? undrafted(instructionFor(input.earlier.outcome === "same_draft" ? { ...input.earlier, outcome: "changed_nothing" } : input.earlier, input.rerunStep)) : instructionFor(input.earlier, input.rerunStep))
   };
 }

@@ -7,7 +7,7 @@ import {
   parseAutomationStudioTaskAttempt,
   parseAutomationStudioTaskResult
 } from "../../../../../contracts/src/task-attempts/index.ts";
-import type { ChatTaskOutcome } from "../../../chat/ports/index.ts";
+import type { ChatTaskAttempt, ChatTaskOutcome } from "../../../chat/ports/index.ts";
 import { createFakeChatResultsPort, fakeTaskOutcomes } from "../index.ts";
 
 const QUERY = { projectId: "project-1" };
@@ -24,7 +24,7 @@ describe("fakeTaskOutcomes", () => {
 
   it("tell the truth between records: they pass the contract's check, and only a confirmed result is achieved", () => {
     for (const [name, outcome] of Object.entries(fakeTaskOutcomes())) {
-      expect(checkAutomationStudioTaskAttemptResult(outcome.attempt, outcome.result), name).toEqual({ ok: true });
+      expect(checkAutomationStudioTaskAttemptResult(outcome.attempt as ChatTaskAttempt, outcome.result), name).toEqual({ ok: true });
       if (outcome.attempt.status === "achieved") expect(outcome.result?.label, name).toBe("confirmed");
     }
   });
@@ -84,7 +84,7 @@ describe("createFakeChatResultsPort", () => {
     const read = await port.readAttempt({ ...QUERY, attemptId: again.value.attemptId });
     if (!read.ok) throw new Error("expected to read it");
     expect(read.value.attempt).toMatchObject({ taskId: "task-deals", ordinal: 2, path: "run_flow", flowId: "flow-deals", status: "working", spend: { usd: 0, calls: 0 } });
-    expect(parseAutomationStudioTaskAttempt(read.value.attempt).ok).toBe(true);
+    expect(parseAutomationStudioTaskAttempt(read.value.attempt as ChatTaskAttempt).ok).toBe(true);
     const noFlow = await port.runAgain({ ...QUERY, taskId: "task-hours" });
     const noFlowRead = noFlow.ok ? await port.readAttempt({ ...QUERY, attemptId: noFlow.value.attemptId }) : noFlow;
     expect(noFlowRead.ok && noFlowRead.value.attempt.path).toBe("explore");
@@ -103,8 +103,8 @@ describe("createFakeChatResultsPort", () => {
     expect(read.value.attempt.spend).toEqual(budgetOutPartial.attempt.spend);
     expect(read.value.attempt.endedAtMs).toBeUndefined();
     expect(read.value.result).toEqual(budgetOutPartial.result);
-    expect(parseAutomationStudioTaskAttempt(read.value.attempt).ok).toBe(true);
-    expect(checkAutomationStudioTaskAttemptResult(read.value.attempt, read.value.result)).toEqual({ ok: true });
+    expect(parseAutomationStudioTaskAttempt(read.value.attempt as ChatTaskAttempt).ok).toBe(true);
+    expect(checkAutomationStudioTaskAttemptResult(read.value.attempt as ChatTaskAttempt, read.value.result)).toEqual({ ok: true });
     expect(budgetOutPartial.attempt.status).toBe("budget_out");
   });
 

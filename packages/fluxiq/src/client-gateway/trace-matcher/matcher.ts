@@ -54,18 +54,15 @@
 // Commands are handled one at a time in the order the gateway sent them.
 
 import type { ClientGatewayClientHello, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
-import type { ClientGatewayTraceEvent } from "../trace/index.ts";
-import { readClientGatewayTraceInboundText } from "../trace-replay/index.ts";
-import { translateClientGatewayTraceCommandIds } from "./command-id-translation.ts";
 import { clientGatewayTraceGapAnswer } from "./gap-answer.ts";
 import { CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS } from "./gap-reasons.ts";
 import { matchClientGatewayTraceOperation, readClientGatewayTraceOperation } from "./operation/index.ts";
+import { CLIENT_GATEWAY_TRACE_OPENING as OPENING, ClientGatewayTraceRecordedFeed, type ClientGatewayTraceDeliveredAfter as DeliveredAfter } from "./recorded-feed.ts";
 import { clientGatewayTraceReevaluationRequest } from "./reevaluation-request.ts";
 import { admitClientGatewayTraceForMatching } from "./trace-admission.ts";
 import type {
   ClientGatewayTraceMatchedOperation,
   ClientGatewayTraceMatcherAdmission,
-  ClientGatewayTraceMatcherDelivery,
   ClientGatewayTraceMatcherGap,
   ClientGatewayTraceMatcherGapReason,
   ClientGatewayTraceMatcherInput,
@@ -77,30 +74,14 @@ import type {
 
 type JsonRecord = { readonly [key: string]: unknown };
 
-/** The matched command a delivery came after: the one whose recorded segment holds it. */
-type DeliveredAfter = Pick<ClientGatewayTraceMatcherGap, "ordinal" | "commandId" | "actionType">;
-
-/** What the trace delivered before its first operation came after: no command. */
-const OPENING: DeliveredAfter = Object.freeze({ ordinal: 0, commandId: "", actionType: "" });
-
-/** A recorded reconcile answer held for its question, with the command its segment came after. */
-type HeldDelivery = { readonly delivery: ClientGatewayTraceMatcherDelivery; readonly after: DeliveredAfter };
-
 export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
   private readonly input: ClientGatewayTraceMatcherInput;
   private readonly admission: ClientGatewayTraceMatcherAdmission;
-  /** Each matched operation's recorded command id to the id the trial's gateway gave it. */
-  private readonly ids = new Map<string, string>();
-  /** Command ids the trial's gateway asked a reconcile question about. */
-  private readonly asked = new Set<string>();
-  /** Recorded reconcile answers waiting for their question, by the trial's command id. */
-  private readonly held = new Map<string, HeldDelivery[]>();
+  /** How recorded events reach the trial's gateway. */
+  private readonly feed: ClientGatewayTraceRecordedFeed;
   private readonly matched: ClientGatewayTraceMatchedOperation[] = [];
   private readonly gaps: ClientGatewayTraceMatcherGap[] = [];
-  private readonly delivered: number[] = [];
-  private readonly refusedDeliveries: string[] = [];
   private readonly unanswered: string[] = [];
-  private sessionId: string | undefined;
   private queue: Promise<void> = Promise.resolve();
   private released: Promise<void> = Promise.resolve();
   private cursor = 0;
@@ -112,6 +93,11 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
   private constructor(input: ClientGatewayTraceMatcherInput, admission: ClientGatewayTraceMatcherAdmission) {
     this.input = input;
     this.admission = admission;
+    this.feed = new ClientGatewayTraceRecordedFeed({
+      store: input.store, traceId: input.traceId, gateway: input.gateway, clock: input.clock,
+      manifest: () => admission.manifest,
+      onFailedDelivery: (after, reason, sequence) => this.failedDelivery(after, reason, sequence)
+    });
   }
 
   /** Reads and judges the trace (`./trace-admission.ts`); a refused trace still yields a matcher, which answers every command with its gap. */
@@ -131,14 +117,12 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
   attach(scopeId: string, supplied?: ClientGatewayClientHello): ClientGatewaySession {
     const chosen = this.sessionView(supplied);
     if (chosen === null) throw new Error(`trace_matcher.no_session_view: the trace ${this.input.traceId} recorded no session view (no session.claimed) and none was supplied`);
-    const session = this.input.gateway.attachScopedSession({ scopeId, socket: this, hello: chosen.view });
-    this.sessionId = session.sessionId;
-    return session;
+    return this.feed.attach(scopeId, this, chosen.view);
   }
 
   /** Feeds what the trace delivered before its first operation, timed from the trace's start. Resolves once fed. */
   deliverOpening(): Promise<void> {
-    this.enqueue(() => this.deliver(this.admission.deliveries.opening, 0, OPENING), () => OPENING);
+    this.enqueue(() => this.feed.deliver(this.admission.deliveries.opening, 0, OPENING), () => OPENING);
     return this.settled();
   }
 
@@ -171,8 +155,8 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
       recordedOperations: this.admission.operations.length,
       matchedOperations: Object.freeze([...this.matched]),
       gaps: Object.freeze([...this.gaps]),
-      deliveredSequences: Object.freeze([...this.delivered]),
-      refusedDeliveries: Object.freeze([...this.refusedDeliveries]),
+      deliveredSequences: Object.freeze([...this.feed.delivered]),
+      refusedDeliveries: Object.freeze([...this.feed.refusedDeliveries]),
       unansweredMessageTypes: Object.freeze([...this.unanswered])
     });
   }
@@ -190,7 +174,7 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
     try {
       await work();
     } catch (error) {
-      this.refusedDeliveries.push(`the matcher failed: ${messageOf(error)}`);
+      this.feed.refusedDeliveries.push(`the matcher failed: ${messageOf(error)}`);
       this.failedDelivery(where(), "incomplete_capture", null);
     }
   }
@@ -210,12 +194,12 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
       return this.answerGap({ ...gap, reason: match.reason, cause: match.cause, fields: match.fields, recordedSequence: match.recordedSequence });
     }
     const segment = this.admission.deliveries.segments[this.cursor] ?? [];
-    const unreadable = this.unreadable(segment);
+    const unreadable = this.feed.unreadable(segment);
     if (unreadable !== undefined) return this.answerGap({ ...gap, reason: unreadable, cause: "unreadable_answer", fields: [], recordedSequence: match.recorded.sequence });
     this.cursor += 1;
-    this.ids.set(match.recorded.commandId, commandId);
+    this.feed.translate(match.recorded.commandId, commandId);
     this.matched.push({ ...gap, recordedCommandId: match.recorded.commandId, recordedSequence: match.recorded.sequence, answeredFrom: "recorded", fields: [] });
-    await this.deliver(segment, match.recorded.logicalMs, gap);
+    await this.feed.deliver(segment, match.recorded.logicalMs, gap);
   }
 
   /**
@@ -233,7 +217,7 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
     const manifest = this.admission.manifest;
     if (reevaluator === undefined || manifest === null || match.cause !== "mismatch" || match.reason !== "argument_mismatch" || recorded === undefined || recorded.actionType !== operation.actionType) return false;
     const answerFailure = async (reason: string): Promise<true> => {
-      this.refusedDeliveries.push(`the reevaluator failed: ${reason}`);
+      this.feed.refusedDeliveries.push(`the reevaluator failed: ${reason}`);
       await this.answerGap({ ...gap, reason: "incomplete_capture", cause: "reevaluation", fields: match.fields, recordedSequence: recorded.sequence });
       return true;
     };
@@ -256,21 +240,11 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
     }
     if (answer.status !== "answered" || !isRecord(answer.result)) return answerFailure("it answered neither a result object, a gap nor a decline");
     this.cursor += 1;
-    this.ids.set(recorded.commandId, gap.commandId);
+    this.feed.translate(recorded.commandId, gap.commandId);
     this.matched.push({ ...gap, recordedCommandId: recorded.commandId, recordedSequence: recorded.sequence, answeredFrom: "reevaluated", fields: match.fields });
     const replacement = JSON.stringify({ ...ask.envelope, payload: { ...answer.result, commandId: recorded.commandId } });
-    await this.deliver(segment, recorded.logicalMs, gap, new Map([[ask.replaced.event.sequence, replacement]]));
+    await this.feed.deliver(segment, recorded.logicalMs, gap, new Map([[ask.replaced.event.sequence, replacement]]));
     return true;
-  }
-
-  /** The gap that makes a segment unusable: an input the trace withheld or cannot write back. */
-  private unreadable(segment: readonly ClientGatewayTraceMatcherDelivery[]): ClientGatewayTraceMatcherGapReason | undefined {
-    for (const delivery of segment) {
-      if (delivery.kind !== "input") continue;
-      const reason = unreadableReason(delivery.event);
-      if (reason !== undefined) return reason;
-    }
-    return undefined;
   }
 
   /** A recorded event that could not be read or fed: a gap after the command it came after; every later command is answered as after a gap. */
@@ -282,89 +256,15 @@ export class ClientGatewayTraceMatcher implements ClientGatewaySocket {
   private async answerGap(gap: ClientGatewayTraceMatcherGap): Promise<void> {
     this.gaps.push(gap);
     this.diverged = true;
-    await this.receive(clientGatewayTraceGapAnswer(gap.commandId, gap.reason), `the gap answer to ${gap.commandId}`);
-  }
-
-  /**
-   * Feeds `segment` (recorded after `after`) in recorded order, moving the
-   * clock to each event's logical time measured from `fromMs`; an input whose
-   * sequence `replaced` names is fed with that text in place of its recorded one.
-   */
-  private async deliver(segment: readonly ClientGatewayTraceMatcherDelivery[], fromMs: number, after: DeliveredAfter, replaced?: ReadonlyMap<number, string>): Promise<void> {
-    let at = fromMs;
-    for (const delivery of segment) {
-      if (delivery.atMs > at) {
-        await this.input.clock.advance(delivery.atMs - at);
-        at = delivery.atMs;
-      }
-      if (delivery.kind === "artifact") await this.feedArtifact(delivery, after);
-      else if (delivery.kind === "input") await this.feedInput(delivery, after, replaced?.get(delivery.event.sequence));
-    }
-  }
-
-  /** Feeds a recorded input, or `replacement` in its place (a reevaluated result), with recorded command ids translated. */
-  private async feedInput(delivery: ClientGatewayTraceMatcherDelivery, after: DeliveredAfter, replacement?: string): Promise<void> {
-    const sequence = delivery.event.sequence;
-    const read = replacement === undefined ? readClientGatewayTraceInboundText(delivery.event) : { text: replacement };
-    if ("gap" in read) return this.failedDelivery(after, unreadableReason(delivery.event) ?? "incomplete_capture", sequence);
-    const text = translateClientGatewayTraceCommandIds(read.text, this.ids);
-    const question = delivery.event.messageType === "client.reconcile_result" ? reconciledCommandId(text) : undefined;
-    if (question !== undefined && !this.asked.has(question)) {
-      this.held.set(question, [...(this.held.get(question) ?? []), { delivery, after }]);
-      return;
-    }
-    if (this.sessionId === undefined) return this.failedDelivery(after, "incomplete_capture", sequence);
-    this.delivered.push(sequence);
-    await this.receive(text, `sequence ${sequence}`);
-  }
-
-  /** Feeds a recorded artifact; one the store does not give back, or whose bytes the gateway refuses, is a `missing_artifact` gap. */
-  private async feedArtifact(delivery: ClientGatewayTraceMatcherDelivery, after: DeliveredAfter): Promise<void> {
-    const sequence = delivery.event.sequence;
-    const artifactId = delivery.event.artifactIds[0];
-    const entry = this.admission.manifest?.artifacts.find((artifact) => artifact.id === artifactId);
-    const bytes = entry === undefined ? undefined : await this.input.store.readArtifact(this.input.traceId, entry.id);
-    if (entry === undefined || bytes === undefined) return this.failedDelivery(after, "missing_artifact", sequence);
-    if (this.sessionId === undefined) return this.failedDelivery(after, "incomplete_capture", sequence);
-    const intake = this.input.gateway.receiveTraceArtifact(this.sessionId, { sha256: entry.sha256, mediaType: entry.mediaType, bytes });
-    if (intake.status !== "accepted") return this.failedDelivery(after, "missing_artifact", sequence);
-    this.delivered.push(sequence);
+    await this.feed.receive(clientGatewayTraceGapAnswer(gap.commandId, gap.reason), `the gap answer to ${gap.commandId}`);
   }
 
   /** The trial's gateway asked about `commandId`: its held recorded answer is fed now, outside the command queue, which may be waiting on the clock. */
   private release(commandId: string): void {
-    this.asked.add(commandId);
-    const held = this.held.get(commandId) ?? [];
-    this.held.delete(commandId);
-    for (const entry of held) {
-      this.released = this.released.then(() => this.guarded(() => this.feedInput(entry.delivery, entry.after), () => entry.after));
+    for (const { feed, after } of this.feed.release(commandId)) {
+      this.released = this.released.then(() => this.guarded(feed, () => after));
     }
   }
-
-  private async receive(text: string, what: string): Promise<void> {
-    if (this.sessionId === undefined) {
-      this.refusedDeliveries.push(`${what}: the matcher's session is not attached`);
-      return;
-    }
-    try {
-      await this.input.gateway.receiveRaw(this.sessionId, text);
-    } catch (error) {
-      this.refusedDeliveries.push(`${what}: the gateway refused it: ${messageOf(error)}`);
-    }
-  }
-}
-
-/** Why a recorded input cannot be written back: withheld at capture, or not captured readably; `undefined` when it can. */
-function unreadableReason(event: ClientGatewayTraceEvent): ClientGatewayTraceMatcherGapReason | undefined {
-  const read = readClientGatewayTraceInboundText(event);
-  if (!("gap" in read)) return undefined;
-  return event.redactions.length > 0 ? "redacted_input" : "incomplete_capture";
-}
-
-/** The command a reconcile answer's text names, read only to hold it for its question; the text itself is fed unchanged. */
-function reconciledCommandId(text: string): string | undefined {
-  const payload = parseRecord(text)?.payload;
-  return isRecord(payload) && typeof payload.commandId === "string" ? payload.commandId : undefined;
 }
 
 function parseRecord(text: string): JsonRecord | undefined {

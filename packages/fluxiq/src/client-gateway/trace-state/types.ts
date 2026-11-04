@@ -44,7 +44,22 @@ export type ClientGatewayTraceStateNormalisation = {
  *   sibling keys and different canonical keys act on two rows of one list;
  * - `waitMs`: the wait the command gave, when it names one;
  * - `isOneTimeLayerAct`: whether a recorded act closed a layer in front of the page,
- *   judged from the read before it. Such an act may be gone the next time (rule 6).
+ *   judged from the read before it. Such an act may be gone the next time (rule 6);
+ * - `handleScope`: a fresh reader of one run's calls in order, which rewrites what a run
+ *   mints for itself (which tab, which frame, the instant it reads dates at) to where it
+ *   stands in that run, so two runs' calls compare and a genuinely new handle still
+ *   differs. `clock` is the time the recording spans: an instant inside it is the
+ *   recording's own, and one outside it stays in the key. With no clock every instant
+ *   is the run's own. Declared among `normalisations`. Calls go through it before
+ *   `canonicalKey`;
+ * - `unansweredCall`: what a read or a page move the recording cannot answer is told so
+ *   the run can go on and report what else it cannot answer, or `null` when it cannot go
+ *   on. It says nothing was read and nothing moved. It is never recorded data, and any
+ *   such answer leaves the verdict `inconclusive`. An act has none: a run never hears
+ *   that an act landed when it did not;
+ * - `computeRead`: a read the recording holds no answer for, computed from recorded
+ *   reads of the state it stands in, or `null` when the page would be needed. It is also
+ *   asked when `recordedAnswerFits` says a same-input answer does not stand as it is.
  */
 export type ClientGatewayTraceStateDomain = {
   readonly normalisations: readonly ClientGatewayTraceStateNormalisation[];
@@ -55,6 +70,27 @@ export type ClientGatewayTraceStateDomain = {
   waitMs(operation: ClientGatewayTraceOperation): number | null;
   readAnswer(answer: ClientGatewayTraceRecordedPayload | null): ClientGatewayTraceStateAnswerReading;
   isOneTimeLayerAct(operation: ClientGatewayTraceOperation, readBefore: ClientGatewayTraceRecordedPayload | null): boolean;
+  handleScope(clock?: ClientGatewayTraceStateClockSpan): (operation: ClientGatewayTraceOperation) => ClientGatewayTraceOperation;
+  unansweredCall(operation: ClientGatewayTraceOperation): ClientGatewayTraceRecordedPayload | null;
+  computeRead(operation: ClientGatewayTraceOperation, recorded: readonly ClientGatewayTraceStateRecordedRead[]): ClientGatewayTraceStateComputedRead | null;
+  recordedAnswerFits(operation: ClientGatewayTraceOperation, answer: ClientGatewayTraceRecordedPayload | null): boolean;
+};
+
+/** The time a recording spans, on the wall clock it was recorded under: what a simulated run's clock reads. */
+export type ClientGatewayTraceStateClockSpan = { readonly fromMs: number; readonly toMs: number };
+
+/** A recorded read offered to `computeRead`, with its place in the recording. */
+export type ClientGatewayTraceStateRecordedRead = {
+  readonly entry: number;
+  readonly operation: ClientGatewayTraceOperation;
+  readonly answer: ClientGatewayTraceRecordedPayload;
+};
+
+/** A read's answer computed from recorded reads: the recorded read it came from, the answer in its place, and its rows by identity. */
+export type ClientGatewayTraceStateComputedRead = {
+  readonly from: number;
+  readonly answer: ClientGatewayTraceRecordedPayload;
+  readonly rows: readonly string[];
 };
 
 /** One command of a trace with its answer, in delivery order. */
@@ -113,6 +149,7 @@ export type ClientGatewayTraceStateRecording = {
 
 export type ClientGatewayTraceStateAnsweredRule =
   | "read_same_state"
+  | "read_computed"
   | "page_move"
   | "page_move_recorded_failure"
   | "act"
@@ -133,6 +170,8 @@ export type ClientGatewayTraceStateAnswer =
       readonly mayBeGoneNextTime: boolean;
       /** Under `tolerate`: recorded acts in the answering state that this run never did and that have no receipt. */
       readonly skippedActs: number;
+      /** The answer computed from recorded rows, in place of the entry's recorded one; `null` when the recorded answer stands. */
+      readonly computed: ClientGatewayTraceStateComputedRead | null;
     }
   | {
       readonly status: "gap";
@@ -151,6 +190,8 @@ export type ClientGatewayTraceStateSkippedActs = "gap" | "tolerate";
 
 export type ClientGatewayTraceStateWalkOptions = {
   readonly skippedActs: ClientGatewayTraceStateSkippedActs;
+  /** The recording's own time, handed to the domain's `handleScope`; without it every instant a run names is that run's own. */
+  readonly clock?: ClientGatewayTraceStateClockSpan | undefined;
 };
 
 export type ClientGatewayTraceStateEndCheck = {
@@ -164,6 +205,8 @@ export type ClientGatewayTraceStateEndCheck = {
   readonly reachedEnd: boolean;
   /** The rows this run was answered with, by identity, in order of first answer. */
   readonly rows: readonly string[];
+  /** Whether it went on after a computed read changed the rows the recording went on from: what followed is not vouched for. */
+  readonly afterChangedRows: boolean;
 };
 
 export type ClientGatewayTraceStateVerdictValue = "pass" | "fail" | "inconclusive";

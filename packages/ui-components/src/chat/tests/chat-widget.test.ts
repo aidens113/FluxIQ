@@ -170,8 +170,8 @@ test("the wait shows no \"Show the question\" when the question is already in th
       chat.setActive(true);
       await settle();
       const root = fake(chat.element);
-      assert.equal(root.byClass("chat-live")[0]!.getAttribute("data-state"), "waiting", "the wait still shows");
-      assert.equal(root.byClass("chat-live-action")[0]!.hidden, true, "its question is on screen, so there is nothing to show");
+      assert.equal(root.byClass("chat-work-header")[0]!.getAttribute("data-state"), "waiting", "the wait still shows");
+      assert.equal(root.byClass("chat-work-action")[0]!.hidden, true, "its question is on screen, so there is nothing to show");
       assert.deepEqual(root.byClass("small-button").map((button) => button.textContent), ["Continue", "Stop"]);
     } finally {
       chat.setActive(false);
@@ -206,11 +206,11 @@ test("a run waiting on the person in a thread not on screen shows in the latest 
       await settle();
       const root = fake(chat.element);
       assert.deepEqual(words(root), ["Find cheap lamps"]);
-      const live = root.byClass("chat-live")[0]!;
+      const live = root.byClass("chat-work-header")[0]!;
       assert.equal(live.hidden, false, "the latest chat shows the wait");
       assert.equal(live.getAttribute("data-state"), "waiting");
-      assert.equal(root.byClass("chat-live-detail")[0]!.textContent, ask);
-      const action = root.byClass("chat-live-action")[0]!;
+      assert.equal(root.byClass("chat-work-now")[0]!.textContent, "Answer in the FluxIQ panel", "says once what it waits for; the ask itself is in its own thread");
+      const action = root.byClass("chat-work-action")[0]!;
       assert.equal(action.hidden, false);
       assert.equal(action.textContent, "Show the question");
 
@@ -225,7 +225,7 @@ test("a run waiting on the person in a thread not on screen shows in the latest 
       assert.equal(listed?.subjectId, "r1");
       assert.equal(words(root).length, 1);
       assert.match(words(root)[0]!, /complete the check on this page/u);
-      assert.equal(root.byClass("chat-live-action")[0]!.hidden, true, "the question is on screen now");
+      assert.equal(root.byClass("chat-work-action")[0]!.hidden, true, "the question is on screen now");
       const buttons = root.byClass("small-button");
       assert.deepEqual(buttons.map((button) => button.textContent), ["Continue", "Stop"]);
 

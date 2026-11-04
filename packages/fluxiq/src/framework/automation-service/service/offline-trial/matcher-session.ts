@@ -36,7 +36,7 @@
 //
 // A cancelled build is not a verdict: whatever the runner throws goes on.
 
-import { ClientGatewayTraceMatcher, type ClientGatewayTraceMatcherClock } from "../../../../client-gateway/index.ts";
+import { ClientGatewayTraceMatcher, type ClientGatewayClientHello, type ClientGatewaySession, type ClientGatewayTraceMatcherClock, type ClientGatewayTraceMatcherGapReason, type ClientGatewayTraceMatcherSessionView } from "../../../../client-gateway/index.ts";
 import { AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import { AutomationStudioGatewayTraceReplaySources } from "../../../../runtime/recording/gateway-trace/index.ts";
 import type { AutomationStudioOfflineTrialNormalization, AutomationStudioOfflineTrialRan, AutomationStudioOfflineTrialRefusal, AutomationStudioOfflineTrialRunOutcome, AutomationStudioOfflineTrialSessionInput } from "./contracts.ts";
@@ -54,11 +54,21 @@ const SUPPLIED_VIEW: AutomationStudioOfflineTrialNormalization = Object.freeze({
 /** A session that ran: everything an offline trial answers but its evidence result, and the live episode the trace recorded, which that result names. */
 type SessionRan<Trial extends AutomationStudioOfflineTrialRunOutcome> = Omit<AutomationStudioOfflineTrialRan<Trial>, "evidence"> & { sourceEpisodeId: string };
 
-/** Runs `run` in a trace environment whose only client is a matcher session over `input.source` (header), or says why it was refused. */
-export async function automationStudioOfflineTrialMatcherSession<Trial extends AutomationStudioOfflineTrialRunOutcome>(
-  input: AutomationStudioOfflineTrialSessionInput,
+/** What stands in for the client over a recorded trace: the matcher, or the state engine (`./state/run.ts`). */
+export type AutomationStudioOfflineTrialTraceClient<Report> = {
+  report(): Report & { refusal: { reason: ClientGatewayTraceMatcherGapReason; detail: string } | null };
+  sessionView(supplied?: ClientGatewayClientHello): ClientGatewayTraceMatcherSessionView | null;
+  attach(scopeId: string, supplied?: ClientGatewayClientHello): ClientGatewaySession;
+  deliverOpening(): Promise<void>;
+  settled(): Promise<void>;
+};
+
+/** Steps 1 to 5 of the header around any client of a recorded trace: refused before anything runs, or the run, its session view and the client's report. */
+export async function automationStudioOfflineTrialTraceSession<Trial, Report>(
+  input: Pick<AutomationStudioOfflineTrialSessionInput, "source" | "gateway" | "phase" | "contractVersions" | "sessionView">,
+  load: (clock: ClientGatewayTraceMatcherClock, contractVersions: Readonly<Record<string, string>>) => Promise<AutomationStudioOfflineTrialTraceClient<Report>>,
   run: (environment: AutomationStudioRunEnvironment) => Promise<Trial>
-): Promise<AutomationStudioOfflineTrialRefusal | SessionRan<Trial>> {
+): Promise<AutomationStudioOfflineTrialRefusal | { status: "ran"; trial: Trial; report: Report; sessionView: ClientGatewayTraceMatcherSessionView["source"]; normalizations: AutomationStudioOfflineTrialNormalization[]; sourceEpisodeId: string }> {
   const { source, gateway } = input;
   if (input.phase === "exploration") return refused("offline_not_allowed_in_phase", "an offline trial never runs during exploration; exploration acts on the live site");
   const manifest = await source.store.readManifest(source.traceId);
@@ -68,15 +78,7 @@ export async function automationStudioOfflineTrialMatcherSession<Trial extends A
   // `random` fixed at its midpoint, which the Wait node reads as no jitter, so the trial is reproducible.
   const environment = createAutomationStudioScopedRunEnvironment({ kind: "trace", clock, random: () => 0.5 });
   const advance: ClientGatewayTraceMatcherClock = { advance: async (ms) => clock.advance(ms) };
-  const matcher = await ClientGatewayTraceMatcher.load({
-    store: source.store,
-    traceId: source.traceId,
-    gateway,
-    clock: advance,
-    contractVersions: input.contractVersions ?? AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS,
-    ...(source.sessionRef === undefined ? {} : { sessionRef: source.sessionRef }),
-    ...(input.reevaluator === undefined ? {} : { reevaluator: input.reevaluator })
-  });
+  const matcher = await load(advance, input.contractVersions ?? AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS);
   const refusal = matcher.report().refusal;
   if (refusal !== null) return refused(refusal.reason, refusal.detail);
   const view = matcher.sessionView(input.sessionView);
@@ -90,18 +92,40 @@ export async function automationStudioOfflineTrialMatcherSession<Trial extends A
   } finally {
     gateway.disconnect(session.sessionId, DETACHED);
   }
-  const report = matcher.report();
   return {
     status: "ran",
     trial,
-    matcher: report,
+    report: matcher.report(),
     sessionView: view.source,
     normalizations: view.source === "supplied" ? [{ ...SUPPLIED_VIEW }] : [],
+    sourceEpisodeId: manifest.episodeId
+  };
+}
+
+/** Runs `run` in a trace environment whose only client is a matcher session over `input.source` (header), or says why it was refused. */
+export async function automationStudioOfflineTrialMatcherSession<Trial extends AutomationStudioOfflineTrialRunOutcome>(
+  input: AutomationStudioOfflineTrialSessionInput,
+  run: (environment: AutomationStudioRunEnvironment) => Promise<Trial>
+): Promise<AutomationStudioOfflineTrialRefusal | SessionRan<Trial>> {
+  const { source, gateway } = input;
+  const session = await automationStudioOfflineTrialTraceSession(input, (clock, contractVersions) => ClientGatewayTraceMatcher.load({
+    store: source.store,
+    traceId: source.traceId,
+    gateway,
+    clock,
+    contractVersions,
+    ...(source.sessionRef === undefined ? {} : { sessionRef: source.sessionRef }),
+    ...(input.reevaluator === undefined ? {} : { reevaluator: input.reevaluator })
+  }), run);
+  if (session.status === "refused") return session;
+  const { report, ...ran } = session;
+  return {
+    ...ran,
+    matcher: report,
     supported: { matchedOperations: report.matchedOperations.length, recordedOperations: report.recordedOperations },
     reevaluated: report.matchedOperations
       .filter((operation) => operation.answeredFrom === "reevaluated")
-      .map((operation) => ({ ordinal: operation.ordinal, actionType: operation.actionType, fields: [...operation.fields] })),
-    sourceEpisodeId: manifest.episodeId
+      .map((operation) => ({ ordinal: operation.ordinal, actionType: operation.actionType, fields: [...operation.fields] }))
   };
 }
 

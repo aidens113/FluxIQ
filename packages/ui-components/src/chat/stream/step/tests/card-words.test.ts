@@ -229,7 +229,7 @@ test("a refused decision never reads as work done or under way, and a repeated r
   const bare = cardWords(card({ kind: "draft", target: null, outcome: "done", refused: { all: false, because: "that step is already in the Flow" } }), false);
   assert.equal(bare.outcome, "Only partly done: that step is already in the Flow", "with nothing said of what landed, the reason alone");
   const thrice = cardWords(card({ kind: "draft", target: "run the step again", outcome: "failed", refused, times: 3 }), false);
-  assert.deepEqual([thrice.outcome, thrice.label], [`Not done (3 times): ${because}`, `Change the Flow, run the step again: Not done (3 times): ${because}`]);
+  assert.deepEqual([thrice.outcome, thrice.label], [`Not done: ${because}`, `Change the Flow, run the step again: Not done: ${because}`]);
   assert.equal(cardWords(card({ kind: "draft", target: null, outcome: "failed", refused, times: 1 }), false).outcome, `Not done: ${because}`, "once is said as once");
 });
 

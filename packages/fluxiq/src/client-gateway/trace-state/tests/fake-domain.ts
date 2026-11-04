@@ -23,7 +23,20 @@ export const fakeDomain: ClientGatewayTraceStateDomain = {
     rows: Array.isArray(answer?.rows) ? (answer.rows as readonly string[]) : null,
     timedOut: answer?.timedOut === true
   }),
-  isOneTimeLayerAct: (operation, readBefore) => (operation.compared.parameters as { readonly part?: string } | null)?.part === "cover" && readBefore !== null
+  isOneTimeLayerAct: (operation, readBefore) => (operation.compared.parameters as { readonly part?: string } | null)?.part === "cover" && readBefore !== null,
+  handleScope: () => (operation) => operation,
+  // A scan or a move the recording cannot answer says nothing was there.
+  unansweredCall: (operation) => (operation.actionType === "scan" ? { status: "succeeded", payload: { rows: [] } } : operation.actionType === "goto" ? { status: "succeeded", payload: {} } : null),
+  // A scan with a `keep` computes from a recorded scan of the same shelf with none: its rows that contain `keep`.
+  computeRead: (operation, recorded) => {
+    const { keep, ...asked } = (operation.compared.parameters ?? {}) as { readonly keep?: string };
+    if (keep === undefined) return null;
+    const source = recorded.find((read) => JSON.stringify(read.operation.compared.parameters ?? {}) === JSON.stringify(asked));
+    if (source === undefined) return null;
+    const rows = ((source.answer.rows ?? []) as readonly string[]).filter((row) => row.includes(keep));
+    return { from: source.entry, answer: { ...source.answer, rows }, rows };
+  },
+  recordedAnswerFits: () => true
 };
 
 function withoutWait(operation: ClientGatewayTraceOperation): Record<string, unknown> {
