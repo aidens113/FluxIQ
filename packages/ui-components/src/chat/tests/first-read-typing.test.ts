@@ -55,7 +55,7 @@ test("a project named to the chat holds a send until its first read lands, as bo
     await tick();
     await tick();
     assert.equal(sends.length, 1, "it went when the read landed");
-    assert.equal((sends[0] as { text?: unknown }).text, "Find the kettles");
+    assert.equal((sends[0] as unknown as { text?: unknown }).text, "Find the kettles");
     assert.equal(box.value, "");
     assert.equal(root.byClass("composer-held")[0]!.hidden, true);
   });
