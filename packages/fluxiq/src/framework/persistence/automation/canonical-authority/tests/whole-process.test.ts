@@ -2,12 +2,19 @@
 import { fork, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
+import { REAL_SQL_TEST_TIMEOUT_MS } from "../../../../../../tests/test-groups.ts";
 import { wholeFixture } from "./whole-fixture.ts";
 
 type Reply = { status: string; code?: string };
+/**
+ * Waits for a child's reply. The limit is the file's test limit (the real-SQL marker): the longest
+ * wait is `ready`, the child's load of the built package, 5.7-7.7 s of CPU and 11-19 s of wall
+ * clock on a busy machine (t868), while a refusal took about 0.1 s and the winner 0.6-7.3 s. It
+ * ends the wait, so a hung child is still killed and its fixture removed after the test failed.
+ */
 function receive(child: ChildProcess, statuses: string[]): Promise<Reply> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { cleanup(); reject(new Error("whole writer child timeout")); }, 15000);
+    const timeout = setTimeout(() => { cleanup(); reject(new Error("whole writer child timeout")); }, REAL_SQL_TEST_TIMEOUT_MS);
     const listener = (reply: Reply) => { if (statuses.includes(reply.status)) { cleanup(); resolve(reply); } };
     const failed = () => { cleanup(); reject(new Error("whole writer child exited before expected phase")); };
     function cleanup() { clearTimeout(timeout); child.off("message", listener); child.off("exit", failed); }
@@ -44,7 +51,7 @@ for (const mode of ["sql", "file"] as const) {
         await expect(f.writer.saveFlowInternal({ projectId: f.project.id, flow }, false)).rejects.toThrow("unresolved");
       });
     } finally { await Promise.all(children.map(stop)); }
-  }, 30000);
+  });
   for (const phase of ["canonical_flow", "project_flow_document", "flow_source", "generated_config", "sql_flow_metadata", "project_change_feed", "project_complete"]) it(`actual built ${mode} kill after ${phase} preserves both-participant hold`, async () => {
     const child = launch();
     try {
@@ -67,5 +74,5 @@ for (const mode of ["sql", "file"] as const) {
         finally { await lease.release(); }
       });
     } finally { await stop(child); }
-  }, 30000);
+  });
 }
