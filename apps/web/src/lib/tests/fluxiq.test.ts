@@ -10,6 +10,12 @@ import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, 
 const ownerClaim = vi.hoisted(() => ({ prepare: vi.fn(async (_input: unknown) => ({ claimed: false, codeFile: "/setup-code-file" })) }));
 vi.mock("../../server/owner-claim", () => ({ prepareOwnerClaim: ownerClaim.prepare }));
 
+// Closing the runtime imports this lazily. In a run of this file alone, that is Vite's first
+// transform of the module and all it imports, 3.7-5.1 s of waiting that fell inside whichever test
+// closed first, against 0.1 s for the rest of that test, and failed it at the default 5 s (t868).
+// Imported here, it is paid while the file is collected, as every other import is.
+import "../../server/provisioning-listener";
+
 const originalEnv = {
   FLUXIQ_MODEL_PROVIDERS_ENABLED: process.env.FLUXIQ_MODEL_PROVIDERS_ENABLED,
   FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT: process.env.FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT,
@@ -100,7 +106,11 @@ describe("FluxIQ web host module loading", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("loads an ES module host that imports FluxIQ's public package exports", async () => {
+  // The host's import is native, so it loads the built package from scratch inside this test:
+  // 5.7-5.9 s of CPU and 10-12 s of wall clock on a busy machine, against about 0.1 s for the rest
+  // of the test (t868). The default 5 s is less than that import's CPU alone. Same limit as a
+  // real-SQL test in packages/fluxiq (`REAL_SQL_TEST_TIMEOUT_MS`): a hung import still fails.
+  it("loads an ES module host that imports FluxIQ's public package exports", { timeout: 60_000 }, async () => {
     const root = mkdtempSync(path.join(importingRepositoryDir(), "fluxiq-esm-host-"));
     const modulePath = path.join(root, "host.mjs");
     writeFileSync(modulePath, [
