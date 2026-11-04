@@ -74,7 +74,7 @@ export function answerModel(outcome: ChatTaskOutcome, options: AnswerModelOption
     ...start,
     ...parts,
     canRunAgain: ended && !(attempt.status === "budget_out" && options.canAddBudget && lastingActs(result)),
-    stuckActions: attempt.status === "waiting_for_person" && attempt.waitingFor === "stuck_in_a_loop"
+    stuckActions: attempt.status === "waiting_for_person" && (attempt.waitingFor === "stuck_in_a_loop" || attempt.waitingFor === "interrupted")
   };
   const from = ended ? fromWords(attempt, result, options.reportsSpend) : undefined;
   if (from !== undefined) model.from = from;
