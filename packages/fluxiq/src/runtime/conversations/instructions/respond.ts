@@ -24,7 +24,7 @@
 // Everything else runs straight away: the person asking is the permission.
 
 import { randomUUID } from "node:crypto";
-import { AUTOMATION_STUDIO_PANEL_COMMAND_ASK_PREFIX } from "../answer-pin.ts";
+import { AUTOMATION_STUDIO_PANEL_COMMAND_ASK_PREFIX } from "../panel-command-pin.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_COMMANDS } from "../commands/index.ts";
 import { automationStudioConversationSiteName } from "../site-name.ts";
