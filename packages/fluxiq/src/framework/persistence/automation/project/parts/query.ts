@@ -26,7 +26,7 @@ export function partQuerySql(query: AutomationStudioProjectPartQuery, offset: nu
     }
   }
   if (query.callerFlowId !== undefined) {
-    clauses.push("exists (select 1 from part_calls c where c.part_id = p.part_id and c.caller_kind = 'flow_graph' and c.caller_id = ?)");
+    clauses.push("exists (select 1 from part_calls c where c.part_id = p.part_id and c.caller_kind = 'flow_graph' and c.caller_flow_id = ?)");
     params.push(query.callerFlowId);
   }
   if (query.sourceFlowId !== undefined) {

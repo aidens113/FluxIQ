@@ -16,6 +16,10 @@
 // edges and the router exactly as it does for a script a model wrote, because
 // it is the same assembler.
 //
+// A step that ran a saved part is Core's own shape too, and is written as what it is: one
+// call step pinned at the version that ran, with the values it was given. Its steps stay in
+// the part, so a run of the Flow goes on running what ran here, whatever the part becomes.
+//
 // **Values are written as text because the assembler reads text.** That is not
 // a round trip through prose: `authoring/values.ts` reads a JSON object or
 // array back as itself, a string verbatim however many colons or braces it
@@ -25,12 +29,16 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run/node.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_PART_TOOL_ID } from "./run/part.ts";
 // A type only, so nothing is imported back out of the directory this one is read by.
 import type { AutomationStudioFlowDraftWrittenStep } from "../../flow-authoring/bootstrap/index.ts";
 
 /** Where a run-node call keeps the node's own parameters and its declaration. */
 const PARAMETERS_KEY = "parameters";
 const CONSEQUENCES_KEY = "consequences";
+/** Where a saved part's call says what it pinned and gave (`./run/part.ts`). */
+const PIN_KEY = "part";
+const INPUTS_KEY = "inputs";
 
 /**
  * One draft step as a written step, or nothing when it is not a step Core can
@@ -43,6 +51,7 @@ const CONSEQUENCES_KEY = "consequences";
  */
 export function automationStudioFlowBootstrapDraftNodeStep(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftWrittenStep | undefined {
   if (!automationStudioFlowBootstrapDraftStepIsWritable(step)) return undefined;
+  if (step.toolId === AUTOMATION_STUDIO_LLM_RUN_PART_TOOL_ID) return savedPartStep(step);
   // What it ran with, where that is not what it was written with: a handle is
   // a name for something on a page as it was, and the Flow has to carry what
   // the node actually ran on rather than a name that may stop resolving.
@@ -65,6 +74,18 @@ export function automationStudioFlowBootstrapDraftNodeStep(step: AutomationStudi
       // gate has to be able to tell them apart.
       ...(Array.isArray(declared) ? [{ key: CONSEQUENCES_KEY, value: declared.length ? declared.join(", ") : "none" }] : [])
     ]
+  };
+}
+
+/** A call to a saved part as one step: the pin that ran and the values it was given. A call that ran nothing pinned nothing, and is not written. */
+function savedPartStep(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftWrittenStep | undefined {
+  const pin = record(step.ranWith?.[PIN_KEY]);
+  if (!pin) return undefined;
+  const inputs = record(step.ranWith?.[INPUTS_KEY]) ?? {};
+  return {
+    description: step.actionId,
+    node: step.actionId,
+    entries: [{ key: PIN_KEY, value: JSON.stringify(pin) }, { key: INPUTS_KEY, value: JSON.stringify(inputs) }]
   };
 }
 
@@ -94,13 +115,13 @@ function record(value: JsonValue | undefined): JsonObject | undefined {
 /**
  * Whether Core can write this step down by itself.
  *
- * It can exactly when the step went through the library verb, because that
- * call's shape is Core's own. A step taken through a domain's own tool carries
+ * It can exactly when the step went through the library verb or ran a saved part,
+ * because those calls' shapes are Core's own. A step taken through a domain's own tool carries
  * a name Core has never been told the meaning of, and a draft made of those is
  * not a draft Core can build a Flow from -- so the build falls back to what the
  * reply carried, which is how a host whose actions are not nodes of the
  * registry still builds a Flow.
  */
 export function automationStudioFlowBootstrapDraftStepIsWritable(step: AutomationStudioFlowDraftStep): boolean {
-  return step.toolId === AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID;
+  return step.toolId === AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID || step.toolId === AUTOMATION_STUDIO_LLM_RUN_PART_TOOL_ID;
 }

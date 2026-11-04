@@ -18,6 +18,12 @@
 // **A repeat is refused in a build.** The same version with the same values, once it has
 // landed something lasting, is answered `part.repeat_refused`: a build never does a lasting
 // act twice while it builds. `done` holds what this build has run, across its briefs.
+//
+// **What it leaves in the draft is one step: the call, pinned at the version that ran**
+// (`draft.ranWith`, read by `../draft-step.ts`), never the part's steps. So a task that ran a part
+// keeps the part in its Flow, and that Flow goes on running what ran here when the part changes.
+// It carries nothing to replay: running a part again is not a look at whether it can be.
+import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID } from "../../../../components/automation/control-flow/index.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
@@ -99,7 +105,7 @@ export function automationStudioLlmRunPartBundle<Act>(input: { port: AutomationS
         }
         // The acts are handed over; what the loop's gate records for this call is no act of its own (header).
         await call.permission({ consequences: [], control: { name: "a saved part" }, verb: "run", effect: "observe" });
-        return answered(answer);
+        return { ...answered(answer), draft: { actionId: AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID, effect: "mutate", ranWith: { part: { partId: answer.partId, version: answer.version }, inputs: asked.inputs } } };
       }
     }
   };

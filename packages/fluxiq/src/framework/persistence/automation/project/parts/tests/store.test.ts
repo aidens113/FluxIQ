@@ -151,13 +151,27 @@ describe("AutomationStudioProjectPartStore", () => {
     await pool.closeAll();
   });
 
+  it("keeps what a graph pins true of the graph as saved: a pin recorded, a node that no longer calls forgotten, a sibling's call left alone", async () => {
+    const { pool, store } = await open("project.pins");
+    await store.writeVersion(write());
+    await store.recordFlowGraphCall({ flowId: "flow.main", graphFlowId: "flow.main.graph", nodeId: "sibling", partId: "part.one", version: 1 });
+    await store.syncFlowGraphPins({ flowId: "flow.main", graphFlowId: "flow.main.graph", callNodeIds: ["sibling", "pinned", "gone"], pins: [{ nodeId: "pinned", partId: "part.one", version: 1 }, { nodeId: "gone", partId: "part.one", version: 1 }] });
+    const nodes = async () => (await store.listCallsTo({ partId: "part.one" })).map((call) => call.callerNodeId);
+    expect(await nodes()).toEqual(["gone", "pinned", "sibling"]);
+    await store.syncFlowGraphPins({ flowId: "flow.main", graphFlowId: "flow.main.graph", callNodeIds: ["sibling", "pinned"], pins: [{ nodeId: "pinned", partId: "part.one", version: 1 }] });
+    expect(await nodes()).toEqual(["pinned", "sibling"]);
+    await store.close();
+    await pool.closeAll();
+  });
+
   it("finds the parts a Flow's graph calls, and records runs", async () => {
     const { pool, store } = await open("project.calls");
     await store.writeVersion(write());
-    await store.recordFlowGraphCall({ flowId: "flow.main.graph", nodeId: "call.1", partId: "part.one", version: 1 });
-    expect((await store.query({ callerFlowId: "flow.main.graph" })).items.map((item) => item.part.partId)).toEqual(["part.one"]);
+    await store.recordFlowGraphCall({ flowId: "flow.main", graphFlowId: "flow.main.graph", nodeId: "call.1", partId: "part.one", version: 1 });
+    expect((await store.query({ callerFlowId: "flow.main" })).items.map((item) => item.part.partId), "by the Flow a person opened").toEqual(["part.one"]);
+    expect((await store.query({ callerFlowId: "flow.main.graph" })).items, "not by the graph that holds the step").toEqual([]);
     expect((await store.query({ callerFlowId: "flow.nobody" })).items).toEqual([]);
-    expect(await store.listCallsTo({ partId: "part.one", version: 1 })).toEqual([{ callerKind: "flow_graph", callerId: "flow.main.graph", callerVersion: 0, callerNodeId: "call.1", partId: "part.one", version: 1 }]);
+    expect(await store.listCallsTo({ partId: "part.one", version: 1 })).toEqual([{ callerKind: "flow_graph", callerId: "flow.main.graph", callerVersion: 0, callerNodeId: "call.1", callerFlowId: "flow.main", partId: "part.one", version: 1 }]);
     await store.recordRun({ partId: "part.one", version: 1, runId: "run.1", outcome: "succeeded", modelCalls: 0, finishedAtMs: 10 });
     expect(await store.listRuns({ partId: "part.one", version: 1 })).toEqual([{ partId: "part.one", version: 1, runId: "run.1", outcome: "succeeded", modelCalls: 0, finishedAtMs: 10 }]);
     await store.close();

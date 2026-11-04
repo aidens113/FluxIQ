@@ -13,6 +13,9 @@ import type {
 import { AutomationStudioProjectPartControlKeys, automationStudioProjectPartControlKeys } from "./control-keys.ts";
 import type { AutomationStudioKnownParts } from "../../../../runtime/project-parts/index.ts";
 import { getProjectPart } from "./get.ts";
+import { automationStudioPinnedPartGraphs } from "./graphs.ts";
+import { automationStudioKeepPartCallsOf, type AutomationStudioSavedFlowGraph } from "./graph-calls.ts";
+import type { AutomationStudioPinnedPartGraphs } from "../runtime-session/index.ts";
 import type { AutomationStudioProjectPartsDependencies, AutomationStudioProjectPartsRefusal } from "./library-types.ts";
 import { listProjectParts, type AutomationStudioListProjectPartsInput } from "./list.ts";
 import { keepProjectPart } from "./keep.ts";
@@ -49,6 +52,16 @@ export class AutomationStudioProjectParts {
   /** The parts of an answer-first attempt's saved draft, kept in the library; a failure is reported on the result and never thrown (`./draft-parts.ts`). */
   saveDraft(input: AutomationStudioSaveProjectPartsOfDraftInput): ReturnType<typeof saveProjectPartsOfDraft> {
     return saveProjectPartsOfDraft(this.dependencies.pool, input);
+  }
+
+  /** The library as one run of a Flow reads it, for the steps that pin a saved part (`./graphs.ts`). */
+  graphs(projectId: string, parentFlowId: string): AutomationStudioPinnedPartGraphs {
+    return automationStudioPinnedPartGraphs({ pool: this.dependencies.pool, projectId, parentFlowId });
+  }
+
+  /** A graph is about to be saved, and has been: its pinned calls are refused, then known, here (`./graph-calls.ts`). */
+  flowGraphCalls(): AutomationStudioSavedFlowGraph {
+    return automationStudioKeepPartCallsOf(this.dependencies.pool);
   }
 
   /** A person's run of one part, with no model, or why it was not run. */

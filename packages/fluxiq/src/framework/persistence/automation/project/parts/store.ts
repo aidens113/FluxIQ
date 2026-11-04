@@ -170,11 +170,32 @@ export class AutomationStudioProjectPartStore {
   }
 
   /** Records that a Flow's graph calls a version at a node. A later record for the node replaces the earlier. */
-  async recordFlowGraphCall(input: { flowId: string; nodeId: string; partId: string; version: number }): Promise<void> {
+  async recordFlowGraphCall(input: { flowId: string; graphFlowId: string; nodeId: string; partId: string; version: number }): Promise<void> {
     await this.lease.database.run(
-      "insert or replace into part_calls (caller_kind, caller_id, caller_version, caller_node_id, part_id, version) values ('flow_graph', ?, 0, ?, ?, ?)",
-      [requiredId(input.flowId, "flow"), input.nodeId, requiredId(input.partId, "part"), Math.trunc(input.version)]
+      "insert or replace into part_calls (caller_kind, caller_id, caller_version, caller_node_id, caller_flow_id, part_id, version) values ('flow_graph', ?, 0, ?, ?, ?, ?)",
+      [requiredId(input.graphFlowId, "graph flow"), input.nodeId, requiredId(input.flowId, "flow"), requiredId(input.partId, "part"), Math.trunc(input.version)]
     );
+  }
+
+  /**
+   * What a Flow's graph pins, as it was just saved: each pin recorded, and every row of a node that no
+   * longer calls anything gone, in one transaction. A step that calls a sibling keeps the row the
+   * Flow's own save wrote for it, since only that save can tell which part the sibling is.
+   */
+  async syncFlowGraphPins(input: { flowId: string; graphFlowId: string; callNodeIds: readonly string[]; pins: readonly { nodeId: string; partId: string; version: number }[] }): Promise<void> {
+    const graphFlowId = requiredId(input.graphFlowId, "graph flow");
+    const flowId = requiredId(input.flowId, "flow");
+    const still = new Set(input.callNodeIds);
+    await this.lease.database.transaction(async (sql) => {
+      const rows = await sql.all<{ caller_node_id: string }>("select caller_node_id from part_calls where caller_kind = 'flow_graph' and caller_id = ?", [graphFlowId]);
+      for (const row of rows) if (!still.has(row.caller_node_id)) await sql.run("delete from part_calls where caller_kind = 'flow_graph' and caller_id = ? and caller_node_id = ?", [graphFlowId, row.caller_node_id]);
+      for (const pin of input.pins) {
+        await sql.run(
+          "insert or replace into part_calls (caller_kind, caller_id, caller_version, caller_node_id, caller_flow_id, part_id, version) values ('flow_graph', ?, 0, ?, ?, ?, ?)",
+          [graphFlowId, pin.nodeId, flowId, requiredId(pin.partId, "part"), Math.trunc(pin.version)]
+        );
+      }
+    });
   }
 
   /** Every call to one version, or to any version of a part when none is named. */

@@ -38,7 +38,7 @@ export type AutomationStudioSavedProjectPart = {
 
 export type AutomationStudioSkippedProjectPart = {
   subflowId: string;
-  reason: AutomationStudioPartSkipReason | "part.primary_not_explicit" | "part.call_cycle";
+  reason: AutomationStudioPartSkipReason | "part.primary_not_explicit" | "part.call_cycle" | "part.call_too_deep";
   detail?: string;
 };
 

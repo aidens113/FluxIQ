@@ -9,10 +9,15 @@
 // `skipped` entry with a stable reason. A project database that cannot be
 // written propagates: a save that quietly did nothing would leave the library
 // with a hole nothing could tell from a part that never existed.
+//
+// A step may pin a saved part rather than call a Subflow of this Flow. The version it
+// pins must be there, and what it reaches must finish: a part whose calls would go
+// round in a circle or too deep is skipped (`./call-bounds.ts`), never written.
 import { parseAutomationStudioSubflowCard } from "@fluxiq/contracts/automation";
 import { deriveAutomationStudioPartCard, type AutomationStudioPartCallee } from "../../../../runtime/project-parts/index.ts";
 import { AutomationStudioProjectPartStore, type AutomationStudioProjectPartVersionRecord } from "../../../persistence/automation/index.ts";
-import { projectPartCallOrder, projectPartCallTargets } from "./call-order.ts";
+import { projectPartCallBound } from "./call-bounds.ts";
+import { projectPartCallOrder, projectPartCallTargets, projectPartPinnedCalls } from "./call-order.ts";
 import { projectPartIdOf, projectPartKeyOf } from "./part-id.ts";
 import type { AutomationStudioAppliedFlowPart, AutomationStudioSaveProjectPartsInput, AutomationStudioSaveProjectPartsResult } from "./types.ts";
 
@@ -40,6 +45,17 @@ export async function saveProjectPartsOfAppliedFlow(input: AutomationStudioSaveP
         const callee = kept.get(target.subflowId);
         const known = callee ? calleeOf(callee.partId, callee.version) : undefined;
         if (known) callees[target.subflowId] = known;
+      }
+      const pinned = projectPartPinnedCalls(entry.graphFlow);
+      const bound = await projectPartCallBound(store, { partId }, [...pinned.map((call) => call.pin), ...Object.values(callees).map((callee) => ({ partId: callee.partId, version: callee.version }))]);
+      if (bound) {
+        result.skipped.push({ subflowId, reason: bound });
+        continue;
+      }
+      for (const { pin } of pinned) {
+        const version = await store.getVersion(pin.partId, pin.version);
+        const known = version ? calleeOf(pin.partId, version) : undefined;
+        if (known) callees[`${pin.partId}@${pin.version}`] = known;
       }
       const existing = await store.getPart(partId);
       const derived = deriveAutomationStudioPartCard({
@@ -98,10 +114,15 @@ async function recordFlowGraphCalls(
 ): Promise<void> {
   const savedIds = new Set(result.saved.map((saved) => saved.subflowId));
   for (const entry of input.subflows as readonly AutomationStudioAppliedFlowPart[]) {
+    const graph = { flowId: input.flowId, graphFlowId: entry.graphFlow.flowId };
+    // A pin is this Flow's call whichever of its graphs holds it, and a version it could not run is no caller.
+    for (const { nodeId, pin } of projectPartPinnedCalls(entry.graphFlow)) {
+      if (await store.getVersion(pin.partId, pin.version)) await store.recordFlowGraphCall({ ...graph, nodeId, partId: pin.partId, version: pin.version });
+    }
     if (savedIds.has(entry.subflow.subflowId)) continue;
     for (const target of projectPartCallTargets(entry)) {
       const callee = kept.get(target.subflowId);
-      if (callee) await store.recordFlowGraphCall({ flowId: entry.graphFlow.flowId, nodeId: target.nodeId, partId: callee.partId, version: callee.version.version });
+      if (callee) await store.recordFlowGraphCall({ ...graph, nodeId: target.nodeId, partId: callee.partId, version: callee.version.version });
     }
   }
 }

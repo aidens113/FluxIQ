@@ -7,7 +7,9 @@ export {
   type AutomationStudioInvocationFrame
 } from "./invocation-frame.ts";
 export type { AutomationStudioFramePath, AutomationStudioFrameStack } from "./stack.ts";
-export type { AutomationStudioInvocationOptions, AutomationStudioRunFrames, AutomationStudioSubflowGraph, AutomationStudioSubflowGraphRunner, AutomationStudioSubflowGraphSource } from "./invocation-options.ts";
+export type { AutomationStudioInvocationOptions, AutomationStudioPartPinRefusal, AutomationStudioRunFrames, AutomationStudioSubflowGraph, AutomationStudioSubflowGraphRunner, AutomationStudioSubflowGraphSource } from "./invocation-options.ts";
+// A saved part a call step pins, and the id its frame runs under.
+export { AUTOMATION_STUDIO_PART_CALL_MAX_DEPTH, automationStudioPartPinOf, automationStudioPinOfSubflowId, automationStudioPinnedSubflowId, type AutomationStudioPartPin } from "./part-pin.ts";
 // The run holder, the root and child frames, and framing a graph run.
 export { automationStudioRunFrames } from "./run-holder.ts";
 export { automationStudioRootInvocation, runAutomationStudioGraphInFrame } from "./graph-frame.ts";

@@ -34,12 +34,16 @@ export type AutomationStudioProjectPartVersionRecord = {
 /** A graph a version came from: the Flow graph and the revision of it that was saved, or none where the save knew no revision. */
 export type AutomationStudioProjectPartVersionSource = { graphFlowId: string; revision: number | null };
 
-/** A call from a caller to one version of a part. A Flow's graph has caller version 0. */
+/**
+ * A call from a caller to one version of a part. A Flow's graph has caller version 0:
+ * `callerId` is that graph's own id, and `callerFlowId` the Flow it belongs to.
+ */
 export type AutomationStudioProjectPartCall = {
   callerKind: "part_version" | "flow_graph";
   callerId: string;
   callerVersion: number;
   callerNodeId: string;
+  callerFlowId?: string;
   partId: string;
   version: number;
 };
@@ -89,7 +93,7 @@ export type AutomationStudioProjectPartQuery = {
   input?: string | readonly string[] | undefined;
   output?: string | readonly string[] | undefined;
   lasting?: string | readonly string[] | undefined;
-  /** Parts a Flow's graph calls. */
+  /** Parts a Flow calls, from any of its graphs. */
   callerFlowId?: string | undefined;
   /** Parts first saved from a Flow. */
   sourceFlowId?: string | undefined;

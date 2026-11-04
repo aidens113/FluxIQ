@@ -17,7 +17,8 @@
 // - `project_part_facets`: the exact filters, one row per site, input, output
 //   and lasting class of a version.
 // - `part_calls`: which caller (a part version or a Flow's graph) calls which
-//   version, at which node.
+//   version, at which node. A Flow's graph is held by its own id, and by the id of
+//   the Flow it belongs to (`caller_flow_id`), which is the Flow a person opened.
 // - `project_part_runs`: what each run of a version came to. Written by the
 //   runner, later.
 // - `project_parts_fts`: words a person can search -- name, purpose, port names.
@@ -84,11 +85,13 @@ export const AUTOMATION_STUDIO_PROJECT_PARTS_MIGRATION: AutomationStudioSchemaMi
       caller_id text not null,
       caller_version integer not null default 0,
       caller_node_id text not null,
+      caller_flow_id text,
       part_id text not null,
       version integer not null check (version > 0),
       primary key (caller_kind, caller_id, caller_version, caller_node_id)
     )`,
     "create index part_calls_callee_idx on part_calls (part_id, version, caller_kind, caller_id)",
+    "create index part_calls_caller_flow_idx on part_calls (caller_flow_id, part_id)",
     `create table project_part_runs (
       part_id text not null,
       version integer not null,

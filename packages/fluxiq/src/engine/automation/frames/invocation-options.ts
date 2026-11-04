@@ -3,6 +3,7 @@ import type { AutomationStudioFlowDocument } from "../../../flows/executable/gra
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../index.ts";
 import type { AutomationStudioLifecycleRunState } from "../lifecycle-run/index.ts";
 import type { AutomationStudioInvocationFrame } from "./invocation-frame.ts";
+import type { AutomationStudioPartPin } from "./part-pin.ts";
 
 /**
  * How a run executes a called Subflow graph as a frame of its own. It is handed
@@ -62,7 +63,7 @@ export type AutomationStudioInvocationOptions = {
   frame: AutomationStudioInvocationFrame;
 };
 
-/** A sibling Subflow graph of the run's automation, at the revision the run executes. */
+/** A sibling Subflow graph of the run's automation at the revision the run executes, or a saved part at the version a step pins (`./part-pin.ts`). */
 export type AutomationStudioSubflowGraph = {
   subflowId: string;
   graph: AutomationStudioFlowDocument;
@@ -77,13 +78,21 @@ export type AutomationStudioSubflowGraph = {
   artifact?: AutomationStudioFlowArtifact;
 };
 
+/** Why a pinned part is not run though its version may be there: its calls go round in a circle, or too deep. The code is stable. */
+export type AutomationStudioPartPinRefusal = { code: string; message: string };
+
 /**
  * Where a run finds the sibling Subflow graphs of its own automation: the
  * graphs a Call Subflow node may call, and the automation's `recovery`-role
  * Subflow graph, which holds automation-scope handlers (C4). Supplied by the
  * run session; a run without one cannot call a Subflow.
+ *
+ * `load` answers a pinned part's id as well (`./part-pin.ts`), when the source reaches
+ * the project's library; a source that does not answers nothing for it, and the call
+ * then fails with a closed code. `pinRefusal` is asked before a pinned part's frame starts.
  */
 export type AutomationStudioSubflowGraphSource = {
   load(subflowId: string): Promise<AutomationStudioSubflowGraph | undefined>;
   recovery?(): Promise<AutomationStudioSubflowGraph | undefined>;
+  pinRefusal?(pin: AutomationStudioPartPin): Promise<AutomationStudioPartPinRefusal | undefined>;
 };

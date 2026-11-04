@@ -14,6 +14,7 @@ import {
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../../../../runtime/llm/index.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId as isOpeningCall } from "../../../../runtime/llm/evidence-loop/index.ts";
+import type { AutomationStudioAttemptActRecord } from "../../../../runtime/answer-first/act-record/index.ts";
 import type { AutomationStudioKnownParts } from "../../../../runtime/project-parts/index.ts";
 import type { AutomationStudioNodeRegistryResolution } from "../../nodes/index.ts";
 import type { AutomationStudioProjectParts } from "./project-parts.ts";
@@ -61,15 +62,20 @@ type AttemptOffer = {
   permissionGround: { permittedConsequences?: readonly string[] | undefined };
   harnessOptions: AutomationStudioHarnessOptionLoopBinding;
   continuingOptions(): AutomationStudioHarnessOptionLoopBinding;
+  partActs?: AutomationStudioAnswerFirstPartActs | undefined;
 };
+
+/** Where an attempt hands the library its act record, once it has made one. Nothing runs a part before that. */
+export type AutomationStudioAnswerFirstPartActs = { use(record: Pick<AutomationStudioAttemptActRecord, "settled">): void };
 
 /**
  * The attempt's input with the library offered, or the same input untouched when nothing can be offered
  * (or the library cannot be read, which reads as none). The first look of the first round carries the shortlist as `knownParts`, and
  * the tool list gains `core.run_part` in every round. The opening look's own call and every other tool are unchanged.
  *
- * A part a run lands acts through is held to one run per version and values for the attempt, as a build holds it (`done`);
- * the attempt's act record is not told what a part's steps landed.
+ * A part a run lands acts through is held to one run per version and values for the attempt, as a build holds it (`done`).
+ * The attempt's act record is told each of its lasting steps with the node's own action, parameters and row, as it happens, so
+ * the first real run of that part knows them when it reaches the same step (`../answer-first/run-acts/run-gate.ts`).
  */
 export async function automationStudioAnswerFirstKnownParts<Input extends AttemptOffer>(input: Input): Promise<Input> {
   const { parts } = input;
@@ -81,7 +87,12 @@ export async function automationStudioAnswerFirstKnownParts<Input extends Attemp
     askedClasses: input.permissionGround.permittedConsequences ?? []
   });
   if (!known) return input;
-  const bundle = automationStudioProjectBuildRunPartBundle({ parts, permittedConsequences: input.permissionGround.permittedConsequences ?? [], done: new Set(), landed: () => undefined });
+  let record: Pick<AutomationStudioAttemptActRecord, "settled"> | undefined;
+  const bundle = automationStudioProjectBuildRunPartBundle({
+    parts, permittedConsequences: input.permissionGround.permittedConsequences ?? [], done: new Set(), landed: () => undefined,
+    // The words are left to the record, which says an act by its class: a step's label may hold page text.
+    settled: (call, outcome) => { record?.settled({ ...call, stage: "exploration" }, { ...outcome, words: { what: "", where: "" } }); }
+  });
   const offering = (base: AutomationStudioHarnessOptionLoopBinding) => withRunPart(base, bundle, { projectId: input.projectId, flowId: input.flowId, resolution: input.resolution });
   let told = false;
   const first = offering(input.harnessOptions);
@@ -97,7 +108,8 @@ export async function automationStudioAnswerFirstKnownParts<Input extends Attemp
         return shown;
       }
     },
-    continuingOptions: () => offering(input.continuingOptions())
+    continuingOptions: () => offering(input.continuingOptions()),
+    partActs: { use: (made) => { record = made; } }
   };
 }
 

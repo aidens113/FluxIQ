@@ -16,6 +16,8 @@ import { AutomationStudioProjectParts, saveProjectPartsOfAppliedFlow, type Autom
 
 type Collaborators = NonNullable<ReturnType<AutomationStudioProjectPartRunPorts["collaborators"]>>;
 
+const edge = (id: string, sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId = "in"): AutomationStudioFlowEdge => ({ id, sourceNodeId, sourcePortId, targetNodeId, targetPortId });
+
 export const PROJECT = "project.rows";
 export const SITE = "https://list.example";
 const SEARCH = { selector: "#search" };
@@ -24,6 +26,48 @@ const FOR_EACH = "builtin.control.for-each";
 const OUTPUT_NODE = "custom.press";
 
 export type Row = { key: string; words: string; count?: number };
+
+/** The part of a press: it takes a row and presses that row's control, and reads no list of its own. */
+export function actionGraph(key: string, options: { pressDefinition?: string } = {}): AutomationStudioFlowArtifact {
+  const blank = createBlankAutomationStudioFlowArtifact({ flowId: `graph.${key}`, projectId: PROJECT, name: key, now: 1, metadata: { parentFlowId: "flow.source", parentSubflowId: `subflow.${key}`, subflowGraph: true } });
+  const nodes: AutomationStudioFlowNode[] = [
+    { id: `${key}.start`, definitionId: "builtin.control.start", definitionVersion: "1.0.0", label: "Start" },
+    { id: `${key}.press`, definitionId: options.pressDefinition ?? OUTPUT_NODE, definitionVersion: "1.0.0", label: "Press it", parameterValues: { target: PRESS }, metadata: { declaredConsequences: ["create_new"] } }
+  ];
+  return { ...blank, interface: { inputs: [{ id: "item", name: "The row", valueType: { kind: "unknown" }, required: true }], outputs: [] }, nodes, edges: [edge(`${key}.1`, `${key}.start`, "success", `${key}.press`)] };
+}
+
+/** Read a list, then for each row call a part, handing it the row: `call` says how the step names what it calls and `given` what it hands it. */
+export function siteGraph(key: string, call: JsonObject, options: { given?: JsonObject; readMetadata?: JsonObject } = {}): AutomationStudioFlowArtifact {
+  const blank = createBlankAutomationStudioFlowArtifact({ flowId: `graph.${key}`, projectId: PROJECT, name: key, now: 1, metadata: { parentFlowId: "flow.source", parentSubflowId: `subflow.${key}`, subflowGraph: true } });
+  const at = (name: string) => `${key}.${name}`;
+  const nodes: AutomationStudioFlowNode[] = [
+    { id: at("start"), definitionId: "builtin.control.start", definitionVersion: "1.0.0", label: "Start" },
+    { id: at("read"), definitionId: "custom.read", definitionVersion: "1.0.0", label: "Read the list", parameterValues: { target: SEARCH }, metadata: options.readMetadata ?? { declaredConsequences: [], effect: "observe" } },
+    { id: at("each"), definitionId: FOR_EACH, definitionVersion: "1.0.0", label: "Each row" },
+    { id: at("call"), definitionId: "builtin.control.call-subflow", definitionVersion: "1.0.0", label: "Do it to this row", parameterValues: { ...call, inputs: options.given ?? { item: { $state: { path: "item" } } } }, metadata: {} },
+    { id: at("end"), definitionId: "builtin.control.end", definitionVersion: "1.0.0", label: "End" }
+  ];
+  const edges = [
+    edge(`${key}.1`, at("start"), "success", at("read")),
+    edge(`${key}.2`, at("read"), "success", at("each")),
+    edge(`${key}.3`, at("read"), "rows", at("each"), "items"),
+    edge(`${key}.4`, at("each"), "body", at("call")),
+    edge(`${key}.5`, at("call"), "success", at("each")),
+    edge(`${key}.6`, at("each"), "done", at("end"))
+  ];
+  return { ...blank, interface: { inputs: [], outputs: [] }, nodes, edges };
+}
+
+/** A part that hands on the row it was handed, to the part it calls. */
+export function passOnGraph(key: string, call: JsonObject): AutomationStudioFlowArtifact {
+  const blank = createBlankAutomationStudioFlowArtifact({ flowId: `graph.${key}`, projectId: PROJECT, name: key, now: 1, metadata: { parentFlowId: "flow.source", parentSubflowId: `subflow.${key}`, subflowGraph: true } });
+  const nodes: AutomationStudioFlowNode[] = [
+    { id: `${key}.start`, definitionId: "builtin.control.start", definitionVersion: "1.0.0", label: "Start" },
+    { id: `${key}.call`, definitionId: "builtin.control.call-subflow", definitionVersion: "1.0.0", label: "Hand it on", parameterValues: { ...call, inputs: { item: { $state: { path: "item" } } } }, metadata: {} }
+  ];
+  return { ...blank, interface: { inputs: [{ id: "item", name: "The row", valueType: { kind: "unknown" }, required: true }], outputs: [] }, nodes, edges: [edge(`${key}.1`, `${key}.start`, "success", `${key}.call`)] };
+}
 
 /** The page as it stands. Tests change it between reads and presses. */
 export type RowsPage = {
@@ -52,8 +96,6 @@ export type RowsDomain = {
   /** Anything else that ran. */
   ran: string[];
 };
-
-const edge = (id: string, sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId = "in"): AutomationStudioFlowEdge => ({ id, sourceNodeId, sourcePortId, targetNodeId, targetPortId });
 
 /** Read the list, then press something on each row it read. `before` runs before the press on each pass. */
 export function rowGraph(key: string, options: { readMetadata?: JsonObject; pressDefinition?: string; before?: AutomationStudioFlowNode } = {}): AutomationStudioFlowArtifact {
@@ -92,8 +134,8 @@ export function callerGraph(key: string, subflowId: string): AutomationStudioFlo
   return { ...blank, interface: { inputs: [], outputs: [] }, nodes, edges: [edge(`${key}.1`, `${key}.start`, "success", `${key}.first`), edge(`${key}.2`, `${key}.first`, "success", `${key}.call`)] };
 }
 
-function subflowOf(key: string): AutomationStudioFlowSubflow {
-  return { schemaVersion: "0.1", subflowId: `subflow.${key}`, flowId: "flow.source", projectId: PROJECT, name: `Part ${key}`, description: `Part ${key}`, role: "utility", graphFlowId: `graph.${key}`, createdAt: 1, updatedAt: 1, status: "active" } as unknown as AutomationStudioFlowSubflow;
+function subflowOf(key: string, flowId = "flow.source"): AutomationStudioFlowSubflow {
+  return { schemaVersion: "0.1", subflowId: `subflow.${key}`, flowId, projectId: PROJECT, name: `Part ${key}`, description: `Part ${key}`, role: "utility", graphFlowId: `graph.${key}`, createdAt: 1, updatedAt: 1, status: "active" } as unknown as AutomationStudioFlowSubflow;
 }
 
 function hostOf(page: RowsPage, domain: RowsDomain, extra: Partial<AutomationStudioHostRuntimeBoundary>, noMatcher: boolean): AutomationStudioHostRuntimeBoundary {
@@ -176,7 +218,10 @@ export type RowsHarness = {
   sessions: AutomationStudioRuntimeSession[];
   /** What the project's other runs are, as the service would list them. */
   otherRuns: { list: () => Promise<AutomationStudioRuntimeSession[]> };
-  save(graphs: AutomationStudioFlowArtifact[]): Promise<string>;
+  pool: AutomationStudioProjectDatabasePool;
+  /** The executor's parts, as a run of a Flow is made from them. */
+  executor(): ReturnType<Collaborators["executor"]>;
+  save(graphs: AutomationStudioFlowArtifact[], flowId?: string): Promise<string>;
   close(): Promise<void>;
 };
 
@@ -204,9 +249,10 @@ export async function openRowsHarness(options: { rows?: Row[]; hostResources?: A
   };
   const parts = new AutomationStudioProjectParts({ pool, ports: {} as unknown as AutomationStudioProjectPartsPorts, run });
   return {
-    page, domain, parts, sessions, otherRuns,
-    save: async (graphs) => {
-      const saved = await saveProjectPartsOfAppliedFlow({ pool, projectId: PROJECT, flowId: "flow.source", requestWords: "do what a person asked", startLocation: `${SITE}/start`, subflows: graphs.map((graph) => ({ subflow: subflowOf(graph.name), graphFlow: graph })) });
+    page, domain, parts, sessions, otherRuns, pool,
+    executor: () => run.collaborators()!.executor(),
+    save: async (graphs, flowId = "flow.source") => {
+      const saved = await saveProjectPartsOfAppliedFlow({ pool, projectId: PROJECT, flowId, requestWords: "do what a person asked", startLocation: `${SITE}/start`, subflows: graphs.map((graph) => ({ subflow: subflowOf(graph.name, flowId), graphFlow: graph })) });
       if (saved.skipped.length) throw new Error(`skipped: ${JSON.stringify(saved.skipped)}`);
       return saved.saved.at(-1)!.partId;
     },

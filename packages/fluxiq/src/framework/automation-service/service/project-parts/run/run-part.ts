@@ -38,12 +38,15 @@ import { readProjectPartPage } from "./page-read.ts";
 import { projectPartRecheck } from "./recheck.ts";
 import { projectPartRowTarget } from "./row-target.ts";
 import { projectPartRunOnlyGraphs } from "./run-only-graphs.ts";
+import { projectPartSettledCalls } from "./settled-calls.ts";
 import { projectPartStepClasses } from "./step-classes.ts";
 import { projectPartStepGate } from "./step-gate.ts";
 import type { AutomationStudioProjectPartRunInput, AutomationStudioProjectPartRunRefusal, AutomationStudioProjectPartRunResult } from "./types.ts";
 
 const UNAVAILABLE: AutomationStudioProjectPartRunRefusal = { ok: false, code: "parts.unavailable", message: "This project's library of saved parts is not available right now." };
 const CALLS_NOT_AVAILABLE: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.calls_not_available", message: "This part calls another part that is not available, so it was not run." };
+const CALL_CYCLE: AutomationStudioProjectPartRunRefusal = { ...CALLS_NOT_AVAILABLE, callBound: "part.call_cycle", message: "This part ends up calling itself, so it was not run: it would never come back out." };
+const CALL_TOO_DEEP: AutomationStudioProjectPartRunRefusal = { ...CALLS_NOT_AVAILABLE, callBound: "part.call_too_deep", message: "This part calls parts that call parts too many levels deep, so it was not run." };
 const REPEAT_REFUSED: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.repeat_refused", message: "This part already did its lasting acts in this build, so it was not run again." };
 const RUN_ID_REFUSED: AutomationStudioProjectPartRunRefusal = { ok: false, code: "parts.run_id_refused", message: "That run id cannot be used for a new run." };
 const DEFAULT_CONTROL_KEYS: ReadonlySet<string> = new Set(["target"]);
@@ -54,6 +57,8 @@ export async function runProjectPartNow(deps: AutomationStudioProjectPartsDepend
   const closure = await withProjectPartStores(deps.pool, input.projectId, (stores) => readProjectPartRunClosure(stores, input.partId, input.version));
   if ("ok" in closure) return UNAVAILABLE;
   if (closure.kind === "calls_not_available") return CALLS_NOT_AVAILABLE;
+  if (closure.kind === "call_cycle") return CALL_CYCLE;
+  if (closure.kind === "call_too_deep") return CALL_TOO_DEEP;
   const inputs: Record<string, JsonValue> = { ...(input.inputs ?? {}) };
   const part = closure.kind === "found" ? closure.root : undefined;
   const executor = collaborators.executor();
@@ -66,7 +71,7 @@ export async function runProjectPartNow(deps: AutomationStudioProjectPartsDepend
 }
 
 /** From the read of the page on: asked while the run holds the host, so nothing moves the page under the guard's answer. */
-async function guarded(deps: AutomationStudioProjectPartsDependencies, input: AutomationStudioProjectPartRunInput, closure: Exclude<Awaited<ReturnType<typeof readProjectPartRunClosure>>, { kind: "calls_not_available" }>, inputs: Record<string, JsonValue>): Promise<AutomationStudioProjectPartRunResult | AutomationStudioProjectPartRunRefusal> {
+async function guarded(deps: AutomationStudioProjectPartsDependencies, input: AutomationStudioProjectPartRunInput, closure: Extract<Awaited<ReturnType<typeof readProjectPartRunClosure>>, { kind: "found" | "not_found" }>, inputs: Record<string, JsonValue>): Promise<AutomationStudioProjectPartRunResult | AutomationStudioProjectPartRunRefusal> {
   const part = closure.kind === "found" ? closure.root : undefined;
   const asked = { caller: input.caller, inputs, permittedConsequences: input.permittedConsequences, acknowledgedRepeat: input.acknowledgedRepeat };
   const executor = deps.run!.collaborators()!.executor();
@@ -138,8 +143,9 @@ async function executed(
     ...(datasets.available ? { onRecordBatch: datasets.recordBatchHandler(projectId, runId) } : {}),
     ...(conversations.available ? { parking: conversations.parkingPort({ projectId, subject: { kind: "run", id: runId } }) } : {})
   });
+  const doors = input.settled ? projectPartSettledCalls(base, { classesOf, settled: input.settled }) : base;
   const options: AutomationStudioGraphExecutionOptions = {
-    ...base, runControl: gate, subflowGraphs: graphs.source, allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], recoveryBudget: failedRouteBudget(graphs.root)
+    ...doors, runControl: gate, subflowGraphs: graphs.source, allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], recoveryBudget: failedRouteBudget(graphs.root)
   };
   options.invocation = automationStudioRootInvocation(graphs.root, options, async (target, childOptions, onExecuted) => {
     const child = graphs.copyOf(target.subflowId);

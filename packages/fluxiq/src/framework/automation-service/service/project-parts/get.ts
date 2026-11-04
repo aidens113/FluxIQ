@@ -89,7 +89,8 @@ async function versionsOf(stores: AutomationStudioProjectPartStores, partId: str
 async function callersOf(stores: AutomationStudioProjectPartStores, partId: string): Promise<ProjectPartCaller[]> {
   return (await stores.parts.listCallsTo({ partId })).map((call): ProjectPartCaller =>
     call.callerKind === "flow_graph"
-      ? { kind: "flow", flowId: call.callerId, nodeId: call.callerNodeId, version: call.version }
+      // The Flow a person opened. The graph that holds the step stays in the store, and no screen reads it.
+      ? { kind: "flow", flowId: call.callerFlowId ?? call.callerId, nodeId: call.callerNodeId, version: call.version }
       : { kind: "part", partId: call.callerId, callerVersion: call.callerVersion, nodeId: call.callerNodeId, version: call.version }
   );
 }

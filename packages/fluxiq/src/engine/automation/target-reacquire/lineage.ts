@@ -7,6 +7,10 @@
 // and the loop's `items` come from another node's output. Nested loops: the
 // innermost loop that hands the step its row wins.
 //
+// A call step inside a loop that hands its part the pass's row (`inputs: { item: <the row> }`)
+// is handed the row by that binding too, which is how a step inside the call finds its way
+// back to the step that read the list: `./frame-row.ts`, `./row-recheck.ts`.
+//
 // `output`: one of the step's parameters is bound to another node's output
 // (`$node.<key>.<output>`, or the output's run path `<node>.<output>`). With
 // several, the first element-target parameter (`element`, `target`) wins, else
@@ -54,6 +58,22 @@ export function automationStudioRowLoopOf(flow: AutomationStudioFlowDocument, no
   const bindings: Binding[] = [];
   collectBindings(flow, node.parameterValues ?? {}, [], 0, bindings);
   return innermostRowLoop(flow, node, bindings, new Map(flow.nodes.map((candidate) => [candidate.id, candidate])));
+}
+
+/** Whether a call step hands its part the row of the pass it is on, read off the step as written. A row given any other way has no lineage to follow. */
+export function automationStudioCallHandsRow(flow: AutomationStudioFlowDocument, call: AutomationStudioFlowNode): boolean {
+  const inputs = call.parameterValues?.inputs;
+  const given = inputs && typeof inputs === "object" && !Array.isArray(inputs) ? inputs[ROW] : undefined;
+  const path = automationStudioReacquireStatePath(flow, given);
+  if (path === undefined) return false;
+  if (path === ROW) return true;
+  const output = nodeOutput(path, new Map(flow.nodes.map((candidate) => [candidate.id, candidate])), call.id);
+  return output?.rest === ROW && flow.nodes.some((candidate) => candidate.id === output.nodeId && candidate.definitionId === FOR_EACH);
+}
+
+/** Whether a step sits in the body of a For Each, handed a row or not. */
+export function automationStudioStepRepeatsOverRows(flow: AutomationStudioFlowDocument, node: AutomationStudioFlowNode): boolean {
+  return automationStudioActivityLoops(flow, FOR_EACH).some((loop) => loop.members.has(node.id));
 }
 
 /** The row lineage: the innermost For Each handing the step its row, and the node its `items` came from. */

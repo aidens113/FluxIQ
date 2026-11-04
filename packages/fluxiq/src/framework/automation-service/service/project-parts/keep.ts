@@ -22,7 +22,8 @@ export async function keepProjectPart(deps: { pool: AutomationStudioProjectDatab
   if (!all.some((entry) => entry.subflow.subflowId === input.subflowId)) return { saved: false, code: "parts.subflow_not_found", message: "That part of the automation was not found." };
   const entries = closureOf(all, input.subflowId);
   const words = { ...(input.name ? { name: input.name } : {}), ...(input.purpose ? { purpose: input.purpose } : {}) };
-  const start = firstLiteralAddress(entries.map((entry) => entry.graphFlow));
+  // Where the Flow starts is the site of its parts, whichever of its graphs opens it: a part kept alone says so too, or no run of it could be checked.
+  const start = firstLiteralAddress(entries.map((entry) => entry.graphFlow)) ?? firstLiteralAddress(all.map((entry) => entry.graphFlow));
   try {
     const controlParameterKeys = AutomationStudioProjectPartControlKeys.of(deps.pool);
     const saved = await saveProjectPartsOfAppliedFlow({

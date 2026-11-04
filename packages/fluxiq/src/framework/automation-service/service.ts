@@ -214,7 +214,7 @@ import {
   type AutomationStudioProjectRecord,
   type AutomationStudioSubflowSummary,
   type RecordingIndex,
-  automationStudioFlowBootstrapInstructionAuthority, automationStudioFlowBootstrapExecutionAuthority, recordAutomationStudioFlowGraphJudgements, saveProjectPartsOfAppliedAdaptation, AutomationStudioProjectParts, automationStudioOpenPartRun,
+  automationStudioFlowBootstrapInstructionAuthority, automationStudioFlowBootstrapExecutionAuthority, recordAutomationStudioFlowGraphJudgements, saveProjectPartsOfAppliedAdaptation, AutomationStudioProjectParts, automationStudioFlowWriterKeepingPartCalls, automationStudioOpenPartRun,
   AutomationStudioRecordingEntryRemoval
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "../../runtime/conversations/index.ts";
@@ -456,7 +456,7 @@ export class AutomationStudioService {
     this.objectDocuments = new AutomationStudioObjectDocuments(this.projectPaths, this.recordingPaths, this.projects, this.objectStore);
     this.flows = new AutomationStudioFlowStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.repositories, this.projectDatabasePool);
     this.recordings = new AutomationStudioRecordingStore(this.projectPaths, this.recordingPaths, this.projects, this.indexes, this.objectDocuments, this.repositories, this.objectStore, this.runtimeProjectDatabasePool);
-    this.flowWriter = new AutomationStudioFlowWriter(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.legacy, this.objectDocuments, this.repositories, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
+    this.flowWriter = automationStudioFlowWriterKeepingPartCalls(new AutomationStudioFlowWriter(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.legacy, this.objectDocuments, this.repositories, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool), this.projectParts.flowGraphCalls());
     this.flowCreation = new AutomationStudioFlowCreation(this.projects, this.flows, this.repositories, this.flowWriter, undefined, automationStudioFacadePorts(this));
     this.flowMutations = new AutomationStudioFlowMutations(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowWriter, automationStudioFacadePorts(this));
     this.adaptationPatches = new AutomationStudioAdaptationPatches(this.flows, this.flowWriter, this.flowMutations, automationStudioFacadePorts(this));
@@ -2535,7 +2535,7 @@ export class AutomationStudioService {
         const selectedFlowIsOwned = automationStudioSubflowGraphIsOwned(route.selectedSubflow, selectedFlow, runtimeCanonical.flowId, (flow) => this.flowWriter.persistedFlowRepresentation(flow));
         // The selected Subflow is the run's first frame: its mappings applied, its siblings callable (C1).
         let routedFailedTraceAttempt: AutomationStudioNodeAttemptTrace | undefined;
-        const subflowFrame = automationStudioBindRouterSubflowFrame({ graphOptions, selected: route.selectedSubflow, selectedIsOwned: Boolean(selectedFlow && selectedFlowIsOwned), subflows: subflows.filter((item): item is AutomationStudioFlowSubflow => Boolean(item)), parentFlowId: runtimeCanonical.flowId, loadGraph: loadSubflowGraph, representationOf: (flow) => this.flowWriter.persistedFlowRepresentation(flow) });
+        const subflowFrame = automationStudioBindRouterSubflowFrame({ graphOptions, selected: route.selectedSubflow, selectedIsOwned: Boolean(selectedFlow && selectedFlowIsOwned), subflows: subflows.filter((item): item is AutomationStudioFlowSubflow => Boolean(item)), parentFlowId: runtimeCanonical.flowId, loadGraph: loadSubflowGraph, representationOf: (flow) => this.flowWriter.persistedFlowRepresentation(flow), library: this.projectParts.graphs(input.projectId, runtimeCanonical.flowId) });
         // C10: refused before any step when a graph requires what neither the executor nor the client offers.
         if (route.selectedSubflow && selectedFlow && selectedFlowIsOwned) assertAutomationStudioRunRequirements({ flows: [runtimeCanonical, selectedFlow], graphOptions, runtimeService: this.runtimeService, domainId: this.ioRuntime?.domainId ?? null });
         const trace = route.selectedSubflow && selectedFlow && selectedFlowIsOwned

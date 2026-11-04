@@ -14,7 +14,8 @@ const SKIP_WORDS: Readonly<Record<AutomationStudioSkippedProjectPart["reason"], 
   "part.unresolved_call": "It uses another part that is not saved, so it cannot be kept on its own.",
   "part.card_invalid": "Its description could not be written safely, so it was not kept.",
   "part.primary_not_explicit": "It is the main part of its automation, which is kept only when you ask for it.",
-  "part.call_cycle": "It and another part use each other, so neither can be kept."
+  "part.call_cycle": "It and another part use each other, so neither can be kept.",
+  "part.call_too_deep": "It uses parts that use parts too many levels deep, so it was not kept."
 });
 
 export function projectPartSkipWords(reason: AutomationStudioSkippedProjectPart["reason"]): string {

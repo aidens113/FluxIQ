@@ -10,6 +10,7 @@ import type { AutomationStudioPartCaller } from "../../../../../runtime/project-
 import type { AutomationStudioCandidateTrialLandedAct } from "../../candidate-trial/index.ts";
 import type { AutomationStudioServiceTrialCollaborators } from "../../trial-ports/index.ts";
 import type { AutomationStudioProjectPartDrivingPorts } from "./driving-gate.ts";
+import type { ProjectPartSettled } from "./settled-calls.ts";
 
 /** A run as the service holds it: where a person pauses and stops it, closed when the run ends. */
 export type AutomationStudioProjectPartOpenRun = { gate: AutomationStudioRunControlGate; close(): void };
@@ -36,6 +37,8 @@ export type AutomationStudioProjectPartRunInput = RunProjectPartRequest & {
   permission?: AutomationStudioActionPermissionCheck | undefined;
   /** Whether this very run was already done in this build: a lasting one is then refused, never repeated. */
   repeated?: ((key: { partId: string; version: number }) => boolean) | undefined;
+  /** Told each lasting step's call and what became of it, as it happens (`./settled-calls.ts`). */
+  settled?: ProjectPartSettled | undefined;
 };
 
 /** A part that was not run, as the library answers it. The handler turns it into `RunProjectPartRefusal`. */
@@ -43,6 +46,8 @@ export type AutomationStudioProjectPartRunRefusal = {
   ok: false;
   code: RunProjectPartRefusal["code"];
   message: string;
+  /** Which bound a part's calls broke, where `code` is `part.calls_not_available` because of one. A stable word. */
+  callBound?: "part.call_cycle" | "part.call_too_deep";
   classes?: AutomationStudioAttemptActClass[];
 };
 

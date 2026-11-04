@@ -79,6 +79,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput): Promise<A
   const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
   // The same answer as the loop's `askedRepeats` (`./round.ts`), so the record and the detector agree on how many of one act the person asked for.
   const record = new AutomationStudioAttemptActRecord({ persist: (data) => acts.save(projectId, flowId, data), asked: () => asked(run.claim) });
+  input.partActs?.use(record);
   const tried = automationStudioLlmLoopAttemptRecord();
   const session = await automationStudioAnswerFirstSession({ openSession: stores.openSession, writeSession: stores.writeSession, runId, attemptId });
   let sessionEnded = false;
