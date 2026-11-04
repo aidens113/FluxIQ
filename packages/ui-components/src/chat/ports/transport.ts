@@ -5,6 +5,7 @@
 // a shape it does not know is a failed read, never a thrown error.
 
 import type { ChatResult } from "./result.ts";
+import type { ChatResultsPort } from "./results.ts";
 
 /** Core's subject kinds a thread can be about. */
 export type ChatSubjectKind = "project" | "flow" | "run";
@@ -139,4 +140,6 @@ export type ChatTransport = {
   readonly recordings?: ChatRecordingsPort;
   readonly models?: ChatModelsPort;
   readonly changes?: ChatChangesPort;
+  /** A task's answer (`./results.ts`). Absent: the chat shows no answer turn. */
+  readonly results?: ChatResultsPort;
 };

@@ -12,6 +12,8 @@ export * from "./record-sets/index.ts";
 // What a recording client may capture and whether it may send direct requests:
 // Core's policy, its default, and the clamp every client applies.
 export * from "./recording-capture/index.ts";
+// Answer First's shared records: an attempt, its result, its acts, what it tried, what it saved, a subflow's card.
+export * from "./task-attempts/index.ts";
 
 export type AutomationStudioSchemaVersion = "0.1";
 export type StateValueType = "string" | "number" | "integer" | "boolean" | "point" | "rectangle" | "entity_ref" | "entity_ref_list" | "hash" | "json" | "unknown";
