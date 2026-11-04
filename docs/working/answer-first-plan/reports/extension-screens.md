@@ -102,3 +102,18 @@ Pictures: `C:/Users/osrs_/AppData/Local/Temp/claude/c--Users-osrs--FluxStuff--Fl
 6. **A result that finishes while the popup is closed gets no answer turn.** Passed to t869, as you said.
 7. **Project line in Settings has no name:** no port gives one.
 8. **Permission words** ("to build this Flow") are t870's. They still show in my pictures.
+
+## Last piece: docs (after Core 1f3c0d462, extension 6e29ee26a)
+
+One `worker`; its report is `reports/extension-screens/docs.md`. This supersedes open questions 5 and 7 above.
+
+- **Updated:** extension `docs/architecture/extension-client.md`, `docs/user/quickstart.md`, the description in `manifest.chrome.json` and `manifest.firefox.json`; Core `docs/architecture/package-boundaries.md`. The e2e manifest's own description was left, as it describes the test build.
+- **Quickstart's unlock section was left exactly as it was,** for the lead to update when t865 lands.
+- **The Settings project line stays nameless.** No port or message reaches the name: `ExtensionStatus` has only `projectId`, `hostStatusOf` never sets `projectName`, and the background keeps only the id from Core's snapshot. I confirmed by a grep for `projectName` across `src/shared`, `src/background` and `host-status.ts`, which finds nothing. It needs `ExtensionStatus.projectName` in the background and probably a Core read.
+- **Still out of date, not on the list I was given:** `docs/user/store-listing.md` lines 15 and 33 hold the old description and now disagree with the manifests. Core `docs/architecture/runtime-ownership.md:139` still says ui-components 0.1.0.
+- **Not confirmed in code:** quickstart's work-header and answer-foot claims are only partly traced; its web-app steps are unchanged and unchecked; older Panel UI paragraphs in `extension-client.md` were left as they were.
+
+Commands on the tree with these docs:
+- The six screens specs not re-run after the spec-only fix, `pnpm.cmd run test:content <setup, second-attempt, asks, tasks, library, recording-settings> --headed --workers=1` -> 30 passed. They ran on the committed source; only docs and manifest descriptions changed beside them.
+- `node scripts/structure-audit.mjs`: extension passed (237 warnings, 552 baselined); Core passed (501 warnings, 1097 baselined).
+- `node apps/extension/scripts/release/tests/release.test.mjs` (worker's run) -> fail 0.
