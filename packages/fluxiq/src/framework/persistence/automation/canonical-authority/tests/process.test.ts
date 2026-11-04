@@ -2,12 +2,14 @@
 import { fork, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
+import { REAL_SQL_TEST_TIMEOUT_MS } from "../../../../../../tests/test-groups.ts";
 import { canonicalFixture } from "./fixture.ts";
 
 type Reply = { status: string; operationKey?: string; code?: string };
+/** Waits for a child's reply, at the file's test limit: its longest wait is its load of the built package, as in whole-process.test.ts (t868). */
 function receive(child: ChildProcess, statuses: string[]): Promise<Reply> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { cleanup(); reject(new Error("canonical probe timeout")); }, 15000);
+    const timeout = setTimeout(() => { cleanup(); reject(new Error("canonical probe timeout")); }, REAL_SQL_TEST_TIMEOUT_MS);
     const listener = (reply: Reply) => { if (statuses.includes(reply.status)) { cleanup(); resolve(reply); } };
     const failed = () => { cleanup(); reject(new Error("canonical probe exited before expected phase")); };
     function cleanup() { clearTimeout(timeout); child.off("message", listener); child.off("exit", failed); }
@@ -28,7 +30,7 @@ it("real built two-process race has one reservation and one refusal", async () =
       await expect(coordinator.beginCapture("original-project", "race-capture", 1)).rejects.toThrow("unresolved");
     } finally { await Promise.all(children.map(stop)); }
   });
-}, 30000);
+});
 
 it("private infrastructure publication allocation race preserves one original owner", async () => {
   await canonicalFixture(async ({ root, create, owners, coordinator }) => {
@@ -41,7 +43,7 @@ it("private infrastructure publication allocation race preserves one original ow
       expect(await owners.readOwner("automation.flow_publications", `${original.document.flowId}@1.0.0`)).toMatchObject({ originalProjectId: "original-project", tombstoned: false, ownerRevision: 0 });
     } finally { await Promise.all(children.map(stop)); }
   });
-}, 30000);
+});
 
 for (const phase of ["reserved", "effect", "project-complete"]) it(`literal child kill after ${phase} preserves unresolved capture refusal`, async () => {
   await canonicalFixture(async ({ root, create, owners, coordinator }) => {
@@ -53,4 +55,4 @@ for (const phase of ["reserved", "effect", "project-complete"]) it(`literal chil
       await expect(coordinator.beginCapture("original-project", `kill-${phase}`, phase === "reserved" ? 1 : 2)).rejects.toThrow("unresolved");
     } finally { await stop(child); }
   });
-}, 30000);
+});
