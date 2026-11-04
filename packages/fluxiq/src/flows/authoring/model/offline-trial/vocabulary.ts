@@ -33,7 +33,9 @@ export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_SCOPES = Object.freeze(["supplied_
  * `snapshot_unavailable`: the trace holds no usable page snapshot at the point
  * a changed read was to be evaluated; `dynamic_content`: the evaluation needed
  * page behaviour a static snapshot cannot give. The trace matcher spells the
- * last two alike (`client-gateway/trace-matcher/gap-reasons.ts`).
+ * last two alike (`client-gateway/trace-matcher/gap-reasons.ts`). The last nine are
+ * the state rule's (`client-gateway/trace-state/gap-codes.ts`), which says what each
+ * means: only a trial answered from an exploration's states gives them.
  */
 export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES = Object.freeze([
   "missing_transition",
@@ -53,7 +55,16 @@ export const AUTOMATION_STUDIO_TRIAL_EVIDENCE_REASON_CODES = Object.freeze([
   "source_not_live",
   "judgement_unavailable",
   "snapshot_unavailable",
-  "dynamic_content"
+  "dynamic_content",
+  "state_changed_by_act",
+  "other_position",
+  "would_repeat_act",
+  "after_unrecorded_act",
+  "after_unrecorded_move",
+  "other_row",
+  "act_out_of_order",
+  "wait_longer_than_recorded",
+  "wait_shorter_than_recorded"
 ] as const);
 
 /** How one checked assertion came out. `unverified` means its evidence was unavailable. */

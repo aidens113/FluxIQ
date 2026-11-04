@@ -30,6 +30,41 @@ function judge(items: readonly ClientGatewayTraceStateRecordedCall[], flow: read
   return { end, verdict: clientGatewayTraceStateVerdict({ recording, end, gaps }) };
 }
 
+describe("a recording that read rows and kept none", () => {
+  it("is no reference: two empty lists are not the same result, whatever the Flow did", () => {
+    const recording = clientGatewayTraceStateRecording({ domain: fakeDomain, calls: calls(["scan", {}, { status: "ok", at: "a", rows: [] }]) });
+    const verdict = clientGatewayTraceStateVerdict({ recording, end: { used: [], receipted: [], skipped: [], reachedEnd: true, rows: [], afterChangedRows: false }, gaps: [] });
+    expect(verdict.verdict).toBe("inconclusive");
+    expect(verdict.reasons).toEqual(["recording.no_result_rows"]);
+    expect(verdict.assertions.every((assertion) => assertion.outcome === "unverified")).toBe(true);
+  });
+
+  it("does not speak for what follows a computed read that changed the rows", () => {
+    const recording = clientGatewayTraceStateRecording({ domain: fakeDomain, calls: calls(["scan", {}, { status: "ok", at: "a", rows: ["bolt", "nut"] }], ["pick", { part: "x" }, { status: "ok", at: "a" }], ["scan", { list: true }, { status: "ok", at: "a", rows: ["done"] }]) });
+    const walker = new ClientGatewayTraceStateWalker(recording, fakeDomain);
+    expect(walker.answer(operation("scan", { keep: "bolt" }))).toMatchObject({ rule: "read_computed" });
+    expect(walker.afterChangedRows).toBe(false);
+    expect(walker.answer(operation("pick", { part: "x" }))).toMatchObject({ status: "answered" });
+    expect(walker.afterChangedRows).toBe(true);
+    expect(walker.answer(operation("scan", { list: true }))).toMatchObject({ status: "answered" });
+    const end = clientGatewayTraceStateEndCheck(recording, walker);
+    expect(clientGatewayTraceStateVerdict({ recording, end, gaps: [] })).toMatchObject({ verdict: "inconclusive", reasons: ["recording.after_changed_rows"] });
+  });
+
+  it("judges a computed read that is the last thing the run read: same rows or not is on recorded support", () => {
+    const recording = clientGatewayTraceStateRecording({ domain: fakeDomain, calls: calls(["scan", {}, { status: "ok", at: "a", rows: ["bolt", "nut"] }]) });
+    const walker = new ClientGatewayTraceStateWalker(recording, fakeDomain);
+    walker.answer(operation("scan", { keep: "bolt" }));
+    const end = clientGatewayTraceStateEndCheck(recording, walker);
+    expect(clientGatewayTraceStateVerdict({ recording, end, gaps: [] })).toMatchObject({ verdict: "fail", reasons: ["recording.same_rows"] });
+  });
+
+  it("does not hold back a recording that read no rows at all: a task of acts has none", () => {
+    const recording = clientGatewayTraceStateRecording({ domain: fakeDomain, calls: calls(["scan", {}, { status: "ok", at: "a" }]) });
+    expect(clientGatewayTraceStateVerdict({ recording, end: { used: [], receipted: [], skipped: [], reachedEnd: true, rows: [], afterChangedRows: false }, gaps: [] }).verdict).toBe("pass");
+  });
+});
+
 describe("the pure verdict", () => {
   it("passes a Flow that repeats the recording's path", () => {
     const { verdict, end } = judge(EXPLORED, WHOLE);

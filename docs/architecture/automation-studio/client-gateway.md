@@ -1192,6 +1192,66 @@ ports a build makes, with the caller's judge and no start hook);
 sealed as the host writes it); and `clientGatewayTraceReevaluationRequest`, so
 a tool asks a reevaluator exactly as the matcher does.
 
+### The state engine (Answer First)
+
+`client-gateway/trace-state/` answers a Flow from one exploration by state instead
+of by a cursor: a state is the page's position plus the acts done. The rule is
+`ClientGatewayTraceStateWalker`; `ClientGatewayTraceStateEngine` puts it behind the
+same socket as the matcher, and everything around the rule is shared through
+`trace-matcher/recorded-feed.ts`: admission, Core's real intake, the virtual clock,
+id translation, reconcile answers held for their question, and the gap answer. The
+matcher is unchanged and stays for what uses it. `runAutomationStudioOfflineStateTrial`
+(`service/offline-trial/state/run.ts`) runs the candidate trial runner on it. **It is
+wired into no live path.**
+
+**Only what the Flow caused is fed.** A command answered from a recorded call gets
+that call's own answer, wherever it was recorded, and on its first use what arrived
+on its own after it. Another command's late answer is withheld and counted. A read
+after an act the run did not do, a move to a state it did not earn, or anything
+after an unrecorded act is a gap, not an answer.
+
+**A read gap does not end the run.** A read or page move the recording cannot answer
+gets the domain's `unansweredCall`, which says nothing was read and nothing moved, and
+the run goes on, so one verdict reports every gap with the step it sits on
+(`stepGaps`, `service/offline-trial/state/step-gaps.ts`). That answer is no recorded data,
+and the gap it stands for leaves the verdict `inconclusive`. An act gets the failing gap
+answer and its run stops: a run is never told an act landed when it did not.
+
+**A simulated run stands on the recording's clock.** The trial's virtual clock starts at
+the trace's origin, so a date filter's `now` inside the time the recording spans is the
+recording's own, not a new input (`run_clock`). A `now` outside it asks about another
+time, and stays a gap.
+
+**The domain's port** (`ClientGatewayTraceStateDomain`) labels a call, says what
+makes two calls one, reads an answer and may compute a read. The web port is
+`domain/src/runtime/offline-reads/state-domain/` in the web repository. Its canonical
+form changes nothing on the wire: every path keeps sending what it sends, and this is
+how the rule reads both. Every normalisation is declared, and comes back with the
+result as a normalisation: `target_form`, `wait_fields`, `new_tab`, `run_handles`,
+`run_clock` and `read_asks`. Row identity, `where`, `text`, `url`, `value`, `checked` and
+`ensureState` are never normalised away.
+
+**The row computer** (`computeRead`). A list read that differs from a recorded read
+of the same state only by its filter on columns already read is computed from the
+recorded rows through `automationStudioRecordConditionHolds`, the same function the
+page runs. A condition that reads its own value, another column, or a recorded read
+that was cut short or paged stays a gap. Nothing is computed from another state.
+
+**The verdict is pure** (`automationStudioStateTrialEvidenceResult`): no judge is
+read. Same rows, acts covered and reached the end with no gap is `pass` under
+`full_recorded_path`; a check failed on recorded support is `fail`
+(`assertion_failure`); any gap is `inconclusive` under its own reason. Origins are
+`recorded` and `pure_computation`, `liveEpisodeId` is `null`, so it can never be a
+live success: a pass says the Flow fits the recording, and it is only as right as the
+recording. So a recording nobody said yes to (`reference: "unjudged"`), one that read
+rows and kept none, or a run that went on after a computed read changed the rows the
+recording went on from, gives `inconclusive` whatever the assertions said. A run that
+never ran, or whose commands never reached the recording, is `inconclusive` too, never a
+fail. The trial's own bookkeeping (a result check, an end view) is not the Flow: it is
+answered with a gap, counted apart, and the verdict does not read it.
+The rule's nine own gap reasons are in U5 and not in the matcher's list, so what a gate
+must have words for is unchanged until a state trial is wired in.
+
 ### Offline trials in builds (P6)
 
 A build's test call runs offline first. Every build trial port does it, in the

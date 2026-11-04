@@ -88,6 +88,16 @@ describe("the detector", () => {
     expect(fresh.amended({ key: "other words, same result", draftBefore: "start", draftAfter: "tried", applied: 1, undone: false }).finding?.pattern).toBe("same_fix");
     expect(fresh.amended({ key: "a new edit", draftBefore: "tried", draftAfter: "never stood", applied: 1, undone: false }).progressed).toBe(true);
   });
+
+  it("taking steps out, back through drafts only its calls built, is not the same fix; bringing one back is", () => {
+    const watching = detector();
+    const step = (index: number): AutomationStudioLlmLoopCall => ({ callId: `s${index}`, toolId: "go", input: { to: index }, effect: "mutate", effectApplied: true, refused: false, stateBefore: `p${index}`, stateAfter: `p${index + 1}`, draftKey: `d${index}` });
+    for (const index of [0, 1, 2]) watching.ran(step(index));
+    const edit = (key: string, draftBefore: string, draftAfter: string) => watching.amended({ key, draftBefore, draftAfter, applied: 1, undone: false });
+    expect(edit("drop the third", "d2", "d1").finding).toBeUndefined();
+    expect(edit("drop the second", "d1", "d0").finding).toBeUndefined();
+    expect(edit("keep the second", "d0", "d1").finding).toMatchObject({ pattern: "same_fix", repeats: 2 });
+  });
 });
 
 describe("a look around an act", () => {
