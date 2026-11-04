@@ -16,6 +16,11 @@
 //     with `keepDraft: false` it is kept in memory only (`draft-memory.ts`).
 //   - With `maxLength` the box takes no more, and under `remainingHintBelow`
 //     characters left it says how many (`composer-hint`).
+//   - While a thread's first read is on its way the box takes words at once.
+//     A send pressed then is held: the words stay in the box, a line says they
+//     go when the conversation is ready, and they go when it is. Changing the
+//     words, or the chat, lets go of the hold; a read that fails lets go of it
+//     too and says so, and the words stay.
 //   - Not connected, the box is disabled and says "Connect to FluxIQ first".
 //   - With nowhere to send (`setUnavailable`: no thread and no project to open
 //     one on) the box is disabled and the reason stands above it, in words,
@@ -56,6 +61,8 @@ export type Composer = {
 const PLACEHOLDER = "Message FluxIQ";
 const OFFLINE_PLACEHOLDER = "Connect to FluxIQ first";
 const UNAVAILABLE_PLACEHOLDER = "Chat unavailable";
+const HELD = "This goes as soon as the conversation is ready.";
+const HOLD_FAILED = "Not sent: the conversation could not be read. Your words are still here.";
 /** The most lines the box grows to before it scrolls. */
 const MAX_LINES = 8;
 const SVG = "http://www.w3.org/2000/svg";
@@ -81,15 +88,20 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
   const unavailableLine = createElement("p", { className: "composer-unavailable", hidden: true, attrs: { role: "status" } });
   const parkedControls = createElement("div", { className: "composer-draft-review", hidden: true }, [parkedNotice, adopt, clear]);
   const hint = createElement("p", { className: "composer-hint", hidden: true, attrs: { role: "status" } });
+  const heldLine = createElement("p", { className: "composer-held", hidden: true, attrs: { role: "status" } });
   const fieldParts = attachment ? [box, attachment.button, sendButton] : [box, sendButton];
   const element = createElement("div", { className: "composer" }, [
     ...(attachment ? [attachment.chip, attachment.menu] : []),
     unavailableLine,
+    heldLine,
     createElement("div", { className: "composer-field" }, fieldParts),
     ...(maxLength === undefined || options.remainingHintBelow === undefined ? [] : [hint]),
     parkedControls
   ]);
   let enabled = false;
+  /** False while the thread's first read is on its way: words may be typed, and a send is held. */
+  let ready = false;
+  let held = false;
   let sending = false;
   let composing = false;
   let editRevision = 0;
@@ -100,6 +112,16 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
   let operation: object | undefined;
   let parked = false;
   const current = () => owner === undefined || owner.current();
+  function say(words: string): void {
+    if (heldLine.textContent !== words) heldLine.textContent = words;
+    if (heldLine.hidden !== (words === "")) heldLine.hidden = words === "";
+  }
+
+  function letGo(words = ""): void {
+    held = false;
+    say(words);
+  }
+
   function persist(): void { if (owner) draft.writeOwned(box.value, draftOwner); else draft.write(box.value); }
 
   function fit(): void {
@@ -144,6 +166,12 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
 
   function submit(): void {
     if (!enabled || sending || operation !== undefined || parked || !current() || box.value.trim() === "") return;
+    if (!ready) {
+      held = true;
+      say(HELD);
+      syncButton();
+      return;
+    }
     const words = box.value;
     const recording = attachment?.current();
     const submittedOwner = owner;
@@ -187,6 +215,7 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
     if (!current()) return;
     editRevision += 1;
     if (!parked) draftOwner = owner?.identity ?? null;
+    letGo();
     persist();
     fit();
     syncButton();
@@ -228,7 +257,8 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
   return {
     element,
     render(state) {
-      enabled = state.mode !== "offline" && state.mode !== "fallback" && (state.scopeState === undefined || state.scopeState === "ready") && unavailable === undefined;
+      enabled = state.mode !== "offline" && state.mode !== "fallback" && state.scopeState !== "error" && unavailable === undefined;
+      ready = state.scopeState !== "loading";
       sending = state.sending;
       if (box.disabled !== !enabled) box.disabled = !enabled;
       const shown = enabled ? placeholder : unavailable !== undefined ? UNAVAILABLE_PLACEHOLDER : state.mode === "offline" ? OFFLINE_PLACEHOLDER : state.scopeState === "loading" ? "Loading the conversation..." : state.scopeState === "error" ? "Chat unavailable" : OFFLINE_PLACEHOLDER;
@@ -236,6 +266,10 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
       syncButton();
       // A kept draft is sized once the box is on screen.
       if (box.style.height === "" && box.value !== "") fit();
+      if (!held || !ready) return;
+      letGo(enabled ? "" : HOLD_FAILED);
+      // After this render: a send tells the window, which renders again.
+      if (enabled) queueMicrotask(submit);
     },
     focus() {
       box.focus();
@@ -244,6 +278,7 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
     fill(text) {
       if (!current()) return;
       editRevision += 1;
+      letGo();
       box.value = text;
       if (!parked) draftOwner = owner?.identity ?? null;
       persist();
@@ -272,6 +307,7 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
       owner = next;
       editRevision++;
       operation = undefined;
+      letGo();
       reviewControls(next);
       parked = box.value !== "" && draftOwner !== next.identity;
       if (!parked) draftOwner = next.identity;

@@ -83,7 +83,8 @@ async function verifyStudioProjectFixture(name, project) {
   const flowId = project.flowIds?.[0];
   if (!flowId) throw new Error(`Fixture verification failed for ${name}: first flow id is missing`);
 
-  const flow = await studio.getFlow(project.id, flowId);
+  assertEqual((await studio.getFlow(project.id, flowId)).nodes.length, 0, `${name} top-level Flow owns no nodes`);
+  const flow = await studio.getFlow(project.id, project.stressGraphFlowId);
   assertEqual(flow.nodes.length, project.counts.graphNodes, `${name} graph nodes`);
   const workspaceSummary = await studio.getProjectWorkspaceSummary(project.id);
   assertEqual(workspaceSummary.flows.length, project.counts.flows + project.counts.subflows, `${name} canonical workspace and Subflow graph Flows`);
@@ -143,7 +144,8 @@ async function verifyPhase8Project(profile, project, expected) {
   assertEqual(hierarchyObjects, expected.hierarchyObjects, `${profile} persisted hierarchy objects`);
 
   reportStage(profile, "graphs");
-  const graphNodeCounts = await mapInBatches(flowIds, 16, async (flowId) => {
+  const graphFlowIds = project.stressGraphFlowId ? [...flowIds, project.stressGraphFlowId] : flowIds;
+  const graphNodeCounts = await mapInBatches(graphFlowIds, 16, async (flowId) => {
     const flow = await studio.getFlow(project.id, flowId);
     return Array.isArray(flow?.nodes) ? flow.nodes.length : 0;
   });

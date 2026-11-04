@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { automationStudioConversationAnswerNeedsPin } from "fluxiq/automation";
 import {
   CONVERSATION_POLL_CEILING_MS,
   CONVERSATION_POLL_FAST_MS,
@@ -228,21 +229,47 @@ describe("conversation answers", () => {
     expect(conversationAnswerNeedsReauthorization(deny)).toBe(false);
   });
 
-  it("offers one action per option, and re-authorizes only the destructive ones", () => {
-    const presentation = conversationAskPresentation(ask({
-      kind: "choice",
-      missing: [],
-      control: null,
-      options: [
-        { optionId: "opt.keep", label: "Keep the draft" },
-        { optionId: "opt.delete", label: "Delete it", destructive: true }
-      ]
-    }));
+  it("offers one action per option, each re-authorized when a run waits on an ask that names a gated class", () => {
+    const options = [
+      { optionId: "opt.keep", label: "Keep the draft", description: null, destructive: false },
+      { optionId: "opt.delete", label: "Delete it", description: null, destructive: true }
+    ];
+    const presentation = conversationAskPresentation(ask({ kind: "choice", parks: true, missing: [], consequences: ["delete"], control: null, options }));
     expect(presentation.actions.map((action) => action.answer)).toEqual([
       { askId: "ask.1", kind: "choice", optionId: "opt.keep" },
       { askId: "ask.1", kind: "choice", optionId: "opt.delete" }
     ]);
-    expect(presentation.actions.map(conversationAnswerNeedsReauthorization)).toEqual([false, true]);
+    // Core stores consequences on the ask, not on an option, so it cannot tell a safe option from a lasting one.
+    expect(presentation.actions.map(conversationAnswerNeedsReauthorization)).toEqual([true, true]);
+    expect(presentation.actions.map((action) => action.variant)).toEqual(["danger", "danger"]);
+  });
+
+  it("asks for a PIN exactly where Core checks one", () => {
+    const classes = [[], ["create_new"], ["modify_existing"], ["delete"], ["send_or_publish"], ["move_money"], ["create_new", "move_money"]] as const;
+    const asks = classes.flatMap((consequences) => (["permission", "confirm", "choice"] as const).flatMap((kind) => [true, false].flatMap((parks) => ["ask.plain", "panel-command.1", "conversation-command.1", "declaration-cross-check:1"].map((askId) => ({
+      askId,
+      kind,
+      parks,
+      missing: kind === "permission" ? [...consequences] : [],
+      consequences: kind === "permission" ? [] : [...consequences],
+      control: null,
+      options: kind === "choice" ? [{ optionId: "one", label: "One", description: null, destructive: false }, { optionId: "two", label: "Two", description: null, destructive: false }] : []
+    })))));
+    for (const fields of asks) {
+      const presentation = conversationAskPresentation(ask(fields));
+      const yes = presentation.actions.find((action) => action.answer.kind !== "deny")!;
+      const no = presentation.actions.find((action) => action.answer.kind === "deny");
+      const core = automationStudioConversationAnswerNeedsPin({ askId: fields.askId, kind: fields.kind, parks: fields.parks, missing: fields.missing, consequences: fields.consequences }, yes.answer.kind);
+      expect(conversationAnswerNeedsReauthorization(yes), JSON.stringify(fields)).toBe(core);
+      if (no) expect(conversationAnswerNeedsReauthorization(no)).toBe(false);
+    }
+  });
+
+  it("asks nothing where no act depends on the answer: a change to what exists, and a confirmation nothing reads", () => {
+    const apply = conversationAskPresentation(ask({ askId: "conversation-command.1", kind: "confirm", parks: false, missing: [], consequences: ["modify_existing"], control: null }));
+    expect(apply.actions.map(conversationAnswerNeedsReauthorization)).toEqual([false, false]);
+    const crossCheck = conversationAskPresentation(ask({ askId: "declaration-cross-check:send_or_publish:1", kind: "confirm", parks: false, missing: [], consequences: ["send_or_publish"], control: null }));
+    expect(crossCheck.actions.map(conversationAnswerNeedsReauthorization)).toEqual([false, false]);
   });
 
   it("takes words for an open ask and fixed answers for a confirm", () => {

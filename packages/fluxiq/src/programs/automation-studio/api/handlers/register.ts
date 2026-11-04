@@ -46,8 +46,8 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerInstructionEndpoints(dependencies);
   registerRunEndpoints(dependencies);
   registerRunDatasetEndpoints(dependencies);
-  // The conversation endpoints take their own dependency record: the registry, and the narrow service surface they use.
-  registerAutomationStudioConversationEndpoints({ registry, service });
+  // The conversation endpoints take their own dependency record: the registry, the narrow service surface they use, and what checks an answer's PIN.
+  registerAutomationStudioConversationEndpoints({ registry, service, identityAccess });
   registerAutomationStudioActivityEndpoints({ registry });
   registerRouterEndpoints(dependencies);
   registerLlmGenerationEndpoints(dependencies);

@@ -75,6 +75,8 @@ async function settle(command: AutomationStudioConversationCommand, context: Aut
       attachment: { kind: "candidate-draft", ref: outcome.candidate.candidateId } });
   }
   if (outcome.status === "done" && !outcome.candidate && outcome.confirm) {
+    // A paired client has no drawer for it and would show the words alone; the panel's Suggested changes still hold it.
+    if (outcome.confirm.shows && !context.paired) await context.host.appendAutomationTurn({ projectId: context.projectId, conversationId: context.conversationId, text: outcome.confirm.shows.text, ask: null, attachment: outcome.confirm.shows.attachment });
     const askId = await askToConfirmAutomationStudioConversationCommand(context, outcome.confirm);
     if (!askId) {
       await context.host.appendAutomationTurn({

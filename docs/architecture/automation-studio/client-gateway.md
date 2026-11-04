@@ -463,8 +463,9 @@ bound it:
   or `authoring`, so a mistaken allowlist entry still cannot reach a delete, a
   payment or a program-gated credential check. Deletes and money movement keep
   asking the person for their PIN in the web panel. Answering an ask is
-  `authoring`: it is the person answering in their own thread, and the act it
-  answers is still gated where it happens.
+  `authoring`: it is the person answering in their own thread. A signed-in
+  person's answer that is the authority for an act takes their PIN at
+  `answer-ask`; a paired client's press stands without one.
 - No auth session is injected into a token call's payload, and one the caller
   names is removed, so a PIN check a handler runs fails closed.
 

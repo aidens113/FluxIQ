@@ -29,7 +29,7 @@ test("rendered project readiness waits for authorized empty list and never comes
     const root = fake(chat.element);
     assert.equal(root.getAttribute(CHAT_PROJECT_NAVIGATION.projectAttribute), "new");
     assert.equal(root.getAttribute(CHAT_PROJECT_NAVIGATION.scopeStateAttribute), "loading");
-    assert.equal(root.descendants().find(node => node.id === "conversationInput")!.disabled, true);
+    assert.equal(root.descendants().find(node => node.id === "conversationInput")!.disabled, false, "words can be typed while the first read is on its way");
     assert.equal(root.byClass("chat-msg").some(message => message.textContent.includes("old task")), false);
     release();
     await new Promise(resolve => setTimeout(resolve, 0));

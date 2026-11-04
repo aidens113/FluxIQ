@@ -6,13 +6,14 @@
 // Seeded in the "small" project (UI Fixture - Small):
 //   - a build thread holding a pending permission ask (send_or_publish, create_new)
 //   - a run thread holding a pending choice ask whose options are destructive (consequence: delete), below 14 filler turns
-//   - a project thread with an open ask, a flow-graph-diff attachment, an adaptation reference and the
-//     panel's own `panel-capability-result` record after a person's turn.
+//   - a project thread with an open ask, a flow-graph-diff reference to a real proposal held by Core, an adaptation
+//     reference and the panel's own `panel-capability-result` record after a person's turn.
 // The "empty" project is left without threads.
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
+import { automationStudioFlowGraphDiffAttachment } from "fluxiq/automation";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureRoot = path.resolve(process.env.FLUXIQ_E2E_FIXTURE_ROOT ?? path.join(webRoot, ".e2e-host"));
@@ -24,7 +25,38 @@ const projectId = manifest.projects.small.id;
 
 const fluxiq = FluxIQ.create({ rootDir: fixtureRoot, loadEnv: false });
 await fluxiq.setup();
-const conversations = fluxiq.programs.automationStudio.conversations;
+const studio = fluxiq.programs.automationStudio;
+const conversations = studio.conversations;
+
+// A proposed change Core really holds, on a Flow of its own: nothing is built and no model is called.
+const flow = await studio.createFlow({ projectId, name: "Weekly post" });
+const now = Date.now();
+const instructionId = "instruction.e2e.weekly-post";
+await studio.saveFlowInstruction(projectId, {
+  schemaVersion: "0.1", instructionId, title: "Weekly post", body: "Open the post editor, then finish.",
+  scope: { kind: "flow", projectId, flowId: flow.flowId }, priority: 100, status: "active", requirement: "required", createdAt: now, updatedAt: now
+});
+const proposal = await studio.createFlowBootstrapAdaptation({
+  projectId,
+  flowId: flow.flowId,
+  baseDependencyDigest: await studio.getLlmExecutionDependencyDigest(projectId, flow.flowId),
+  sourceInstructionIds: [instructionId],
+  summary: "Open the post editor, then finish.",
+  buildPlan: { plan: {
+    schemaVersion: "0.1",
+    router: { name: "Instruction router", rules: [], fallback: { kind: "subflow", targetSubflowKey: "primary" } },
+    subflows: [{
+      key: "primary",
+      name: "Primary",
+      role: "primary",
+      nodes: [
+        { key: "start", definitionId: "builtin.control.start", definitionVersion: "1.0.0", label: "Start the post" },
+        { key: "end", definitionId: "builtin.control.end", definitionVersion: "1.0.0", label: "Finish the post" }
+      ],
+      edges: [{ key: "start_end", source: { nodeKey: "start", portId: "success" }, target: { nodeKey: "end", portId: "in" } }]
+    }]
+  } }
+});
 
 const permission = {
   schemaVersion: "automation-studio.action-permission-request.v1",
@@ -59,7 +91,7 @@ await run.ask({
 const project = conversations.writerFor({ projectId, subject: { kind: "project", id: projectId }, title: "Planning notes" });
 const conversationId = await project.conversationId();
 await conversations.appendTurn({ projectId, conversationId, text: "Please show me what the proposed change does.", actorId: "admin" });
-await project.say("Here is the change I would make to the Flow.", { kind: "flow-graph-diff", ref: "diff.e2e.1" });
+await project.say("Here is the change I would make to the Flow.", automationStudioFlowGraphDiffAttachment(flow.flowId, proposal.adaptationId));
 await project.say("A better selector exists for the title.", { kind: "adaptation", ref: "adaptation:adaptation.e2e.1" });
 await conversations.appendTurn({ projectId, conversationId, text: "Opened the Runs view.", actorId: "admin", attachment: { kind: "panel-capability-result", ref: "result.e2e.1" } });
 await project.ask({

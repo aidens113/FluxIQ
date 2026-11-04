@@ -82,12 +82,11 @@ with the server stopped, then run it against a server you started on a free port
 `apps/web/.e2e-host` and no model key in its environment:
 
 ```powershell
-$env:FLUXIQ_E2E_CHAT_ONLY = "true"; $env:FLUXIQ_E2E_FAST_STUDIO = "true"
+$env:FLUXIQ_E2E_FAST_STUDIO = "true"
 pnpm --filter @fluxiq/web fixture:e2e
 node apps/web/e2e/support/seed-chat-threads.mjs
 $env:FLUXIQ_E2E_BASE_URL = "http://127.0.0.1:<port>"
 npx playwright test e2e/chat-widget.spec.ts --headed --project=desktop-chromium --workers=1
 ```
 
-`FLUXIQ_E2E_CHAT_ONLY` seeds bare projects: the Flow corpus no longer saves against Core's Subflow-graph rule. The spec answers
-asks, so each run needs a fresh seed. The typed send runs only when the panel's own key snapshot shows no enabled key.
+`FLUXIQ_E2E_FAST_STUDIO` seeds the small project alone. The spec answers asks, so each run needs a fresh seed. The typed send runs only when the panel's own key snapshot shows no enabled key.

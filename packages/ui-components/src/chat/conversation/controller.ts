@@ -210,6 +210,8 @@ export function createConversationController(
   const answering = new Map<string, object>();
   const answerErrors = new Map<string, string>();
   let inFlight: Promise<void> | undefined;
+  /** The generation the read in flight is for. An older one is thrown away when it lands, so nothing waits for it. */
+  let inFlightGeneration = -1;
   let again = false;
   // Failed reads in a row, since when, and the quiet retry waiting to run.
   let failing: { since: number; count: number } | undefined;
@@ -441,14 +443,19 @@ export function createConversationController(
     },
     refresh() {
       if (!readable() || reach.quiet?.() === true) return Promise.resolve();
-      if (inFlight) {
+      if (inFlight && inFlightGeneration === generation) {
         again = true;
         return inFlight;
       }
+      const mine = generation;
+      inFlightGeneration = mine;
+      again = false;
       inFlight = (async () => {
         do {
           again = false;
           await readOnce();
+          // Left behind: the newer read owns `inFlight` and `again` now.
+          if (mine !== generation) return;
           onChange();
         } while (again && readable());
         inFlight = undefined;
