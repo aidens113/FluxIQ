@@ -5,4 +5,5 @@ export * from "./mergers/index.ts";
 export * from "./record-data.ts";
 export * from "./record.ts";
 export * from "./row-ties.ts";
+export * from "./same-row.ts";
 export * from "./words.ts";

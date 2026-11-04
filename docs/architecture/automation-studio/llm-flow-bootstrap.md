@@ -1043,7 +1043,15 @@ opened as a trial's is and marked `explorationAttempt`. A model never writes one
 build record, the trial ledger and a run's completed acts into the contract's shape. It
 is persisted per Flow (`attempt-acts.json`) and carried across rounds. An identical
 landed act is refused, a may-have-landed act only after a look, and a row is done by the
-digest of its own fields. The person may ask for an act several times in their own words
+digest of its own fields or by being the same row as one an earlier read noted. Two rows of
+one read are never the same row. Otherwise, per earlier read, the row whose telling words
+best fit is that row, whatever its columns are called, and rows that fit equally are all
+held (`act-record/same-row.ts`). A field most of a read shares tells no row apart, and a
+bare number only decides between rows that already fit. A later read is also held against
+the sentence that named a by-hand press. The bias is deliberate: a row wrongly held done is
+left out and counted as skipped, which a judge's no brings back; a row wrongly held not done
+is an act done twice. A row sharing no word with any read or that sentence is a new row.
+The person may ask for an act several times in their own words
 (`runtime/answer-first/asked-count/`): digits, the number words two to twelve, "twice"
 and "thrice". A model's words never lift the rule. The first Flow run after an attempt
 carries the record (`service/answer-first/run-acts/`) and does not press what landed,

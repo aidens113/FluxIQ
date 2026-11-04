@@ -37,6 +37,11 @@
 // On one row, two acts are the same unless their controls' words differ: pressing
 // a row's control by hand and in a loop ran under different selectors, and that must not
 // read as two acts, while a row's two different controls must.
+//
+// **One row, read differently (`./same-row.ts`).** A row's digest holds only while the row
+// reads the same, and a Flow's own read, or the press itself, changes how it reads. So a row a
+// call carries answers to its own digest and those of the rows earlier reads noted that are the
+// same row, and an act keeps them all, while its id and its `rowIdentity` stay the row's own.
 
 import { type AutomationStudioAttemptAct, type AutomationStudioAttemptActClass, readAttemptActClasses } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
@@ -56,7 +61,7 @@ import { automationStudioAttemptActScreenedWords } from "./words.ts";
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
 const MODEL_RULE = "These acts already happened in this task or may have. Never repeat one: count what landed as done and carry on with what is left. Look at the page before retrying one that may have landed.";
 
-type Identity = AutomationStudioAttemptActTargetKeys & { actionId: string; rows: string[] };
+type Identity = AutomationStudioAttemptActTargetKeys & { actionId: string; rows: string[]; ownRow?: string };
 type ForRun = { actionId: string; parameters: JsonObject; row?: JsonObject | undefined; steps?: readonly string[] | undefined };
 
 export class AutomationStudioAttemptActRecord {
@@ -129,8 +134,9 @@ export class AutomationStudioAttemptActRecord {
 
   /** Whether this row already took a lasting act (never by position or handle). */
   rowDone(row: JsonObject): boolean {
-    const identity = automationStudioAttemptActRowIdentity(row);
-    return identity !== undefined && this.entries.some((entry) => stands(entry) && entry.rows.includes(identity));
+    if (!this.entries.some((entry) => stands(entry) && entry.rows.length > 0)) return false;
+    const rows = this.ties.sameAs(row);
+    return this.entries.some((entry) => stands(entry) && entry.rows.some((held) => rows.includes(held)));
   }
 
   /** Whether a step's non-row lasting act already landed. A may-have-landed one counts: a step so held is checked, never sent again. */
@@ -150,9 +156,12 @@ export class AutomationStudioAttemptActRecord {
   /** Remembers which row a handle printed in a read belongs to, so a by-hand press on it counts for that row. */
   noteReadRows(rows: readonly JsonObject[]): void {
     if (rows.length === 0) return;
-    this.ties.note(rows);
-    // An act made before the read that lists its row (header of `./row-ties.ts`).
-    for (const entry of this.entries) if (entry.rows.length === 0) this.tieLate(entry);
+    const read = this.ties.note(rows);
+    // An act made before the read that lists its row, however that read writes it (header of `./row-ties.ts`).
+    for (const entry of this.entries) {
+      if (entry.rows.length === 0) this.tieLate(entry);
+      else if (entry.actedOnWords) entry.rows = [...new Set([...entry.rows, ...this.ties.ofWords(entry.actedOnWords, read)])];
+    }
     this.changed();
   }
 
@@ -199,9 +208,9 @@ export class AutomationStudioAttemptActRecord {
 
   private identityOf(actionId: string, parameters: JsonObject, row: JsonObject | undefined): Identity {
     const target = automationStudioAttemptActTargetKeys(actionId, parameters);
-    const own = row === undefined ? undefined : automationStudioAttemptActRowIdentity(row);
-    const printed = own === undefined && target.handle !== undefined ? this.ties.ofHandle(target.handle) : [];
-    return { ...target, actionId, rows: own !== undefined ? [own] : printed };
+    const ownRow = row === undefined ? undefined : automationStudioAttemptActRowIdentity(row);
+    if (ownRow !== undefined) return { ...target, actionId, ownRow, rows: this.ties.sameAs(row!) };
+    return { ...target, actionId, rows: target.handle !== undefined ? this.ties.ofHandle(target.handle) : [] };
   }
 
   /** Every act this identity is the same act as (header). */
@@ -240,7 +249,7 @@ export class AutomationStudioAttemptActRecord {
     const actedOnWords = outcome.actedOn === undefined ? undefined : RowTies.wordsOf(outcome.actedOn);
     const named = actedOnWords ? this.ties.ofWords(actedOnWords) : [];
     const rows = called.rows.length > 0 ? called.rows : named.length > 0 ? named : this.place?.rows ?? [];
-    const only = rows.length === 1 ? rows[0] : undefined;
+    const only = called.ownRow ?? (rows.length === 1 ? rows[0] : undefined);
     // The frozen form names the act from here on; a handle stops meaning anything when the build ends.
     const key = (frozen?.keys ?? called.keys)[0] ?? called.keys[0]!;
     const words = automationStudioAttemptActScreenedWords(outcome.words, classes);

@@ -56,7 +56,7 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
     }
     if (read.kind === "pass") return answer;
     const said = automationStudioAttemptActAnswerRead(answer, input.readRowsKey);
-    record.noteReadRows(said.rows);
+    for (const rows of said.reads) record.noteReadRows(rows);
     if (read.kind === "look" ? said.looked || !said.applied : said.looked) record.looked();
     if (read.kind === "act") {
       if (recordable(read.act, said)) record.settled(read.act, {
