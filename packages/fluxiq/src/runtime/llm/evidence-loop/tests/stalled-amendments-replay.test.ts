@@ -159,8 +159,10 @@ describe("replaying the recorded amendment stall", () => {
     expect(result.trace.filter((row) => row.decision === "amend_draft").map((row) => row.resultCode)).toEqual([
       "llm_evidence_loop.draft_amended",
       "llm_evidence_loop.draft_amendment_undone",
-      "llm_evidence_loop.draft_amendment_undone",
-      "llm_evidence_loop.draft_amendment_undone"
+      // Step 3 was added, dropped and kept again: the draft has come back twice, which is the same fix again, so it was told so and
+      // the next drop was refused before it ran (`../../repeat-guard/loop-detection/`). The keep then finds step 3 already in the Flow.
+      "llm_evidence_loop.repeat_refused",
+      "llm_evidence_loop.draft_unchanged"
     ]);
   });
 

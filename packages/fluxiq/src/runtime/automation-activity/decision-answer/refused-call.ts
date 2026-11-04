@@ -56,9 +56,12 @@ function refusedIn(evidence: Evidence, iteration: number): string | undefined {
   return typeof outcome === "string" ? outcome : "";
 }
 
+/** The loop detector's own rows beside a decision's (`../../llm/repeat-guard/loop-detection/feedback.ts`): a steer or a signal, never what the decision came to. */
+const LOOP_ROW = /^llm_evidence_loop\.loop_/u;
+
 /** The same, from the stalled round's trace row for `iteration`. */
 function refusedInTrace(trace: Stalled["trace"], iteration: number): string | undefined {
-  const row = [...trace].reverse().find((candidate) => candidate.iteration === iteration);
+  const row = [...trace].reverse().find((candidate) => candidate.iteration === iteration && !LOOP_ROW.test(candidate.resultCode ?? ""));
   return row?.resultCode === REPEAT_REFUSED ? row.resultReason ?? "" : undefined;
 }
 

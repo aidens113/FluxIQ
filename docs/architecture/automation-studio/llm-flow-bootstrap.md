@@ -3160,6 +3160,15 @@ that declares nothing is shown every result whole, as before. Live run
 decision, 214,853 input tokens, on course to pass a 1M-token window near the
 twenty-second call of a thirty-step build.
 
+**A loop that got past that guard is caught too** (2026-11-03;
+`runtime/llm/repeat-guard/loop-detection/`, `runtime/llm/decision-handlers/loop-check.ts`).
+The same call with only its words changed, a cycle of calls, a window of calls that
+bring nothing new, and the same fix again are read from typed facts, and steered,
+then refused before they run, then signalled to the loop's caller, which ends as a
+stall does where no caller answers. Working through rows or pages is progress and
+never reaches them. [Failure facts](./failure-control.md#loops-when-calls-that-each-ran-get-nowhere)
+has the patterns, the ladder and what it leaves uncaught.
+
 **A call already tried on this page is not made again** (2026-10-01;
 `runtime/llm/repeat-guard/`, `runtime/llm/decision-handlers/refused-repeat.ts`). The loop
 records every call by its tool, its whole input as canonical JSON, and the
