@@ -205,7 +205,7 @@ test("steps open on request with their reasoning, marked from saved or worked ou
 
 test("every optional method absent means its control is not drawn", async () => {
   await withFakeDocument(async () => {
-    const { screen, root } = mount({ without: ["readSteps", "readProvenance", "carryOn", "rename", "remove"], chat: false });
+    const { screen, root } = mount({ without: ["readSteps", "carryOn", "rename", "remove"], chat: false });
     screen.setActive(true);
     await flush();
     await press(keyed(root, "row:task-saved-searches"));

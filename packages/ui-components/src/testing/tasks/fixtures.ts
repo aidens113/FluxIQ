@@ -4,7 +4,7 @@
 // Times are set against `nowMs` so the days read naturally; spend and steps are invented.
 
 import type { ChatTaskAttempt, ChatTaskOutcome } from "../../chat/ports/index.ts";
-import type { TaskProvenance, TaskStep, TaskSummary } from "../../screens/tasks/index.ts";
+import type { TaskStep, TaskSummary } from "../../screens/tasks/index.ts";
 import { fakeTaskOutcomes } from "../results/index.ts";
 
 /** One task with its attempts (newest first) and what a read of their steps answers. */
@@ -12,7 +12,6 @@ export type FakeTask = {
   summary: TaskSummary;
   attempts: ChatTaskOutcome[];
   steps?: Record<string, TaskStep[]>;
-  provenance?: Record<string, TaskProvenance>;
 };
 
 const MINUTE = 60_000;
@@ -74,13 +73,10 @@ export function fakeTasks(nowMs: number): Record<"done" | "working" | "interrupt
   return {
     done: {
       summary: summaryOf("Find the cheapest kettles on the shop", [second, first], "conv-deals"),
-      attempts: [second, first],
+      attempts: [{ ...second, provenance: { route: "saved", startedFrom: "the saved steps", steps: [{ position: 1, label: "Opened the shop's kettle page", from: "saved", ran: true }, { position: 2, label: "Sorted by price, lowest first", from: "saved", ran: true }, { position: 3, label: "Read the first 10 rows", from: "worked_out", ran: true }] } }, first],
       steps: {
         "attempt-deals-2": stepsOf("attempt-deals-2", [["Opened the shop's kettle page", "Started from the saved steps.", "Kettles, 24 results"], ["Sorted by price, lowest first", "The task asks for the cheapest.", "Sorted"], ["Read the first 10 rows", undefined, "10 rows"]], second.attempt.startedAtMs),
         "attempt-deals-1": stepsOf("attempt-deals-1", [["Opened the shop's kettle page", "No saved steps yet, so I looked at the page.", "Kettles, 24 results"], ["Looked at the page's layout", undefined, undefined], ["Sorted by price, lowest first", "The task asks for the cheapest.", "Sorted"], ["Read the first 10 rows", "Ten rows is what was asked for.", "10 rows"]], first.attempt.startedAtMs, 1)
-      },
-      provenance: {
-        "attempt-deals-2": { route: "saved", startedFrom: "the saved steps", steps: [{ position: 1, label: "Opened the shop's kettle page", from: "saved", ran: true }, { position: 2, label: "Sorted by price, lowest first", from: "saved", ran: true }, { position: 3, label: "Read the first 10 rows", from: "worked_out", ran: true }] }
       }
     },
     working: { summary: summaryOf("Collect the new job posts every morning", [working], "conv-jobs"), attempts: [working], steps: { "attempt-jobs-1": stepsOf("attempt-jobs-1", [["Opened the job board", "That is where the posts are.", "Board loaded"], ["Filtered to today", undefined, "14 posts"]], working.attempt.startedAtMs) } },

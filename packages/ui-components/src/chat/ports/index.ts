@@ -6,6 +6,7 @@ export type { ChatAttachmentContext, ChatAttachmentDraw, ChatAttachmentPort } fr
 export type { ChatResult } from "./result.ts";
 export type {
   ChatAddBudgetQuery,
+  ChatAttemptProvenance,
   ChatAttemptAct,
   ChatAttemptLoopCount,
   ChatDownload,

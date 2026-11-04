@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { fakeTasks } from "../../../../testing/index.ts";
 import type { ChatTaskOutcome } from "../../../../chat/ports/index.ts";
-import type { TaskProvenance, TaskStep } from "../../port.ts";
+import type { ChatAttemptProvenance } from "../../../../chat/ports/index.ts";
+import type { TaskStep } from "../../port.ts";
 import { attemptEntry, clockWords, deleteWords, FROM_SAVED, groupTasks, ownWaitingWords, stepRuns, taskActions, taskRow, taskState, whereItGotTo, WORKED_OUT } from "../index.ts";
 
 // A Friday afternoon, local time, so "yesterday", "Tuesday" and "today" read the same wherever the tests run.
@@ -113,7 +114,7 @@ test("steps keep their reasoning, fold the small ones, and mark saved or worked 
     { stepId: "e", atMs: 0, title: "Read the rows" },
     { stepId: "f", atMs: 0, title: "Wrote it down" }
   ];
-  const provenance: TaskProvenance = { route: "x", startedFrom: "y", steps: [
+  const provenance: ChatAttemptProvenance = { route: "x", startedFrom: "y", steps: [
     { position: 1, label: "Opened the page", from: "saved", ran: true },
     { position: 4, label: "Sorted by price", from: "saved", ran: true },
     { position: 5, label: "Read the rows", from: "worked_out", ran: true },

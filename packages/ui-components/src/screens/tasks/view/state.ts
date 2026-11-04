@@ -2,7 +2,8 @@
 // a view never changes it.
 
 import type { ChatTaskOutcome } from "../../../chat/ports/index.ts";
-import type { TaskProvenance, TaskStep, TaskSummary } from "../port.ts";
+import type { ChatAttemptProvenance } from "../../../chat/ports/index.ts";
+import type { TaskStep, TaskSummary } from "../port.ts";
 
 /** The list: what was read, what the search says, and the last failed read (kept beside what was on screen). */
 export type ListState = {
@@ -20,7 +21,7 @@ export type ListState = {
 export type StepsState = {
   status: "loading" | "ready" | "failed";
   steps: readonly TaskStep[];
-  provenance?: TaskProvenance;
+  provenance?: ChatAttemptProvenance;
   error?: string;
   open: boolean;
   quietOpen: boolean;

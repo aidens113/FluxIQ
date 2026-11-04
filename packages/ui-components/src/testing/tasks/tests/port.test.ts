@@ -62,7 +62,6 @@ test("rename and remove change the list; a port made without a method does not h
   const bare = createFakeTasksPort({ tasks: [], without: ["readSteps", "carryOn", "rename", "remove"] });
   assert.equal(bare.readSteps, undefined);
   assert.equal(bare.carryOn, undefined);
-  assert.equal(typeof bare.readProvenance, "function");
 });
 
 test("the memory holds what it was last given", async () => {

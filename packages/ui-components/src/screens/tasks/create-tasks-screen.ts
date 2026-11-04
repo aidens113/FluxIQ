@@ -148,12 +148,13 @@ export function createTasksScreen(options: TasksScreenOptions): TasksScreen {
     const before = details.steps.get(attemptId);
     setSteps(attemptId, { status: "loading", steps: before?.steps ?? [], ...(before?.provenance === undefined ? {} : { provenance: before.provenance }), open: before?.open ?? open, quietOpen: before?.quietOpen ?? false });
     draw();
-    const [steps, provenance] = await Promise.all([port.readSteps({ projectId, attemptId }), port.readProvenance?.({ projectId, attemptId }) ?? Promise.resolve(undefined)]);
+    const steps = await port.readSteps({ projectId, attemptId });
     if (details?.taskId !== taskId) return;
     const current = details.steps.get(attemptId);
+    const heldProvenance = details.attempts.find((outcome) => outcome.attempt.attemptId === attemptId)?.provenance;
     const base = { open: current?.open ?? open, quietOpen: current?.quietOpen ?? false };
     if (!steps.ok) setSteps(attemptId, { ...base, status: "failed", steps: before?.steps ?? [], error: steps.sentence });
-    else setSteps(attemptId, { ...base, status: "ready", steps: steps.value.steps, ...(provenance?.ok === true ? { provenance: provenance.value } : {}) });
+    else setSteps(attemptId, { ...base, status: "ready", steps: steps.value.steps, ...(heldProvenance === undefined ? {} : { provenance: heldProvenance }) });
     draw();
   }
 

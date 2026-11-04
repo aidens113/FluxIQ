@@ -6,14 +6,14 @@
 // `working` attempt.
 
 import type { ChatResult, ChatResultsPort, ChatTaskAttempt, ChatTaskOutcome } from "../../chat/ports/index.ts";
-import type { TaskProvenance, TaskStep, TaskSummary, TasksPort } from "../../screens/tasks/index.ts";
+import type { TaskStep, TaskSummary, TasksPort } from "../../screens/tasks/index.ts";
 import { createFakeChatResultsPort, fakeTaskOutcomes } from "../results/index.ts";
 import type { FakeTask } from "./fixtures.ts";
 
 export type FakeTasksOptions = {
   tasks: readonly FakeTask[];
   /** Methods the port leaves out, to test a client that cannot carry them. */
-  without?: ReadonlyArray<"readSteps" | "readProvenance" | "carryOn" | "rename" | "remove">;
+  without?: ReadonlyArray<"readSteps" | "carryOn" | "rename" | "remove">;
   /** `false`: the spend is not real (`ChatResultsPort.reportsSpend`). */
   reportsSpend?: false;
 };
@@ -127,12 +127,6 @@ export function createFakeTasksPort(options: FakeTasksOptions): FakeTasksPort {
       if (failure) return failure;
       const held: TaskStep[] | undefined = tasks.map((task) => task.steps?.[query.attemptId]).find((steps) => steps !== undefined);
       return { ok: true, value: { steps: structuredClone(held ?? []) } };
-    },
-    async readProvenance(query) {
-      const failure = failing("readProvenance", query);
-      if (failure) return failure;
-      const held: TaskProvenance | undefined = tasks.map((task) => task.provenance?.[query.attemptId]).find((value) => value !== undefined);
-      return held === undefined ? { ok: false, sentence: "Nothing is recorded about where these steps came from.", code: "failed" } : { ok: true, value: structuredClone(held) };
     },
     async carryOn(query) {
       const failure = failing("carryOn", query);

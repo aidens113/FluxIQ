@@ -31,13 +31,6 @@ export type TaskStep = {
   quiet?: boolean;
 };
 
-/** Where an attempt's steps came from: the task's memory of it (`taskMemory.provenance`). */
-export type TaskProvenance = {
-  route: string;
-  startedFrom: string;
-  steps: { position: number; label: string; from: "saved" | "worked_out"; ran: boolean }[];
-};
-
 export type TasksListQuery = { projectId: string; text?: string; limit: number; cursor?: string };
 
 /** Reads and changes a person's tasks. Requests never throw: a failure is a failed `ChatResult`. */
@@ -48,7 +41,6 @@ export type TasksPort = {
   /** The attempt's durable steps. Absent: the steps are not shown. */
   readSteps?(query: { projectId: string; attemptId: string }): Promise<ChatResult<{ steps: readonly TaskStep[] }>>;
   /** Absent: nothing is marked as saved or worked out again. */
-  readProvenance?(query: { projectId: string; attemptId: string }): Promise<ChatResult<TaskProvenance>>;
   /** Carries on an interrupted attempt. Absent: no Carry on. */
   carryOn?(query: { projectId: string; attemptId: string }): Promise<ChatResult<{ attemptId: string }>>;
   rename?(query: { projectId: string; taskId: string; title: string }): Promise<ChatResult<unknown>>;

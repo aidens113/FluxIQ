@@ -2,7 +2,8 @@
 // (quiet) folded together, and a heading only where the kind changes between steps taken from
 // what was saved and steps worked out again. With no provenance nothing is marked.
 
-import type { TaskProvenance, TaskStep } from "../port.ts";
+import type { ChatAttemptProvenance } from "../../../chat/ports/index.ts";
+import type { TaskStep } from "../port.ts";
 import { clockWords } from "./clock-words.ts";
 
 export const FROM_SAVED = "From saved steps";
@@ -13,7 +14,7 @@ export type StepEntry = { stepId: string; time?: string; title: string; reason?:
 /** A step shown, or a run of quiet ones kept behind one control. */
 export type StepRun = { kind: "step"; entry: StepEntry } | { kind: "quiet"; entries: StepEntry[] };
 
-function kindOf(step: TaskStep, index: number, provenance: TaskProvenance | undefined): string | undefined {
+function kindOf(step: TaskStep, index: number, provenance: ChatAttemptProvenance | undefined): string | undefined {
   if (provenance === undefined) return undefined;
   const matched = provenance.steps.find((candidate) => candidate.label === step.title) ?? provenance.steps.find((candidate) => candidate.position === index + 1);
   if (matched === undefined || !matched.ran) return undefined;
@@ -21,7 +22,7 @@ function kindOf(step: TaskStep, index: number, provenance: TaskProvenance | unde
 }
 
 /** `steps` in order as runs; headings are put on the first step of each kind. */
-export function stepRuns(steps: readonly TaskStep[], provenance?: TaskProvenance): StepRun[] {
+export function stepRuns(steps: readonly TaskStep[], provenance?: ChatAttemptProvenance): StepRun[] {
   const runs: StepRun[] = [];
   let lastKind: string | undefined;
   for (const [index, step] of steps.entries()) {
