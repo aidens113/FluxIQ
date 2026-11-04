@@ -27,7 +27,7 @@ describe("a build's ending against Core's record", () => {
       assembled: true,
       whole: { verdict: "no", feedback: { steps: [{ step: 1, status: "succeeded" }, { step: 2, status: "succeeded" }, { step: 3, status: "succeeded" }], stored: { rows: 0, refused: 0, missingRequired: 0 } } }
     });
-    expect(told).toBe("Of the 2 parts tested on their own, 1 passed its own test; left: a part tested 4 times whose last test was judged not to do what was asked. The judged test run of the whole Flow from its start ran all 3 of its steps and stored no rows, and was judged not to do what was asked.");
+    expect(told).toBe("Of the 2 parts tested on their own, 1 passed its own test; left: a part tested 4 times whose last test did not do what was asked. The test run of the whole Flow from its start ran all 3 of its steps and stored no rows, and did not do what was asked.");
     expect(told).not.toContain("open_box");
     expect(automationStudioProjectBuildRecordTold({ parts: new Map([["open_box", PASSED], ["save_recipe", PASSED]]), assembled: false })).toBe("Both parts tested on their own passed their own test. No whole Flow was assembled, so it was never tested as one.");
   });
@@ -37,7 +37,7 @@ describe("a build's ending against Core's record", () => {
     expect(automationStudioProjectBuildRecordTold({ parts: new Map([["open_box", PASSED]]), assembled: false }))
       .toBe("The one part tested on its own passed its own test. No whole Flow was assembled, so it was never tested as one.");
     expect(automationStudioProjectBuildRecordTold({ parts: new Map([["save_recipe", { count: 1, last: "execution_failed", passed: false }]]), assembled: true, whole: { verdict: "execution_failed", feedback: { steps: [{ status: "succeeded" }, { status: "failed" }] } } }))
-      .toBe("The judged test run of the whole Flow from its start ran 1 of its 2 steps, and did not run to its end.");
+      .toBe("The test run of the whole Flow from its start ran 1 of its 2 steps, and did not run to its end.");
   });
 
   it("never prints a part's failed test the record contradicts, and says the record's facts in its place", () => {
@@ -54,10 +54,10 @@ describe("a build's ending against Core's record", () => {
   it("tells one test once when the only part tested and the whole run are the same test", () => {
     const part = { count: 6, last: "no", passed: false } as const;
     const told = automationStudioProjectBuildRecordTold({ parts: new Map([["only", part]]), assembled: true, whole: { verdict: "no", feedback: { steps: [{ status: "succeeded" }, { status: "failed" }] } } })!;
-    expect(told).toContain("judged not to do what was asked");
+    expect(told).toContain("did not do what was asked");
     expect(told).toContain("6 times");
     expect(told).not.toMatch(/tested on its own/u);
-    expect(told.match(/judged not/gu)).toHaveLength(1);
+    expect(told.match(/did not do what was asked/gu)).toHaveLength(1);
     const runs = automationStudioProjectBuildRecordTold({ parts: new Map([["only", part]]), assembled: false, wholeRuns: { count: 6, last: "no" } })!;
     expect(runs).not.toMatch(/tested on its own/u);
   });

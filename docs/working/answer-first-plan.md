@@ -234,12 +234,12 @@ Interfaces are fixed by the lead before dispatch, and lanes run in parallel, eac
 
 **Exploration lane (Core).**
 1. New single-loop path: no trial, reset or dry run; every asked row and page, with D2; row sink; witnesses before the first lasting act and at the end; ends with the result; generic guidance.
-1b. **Loop detection** (D14), on its own task, because "keep going" depends on it.
-1a. **Keep going until the result:** every ending in "Keep Going Until The Result" converted, each with its own provider-free test. This is the plan's hard requirement.
-2. One act record. Proof: a repeat refused across stages; a provider-free probe that "run it" straight after a build no longer repeats silently.
-3. One purse per attempt with its reserve.
-4. Result record, Flow-less judge, labels, the answer event to chat.
-5. **Paid:** one exploration per site, supervised. This is the first real test of "must reach the result".
+2. **Loop detection** (D14), on its own task (t859), because "keep going" depends on it.
+3. **Keep going until the result:** every ending in "Keep Going Until The Result" converted, each with its own provider-free test. This is the plan's hard requirement.
+4. One act record. Proof: a repeat refused across stages; a provider-free probe that "run it" straight after a build no longer repeats silently.
+5. One purse per attempt with its reserve.
+6. Result record, Flow-less judge, labels, the answer event to chat.
+7. **Paid:** one exploration per site, supervised. This is the first real test of "must reach the result".
 
 **Engine lane (Core, domain).**
 1. **Go/no-go:** save each gap's reason, then the corpus harness. Stop if it cannot get close.

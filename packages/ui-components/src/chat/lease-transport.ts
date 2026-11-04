@@ -26,10 +26,11 @@ function leased<Args extends unknown[], Value>(
 
 /** A copy of `transport` whose requests are answered only while `valid()` holds. */
 export function leaseTransport(transport: ChatTransport, valid: () => boolean): ChatTransport {
-  const { conversation, activity, runs, recordings, models, changes } = transport;
+  const { conversation, activity, runs, recordings, models, changes, results } = transport;
   const listAllThreads = conversation.listAllThreads;
   const setOverlay = activity.setOverlay;
   const openInstructions = runs.openInstructions;
+  const addBudgetAndCarryOn = results?.addBudgetAndCarryOn;
   return {
     conversation: {
       listThreads: leased(valid, (query) => conversation.listThreads(query)),
@@ -51,6 +52,15 @@ export function leaseTransport(transport: ChatTransport, valid: () => boolean): 
     },
     ...(recordings === undefined ? {} : { recordings: { list: leased(valid, (query) => recordings.list(query)) } }),
     ...(models === undefined ? {} : { models: { readKeys: leased(valid, () => models.readKeys()) } }),
-    ...(changes === undefined ? {} : { changes: { subscribe: (listener) => changes.subscribe(listener) } })
+    ...(changes === undefined ? {} : { changes: { subscribe: (listener) => changes.subscribe(listener) } }),
+    ...(results === undefined ? {} : {
+      results: {
+        readThread: leased(valid, (query) => results.readThread(query)),
+        readAttempt: leased(valid, (query) => results.readAttempt(query)),
+        exportRows: leased(valid, (query) => results.exportRows(query)),
+        runAgain: leased(valid, (query) => results.runAgain(query)),
+        ...(addBudgetAndCarryOn === undefined ? {} : { addBudgetAndCarryOn: leased(valid, (query) => addBudgetAndCarryOn.call(results, query)) })
+      }
+    })
   };
 }

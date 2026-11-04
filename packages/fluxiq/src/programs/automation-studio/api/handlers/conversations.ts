@@ -17,11 +17,13 @@
 //
 // Reads take `programs.read`; writing a turn or answering an ask takes
 // `programs.write` and is `authoring`, not `destructive`, because most answers
-// commit nothing and a refusal never does. The answers that are the person's
-// authority for an act take their PIN, checked here before the answer is written
-// so a wrong one leaves the question waiting: which ones is Core's one decision
-// (`runtime/conversations/answer-pin.ts`). A paired client has no PIN to give:
-// the person's press in the client they approved stands, as it always has.
+// commit nothing and a refusal never does. No answer to a permission ask or to
+// a question a run waits on takes a PIN: it is a step inside a Flow or a chat,
+// and the person's press stands, signed in or paired. The one exception is a
+// `panel-command.` confirmation, a one-off command from chat whose PIN is
+// checked here before the answer is written so a wrong one leaves it waiting
+// (`runtime/conversations/panel-command-pin.ts`). A paired client has no PIN to
+// give and never runs those.
 //
 // This module registers against its own dependency record rather than
 // `AutomationStudioApiDependencies`: it needs the domain-scope check, the
@@ -37,7 +39,7 @@ import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type Conve
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import type { AutomationStudioConversations } from "../../../../framework/automation-service/index.ts";
 import {
-  automationStudioConversationAnswerNeedsPin,
+  automationStudioPanelCommandAnswerNeedsPin,
   automationStudioConversationAttachmentResolver,
   type AutomationStudioConversationAttachmentReads
 } from "../../../../runtime/conversations/index.ts";
@@ -213,7 +215,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
 /** Checks the PIN of an answer that is the person's authority for an act. One already settled commits nothing, so a resend is not asked again. */
 async function authorizeAnswer(dependencies: AutomationStudioConversationApiDependencies, projectId: string, payload: Partial<ConversationAnswerRequest>): Promise<void> {
   const ask = await dependencies.service.conversations.getAsk({ projectId, askId: String(payload.askId ?? "") });
-  if (ask?.status !== "pending" || !automationStudioConversationAnswerNeedsPin(ask, String(payload.kind ?? ""))) return;
+  if (ask?.status !== "pending" || !automationStudioPanelCommandAnswerNeedsPin(ask, String(payload.kind ?? ""))) return;
   await authorizeProgramPin(dependencies.identityAccess, payload as ProgramPinAuthorizationPayload);
 }
 

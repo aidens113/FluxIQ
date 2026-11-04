@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { personFacingTextFaults } from "../../../../ui/person-facing/index.ts";
 import { automationStudioActivityPersonWords, automationStudioActivityReasonText } from "../index.ts";
 
 // R4a (`run-mv2nlh9l-52e476da`, moments 05 and 07): the model's own words
@@ -86,6 +87,18 @@ describe("automationStudioActivityPersonWords: extraction after a noun", () => {
     expect(automationStudioActivityPersonWords("Add a text extraction step after it")).toBe("Add a text-reading step after it");
     expect(automationStudioActivityPersonWords("Both list extractions came back empty")).toBe("Both list reads came back empty");
     expect(automationStudioActivityPersonWords("the list extraction handle")).toBe("the list");
+  });
+
+  it("says the framework as FluxIQ and a judge as the check, never in the person's hearing", () => {
+    expect(automationStudioActivityPersonWords("Core's own record shows it, so no judge was asked")).toBe("FluxIQ's own record shows it, so no check was asked");
+    expect(automationStudioActivityPersonWords("The result was judged to answer the request")).toBe("The result was found to answer the request");
+    expect(automationStudioActivityPersonWords("It was judged not to do what was asked, after judging twice")).toBe("It was found not to do what was asked, after checking twice");
+    expect(personFacingTextFaults(automationStudioActivityPersonWords("Core judged it, and the judges agreed"))).toEqual([]);
+  });
+
+  it("leaves a failure code out of what the person reads, and an address alone", () => {
+    expect(automationStudioActivityReasonText("The step failed for good (executor.fault.unclassified); looking for a fix to it.")).toBe("The step failed for good; looking for a fix to it.");
+    expect(automationStudioActivityReasonText("It opened www.example.co.uk and then (shop.example.com) as asked.")).toBe("It opened www.example.co.uk and then (shop.example.com) as asked.");
   });
 
   it("still says a bare extraction as before", () => {

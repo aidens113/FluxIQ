@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioConversationAnswerNeedsPin } from "fluxiq/automation";
+import { automationStudioPanelCommandAnswerNeedsPin } from "fluxiq/automation";
 import {
   CONVERSATION_POLL_CEILING_MS,
   CONVERSATION_POLL_FAST_MS,
@@ -214,7 +214,7 @@ describe("conversation reachability", () => {
 describe("conversation answers", () => {
   const ask = (overrides: Record<string, unknown>) => parseConversationTurn(wireTurn({ ask: wireAsk(overrides) }))!.ask!;
 
-  it("grants exactly the classes the ask listed, in Core's words, and re-authorizes it", () => {
+  it("grants exactly the classes the ask listed, in Core's words, with no PIN", () => {
     const presentation = conversationAskPresentation(ask({}));
     expect(presentation.consequencePhrases).toEqual([
       "send or publish something that others will receive or see",
@@ -222,14 +222,14 @@ describe("conversation answers", () => {
     ]);
     const grant = presentation.actions.find((action) => action.actionId === "grant")!;
     expect(grant.answer).toEqual({ askId: "ask.1", kind: "grant", consequences: ["send_or_publish", "create_new"] });
-    expect(conversationAnswerNeedsReauthorization(grant)).toBe(true);
+    expect(conversationAnswerNeedsReauthorization(grant)).toBe(false);
 
     const deny = presentation.actions.find((action) => action.actionId === "deny")!;
     expect(deny.answer).toEqual({ askId: "ask.1", kind: "deny" });
     expect(conversationAnswerNeedsReauthorization(deny)).toBe(false);
   });
 
-  it("offers one action per option, each re-authorized when a run waits on an ask that names a gated class", () => {
+  it("offers one action per option, none asking for a PIN when a run waits on an ask that names a gated class", () => {
     const options = [
       { optionId: "opt.keep", label: "Keep the draft", description: null, destructive: false },
       { optionId: "opt.delete", label: "Delete it", description: null, destructive: true }
@@ -239,12 +239,12 @@ describe("conversation answers", () => {
       { askId: "ask.1", kind: "choice", optionId: "opt.keep" },
       { askId: "ask.1", kind: "choice", optionId: "opt.delete" }
     ]);
-    // Core stores consequences on the ask, not on an option, so it cannot tell a safe option from a lasting one.
-    expect(presentation.actions.map(conversationAnswerNeedsReauthorization)).toEqual([true, true]);
+    // A choice inside a run is never behind a PIN, whatever class the ask names.
+    expect(presentation.actions.map(conversationAnswerNeedsReauthorization)).toEqual([false, false]);
     expect(presentation.actions.map((action) => action.variant)).toEqual(["danger", "danger"]);
   });
 
-  it("asks for a PIN exactly where Core checks one", () => {
+  it("asks for a PIN exactly where Core checks one: a panel command's confirmation", () => {
     const classes = [[], ["create_new"], ["modify_existing"], ["delete"], ["send_or_publish"], ["move_money"], ["create_new", "move_money"]] as const;
     const asks = classes.flatMap((consequences) => (["permission", "confirm", "choice"] as const).flatMap((kind) => [true, false].flatMap((parks) => ["ask.plain", "panel-command.1", "conversation-command.1", "declaration-cross-check:1"].map((askId) => ({
       askId,
@@ -259,9 +259,10 @@ describe("conversation answers", () => {
       const presentation = conversationAskPresentation(ask(fields));
       const yes = presentation.actions.find((action) => action.answer.kind !== "deny")!;
       const no = presentation.actions.find((action) => action.answer.kind === "deny");
-      const core = automationStudioConversationAnswerNeedsPin({ askId: fields.askId, kind: fields.kind, parks: fields.parks, missing: fields.missing, consequences: fields.consequences }, yes.answer.kind);
+      const core = automationStudioPanelCommandAnswerNeedsPin({ askId: fields.askId, kind: fields.kind, missing: fields.missing, consequences: fields.consequences }, yes.answer.kind);
       expect(conversationAnswerNeedsReauthorization(yes), JSON.stringify(fields)).toBe(core);
       if (no) expect(conversationAnswerNeedsReauthorization(no)).toBe(false);
+      if (fields.askId !== "panel-command.1") expect(core, JSON.stringify(fields)).toBe(false);
     }
   });
 
@@ -279,6 +280,8 @@ describe("conversation answers", () => {
     const confirm = conversationAskPresentation(ask({ kind: "confirm", missing: [], consequences: ["delete"], control: null }));
     expect(confirm.takesText).toBe(false);
     expect(confirm.actions.map((action) => action.actionId)).toEqual(["deny", "confirm"]);
-    expect(confirm.actions[1]?.destructive).toBe(true);
+    expect(confirm.actions[1]?.destructive).toBe(false);
+    const command = conversationAskPresentation(ask({ askId: "panel-command.1", kind: "confirm", parks: false, missing: [], consequences: ["delete"], control: null }));
+    expect(command.actions[1]?.destructive).toBe(true);
   });
 });

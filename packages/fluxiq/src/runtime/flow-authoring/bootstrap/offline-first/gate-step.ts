@@ -14,6 +14,7 @@ import { AUTOMATION_STUDIO_TRIAL_OFFLINE_FIRST_WORDS as WORDS } from "./words.ts
 import type {
   AutomationStudioTrialOfflineCheck,
   AutomationStudioTrialOfflineFirstChecked,
+  AutomationStudioTrialOfflineFirstGap,
   AutomationStudioTrialOfflineFirstLogged,
   AutomationStudioTrialOfflineFirstResult,
   AutomationStudioTrialOfflineFirstStepOutcome
@@ -21,6 +22,10 @@ import type {
 
 /** A plain code: what a note's `why` may be, so no page, run or recording text reaches the model through it. */
 const CODE = /^[a-z][a-z0-9_.-]{0,59}$/u;
+/** A field path: where a command differed, never what it held. Dots between names and array indexes. */
+const FIELD_PATH = /^[A-Za-z0-9_$.-]{1,120}$/u;
+const ACTION = /^[A-Za-z][A-Za-z0-9_.-]{0,59}$/u;
+const MAX_GAP_FIELDS = 20;
 const KEPT_VERDICTS: Readonly<Record<string, string>> = Object.freeze({ no: "kept_no", execution_failed: "kept_failed" });
 const INVALID = "offline_answer_invalid";
 const MISMATCH = "offline_answer_mismatch";
@@ -101,14 +106,27 @@ function noteOf(note: unknown): AutomationStudioTrialOfflineCheck {
 function checkedOf(value: unknown): AutomationStudioTrialOfflineFirstChecked | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Refused(INVALID);
-  onlyKeys(value, ["matched", "recorded"]);
+  onlyKeys(value, ["matched", "recorded", "gap"]);
   const { matched, recorded } = value;
   if (!isCount(matched) || !isCount(recorded) || matched > recorded) throw new Refused(INVALID);
-  return { matched, recorded };
+  const gap = gapOf(value.gap);
+  return gap ? { matched, recorded, gap } : { matched, recorded };
 }
 
-function counts(checked: AutomationStudioTrialOfflineFirstChecked | undefined): Pick<AutomationStudioTrialOfflineFirstLogged, "matchedOperations" | "recordedOperations"> {
-  return checked ? { matchedOperations: checked.matched, recordedOperations: checked.recorded } : {};
+/** The gap as the step log may keep it; anything else is dropped: it says why a check ended and never changes what the gate does. */
+function gapOf(value: unknown): AutomationStudioTrialOfflineFirstGap | undefined {
+  if (!isRecord(value)) return undefined;
+  const { code, cause, ordinal, action, fields, step } = value;
+  if (typeof code !== "string" || !CODE.test(code) || typeof cause !== "string" || !CODE.test(cause) || !isCount(ordinal) || typeof action !== "string" || !Array.isArray(fields)) return undefined;
+  const paths = fields.filter((path): path is string => typeof path === "string" && FIELD_PATH.test(path)).slice(0, MAX_GAP_FIELDS);
+  const named = { code, cause, ordinal, action: ACTION.test(action) ? action : "", fields: paths };
+  return isCount(step) && step >= 1 ? { ...named, step } : named;
+}
+
+function counts(checked: AutomationStudioTrialOfflineFirstChecked | undefined): Pick<AutomationStudioTrialOfflineFirstLogged, "matchedOperations" | "recordedOperations" | "gap"> {
+  if (!checked) return {};
+  const { matched, recorded, gap } = checked;
+  return gap ? { matchedOperations: matched, recordedOperations: recorded, gap } : { matchedOperations: matched, recordedOperations: recorded };
 }
 
 function codeOf(value: unknown): string {

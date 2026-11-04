@@ -26,8 +26,18 @@ export type AutomationStudioTrialOfflineFirstResult = {
   feedback: JsonObject;
 };
 
-/** How much of the recording the offline run matched: operations matched, of those recorded. For the step log only. */
-export type AutomationStudioTrialOfflineFirstChecked = { matched: number; recorded: number };
+/**
+ * Why an offline run left recorded support: the first gap the recording could not
+ * answer. For the step log only: it never reaches the model or the note. Codes,
+ * counts and field paths, never a value. `code` is the gap's reason, `cause` how
+ * it came about, `ordinal` the command's place among those the run sent, `action`
+ * its action type, `fields` where it differed from what was recorded, and `step`
+ * the feedback step the run stopped at, when the feedback names one.
+ */
+export type AutomationStudioTrialOfflineFirstGap = { code: string; cause: string; ordinal: number; action: string; fields: readonly string[]; step?: number };
+
+/** How much of the recording the offline run matched: operations matched, of those recorded, and the first gap if it left the recording. For the step log only. */
+export type AutomationStudioTrialOfflineFirstChecked = { matched: number; recorded: number; gap?: AutomationStudioTrialOfflineFirstGap };
 
 /**
  * How the offline check went, when the trial then runs live in the same call.
@@ -90,6 +100,8 @@ export type AutomationStudioTrialOfflineFirstLogged = {
   step?: number;
   matchedOperations?: number;
   recordedOperations?: number;
+  /** The gap the offline run stopped at, whatever its outcome (`AutomationStudioTrialOfflineFirstGap`). */
+  gap?: AutomationStudioTrialOfflineFirstGap;
 };
 
 /**

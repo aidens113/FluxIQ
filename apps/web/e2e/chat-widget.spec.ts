@@ -171,7 +171,7 @@ test("D2-D6, V1, V2, V7, T3, U2, U5, U6: the window in a project", async ({ page
   await shot(page, "adaptation-opened", info);
 });
 
-test("A1, A3, A4, A6: the permission ask, the PIN dialog, wrong then right PIN", async ({ page }, info) => {
+test("A1, A3, A4, A6: the permission ask settles on one press, with no PIN", async ({ page }, info) => {
   await openProject(page, seeded.projectId);
   await openChat(page);
   await pickThread(page, seeded.threads.permission);
@@ -184,41 +184,14 @@ test("A1, A3, A4, A6: the permission ask, the PIN dialog, wrong then right PIN",
   await expect(chat.getByText('The control is "Schedule post" (button).')).toBeVisible();
   await shot(page, "permission-ask", info);
 
+  // Nothing inside a Flow or a chat asks for a PIN: the press is the answer, checked by Core.
   await chat.getByRole("button", { name: "Allow", exact: true }).click();
-  const dialog = pinDialog(page, "Allow this action");
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("Re-enter your security PIN");
-  // The close button sits on the title's row, not wrapped under the description.
-  const closeBox = (await dialog.getByRole("button", { name: "Close" }).boundingBox())!;
-  const titleBox = (await dialog.getByRole("heading", { name: "Allow this action" }).boundingBox())!;
-  expect(Math.abs(closeBox.y - titleBox.y)).toBeLessThan(24);
-  await shot(page, "pin-dialog", info);
-
-  // Escape belongs to the dialog; the window stays.
-  await page.keyboard.press("Escape");
-  await expect(panel(page)).toBeVisible();
-  await expect(launcher(page)).toHaveAttribute("aria-expanded", "true");
-  if (!(await dialog.isVisible())) await chat.getByRole("button", { name: "Allow", exact: true }).click();
-
-  // A real wrong PIN, checked by Core: refused with its reason, the dialog open and the question still waiting.
-  const pin = dialog.getByLabel(/pin/iu).first();
-  await pin.fill("000000");
-  await dialog.getByRole("button", { name: /allow/iu }).last().click();
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText("Invalid PIN", { timeout: 30_000 });
-  // Behind a modal the window is out of the accessibility tree, so it is found by its class here.
-  await expect(page.locator(".chat-window-panel")).toBeVisible();
-  await expect(page.locator(".chat-window-panel button", { hasText: /^Allow$/u })).toBeVisible();
-  await shot(page, "pin-refused", info);
-
-  await pin.fill(manifest.credentials.securityPin);
-  await dialog.getByRole("button", { name: /allow/iu }).last().click();
-  await expect(dialog).toBeHidden({ timeout: 30_000 });
+  await expect(pinDialog(page, "Allow this action")).toBeHidden();
   await expect(chat.getByRole("button", { name: "Allow", exact: true })).toBeHidden({ timeout: 30_000 });
   await shot(page, "permission-settled", info);
 });
 
-test("A1, A3, A4: a choice ask with destructive options needs the PIN; Cancel sends nothing", async ({ page }, info) => {
+test("A1, A3, A4: a choice ask with destructive options settles on one press, with no PIN", async ({ page }, info) => {
   await openProject(page, seeded.projectId);
   await openChat(page);
   await pickThread(page, seeded.threads.choice);
@@ -227,16 +200,8 @@ test("A1, A3, A4: a choice ask with destructive options needs the PIN; Cancel se
   await expect(chat.getByRole("list", { name: "Consequences requiring approval" })).toContainText("delete or remove something");
   await shot(page, "choice-ask", info);
   await chat.getByRole("button", { name: "Clear the oldest" }).click();
-  const dialog = pinDialog(page, "Confirm this answer");
-  await expect(dialog).toBeVisible();
-  // A real wrong PIN here too, on a question a run waits on.
-  await dialog.getByLabel(/pin/iu).first().fill("000000");
-  await dialog.getByRole("button", { name: "Clear the oldest" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("Invalid PIN", { timeout: 30_000 });
-  await dialog.getByRole("button", { name: /cancel/iu }).click();
-  await expect(dialog).toBeHidden();
-  await expect(chat.getByRole("button", { name: "Clear the oldest" })).toBeVisible();
-  await expect(chat.getByRole("button", { name: "Clear both" })).toBeVisible();
+  await expect(pinDialog(page, "Confirm this answer")).toBeHidden();
+  await expect(chat.getByRole("button", { name: "Clear the oldest" })).toBeHidden({ timeout: 30_000 });
 });
 
 test("A2: the open ask takes words and answers", async ({ page }, info) => {

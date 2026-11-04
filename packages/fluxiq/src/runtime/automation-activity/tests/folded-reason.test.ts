@@ -21,7 +21,7 @@ const thoughts = () => seen.filter((event) => event.detail?.kind === "thought" &
 
 describe("automationStudioActivityFoldedReason", () => {
   it("writes one plain sentence", () => {
-    expect(automationStudioActivityFoldedReason({ did: "Chose the first matching button", because: "Only one button matched." })).toBe("Core chose the first matching button because only one button matched.");
+    expect(automationStudioActivityFoldedReason({ did: "Chose the first matching button", because: "Only one button matched." })).toBe("FluxIQ chose the first matching button because only one button matched.");
   });
 
   it("screens ids and says nothing when a part is empty", () => {
@@ -50,6 +50,6 @@ describe("a Core-written line beside a decision", () => {
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, resultCode: "web.action.succeeded" })
     });
     await runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, () => observed.decide(request));
-    expect(thoughts()).toEqual(["Core chose the Next button because it was the only way forward."]);
+    expect(thoughts()).toEqual(["FluxIQ chose the Next button because it was the only way forward."]);
   });
 });

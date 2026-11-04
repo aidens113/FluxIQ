@@ -41,6 +41,7 @@
 //   ends then too, even when the held step has no number (a Merge).
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { ACTIVITY_RESULT_CHECK_LABELS } from "../activity-action/index.ts";
 
 /** A supervisor's card opening or closing a brief, when `event` is one. */
 function projectCardOf(event: ClientGatewayActivity): { kind: "brief"; brief: string } | { kind: "return" } | undefined {
@@ -61,6 +62,8 @@ export type UnitState = {
   readonly checkReportedNow: boolean;
   /** A project build's reset brief is putting the site back: no repair is under way while it does. */
   readonly resetting: boolean;
+  /** The result check could not confirm the result (or could not run): a run that ends now has not been shown to have worked. */
+  readonly unconfirmed: boolean;
 };
 
 export class UnitSituation {
@@ -70,6 +73,7 @@ export class UnitSituation {
   private check = false;
   private paused = false;
   private resetting = false;
+  private unconfirmed = false;
 
   /** A new brief began elsewhere in the unit: whatever repair this one was in is over (t753). */
   endRepair(): void {
@@ -91,6 +95,7 @@ export class UnitSituation {
       this.check = false;
       this.paused = false;
       this.resetting = false;
+      this.unconfirmed = false;
     }
     const continued = this.paused && event.phase === "running";
     this.paused = event.phase === "paused";
@@ -111,10 +116,12 @@ export class UnitSituation {
     const runMovedOn = event.phase === "running" && event.step !== undefined;
     if (runMovedOn || resultCheckPassed(event)) this.repairing = false;
     if (runMovedOn) this.rebuilding = false;
+    if (resultCheckPassed(event)) this.unconfirmed = false;
+    else if (resultCheckUnconfirmed(event)) this.unconfirmed = true;
     const reported = asksForPerson(event);
     if (reported) this.check = true;
     else if (runMovedOn || continued || pageActionSucceeded(event) || isSettledAsk(event)) this.check = false;
-    return { repairing: this.repairing, rebuilding: this.rebuilding, check: this.check, checkReportedNow: reported, resetting: this.resetting };
+    return { repairing: this.repairing, rebuilding: this.rebuilding, check: this.check, checkReportedNow: reported, resetting: this.resetting, unconfirmed: this.unconfirmed };
   }
 }
 
@@ -144,6 +151,11 @@ const RESULT_CHECK_TITLE = "Result check";
 /** The result check accepted the result: a repair that led to it is over. */
 function resultCheckPassed(event: ClientGatewayActivity): boolean {
   return event.detail?.kind === "check" && event.detail.status === "succeeded" && event.detail.title === RESULT_CHECK_TITLE;
+}
+
+/** The result check ended on "couldn't confirm" or "couldn't be checked": neither a pass nor a failure of the run (`activity-action/result-check-labels.ts`). */
+function resultCheckUnconfirmed(event: ClientGatewayActivity): boolean {
+  return event.detail?.kind === "check" && (event.label === ACTIVITY_RESULT_CHECK_LABELS.unconfirmed || event.label === ACTIVITY_RESULT_CHECK_LABELS.unchecked);
 }
 
 /** Core's row closing a wait on the person: the wait's own `ask` row, now settled one way or the other. */

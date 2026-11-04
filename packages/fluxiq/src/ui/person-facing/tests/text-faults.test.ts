@@ -5,12 +5,12 @@ import { describe, expect, it } from "vitest";
 import { personFacingTextFaults } from "../index.ts";
 
 const ROUND_5: ReadonlyArray<[string, string]> = [
-  ["Using “Submit subflow”", 'internal term "subflow"'],
-  ["Action · Test subflow", 'internal term "subflow"'],
   ["Reading the details of “css-0732x7m”", 'generated name "css-0732x7m"'],
-  ["Main: Runs each of the other subflows in turn, passing each value on by name", 'internal term "subflows"'],
   ["Whole-Flow trial could not be confirmed", 'internal term "trial"'],
   ["Saved candidate draft.", 'internal term "candidate"'],
+  ["it saved 3 rows, but Core's own record shows they don't answer, so no judge was asked", 'internal term "Core"'],
+  ["The check was judged to answer the request", 'internal term "judged"'],
+  ["Build stopped. The Flow was not promoted.", 'internal term "promoted"'],
   ["Build failed | Build failed: FluxIQ could not finish the Flow: I could not finish this.", 'repeated phrase "build failed"']
 ];
 
@@ -30,6 +30,10 @@ const CLEAN: readonly string[] = [
   "Testing the whole Flow from the start",
   "Build failed: it ran out of time",
   "Your Flow is ready",
+  "Using “Submit subflow”",
+  "Main: Runs each of the other subflows in turn, passing each value on by name",
+  "The core idea is on the page",
+  "Clicking “Promotions” on the shop page",
   "Reading the list of “Recent orders”, e.g. the first 20 rows",
   "Version 2.4 of the app is shown on the page",
   ""
@@ -49,6 +53,12 @@ describe("personFacingTextFaults", () => {
       'internal term "router"', 'internal term "candidate"', 'internal term "trials"', 'internal term "harness"', 'internal term "brief"'
     ]);
     expect(personFacingTextFaults("Subflowing and candidacy are not the words")).toEqual([]);
+    expect(personFacingTextFaults("The Judge picked it: judging is done, it was promoted by Core")).toEqual([
+      'internal term "judge"', 'internal term "judging"', 'internal term "promoted"', 'internal term "Core"'
+    ]);
+    expect(personFacingTextFaults("The Judge picked it: judging is done, it was promoted by Core")).toEqual([
+      'internal term "judge"', 'internal term "judging"', 'internal term "promoted"', 'internal term "Core"'
+    ]);
   });
 
   it("names code identifiers: dotted tool names, snake_case and camelCase", () => {

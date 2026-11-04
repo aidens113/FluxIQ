@@ -160,7 +160,7 @@ describe("what a failed candidate build kept", () => {
     expect(sentences).toEqual({
       neverTested: "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow. It was never test-run from the start.",
       twiceDidNotFinish: "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow. A version of it was test-run from the start twice, and the last test run did not get to the end.",
-      onceJudgedNo: "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow. A version of it was test-run from the start once, and that test run was judged not to do what you asked.",
+      onceJudgedNo: "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow. A version of it was test-run from the start once, and that test run did not do what you asked.",
       threeUnsure: "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow. A version of it was test-run from the start 3 times, and the last test run could not be confirmed to do what you asked.",
       notChecked: "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow. A version of it was test-run from the start once, and that test run was not checked.",
       notKept: "The latest version of the Flow's steps that I wrote could not be kept, and nothing was put into the Flow. It was never test-run from the start."
@@ -190,7 +190,7 @@ describe("what a candidate draft says of its tests", () => {
     expect(automationStudioConversationCandidateDraftSaid(draft("unsure", ["candidate.trial_unconfirmed"])))
       .toBe("I could not confirm that its test run from the start did what you asked, so nothing was put into the Flow. I kept what I wrote as a draft.");
     expect(automationStudioConversationCandidateDraftSaid(draft("no", ["candidate.trial_judged_no", "project.build_time_limit", "project.build_trial_cut"])))
-      .toBe("Its last finished test run from the start was judged not to do what you asked, and a later test run of it was cut short by the build's time limit, so nothing was put into the Flow. I kept what I wrote as a draft.");
+      .toBe("Its last finished test run from the start did not do what you asked, and a later test run of it was cut short by the build's time limit, so nothing was put into the Flow. I kept what I wrote as a draft.");
   });
 
   it("says a draft whose only test the time limit cut was cut short, never that it was never tested", () => {

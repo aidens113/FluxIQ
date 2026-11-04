@@ -1,5 +1,5 @@
 // @fluxiq-test-group real-sql
-// The PIN on an answer, through the registered `answer-ask` endpoint, against
+// The PIN on an answer (only a panel command's takes one), through the registered `answer-ask` endpoint, against
 // the real Identity Access service and a real thread store: the wrong PIN is
 // typed, not stood in for. Nothing here is stubbed but the project's domain.
 
@@ -34,7 +34,7 @@ const ask = (askId: string, fields: Partial<AutomationStudioConversationAskInput
   ...fields
 });
 
-describe("the PIN on an answer", () => {
+describe("the PIN on an answer (panel commands only)", () => {
   let rootDir: string;
   let conversations: AutomationStudioConversations;
   let registry: GlobalProgramApiRegistry;
@@ -43,7 +43,7 @@ describe("the PIN on an answer", () => {
   let panel: ProgramApiActor;
 
   beforeEach(async () => {
-    rootDir = await mkdtemp(path.join(os.tmpdir(), "conversation-answer-pin-test-"));
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "panel-command-pin-test-"));
     conversations = new AutomationStudioConversations(new AutomationStudioProjectDatabasePool({ rootDir }));
     conversationId = (await conversations.openConversation({ projectId: PROJECT, subject: { kind: "project", id: PROJECT }, title: null })).conversationId;
     const identityAccess = new IdentityAccessService(lowCost);
@@ -85,36 +85,32 @@ describe("the PIN on an answer", () => {
 
   const statusOf = async (askId: string) => (await conversations.getAsk({ projectId: PROJECT, askId }))?.status;
 
-  it("refuses a wrong PIN on a permission grant with the reason, and leaves the question waiting", async () => {
+  it("settles a permission grant for a signed-in person with no PIN, whatever class it names", async () => {
     await raise(ask("request.post", { kind: "permission", missing: ["send_or_publish"], consequences: ["send_or_publish"] }));
-    const wrong = await answer("request.post", "grant", { authorizationPin: "000000" });
-    expect(wrong).toMatchObject({ ok: false, error: "Invalid PIN" });
-    expect(JSON.stringify(wrong)).not.toContain("000000");
-    expect(await statusOf("request.post")).toBe("pending");
-
-    const right = await answer("request.post", "grant", { authorizationPin: PIN });
-    expect(right.ok, right.error).toBe(true);
-    expect(await statusOf("request.post")).toBe("answered");
-  });
-
-  it("refuses a grant that carries no PIN at all", async () => {
     await raise(ask("request.pay", { kind: "permission", missing: ["move_money"], consequences: ["move_money"] }));
-    expect(await answer("request.pay", "grant")).toMatchObject({ ok: false, error: "PIN is required for this action" });
-    expect(await statusOf("request.pay")).toBe("pending");
+    for (const askId of ["request.post", "request.pay"]) {
+      const settled = await answer(askId, "grant");
+      expect(settled.ok, `${askId}: ${settled.error}`).toBe(true);
+      expect(await statusOf(askId)).toBe("answered");
+    }
   });
 
-  it("refuses a wrong PIN on a choice a run waits on when the ask names a gated class", async () => {
+  it("settles a choice a run waits on with no PIN, even when the ask names a gated class", async () => {
     const options = [{ id: "oldest", label: "Clear the oldest", route: null }, { id: "all", label: "Clear both", route: null }];
     await raise(ask("ask.which", { kind: "choice", options, consequences: ["delete"] }));
-    expect(await answer("ask.which", "choice", { value: "all", authorizationPin: "000000" })).toMatchObject({ ok: false, error: "Invalid PIN" });
-    expect(await statusOf("ask.which")).toBe("pending");
-    expect((await answer("ask.which", "choice", { value: "all", authorizationPin: PIN })).ok).toBe(true);
+    const settled = await answer("ask.which", "choice", { value: "all" });
+    expect(settled.ok, settled.error).toBe(true);
+    expect(await statusOf("ask.which")).toBe("answered");
   });
 
   it("refuses a wrong PIN on a panel confirmation before it settles, so it can be answered again", async () => {
     await raise(ask("panel-command.1", { parks: false, consequences: ["delete"] }));
-    expect(await answer("panel-command.1", "grant", { authorizationPin: "000000" })).toMatchObject({ ok: false, error: "Invalid PIN" });
+    const wrong = await answer("panel-command.1", "grant", { authorizationPin: "000000" });
+    expect(wrong).toMatchObject({ ok: false, error: "Invalid PIN" });
+    expect(JSON.stringify(wrong)).not.toContain("000000");
     expect(await statusOf("panel-command.1")).toBe("pending");
+    expect(await answer("panel-command.1", "grant")).toMatchObject({ ok: false, error: "PIN is required for this action" });
+    expect((await answer("panel-command.1", "grant", { authorizationPin: PIN })).ok).toBe(true);
   });
 
   it("takes a refusal without a PIN, whatever the ask would have committed", async () => {
@@ -140,9 +136,9 @@ describe("the PIN on an answer", () => {
     expect(answered.ok, answered.error).toBe(true);
   });
 
-  it("an answer already settled replays without asking again", async () => {
-    await raise(ask("request.twice", { kind: "permission", missing: ["delete"], consequences: ["delete"] }));
-    expect((await answer("request.twice", "grant", { authorizationPin: PIN })).ok).toBe(true);
-    expect((await answer("request.twice", "grant")).ok).toBe(true);
+  it("a panel confirmation already settled replays without asking again", async () => {
+    await raise(ask("panel-command.twice", { parks: false, consequences: ["delete"] }));
+    expect((await answer("panel-command.twice", "grant", { authorizationPin: PIN })).ok).toBe(true);
+    expect((await answer("panel-command.twice", "grant")).ok).toBe(true);
   });
 });

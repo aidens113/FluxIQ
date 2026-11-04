@@ -63,7 +63,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
 
     const created = await context.port.call("create-flow", { projectId: context.projectId, name });
     const flowId = (created.payload as { flow?: { flowId?: unknown } } | undefined)?.flow?.flowId;
-    if (!created.ok || typeof flowId !== "string" || !flowId) return progress.failed(automationStudioConversationCallCause("creating the Flow", created.ok ? { ok: false, error: "Core answered without the new Flow's id" } : created));
+    if (!created.ok || typeof flowId !== "string" || !flowId) return progress.failed(automationStudioConversationCallCause("creating the Flow", created.ok ? { ok: false, error: "FluxIQ answered without the new Flow's id" } : created));
     progress.carry({ flowId });
     progress.landed(`created the Flow "${name}"`);
 

@@ -77,6 +77,8 @@ export type ActivityHeadlineSituation = {
   readonly preparing?: boolean;
   /** A project build's reset brief is putting the site back; outweighs `repairing`. */
   readonly resetting?: boolean;
+  /** The run's result check could not confirm the result: finishing is not success, and no tick may say so. */
+  readonly unconfirmed?: boolean;
   /** Why the work waits, when `outcome` is `waiting`. */
   readonly waitingOn?: ActivityWaitReason;
 };
@@ -90,6 +92,9 @@ const DONE: Readonly<Record<ActivityDisplay["subjectKind"], string>> = Object.fr
   build: "Flow ready",
   run: "Run finished"
 });
+
+/** A run that finished but whose result the check could not confirm: said as what it is, never as a plain success. */
+const DONE_UNCONFIRMED = "Run finished, result not confirmed";
 
 const FAILED: Readonly<Record<ActivityDisplay["subjectKind"], string>> = Object.freeze({
   build: "Build failed",
@@ -112,7 +117,7 @@ export function activityHeadline(kind: ActivityDisplay["subjectKind"], outcome: 
     const reason = situation.waitingOn ?? "answer";
     return reason === "paused" ? PAUSED : words[reason];
   }
-  if (outcome === "done") return DONE[kind];
+  if (outcome === "done") return kind === "run" && situation.unconfirmed ? DONE_UNCONFIRMED : DONE[kind];
   if (outcome === "failed" && kind === "run" && situation.doubted) return ACTIVITY_DOUBTED_HEADLINE;
   if (outcome === "failed") return kind === "run" && situation.repairing && !situation.testing ? REPAIR_FAILED : FAILED[kind];
   if (situation.preparing) return ACTIVITY_PAGE_PREPARATION_WORDS;

@@ -34,6 +34,29 @@ result control, record processing/datasets and capture policy.
 `@fluxiq/contracts/automation` is the shared automation contract and
 reexports the same authorities.
 
+### Answer First's shared records
+
+`@fluxiq/contracts/automation` carries the records of the
+[Answer First loop](../working/answer-first-plan.md) (`contracts/src/task-attempts/`),
+each with a strict parser that refuses an unknown key or status:
+`AutomationStudioTaskAttempt`, `AutomationStudioTaskResult`,
+`AutomationStudioAttemptAct`, `AutomationStudioTriedRecord`,
+`AutomationStudioSavedState` and `AutomationStudioSubflowCard`. An attempt's status
+list is closed and has no `failed`: a task ends only with its result, its budget
+gone, or a person stopping it. `waiting_for_person` always says what for (`waitingFor`).
+Whoever writes an attempt's ending calls `checkAutomationStudioTaskAttemptResult`, which
+refuses a pair that disagrees, such as `achieved` with a `refuted` result. Nothing is
+wired to them yet.
+
+`@fluxiq/ui-components` reads them through an optional port, `ChatTransport.results`
+(`ChatResultsPort`, `chat/ports/results.ts`), leased like the rest of the transport.
+Its `addBudgetAndCarryOn` is optional too. That package does not depend on
+`@fluxiq/contracts`, so the port restates the records, and a test beside it fails
+`pnpm check` if they part. A client's adapter runs Core's answer through the
+contract's parsers before it answers. `@fluxiq/ui-components/testing` adds
+`createFakeChatResultsPort` and `fakeTaskOutcomes`, for building the answer turn with
+no Core behind it.
+
 ### Automation entries of `fluxiq`
 
 | Entry | Is |
@@ -137,19 +160,26 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
-### Next minor (unreleased): `answer-ask` checks the PIN on an answer that is the authority for an act, and a Flow change can be drawn (`fluxiq`, `@fluxiq/ui-components`)
+### Next patch (unreleased): Answer First's shared records and an optional results port (`@fluxiq/contracts`, `@fluxiq/ui-components`)
 
-- `answer-ask` from a signed-in person now refuses a yes without their right PIN
-  when the ask names a class a person has to be asked about (`move_money`,
-  `delete`, `send_or_publish`) and an act depends on the answer: a permission ask,
-  an ask a run waits on, or a `panel-command.` confirmation. The refusal is the
-  same as a destructive endpoint's, `Invalid PIN`, and the ask stays pending. A
-  refusal, an answer in words to anything else, and a resend of a settled answer
-  take none. `automationStudioConversationAnswerNeedsPin` is the decision.
-  A host that answers these asks through the registry as a person must send
-  `authorizationPin` and `authSessionId`; `conversations.answerAsk` itself is
-  unchanged, and a `paired-client` caller is not asked: it has no PIN to give.
-  The endpoint stays `authoring`, so its IAM declaration does not change.
+- Added only: [the records and the port](#answer-firsts-shared-records). A client
+  that supplies no `results` port is unchanged, and nothing reads the records yet.
+
+### Next minor (unreleased): `answer-ask` takes a PIN only on a panel command, and a Flow change can be drawn (`fluxiq`, `@fluxiq/ui-components`)
+
+- `answer-ask` takes no PIN for a permission ask or a question a run or build
+  waits on, whatever class it names, for a signed-in person as for a paired
+  client: the press inside a Flow or a chat stands. The only answer it checks is
+  a `panel-command.` confirmation naming a class a person has to be asked about
+  (`move_money`, `delete`, `send_or_publish`), a one-off command from chat whose
+  capability endpoint checks the PIN itself. A refusal, any other answer, and a
+  resend of a settled answer take none. A wrong PIN there is `Invalid PIN` and
+  the ask stays pending. `automationStudioPanelCommandAnswerNeedsPin` is the
+  decision; it replaces `automationStudioConversationAnswerNeedsPin`, which never
+  shipped. A host that answers a panel command through the registry as a person
+  must send `authorizationPin` and `authSessionId`; `conversations.answerAsk`
+  itself is unchanged. The endpoint stays `authoring`, so its IAM declaration
+  does not change.
 - `get-conversation-attachment` now serves `flow-graph-diff`, whose reference is
   `automationStudioFlowGraphDiffAttachment(flowId, adaptationId)`, and
   `panel-capability-result`. Any other kind is still refused by name.

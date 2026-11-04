@@ -470,7 +470,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     const working = display && (display.working || display.outcome === "waiting") ? display.activityId : null;
     const anything = thread.render(
       buildChatStream(stamped, activity.events),
-      liveLineModel(activity.display, state.sending, answerIn !== null),
+      // "Show the question" only when the question is in another thread: a pending question already in the thread on screen is answered where it stands.
+      liveLineModel(activity.display, state.sending, answerIn !== null && !state.turns.some((turn) => turn.ask?.status === "pending")),
       (turn) => turnControls(turn, state),
       working
     );
