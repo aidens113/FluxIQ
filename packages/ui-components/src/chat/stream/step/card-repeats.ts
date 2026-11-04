@@ -26,17 +26,14 @@
 // stretch after one of its cards has already repeated starts a new stretch, so
 // the order still reads true: A B A B A B is A (3 times) and B (3 times), and
 // A B A C A is A (2 times), B, C, A. The card folded into keeps its key and
-// its place and says how many times it stands for (`times`; "Not done (3
-// times): ...", "Didn't work (3 times): ...", `card-words.ts`). A message
+// its place and keeps how many it stands for (`times`, never worded). A message
 // that was only folded cards is gone; one with words keeps them.
 //
-// A card that did its work folds too, but only into the card shown just
-// before it, when that one says the same, result and all: five reruns of one
-// list read stacked five identical "Read list · name, price and 4 more /
-// Done" cards (R3-U-5 of the run-mux6naez-6c20f26e UI review), and are one
-// "Done (5 times)". Only the card just before, so done, failed, done never
-// reads as "Done (2 times)" then a failure; another row count is another
-// result, shown apart; a card still under way or waiting is never folded.
+// A card that did its work is never folded: five reads of five pages are five
+// steps, and every step stays in the chat (user, "Not just 5 steps with a
+// dropdown"). Nor does a folded card say a count: the identical refusals and
+// failures it stands for say nothing new, so the one card says it once (user,
+// 2026-11-03, told once).
 //
 // A decision Core declined in whole folds across decisions too, when the
 // decision that asked for it again gave the same reason: round 5 showed two
@@ -63,28 +60,18 @@ export function foldRepeatedCards(messages: readonly StepMessage[]): StepMessage
   // Each refused card shown under a decision, by its unit, the decision's words and its own.
   const refusals = new Map<string, Shown>();
   let stretch: Stretch | undefined;
-  // The card shown just before, when it did its work: an identical one after it is folded into it.
-  let last: (Shown & { activityId: string }) | undefined;
   for (const message of messages) {
     // Words above a message's cards are new: a card after them repeats nothing before.
-    if (SPOKEN.has(message.kind) || message.actions.length === 0) stretch = last = undefined;
+    if (SPOKEN.has(message.kind) || message.actions.length === 0) stretch = undefined;
     if (stretch !== undefined && stretch.activityId !== message.activityId) stretch = undefined;
-    if (last !== undefined && last.activityId !== message.activityId) last = undefined;
     const copy: StepMessage = { ...message, actions: [] };
     for (const card of message.actions) {
       const words = nothingDone(card) ? sameWords(card) : undefined;
       if (words === undefined) {
-        const done = settledWork(card) ? doneWords(card) : undefined;
-        if (done !== undefined && last !== undefined && last.words === done) {
-          fold(last, card, message);
-          continue;
-        }
         copy.actions.push(card);
         stretch = undefined;
-        last = done === undefined ? undefined : { message: copy, card: copy.actions.length - 1, words: done, activityId: message.activityId };
         continue;
       }
-      last = undefined;
       const same = stretch?.cards.find((shown) => shown.words === words);
       if (stretch !== undefined && same !== undefined) {
         fold(same, card, message);
@@ -121,16 +108,6 @@ function fold(into: Shown, card: ActionCard, message: StepMessage): void {
   const before = into.message.actions[into.card]!;
   into.message.actions[into.card] = { ...before, times: (before.times ?? 1) + (card.times ?? 1) };
   into.message.sequence = Math.max(into.message.sequence, message.sequence);
-}
-
-/** An action that did its work and said so: done, and not an edit Core took only in part. */
-function settledWork(card: ActionCard): boolean {
-  return card.outcome === "done" && card.refused === undefined;
-}
-
-/** What a card that did its work says, result and all, but for its count. */
-function doneWords(card: ActionCard): string {
-  return JSON.stringify([card.kind, card.name ?? null, card.target, card.testing === true, "done", card.check, card.said ?? null, card.result?.trim() || null, card.tested ?? null, card.answer ?? null, card.retried ?? null, card.already === true]);
 }
 
 /** A decision Core declined in whole, or an action that didn't work: nothing came of it. */

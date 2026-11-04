@@ -8,6 +8,7 @@ export * from "./candidate-feedback.ts";
 export * from "./covered-refused.ts";
 export * from "./draft-key.ts";
 export * from "./feedback.ts";
+export * from "./loop-detection/index.ts";
 export * from "./narrowed-nothing.ts";
 export * from "./outcomes.ts";
 export * from "./permission-refused.ts";

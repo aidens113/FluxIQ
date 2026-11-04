@@ -17,6 +17,7 @@ export type {
   ChatRowsExportQuery,
   ChatRunAgainQuery,
   ChatSavedState,
+  ChatFinishedRunAttempt,
   ChatTaskAttempt,
   ChatTaskAttemptFields,
   ChatTaskOutcome,

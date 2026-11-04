@@ -20,6 +20,7 @@ import type { AutomationStudioLlmEvidenceFinishingTools, AutomationStudioLlmEvid
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
 import type { AutomationStudioLlmStepLogPageReader } from "./step-log/index.ts";
+import type { AutomationStudioLlmLoopAskedRepeats, AutomationStudioLlmLoopAttemptRecord, AutomationStudioLlmLoopSignal, AutomationStudioLlmLoopSignalAnswer } from "./repeat-guard/loop-detection/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
 import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-authoring/draft/scheduled-candidate/index.ts";
@@ -58,6 +59,28 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   finishingTools?: AutomationStudioLlmEvidenceFinishingTools | undefined;
   /** Backend-owned target revision for a tool whose request also depends on non-page state. Never provider data; unchanged targets keep the same key. */
   requestContextKey?: ((toolId: string) => string | undefined) | undefined;
+  /**
+   * What this attempt has already tried, shared by its loops across fresh
+   * contexts and stages (`./repeat-guard/loop-detection/attempt-record.ts`).
+   * Absent, each loop keeps its own.
+   */
+  attemptRecord?: AutomationStudioLlmLoopAttemptRecord | undefined;
+  /**
+   * The ladder's last two steps, which only a caller on the single-loop path can
+   * do (`./repeat-guard/loop-detection/watch.ts`). Answer `continue` when the
+   * signal is dealt with here and the loop may go on; `end` to stop the round as
+   * a stall does, then start a fresh loop with the same `attemptRecord` or wait
+   * for the person. Absent, every loop ends as a stall always has.
+   */
+  loopSignal?: ((signal: AutomationStudioLlmLoopSignal) => AutomationStudioLlmLoopSignalAnswer) | undefined;
+  /**
+   * How many times the task asks for this lasting act, for the new path: the
+   * caller fills it from the attempt's act record. With a `loopSignal`, a stated
+   * lasting act on one target is refused past this count (past one repeat when it
+   * says nothing). With no `loopSignal` such an act is told and never refused, so
+   * this is not read for a refusal. Nothing the model replies can lift it.
+   */
+  askedRepeats?: AutomationStudioLlmLoopAskedRepeats | undefined;
   /**
    * A loop whose model plans and hands the work on rather than acting on the
    * target (the project supervisor; t569): the tools that move its work

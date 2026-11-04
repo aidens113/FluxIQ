@@ -114,7 +114,8 @@ function answeredIn(evidence: Evidence, iteration: number): Heard | undefined {
 
 /** What the stalled round's trace says of the decision at `iteration`; undefined when it all landed. */
 function answeredInTrace(trace: Stalled["trace"], iteration: number): Heard | undefined {
-  const row = [...trace].reverse().find((candidate) => candidate.iteration === iteration);
+  // The loop detector's own rows beside a decision's are never what it came to.
+  const row = [...trace].reverse().find((candidate) => candidate.iteration === iteration && !/^llm_evidence_loop\.loop_/u.test(candidate.resultCode ?? ""));
   if (!row) return undefined;
   if (row.decision === "unusable" && row.resultCode !== REPEAT_REFUSED) return { answer: { kind: "unusable" } };
   if (row.resultCode === REPEAT_REFUSED) return { answer: { kind: "repeated", outcome: row.resultReason ?? "" } };

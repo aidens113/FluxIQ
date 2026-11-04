@@ -15,13 +15,12 @@ import {
   automationStudioLlmDecisionContextSignature,
   automationStudioLlmDecisionContextSupersede
 } from "./decision-context/index.ts";
-// What the loop does with each kind of answer it gives the model -- a completion, an amendment, a failed call, a request
-// answered from what it holds -- each handed the loop's state as one context object (`decision-handlers/`).
+// What the loop does with each kind of answer it gives the model, handed the loop's state as one context object (`decision-handlers/`).
 import {
   automationStudioLlmEvidenceAnswerCheck,
   automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
-  automationStudioLlmEvidenceHandleAnsweredRequest,
+  automationStudioLlmEvidenceHandleAnsweredRequest, automationStudioLlmEvidenceLoopCheck, automationStudioLlmEvidenceLoopOverdue, automationStudioLlmEvidenceLoopRan,
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRefusedCallRun, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
   automationStudioLlmEvidenceHandleCompletion,
   automationStudioLlmEvidenceHandleFailedCall,
@@ -33,7 +32,6 @@ import {
   type AutomationStudioLlmEvidenceLoopCounters, type AutomationStudioLlmEvidenceRerunHeld,
   type AutomationStudioLlmEvidenceRowTransition as RowTransition
 } from "./decision-handlers/index.ts";
-// Contracts and focused settlement/admission helpers live in `evidence-loop/`.
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
@@ -81,11 +79,12 @@ import {
 } from "./unusable-decision.ts";
 import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "../models/failures/index.ts";
 import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnansweredCount } from "../models/failures/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard } from "./repeat-guard/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard, automationStudioLlmLoopWatch } from "./repeat-guard/index.ts";
 import { createAutomationStudioLlmRerunProvenance, type AutomationStudioLlmRerunScope } from "./rerun-provenance/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID } from "./node-reruns/index.ts";
 import { automationStudioLlmEvidenceBatchMember, automationStudioLlmEvidenceToolAdmission, automationStudioLlmEvidenceToolWithdrawal, automationStudioLlmPriorNodesLoop, automationStudioLlmPriorNodesSettlementContext, automationStudioLlmPriorNodesUnsettled } from "./prior-nodes/index.ts";
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
+export * from "./repeat-guard/loop-detection/index.ts"; // Loop detection's facts, its replay over a saved log (the Lab's `loop-replay/`) and the attempt's record.
 /** What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. */
 export type { AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
 export { automationStudioLlmEvidenceLoopRouteChecked } from "./loop-configuration.ts"; // The build composes it before it observes the loop (D phase 2).
@@ -360,7 +359,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     accountEvidence,
     // What the gate did is also what the history records of a completion attempt.
     showEvidence: (entry) => { evidence.push(entry); if (entry.toolId === AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID) handling.dryRunSeen.verdict = entry.value; },
-    targetMoved: () => { counters.mutationEpoch += 1; counters.attemptEpoch += 1; handling.dryRunSeen.ran = true; handling.repeats.moved(); },
+    targetMoved: () => { counters.mutationEpoch += 1; counters.attemptEpoch += 1; handling.dryRunSeen.ran = true; handling.repeats.moved(); handling.loops.moved(); },
     reusedClean: () => { handling.dryRunSeen.reused = true; },
     ...(input.observeTest ? { observed: input.observeTest } : {}),
     ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
@@ -370,9 +369,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
   });
   const draftOf = (toolId: string): string | undefined => input.requestContextKey?.(toolId) ?? (toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined); // Memo and repeat identity share the backend target key; part runs retain their draft key.
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
+  const repeatGuard = automationStudioLlmEvidenceRepeatGuard({ draftOf });
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
-    input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
-    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: automationStudioLlmEvidenceRepeatGuard({ draftOf }), looks,
+    loops: automationStudioLlmLoopWatch({ record: input.attemptRecord, holds: (toolId, value, state) => repeatGuard.blocks(toolId, value, state) !== undefined, refuseActs: input.loopSignal !== undefined, askedRepeats: input.askedRepeats }), loopOverdue: (iteration) => automationStudioLlmEvidenceLoopOverdue(handling, iteration), contextOf: draftOf, input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
+    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: repeatGuard, looks,
     recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun()
   };
   const batchHandling = automationStudioLlmPriorNodesSettlementContext(handling);
@@ -519,7 +519,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       noProgress.redirect(iteration);
     }
     // Looks in a row with nothing done between: told at five, the round stalled at eight (`decision-handlers/searching.ts`).
-    const searching = automationStudioLlmEvidenceSearchingWithoutActing(member ? batchHandling : handling, iteration);
+    const searching = automationStudioLlmEvidenceSearchingWithoutActing(member ? batchHandling : handling, iteration) ?? automationStudioLlmEvidenceLoopRan(member ? batchHandling : handling, iteration, { decision, answer: value, execution, returned: ran, effect: record.effect, refused: refusedCall, stateBefore, stateAfter, notCounted: member !== undefined || rerunReplaces !== undefined || rerunChecked, draftKey: drafting ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined, ranWith: record.ranWith, targetWords: words?.target }); // Looks in a row first; then what the loop detector makes of this call (`./decision-handlers/loop-check.ts`).
     if (searching?.kind === "end") return searching.result;
     if (searching?.kind === "recover") {
       if (member) {
@@ -756,7 +756,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const tool = admitted.tool;
     const toolRequestSignature = admitted.signature!;
     // `tool-admission.ts` shares the offering/repeat facts with each batch member.
-    const triedHere = admitted.triedHere;
+    const triedHere = admitted.triedHere ?? (rerunning || admitted.answered ? undefined : automationStudioLlmEvidenceLoopCheck(handling, decision)); // The repeat guard first; then the ladder, for a call that would run (`./decision-handlers/loop-check.ts`).
     if (triedHere) {
       const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);
       if (next.kind === "stalled") { if (input.propagateDecisionErrors) throw next.error; return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) }; }
@@ -791,7 +791,6 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (accounting.toolCalls >= limits.maxToolCalls) return { kind: "complete", result: exhausted("tool_calls") };
     const ended = await runCall(iteration, callId, decision, tool, toolRequestSignature, { replaces: rerunReplaces, held: rerunHeld, verifying });
     if (ended) return { kind: "complete", result: ended };
-
       return { kind: "continue" };
     },
     exhausted: () => exhausted("iterations")

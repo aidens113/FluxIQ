@@ -32,9 +32,9 @@ test("the person's turn is a bubble; each step is FluxIQ's own message with its 
       { turn: turn("t1", "person", "Get me a quote"), at: eventTime(0) },
       { turn: turn("t2", "automation", "Found it:\n- **Quote** for `$12`"), at: eventTime(5) }
     ], [thought(1), click(2, "started"), click(3, "succeeded")]);
-    view.render(stream, null, controls);
+    view.render(stream, controls);
     const list = fake(view.element);
-    const [person, step, answer, live] = list.children;
+    const [person, step, answer] = list.children;
     assert.equal(person!.getAttribute("data-author"), "person");
     assert.equal(person!.byClass("chat-bubble")[0]!.textContent, "Get me a quote");
     assert.equal(step!.getAttribute("data-kind"), "decision");
@@ -48,14 +48,14 @@ test("the person's turn is a bubble; each step is FluxIQ's own message with its 
     assert.equal(answer!.getAttribute("data-author"), "fluxiq");
     assert.deepEqual(answer!.byClass("chat-answer")[0]!.children.map((node) => node.tagName), ["P", "UL"]);
     assert.equal(list.byClass("chat-work").length + list.byClass("chat-work-label").length, 0, "no fold, no count");
-    assert.equal(live!.hidden, true, "no live line when nothing is working");
+    assert.equal(list.children.length, 3, "the live status is the work header, not an entry here");
   });
 });
 
 test("an equal turn from a re-read keeps its element; a changed one keeps it too, with new words", async () => {
   await withFakeDocument(() => {
     const view = createThreadView();
-    const render = (text: string) => view.render(buildChatStream([{ turn: turn("t1", "automation", text), at: eventTime(0) }], []), null, controls);
+    const render = (text: string) => view.render(buildChatStream([{ turn: turn("t1", "automation", text), at: eventTime(0) }], []), controls);
     render("Working on it");
     const first = fake(view.element).children[0]!;
     const words = first.byClass("chat-p")[0]!;
@@ -73,25 +73,24 @@ test("a step message and its card are the same elements from its decision to its
     const view = createThreadView();
     const ask = { turn: turn("t1", "person"), at: eventTime(0) };
     const events: ClientGatewayActivity[] = [thought(1), click(2, "started")];
-    const live = { headline: "Building your Flow", detail: "Thinking about the next step", step: "", waiting: false, action: "" };
-    view.render(buildChatStream([ask], events), live, controls, "build-1");
+    view.render(buildChatStream([ask], events), controls, "build-1");
     const list = fake(view.element);
     const step = list.children[1]!;
     const nodes = [step, ...step.descendants()];
     assert.equal(step.byClass("chat-card-outcome")[0]!.textContent, "Working on it");
-    assert.equal(list.children[2]!.hidden, false, "the live line is last");
+    assert.equal(list.children.length, 2, "the step is the last entry: the live status is the work header");
 
     events.push(click(3, "failed"));
-    view.render(buildChatStream([ask], events), live, controls, "build-1");
+    view.render(buildChatStream([ask], events), controls, "build-1");
     assert.equal(list.children[1], step);
     assert.deepEqual([step, ...step.descendants()], nodes, "updated in place, nothing remounted");
     assert.equal(step.byClass("chat-card")[0]!.getAttribute("data-state"), "failed");
     assert.equal(step.byClass("chat-card-outcome")[0]!.textContent, "Didn't work");
 
-    view.render(buildChatStream([ask, { turn: turn("t2", "automation", "All done"), at: eventTime(4) }], events), null, controls);
+    view.render(buildChatStream([ask, { turn: turn("t2", "automation", "All done"), at: eventTime(4) }], events), controls);
     assert.deepEqual(list.children.slice(0, 3).map((child) => child.getAttribute("data-author") ?? child.getAttribute("data-kind")), ["person", "decision", "fluxiq"]);
     assert.equal(list.children[1], step, "the message stays once the work settled");
-    assert.equal(list.children[3]!.hidden, true);
+    assert.equal(list.children.length, 3, "nothing follows the answer");
   });
 });
 
@@ -107,7 +106,7 @@ test("an answer carrying Core's record of the command it ran shows no attachment
     });
     assert.ok(page);
     const view = createThreadView();
-    view.render(buildChatStream([{ turn: page.turns[0]!, at: eventTime(0) }], []), null, controls);
+    view.render(buildChatStream([{ turn: page.turns[0]!, at: eventTime(0) }], []), controls);
     const answer = fake(view.element).children[0]!;
     assert.equal(answer.byClass("chat-note").length, 0);
     assert.doesNotMatch(answer.textContent, /attached/u);
@@ -119,11 +118,11 @@ test("U5: a person's turn that could not be sent says so under its bubble", asyn
   await withFakeDocument(() => {
     const view = createThreadView();
     const failed: CoreTurn = { ...turn("local-send:1", "person", "Find earbuds"), sendError: "Couldn't send that. Try again." };
-    view.render(buildChatStream([{ turn: failed, at: eventTime(0) }], []), null, controls);
+    view.render(buildChatStream([{ turn: failed, at: eventTime(0) }], []), controls);
     const entry = fake(view.element).children[0]!;
     assert.equal(entry.byClass("chat-bubble-text")[0]!.textContent, "Find earbuds");
     assert.equal(entry.byClass("chat-send-error")[0]!.textContent, "Couldn't send that. Try again.");
-    view.render(buildChatStream([{ turn: { ...failed, sendError: undefined }, at: eventTime(0) }], []), null, controls);
+    view.render(buildChatStream([{ turn: { ...failed, sendError: undefined }, at: eventTime(0) }], []), controls);
     assert.equal(fake(view.element).children[0]!.byClass("chat-send-error").length, 0, "gone once it is on its way again");
   });
 });
@@ -135,7 +134,7 @@ test("a recovery on a run step shows what happened and why, then its card", asyn
     const view = createThreadView();
     const recovery = { kind: "handler", subject: "Close the sign-up box", outcome: "succeeded", event: "before" };
     const row = activityEvent(1, { phase: "running", label: "Recovered: Close the sign-up box", detail: { kind: "step", title: "Close the sign-up box", status: "succeeded", ref: "n2.add", recovery } as NonNullable<ClientGatewayActivity["detail"]> });
-    view.render(buildChatStream([], [row]), null, controls);
+    view.render(buildChatStream([], [row]), controls);
     const step = fake(view.element).children[0]!;
     assert.equal(step.getAttribute("data-kind"), "recovery");
     assert.equal(step.byClass("chat-step-line")[0]!.hidden, false, "the words are shown beside the card");

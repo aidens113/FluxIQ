@@ -24,7 +24,7 @@ import type {
   AutomationStudioLlmEvidenceRefusalRun,
   AutomationStudioLlmEvidenceTool
 } from "../evidence-loop/index.ts";
-import type { AutomationStudioLlmEvidenceRepeatGuard } from "../repeat-guard/index.ts";
+import type { AutomationStudioLlmEvidenceRepeatGuard, AutomationStudioLlmLoopWatch } from "../repeat-guard/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, EvidenceLoopLimits } from "../loop-configuration.ts";
 import type { AutomationStudioFlowDraftDryRunRefusal } from "../node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLookWithdrawal } from "./look-withdrawal.ts";
@@ -104,6 +104,12 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   callStates: Map<string, string>;
   /** What each call did on the page it found, so a call that failed or changed nothing is not made again there (`../repeat-guard/`). */
   repeats: AutomationStudioLlmEvidenceRepeatGuard;
+  /** Whether the loop's calls are getting anywhere, and the ladder over the answer (`../repeat-guard/loop-detection/`). */
+  loops: AutomationStudioLlmLoopWatch;
+  /** The ladder's next step once refusing has not worked: nothing, or how the round stops (`./refused-repeat.ts`). */
+  loopOverdue(iteration: number): Extract<import("./refused-repeat.ts").AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> | undefined;
+  /** What a tool's call is answered against besides its page: the backend target key, or the draft a part run runs. */
+  contextOf(toolId: string): string | undefined;
   /** Looks withdrawn after an ignored redirect (`./look-withdrawal.ts`). */
   looks: AutomationStudioLlmEvidenceLookWithdrawal;
   toolIds: ReadonlySet<string>;
@@ -153,7 +159,7 @@ export type AutomationStudioLlmEvidenceRerunHeld = {
    * its signature (`../decision-context/signature.ts`), the draft's key before it
    * (`../repeat-guard/draft-key.ts`), what the replaced step observed, and what it found (`./rerun-result.ts`).
    */
-  before: { signature: string; draft: string; observed: string; answer?: string | undefined };
+  before: { signature: string; draft: string; observed: string; answer?: string | undefined; loopKey: string };
 };
 
 /**
