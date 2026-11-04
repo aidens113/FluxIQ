@@ -22,10 +22,17 @@
 // reason: the matcher answers a command it cannot serve with a failure whose
 // code is the reason (`client-gateway/trace-matcher/gap-answer.ts`). Only
 // codes go into a note; the gates' words say them (`WORDS.reasons`).
+//
+// A domain may restate a gap's code on the way to the feedback (the web domain
+// reports it as its own unknown failure), and then no feedback step names it and
+// the note stays `inconclusive`. So the counts the step log reads also carry the
+// first gap as the matcher reported it, whatever the note says, with the step the
+// run stopped at: it is what says why a check was inconclusive, and the note and
+// what the model reads do not change.
 
-import { CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS } from "../../../../client-gateway/index.ts";
+import { CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS, type ClientGatewayTraceMatcherGap } from "../../../../client-gateway/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioTrialOfflineFirstAnswer, AutomationStudioTrialOfflineFirstChecked, AutomationStudioTrialOfflineFirstNote, AutomationStudioTrialOfflineFirstResult } from "../../../../runtime/flow-authoring/bootstrap/offline-first/index.ts";
+import type { AutomationStudioTrialOfflineFirstAnswer, AutomationStudioTrialOfflineFirstChecked, AutomationStudioTrialOfflineFirstGap, AutomationStudioTrialOfflineFirstNote, AutomationStudioTrialOfflineFirstResult } from "../../../../runtime/flow-authoring/bootstrap/offline-first/index.ts";
 import type { AutomationStudioOfflineTrialRan, AutomationStudioOfflineTrialRefusal, AutomationStudioOfflineTrialRunOutcome } from "../offline-trial/index.ts";
 
 /** The trial outcome both offline runners answer, with the result a gate reads. */
@@ -39,7 +46,7 @@ export function automationStudioOfflineFirstAnswer<Trial extends OfflineTrial>(
 ): AutomationStudioTrialOfflineFirstAnswer<Trial["result"]> {
   if (outcome.status === "refused") return { kind: "live", note: { outcome: "not_tried", why: outcome.reasonCode } };
   const { trial, evidence, matcher } = outcome;
-  const checked = checkedOf(outcome.supported);
+  const checked = checkedOf(outcome.supported, firstGap(matcher.gaps, trial.result.feedback));
   const live = (note: AutomationStudioTrialOfflineFirstNote): AutomationStudioTrialOfflineFirstAnswer<Trial["result"]> => ({ kind: "live", note, ...(checked ? { checked } : {}) });
   if (evidence.verdict === "pass") return live(trial.result.verdict === "yes" ? { outcome: "passed" } : { outcome: "inconclusive", why: "offline_pass_without_yes" });
   if (evidence.verdict === "fail") {
@@ -55,10 +62,33 @@ export function automationStudioOfflineFirstAnswer<Trial extends OfflineTrial>(
 }
 
 /** The matched and recorded operation counts, when they are counts the gates accept. */
-function checkedOf(supported: { matchedOperations: number; recordedOperations: number }): AutomationStudioTrialOfflineFirstChecked | undefined {
+function checkedOf(supported: { matchedOperations: number; recordedOperations: number }, gap: AutomationStudioTrialOfflineFirstGap | undefined): AutomationStudioTrialOfflineFirstChecked | undefined {
   const { matchedOperations: matched, recordedOperations: recorded } = supported;
   const count = (value: number) => Number.isSafeInteger(value) && value >= 0;
-  return count(matched) && count(recorded) && matched <= recorded ? { matched, recorded } : undefined;
+  if (!count(matched) || !count(recorded) || matched > recorded) return undefined;
+  return gap ? { matched, recorded, gap } : { matched, recorded };
+}
+
+/** The matcher's first gap that is not only the echo of an earlier one, with the step the feedback says the run stopped at. */
+function firstGap(gaps: readonly ClientGatewayTraceMatcherGap[], feedback: JsonObject): AutomationStudioTrialOfflineFirstGap | undefined {
+  const gap = gaps.find((candidate) => candidate.cause !== "after_gap") ?? gaps[0];
+  if (gap === undefined) return undefined;
+  const named = { code: gap.reason, cause: gap.cause, ordinal: gap.ordinal, action: gap.actionType, fields: gap.fields };
+  const step = stoppedAt(feedback);
+  return step === undefined ? named : { ...named, step };
+}
+
+/** The step the run's feedback says it stopped at: its first gap step, else the first step that failed. */
+function stoppedAt(feedback: JsonObject): number | undefined {
+  const named = gapStep(feedback);
+  if (named) return named.step;
+  const steps = Array.isArray(feedback.steps) ? feedback.steps : [];
+  for (const entry of steps) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const { step, status } = entry;
+    if (status === "failed" && typeof step === "number" && Number.isSafeInteger(step) && step >= 1) return step;
+  }
+  return undefined;
 }
 
 /** The first feedback step whose failure is a gap reason: its number and the reason. */
