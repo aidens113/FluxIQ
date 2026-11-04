@@ -3,6 +3,33 @@ import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatew
 import { COMMAND_ANSWER_MARGIN_MS } from "../service/index.ts";
 
 describe("ClientGatewayService", () => {
+  it("does not finish closing while the trusted clients' first read still holds the store", async () => {
+    let finishRead!: () => void;
+    const reading = new Promise<void>((resolve) => { finishRead = resolve; });
+    const store: ClientGatewayTrustedClientStore = {
+      load: async () => {
+        await reading;
+        return [];
+      },
+      save: async () => undefined
+    };
+    const gateway = new ClientGatewayService({ trustedClientStore: store });
+    let closed = false;
+    const closing = gateway.close().then(() => { closed = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    finishRead();
+    await closing;
+    expect(closed).toBe(true);
+  });
+
+  it("closes after a first read that failed, which is ready()'s to report", async () => {
+    const failure = new Error("store unreadable");
+    const gateway = new ClientGatewayService({ trustedClientStore: { load: async () => { throw failure; }, save: async () => undefined } });
+    await expect(gateway.close()).resolves.toBeUndefined();
+    await expect(gateway.ready()).rejects.toBe(failure);
+  });
+
   it("returns bounded stable summary pages without exposing full snapshots", async () => {
     const gateway = new ClientGatewayService();
     for (let index = 0; index < 125; index += 1) {

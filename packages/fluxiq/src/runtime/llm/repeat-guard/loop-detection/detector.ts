@@ -323,7 +323,10 @@ export function automationStudioLlmLoopDetector(options: {
         progress();
         return { progressed: true };
       }
-      if (draftReturns < 2 && !fromEarlierContext) return { progressed: false };
+      // Twice in a row back to a draft is the same fix only if an edit has led to this one before. A draft only ever
+      // built by running its steps, dropped back to, has not been tried: taking steps out edit by edit is not a fix
+      // coming back, and telling the model it "did not work" would not be true (t867, bigbox-run6's decision 23).
+      if ((draftReturns < 2 || stood.times < 2) && !fromEarlierContext) return { progressed: false };
       return { progressed: false, finding: { pattern: "same_fix", repeats: stood.times, toolIds: ["amend_draft"], unchanged: ["draft"] } };
     },
     moved() {

@@ -93,7 +93,7 @@ else, is not judged, as with the guard: the doubt falls on not firing.
 | `near_repeat` | One call, with its free text taken out (`reason`, `summary`, a plan's `purpose` and `notAsked`, never anything under `parameters`), that came to nothing twice on one page |
 | `cycle` | The last block of up to four calls equal to the block before it, across pages too, with nothing new in its last pass |
 | `no_progress` | Twelve calls in a row with no progress, whatever they were |
-| `same_fix` | An edit that brings the draft back to a Flow it already stood at, an identical edit that changed nothing, or a submission a trial or the check has already refused |
+| `same_fix` | An edit that brings the draft back, the second time in a row, to a Flow an edit already led to (dropping steps back through drafts only their calls built is not a fix coming back), an identical edit that changed nothing, or a submission a trial or the check has already refused |
 | `same_act` | One stated-lasting act on one target landing again with no new row identity read since, however much the page changed |
 
 **A lasting act is not progress for moving the page.** Adding one more to a cart

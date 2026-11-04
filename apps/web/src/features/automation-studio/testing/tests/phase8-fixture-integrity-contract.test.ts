@@ -13,7 +13,7 @@ describe("Phase 8 storage fixture integrity contract", () => {
     expect(seed).toContain('const FIXTURE_SECURITY_PIN = "123456"');
     expect(seed).toContain("identityAccess.setPassword(FIXTURE_USERNAME, FIXTURE_PASSWORD)");
     expect(seed).toContain("identityAccess.setPin(FIXTURE_USERNAME, FIXTURE_SECURITY_PIN)");
-    expect(seed).toContain("studio.saveFlow({ projectId: project.id, flow: ownedFixtureFlow(project.id, artifact) })");
+    expect(seed).toContain("studio.saveFlow({ projectId, flow: ownedFixtureFlow(projectId, flow) })");
     expect(seed).not.toContain('saveProjectArtifact({ projectId: project.id, kind: "flow"');
     expect(seed).not.toContain('credentials: { username: "admin", password: "admin" }');
   });
@@ -43,7 +43,7 @@ describe("Phase 8 storage fixture integrity contract", () => {
 
   it("marks fixture Flow artifacts with independently enumerable project ownership", () => {
     const seed = read("e2e/support/seed-fixtures.mjs");
-    expect(seed).toContain("ownedFixtureFlow(project.id, artifact)");
+    expect(seed).toContain("ownedFixtureFlow(projectId, flow)");
     expect(seed).toContain('ownerKind: "project", ownerId: projectId');
     expect(seed).toContain("namespaceLargeFixtureIdentifiers(createAutomationStudioLargeProjectFixture");
     expect(seed).toContain("function namespaceLargeFixtureIdentifiers(fixture, namespace)");
