@@ -5,6 +5,7 @@
 
 import { resolveAutomationStudioBuildAuthoringMode } from "../../../../flows/authoring/model/authoring-mode/index.ts";
 import type { GenerateFlowBootstrapAdaptationRequest, GenerateFlowBootstrapAdaptationResponse } from "../../../../api-contracts/automation.ts";
+import type { AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../flow-bootstrap-commands/index.ts";
 // Values come from their owning modules, not the runtime barrel: through the barrel a load order
 // reached llm-generation before generation-failure finished loading, and its builders read undefined
 // (sweep-1008: twelve runtime-execution tests). Types erase, so they may stay on the barrel.
@@ -12,6 +13,7 @@ import { parseAutomationStudioPermittedConsequences, type AutomationStudioAction
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailedBuilds } from "../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
+import { automationStudioAnswerFirstSetupOf } from "../answer-first/setup/index.ts";
 import { boundedIdentifier } from "./bounded-identifier.ts";
 import { flowBootstrapGenerationReadiness } from "./readiness.ts";
 import { sanitizedFlowBootstrapGeneration } from "./sanitized-generation.ts";
@@ -49,17 +51,20 @@ export async function generateFlowBootstrapAdaptationForRequest(
   const unknownField = Object.keys(payload).find((key) => !FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS.has(key));
   if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
   if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
-  if (payload.authoringMode !== undefined && ((payload.authoringMode !== "candidate" && payload.authoringMode !== "project" && payload.authoringMode !== "configured") || payload.evidenceGuided !== true)) return { ok: false, error: "Candidate authoring requires evidence-guided generation." };
+  // `answer-first` by name is this file's alone: the API contract keeps its own list, and the chat reaches this mode through `configured`.
+  const askedMode: unknown = payload.authoringMode;
+  if (askedMode !== undefined && ((askedMode !== "candidate" && askedMode !== "project" && askedMode !== "configured" && askedMode !== "answer-first") || payload.evidenceGuided !== true)) return { ok: false, error: "Candidate authoring requires evidence-guided generation." };
   // `configured` is how a client that cannot read Core's configuration
   // (the web panel) asks for Core's own authoring mode
   // (`../../model/authoring-mode/`); it is resolved here, once, so the build
   // and the answer below agree on it. An extend resolves to a mode that can
   // extend, as the chat's improve does (`resolveAutomationStudioBuildAuthoringMode`);
   // `project` asked for by name is forwarded as asked.
-  let candidateAuthoring: "candidate" | "project" | undefined;
+  let candidateAuthoring: "candidate" | "project" | "answer-first" | undefined;
   try {
-    const mode = payload.authoringMode === "configured" ? resolveAutomationStudioBuildAuthoringMode(payload.mode === "extend" ? "extend" : "create") : payload.authoringMode;
-    candidateAuthoring = mode === "candidate" || mode === "project" ? mode : undefined;
+    const mode = askedMode === "configured" ? resolveAutomationStudioBuildAuthoringMode(payload.mode === "extend" ? "extend" : "create") : askedMode;
+    // An extend asked for by name in answer-first mode builds as a candidate, as a `configured` one resolves.
+    candidateAuthoring = mode === "answer-first" && payload.mode === "extend" ? "candidate" : mode === "candidate" || mode === "project" || mode === "answer-first" ? mode : undefined;
   }
   catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Core's authoring mode is misconfigured." }; }
   if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
@@ -89,7 +94,7 @@ export async function generateFlowBootstrapAdaptationForRequest(
   if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
   const projectId = boundedIdentifier(payload.projectId, "Project");
   const flowId = boundedIdentifier(payload.flowId, "Flow");
-  let generated: GenerateFlowBootstrapAdaptationResponse;
+  let generated: AutomationStudioGenerateFlowBootstrapAdaptationResult;
   try {
     generated = await service.generateFlowBootstrapAdaptation({
       projectId,
@@ -137,9 +142,14 @@ export async function generateFlowBootstrapAdaptationForRequest(
     return { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.unclassified_failure)." };
   }
   failedBuilds.ended(projectId, flowId, undefined);
+  // An attempt's answer is a normal return however it ended (`../answer-first/`), and its records were each parsed by the contract as it ended; the Flow is untouched, so nothing here is a change to review. The API contract's list stays as it is: the chat reads this by its own shape (`runtime/conversations/commands/build.ts`).
+  if (generated.status === "answered") return candidateAuthoring === "answer-first" ? { ok: true, payload: { answered: generated } } : { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
+  // What a person must do before an attempt can start: no attempt began, and nothing failed (`../answer-first/setup/`).
+  const setupNeeded = automationStudioAnswerFirstSetupOf(generated);
+  if (setupNeeded) return candidateAuthoring === "answer-first" ? { ok: true, payload: { setupNeeded } } : { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
   // Candidate mode ends as a draft or, after a trial judged yes twice, as a proposal naming that candidate and trial (t340); legacy mode only ever proposes, and never names a candidate.
   const consistent = candidateAuthoring ? generated.status === "draft" || generated.candidate !== undefined : generated.status === "proposed" && generated.candidate === undefined;
   if (!consistent) return { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
-  const sanitized = sanitizedFlowBootstrapGeneration(generated);
+  const sanitized = sanitizedFlowBootstrapGeneration(generated as GenerateFlowBootstrapAdaptationResponse);
   return { ok: true, payload: sanitized.status === "draft" ? { candidate: sanitized } : { adaptation: sanitized } };
 }

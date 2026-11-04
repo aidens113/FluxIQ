@@ -17,6 +17,11 @@ describe("the authoring mode a build runs in", () => {
     expect(resolveAutomationStudioBuildAuthoringMode("extend", env("candidate"))).toBe("candidate");
   });
 
+  it("creates in answer-first mode, and extends as a candidate until a saved Flow's later attempt lands", () => {
+    expect(resolveAutomationStudioBuildAuthoringMode("create", env("answer-first"))).toBe("answer-first");
+    expect(resolveAutomationStudioBuildAuthoringMode("extend", env("answer-first"))).toBe("candidate");
+  });
+
   it("leaves legacy alone, so an opted-out Core extends as legacy", () => {
     expect(resolveAutomationStudioBuildAuthoringMode("extend", env("legacy"))).toBe("legacy");
   });

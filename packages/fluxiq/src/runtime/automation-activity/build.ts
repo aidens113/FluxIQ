@@ -14,16 +14,23 @@ import { runWithAutomationStudioActivity } from "./scope.ts";
  * the person (`../flow-bootstrap/generation-failure/build-ending.ts`) rather
  * than the bare "Build failed" 30 live runs ended on (audit A3, cause 1).
  */
-export async function withAutomationStudioBuildActivity<T>(target: { projectId?: unknown; flowId?: unknown; domainReadings?: Readonly<AutomationStudioDomainReadings> | undefined }, fn: () => Promise<T>): Promise<T> {
+export async function withAutomationStudioBuildActivity<T>(target: { projectId?: unknown; flowId?: unknown; authoringMode?: unknown; domainReadings?: Readonly<AutomationStudioDomainReadings> | undefined }, fn: () => Promise<T>): Promise<T> {
   if (typeof target.projectId !== "string" || !target.projectId) return await fn();
   const flowId = typeof target.flowId === "string" && target.flowId ? target.flowId : undefined;
   return await runWithAutomationStudioActivity({ kind: "build", id: `build-${randomUUID()}`, projectId: target.projectId, ...(flowId ? { flowId } : {}) }, async () => {
-    emitAutomationStudioActivity({ phase: "building", label: "Building the Flow", detail: { kind: "step", title: "Build started", status: "started", ...(flowId ? { ref: flowId } : {}) } });
+    // An answer-first attempt does the task, so it never says a Flow is being built or is ready (t861).
+    const started = target.authoringMode === "answer-first" ? { label: "Working on your task", title: "Started" } : { label: "Building the Flow", title: "Build started" };
+    emitAutomationStudioActivity({ phase: "building", label: started.label, detail: { kind: "step", title: started.title, status: "started", ...(flowId ? { ref: flowId } : {}) } });
     try {
       const built = await fn();
       // A build that kept only a draft built no Flow, so it never says one is ready (G2): it ends failed, as the chat says it.
       if (endedAsDraft(built)) {
         emitAutomationStudioActivity({ phase: "failed", label: DRAFT_TITLE, detail: { kind: "step", title: DRAFT_TITLE, status: "failed", text: DRAFT_TEXT }, final: true });
+        return built;
+      }
+      const answered = answeredEnding(built);
+      if (answered) {
+        emitAutomationStudioActivity({ phase: answered.phase, label: answered.label, detail: { kind: "step", title: answered.label, status: answered.phase === "failed" ? "failed" : "succeeded" }, final: true });
         return built;
       }
       // "Build finished: a Flow is proposed" said nothing to the person, and the
@@ -54,6 +61,22 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
  */
 function endedAsDraft(built: unknown): boolean {
   return Boolean(built) && typeof built === "object" && (built as { status?: unknown }).status === "draft";
+}
+
+/**
+ * What the activity says at the end of an answer-first attempt, in a person's words: the
+ * attempt's own status, which holds no failure but a budget gone. The answer itself is the
+ * answer turn's (`../conversations/`). Absent for any other build.
+ */
+function answeredEnding(built: unknown): { phase: "done" | "failed"; label: string } | undefined {
+  const ended = built && typeof built === "object" ? (built as { status?: unknown }).status : undefined;
+  if (ended === "setup_needed") return { phase: "done", label: "Before I can start" };
+  if (ended !== "answered") return undefined;
+  const status = (built as { attempt?: { status?: unknown } }).attempt?.status;
+  if (status === "budget_out") return { phase: "failed", label: "Reached this task's budget" };
+  if (status === "stopped_by_person") return { phase: "done", label: "Stopped" };
+  if (status === "waiting_for_person") return { phase: "done", label: "Waiting for you" };
+  return { phase: "done", label: "Finished" };
 }
 
 /** What the activity says of a build that kept only a draft (G2). */

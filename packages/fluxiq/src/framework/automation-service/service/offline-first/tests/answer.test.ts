@@ -60,22 +60,23 @@ describe("why a check that stayed inconclusive was inconclusive", () => {
   // feedback, so no feedback step names it: every saved check on a real site read this way.
   const restated = () => trial("execution_failed", "failed", { steps: [{ step: 1, status: "succeeded" }, { step: 4, status: "failed", failureCode: "web.action.unknown" }] });
 
-  it("hands the step log the matcher's first gap and the step the run stopped at, and leaves the note alone", () => {
+  it("names the matcher's first gap and the step the run stopped at, in the note the model reads and in the step log", () => {
     const first: ClientGatewayTraceMatcherGap = { ...gap(3, "argument_mismatch"), fields: ["parameters.where.0.field", "target.selector"] };
     const answer = automationStudioOfflineFirstAnswer(ran(restated(), matcher(5, [1, 2], [first, gap(4, "missing_transition", "after_gap")])));
 
     expect(answer).toEqual({
       kind: "live",
-      note: { outcome: "inconclusive", why: "argument_mismatch" },
+      note: { outcome: "gap", step: 4, why: "argument_mismatch" },
       checked: { matched: 2, recorded: 5, gap: { code: "argument_mismatch", cause: "mismatch", ordinal: 3, action: "example.read", fields: ["parameters.where.0.field", "target.selector"], step: 4 } }
     });
     const step = stepOf(answer);
     expect(step).toMatchObject({
       kind: "live",
-      logged: { outcome: "inconclusive", matchedOperations: 2, recordedOperations: 5, gap: { code: "argument_mismatch", cause: "mismatch", ordinal: 3, step: 4 } }
+      logged: { outcome: "gap", step: 4, matchedOperations: 2, recordedOperations: 5, gap: { code: "argument_mismatch", cause: "mismatch", ordinal: 3, step: 4 } }
     });
-    // The gate's evidence, which the model reads, is the note as it was.
-    expect(step).toMatchObject({ evidence: { offlineCheck: { outcome: "inconclusive", why: "argument_mismatch" } } });
+    // The model reads the reason in generic words, never a code, a field path or a value.
+    expect(step).toMatchObject({ evidence: { offlineCheck: { outcome: "gap", step: 4, why: "argument_mismatch", said: WORDS.gap(4, "argument_mismatch") } } });
+    expect(step.kind === "live" ? step.note.said : "").toContain(WORDS.reasons.argument_mismatch);
     expect(JSON.stringify(step.kind === "live" ? step.evidence : {})).not.toContain("parameters.where");
   });
 

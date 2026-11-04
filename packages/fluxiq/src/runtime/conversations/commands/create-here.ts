@@ -17,7 +17,8 @@
 import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { automationStudioConversationAttachedRecordingProblem } from "../attached-recording/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText, type AutomationStudioConversationCommandInstruction } from "./argument.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
+import { resolveAutomationStudioBuildAuthoringMode } from "../../../flows/authoring/model/authoring-mode/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAnswerFirstAttempt, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation, type AutomationStudioConversationAnswered } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationSiteName } from "../site-name.ts";
 import type { AutomationStudioCandidateAuthoringResult } from "../../flow-authoring/bootstrap/authoring-result/index.ts";
@@ -26,12 +27,16 @@ import { automationStudioConversationCallCause, automationStudioConversationComm
 const TITLE = "Create an automation here";
 const NAME_MAX = 80;
 
+/** In answer-first mode this does the task and comes back with its result, rather than making a Flow and testing it. */
+const answersFirst = (): boolean => resolveAutomationStudioBuildAuthoringMode("create") === "answer-first";
+
 export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConversationCommand = {
   background: true,
   capability: {
     id: "flow.createHere",
     title: TITLE,
     get summary() {
+      if (answersFirst()) return "Does what the person asks on the page they have open, in one live pass, comes back with the result, and keeps the steps it took as a draft Flow.";
       return automationStudioConversationAuthorsCandidates()
         ? "Makes a new Flow that does what the person asks, explores the page they have open to work out the steps, test-runs the whole Flow once from its start, and puts the steps into the Flow only when that test is judged to do what was asked."
         : "Makes a new Flow that does what the person asks, explores the page they have open to work out the steps, and puts those steps into the Flow.";
@@ -46,7 +51,9 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     consequences: ["create_new"],
     reauthorizes: false
   },
-  announce: ({ place }) => automationStudioConversationAuthorsCandidates()
+  announce: ({ place }) => answersFirst()
+    ? `I'll do this on ${place} and show you the result here. I'll save how I did it, so next time is quicker.`
+    : automationStudioConversationAuthorsCandidates()
     ? `I'll make you a new automation for this, working out its steps by trying them on ${place} and then test-running the whole Flow once from the start. I'll say here when it is ready, or why it is not.`
     : `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when it is ready.`,
   async run(context, args) {
@@ -73,6 +80,11 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // The recording, when one was attached, follows the saved instruction at once; where the instruction came from is said after it.
     progress.landed(`saved what it should do${recordingId ? ", with your recording as supporting evidence" : ""}${said.from === "person" ? "" : `, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`}`);
 
+    if (answersFirst()) {
+      const answered = await automationStudioConversationAnswerFirstAttempt(context, { flowId });
+      if (!answered.ok) return progress.failed(answered.cause, { ending: answered.ending, left: automationStudioConversationCreateHereLeft(name, answered, said.from), told: answered.told });
+      return progress.succeeded(answered.status === "setup_needed" ? answered.say : automationStudioConversationAttemptSaid(answered));
+    }
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
     // A build that failed leaves the Flow it was making empty, and the ending
     // says so in place of the steps that landed: "Before that I created the
@@ -96,6 +108,20 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
       : `Your automation "${name}" is ready: I tried its steps on ${where} and put the ones that worked into it.`);
   }
 };
+
+/**
+ * The one plain line an attempt's ending gets here. The answer itself, its rows, acts and
+ * label, is the Answer lane's turn, so this only says how it stands and that it is kept.
+ */
+function automationStudioConversationAttemptSaid(answered: AutomationStudioConversationAnswered): string {
+  switch (answered.attempt.status) {
+    case "achieved": return "I got what you asked for, and it was checked once against what you asked.";
+    case "budget_out": return "The budget for this ran out before I could confirm it. What I found so far is kept.";
+    case "stopped_by_person": return "Stopped, as you asked. What I found so far is kept.";
+    case "waiting_for_person": return "This needs you before it can go on. What I found so far is kept.";
+    case "working": return "This is still going. What I found so far is kept.";
+  }
+}
 
 /** The build endings whose own message says the instruction is kept and the build can be run again (header of `automationStudioConversationCreateHereLeft`). */
 const ENDINGS_SAYING_INSTRUCTION_KEPT: ReadonlySet<string> = new Set(["provider_unavailable"]);

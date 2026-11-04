@@ -1,3 +1,4 @@
+import type { AutomationStudioTaskAttempt, AutomationStudioTaskResult } from "@fluxiq/contracts/automation";
 import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
@@ -18,8 +19,10 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
    * Opt-in explicit complete candidate submission; static validity remains
    * unverified. `project` builds that candidate through the project supervisor
    * and its builders (`../project-build/`); its result is a candidate's.
+   * `answer-first` runs one live exploration that must reach the person's result
+   * (`../answer-first/`); its result is an attempt's, `status: "answered"`.
    */
-  authoringMode?: "candidate" | "project";
+  authoringMode?: "candidate" | "project" | "answer-first";
   useReusableContext?: true;
   /**
    * What this build does to the Flow. Absent, `create`: a blank Flow, written
@@ -131,7 +134,29 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationResult = AutomationSt
     /** Present when a trial runner was available: why nothing was promoted. */
     trial?: AutomationStudioCandidateDraftTrial;
   }
-);
+) | AutomationStudioGenerateFlowBootstrapAdaptationAnswered;
+
+/**
+ * What an answer-first attempt answers: a normal return however it ended, a budget-out and
+ * a person's Stop among them, since neither is a failure of the call (plan, "The one hard
+ * requirement"). `attempt.status` says how it ended. The Flow is untouched: `candidateId`,
+ * `revision` and `digest` name the unverified draft it saved, where one could be assembled.
+ */
+export type AutomationStudioGenerateFlowBootstrapAdaptationAnswered = {
+  projectId: string;
+  flowId: string;
+  status: "answered";
+  /** What the build's callers read of any answer: the instructions it worked from, the Flow as it found it, and what it spent. */
+  sourceInstructionIds: string[];
+  baseDependencyDigest: string;
+  baseSettingsRevision: number;
+  accounting: AutomationStudioGenerateFlowBootstrapAdaptationProposal["accounting"];
+  attempt: AutomationStudioTaskAttempt;
+  result?: AutomationStudioTaskResult;
+  candidateId?: string;
+  revision?: number;
+  digest?: string;
+};
 
 /**
  * Only an absent flag is statically legacy. Candidate mode ends as a draft or,
