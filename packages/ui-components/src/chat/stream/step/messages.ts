@@ -87,6 +87,7 @@ import { activityAgent, isInternalStep, isModelThought, projectCard, stepRecover
 import { actionCard, type ActionCard } from "./action-card.ts";
 import { foldRepeatedCards } from "./card-repeats.ts";
 import { foldRetriedCards } from "./retried.ts";
+import { calmSupersededFailures } from "./superseded.ts";
 import { foldDoneAgain } from "./done-again.ts";
 import { projectMessages, withAgents } from "./project-message.ts";
 import type { ProjectWords } from "./project-words.ts";
@@ -430,7 +431,7 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
   // Repeated refusals and failures are one card each that counts them (U-8, R2-U-7, `card-repeats.ts`),
   // a step that worked when tried again is one card that says on which try (lane D finding 2,
   // `retried.ts`), and steps done again before a retry are one line that holds them (D7, `done-again.ts`).
-  const folded = foldDoneAgain(foldRetriedCards(foldRepeatedCards(drafts)));
+  const folded = calmSupersededFailures(foldDoneAgain(foldRetriedCards(foldRepeatedCards(drafts))));
   const kept = limit > 0 ? folded.slice(-limit) : [];
   const newest = new Map<string, StepMessage>();
   for (const draft of kept) newest.set(draft.activityId, draft);

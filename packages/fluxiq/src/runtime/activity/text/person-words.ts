@@ -88,6 +88,9 @@ const STEP_NUMBER = /\b([Ss])tep(s?)\s+\d+(?:\s*(?:,|and|or|to|-|–)\s*\d+)*\b/
  */
 const CHANGE_PLACE = /(?:\b(the|an?|that|this|its|their|each|every|which|another|any)\s+)?\b(?:witnessed\s+destinations?|(?:reset\s+)?destination[\s-]+\d+|(?:reset|destination)\s+(?:refs?|references?)|resetDestinations?|witness\s+stamps?)\b/giu;
 
+/** What "judge" said as a person's check: "judged" is "checked". */
+const JUDGE_WORDS: Readonly<Record<string, string>> = { e: "check", es: "checks", ed: "checked", ing: "checking" };
+
 /** `said` in the case `found` opens with. */
 function cased(found: string, said: string): string {
   return /^\p{Lu}/u.test(found) ? `${said.charAt(0).toUpperCase()}${said.slice(1)}` : said;
@@ -157,6 +160,11 @@ export function automationStudioActivityPersonWords(text: string): string {
     .replace(/\bde-?duplicate\b/giu, (found: string) => cased(found, "remove duplicates"))
     .replace(/\b(?:de-?duplication|de-?duplicating|dedup(?:e|ing)?)\b/giu, (found: string, offset: number, whole: string) => cased(found, VERB_BEFORE.test(whole.slice(0, offset)) ? "remove duplicates" : "removing duplicates"))
     .replace(/\b(the|a)\s+judge('s)?\b/giu, "$1 check$2")
+    // The check is not a judge to the person (answer-first study, B 34 and A 27: "no judge was asked", "was judged to answer").
+    .replace(/\b(was|were|is|are|been)\s+judged\s+(not\s+)?to\b/giu, (found: string, verb: string, not: string | undefined) => cased(found, `${verb.toLowerCase()} found ${not ? "not " : ""}to`))
+    .replace(/\bjudg(e|es|ed|ing)\b/giu, (found: string, ending: string) => cased(found, JUDGE_WORDS[ending.toLowerCase()]!))
+    // The framework is FluxIQ to the person, never "Core".
+    .replace(/\bCore\b/gu, "FluxIQ")
     .replace(/\bnext\s+(?:model\s+)?call(s?)\b/giu, "next step$1")
     .replace(STEP_NUMBER, (found: string, s: string, plural: string, offset: number, whole: string) => {
       const many = plural !== "" || /\d\s*(?:,|and|or|to|-|–)\s*\d/u.test(found);

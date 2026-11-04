@@ -28,5 +28,5 @@ export function automationStudioProjectBuildReadingsTold(readings: readonly Auto
   const added = readings.flatMap((reading) => reading.added);
   const gone = readings.flatMap((reading) => reading.gone);
   const parts = [added.length ? `now shows ${quoted(added)}` : "", gone.length ? `no longer shows ${quoted(gone)}` : ""].filter((part) => part);
-  return parts.length ? `Where the build acted, Core last read the page${readings.length > 1 ? "s" : ""} as it ${parts.join(" and ")}.` : undefined;
+  return parts.length ? `Where the build acted, FluxIQ last read the page${readings.length > 1 ? "s" : ""} as it ${parts.join(" and ")}.` : undefined;
 }

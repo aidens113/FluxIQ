@@ -31,12 +31,16 @@ export type EmptyStateModel = {
   items: readonly ChatWelcomeItem[];
 };
 
-/** What FluxIQ is, in the latest chat's empty state. Its last sentence is true once Stop and Take over ship (t376). */
+/**
+ * What FluxIQ is, in the latest chat's empty state: only what is true while the
+ * person reads it, before any task. Stop is offered from the first moment of work;
+ * "take over" exists for a run only (`../controls/hold-control.ts`), never a build,
+ * so it is not promised here. Nothing offers scheduling, so nothing implies it.
+ */
 export const ONBOARDING_CONCEPT =
-  "FluxIQ turns a job you describe on a website into an automation you can run again. "
-  + "The first time, it works the job out on this page with AI and shows each step here. "
-  + "After that it repeats the saved steps without AI, and if the site changes it fixes the step, checks the fix and remembers it. "
-  + "You can stop it, or take over the page, at any time.";
+  "Describe a job on this page and FluxIQ works it out with AI, showing each step here. "
+  + "It saves the steps, so it can repeat the job later without AI. "
+  + "You can stop it at any time.";
 
 /** Said when no model key is enabled; Extract still works, because it needs no model. */
 export const MODEL_KEY_LINE = "FluxIQ needs a model key before it can build. Add one in FluxIQ.";
@@ -48,7 +52,7 @@ const LATEST_STARTS: readonly EmptyStart[] = [
 
 const LATEST_EXAMPLES: readonly string[] = [
   "Collect the name and price of every product on this page",
-  "Check this page every morning and tell me what's new",
+  "Open each result on this page and list its title and link",
   "Fill in this form for me, and stop before sending it"
 ];
 

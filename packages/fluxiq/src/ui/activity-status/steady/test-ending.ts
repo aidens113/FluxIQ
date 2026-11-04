@@ -33,8 +33,8 @@ const VERDICTS: ReadonlyMap<string, string> = new Map([
   ["trial_yes", "The test passed: the Flow did what you asked"],
   ["trial_no", "The test failed: the Flow didn't do what you asked. Next: changing it and testing again"],
   ["trial_execution_failed", "The test failed: a step didn't work. Next: changing the Flow and testing again"],
-  ["trial_unsure", "The test couldn't be judged. Next: testing the Flow again"],
-  ["trial_not_judged", "The test couldn't be judged. Next: testing the Flow again"]
+  ["trial_unsure", "The test couldn't be checked. Next: testing the Flow again"],
+  ["trial_not_judged", "The test couldn't be checked. Next: testing the Flow again"]
 ]);
 
 /** A failure the recorded run kept, by its verdict: the site was never touched. */

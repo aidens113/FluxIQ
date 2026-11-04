@@ -130,7 +130,7 @@ const BY_TARGET: Record<AppliedTarget, string> = {
 };
 
 /** A re-authored Flow that was kept (t267 S4): only after a whole run with it was judged to answer. */
-const REAUTHORED = "it re-wrote some of its steps, and a whole run with them was judged to do what you asked";
+const REAUTHORED = "it re-wrote some of its steps, and a whole run with them did what you asked";
 
 /** A re-author that was settled without being kept: the Flow is unchanged by it. */
 const REAUTHOR_NOT_KEPT = "It tried re-writing some of its steps, but those rewritten steps were not kept.";

@@ -147,7 +147,7 @@ function outcomeOf(card: ActionCard, current: boolean): [CardWords["state"], str
     case "failed":
       if (card.unconfirmed) return ["unconfirmed", joined("Not confirmed", card.said)];
       if (card.why === null && card.answer !== undefined) return ["failed", `${counted("Didn't work", card.times)}. ${card.answer}`];
-      return ["failed", joined(counted(card.check ? "Didn't pass" : "Didn't work", card.times), card.why ?? card.said)];
+      return [card.superseded ? "settled" : "failed", joined(counted(card.check ? "Didn't pass" : "Didn't work", card.times), card.why ?? card.said)];
   }
 }
 
