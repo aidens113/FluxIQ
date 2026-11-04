@@ -1,5 +1,5 @@
 // Core's question in the Studio's words, as the chat's ask port reads it: what
-// each kind of ask offers, which answers ask for the PIN first, and what an
+// each kind of ask offers, that only a panel command's confirmation asks for the PIN, and what an
 // answer carries.
 
 import { describe, expect, it } from "vitest";
@@ -15,7 +15,7 @@ const permissionAsk = {
 };
 
 describe("a question in the panel's words", () => {
-  it("offers to grant exactly the classes the ask listed, only after the PIN, and to refuse without one", () => {
+  it("offers to grant exactly the classes the ask listed, with no PIN, and to refuse", () => {
     const presented = presentAsk(permissionAsk)!;
     expect(presented.title).toBe("FluxIQ is asking for permission.");
     expect(presented.consequences).toEqual([
@@ -26,8 +26,8 @@ describe("a question in the panel's words", () => {
     const [deny, allow] = presented.actions;
     expect(deny).toMatchObject({ id: "deny", label: "Don't allow", tone: "secondary", kind: "deny" });
     expect(deny).not.toHaveProperty("reauthorize");
-    expect(allow).toMatchObject({ id: "grant", label: "Allow", tone: "primary", kind: "grant", reauthorize: { title: "Allow this action", actionLabel: "Allow" } });
-    expect(allow!.reauthorize!.description).toContain("This answer has a lasting effect.");
+    expect(allow).toMatchObject({ id: "grant", label: "Allow", tone: "primary", kind: "grant" });
+    expect(allow).not.toHaveProperty("reauthorize");
     expect(presented.takesText).toBe(false);
   });
 
@@ -44,9 +44,9 @@ describe("a question in the panel's words", () => {
     expect(presented.actions[1]).not.toHaveProperty("reauthorize");
   });
 
-  it("asks for the PIN on every option of a choice a run waits on that names a gated class", () => {
+  it("asks no PIN on any option of a choice a run waits on, even when it names a gated class", () => {
     const presented = presentAsk({ askId: "ask.2", kind: "choice", status: "pending", parks: true, consequences: ["delete"], options })!;
-    for (const action of presented.actions) expect(action).toMatchObject({ reauthorize: { title: "Confirm this answer" } });
+    for (const action of presented.actions) expect(action).not.toHaveProperty("reauthorize");
   });
 
   it("confirms without inventing a consequence the ask did not carry", () => {

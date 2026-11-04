@@ -23,7 +23,7 @@
 // An ask that would move money, delete something, or send or publish
 // something is not settled from words, except by a no. Those are the classes
 // Core asks a person about every time (`action-permissions/destructive.ts`,
-// read here rather than restated), and the control that asks takes the PIN; a
+// read here rather than restated), and the control that asks takes a press; a
 // typed "yes" would skip it. "Except by a no" is the whole rule: a grant, a
 // chosen option or passed-on words could each be the answer that commits the
 // act, and only a refusal is safe to take in passing.
@@ -33,7 +33,7 @@
 // and the test here still granted a publish by typing (t201).
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES } from "../../action-permission-requests/client/index.ts";
-import { automationStudioConversationAskGatedClasses } from "../answer-pin.ts";
+import { automationStudioConversationAskGatedClasses } from "../panel-command-pin.ts";
 import type { AutomationStudioConversationAsk } from "../ask.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
 import { automationStudioConversationAnswerFromWords } from "./answer-words.ts";
@@ -75,7 +75,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_ANSWER_ASK: AutomationStudioConversa
     if (!answer) return progress.failed(unreadable(ask));
     const gated = automationStudioConversationAskGatedClasses(ask);
     if (answer.kind !== "deny" && gated.length) {
-      return progress.failed(`answering that would ${gated.map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]).join(", or ")}, which is confirmed with your PIN on the question itself, not by typing`);
+      return progress.failed(`answering that would ${gated.map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]).join(", or ")}, which is confirmed by pressing the button on the question itself, not by typing`);
     }
     const settled = await context.port.call("answer-ask", {
       projectId: context.projectId,

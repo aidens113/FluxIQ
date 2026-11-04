@@ -137,19 +137,21 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
-### Next minor (unreleased): `answer-ask` checks the PIN on an answer that is the authority for an act, and a Flow change can be drawn (`fluxiq`, `@fluxiq/ui-components`)
+### Next minor (unreleased): `answer-ask` takes a PIN only on a panel command, and a Flow change can be drawn (`fluxiq`, `@fluxiq/ui-components`)
 
-- `answer-ask` from a signed-in person now refuses a yes without their right PIN
-  when the ask names a class a person has to be asked about (`move_money`,
-  `delete`, `send_or_publish`) and an act depends on the answer: a permission ask,
-  an ask a run waits on, or a `panel-command.` confirmation. The refusal is the
-  same as a destructive endpoint's, `Invalid PIN`, and the ask stays pending. A
-  refusal, an answer in words to anything else, and a resend of a settled answer
-  take none. `automationStudioConversationAnswerNeedsPin` is the decision.
-  A host that answers these asks through the registry as a person must send
-  `authorizationPin` and `authSessionId`; `conversations.answerAsk` itself is
-  unchanged, and a `paired-client` caller is not asked: it has no PIN to give.
-  The endpoint stays `authoring`, so its IAM declaration does not change.
+- `answer-ask` takes no PIN for a permission ask or a question a run or build
+  waits on, whatever class it names, for a signed-in person as for a paired
+  client: the press inside a Flow or a chat stands. The only answer it checks is
+  a `panel-command.` confirmation naming a class a person has to be asked about
+  (`move_money`, `delete`, `send_or_publish`), a one-off command from chat whose
+  capability endpoint checks the PIN itself. A refusal, any other answer, and a
+  resend of a settled answer take none. A wrong PIN there is `Invalid PIN` and
+  the ask stays pending. `automationStudioPanelCommandAnswerNeedsPin` is the
+  decision; it replaces `automationStudioConversationAnswerNeedsPin`, which never
+  shipped. A host that answers a panel command through the registry as a person
+  must send `authorizationPin` and `authSessionId`; `conversations.answerAsk`
+  itself is unchanged. The endpoint stays `authoring`, so its IAM declaration
+  does not change.
 - `get-conversation-attachment` now serves `flow-graph-diff`, whose reference is
   `automationStudioFlowGraphDiffAttachment(flowId, adaptationId)`, and
   `panel-capability-result`. Any other kind is still refused by name.

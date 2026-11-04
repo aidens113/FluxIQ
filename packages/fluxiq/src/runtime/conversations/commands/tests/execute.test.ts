@@ -523,7 +523,7 @@ describe("conversation commands", () => {
       await ask(askId, "confirm", [consequence]);
       const refused = await answer("yes", askId);
       expect(refused.status, askId).toBe("failed");
-      expect(refused.summary, askId).toContain("PIN");
+      expect(refused.summary, askId).toContain("pressing the button");
       expect(refused.summary, askId).toContain(said);
       expect((await conversations.getAsk({ projectId: PROJECT, askId }))?.status, askId).toBe("pending");
     }
