@@ -47,7 +47,7 @@ export type ChatTaskAttemptFields = {
   budget: { usd: number };
   liveSteps: number;
   simulation?: { verdict: "passed" | "failed" | "inconclusive" | "not_run"; flags: number };
-  loopsCaught: Record<"exact_repeat" | "near_repeat" | "cycle" | "no_progress" | "same_fix", ChatAttemptLoopCount>;
+  loopsCaught: Record<"exact_repeat" | "near_repeat" | "cycle" | "no_progress" | "same_fix" | "same_act", ChatAttemptLoopCount>;
   startedAtMs: number;
   endedAtMs?: number;
 };
@@ -130,6 +130,11 @@ export type ChatTaskOutcome = {
   saved?: ChatSavedState;
   /** The earlier attempt this one is told against ("This time 18s and $0.00. First time 3m 14s and $1.12."). Absent on a first attempt. */
   comparedTo?: ChatTaskAttempt;
+  /**
+   * This one outcome carries no real spend: a run a client read from a dataset, beside attempts
+   * whose spend is real. Its `spend` is zeros and nothing is said of its cost. Not part of the contract's records.
+   */
+  spendUnknown?: true;
   /** Where its steps came from, when the attempt's record says. */
   provenance?: ChatAttemptProvenance;
 };
@@ -146,7 +151,10 @@ export type ChatRowsExportQuery = { projectId: string; runId: string; datasetId:
 /** A task to try again, because a person pressed Run again: choosing it is what lets a saved Flow run (plan, D10). */
 export type ChatRunAgainQuery = { projectId: string; taskId: string };
 
-/** More budget for an attempt that ran out, in dollars, above zero. */
+/**
+ * More budget for an attempt that ran out, in dollars, above zero. For an attempt its Core's restart
+ * cut off (`waitingFor: "interrupted"`) it is zero: nothing ran out, and it carries on as it was.
+ */
 export type ChatAddBudgetQuery = { projectId: string; attemptId: string; addUsd: number };
 
 /** How a host saves a file for a person. A client's adapter supplies it; the chat never touches a file itself. */

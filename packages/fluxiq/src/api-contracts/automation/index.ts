@@ -13,6 +13,7 @@ export * from "./adaptation.ts";
 export * from "./run.ts";
 export * from "./dataset.ts";
 export * from "./conversation.ts";
+export * from "./task-attempt.ts";
 export * from "./activity.ts";
 export * from "./recording.ts";
 export * from "./policy.ts";

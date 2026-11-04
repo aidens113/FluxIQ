@@ -11,7 +11,7 @@ import { createFakeChatResultsPort, fakeTaskOutcomes } from "../../testing/index
 import { fake, withFakeDocument } from "../../testing/index.ts";
 import type { ChatOpenControlFactory, ChatResult, ChatTaskOutcome } from "../ports/index.ts";
 import { hostStatus } from "./host-status.ts";
-import { messageTransport, TEST_ACTIVITY_MESSAGES, type TestMessage } from "./message-transport.ts";
+import { messageTransport, TEST_ACTIVITY_MESSAGES, TEST_MESSAGES, type TestMessage } from "./message-transport.ts";
 
 const opener: ChatOpenControlFactory = () => ({ element: document.createElement("a"), observe: () => undefined });
 const CONNECTED = hostStatus({ connected: true, projectId: "project-1" });
@@ -68,4 +68,44 @@ test("a working attempt's spend and budget reach the header; a port that reports
   await mounted([working], true, (root) => {
     assert.equal(root.byClass("chat-work-cost")[0]?.textContent ?? "", "", "no real spend, no cost");
   }, createFakeChatResultsPort({ threads: [{ conversationId: THREAD, outcomes: [working] }], reportsSpend: false }), state);
+});
+
+/** The mounted chat with `outcomes` in its thread, the requests it sent, and the port. This press is proven here by a narrow test over a fake port and a fake document, not in a browser. */
+async function pressedKeepGoing(outcome: ChatTaskOutcome): Promise<{ port: ReturnType<typeof createFakeChatResultsPort>; sent: string[] }> {
+  const port = createFakeChatResultsPort({ threads: [{ conversationId: THREAD, outcomes: [outcome] }] });
+  const sent: string[] = [];
+  await withFakeDocument(async () => {
+    const backend = core();
+    const request = async <T>(message: TestMessage): Promise<ChatResult<T>> => {
+      if (message.type === TEST_MESSAGES.panelConversationSend) sent.push(String(message.text ?? ""));
+      return backend.request<T>(message);
+    };
+    const chat = createChatWidget({ ...messageTransport(request), results: port }, { openControl: opener });
+    try {
+      chat.render(CONNECTED);
+      chat.setActive(true);
+      for (let turn = 0; turn < 4; turn += 1) await settle();
+      const keep = fake(chat.element).querySelectorAll("button").find((candidate) => candidate.getAttribute("data-action") === "keep-going");
+      assert.notEqual(keep, undefined, "a Keep going button");
+      keep!.dispatch("click");
+      for (let turn = 0; turn < 4; turn += 1) await settle();
+    } finally {
+      chat.setActive(false);
+    }
+  });
+  return { port, sent };
+}
+
+test("Keep going on an attempt its Core cut off calls the port with no budget added, and sends the model nothing", async () => {
+  const outcome = fakeTaskOutcomes().interruptedByRestart;
+  const { port, sent } = await pressedKeepGoing(outcome);
+  const carried = port.calls.filter((call) => call.method === "addBudgetAndCarryOn");
+  assert.deepEqual(carried.map((call) => call.query), [{ projectId: outcome.attempt.projectId, attemptId: outcome.attempt.attemptId, addUsd: 0 }]);
+  assert.deepEqual(sent, []);
+});
+
+test("Keep going on an attempt stuck in a loop still tells the model to keep going, and carries nothing on", async () => {
+  const { port, sent } = await pressedKeepGoing(fakeTaskOutcomes().stuckInALoop);
+  assert.equal(port.calls.some((call) => call.method === "addBudgetAndCarryOn"), false);
+  assert.deepEqual(sent, ["Keep going."]);
 });

@@ -13,6 +13,7 @@ import { parseAutomationStudioPermittedConsequences, type AutomationStudioAction
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailedBuilds } from "../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
+import { trackAutomationStudioTaskAttempt } from "../answer-first/attempt-in-flight/index.ts";
 import { automationStudioAnswerFirstSetupOf } from "../answer-first/setup/index.ts";
 import { boundedIdentifier } from "./bounded-identifier.ts";
 import { flowBootstrapGenerationReadiness } from "./readiness.ts";
@@ -22,6 +23,7 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "projectId",
   "flowId",
   "authSessionId",
+  "conversationId",
   "permittedConsequences",
   "evidenceGuided",
   "authoringMode",
@@ -36,10 +38,22 @@ function flowBootstrapRuntimeUnavailable(readiness: ReturnType<typeof flowBootst
   return { ok: false, error: "Flow bootstrap generation runtime is unavailable.", payload: { readiness } } as const;
 }
 
+/** Whether the thread that asked is noted. A failure is the caller's to say, and a host with no way to note one has none to report. */
+async function threadNoted(note: ((projectId: string, conversationId: string, flowId: string) => Promise<void>) | undefined, projectId: string, conversationId: string, flowId: string): Promise<boolean> {
+  try {
+    await note?.(projectId, conversationId, flowId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function generateFlowBootstrapAdaptationForRequest(
   dependencies: {
     service: Pick<AutomationStudioService, "generateFlowBootstrapAdaptation" | "getFlowBootstrapGenerationRuntimeReadiness">;
     failedBuilds: AutomationStudioFlowBootstrapFailedBuilds<NonNullable<ReturnType<typeof parseAutomationStudioFlowBootstrapGenerationError>>>;
+    /** Notes that a chat thread holds this Flow, so it can read back the attempt it asked for. */
+    noteConversation?: (projectId: string, conversationId: string, flowId: string) => Promise<void>;
   },
   request: { payload?: unknown; actor?: { userId: string; sessionId: string } }
 ) {
@@ -94,9 +108,15 @@ export async function generateFlowBootstrapAdaptationForRequest(
   if (payload.authSessionId !== request.actor.sessionId) return { ok: false, error: "Authorization session mismatch." };
   const projectId = boundedIdentifier(payload.projectId, "Project");
   const flowId = boundedIdentifier(payload.flowId, "Flow");
+  const conversationId = payload.conversationId === undefined ? undefined : boundedIdentifier(payload.conversationId, "Conversation");
+  // Before the attempt starts, so a thread lists its working row. A note not written costs the thread its card and must not cost the person the task, so the answer says so and the attempt runs.
+  const threadNotNoted = candidateAuthoring === "answer-first" && conversationId !== undefined && !(await threadNoted(dependencies.noteConversation, projectId, conversationId, flowId));
   let generated: AutomationStudioGenerateFlowBootstrapAdaptationResult;
+  // An answer-first attempt counts as work in flight for its whole length, waiting on a person included (`../answer-first/attempt-in-flight/`).
+  const actor = request.actor; // Narrowed above; the closure below does not keep that.
+  const counted = <T>(run: () => Promise<T>): Promise<T> => candidateAuthoring === "answer-first" ? trackAutomationStudioTaskAttempt(service, run) : run();
   try {
-    generated = await service.generateFlowBootstrapAdaptation({
+    generated = await counted(() => service.generateFlowBootstrapAdaptation({
       projectId,
       flowId,
       // Whose key pays for the build's model calls. Not an authorization,
@@ -105,7 +125,7 @@ export async function generateFlowBootstrapAdaptationForRequest(
       // other live unlocks (`runtime/llm/session-key-provider.ts`). A
       // sign-out of it mid-build no longer fails the build while another
       // unlock of theirs lives; with none, the next call is `secrets.locked`.
-      caller: { actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId },
+      caller: { actorUserId: actor.userId, actorSessionId: actor.sessionId },
       // A build that meets an act outside these asks the person; empty
       // permits nothing lasting.
       permittedConsequences,
@@ -123,7 +143,7 @@ export async function generateFlowBootstrapAdaptationForRequest(
       // worth holding it open for: answered, the build carries on with
       // permission instead of coming back needing another one.
       permissionAskTimeoutMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS
-    });
+    }));
   } catch (error) {
     if ((error as { name?: string } | null)?.name === "AbortError") {
       const diagnostic = parseAutomationStudioFlowBootstrapGenerationError((error as { cause?: unknown }).cause);
@@ -143,7 +163,7 @@ export async function generateFlowBootstrapAdaptationForRequest(
   }
   failedBuilds.ended(projectId, flowId, undefined);
   // An attempt's answer is a normal return however it ended (`../answer-first/`), and its records were each parsed by the contract as it ended; the Flow is untouched, so nothing here is a change to review. The API contract's list stays as it is: the chat reads this by its own shape (`runtime/conversations/commands/build.ts`).
-  if (generated.status === "answered") return candidateAuthoring === "answer-first" ? { ok: true, payload: { answered: generated } } : { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
+  if (generated.status === "answered") return candidateAuthoring === "answer-first" ? { ok: true, payload: threadNotNoted ? { answered: generated, threadNotNoted } : { answered: generated } } : { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
   // What a person must do before an attempt can start: no attempt began, and nothing failed (`../answer-first/setup/`).
   const setupNeeded = automationStudioAnswerFirstSetupOf(generated);
   if (setupNeeded) return candidateAuthoring === "answer-first" ? { ok: true, payload: { setupNeeded } } : { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };

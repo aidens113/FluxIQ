@@ -21,7 +21,9 @@ import type { SubflowSettingsDraft } from "./subflow-settings-model";
  * setting that did not survive is named. A control never silently reverts.
  */
 export function flowSettingsNotPersisted(requested: FlowSettingsDraft, persisted: FlowSettingsDraft): string[] {
-  return notPersisted(requested, persisted, FLOW_SETTINGS_LABELS);
+  // The edited mark is the form's note to the save, not a setting that comes back.
+  const { maxAdaptationCostUsdPerRunEdited: _edited, ...asked } = requested;
+  return notPersisted(asked as FlowSettingsDraft, persisted, FLOW_SETTINGS_LABELS);
 }
 
 /**

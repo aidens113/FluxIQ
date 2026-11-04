@@ -12,6 +12,13 @@ const NOW = 1_800_000_000_000 + 86_400_000 + 60_000;
 const REAL = { reportsSpend: true, canAddBudget: true, nowMs: NOW };
 const NO_SPEND = { reportsSpend: false, canAddBudget: true, nowMs: NOW };
 
+test("an outcome derived from a run reads as a port that reports no spend, never a made-up $0.00", () => {
+  for (const outcome of [fakeTaskOutcomes().rowsChecked, fakeTaskOutcomes().budgetOutPartial]) {
+    assert.deepEqual(modelOf({ ...outcome, spendUnknown: true }), modelOf(outcome, NO_SPEND));
+  }
+  assert.equal(modelOf({ ...fakeTaskOutcomes().budgetOutPartial, spendUnknown: true }).addBudget?.words, "Add budget and carry on");
+});
+
 function modelOf(outcome: ChatTaskOutcome, options: AnswerModelOptions = REAL): AnswerModel {
   const model = answerModel(outcome, options);
   assert.notEqual(model, undefined);
@@ -20,7 +27,7 @@ function modelOf(outcome: ChatTaskOutcome, options: AnswerModelOptions = REAL): 
 
 const BANNED = /\b(flow|build|judge|core|candidate|trial)\b/iu;
 
-test("rows, confirmed: found N of N, a tick, the first five rows, nothing changed, what was checked, where from, what is saved", () => {
+test("rows, confirmed: found N of N, a tick, the first five rows, no changes recorded, what was checked, where from, what is saved", () => {
   const model = modelOf(fakeTaskOutcomes().rowsChecked);
   assert.equal(model.kind, "rows");
   assert.equal(model.headline, "Found 10 of 10");
@@ -29,7 +36,7 @@ test("rows, confirmed: found N of N, a tick, the first five rows, nothing change
   assert.equal(model.rows?.rows.length, 5);
   assert.deepEqual(model.rows?.rows[0], ["Blue kettle", "18.5"]);
   assert.equal(model.rows?.collapsedCount, 5);
-  assert.equal(model.siteTitle, "On the site: nothing changed");
+  assert.equal(model.siteTitle, "On the site: I recorded no changes");
   assert.equal(model.checked, "Checked: Right columns, cheapest first, no duplicates");
   assert.equal(model.from, "From: 3 results pages on shop.example · 3m 14s · $1.12");
   assert.equal(model.saved, "Saved yesterday: the steps. They only partly work, so next time I will fix what changed.");

@@ -55,6 +55,7 @@
 //   "Fixing your Flow" (t753: a repair's headline stayed up through a reset).
 
 import type { ActivityDisplay } from "./activity-display.ts";
+import { activityAttemptHeadline } from "./attempt/index.ts";
 import { ACTIVITY_DOUBTED_HEADLINE } from "./doubted-ending.ts";
 import type { ActivityHostWords } from "./host-words.ts";
 import { ACTIVITY_PAGE_PREPARATION_WORDS, ACTIVITY_RECORDED_CHECK_HEADLINE } from "./steady/index.ts";
@@ -79,6 +80,8 @@ export type ActivityHeadlineSituation = {
   readonly resetting?: boolean;
   /** The run's result check could not confirm the result: finishing is not success, and no tick may say so. */
   readonly unconfirmed?: boolean;
+  /** The unit is an answer-first attempt, which does the task and builds no Flow: `label` is its newest row's, which says how it ended (`attempt-words.ts`). */
+  readonly attempt?: { readonly label: string };
   /** Why the work waits, when `outcome` is `waiting`. */
   readonly waitingOn?: ActivityWaitReason;
 };
@@ -112,6 +115,7 @@ const REPAIR_FAILED = "Couldn't fix your Flow";
 
 /** The headline for a unit of work of `kind`, working (`outcome` null) or settled, in `situation`, a wait said in the host's `words`. */
 export function activityHeadline(kind: ActivityDisplay["subjectKind"], outcome: ActivityDisplay["outcome"], words: ActivityHostWords, situation: ActivityHeadlineSituation = {}): string {
+  if (situation.attempt && outcome !== "waiting") return activityAttemptHeadline(outcome, situation.attempt.label, situation.stopped === true);
   if (outcome === "failed" && situation.stopped) return kind === "build" ? "Build stopped" : "Run stopped";
   if (outcome === "waiting") {
     const reason = situation.waitingOn ?? "answer";

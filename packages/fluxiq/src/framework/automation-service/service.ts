@@ -349,10 +349,10 @@ export class AutomationStudioService {
   private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool;
   // Collaborators extracted from this class. The facade owns their wiring and
   // keeps every public method; each owns one slice of the project storage layer.
-  private readonly projectPaths: AutomationStudioProjectPaths;
-  private readonly flowPaths: AutomationStudioFlowPaths;
+  readonly projectPaths: AutomationStudioProjectPaths;
+  readonly flowPaths: AutomationStudioFlowPaths;
   private readonly recordingPaths: AutomationStudioRecordingPaths;
-  private readonly projects: AutomationStudioProjectStore;
+  readonly projects: AutomationStudioProjectStore;
   private readonly indexes: AutomationStudioServiceIndexes;
   private readonly legacy: AutomationStudioLegacyRetirementStore;
   private readonly uiCache: AutomationStudioServiceUiCache;
@@ -1557,7 +1557,7 @@ export class AutomationStudioService {
         const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider, automationStudioLlmRunCostCeilingUsd(adaptationPolicyFromFlowMetadata(parent, flowSettings).maxEstimatedCostUsdPerRun, repairCostLeftUsd)); // A repair build spends only what its repair has left (`service/runtime-adaptation/refuted-result-port.ts`).
         // One purse per Flow creation, the only cost authority, under which the build's whole body runs; its record is kept or dropped however the build ends (`service/flow-bootstrap-commands/creation-purse.ts`).
         const testCalls = resolveAutomationStudioLlmBuildCallLimit();
-        const creation = await automationStudioFlowBootstrapCreationPurse({ store: this.creationSpends, projectId, flowId, repair: Boolean(repairBrief) || authoringMode === "answer-first", interpretationCostUsd, interpretationCalls, ...(testCalls === undefined ? {} : { maxCalls: Math.min(testCalls, unresolvedProvider.maxCallsPerRun ?? testCalls) }), ceilingUsd: authoringMode === "answer-first" ? (await import("./service/answer-first/index.ts")).automationStudioAnswerFirstCeilingUsd({ flowSetting: adaptationPolicyFromFlowMetadata(parent, flowSettings).maxEstimatedCostUsdPerRun, resolverTotalUsd: unresolvedProvider.maxTotalEstimatedCostUsd }) : bootstrapLoopLimits.loop.budget.maxCostUsd ?? automationStudioLlmRunCostCeilingUsd() });
+        const creation = await automationStudioFlowBootstrapCreationPurse({ store: this.creationSpends, projectId, flowId, repair: Boolean(repairBrief) || authoringMode === "answer-first", interpretationCostUsd, interpretationCalls, ...(testCalls === undefined ? {} : { maxCalls: Math.min(testCalls, unresolvedProvider.maxCallsPerRun ?? testCalls) }), ceilingUsd: authoringMode === "answer-first" ? (await import("./service/answer-first/index.ts")).automationStudioAnswerFirstCeilingUsd({ flowSetting: (await import("../../runtime/answer-first/attempt-purse/index.ts")).automationStudioAnswerFirstExplicitLimitUsd(flowSettings), resolverTotalUsd: unresolvedProvider.maxTotalEstimatedCostUsd }) : bootstrapLoopLimits.loop.budget.maxCostUsd ?? automationStudioLlmRunCostCeilingUsd() });
         buildProviderCharge = () => creation.purse.chargedReceipt();
         return await creation.run(async () => {
         const authority = automationStudioFlowBootstrapInstructionAuthority({ run: creation.reading(runHarness), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider });

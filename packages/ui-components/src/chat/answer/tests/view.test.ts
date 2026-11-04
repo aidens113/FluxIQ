@@ -47,7 +47,7 @@ test("rows: headline, tick, a table with headers and the first five rows, the li
     assert.deepEqual(text(root, "answer-note"), ["Showing 5 of 10 rows here. CSV and JSON have every row."]);
     assert.deepEqual(text(root, "answer-saved"), ["Saved yesterday: the steps. They only partly work, so next time I will fix what changed."]);
     const lines = text(root, "answer-line");
-    assert.ok(lines.includes("On the site: nothing changed"));
+    assert.ok(lines.includes("On the site: I recorded no changes"));
     assert.ok(lines.includes("Checked: Right columns, cheapest first, no duplicates"));
     assert.ok(lines.includes("From: 3 results pages on shop.example · 3m 14s · $1.12"));
     for (const action of ["export-csv", "export-json", "run-again", "what-i-did"]) assert.ok(hasButton(root, action), action);
@@ -252,6 +252,46 @@ test("stuck in a loop offers Keep going, Tell it more and Stop as the host's cal
     assert.equal(root.byClass("answer-row").length, 0);
     assert.ok(text(root, "answer-line").includes("Missing: Everything past the first page"));
     assert.equal(buttons(draw(fakeTaskOutcomes().stuckInALoop, { results: createFakeChatResultsPort() }).root).length, 0, "no host callbacks, no buttons");
+  });
+});
+
+test("Keep going on an attempt its Core cut off carries it on with no budget added, and on one stuck in a loop is still the host's", async () => {
+  await withFakeDocument(async () => {
+    const heard: string[] = [];
+    const results = createFakeChatResultsPort({ outcomes: [fakeTaskOutcomes().interruptedByRestart] });
+    const { root } = draw(fakeTaskOutcomes().interruptedByRestart, { results, onKeepGoing: (id) => heard.push(`keep:${id}`), onChanged: () => heard.push("changed") });
+    button(root, "keep-going").dispatch("click");
+    await settle();
+    await settle();
+    const asked = results.calls.filter((call) => call.method === "addBudgetAndCarryOn");
+    assert.equal(asked.length, 1);
+    assert.deepEqual(asked[0]!.query, { projectId: fakeTaskOutcomes().interruptedByRestart.attempt.projectId, attemptId: fakeTaskOutcomes().interruptedByRestart.attempt.attemptId, addUsd: 0 });
+    assert.deepEqual(heard, ["changed"], "it was not sent to the model");
+    assert.deepEqual(text(root, "answer-status"), ["Carrying on."]);
+
+    const loop = createFakeChatResultsPort({ outcomes: [fakeTaskOutcomes().stuckInALoop] });
+    const stuck = draw(fakeTaskOutcomes().stuckInALoop, { results: loop, onKeepGoing: (id) => heard.push(`keep:${id}`) }).root;
+    button(stuck, "keep-going").dispatch("click");
+    await settle();
+    assert.equal(loop.calls.some((call) => call.method === "addBudgetAndCarryOn"), false);
+    assert.deepEqual(heard, ["changed", "keep:attempt-pages-1"]);
+
+    // A client that cannot carry on keeps the old press for an interrupted attempt too.
+    const { addBudgetAndCarryOn: _carryOn, ...without } = createFakeChatResultsPort({ outcomes: [fakeTaskOutcomes().interruptedByRestart] });
+    const plain = draw(fakeTaskOutcomes().interruptedByRestart, { results: without, onKeepGoing: (id) => heard.push(`keep:${id}`) }).root;
+    button(plain, "keep-going").dispatch("click");
+    assert.equal(heard.at(-1), `keep:${fakeTaskOutcomes().interruptedByRestart.attempt.attemptId}`);
+  });
+});
+
+test("a carry-on Core refuses says Core's sentence under the card", async () => {
+  await withFakeDocument(async () => {
+    const results = createFakeChatResultsPort({ outcomes: [fakeTaskOutcomes().interruptedByRestart] });
+    results.failNext("addBudgetAndCarryOn", { ok: false, sentence: "That attempt is still going.", code: "failed" });
+    const { root } = draw(fakeTaskOutcomes().interruptedByRestart, { results, onKeepGoing: () => undefined });
+    button(root, "keep-going").dispatch("click");
+    await settle();
+    assert.deepEqual(text(root, "answer-status"), ["I could not carry it on. That attempt is still going."]);
   });
 });
 

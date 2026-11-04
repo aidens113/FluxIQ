@@ -19,28 +19,25 @@
 // held done is a row the forward run leaves out, which a judge's no brings back by hand.
 // A row wrongly held not done is a lasting act done twice.
 //
+// **A later read is tied the same way.** The sentence naming a by-hand press is kept, and each
+// new read's rows are held against it (`note`, `ofWords`), so a Flow's read of quite different
+// columns still finds the row the press named. Here a word most of that read shares does not
+// count: every remaining row saying "Accept" is not the row an "Accept" was pressed on.
+//
+// **Whether two rows are one row is `./same-row.ts`'s.** This file holds what that rule reads:
+// a row's hashed fields, which reads it was in, and which of its fields those reads shared. A value
+// that is one number is held as that number's own writing, since `1,299.00` read back from text
+// is `1299`. The newest rows are kept past `MOST_ROWS`, and a row an act is on always, since that
+// row is what stops the act happening twice.
+//
 // **Nothing here is kept in the clear.** A row's words and addresses are hashed, so what
 // is persisted beside a Flow holds no page text, and one read can still be matched
 // against a sentence that came before it.
-//
-// **The same row in another shape (`sameAs`, t870).** A by-hand read, a walker's pass and a
-// Flow's For Each each hold one row differently: keys renamed by a record output, a column
-// dropped, a handle minted, an address written whole or from the page's origin, a number
-// read back from text. So two rows are compared by their values, whatever key holds them:
-// they are the same row when every value of the one with fewer lies in the other, and a
-// value they share proves it, one with a letter in it or an address. A bare number or a
-// date proves nothing, since two different rows share those all the time. A kept column
-// that differs is a value that does not lie in the other, so those stay two rows.
-//
-// This leans the way the rule above does. A row with few columns left fits every row
-// holding those values, and it is then held done if any of them was acted on. What it cannot
-// see: a value written differently in the two shapes ("Nov 4" against "2026-11-04"), a
-// column split or merged, two rows sharing every value, and a row whose every value is a
-// bare number under renamed keys, which only an exact identity tells.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioAttemptActNotedRow } from "./contracts.ts";
 import { automationStudioAttemptActDigest, automationStudioAttemptActRowIdentity } from "./identity/index.ts";
+import { automationStudioAttemptActSameRows } from "./same-row.ts";
 
 /** The most rows held: far past any read, and short of a record that outgrows its file. */
 const MOST_ROWS = 5_000;
@@ -54,6 +51,10 @@ const MINTED_REFERENCE = /evidence/iu;
 const ONE_NUMBER = /^[^\p{L}\p{N}]*\d[\d,]*(?:\.\d+)?[^\p{L}\p{N}]*$/u;
 const ADDRESS_OR_PATH = /^(?:[a-z][a-z\d+.-]*:\/\/|\/)/iu;
 const WORD = /[\p{L}\p{N}]+/gu;
+/** A number this long is an id a person tells a row by: too long to be a count or a place on a page. */
+const ID_NUMBER = /^\p{N}{6,}$/u;
+/** How many reads a row remembers: two rows of a read further back than this are compared as any two are. */
+const MOST_READS_KEPT = 8;
 
 const hashed = (text: string) => automationStudioAttemptActDigest(text).slice(0, HASH_LENGTH);
 
@@ -76,14 +77,27 @@ export class AutomationStudioAttemptActRowTies {
     return hashed(trimmed.replace(/^[a-z][a-z\d+.-]*:\/\/[^/?#]+/iu, "").replace(/#.*$/u, "").replace(/\/+$/u, "") || "/");
   }
 
-  /** Holds `rows`, the newest kept where they run past the bound (`MOST_ROWS`), and `acted` kept always: a row an act is on is what stops it happening twice. */
-  note(rows: readonly JsonObject[], acted: ReadonlySet<string> = new Set()): void {
+  /** Holds `rows`, the rows of one read, the newest kept where they run past the bound (`MOST_ROWS`), and `acted` kept always: a row an act is on is what stops it happening twice. Answers the digests of the rows it read. */
+  note(rows: readonly JsonObject[], acted: ReadonlySet<string> = new Set()): string[] {
+    const read = this.rows.reduce((newest, row) => Math.max(newest, ...(row.reads ?? [])), 0) + 1;
+    const batch = rows.flatMap((row) => notedRow(row) ?? []);
+    markCommon(batch);
+    this.hold(batch, acted, read);
+    return batch.map((row) => row.row);
+  }
+
+  /** Holds one row an act is on. It is no read, so it counts in none (`./same-row.ts`). */
+  noteActed(row: JsonObject, acted: ReadonlySet<string>): void {
+    const noted = notedRow(row);
+    if (noted) this.hold([noted], acted);
+  }
+
+  private hold(batch: readonly AutomationStudioAttemptActNotedRow[], acted: ReadonlySet<string>, read?: number): void {
     const merged = new Map(this.rows.map((row) => [row.row, row]));
-    for (const row of rows) {
-      const noted = notedRow(row);
-      if (!noted) continue;
+    for (const noted of batch) {
       const known = merged.get(noted.row);
-      merged.set(noted.row, known ? { ...known, handles: [...new Set([...known.handles, ...noted.handles])] } : noted);
+      const row = known ? mergedRow(known, noted) : noted;
+      merged.set(noted.row, read === undefined ? row : withRead(row, read));
     }
     let over = merged.size - MOST_ROWS;
     this.rows = [...merged.values()].filter((row) => {
@@ -93,13 +107,11 @@ export class AutomationStudioAttemptActRowTies {
     });
   }
 
-  /** Which of `among` are this same row in another shape (header). */
-  sameAs(row: JsonObject, among: ReadonlySet<string>): string[] {
-    if (among.size === 0) return [];
-    const noted = notedRow(row);
-    if (!noted) return [];
-    const values = valuesOf(noted);
-    return this.rows.filter((held) => among.has(held.row) && sameRow(values, valuesOf(held))).map((held) => held.row);
+  /** The digests `row` answers to: its own, and those of the rows held that are the same row (`./same-row.ts`). None for a row that can be told from no other. */
+  sameAs(row: JsonObject): string[] {
+    const carried = notedRow(row);
+    if (!carried) return [];
+    return [carried.row, ...automationStudioAttemptActSameRows(this.rows.find((known) => known.row === carried.row) ?? carried, this.rows)];
   }
 
   /** The rows that printed `handle`. */
@@ -112,13 +124,15 @@ export class AutomationStudioAttemptActRowTies {
     return this.rows.filter((row) => row.paths.includes(path)).map((row) => row.row);
   }
 
-  /** Every row whose own words best fit a sentence's hashed words, none where no row's fit (header). */
-  ofWords(sentence: readonly string[]): string[] {
+  /** Every row whose own words best fit a sentence's hashed words, none where no row's fit (header). `among`: only those of one read, by what tells its rows apart. */
+  ofWords(sentence: readonly string[], among?: readonly string[]): string[] {
     const words = new Set(sentence);
+    const within = among === undefined ? undefined : new Set(among);
     let best = 0;
     let found: string[] = [];
     for (const row of this.rows) {
-      const score = fitOf(row, words);
+      if (within && !within.has(row.row)) continue;
+      const score = fitOf(row, words, within !== undefined);
       if (score === 0 || score < best) continue;
       if (score > best) {
         best = score;
@@ -170,7 +184,39 @@ function noteValue(noted: AutomationStudioAttemptActNotedRow, key: string, value
     return;
   }
   const words = plainNumber(text).toLowerCase().match(WORD) ?? [];
-  if (words.length > 0) noted.fields.push({ words: words.map(hashed), lettered: words.filter((word) => /\p{L}/u.test(word)).map(hashed) });
+  // A long number is an id only as it is written: `1,250,000.00` is an amount.
+  if (words.length > 0) noted.fields.push({ words: words.map(hashed), lettered: words.filter((word) => /\p{L}/u.test(word) || (ID_NUMBER.test(word) && text.includes(word))).map(hashed) });
+}
+
+const fieldKey = (field: { words: readonly string[] }) => field.words.join(" ");
+
+/** Marks what more than one row of a read holds (`./same-row.ts`). A read of one row can say nothing of it. */
+function markCommon(batch: AutomationStudioAttemptActNotedRow[]): void {
+  const seen = new Map<string, number>();
+  for (const row of batch) {
+    for (const key of new Set([...row.fields.map(fieldKey), ...row.paths])) seen.set(key, (seen.get(key) ?? 0) + 1);
+  }
+  for (const row of batch) {
+    for (const field of row.fields) if ((seen.get(fieldKey(field)) ?? 0) > 1) field.common = true;
+    const commonPaths = row.paths.filter((path) => (seen.get(path) ?? 0) > 1);
+    if (commonPaths.length > 0) row.commonPaths = commonPaths;
+  }
+}
+
+/** A row seen again: what either read said of it. A field common in any read tells no row from another. */
+function mergedRow(known: AutomationStudioAttemptActNotedRow, noted: AutomationStudioAttemptActNotedRow): AutomationStudioAttemptActNotedRow {
+  const common = new Set(noted.fields.filter((field) => field.common).map(fieldKey));
+  const commonPaths = [...new Set([...(known.commonPaths ?? []), ...(noted.commonPaths ?? [])])];
+  return {
+    ...known,
+    handles: [...new Set([...known.handles, ...noted.handles])],
+    fields: known.fields.map((field) => common.has(fieldKey(field)) ? { ...field, common: true as const } : field),
+    ...(commonPaths.length > 0 ? { commonPaths } : {})
+  };
+}
+
+function withRead(row: AutomationStudioAttemptActNotedRow, read: number): AutomationStudioAttemptActNotedRow {
+  return { ...row, reads: [...(row.reads ?? []), read].slice(-MOST_READS_KEPT) };
 }
 
 /** A value that is one number as that number's own writing (`ONE_NUMBER`); anything else, or one too long to read exactly, as it stands. */
@@ -180,37 +226,16 @@ function plainNumber(text: string): string {
   return Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER ? String(number) : text;
 }
 
-/** A row's values, whatever key holds each, and whether each proves two rows the same (header). */
-function valuesOf(row: AutomationStudioAttemptActNotedRow): Map<string, boolean> {
-  const values = new Map<string, boolean>();
-  for (const field of row.fields) {
-    const value = `words:${field.words.join(" ")}`;
-    values.set(value, values.get(value) === true || field.lettered.length > 0);
-  }
-  for (const path of row.paths) values.set(`path:${path}`, true);
-  return values;
-}
-
-/** Whether every value of the row with fewer lies in the other, one of them proving it (header). */
-function sameRow(one: ReadonlyMap<string, boolean>, other: ReadonlyMap<string, boolean>): boolean {
-  const [fewer, more] = one.size <= other.size ? [one, other] : [other, one];
-  let proven = false;
-  for (const [value, proves] of fewer) {
-    if (!more.has(value)) return false;
-    proven ||= proves || more.get(value) === true;
-  }
-  return proven;
-}
-
 /**
  * How many of a row's words fit, counting only fields that fit whole enough and with a
  * word with a letter in the sentence. A sentence names an item's place too ("item 2/3"),
  * so a field of bare numbers fits by accident, and would pick the wrong one of two rows
  * only it tells apart, leaving the right one held not done.
  */
-function fitOf(row: AutomationStudioAttemptActNotedRow, words: ReadonlySet<string>): number {
+function fitOf(row: AutomationStudioAttemptActNotedRow, words: ReadonlySet<string>, tellingOnly = false): number {
   let score = 0;
   for (const field of row.fields) {
+    if (tellingOnly && field.common === true) continue;
     const inSentence = field.words.filter((word) => words.has(word)).length;
     if (inSentence / field.words.length < FIELD_WORDS_NEEDED || !field.lettered.some((word) => words.has(word))) continue;
     score += inSentence;

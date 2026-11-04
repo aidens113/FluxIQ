@@ -39,7 +39,8 @@ export type AutomationStudioAttemptActAnswerRead = {
   location?: string;
   /** The answer says the page did not change. */
   pageUnchanged: boolean;
-  rows: JsonObject[];
+  /** The rows it read, one list per place the answer holds them: the same read's rows there may be written differently, and two rows of one list are never one row. */
+  reads: JsonObject[][];
 };
 
 /** What the gate reads of an answer (header). A bare JSON answer is a tool's own and says nothing about its effect. */
@@ -62,7 +63,7 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
     ...(typeof evidence?.location === "string" ? { location: evidence.location } : {}),
     pageUnchanged: evidence?.pageChanged === false,
     // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).
-    rows: refused || result?.failure !== undefined ? [] : [...rowsAt(evidence, readRowsKey), ...rowsIn(result?.outputs)]
+    reads: refused || result?.failure !== undefined ? [] : [rowsAt(evidence, readRowsKey), ...rowsIn(result?.outputs)].filter((rows) => rows.length > 0)
   };
 }
 
@@ -74,8 +75,8 @@ function rowsAt(evidence: JsonObject | undefined, key: string): JsonObject[] {
 }
 
 /** The rows carried under an output port (`AUTOMATION_STUDIO_NODE_OUTPUTS_KEY`): never shown, the same rows a pass carries. */
-function rowsIn(outputs: JsonObject | undefined): JsonObject[] {
-  return Object.values(outputs ?? {}).flatMap(objects);
+function rowsIn(outputs: JsonObject | undefined): JsonObject[][] {
+  return Object.values(outputs ?? {}).map(objects);
 }
 
 function objects(value: JsonValue | undefined): JsonObject[] {
