@@ -44,7 +44,8 @@ export function automationStudioResultComputedNo(summary: AutomationStudioRunRes
     verdict: "does_not_answer",
     basis: "core_observation",
     code: COMPUTED_FACT_FAILED,
-    reason: `Core's own record of this result shows it does not answer the request, so no judge was asked: ${observation}`,
+    // Said as the person reads it (the check card shows it): FluxIQ's own record, with no mention of who was or was not asked.
+    reason: `FluxIQ's own record of this result shows it does not answer the request: ${observation}`,
     observation,
     repair,
     failure: automationStudioResultFailureRecord({ verdict: "does_not_answer", code: COMPUTED_FACT_FAILED, observation, repair }),

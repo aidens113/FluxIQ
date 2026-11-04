@@ -19,7 +19,7 @@ export type AutomationStudioActivityTimeLimitTried = { count: number; last: Verd
 /** A test's last verdict, in words that finish "whose last test ...". */
 const LAST_TRIAL_WORDS: Readonly<Record<Verdict, string>> = Object.freeze({
   yes: "passed",
-  no: "was judged not to do what was asked",
+  no: "did not do what was asked",
   unsure: "could not be confirmed",
   not_judged: "could not be confirmed",
   execution_failed: "did not run to its end"

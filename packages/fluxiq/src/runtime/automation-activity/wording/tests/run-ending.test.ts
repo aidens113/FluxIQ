@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { personFacingTextFaults } from "../../../../ui/person-facing/index.ts";
 import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "../../index.ts";
 import { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "../index.ts";
 
@@ -192,6 +193,23 @@ describe("a no Core reached from its computed facts (t805)", () => {
   it("says Core's sentence alone, in FluxIQ's name, when no rows were counted, and prefixes a sentence not in Core's voice", () => {
     expect(automationStudioActivityRunEnding({ resultVerification: coreNo })).toBe("FluxIQ counted 3 stored rows where the build declared 2.");
     expect(automationStudioActivityRunEnding({ resultVerification: { ...coreNo, observation: "Two columns were never stored." } })).toBe("FluxIQ found that two columns were never stored.");
+  });
+  it("says every Core in a sentence as FluxIQ, and never cuts a sentence with an ellipsis", () => {
+    const long = "Core read that no step serving the requested part ran on any pass of this test, and Core's own reading of the stored rows says they are not in the order the Flow sorts them, and a third thing was also found to be wrong with them.";
+    const ended = automationStudioActivityRunEnding({ resultVerification: { ...coreNo, observation: long } });
+    expect(ended).toBeDefined();
+    expect(ended).not.toMatch(/\bCore\b|…|\.\.\./u);
+    expect(personFacingTextFaults(ended!)).toEqual([]);
+    // A sentence too long for any allowance is left out whole; the plain ending stands in its place.
+    const huge = `Core read that ${"a step ran and then another step ran ".repeat(20)}.`;
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...coreNo, observation: huge } })).not.toMatch(/…/u);
+  });
+  it("adds no \"The check said\" to a no FluxIQ reached from its own record, and never a reason cut short", () => {
+    expect(automationStudioActivityRunObjection({ resultVerification: coreNo })).toBeUndefined();
+    const cut = { ...coreNo, basis: "model", code: "core.result.does_not_answer_request", reason: `${"Words that run on without ending ".repeat(20)}` };
+    expect(automationStudioActivityRunObjection({ resultVerification: cut })).toBeUndefined();
+    const kept = automationStudioActivityRunObjection({ resultVerification: { ...cut, reason: "Two products with the Plus badge were left out." } });
+    expect(kept).toBe("The check said: Two products with the Plus badge were left out.");
   });
   it("leaves a judge's no on the same code untouched", () => {
     expect(automationStudioActivityRunEnding({ resultVerification: { ...coreNo, basis: "model" }, resultRepair: repairEnded({ outcome: "not_rerun" }) })).toMatch(/the fix didn't finish\.$/u);

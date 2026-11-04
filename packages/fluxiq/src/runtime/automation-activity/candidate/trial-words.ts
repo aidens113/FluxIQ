@@ -149,5 +149,5 @@ function uncheckedSaid(note: unknown): string | undefined {
   const named = labels.every((label) => label !== undefined) ? labels.map((label) => `“${label}”`).join(" and ") : undefined;
   const more = steps.length > MAX_NAMED ? ` and ${steps.length - MAX_NAMED} more` : "";
   const what = named ? `what ${named}${more} changed` : steps.length === 1 ? "what one step changed" : `what ${steps.length} steps changed`;
-  return `${what} on the site couldn't be checked, so ${steps.length === 1 ? "it was" : "they were"} judged by how the page ended`;
+  return `${what} on the site couldn't be checked, so ${steps.length === 1 ? "it was" : "they were"} decided by how the page ended`;
 }

@@ -44,7 +44,7 @@ import type { AutomationStudioConversationCommandCallResult, AutomationStudioCon
 import { AUTOMATION_STUDIO_CONVERSATION_TOLD_NEXT, automationStudioConversationCallCause } from "./progress.ts";
 
 /** What a create-here, explore or improve says once its candidate draft is saved with no trial runner (candidate mode only). */
-export const AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED = "Saved a candidate draft. Verification pending; the Flow's steps are unchanged.";
+export const AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED = "I kept a draft of the Flow, but it hasn't been run and checked yet, and nothing was put into the Flow.";
 
 /** What a draft whose ending the build's row told says (header, t753): what is kept and what to do next, never its verdict again. */
 const TOLD_DRAFT = `I kept what I wrote as a draft, and nothing was put into the Flow. ${AUTOMATION_STUDIO_CONVERSATION_TOLD_NEXT}`;
@@ -61,13 +61,13 @@ export function automationStudioConversationCandidateDraftSaid(candidate: Automa
   if (!trial) return AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED;
   const kept = "so nothing was put into the Flow. I kept what I wrote as a draft.";
   if (trial.verdict === "yes") {
-    if (trial.codes.includes("FLOW_BOOTSTRAP_STALE")) return `Its test run from the start was judged to do what you asked, but the Flow or what it should do changed before the change could be made, ${kept}`;
-    return `Its test run from the start was judged to do what you asked, but the draft I saved no longer matched the one that was tested, ${kept}`;
+    if (trial.codes.includes("FLOW_BOOTSTRAP_STALE")) return `Its test run from the start did what you asked, but the Flow or what it should do changed before the change could be made, ${kept}`;
+    return `Its test run from the start did what you asked, but the draft I saved no longer matched the one that was tested, ${kept}`;
   }
   // A later test the build's time limit cut is said as cut, after the last finished test (G2, `../../service/project-build/run.ts`).
   if (trial.codes.includes(TRIAL_CUT_CODE)) return `${CUT_SAID[trial.verdict]} ${kept}`;
   const said: Record<Exclude<typeof trial.verdict, "yes">, string> = {
-    no: "Its test run from the start was judged not to do what you asked,",
+    no: "Its test run from the start did not do what you asked,",
     unsure: "I could not confirm that its test run from the start did what you asked,",
     not_judged: "Its test run from the start was not checked,",
     execution_failed: "Its test run from the start did not get to the end,",
@@ -85,7 +85,7 @@ const TRIAL_CUT_CODE = "project.build_trial_cut";
  * test-run from the start, though its Flow had been tested whole seven times.
  */
 const CUT_SAID: Readonly<Record<Exclude<NonNullable<AutomationStudioCandidateAuthoringResult["trial"]>["verdict"], "yes">, string>> = Object.freeze({
-  no: "Its last finished test run from the start was judged not to do what you asked, and a later test run of it was cut short by the build's time limit,",
+  no: "Its last finished test run from the start did not do what you asked, and a later test run of it was cut short by the build's time limit,",
   unsure: "I could not confirm that its last finished test run from the start did what you asked, and a later test run of it was cut short by the build's time limit,",
   not_judged: "Its last finished test run from the start was not checked, and a later test run of it was cut short by the build's time limit,",
   execution_failed: "Its last finished test run from the start did not get to the end, and a later test run of it was cut short by the build's time limit,",
@@ -94,8 +94,8 @@ const CUT_SAID: Readonly<Record<Exclude<NonNullable<AutomationStudioCandidateAut
 
 /** How a test run from the start came out, in words that finish "the last test run ...". */
 const LAST_TRIAL: Readonly<Record<AutomationStudioFlowBootstrapCandidateKept["trials"][number]["verdict"], string>> = Object.freeze({
-  yes: "was judged to do what you asked",
-  no: "was judged not to do what you asked",
+  yes: "did what you asked",
+  no: "did not do what you asked",
   unsure: "could not be confirmed to do what you asked",
   not_judged: "was not checked",
   execution_failed: "did not get to the end"
@@ -195,7 +195,7 @@ export async function buildAutomationStudioFlowFromConversation(
   });
   if (!response.ok) {
     const cancelled = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true;
-    const ending = cancelled ? "Build stopped. The Flow was not promoted." : buildEnding(response);
+    const ending = cancelled ? "Build stopped. Nothing was put into the Flow." : buildEnding(response);
     const endingKind = cancelled ? undefined : buildEndingKind(response);
     const told = !cancelled && failureTold(response);
     const candidateKept = keptCandidate(response, told);
@@ -207,13 +207,13 @@ export async function buildAutomationStudioFlowFromConversation(
     const proposal = parseAutomationStudioCandidateProposalResult(response.payload, subject);
     if (proposal) return { ok: true, status: "proposed", adaptationId: proposal.adaptationId, awaitingPermission: proposal.awaitingPermission, trial: { runId: proposal.candidate.trial.runId, calls: proposal.candidate.trial.calls } };
     const candidate = parseAutomationStudioCandidateAuthoringResult(response.payload, subject);
-    if (!candidate) return { ok: false, cause: "the build answered without a tested change or a valid candidate draft for this Flow", kept: false };
+    if (!candidate) return { ok: false, cause: "the build answered without a tested change or a valid draft for this Flow", kept: false };
     // Told by the build's ending row: its code, or a project build's draft with no whole test of its latest version (header, t753).
     const told = candidate.trial?.codes.includes(TOLD_CODE) === true || (authoringMode === "project" && candidate.trial?.verdict === "not_tested");
     return { ok: true, status: "draft", candidate, told };
   }
   const payload = response.payload as { candidate?: { status?: unknown }; adaptation?: { status?: unknown; adaptationId?: unknown; permissionRequest?: unknown } } | undefined;
-  if (payload?.candidate?.status === "draft" || payload?.adaptation?.status === "draft") return { ok: false, cause: "the build returned an unverified draft, so no change was applied", ending: "Saved a candidate draft. It still needs independent execution and verification; the Flow's steps are unchanged.", kept: true };
+  if (payload?.candidate?.status === "draft" || payload?.adaptation?.status === "draft") return { ok: false, cause: "the build returned an unverified draft, so no change was applied", ending: "I kept a draft of the Flow, but it hasn't been run and checked yet, and nothing was put into the Flow.", kept: true };
   const adaptation = payload?.adaptation;
   if (!adaptation || adaptation.status !== "proposed" || typeof adaptation.adaptationId !== "string" || !adaptation.adaptationId) {
     return { ok: false, cause: "the build answered without the change it made", kept: false };

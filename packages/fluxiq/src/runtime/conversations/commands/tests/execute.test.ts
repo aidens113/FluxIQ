@@ -622,7 +622,7 @@ describe("conversation commands", () => {
       const turns = await turnsOf(conversations, conversationId);
       expect(turns.filter((turn) => turn.ask)).toEqual([]);
       expect(turns.some((turn) => turn.attachment?.kind === "candidate-draft" && turn.attachment.ref === "candidate.1")).toBe(true);
-      expect(turns.map((turn) => turn.text).join(" ")).toContain("Verification pending");
+      expect(turns.map((turn) => turn.text).join(" ")).toContain("hasn't been run and checked yet");
     });
 
     it("a failed candidate build reports saved progress without claiming verified website actions", async () => {
@@ -701,7 +701,7 @@ describe("conversation commands", () => {
     it.each([
       ["yes", ["FLOW_BOOTSTRAP_STALE"], "changed before the change could be made"],
       ["yes", ["candidate.promotion_digest_mismatch"], "no longer matched the one that was tested"],
-      ["no", ["candidate.trial_judged_no"], "judged not to do what you asked"],
+      ["no", ["candidate.trial_judged_no"], "did not do what you asked"],
       ["unsure", ["candidate.trial_unconfirmed"], "could not confirm"],
       ["execution_failed", ["candidate.execution_incomplete"], "did not get to the end"],
       ["not_tested", ["candidate.trial_not_run"], "never test-run"]
@@ -717,7 +717,7 @@ describe("conversation commands", () => {
         expect(text).toContain(said); expect(text).toContain("nothing was put into the Flow");
         expect(text).not.toContain("is ready");
         // A test of the whole Flow answered, so the draft's card line never says verification is pending (t738).
-        expect(text).not.toContain("Verification pending");
+        expect(text).not.toContain("hasn't been run and checked yet");
       }
     });
 
@@ -729,7 +729,7 @@ describe("conversation commands", () => {
       };
       const { calls, text } = await run("flow.createHere", timedOut);
       expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
-      expect(text).toContain("The build reached its time limit before a whole test of the Flow passed. Its last test run from the start was judged not to do what you asked, so nothing was put into the Flow. I kept what I wrote as a draft.");
+      expect(text).toContain("The build reached its time limit before a whole test of the Flow passed. Its last test run from the start did not do what you asked, so nothing was put into the Flow. I kept what I wrote as a draft.");
       expect(text).not.toContain("is ready");
     });
   });
@@ -740,7 +740,7 @@ describe("conversation commands", () => {
   // could not finish this."). Where the row told the ending, the answer says only what the Flow keeps and what to do next.
   describe("a project build whose ending row told the ending", () => {
     beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project"); });
-    const VERDICTS = /judged|never test-run|test run|could not finish|could not confirm|did not get to the end|time limit|failed:|Verification pending|candidate/iu;
+    const VERDICTS = /judged|never test-run|test run|could not finish|could not confirm|did not get to the end|time limit|failed:|hasn't been run and checked|candidate|judged/iu;
     const told = (verdict: string, codes: readonly string[]): Handler => (payload) => {
       const answer = CANDIDATE_BUILD_OK(payload) as { ok: true; payload: { candidate: Record<string, unknown> } };
       return { ok: true, payload: { candidate: { ...answer.payload.candidate, trial: { verdict, runId: "trial.1", codes: [...codes] } } } };
