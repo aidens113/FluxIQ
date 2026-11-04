@@ -199,15 +199,8 @@
 /* An action card: the getting-started step's round mark and body, in the
    card chrome. The mark is tinted by how the action went. */
 .chat-cards { display: grid; justify-items: start; gap: 6px; }
-/* Steps done again before a retry: one line that opens to show their cards (D7). */
-.chat-again { max-width: 100%; }
-.chat-again-summary { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border: 1px solid var(--divider); border-radius: 999px; background: var(--surface-muted); color: var(--muted); font-size: 13px; cursor: pointer; list-style: none; }
-.chat-again-summary::-webkit-details-marker { display: none; }
-.chat-again-summary::before { content: "\25B8"; font-size: 11px; }
-.chat-again[open] > .chat-again-summary::before { content: "\25BE"; }
-.chat-again-summary:hover { background: var(--hover); }
-.chat-again-summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.chat-again-cards { margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--divider); }
+/* Steps done again before a retry: one quiet line, not a dropdown; each step was told once, where it happened. */
+.chat-again { margin: 0; max-width: 100%; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .chat-card {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
@@ -555,6 +548,33 @@
 .chat-hold-status { flex: 1 0 100%; text-align: center; color: var(--muted); font-size: 12px; }
 .chat-hold-status:empty { display: none; }
 
+/* The work header above the composer (`work-header/`): state, time, cost and the one Stop, then the current step in one line.
+   Stop and Take over sit inside it as the chat's own controls; the time uses tabular numerals so its width holds. */
+.chat-work-header {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 10px;
+  max-width: var(--chat-column); margin: 0 auto; padding: 6px 2px 8px; border-top: 1px solid var(--divider);
+  font-size: 13px; line-height: 1.4;
+}
+.chat-work-header[hidden], .chat-work-header [hidden] { display: none; }
+.chat-work-status { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; }
+.chat-work-label { font-weight: 650; color: var(--text); }
+.chat-work-header[data-state="waiting"] .chat-work-label { color: var(--warning-text); }
+.chat-work-time, .chat-work-cost { color: var(--muted); font-variant-numeric: tabular-nums; }
+.chat-work-time { min-width: 4.5ch; }
+.chat-work-time::before, .chat-work-cost::before { content: "\00B7"; margin-right: 8px; }
+.chat-work-limit { color: var(--warning-text); font-size: 12px; }
+.chat-work-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px; min-width: 0; }
+.chat-work-controls > .chat-stop-control { margin: 0; padding: 0; max-width: none; }
+.chat-work-header:has(.chat-hold-control:not([hidden])) .chat-work-controls { grid-column: 1 / -1; justify-content: flex-start; }
+.chat-work-now { grid-column: 1 / -1; margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.chat-work-header[data-state="waiting"] .chat-work-now { color: var(--text); }
+.chat-work-action {
+  grid-column: 1 / -1; justify-self: start; min-height: 32px; margin-top: 4px; border: 1px solid var(--divider); border-radius: 999px;
+  background: var(--surface); color: var(--text); padding: 4px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.chat-work-action:hover { background: var(--hover); }
+.chat-work-action:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
 /* The thread list: one line over the stream, a picker when there are several threads, else the chat's name. */
 .chat-thread-header { display: flex; flex: 0 0 auto; align-items: center; min-height: 40px; border-bottom: 1px solid var(--divider); padding: 0 12px; }
 .chat-thread-picker { display: block; width: 100%; min-width: 0; }
@@ -677,3 +697,50 @@
 /* Characters left in the box, once few are. */
 .composer-hint { margin: 0; color: var(--muted); font-size: 12px; text-align: right; }
 .composer-hint[hidden] { display: none; }
+
+/* === answer turn (src/chat/answer): what a task found, in the stream. Tokens only; fits 360px. === */
+.answer-turn { min-width: 0; }
+.answer-card {
+  display: grid; gap: 10px; min-width: 0; box-sizing: border-box;
+  border: 1px solid var(--divider); border-radius: var(--radius); background: var(--surface);
+  padding: 12px 14px; font-size: var(--chat-size); line-height: 1.5; overflow-wrap: anywhere;
+}
+.answer-card > * { margin: 0; min-width: 0; }
+.answer-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.answer-headline { margin: 0; font-size: 1.1em; font-weight: 700; line-height: 1.35; }
+.answer-check { display: inline-flex; align-items: baseline; gap: 6px; margin: 0; font-size: 13px; color: var(--muted); }
+.answer-check[data-state="confirmed"] { color: var(--success); font-weight: 650; }
+.answer-check[data-state="unverified"] { border-radius: 8px; background: var(--warning-soft); color: var(--warning-text); padding: 4px 8px; }
+.answer-check[data-state="refuted"] { border-radius: 8px; background: var(--danger-soft); color: var(--danger-text); padding: 4px 8px; font-weight: 650; }
+.answer-mark { font-weight: 700; }
+.answer-check-words { min-width: 0; }
+.answer-lead { color: var(--muted); font-size: 13px; }
+.answer-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--divider); border-radius: 8px; }
+.answer-table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.answer-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+.answer-table th, .answer-table td { border-bottom: 1px solid var(--divider); padding: 6px 10px; text-align: left; vertical-align: top; min-width: 7ch; max-width: 32ch; overflow-wrap: normal; word-break: normal; }
+.answer-table th { background: var(--surface-muted); color: var(--muted); font-weight: 650; white-space: nowrap; }
+.answer-row:last-child td { border-bottom: 0; }
+.answer-note { color: var(--muted); font-size: 12.5px; }
+.answer-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.answer-buttons .small-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.answer-buttons .small-button[data-tone="primary"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.answer-buttons .small-button[data-tone="danger"] { border-color: var(--danger); color: var(--danger-text); }
+.answer-buttons .small-button:disabled { opacity: .6; }
+.answer-text { display: grid; gap: 2px; border-left: 3px solid var(--divider); padding-left: 10px; }
+.answer-text-label { margin: 0; color: var(--muted); font-size: 12px; font-weight: 650; }
+.answer-text-body { margin: 0; white-space: pre-wrap; }
+.answer-site { display: grid; gap: 4px; }
+.answer-site-list { display: grid; gap: 4px; margin: 0; padding-left: 20px; font-size: 13px; }
+.answer-line { margin: 0; color: var(--muted); font-size: 13px; }
+.answer-saved { margin: 0; font-size: 13px; }
+.answer-again-note { margin: 0; font-size: 13px; color: var(--muted); }
+.answer-status { margin: 0; font-size: 12.5px; color: var(--muted); }
+.answer-status[data-tone="error"] { color: var(--danger-text); }
+.answer-turn[data-kind="waiting"] .answer-card { border-color: var(--warning); background: var(--warning-soft); }
+.answer-turn[data-kind="budget_out"] .answer-card { border-color: var(--warning); }
+@media (max-width: 420px) {
+  .answer-card { padding: 10px; }
+  .answer-table th, .answer-table td { padding: 5px 8px; }
+}
+/* === end answer turn === */

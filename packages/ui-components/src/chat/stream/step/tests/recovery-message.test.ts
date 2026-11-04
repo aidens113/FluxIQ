@@ -166,7 +166,7 @@ test("an extra step that didn't work twice in a row is one card that says how ma
   const offer = { kind: "handler", subject: "Close the offer", outcome: "failed", event: "before" } as const;
   const messages = stepMessages([playStep(1, 2, "n2.add", "Add the kettle"), recoveryRow(2, "n2.add", offer), recoveryRow(3, "n2.add", offer)], 100);
   assert.deepEqual(messages.map((message) => message.kind), ["step", "recovery"]);
-  assert.equal(cardWords(messages[1]!.actions[0]!, false).outcome, "Didn't work (2 times)");
+  assert.equal(cardWords(messages[1]!.actions[0]!, false).outcome, "Didn't work");
 });
 
 test("a step row with no recovery and no step of its own (an older Core's route) keeps today's reading: Core's sentence, no card", () => {
@@ -191,8 +191,8 @@ test("a notice the page put in the way, closed, is its own message in Core's wor
   assert.deepEqual(read(stuck).slice(3), ["Clear the page", null, "refused", "Not done: it was still in the way"], "no failure's colour or words");
   const one = { kind: "interference", subject: "Closed a notice the page put in the way", outcome: "succeeded" } as const;
   const twice = stepMessages([playStep(1, 2, "n2.add", "Add the kettle"), recoveryRow(2, "n2.add", one), recoveryRow(3, "n2.add", one)], 100);
-  assert.deepEqual(twice.map((message) => message.kind), ["step", "recovery"], "the same notice closed on two attempts is one card");
-  assert.equal(cardWords(twice[1]!.actions[0]!, false).outcome, "Done (2 times)");
+  assert.deepEqual(twice.map((message) => message.kind), ["step", "recovery", "recovery"], "the same notice closed on two attempts is two steps, each shown");
+  assert.equal(cardWords(twice[1]!.actions[0]!, false).outcome, "Done");
 });
 
 test("an item found again after the page changed reads as found, and one that is gone says so without a failure's words", () => {

@@ -56,9 +56,9 @@ test("a card for each kind: Core's icon in an aria-hidden mark, Core's name, the
   await withFakeDocument(() => {
     const view = createThreadView();
     const events = ONE_OF_EACH.map(([, make], index) => make(index + 1));
-    view.render(buildChatStream([], events), null, controls, "build-1");
+    view.render(buildChatStream([], events), controls, "build-1");
     const shown = cards(fake(view.element));
-    assert.deepEqual(shown.map((card) => card.getAttribute("data-kind")), ONE_OF_EACH.map(([kind]) => kind));
+    assert.deepEqual(shown.map((card) => card.getAttribute("data-kind")), ONE_OF_EACH.map(([kind]) => kind).filter((kind) => kind !== "person_check"), "a robot check draws no card: the question in the thread is the one telling");
     for (const card of shown) {
       const kind = card.getAttribute("data-kind") as ActivityActionKind;
       const mark = card.byClass("chat-card-mark")[0]!;
@@ -80,7 +80,6 @@ test("a card for each kind: Core's icon in an aria-hidden mark, Core's name, the
     assert.deepEqual(read("test"), [undefined, "Didn't work: it didn't do the same when the test tried it again", "failed", "Test run: Didn't work: it didn't do the same when the test tried it again"]);
     // t193 (run-muqiojz4-04a7a8fc, 00019): a real run's result check read "Test run · Working on it".
     assert.deepEqual(read("result_check"), [undefined, "Passed: the result was judged to answer the request.", "done", "Check result: Passed: the result was judged to answer the request."]);
-    assert.deepEqual(read("person_check"), [undefined, "Waiting for you", "waiting", "Robot check: Waiting for you"], "a wait Core has not settled still waits while its work is under way");
     assert.deepEqual(read("permission"), [undefined, "Waiting for you", "waiting", "Permission: Waiting for you"]);
     assert.deepEqual(read("repair"), ["Accept cookies", "Done", "done", "Repair, Accept cookies: Done"]);
     assert.deepEqual(read("other"), [undefined, "Done", "done", "Action: Done"]);
@@ -90,13 +89,12 @@ test("a card for each kind: Core's icon in an aria-hidden mark, Core's name, the
   });
 });
 
-test("a robot check that is the action of the moment waits for you", async () => {
+test("a robot check that is the action of the moment draws no card of its own", async () => {
   await withFakeDocument(() => {
     const view = createThreadView();
     const [, robot] = ONE_OF_EACH.find(([kind]) => kind === "person_check")!;
-    view.render(buildChatStream([], [robot(1)]), null, controls, "build-1");
-    const card = cards(fake(view.element))[0]!;
-    assert.deepEqual([card.getAttribute("data-state"), text(card, "chat-card-outcome"), card.getAttribute("aria-label")], ["waiting", "Waiting for you", "Robot check: Waiting for you"]);
+    view.render(buildChatStream([], [robot(1)]), controls, "build-1");
+    assert.equal(cards(fake(view.element)).length, 0);
   });
 });
 
@@ -108,7 +106,7 @@ test("a card is the same element, icon included, from started to done or failed;
       event(1, "exploring", { kind: "thought", title: quote, text: "The quote form is behind this button.", status: "succeeded" }),
       event(2, "exploring", { kind: "tool", title: quote, ref: "core.run_node", status: "started" })
     ];
-    view.render(buildChatStream([], events), null, controls, "build-1");
+    view.render(buildChatStream([], events), controls, "build-1");
     const root = fake(view.element);
     const message = root.byClass("chat-step-msg")[0]!;
     const card = cards(root)[0]!;
@@ -117,20 +115,20 @@ test("a card is the same element, icon included, from started to done or failed;
     assert.deepEqual([card.getAttribute("data-state"), text(card, "chat-card-outcome")], ["working", "Working on it"]);
 
     events.push(event(3, "exploring", { kind: "tool", title: quote, ref: "core.run_node", status: "failed", text: record("web.target.not_found", "web.output.dom-click") }));
-    view.render(buildChatStream([], events), null, controls, "build-1");
+    view.render(buildChatStream([], events), controls, "build-1");
     assert.equal(cards(root)[0], card);
     assert.deepEqual([card, ...card.descendants()], nodes, "updated in place, nothing remounted");
     assert.deepEqual([card.getAttribute("data-state"), text(card, "chat-card-outcome")], ["failed", "Didn't work: FluxIQ couldn't find it where it was saved"]);
 
     events.push(event(4, "exploring", { kind: "tool", title: "Clicking “Accept cookies”", ref: "core.run_node", status: "started" }));
-    view.render(buildChatStream([], events), null, controls, "build-1");
+    view.render(buildChatStream([], events), controls, "build-1");
     const [first, second] = cards(root);
     assert.equal(first, card, "the first card stays first");
     assert.deepEqual([second!.getAttribute("data-state"), text(second!, "chat-card-outcome")], ["working", "Working on it"]);
     assert.equal(root.byClass("chat-step-msg").length, 1, "both are the decision's cards");
 
     events.push(event(5, "exploring", { kind: "tool", title: "Clicking “Accept cookies”", ref: "core.run_node", status: "succeeded" }));
-    view.render(buildChatStream([], events), null, controls, null);
+    view.render(buildChatStream([], events), controls, null);
     assert.deepEqual(cards(root), [first, second]);
     assert.equal(text(second!, "chat-card-outcome"), "Done");
   });
@@ -144,7 +142,7 @@ test("no card, label or word in the chat shows a dotted id", async () => {
       event(20, "exploring", { kind: "tool", title: "Using core.run_node", ref: "core.run_node", status: "failed", text: record("web.target.not_found", "web.output.dom-click") }),
       event(21, "verifying", { kind: "check", title: "Completion check", status: "failed", text: "Result: core.completion_check.failed" })
     ];
-    view.render(buildChatStream([], events), null, controls, "build-1");
+    view.render(buildChatStream([], events), controls, "build-1");
     const root = fake(view.element);
     for (const element of root.descendants()) {
       const label = element.getAttribute("aria-label");
@@ -157,7 +155,7 @@ test("no card, label or word in the chat shows a dotted id", async () => {
   });
 });
 
-test("a robot check's card is marked from Core's row that settles it, on the same element, and a later note does not quiet it", async () => {
+test("a robot check never draws a card, waiting or settled: the row that settles it adds none either", async () => {
   const CHECK = "Asked the person to complete a check";
   const settle = (sequence: number, resolution: string, status: Detail["status"], said: string) =>
     event(sequence, "building", { kind: "ask", title: CHECK, ref: "person-needed.1", status, text: said, resolution } as Detail);
@@ -171,32 +169,23 @@ test("a robot check's card is marked from Core's row that settles it, on the sam
         event(1, "waiting_permission", { kind: "ask", title: CHECK, ref: "person-needed.1", status: "started", text: "FluxIQ needs you: complete the check on this page, then press Continue." }),
         event(2, "waiting_permission", { kind: "note", title: "Still waiting", text: "The page is still showing the check." })
       ];
-      view.render(buildChatStream([], events), null, controls, "build-1");
+      view.render(buildChatStream([], events), controls, "build-1");
       const root = fake(view.element);
-      const card = cards(root)[0]!;
-      const nodes = [card, ...card.descendants()];
-      assert.deepEqual([card.getAttribute("data-state"), text(card, "chat-card-outcome")], ["waiting", "Waiting for you"], "still waiting after the note");
+      assert.equal(cards(root).length, 0, "no card while it waits");
 
       events.push(settle(3, resolution, status, said), event(4, "building", { kind: "tool", title: "Clicking “Get a free quote”", ref: "core.run_node", status: "started" }));
-      view.render(buildChatStream([], events), null, controls, "build-1");
-      assert.equal(cards(root)[0], card, resolution);
-      assert.deepEqual([card, ...card.descendants()], nodes, "updated in place, nothing remounted");
-      assert.deepEqual([card.getAttribute("data-state"), text(card, "chat-card-outcome"), card.getAttribute("aria-label")], [state, outcome, `Robot check: ${outcome}`]);
-      assert.equal(cards(root).length, 2, "the settling row adds no card");
-      for (const node of [card, ...card.descendants()]) {
-        for (const value of [node.textContent, node.getAttribute("aria-label")]) if (value) assert.doesNotMatch(value, DOTTED_ID, value);
-      }
+      view.render(buildChatStream([], events), controls, "build-1");
+      assert.deepEqual(cards(root).map((card) => card.getAttribute("data-kind")), ["click"], `${resolution}: only the work that followed is a card; the settled check (${state}, ${outcome}) is the question's to tell`);
     });
   }
 });
 
-test("a wait Core has not settled still says so once its work is over: only Core's resolved row ends it", async () => {
+test("a wait Core has not settled draws no card even once its work is over", async () => {
   await withFakeDocument(() => {
     const view = createThreadView();
     const [, robot] = ONE_OF_EACH.find(([kind]) => kind === "person_check")!;
-    view.render(buildChatStream([], [robot(1)]), null, controls, null);
-    const card = cards(fake(view.element))[0]!;
-    assert.deepEqual([card.getAttribute("data-state"), text(card, "chat-card-outcome"), card.getAttribute("aria-label")], ["waiting", "Waiting for you", "Robot check: Waiting for you"]);
+    view.render(buildChatStream([], [robot(1)]), controls, null);
+    assert.equal(cards(fake(view.element)).length, 0);
   });
 });
 
@@ -210,7 +199,7 @@ test("a navigate card names its page, and a refusal says its own reason", async 
       event(1, "running", { kind: "step", title: "Opening “/ip/valueridge-napkins”", ref: "n11", status: "succeeded", text: "Node: web.output.browser-navigate" }, { step: { index: 11, count: 14, nodeId: "n11" } }),
       event(2, "repairing", { kind: "tool", title: "Clicking “Add to cart”", ref: "core.run_node", status: "succeeded", text: "Result: web.action.rejected.target_unobserved · Reason: target_not_a_handle · Node: web.output.dom-click" })
     ];
-    view.render(buildChatStream([], events), null, controls, "run-1");
+    view.render(buildChatStream([], events), controls, "run-1");
     const labels = cards(fake(view.element)).map((card) => card.getAttribute("aria-label"));
     assert.deepEqual(labels, ["Open page, /ip/valueridge-napkins: Done", "Repair, Add to cart: Didn't work: FluxIQ didn't send it, as the step didn't name its control the way FluxIQ needs"]);
   });
@@ -228,7 +217,7 @@ test("a list's name is shown as Core gave it, marked whole when it is longer tha
       event(1, "verifying", { kind: "tool", title: `Reading the list of “${LIST}”`, ref: "core.run_node", status: "succeeded", text: "Result: core.replay.replayed · Rows: 82 · Node: web.output.dom-extract_list" }),
       event(2, "exploring", { kind: "tool", title: "Clicking “Get a free quote”", ref: "core.run_node", status: "succeeded", text: record("web.click.succeeded", "web.output.dom-click") })
     ];
-    view.render(buildChatStream([], events), null, controls, null);
+    view.render(buildChatStream([], events), controls, null);
     const [read, click] = cards(fake(view.element));
     assert.equal(text(read!, "chat-card-target"), LIST);
     assert.equal(read!.byClass("chat-card-target")[0]!.getAttribute("data-whole"), "true");

@@ -1,7 +1,7 @@
 // One of FluxIQ's step messages, the way it reads in the chat: on FluxIQ's
 // side of the conversation, what it decided in bold and why after a dash,
 // then each action that led to as a card (`action-card-view.ts`), and steps
-// done again before a retry as one line that opens to show them
+// done again before a retry as one plain line, never a second telling
 // (`done-again-view.ts`).
 //
 //   **Clicking “Get a free quote”** — The quote form is behind this button,
@@ -109,7 +109,7 @@ export function createStepMessageView(meta?: TurnMeta): StepMessageView {
       const last = message.actions.length - 1;
       const shown = message.actions.map((card, index) => {
         if (card.again !== undefined) {
-          // Steps done again are one line that opens to show them (`done-again-view.ts`, D7).
+          // Steps done again are one plain line, not their cards a second time (`done-again-view.ts`).
           let group = groups.get(card.key);
           if (group === undefined) {
             group = createDoneAgainView();

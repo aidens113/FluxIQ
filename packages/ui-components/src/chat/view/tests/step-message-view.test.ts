@@ -42,7 +42,7 @@ const icon = (card: FakeElement) => card.byClass("chat-card-mark")[0]!.children[
 test("the plan, the brief and its builder's steps: a card each with its pinned icon, the steps indented under the brief, a lane named where it changes", async () => {
   await withFakeDocument(() => {
     const view = createThreadView();
-    view.render(buildChatStream([], EVENTS), null, controls, "build-1");
+    view.render(buildChatStream([], EVENTS), controls, "build-1");
     const [plan, brief, step, supervisor] = fake(view.element).children;
 
     assert.equal(plan!.getAttribute("data-kind"), "project");
@@ -77,11 +77,11 @@ test("the plan, the brief and its builder's steps: a card each with its pinned i
 test("a brief's card is marked in place when its builder returns, and settles when the work stops without one", async () => {
   await withFakeDocument(() => {
     const view = createThreadView();
-    view.render(buildChatStream([], EVENTS), null, controls, "build-1");
+    view.render(buildChatStream([], EVENTS), controls, "build-1");
     const briefCard = fake(view.element).children[1]!.byClass("chat-project-card")[0]!;
-    view.render(buildChatStream([], EVENTS), null, controls, null);
+    view.render(buildChatStream([], EVENTS), controls, null);
     assert.equal(briefCard.getAttribute("data-state"), "settled", "no build working: the brief no longer works");
-    view.render(buildChatStream([], [...EVENTS, RETURN]), null, controls, "build-1");
+    view.render(buildChatStream([], [...EVENTS, RETURN]), controls, "build-1");
     const [, brief, , , returned] = fake(view.element).children;
     assert.equal(brief!.byClass("chat-project-card")[0], briefCard, "the same element");
     assert.equal(briefCard.getAttribute("data-state"), "done");

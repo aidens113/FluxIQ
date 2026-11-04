@@ -54,7 +54,13 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     failed: "it was already tried exactly this way and did not work",
     changed_nothing: "it was already tried exactly this way and changed nothing",
     same_result: "it was already tried exactly this way, and trying it again would end the same way",
-    same_answer: "it was already tried exactly this way, and trying it again would end the same way"
+    same_answer: "it was already tried exactly this way, and trying it again would end the same way",
+    // Refused by the loop detector (`runtime/llm/repeat-guard/loop-detection/`): none of these was tried "exactly" as before.
+    near_repeat: "the same thing was already tried and nothing changed",
+    cycle: "it kept going round the same steps with nothing new",
+    no_progress: "the last steps found nothing new, and this was already one of them",
+    same_fix: "that fix was already tried and did not work",
+    same_act: "that was already done, and doing it again would do it twice"
   } as const),
   /**
    * Why a whole Flow sent again unchanged was not taken, by what the same
@@ -66,6 +72,11 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     failed: "the same Flow was already sent exactly like this and was not accepted",
     changed_nothing: "the same Flow was already sent exactly like this and changed nothing",
     same_result: "the same Flow was already sent exactly like this, and sending it again would end the same way",
-    same_answer: "the same Flow was already sent exactly like this, and sending it again would end the same way"
+    same_answer: "the same Flow was already sent exactly like this, and sending it again would end the same way",
+    near_repeat: "the same Flow was already sent with only its wording changed",
+    cycle: "it kept going round the same steps with nothing new",
+    no_progress: "the last steps found nothing new, and this was already one of them",
+    same_fix: "the same Flow was already sent and did not work",
+    same_act: "that was already done, and doing it again would do it twice"
   } as const)
 } as const);

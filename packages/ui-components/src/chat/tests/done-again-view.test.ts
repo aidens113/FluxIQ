@@ -1,6 +1,9 @@
-// D7 of the t342 round 2 UI review (run-muylu4pp-f9cb2121, screenshots 09-13):
-// steps done again before a retry are one closed line in the chat that opens to
-// show their cards, kept in place as more steps join it.
+// D7 of the t342 round 2 UI review (run-muylu4pp-f9cb2121, screenshots 09-13),
+// as the answer-first plan reads it ("each step told once", "not 5 steps with
+// a dropdown"): steps done again before a retry are one quiet line of plain
+// text. It is no dropdown and holds no cards, since each step was already told
+// as its own message where it happened; the line keeps its element as more
+// steps join it.
 
 import assert from "node:assert/strict";
 import { test } from "vitest";
@@ -21,24 +24,22 @@ const explored = [
   thought(8, "Repairing the Flow", "The quantity was not set.", "repairing")
 ];
 
-test("steps done again are one closed line naming them, which keeps its element as more steps join it", async () => {
+test("steps done again are one plain line naming them, with no dropdown and no cards, which keeps its element as more steps join it", async () => {
   await withFakeDocument(() => {
     const view = createStepMessageView();
     const two = stepMessages([...explored, ...press(9, "Accept all"), ...press(11, "7-in-1")], 100).at(-1)!;
     view.update(two, true);
     const root = fake(view.element);
     const line = root.byClass("chat-again")[0]!;
-    assert.equal(line.tagName.toLowerCase(), "details");
-    assert.equal(line.open, false, "closed until the person opens it");
-    assert.equal(root.byClass("chat-again-summary")[0]!.textContent, "Did 2 earlier steps again: Accept all and 7-in-1");
-    assert.equal(root.byClass("chat-again-cards")[0]!.byClass("chat-card").length, 2, "it holds each step's card");
+    assert.equal(line.tagName.toLowerCase(), "p", "plain text, not a details disclosure");
+    assert.equal(line.textContent, "Did 2 earlier steps again: Accept all and 7-in-1");
+    assert.equal(root.byClass("chat-again-summary").length, 0, "nothing to open");
+    assert.equal(root.byClass("chat-card").length, 0, "the steps are not told a second time as cards");
 
     const three = stepMessages([...explored, ...press(9, "Accept all"), ...press(11, "7-in-1"), ...press(13, "Spain")], 100).at(-1)!;
-    line.open = true;
     view.update(three, true);
-    assert.equal(root.byClass("chat-again")[0], line, "the same element, still open");
-    assert.equal(line.open, true);
-    assert.equal(root.byClass("chat-again-summary")[0]!.textContent, "Did 3 earlier steps again: Accept all, 7-in-1 and Spain");
-    assert.equal(root.byClass("chat-again-cards")[0]!.byClass("chat-card").length, 3);
+    assert.equal(root.byClass("chat-again")[0], line, "the same element");
+    assert.equal(line.textContent, "Did 3 earlier steps again: Accept all, 7-in-1 and Spain");
+    assert.equal(root.byClass("chat-card").length, 0);
   });
 });

@@ -16,8 +16,10 @@
 // its own order. A message's time never changes, so once placed it stays put.
 
 import type { ClientGatewayActivity } from "fluxiq/ui";
+import { hasAnswerTurn } from "../answer/index.ts";
 import type { CoreTurn } from "../conversation/index.ts";
-import { stepMessages, type StepMessage } from "./step/index.ts";
+import type { ChatTaskOutcome } from "../ports/index.ts";
+import { stepMessages, withoutPersonCheck, type StepMessage } from "./step/index.ts";
 import type { StampedTurn } from "./turn-clock.ts";
 
 /** The most step messages the chat keeps, the newest: several long builds' worth. */
@@ -26,25 +28,37 @@ export const CHAT_STEP_MESSAGE_LIMIT = 1_000;
 /** One item of the stream. */
 export type ChatStreamItem =
   | { kind: "turn"; key: string; at: number; turn: CoreTurn }
-  | { kind: "step"; key: string; at: number; message: StepMessage };
+  | { kind: "step"; key: string; at: number; message: StepMessage }
+  | { kind: "answer"; key: string; at: number; outcome: ChatTaskOutcome };
 
 /** The chat, top to bottom. */
 export type ChatStream = { items: ChatStreamItem[] };
 
-/** The stream for `turns` and the activity `events` the chat on screen shows (oldest first). */
+/**
+ * The stream for `turns` and the activity `events` the chat on screen shows (oldest first).
+ * An outcome with an answer turn (`hasAnswerTurn`) sits where its attempt ended, or after
+ * the last item when it has not ended (a wait), and after anything at the same time.
+ */
 export function buildChatStream(
   turns: readonly StampedTurn[],
   events: readonly ClientGatewayActivity[],
-  limit = CHAT_STEP_MESSAGE_LIMIT
+  limit = CHAT_STEP_MESSAGE_LIMIT,
+  outcomes: readonly ChatTaskOutcome[] = []
 ): ChatStream {
   const items: ChatStreamItem[] = [
     ...turns.map(({ turn, at }): ChatStreamItem => ({ kind: "turn", key: `turn:${turn.turnId}`, at, turn })),
     ...requestTurns(turns, events),
-    ...stepMessages(events, limit).map((message): ChatStreamItem => ({ kind: "step", key: message.key, at: message.at, message }))
+    ...withoutPersonCheck(stepMessages(events, limit)).map((message): ChatStreamItem => ({ kind: "step", key: message.key, at: message.at, message }))
   ];
   // Array sort is stable: equal times keep turns first, each in its own order.
-  items.sort((a, b) => (a.at === b.at ? 0 : a.at < b.at ? -1 : 1));
-  return { items };
+  items.sort(byTime);
+  const lastAt = items.reduce((latest, item) => Math.max(latest, item.at), Number.NEGATIVE_INFINITY);
+  const answers = outcomes.filter(hasAnswerTurn).map((outcome): ChatStreamItem => ({ kind: "answer", key: `answer:${outcome.attempt.attemptId}`, at: outcome.attempt.endedAtMs ?? lastAt, outcome }));
+  return { items: [...items, ...answers].sort(byTime) };
+}
+
+function byTime(a: ChatStreamItem, b: ChatStreamItem): number {
+  return a.at === b.at ? 0 : a.at < b.at ? -1 : 1;
 }
 
 /** Each unit of work's first `request` as the person's turn, where the thread does not already hold their words. */

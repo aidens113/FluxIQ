@@ -3,6 +3,7 @@ import { test } from "vitest";
 import { CONTEXT_CHANGED, leaseTransport } from "../lease-transport.ts";
 import type { ChatResult, ChatTransport } from "../ports/index.ts";
 import { messageTransport, type TestMessage } from "./message-transport.ts";
+import { createFakeChatResultsPort } from "../../testing/index.ts";
 
 const OK: ChatResult<unknown> = { ok: true, value: {} };
 
@@ -71,4 +72,11 @@ test("what the client leaves out stays left out", () => {
   assert.equal(leased.models, undefined);
   assert.equal(leased.runs.openInstructions, undefined);
   assert.equal(leased.activity.setOverlay, undefined);
+});
+
+test("a results port that reports no real spend still says so through the lease", () => {
+  const bare = messageTransport(async () => OK);
+  const port = createFakeChatResultsPort({ reportsSpend: false });
+  assert.equal(leaseTransport({ ...bare, results: port }, () => true).results?.reportsSpend, false);
+  assert.equal("reportsSpend" in leaseTransport({ ...bare, results: createFakeChatResultsPort() }, () => true).results!, false);
 });

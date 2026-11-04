@@ -101,9 +101,18 @@ export type ChatSavedState =
   | { state: "notes_only"; trust: "unproven"; savedAtMs: number }
   | { state: "needs_you"; trust: "unproven" | "provisional" | "established"; flowId?: string; savedAtMs: number };
 
+/**
+ * A run that finished with rows and was never judged: not a contract status, and never
+ * `achieved` (the contract refuses an `achieved` attempt whose result is not confirmed). A
+ * client with no attempt records of its own, reading a run's dataset, tells its runs this
+ * way; the answer turn shows them as found and not confirmed, with no tick. Core's attempts
+ * never carry it.
+ */
+export type ChatFinishedRunAttempt = ChatTaskAttemptFields & { status: "finished_unchecked" };
+
 /** An attempt and what goes with it. */
 export type ChatTaskOutcome = {
-  attempt: ChatTaskAttempt;
+  attempt: ChatTaskAttempt | ChatFinishedRunAttempt;
   /** Absent until there is one. A budget-out attempt with something to show has one. */
   result?: ChatTaskResult;
   saved?: ChatSavedState;
@@ -134,6 +143,13 @@ export type ChatDownload = (fileName: string, contentType: string, body: string)
  * `ChatResult`'s `unsupported` says a client cannot carry one of these.
  */
 export type ChatResultsPort = {
+  /**
+   * `false`: this port's records carry no real spend (a client reading a run's
+   * dataset before Core writes attempt records fills `spend` with zeros). The
+   * answer turn then says nothing of cost or model calls, rather than "$0.00".
+   * Absent: the spend is real. Not part of the contract's records.
+   */
+  readonly reportsSpend?: false;
   /** Every outcome in a thread, oldest first. None yet is an empty list, not a failure. */
   readThread(query: ChatResultsThreadQuery): Promise<ChatResult<{ outcomes: readonly ChatTaskOutcome[] }>>;
   /** One attempt's outcome. An attempt it cannot find is a failed read. */
