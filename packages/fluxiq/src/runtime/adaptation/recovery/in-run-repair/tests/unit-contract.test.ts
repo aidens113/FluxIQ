@@ -63,4 +63,12 @@ describe("the unit an in-run repair is held to", () => {
     });
     expect(automationStudioRepairUnitContract({ graph: graph(), unit: { kind: "part", subflowId: "subflow.list" } })).toEqual({ kind: "part", subflowId: "subflow.list", absent: true });
   });
+
+  it("names the key of the step an output is read from, and no more of the binding", () => {
+    const part = { ...graph(), interface: { inputs: [], outputs: [{ id: "rows", metadata: { binding: { $state: { path: "$node.s2.rows" } } } }, { id: "plain" }] } };
+    const contract = automationStudioRepairUnitContract({ graph: graph(), unit: { kind: "part", subflowId: "subflow.list" }, partGraph: part });
+
+    expect(contract).toMatchObject({ interface: { outputs: [{ id: "rows", fromStepKey: "s2" }, { id: "plain" }] } });
+    expect(JSON.stringify(contract)).not.toContain("$node");
+  });
 });

@@ -142,8 +142,7 @@ export class AutomationStudioFlowMutations {
       ...(input.routeTags?.length ? { routeTags: uniqueStrings(input.routeTags.map((tag) => tag.trim()).filter(Boolean)) } : {}),
       graphFlowId,
       createdAt: now,
-      updatedAt: now,
-      stability: { runCount: 0, successCount: 0, failureCount: 0 }
+      updatedAt: now
     };
     let saved: AutomationStudioFlowSubflow;
     try {

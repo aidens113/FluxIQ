@@ -24,6 +24,7 @@ import {
   type AutomationStudioLlmInRunRepairPort,
   type AutomationStudioLlmInRunRepairStep
 } from "../../../llm/harness/index.ts";
+import { automationNodeOutputReference, isAutomationNodeParameterStateBinding } from "../../../../components/automation/index.ts";
 import { automationStudioScreenedAuthoredState, automationStudioScreenedNodeParameters } from "../repair-context/index.ts";
 
 /** A graph a part is read from: a Flow artifact carries its interface, a bare document none. */
@@ -126,12 +127,19 @@ function screenedConditions(conditions: readonly unknown[], path: string): JsonV
 }
 
 /** A part's interface by name and type: what it takes and what it gives back. */
+/** The key of the step an output is read from, when it names one (`metadata.binding`): only the key, which is authored, never a value. */
+function outputStepKey(port: Record<string, unknown>): string | undefined {
+  const binding = (port.metadata as { binding?: unknown } | undefined)?.binding;
+  return isAutomationNodeParameterStateBinding(binding) ? automationNodeOutputReference(binding.$state.path)?.key : undefined;
+}
+
 function interfaceShape(value: unknown): { inputs: AutomationStudioLlmInRunRepairPort[]; outputs: AutomationStudioLlmInRunRepairPort[] } {
   const read = (list: unknown): AutomationStudioLlmInRunRepairPort[] => (Array.isArray(list) ? list : []).flatMap((port) => {
     if (!port || typeof port !== "object") return [];
     const record = port as Record<string, unknown>;
     if (typeof record.id !== "string") return [];
-    return [{ id: record.id, ...(typeof record.name === "string" ? { name: record.name } : {}), ...(typeof record.valueType === "string" ? { valueType: record.valueType } : {}), ...(record.required === true ? { required: true } : {}) }];
+    const key = outputStepKey(record);
+    return [{ id: record.id, ...(typeof record.name === "string" ? { name: record.name } : {}), ...(typeof record.valueType === "string" ? { valueType: record.valueType } : {}), ...(record.required === true ? { required: true } : {}), ...(key ? { fromStepKey: key } : {}) }];
   });
   const shape = value && typeof value === "object" ? value as Record<string, unknown> : {};
   return { inputs: read(shape.inputs), outputs: read(shape.outputs) };

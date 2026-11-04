@@ -17,6 +17,7 @@ import { registerArtifactEndpoints } from "./artifacts.ts";
 import { registerRecordingEndpoints } from "./recordings.ts";
 import { registerRuntimeSessionEndpoints } from "./runtime-sessions.ts";
 import { registerSubflowEndpoints } from "./subflows.ts";
+import { registerProjectPartEndpoints } from "./project-parts.ts";
 import { registerInstructionEndpoints } from "./instructions.ts";
 import { registerRunEndpoints } from "./runs.ts";
 import { registerRunDatasetEndpoints } from "./datasets.ts";
@@ -43,6 +44,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerRecordingEndpoints(dependencies);
   registerRuntimeSessionEndpoints(dependencies);
   registerSubflowEndpoints(dependencies);
+  registerProjectPartEndpoints(dependencies);
   registerInstructionEndpoints(dependencies);
   registerRunEndpoints(dependencies);
   registerRunDatasetEndpoints(dependencies);

@@ -88,6 +88,13 @@ describe("the in-run repair kinds", () => {
     expect(parse({ kind: "replace_unit", reason: "The handler missed a case.", consequences: [], unit: { kind: "handler", nodeId: "node.handler" }, handler: JSON.parse(JSON.stringify(handler)) }).diagnostics).toEqual([]);
   });
 
+  it("reads a step that names the key it is read by, and refuses a key that is not a bounded string", () => {
+    const part = (key: unknown) => parse({ kind: "replace_unit", reason: "r", consequences: [], unit: { kind: "part", subflowId: "subflow.search" }, steps: [{ definitionId: "builtin.data.constant", key }] });
+    expect(part("s2").diagnostics).toEqual([]);
+    expect(part("s2").response).toMatchObject({ patches: [{ steps: [{ key: "s2" }] }] });
+    expect(part(7).diagnostics).not.toEqual([]);
+  });
+
   it.each([
     ["a scope for the whole automation", addHandler({ scope: { kind: "automation" } }), "llm_output.invalid_add_handler"],
     ["an op the grammar does not have", addHandler({ when: [{ fact: "dialog.visible", op: "looks_like" }] }), "llm_output.invalid_add_handler"],

@@ -1833,7 +1833,7 @@ describes how it reaches the node.
 
 Subflows are persisted as Flow-owned behavior units with route tags,
 input/output mapping, graph reference, local instruction IDs, proposal-mode
-override, and stability metrics. New subflows receive an isolated graph Flow by
+override. (A `stability` block once sat here; nothing ever updated it, and it is retired. How far a saved part has been proven is derived from its runs, in the project library: `runtime/project-parts/trust`.) New subflows receive an isolated graph Flow by
 default so editing a subflow does not mutate the parent Flow/router graph. The
 Subflows workspace is only a paginated directory; selecting a row resolves the
 subflow's graphFlowId and opens that graph in the normal Flow editor. Backing

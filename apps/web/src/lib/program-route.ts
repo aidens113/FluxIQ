@@ -123,6 +123,13 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     // What a recording may capture and whether a Flow may send direct requests, `read` (t728). Not projected: Core's
     // policy is switches and nothing secret, and the extension reads it before capturing rather than deciding alone.
     "get-recording-capture-policy",
+    // Searching the project's library of saved parts, `read` (programs.read). Not narrowed or projected: the body is a search
+    // and the cards hold names, the person's words, hashes and counts, never page text.
+    "list-project-parts",
+    // Reading one saved part, `read`. Not projected: its steps are screened labels and a part's page evidence stays in its snapshot.
+    "get-project-part",
+    // Keeping one Subflow of a Flow as a saved part, `authoring` (flows.write). Narrowed: those five fields and nothing else.
+    "save-project-part",
   ]),
   "secret-keys": Object.freeze([
     // Whether an LLM key is configured, `read`. Projected: kind, provider and enabled only, nothing that names or identifies a key.
@@ -286,6 +293,7 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "run-runtime-session") return narrowRunRuntimeSession(payload);
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
+  if (name === "save-project-part") return narrowSaveProjectPart(payload);
   return { ok: true, payload };
 }
 
@@ -330,6 +338,17 @@ function narrowReviewRecordingFlowProposal(payload: unknown): PairedClientReques
   }
   if ("decision" in body && body.decision !== "approved") return forbidden("A paired client's review may only carry decision approved.");
   return { ok: true, payload };
+}
+
+/** The five fields a person's "save this" carries. Anything else a token names is refused, by name. */
+const SAVE_PROJECT_PART_FIELDS: readonly string[] = ["projectId", "flowId", "subflowId", "name", "purpose"];
+
+function narrowSaveProjectPart(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  for (const field of Object.keys(body)) {
+    if (!SAVE_PROJECT_PART_FIELDS.includes(field)) return forbidden(`A paired client's save may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
 }
 
 function payloadRecord(payload: unknown): Record<string, unknown> | null {

@@ -15,3 +15,5 @@ export { automationStudioChildInvocation } from "./child-frame.ts";
 export { automationStudioTraceInFrame } from "./framed-trace.ts";
 // Call Subflow: a sibling Subflow graph run as a frame of its own.
 export { automationStudioCallSubflow, type AutomationStudioCalledSubflow } from "./call-subflow.ts";
+// A declared output bound to a node key no node of the graph carries.
+export { automationStudioLostOutputBinding, type AutomationStudioDeclaredOutputPort, type AutomationStudioLostOutputBinding } from "./lost-output-binding.ts";

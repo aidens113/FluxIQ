@@ -94,4 +94,18 @@ describe("AutomationStudioProjectFlowGraphJudgementStore", () => {
     await store.close();
     await pool.closeAll();
   });
+
+  // Whether a judged run asked a model anything is what makes a confirmed run a
+  // replay for the parts it ran, so it is written beside the verdict.
+  it("records whether the run asked no model, and reads a verdict written without the flag as asked", async () => {
+    const { pool, store } = await openStore("project.zero-model");
+    const base = { status: "confirmed" as const, code: "core.result.answers", instructionDigest: null, decidedAtMs: 10 };
+    await store.record({ ...base, runId: "run.replay", zeroModel: true, versions: [{ graphFlowId: "flow.a", revision: 1 }] });
+    await store.record({ ...base, runId: "run.asked", zeroModel: false, versions: [{ graphFlowId: "flow.a", revision: 1 }] });
+    await store.record({ ...base, runId: "run.unsaid", versions: [{ graphFlowId: "flow.a", revision: 1 }] });
+    const rows = await store.listForFlow({ flowId: "flow.a" });
+    expect(Object.fromEntries(rows.map((row) => [row.runId, row.zeroModel]))).toEqual({ "run.replay": true, "run.asked": false, "run.unsaid": false });
+    await store.close();
+    await pool.closeAll();
+  });
 });

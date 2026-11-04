@@ -21,6 +21,8 @@ export type AutomationStudioFlowGraphJudgementRecord = {
   code: string;
   instructionDigest: string | null;
   decidedAtMs: number;
+  /** The run asked no model anything: a confirmed one is a replay (`zero-provider-run.ts`). False for every row written before the column. */
+  zeroModel: boolean;
 };
 
 /** What one run's verdict is written as: the verdict once, against every version it judged. */
@@ -30,6 +32,8 @@ export type AutomationStudioFlowGraphJudgementWrite = {
   code: string;
   instructionDigest: string | null;
   decidedAtMs: number;
+  /** Whether the run asked no model anything. Omitted means it did, or nobody counted. */
+  zeroModel?: boolean | undefined;
   versions: readonly { graphFlowId: string; revision: number; subflowId?: string | undefined }[];
 };
 
@@ -70,17 +74,18 @@ export class AutomationStudioProjectFlowGraphJudgementStore {
   async record(input: AutomationStudioFlowGraphJudgementWrite): Promise<AutomationStudioFlowGraphJudgementRecord[]> {
     const runId = requiredId(input.runId, "run");
     const written: AutomationStudioFlowGraphJudgementRecord[] = [];
+    const zeroModel = input.zeroModel === true;
     for (const version of input.versions) {
       const flowId = requiredId(version.graphFlowId, "flow");
       const revisionNumber = Math.trunc(version.revision);
       const subflowId = version.subflowId ? requiredId(version.subflowId, "subflow") : null;
       await this.lease.database.run(
         `insert or replace into flow_graph_judgements
-           (flow_id, revision_number, run_id, subflow_id, status, code, instruction_digest, decided_at_ms)
-         values (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [flowId, revisionNumber, runId, subflowId, input.status, input.code, input.instructionDigest, Math.trunc(input.decidedAtMs)]
+           (flow_id, revision_number, run_id, subflow_id, status, code, instruction_digest, decided_at_ms, zero_model)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [flowId, revisionNumber, runId, subflowId, input.status, input.code, input.instructionDigest, Math.trunc(input.decidedAtMs), zeroModel ? 1 : 0]
       );
-      written.push({ flowId, revisionNumber, runId, subflowId, status: input.status, code: input.code, instructionDigest: input.instructionDigest, decidedAtMs: Math.trunc(input.decidedAtMs) });
+      written.push({ flowId, revisionNumber, runId, subflowId, status: input.status, code: input.code, instructionDigest: input.instructionDigest, decidedAtMs: Math.trunc(input.decidedAtMs), zeroModel });
     }
     return written;
   }
@@ -113,6 +118,7 @@ type JudgementRow = {
   code: string;
   instruction_digest: string | null;
   decided_at_ms: number;
+  zero_model: number;
 };
 
 function judgementFromRow(row: JudgementRow): AutomationStudioFlowGraphJudgementRecord {
@@ -124,7 +130,8 @@ function judgementFromRow(row: JudgementRow): AutomationStudioFlowGraphJudgement
     status: row.status,
     code: row.code,
     instructionDigest: row.instruction_digest,
-    decidedAtMs: row.decided_at_ms
+    decidedAtMs: row.decided_at_ms,
+    zeroModel: row.zero_model === 1
   };
 }
 

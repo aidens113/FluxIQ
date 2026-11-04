@@ -99,7 +99,8 @@ export async function automationStudioResultRecordFlowGraphJudgements(
   outcome: AutomationStudioResultVerificationOutcome,
   flowVersions: readonly AutomationStudioFlowGraphVersion[],
   instructionDigest: string | null,
-  decidedAtMs: number
+  decidedAtMs: number,
+  zeroModel = false
 ): Promise<void> {
   const record = input.ports.recordFlowGraphJudgements;
   if (!record) return;
@@ -114,7 +115,8 @@ export async function automationStudioResultRecordFlowGraphJudgements(
       instructionDigest,
       decidedAtMs,
       versions
-    }
+    },
+    ...(zeroModel ? { zeroModel } : {})
   });
 }
 

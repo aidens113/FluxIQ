@@ -193,6 +193,7 @@ import { renderAutomationStudioFlowScriptAct } from "../script-guidance/index.ts
 // example is a library catalogue's format filter, on no Lab lane's kind of site.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permission-requests/index.ts";
+import { AUTOMATION_STUDIO_PART_MARKING_GUIDANCE } from "../../../project-parts/marking/index.ts";
 
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "Write the Flow as plain lines, not JSON. One fact per line, `key: value`.",
@@ -401,6 +402,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "A part is steps another step runs by name, written once: `part <label>: <what it does>`, its steps, then `end`. It has no `when:` line. A step runs it and waits for it with `call: <label>` in place of `node:`: `step pay: pay for the order` then `call: payment`.",
+  AUTOMATION_STUDIO_PART_MARKING_GUIDANCE,
   "`input: <name>` in a part names a value it is given; its steps read it as `$input.<name>`, and the step that calls it gives it a line of its own, `card: $input.card = 4111`. `output: <name> = $step.<label>.<output>` names a value the part hands back, which a later step reads as `$step.<the calling step's label>.<name>`. Nothing else crosses: a `$step` names a step of its own block or part only.",
   "`start at: <step label>`, with its `when:` lines right after it, lets a block begin further on when the page already shows what that step needs: `start at: search` then `when: exists t4`. Otherwise the block starts at its first step, as always.",
   "`checkpoint: yes` on a step marks a place a handler may send the run back to.",

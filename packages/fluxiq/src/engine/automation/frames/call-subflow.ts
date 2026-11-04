@@ -10,6 +10,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import { automationStudioNodeOutputReferences } from "../graph-navigation/index.ts";
 import { automationStudioChildInvocation } from "./child-frame.ts";
 import type { AutomationStudioSubflowGraph } from "./invocation-options.ts";
+import { automationStudioLostOutputBinding } from "./lost-output-binding.ts";
 
 /** What one Call Subflow attempt produced: the node's result, and the child it ran, when it ran one. */
 export type AutomationStudioCalledSubflow = {
@@ -76,6 +77,15 @@ export async function automationStudioCallSubflow(request: {
   });
   // The child's saved message, which its own withholding already applied, says why; a hand-back to a calling frame's checkpoint is not a failure of it.
   const failed = crossed.result.status === "failed";
+  // A child that succeeded cannot answer an output bound to a node key no node of its graph carries (a repair that replaced the part can leave one): a silent `null` would read as an answer, so the call fails and says which.
+  const lost = failed || crossed.childTrace.checkpointRoute ? undefined : automationStudioLostOutputBinding(target.graph, target.artifact?.interface.outputs);
+  if (lost) {
+    return {
+      ...refused("graph_validation_or_unknown_node", "executor.call_subflow.output_binding_lost", `Subflow ${call.subflowId} finished, but its output "${lost.portId}" is read from a step with key "${lost.key}" and no step of the Subflow has that key, so it cannot be answered.`),
+      childTrace: crossed.childTrace,
+      subflowTarget: { subflowId: target.subflowId, graphFlowId: target.graph.flowId, graphRevision: target.graphRevision }
+    };
+  }
   const handedBack = crossed.childTrace.checkpointRoute;
   const message = handedBack ? `Subflow ${call.subflowId} handed the run back to checkpoint "${handedBack.checkpointId}".` : crossed.childTrace.message ? `Subflow ${call.subflowId} failed: ${crossed.childTrace.message}` : `Subflow ${call.subflowId} failed.`;
   return {

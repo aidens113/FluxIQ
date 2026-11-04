@@ -19,6 +19,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/authoring/model/index.ts";
 import { actionTargetParameterValues } from "../flow-change/index.ts";
 import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit } from "../../llm/index.ts";
+import { automationStudioLostOutputBinding, type AutomationStudioDeclaredOutputPort } from "../../../engine/automation/frames/index.ts";
 import { automationStudioRuntimePatchHandlerGraph } from "./handler-build.ts";
 import { automationStudioOverlayValidationRefusal, type AutomationStudioOverlayValidationContext } from "./overlay-validation.ts";
 import { applyAutomationStudioInsertedSteps, automationStudioInsertedStepNodeId } from "./step-insert.ts";
@@ -177,13 +178,37 @@ function replaceUnit(input: AutomationStudioRuntimePatchOverlayInput, patch: Ext
   if (!patch.steps?.length) return refused(`replacement_missing:${unit.kind === "node" ? unit.nodeId : unit.subflowId}`, `A ${unit.kind} is replaced by steps, and none were given.`);
   if (unit.kind === "node") {
     const replaced = replaceAutomationStudioNodeUnit({ graph: flow, nodeId: unit.nodeId, steps: patch.steps, ...(patch.failedEdgeTo !== undefined ? { failedEdgeTo: patch.failedEdgeTo } : {}), runId, reason: patch.reason });
-    return replaced.applied ? { applied: true, flow: replaced.graph, changedUnit: unit } : replaced;
+    if (!replaced.applied) return replaced;
+    const ownerId = flow.metadata?.parentSubflowId;
+    return strandedOutput(typeof ownerId === "string" ? ownerId : flow.flowId, flow, replaced.graph) ?? { applied: true, flow: replaced.graph, changedUnit: unit };
   }
   if (patch.failedEdgeTo !== undefined) return refused(`failed_edge_on_part:${unit.subflowId}`, "Only a replaced step may name where its failure goes.");
   const part = input.subflowGraphs?.[unit.subflowId];
   if (!part) return refused(`part_graph_absent:${unit.subflowId}`, `The graph of part "${unit.subflowId}" was not given, so it cannot be replaced.`);
   const replaced = replaceAutomationStudioPartUnit({ graph: part, subflowId: unit.subflowId, steps: patch.steps, runId, reason: patch.reason });
-  return replaced.applied ? { applied: true, flow: structuredClone(flow), changedUnit: unit, partGraph: { before: part, after: replaced.graph } } : replaced;
+  if (!replaced.applied) return replaced;
+  return strandedOutput(unit.subflowId, part, replaced.graph) ?? { applied: true, flow: structuredClone(flow), changedUnit: unit, partGraph: { before: part, after: replaced.graph } };
+}
+
+/**
+ * A refusal when the graph a Subflow would run after the replacement leaves one
+ * of its declared outputs bound to a node key no node carries, where the graph
+ * before it did not. The declared outputs travel with the graph as its
+ * `interface`; a bare document declares none and is left to the frame's own
+ * check. The message names the port and the key so the repair can give a step
+ * that key.
+ */
+function strandedOutput(subflowId: string, before: AutomationStudioFlowDocument, after: AutomationStudioFlowDocument): { applied: false; reason: string; message: string } | undefined {
+  const declared = declaredOutputsOf(before);
+  const lost = automationStudioLostOutputBinding(after, declared);
+  if (!lost || automationStudioLostOutputBinding(before, declared.filter((port) => port.id === lost.portId))) return undefined;
+  return refused(`part_output_binding_lost:${subflowId}:${lost.portId}`, `The replacement would leave the output "${lost.portId}" of part "${subflowId}" without the step it is read from: no step has the key "${lost.key}". Give the step that produces it the key "${lost.key}".`);
+}
+
+/** The outputs a graph declares, when it carries its interface: a Flow artifact does, a bare document does not. */
+function declaredOutputsOf(graph: AutomationStudioFlowDocument): readonly AutomationStudioDeclaredOutputPort[] {
+  const outputs = (graph as { interface?: { outputs?: unknown } }).interface?.outputs;
+  return Array.isArray(outputs) ? outputs as AutomationStudioDeclaredOutputPort[] : [];
 }
 
 /** The unit a node belongs to: the handler whose body holds it, or the node itself. */

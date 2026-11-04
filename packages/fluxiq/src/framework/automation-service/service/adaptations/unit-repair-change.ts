@@ -25,7 +25,7 @@ import { isJsonRecord } from "../json-values.ts";
 type UnitRepairChange = AutomationStudioFlowAdaptation["patch"][number] & { kind: AutomationStudioUnitRepairChangeKind };
 
 /** What a repair is written onto: a saved graph Flow, or a graph document a run executes. */
-type UnitRepairGraph = Pick<AutomationStudioFlowDocument, "schemaVersion" | "flowId" | "name" | "nodes" | "edges" | "createdAt" | "updatedAt"> & { metadata?: JsonObject | undefined };
+type UnitRepairGraph = Pick<AutomationStudioFlowDocument, "schemaVersion" | "flowId" | "name" | "nodes" | "edges" | "createdAt" | "updatedAt"> & { metadata?: JsonObject | undefined; interface?: unknown };
 
 /** Whether a change is a unit repair, which only the unit repair applier writes. */
 export function automationStudioIsUnitRepairChange(patch: AutomationStudioFlowAdaptation["patch"][number]): patch is UnitRepairChange {
@@ -96,8 +96,10 @@ function documentOf(graph: UnitRepairGraph): AutomationStudioFlowDocument {
     edges: graph.edges,
     createdAt: graph.createdAt,
     updatedAt: graph.updatedAt,
-    ...(graph.metadata ? { metadata: graph.metadata } : {})
-  };
+    ...(graph.metadata ? { metadata: graph.metadata } : {}),
+    // Its declared outputs, which the overlay keeps a replacement from stranding.
+    ...(graph.interface ? { interface: graph.interface } : {})
+  } as AutomationStudioFlowDocument;
 }
 
 /** The handler node given its declared automation scope (C4). */

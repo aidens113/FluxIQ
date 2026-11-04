@@ -524,10 +524,11 @@ function isOptionalNonNegativeInteger(value: unknown): boolean {
  */
 function isRuntimePatchStep(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  for (const key of Object.keys(value)) if (!["definitionId", "label", "parameters"].includes(key)) return false;
+  for (const key of Object.keys(value)) if (!["definitionId", "label", "parameters", "key"].includes(key)) return false;
   if (!isBoundedString(value.definitionId)) return false;
   if (value.label !== undefined && !isBoundedString(value.label)) return false;
   if (value.parameters !== undefined && !isJsonObject(value.parameters)) return false;
+  if (value.key !== undefined && !isBoundedString(value.key)) return false;
   return JSON.stringify(value).length <= AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH;
 }
 

@@ -18,6 +18,8 @@ export async function recordAutomationStudioFlowGraphJudgements(input: {
   pool: AutomationStudioProjectDatabasePool;
   projectId: string;
   judgement: AutomationStudioFlowGraphJudgement;
+  /** The run asked no model anything (`askedNoModel` in `run-record.ts`): a confirmed one is a replay for the parts it ran. Omitted means it did. */
+  zeroModel?: boolean | undefined;
 }): Promise<void> {
   const store = await AutomationStudioProjectFlowGraphJudgementStore.open({ pool: input.pool, projectId: input.projectId });
   try {
@@ -27,6 +29,7 @@ export async function recordAutomationStudioFlowGraphJudgements(input: {
       code: input.judgement.code,
       instructionDigest: input.judgement.instructionDigest,
       decidedAtMs: input.judgement.decidedAtMs,
+      zeroModel: input.zeroModel === true,
       versions: input.judgement.versions.map((version) => ({ graphFlowId: version.graphFlowId, revision: version.revision, ...(version.subflowId ? { subflowId: version.subflowId } : {}) }))
     });
   } finally {

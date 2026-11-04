@@ -70,6 +70,9 @@ describe("a paired client on the program route", () => {
         "review-recording-flow-proposal",
         "remove-recording-entry",
         "get-recording-capture-policy",
+        "list-project-parts",
+        "get-project-part",
+        "save-project-part",
       ],
       "secret-keys": ["snapshot"],
     });
@@ -217,6 +220,17 @@ describe("a paired client on the program route", () => {
     expect(narrow({ proposalId: "x", reviewerId: "user:else" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's review may not carry reviewerId." });
     expect(narrow({ proposalId: "x", destination: { flowId: "flow.existing" } })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's review may not carry destination." });
     expect(narrow({ proposalId: "x", policyOverride: {} })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's review may not carry policyOverride." });
+  });
+
+  it("saves a part with exactly its five fields and names any other a token carries", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "save-project-part", payload);
+    expect(narrow({ projectId: "p", flowId: "f", subflowId: "s", name: "N", purpose: "P" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "f", subflowId: "s", name: "N", purpose: "P" } });
+    expect(narrow({ projectId: "p", flowId: "f", subflowId: "s" })).toMatchObject({ ok: true });
+    expect(narrow({ projectId: "p", flowId: "f", subflowId: "s", explicit: false })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's save may not carry explicit." });
+    expect(narrow({ projectId: "p", flowId: "f", subflowId: "s", partId: "part.x" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's save may not carry partId." });
+    expect(isPairedClientEndpoint("automation-studio", "list-project-parts")).toBe(true);
+    expect(isPairedClientEndpoint("automation-studio", "get-project-part")).toBe(true);
+    expect(isPairedClientEndpoint("automation-studio", "run-project-part")).toBe(false);
   });
 
   it("passes every other endpoint's body unchanged", () => {

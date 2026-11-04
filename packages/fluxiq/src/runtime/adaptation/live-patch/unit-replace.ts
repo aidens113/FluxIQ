@@ -31,6 +31,9 @@ export type AutomationStudioUnitReplacement =
 /** The node definition that starts a graph, which a part's replacement keeps. */
 const START_DEFINITION_ID = "builtin.control.start";
 
+/** Where a node keeps the key it is read by (`$node.<key>.<output>`), as a build writes it. */
+const SYMBOLIC_KEY_METADATA = "bootstrapSymbolicKey";
+
 /** Where a replacement step sits relative to the one before it. */
 const STEP_X_OFFSET = 320;
 
@@ -66,6 +69,8 @@ export function replaceAutomationStudioNodeUnit(input: {
       return refused(`failed_edge_target_invalid:${input.failedEdgeTo}`, `A replaced step's failure may go only to another existing step outside any handler, and "${input.failedEdgeTo}" is not one.`);
     }
   }
+  const duplicate = duplicateStepKey(input.steps, next.nodes.filter((node) => node.id !== input.nodeId || !input.steps[0]?.key));
+  if (duplicate) return refused(`step_key_in_use:${duplicate}`, `A replacement step is given the key "${duplicate}", which another step already carries.`);
   const kept = keptContract(replaced.metadata);
   const position = replaced.position;
   const stepNodes = input.steps.map((step, stepIndex): AutomationStudioFlowNode => ({
@@ -75,7 +80,7 @@ export function replaceAutomationStudioNodeUnit(input: {
     description: input.reason,
     ...(step.parameters ? { parameterValues: structuredClone(step.parameters) } : {}),
     ...(position ? { position: { x: position.x + STEP_X_OFFSET * stepIndex, y: position.y } } : {}),
-    metadata: { ...(stepIndex === 0 ? kept : {}), runtimePatchRunId: input.runId, ...(stepIndex === 0 ? { runtimePatchReplacedDefinitionId: replaced.definitionId } : {}) }
+    metadata: { ...(stepIndex === 0 ? kept : {}), ...keyMetadata(step), runtimePatchRunId: input.runId, ...(stepIndex === 0 ? { runtimePatchReplacedDefinitionId: replaced.definitionId } : {}) }
   }));
   next.nodes.splice(index, 1, ...stepNodes);
   const last = ids[ids.length - 1]!;
@@ -132,6 +137,8 @@ export function replaceAutomationStudioPartUnit(input: {
   const base = `node.runtime-patch.${automationStudioRuntimePatchIdSegment(input.runId)}.part-${automationStudioRuntimePatchIdSegment(input.subflowId)}`;
   const ids = input.steps.map((_step, index) => `${base}.step-${index + 1}`);
   if (ids.some((id) => starts.some((start) => start.id === id))) return refused(`step_node_id_in_use:${input.subflowId}`, `An id the replacement of part "${input.subflowId}" would take is already in use.`);
+  const duplicate = duplicateStepKey(input.steps, starts);
+  if (duplicate) return refused(`step_key_in_use:${duplicate}`, `A replacement step is given the key "${duplicate}", which another step already carries.`);
   const origin = starts[0]?.position ?? next.nodes[0]?.position;
   next.nodes = [
     ...starts,
@@ -142,7 +149,7 @@ export function replaceAutomationStudioPartUnit(input: {
       description: input.reason,
       ...(step.parameters ? { parameterValues: structuredClone(step.parameters) } : {}),
       ...(origin ? { position: { x: origin.x + STEP_X_OFFSET * (index + 1), y: origin.y } } : {}),
-      metadata: { runtimePatchRunId: input.runId }
+      metadata: { ...keyMetadata(step), runtimePatchRunId: input.runId }
     }))
   ];
   const edges: AutomationStudioFlowEdge[] = starts.map((start, index) => ({
@@ -159,14 +166,35 @@ export function replaceAutomationStudioPartUnit(input: {
   return { applied: true, graph: next };
 }
 
-/** The contract declarations a replaced node's first step keeps: the entry and checkpoint a Route or an entry selection names. */
+/**
+ * The declarations a replaced node's first step keeps: the entry and checkpoint
+ * a Route or an entry selection names, and the key other steps and a Subflow's
+ * declared outputs read the node by (`$node.<key>.<output>`), which a step that
+ * names a key of its own replaces.
+ */
 function keptContract(metadata: JsonObject | undefined): JsonObject {
   const kept: JsonObject = {};
-  for (const key of [AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS.entry, AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS.checkpoint]) {
+  for (const key of [AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS.entry, AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS.checkpoint, SYMBOLIC_KEY_METADATA]) {
     const value = metadata?.[key];
     if (value !== undefined) kept[key] = structuredClone(value);
   }
   return kept;
+}
+
+/** The key a step names for its node, as the metadata that carries it. */
+function keyMetadata(step: AutomationStudioRuntimePatchStep): JsonObject {
+  return step.key ? { [SYMBOLIC_KEY_METADATA]: step.key } : {};
+}
+
+/** A key two replacement steps share, or one a node that stays already carries; reading by it would name more than one node. */
+function duplicateStepKey(steps: readonly AutomationStudioRuntimePatchStep[], staying: readonly AutomationStudioFlowNode[]): string | undefined {
+  const seen = new Set(staying.flatMap((node) => (typeof node.metadata?.[SYMBOLIC_KEY_METADATA] === "string" ? [node.metadata[SYMBOLIC_KEY_METADATA] as string] : [])));
+  for (const step of steps) {
+    if (!step.key) continue;
+    if (seen.has(step.key)) return step.key;
+    seen.add(step.key);
+  }
+  return undefined;
 }
 
 function refused(reason: string, message: string): AutomationStudioUnitReplacement {

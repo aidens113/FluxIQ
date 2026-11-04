@@ -7,6 +7,7 @@ export * from "./llm.ts";
 export * from "./flow.ts";
 export * from "./graph.ts";
 export * from "./subflow.ts";
+export * from "./project-part.ts";
 export * from "./flow-map.ts";
 export * from "./instruction.ts";
 export * from "./adaptation.ts";

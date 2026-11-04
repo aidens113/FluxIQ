@@ -233,7 +233,7 @@ export type AutomationStudioResultVerificationPorts = {
    * its own detail, so a reader can still say which version a result belongs
    * to; what is missing is only the queryable history across runs.
    */
-  recordFlowGraphJudgements?: ((input: { projectId: string; judgement: AutomationStudioFlowGraphJudgement }) => Promise<unknown>) | undefined;
+  recordFlowGraphJudgements?: ((input: { projectId: string; judgement: AutomationStudioFlowGraphJudgement; zeroModel?: boolean }) => Promise<unknown>) | undefined;
   /**
    * Judges a finished run that asked no model anything as a replay of each
    * applied change it executed, and saves what it proved
@@ -353,7 +353,7 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   // below, so the refutation that sent a Flow to be repaired is on record at the
   // revision it was about -- which is the revision a later rollback would return
   // to, and the one thing the repair is about to change.
-  await automationStudioResultRecordFlowGraphJudgements(input, outcome, flowVersions, report.instructionDigest ?? null, next.finishedAt ?? Date.now());
+  await automationStudioResultRecordFlowGraphJudgements(input, outcome, flowVersions, report.instructionDigest ?? null, next.finishedAt ?? Date.now(), record?.askedNoModel === true);
   // A run that asked no model anything is the replay the confidence rule counts
   // (`./zero-provider-run.ts`), and it is recorded as one.
   if (record?.askedNoModel) await automationStudioResultRecordAdaptationReplays(input, next);
