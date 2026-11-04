@@ -148,12 +148,59 @@ P17 unnoted acted copy, reshaped                              true
 3. **For t870's merge:** `row-ties.note` no longer takes single acted rows (use `noteActed`), `sameAs` takes one argument, and `identity.sameRows` is gone (`identity.rows` holds them).
 4. **Conflicts remaining:** `git diff --name-only --diff-filter=U` lists only `A/gate/act-gate.ts`, `A/record.ts` and `A/row-ties.ts`, which are resolved in the working tree and waiting on the lead's stage.
 
+## Follow-up: P5 closed by elimination, and the limits kept as tests
+
+This supersedes the P5 line and the "no kept test" line above.
+
+**The change.** Rule 3 in `same-row.ts` gains one step. A row that fits nothing in an earlier list is that list's row when all of these hold: every other row of both lists plainly matches (same digest, or a fit), exactly one row is left over in each, and most of their words are the same with at least one word that can tie. P5 went from `[false, false]` to `[true, false]`. It compares no positions, and a test puts the leftover row last to show that. The elimination does not need to know which row was acted on: it says only that the two rows are one, and `entry.rows` decides whether that one was acted on.
+
+**One departure from the brief: "share at least a word" became "share at least half the words of the longer row".** "At least a word" contradicts an existing test. `same-row.test.ts`, "a read of quite different columns", has `(Data lead at Kade Energy, Accept)` and `(Recruiter at Orbis, Accept)` followed by `(Recruiter at Orbis, Accept)` and `(Buyer for Moss, Accept)`, and it requires Buyer to be not done. Those counts have the same shape as P5, and the leftover pair share "Accept". With the threshold at 0, that test fails, as does the new counter-case. At half, `(Atlas, a1)` and `(Atlas, zz)` pass with 1 word of 2, and the Buyer pair fails with 1 of 6. I did not edit the test.
+
+**What it can still get wrong:**
+
+- **Left out, the lesser error:** one row gone and a new one come between the reads, when at least half their words are the same. `(Atlas, a1)` and `(Atlas, b2)` followed by `(Atlas, c3)` and `(Atlas, b2)` holds `c3` done. The counts cannot tell this from P5. A test states it as a known limit, and the new row is left out and counted, never pressed twice. Short rows are the exposed ones: `(Ann, Waiting)` replaced by `(Cid, Waiting)` is 1 word of 2, so it collapses. I reasoned that one from the threshold and did not run it. `(Ann Lee, Accept)` replaced by `(Cid Moss, Accept)` is 1 of 3 and stays two, and a test holds that.
+- **Left out:** the same happens across two unrelated lists of the same shape, since nothing says two reads are the same list. Reasoned, not run.
+- **Left out:** rows with their own addresses are not protected from this. `(Engineer, /jobs/1)` and `(Engineer, /jobs/2)` followed by `(Engineer, /jobs/3)` and `(Engineer, /jobs/2)` holds job 3 done if job 1 was pressed. I kept this because blocking it would bring back a double press where a press changes a row's link. Reasoned, not run.
+- **Pressed twice:** the row changed and something else changed too, so two rows are left over. A test states this: `(a1, b2, c3)` followed by `(zz, yy, c3)`.
+- **Pressed twice:** a press that changes most of a short row's words, since they then fall below half.
+- **Left out, unchanged by elimination:** a row no read has shown has no mark of what its list shares, so the shared word alone ties it. A test states this.
+
+**Cost:** a temporary probe measured 500 `rowDone` calls with 1,000 rows held. 500 new rows took 1,317 ms, 500 reshaped rows took 1,107 ms, and 499 unchanged rows plus one changed took 77 ms. I did not measure the same runs without elimination. `unmatched` stops at the second leftover.
+
+**The tests:** `act-record/tests/same-row-limits.test.ts`, new, covers P5, its counter-cases, P7, P8, P13, P13b and P10. Each limit is named "known limit" and states today's answer. No existing test was edited.
+
+**Commands, from `packages/fluxiq`, on the final tree:**
+
+```text
+pnpm.cmd exec vitest run src/runtime/answer-first/act-record .../tests/row-identity.test.ts .../tests/later-attempt.test.ts --minWorkers 1 --maxWorkers 2
+  Test Files 13 passed (13)   Tests 211 passed (211)
+(Core root) node scripts/structure-audit.mjs
+  structure-audit: 3 violation(s) across 3 rule(s), none under act-record: directory-files and naming in programs/automation-studio/api/handlers/, failure-as-empty in runtime/conversations/commands/answer-first/known-flow.ts, all outside this brief (the other worker on this tree).
+```
+
+**Taken out, with `same-row-limits` and `same-row`, then restored:**
+
+| Taken out | Result | Fails |
+| --- | --- | --- |
+| Elimination | 4 failed of 33 | P5, the other-columns case, the any-position case, and the gone-and-new limit |
+| The half threshold (set to 0) | 2 failed of 33 | `same-row` "a read of quite different columns", and the new "share only a word" case |
+
+`T869-PROBE` under `act-record/`: 0 matches. `same-row.ts` is identical to the copy taken before the take-outs, and the timing probe is deleted.
+
+**Not verified:** a browser or a real model, as briefed. `dist` was not rebuilt, as briefed. I ran only the suites named here, not the two whole `answer-first` folders, so the rest of those folders has not run against elimination. The doc paragraph in `llm-flow-bootstrap.md` is updated.
+
 ```text
 Outcome: Done
-Changed: A/same-row.ts, A/row-ties.ts, A/record.ts, A/gate/act-gate.ts, A/contracts.ts, docs/architecture/automation-studio/llm-flow-bootstrap.md, this report
-Validation: `vitest run act-record` -> 159 passed; four service files -> 61 passed; both answer-first folders -> 676 passed in 63 files; `pnpm.cmd --filter fluxiq check` -> exit 0
-Not verified: browser or real model; Core dist not rebuilt; P5, P7, P8, P13 pinned by no kept test
+Changed: same-row.ts, tests/same-row-limits.test.ts (act-record); llm-flow-bootstrap.md; this report
+Validation: `pnpm.cmd exec vitest run src/runtime/answer-first/act-record ...row-identity ...later-attempt --minWorkers 1 --maxWorkers 2` -> 13 files, 211 passed; `node scripts/structure-audit.mjs` -> 3 violations, none in my paths (handlers/ and commands/answer-first/known-flow.ts)
+Not verified: browser or real model; dist not rebuilt; the rest of the two answer-first folders not rerun against elimination
 Report: docs/working/answer-first-plan/reports/attempt-road/same-row-merge.md
-Notes: No test edited. Lead stages six files; nothing staged by me.
-Rule: a read having shown either row excuses a differing value; with no read, every value must hold.
+Notes: "Share at least a word" became "half the longer row's words", because an existing same-row test requires it.
+A row gone and another added between reads is left out, never pressed twice.
 ```
+
+## Second follow-up: cannot tell (supervisor, on the lead's decision)
+
+The elimination above still pressed where more than one row was left over. The lead decided that when nothing separates them the answer is "cannot tell", refused rather than guessed. `byElimination` now holds every row left over in the later list against any row left over in the earlier one with most of its words the same. So `(a1, b2)` then `(zz, yy, b2)` is `[true, true, false]` and the gate answers `already_done`, `already_done`, `run`. `(a1, b2, c3)` then `(zz, yy, c3)` moved from "known limit, pressed twice" to "known limit, left out". Those two limits and the two "say nothing" tests in `same-row-limits.test.ts` were this lane's own and new, so changing them touched no other lane's test. Nothing else moved: a new row beside rows all still there is still a new row, and rows sharing no word stay two.
+
+**The cost:** a list where the pressed row has gone and several new rows arrived, sharing half their words, leaves all of those out. They reach the model only as a skipped count, so telling the person is still a seam in t870's `runtime/answer-first/result`.

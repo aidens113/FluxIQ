@@ -16,7 +16,7 @@
 
 import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { automationStudioConversationAttachedRecordingProblem } from "../attached-recording/index.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_ATTEMPT_SUMMARY, automationStudioConversationAnswersFirst, automationStudioConversationAttemptAnnounce, automationStudioConversationAttemptOutcome } from "./answer-first/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_ATTEMPT_SUMMARY, automationStudioConversationAnswersFirst, automationStudioConversationAttemptAnnounce, automationStudioConversationAttemptOutcome, automationStudioConversationKnownFlow } from "./answer-first/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText, type AutomationStudioConversationCommandInstruction } from "./argument.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAnswerFirstAttempt, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
@@ -65,11 +65,21 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     const recordingProblem = recordingId ? await automationStudioConversationAttachedRecordingProblem(context, recordingId) : null;
     if (recordingProblem) return progress.failed(recordingProblem);
 
-    const created = await context.port.call("create-flow", { projectId: context.projectId, name });
-    const flowId = (created.payload as { flow?: { flowId?: unknown } } | undefined)?.flow?.flowId;
-    if (!created.ok || typeof flowId !== "string" || !flowId) return progress.failed(automationStudioConversationCallCause("creating the Flow", created.ok ? { ok: false, error: "FluxIQ answered without the new Flow's id" } : created));
-    progress.carry({ flowId });
-    progress.landed(`created the Flow "${name}"`);
+    // A task done before lives under a Flow already, and a repeat reuses it (`./answer-first/known-flow.ts`).
+    const known = await automationStudioConversationKnownFlow(context, instruction);
+    let flowId: string;
+    if (known !== undefined) {
+      flowId = known;
+      progress.carry({ flowId });
+      progress.landed("found the Flow this task already has");
+    } else {
+      const created = await context.port.call("create-flow", { projectId: context.projectId, name });
+      const madeId = (created.payload as { flow?: { flowId?: unknown } } | undefined)?.flow?.flowId;
+      if (!created.ok || typeof madeId !== "string" || !madeId) return progress.failed(automationStudioConversationCallCause("creating the Flow", created.ok ? { ok: false, error: "FluxIQ answered without the new Flow's id" } : created));
+      flowId = madeId;
+      progress.carry({ flowId });
+      progress.landed(`created the Flow "${name}"`);
+    }
 
     const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction, ...(said.from === "argument" ? { instructionSource: "conversation_argument" } : {}), ...(recordingId ? { linkedRecordingIds: [recordingId] } : {}) });
     if (!saved.ok) return progress.failed(automationStudioConversationCallCause("saving what it should do", saved));

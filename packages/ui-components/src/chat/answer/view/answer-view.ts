@@ -2,7 +2,7 @@
 //
 //   Found 10 of 10                                  [tick] Checked
 //   [ columns | first 5 rows ]                      Show all 10 · CSV · JSON
-//   On the site: nothing changed
+//   On the site: I recorded no changes
 //   Checked: ...      From: pages on site · time · cost
 //   Saved so next time is quicker.        [Run again] [What I did]
 //

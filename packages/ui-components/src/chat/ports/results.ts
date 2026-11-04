@@ -151,7 +151,10 @@ export type ChatRowsExportQuery = { projectId: string; runId: string; datasetId:
 /** A task to try again, because a person pressed Run again: choosing it is what lets a saved Flow run (plan, D10). */
 export type ChatRunAgainQuery = { projectId: string; taskId: string };
 
-/** More budget for an attempt that ran out, in dollars, above zero. */
+/**
+ * More budget for an attempt that ran out, in dollars, above zero. For an attempt its Core's restart
+ * cut off (`waitingFor: "interrupted"`) it is zero: nothing ran out, and it carries on as it was.
+ */
 export type ChatAddBudgetQuery = { projectId: string; attemptId: string; addUsd: number };
 
 /** How a host saves a file for a person. A client's adapter supplies it; the chat never touches a file itself. */

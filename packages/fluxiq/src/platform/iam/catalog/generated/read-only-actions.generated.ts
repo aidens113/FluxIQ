@@ -55,6 +55,7 @@ export const IAM_READ_ONLY_ACTIONS: readonly string[] = Object.freeze([
   "studio:GetRuntimeSession",
   "studio:GetStateSnapshot",
   "studio:GetTaskAttempt",
+  "studio:GetTaskKnownFlow",
   "studio:InspectFlowDependencies",
   "studio:InspectLegacyRetirement",
   "studio:InspectStateDiff",

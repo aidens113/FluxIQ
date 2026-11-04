@@ -76,7 +76,8 @@ export function answerModel(outcome: ChatTaskOutcome, given: AnswerModelOptions)
     ...start,
     ...parts,
     canRunAgain: ended && !(attempt.status === "budget_out" && options.canAddBudget && lastingActs(result)),
-    stuckActions: attempt.status === "waiting_for_person" && (attempt.waitingFor === "stuck_in_a_loop" || attempt.waitingFor === "interrupted")
+    stuckActions: attempt.status === "waiting_for_person" && (attempt.waitingFor === "stuck_in_a_loop" || attempt.waitingFor === "interrupted"),
+    keepGoingCarriesOn: attempt.status === "waiting_for_person" && attempt.waitingFor === "interrupted"
   };
   const from = ended ? fromWords(attempt, result, options.reportsSpend) : undefined;
   if (from !== undefined) model.from = from;

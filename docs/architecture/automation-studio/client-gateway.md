@@ -386,6 +386,10 @@ stop a run, and use its automation and recording controls:
   `list-conversation-task-attempts` (`programs.read`, `read`; not narrowed or
   projected: a result's rows are what `export-run-dataset` already answers). See
   [Reading an attempt back](llm-flow-bootstrap.md#reading-an-attempt-back)
+- Automation Studio, carrying an attempt on: `carry-on-task-attempt`
+  (`flows.write`, `authoring`; narrowed to `projectId`, `attemptId` and `addUsd`, so a token
+  never names a Flow, a mode, a grant or a session). It spends the approving person's own
+  key through the same generation the chat's build uses, and answers at once
 - Automation Studio, recording controls: `get-recording-capture-policy`
   (`programs.read`, `read`; not narrowed or projected, below)
 - Secret Keys: `snapshot`, projected (below)

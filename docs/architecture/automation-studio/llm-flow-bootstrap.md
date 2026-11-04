@@ -1048,7 +1048,12 @@ digest of its own fields or by being the same row as one the record holds, under
 shown either row, per earlier read, the row whose telling words best fit is that row, whatever
 its columns are called, and rows that fit equally are all held; a kept value may differ there,
 because the press itself may have changed it. A field most of a read shares tells no row apart,
-and a bare number only decides between rows that already fit. Where no read has shown either,
+and a bare number only decides between rows that already fit. A row that fits nothing in an
+earlier list is that list's row by elimination: rows of both lists that plainly match are set
+aside, and a row left over in the later list is any row left over in the earlier one with most
+of its words the same. Where more than one is left over, nothing can say which is which, so all
+are held: the answer is "cannot tell", and a lasting act is refused on it rather than guessed. Where no read has
+shown either,
 as with two rows only a run carried, every value of the row with fewer must lie in the other,
 one of them a word or an address. A later read is also held against the sentence that named a
 by-hand press. The bias is deliberate: a row wrongly held done is left out and counted as
@@ -1139,6 +1144,31 @@ where the result is. A thread holds a Flow until another thread takes it, so a s
 Flow picked up from a new thread shows its later attempts there alone. An attempt with no
 entry stays readable by Flow (`store.get`) and is `not_found` by id. A file that does not
 read is kept aside as `.unreadable` by the next write, as the attempts file is.
+
+**A person's reads go through the interrupted view.** Both routes read a Flow's rows through
+`automationStudioAnswerFirstAttemptsRead` (`service/answer-first/interrupted/`), so a row whose
+Core died reads `waiting_for_person` for `interrupted` and never `working`; the store itself is read
+only by the attempt that writes it. `outcome-of-attempt.ts` and `outcomes-of-conversation.ts` take
+their rows as a port for that.
+
+**Provenance.** An outcome carries `provenance` (`route`, `startedFrom`, `steps`: `position`, `label`,
+`from` of `saved` or `worked_out`, `ran`) where the task's memory holds the attempt
+(`taskMemory.provenance`), in a person's words, and none where it does not. A memory that cannot be
+read costs the card its marks, never the read (`handlers/task-attempt-provenance.ts`).
+
+**The Flow a task already has.** `get-task-known-flow` `{ projectId, instructionText, startLocation? }`
+answers `{ flowId }` for the exact same task (same words, same site) once a Flow was saved for it, and `{}`
+otherwise or when that Flow is gone. It is `read`, asserts domain access, and is reached only by Core's own
+chat command (`flow.createHere`, in answer-first mode only), which reuses that Flow instead of making a
+blank one each time. It is not on a token's list, and a lookup that fails makes a new Flow: it never fails the task.
+
+**Carrying on.** `carry-on-task-attempt` `{ projectId, attemptId, addUsd }` carries a budget-out attempt
+(`addUsd` above zero) or one a restart cut off (`addUsd` zero) on as the same attempt. It spends the
+person's key, so it is `authoring` under `flows.write` (`studio:CarryOnTaskAttempt`), asserts domain access,
+is on a token's list and is narrowed to those three fields. It answers `{ attemptId, budgetUsd }` at once and
+runs `automationStudioAnswerFirstCarryOn`'s generation in the background with no new request field; its
+failure is caught and never surfaces as an unhandled rejection, and the attempt's row says how it ended. A
+refusal is Core's own sentence (`task_attempt.carry_on_refused`).
 
 ## Explicit candidate authoring
 

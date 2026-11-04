@@ -115,6 +115,9 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     // A task's attempts, read back into its chat thread (t869), `read`. Not projected: a result's rows are what `export-run-dataset` already answers.
     "get-task-attempt",
     "list-conversation-task-attempts",
+    // Carrying a budget-out or cut-off attempt on (t869), `authoring` under `flows.write`. It spends the person's own key, as the chat's build does,
+    // and goes on through the same generation. Narrowed: an attempt id, a project and an amount, never a Flow, a mode, a grant or a session.
+    "carry-on-task-attempt",
     // Running a saved Flow, `authoring`. Narrowed: a stored Flow by id, with no LLM, no inputs and no side-effect authorization.
     "run-runtime-session",
     // Turning a finished recording into a Flow proposal, `authoring`. Narrowed: the direct mapper only, never the LLM-assisted one.
@@ -287,6 +290,7 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   const name = endpoint.trim().toLowerCase();
   if (program !== "automation-studio") return { ok: true, payload };
   if (name === "run-runtime-session") return narrowRunRuntimeSession(payload);
+  if (name === "carry-on-task-attempt") return narrowCarryOnTaskAttempt(payload);
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
   return { ok: true, payload };
@@ -311,6 +315,16 @@ function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing
   if (body.adaptiveMode === undefined) return { ok: true, payload: { ...body, adaptiveMode: "no_llm_intervention" } };
   if (typeof body.adaptiveMode !== "string" || !PAIRED_CLIENT_RUN_MODES.includes(body.adaptiveMode)) {
     return forbidden("A paired client's run may not carry an adaptiveMode that lets it invoke an LLM.");
+  }
+  return { ok: true, payload: body };
+}
+
+/** A carry-on names the attempt, the project and the dollars to add, and nothing the generation behind it could be steered by. */
+function narrowCarryOnTaskAttempt(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body) return forbidden("A paired client's carry-on must name an attempt.");
+  for (const field of Object.keys(body)) {
+    if (field !== "projectId" && field !== "attemptId" && field !== "addUsd") return forbidden(`A paired client's carry-on may not carry ${field}.`);
   }
   return { ok: true, payload: body };
 }

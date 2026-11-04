@@ -8,13 +8,14 @@
 // **What Core cannot read is refused, in other words than what is not there.** Reading a file nobody
 // can read as "no such attempt" would tell a person their result never happened.
 
-import { endpointResource } from "../../../_shared/iam/index.ts";
-import type { ProgramApiResponse } from "../../../_shared/api.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type GetTaskAttemptRequest, type ListConversationTaskAttemptsRequest } from "../../../../api-contracts/automation.ts";
-import { automationStudioAnswerFirstOutcomeOfAttempt, automationStudioAnswerFirstOutcomesOfConversation, AutomationStudioAnswerFirstAttemptLocatorUnreadable, AutomationStudioAnswerFirstAttemptsUnreadable } from "../../../../framework/automation-service/service/answer-first/attempt-store/index.ts";
-import { boundedIdentifier } from "../../../../framework/automation-service/service/flow-bootstrap-requests/index.ts";
-import type { AutomationStudioApiDependencies } from "./dependencies.ts";
-import { automationStudioApiTaskAttemptStore } from "./task-attempt-store.ts";
+import { endpointResource } from "../../../../_shared/iam/index.ts";
+import type { ProgramApiResponse } from "../../../../_shared/api.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type GetTaskAttemptRequest, type ListConversationTaskAttemptsRequest } from "../../../../../api-contracts/automation.ts";
+import { automationStudioAnswerFirstOutcomeOfAttempt, automationStudioAnswerFirstOutcomesOfConversation, AutomationStudioAnswerFirstAttemptLocatorUnreadable, AutomationStudioAnswerFirstAttemptsUnreadable } from "../../../../../framework/automation-service/service/answer-first/attempt-store/index.ts";
+import { boundedIdentifier } from "../../../../../framework/automation-service/service/flow-bootstrap-requests/index.ts";
+import type { AutomationStudioApiDependencies } from "../dependencies.ts";
+import { automationStudioApiTaskOutcomesWithProvenance } from "./attempt-provenance.ts";
+import { automationStudioApiTaskOutcomeSource } from "./attempt-store.ts";
 
 const NOT_FOUND = "I could not find that attempt.";
 const UNREADABLE = "What was kept of this task could not be read, so I cannot say how it went.";
@@ -36,8 +37,9 @@ export function registerTaskAttemptEndpoints(dependencies: AutomationStudioApiDe
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
       const attemptId = boundedIdentifier(payload.attemptId, "Attempt");
       return await unreadableRefused(async () => {
-        const outcome = await automationStudioAnswerFirstOutcomeOfAttempt(automationStudioApiTaskAttemptStore(service), projectId, attemptId);
-        return outcome ? { ok: true, payload: { outcome } } : { ok: false, error: NOT_FOUND, errorCode: "task_attempt.not_found" };
+        const outcome = await automationStudioAnswerFirstOutcomeOfAttempt(automationStudioApiTaskOutcomeSource(service), projectId, attemptId);
+        const [told] = outcome ? await automationStudioApiTaskOutcomesWithProvenance(service, projectId, [outcome]) : [];
+        return told ? { ok: true, payload: { outcome: told } } : { ok: false, error: NOT_FOUND, errorCode: "task_attempt.not_found" };
       });
     }
   });
@@ -55,7 +57,10 @@ export function registerTaskAttemptEndpoints(dependencies: AutomationStudioApiDe
       const projectId = boundedIdentifier(payload.projectId, "Project");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
       const conversationId = boundedIdentifier(payload.conversationId, "Conversation");
-      return await unreadableRefused(async () => ({ ok: true, payload: { outcomes: await automationStudioAnswerFirstOutcomesOfConversation(automationStudioApiTaskAttemptStore(service), projectId, conversationId) } }));
+      return await unreadableRefused(async () => {
+        const outcomes = await automationStudioAnswerFirstOutcomesOfConversation(automationStudioApiTaskOutcomeSource(service), projectId, conversationId);
+        return { ok: true, payload: { outcomes: await automationStudioApiTaskOutcomesWithProvenance(service, projectId, outcomes) } };
+      });
     }
   });
 }

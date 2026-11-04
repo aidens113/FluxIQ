@@ -1,13 +1,13 @@
 import type { AutomationStudioTaskOutcome } from "../../../../../api-contracts/automation.ts";
 import { automationStudioAnswerFirstOutcomeOfRecord } from "./outcome-of-record.ts";
-import type { AutomationStudioAnswerFirstAttemptStore } from "./store.ts";
+import type { AutomationStudioAnswerFirstOutcomeSource } from "./outcome-source.ts";
 
 /**
  * A thread's outcomes, oldest first: every attempt that started while the thread held its Flow
  * (`./locator.ts`), whatever it has come to, a working row included. None is an empty list. A file
  * that is there and cannot be read throws, so it is never told as a thread with nothing in it.
  */
-export async function automationStudioAnswerFirstOutcomesOfConversation(store: AutomationStudioAnswerFirstAttemptStore, projectId: string, conversationId: string): Promise<AutomationStudioTaskOutcome[]> {
+export async function automationStudioAnswerFirstOutcomesOfConversation(store: AutomationStudioAnswerFirstOutcomeSource, projectId: string, conversationId: string): Promise<AutomationStudioTaskOutcome[]> {
   const held = await store.locator.flowsOfConversation(projectId, conversationId);
   const outcomes: AutomationStudioTaskOutcome[] = [];
   for (const flowId of new Set(held.map((flow) => flow.flowId))) {

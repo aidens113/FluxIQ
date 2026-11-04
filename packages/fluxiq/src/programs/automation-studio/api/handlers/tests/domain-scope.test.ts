@@ -76,7 +76,9 @@ const DOMAIN_SCOPED = [
   AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
   AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk,
   AUTOMATION_STUDIO_ENDPOINTS.getTaskAttempt,
-  AUTOMATION_STUDIO_ENDPOINTS.listConversationTaskAttempts
+  AUTOMATION_STUDIO_ENDPOINTS.listConversationTaskAttempts,
+  AUTOMATION_STUDIO_ENDPOINTS.getTaskKnownFlow,
+  AUTOMATION_STUDIO_ENDPOINTS.carryOnTaskAttempt
 ].sort();
 
 const DOMAIN_REFUSED = "Automation Studio project is unavailable in this domain scope.";

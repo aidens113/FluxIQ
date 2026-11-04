@@ -10,6 +10,7 @@ import { automationStudioTaskAttemptNoLoopsCaught, parseAutomationStudioSavedSta
 import { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automation.ts";
 import { automationStudioAnswerFirstAttemptStoreOf, type AutomationStudioAnswerFirstAttemptRecord } from "../../../../framework/automation-service/service/answer-first/attempt-store/index.ts";
+import { automationStudioAnswerFirstLiveAttemptsOf } from "../../../../framework/automation-service/service/answer-first/interrupted/index.ts";
 import { registerAutomationStudioApi } from "../handlers/index.ts";
 import { createCacheApiTestService } from "../handlers/tests/test-service.ts";
 import { cacheActor } from "../handlers/tests/test-actor.ts";
@@ -43,6 +44,8 @@ async function world() {
   const call = (endpoint: string, payload: Record<string, unknown>) => registry.call({ programId: "automation-studio", endpoint, scope: {}, actor: cacheActor("user.reader"), payload }) as Promise<{ ok: boolean; payload?: any; error?: string; errorCode?: string }>;
   const save = async (flowId: string, attemptId: string, status: "working" | "achieved", startedAtMs: number, over: Partial<AutomationStudioAnswerFirstAttemptRecord> & { taskId?: string } = {}) => {
     const { taskId, ...fields } = over;
+    // A working row is one something in this process is working on; a person's read tells any other as interrupted (`task-attempt-wiring.test.ts`).
+    if (status === "working") automationStudioAnswerFirstLiveAttemptsOf(service).claim(attemptId);
     await store.save(project.id, flowId, { attempt: { ...attemptOn(flowId, attemptId, status, startedAtMs, taskId), projectId: project.id }, tried: TRIED, ...(status === "achieved" ? { result: confirmed(attemptId) } : {}), ...fields });
   };
   const attemptsFile = (flowId: string) => path.join(service.flowPaths.flowDirectory(project.id, flowId), "answer-attempts.json");

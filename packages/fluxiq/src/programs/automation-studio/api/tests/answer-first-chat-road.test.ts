@@ -14,6 +14,7 @@ import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automatio
 import type { AutomationStudioConversationCommandContext, AutomationStudioConversationCommandHost } from "../../../../runtime/conversations/commands/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, AUTOMATION_STUDIO_CONVERSATION_EXPLORE, automationStudioConversationCommandPort, automationStudioConversationCommandWork, executeAutomationStudioConversationCommand } from "../../../../runtime/conversations/commands/index.ts";
 import { automationStudioAnswerFirstAttemptStoreOf } from "../../../../framework/automation-service/service/answer-first/attempt-store/index.ts";
+import { automationStudioAnswerFirstLiveAttemptsOf } from "../../../../framework/automation-service/service/answer-first/interrupted/index.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import { registerAutomationStudioApi } from "../handlers/index.ts";
 import { createCacheApiTestService } from "../handlers/tests/test-service.ts";
@@ -49,9 +50,12 @@ async function road(ending: (attempt: AutomationStudioTaskAttempt) => { attempt:
     asked.push(input);
     const flowId = input.flowId as string;
     const working = attemptAt(flowId, asked.length);
+    // The attempt is at work in this process while it works, as a real one is (a person's read tells any other as interrupted).
+    automationStudioAnswerFirstLiveAttemptsOf(service).claim(working.attemptId);
     await store.save(project.id, flowId, { attempt: working, tried: TRIED });
     whileWorking.read = await read(AUTOMATION_STUDIO_ENDPOINTS.listConversationTaskAttempts, { projectId: project.id, conversationId: "conversation.1" });
     const ended = ending(working);
+    automationStudioAnswerFirstLiveAttemptsOf(service).release(working.attemptId);
     await store.save(project.id, flowId, { attempt: ended.attempt, result: ended.result, tried: TRIED, ...(ended.candidateId ? { candidateId: ended.candidateId } : {}) });
     return { projectId: project.id, flowId, status: "answered", sourceInstructionIds: [], baseDependencyDigest: "digest", baseSettingsRevision: 1, accounting: {}, ...ended };
   }) as unknown as typeof service.generateFlowBootstrapAdaptation;

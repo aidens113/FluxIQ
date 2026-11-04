@@ -18,7 +18,12 @@
 //      the row it came from is already told from the rest of its list, and the press may have
 //      changed it. A fit is a field a row can be told by, whole enough, found in the other row's
 //      words, or a shared address. A field more than one row of a read holds ("Pending" on every
-//      row) tells no row from another, unless the row has nothing else.
+//      row) tells no row from another, unless the row has nothing else. A row that fits nothing in
+//      an earlier list can still be found by elimination, since two rows of a list are never one:
+//      rows of both lists that plainly match are set aside, and a row left over in the later list
+//      is any row left over in the earlier one with most of its words the same. Where more than one
+//      is left over, nothing can say which is which, so all of them are held: the answer is "cannot
+//      tell", and a lasting act is refused on it rather than guessed.
 //   4. Where no read has shown either (two rows only an act or a run carried), there is no list to
 //      choose among, so all there is to go on is the values: every value of the row with fewer must
 //      lie in the other. A kept value that differs says two rows. A run's own rows meet here, so
@@ -32,6 +37,8 @@ const FIELD_WORDS_NEEDED = 0.6;
 const SHARED_ADDRESS_WEIGHT = 8;
 /** Where a row in no counted read sits: all such rows are taken as one list. */
 const UNCOUNTED_READ = -1;
+/** How much of the longer of two rows left over must be the same words: one word they happen to share (a control's "Accept") says nothing. */
+const LEFT_OVER_WORDS_NEEDED = 0.5;
 
 type Field = NotedRow["fields"][number];
 
@@ -55,7 +62,35 @@ export function automationStudioAttemptActSameRows(carried: NotedRow, rows: read
       else if (score === held.score) held.rows.push(row.row);
     }
   }
-  return [...new Set([...byValues, ...[...best.values()].flatMap((held) => held.rows)])];
+  return [...new Set([...byValues, ...[...best.values()].flatMap((held) => held.rows), ...byElimination(carried, rows, best)])];
+}
+
+/** For each earlier list `carried` fits nothing in, the rows of it `carried` may be, all of them where nothing can say which (header, 3). */
+function byElimination(carried: NotedRow, rows: readonly NotedRow[], fitted: ReadonlyMap<number, unknown>): string[] {
+  const seen = carried.reads ?? [];
+  const newest = seen.at(-1);
+  if (newest === undefined) return [];
+  const later = rows.filter((row) => row.reads?.includes(newest));
+  const earlierReads = new Set(rows.flatMap((row) => row.reads ?? []).filter((read) => !seen.includes(read) && !fitted.has(read)));
+  const found: string[] = [];
+  for (const read of earlierReads) {
+    const earlier = rows.filter((row) => row.reads?.includes(read));
+    if (!unmatched(later, earlier).some((left) => left.row === carried.row)) continue;
+    found.push(...unmatched(earlier, later).filter((gone) => mostWordsShared(carried, gone)).map((gone) => gone.row));
+  }
+  return found;
+}
+
+/** The rows of `list` that plainly match none of `others`. */
+function unmatched(list: readonly NotedRow[], others: readonly NotedRow[]): NotedRow[] {
+  return list.filter((row) => !others.some((other) => other.row === row.row || fitOf(row, other) > 0));
+}
+
+function mostWordsShared(one: NotedRow, other: NotedRow): boolean {
+  const words = wordsOf(one.fields);
+  const otherWords = wordsOf(other.fields);
+  const shared = [...words].filter((word) => otherWords.has(word)).length;
+  return shared / Math.max(words.size, otherWords.size) >= LEFT_OVER_WORDS_NEEDED && one.fields.some((field) => field.lettered.some((word) => otherWords.has(word)));
 }
 
 /** A row's values, whatever key holds each, and whether each ties two rows (header, 2). */
