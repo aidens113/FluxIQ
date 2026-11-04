@@ -52,9 +52,18 @@ describe("change resume decision", () => {
     expect(decideAutomationStudioChangeResume({ checks, resumeFrom: AT_NEXT })).toEqual({ resumable: false, code: "no_evidence" });
   });
 
-  it("refuses when the only evidence rests on a seam nothing writes yet", () => {
+  it("refuses when the only evidence rests on a seam nothing writes yet, and says it is that", () => {
     const checks = [check("changed_node_succeeded", "passed"), check("records", "passed", "records_minimum_undeclared"), check("continuation", "passed")];
-    expect(decideAutomationStudioChangeResume({ checks, resumeFrom: AT_NEXT })).toEqual({ resumable: false, code: "check_unknown" });
+    expect(decideAutomationStudioChangeResume({ checks, resumeFrom: AT_NEXT })).toEqual({ resumable: false, code: "records_minimum_undeclared" });
+  });
+
+  // How many rows were owed is the one unknown a judged run can answer, so its code means no other is open.
+  it("says that code only where nothing else stands against carrying on", () => {
+    const rows = check("records", "passed", "records_minimum_undeclared");
+    expect(decideAutomationStudioChangeResume({ checks: [rows, check("expected_state", "unknown", "expected_state_unevaluated")], resumeFrom: AT_NEXT })).toEqual({ resumable: false, code: "check_unknown" });
+    expect(decideAutomationStudioChangeResume({ checks: [rows, check("records", "unknown", "records_none_captured")], resumeFrom: AT_NEXT })).toEqual({ resumable: false, code: "check_unknown" });
+    expect(decideAutomationStudioChangeResume({ checks: [rows, check("downstream_assertion", "failed", "downstream_assertion_failed")], resumeFrom: AT_NEXT })).toEqual({ resumable: false, code: "check_failed" });
+    expect(decideAutomationStudioChangeResume({ checks: [rows] })).toEqual({ resumable: false, code: "no_resume_point" });
   });
 
   it("refuses when it has nowhere to resume from, whatever the checks say", () => {

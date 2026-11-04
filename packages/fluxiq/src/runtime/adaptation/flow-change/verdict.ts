@@ -25,6 +25,7 @@
 // the run may take it.
 import type { AutomationStudioFlowAdaptationValidationResult, AutomationStudioFlowChangeValidationKind } from "../../../flows/authoring/model/index.ts";
 import {
+  AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED,
   AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS,
   type AutomationStudioChangeResumePoint,
   type AutomationStudioChangeVerdict,
@@ -188,7 +189,7 @@ function recordsCheck(nodeId: string, succeeded: readonly AutomationStudioChange
   }
   if (saving.some((records) => records.captured < (records.minimum ?? 0))) return check("records", "failed", nodeId, "records_below_minimum");
   if (saving.every((records) => records.captured === 0)) return check("records", "unknown", nodeId, "records_none_captured");
-  if (saving.some((records) => records.minimum === undefined)) return check("records", "passed", nodeId, "records_minimum_undeclared");
+  if (saving.some((records) => records.minimum === undefined)) return check("records", "passed", nodeId, AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED);
   return check("records", "passed", nodeId);
 }
 

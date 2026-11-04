@@ -27,6 +27,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 import { automationStudioVerificationAwaitsJudgedRun } from "./verification-awaits-judged-run.ts";
+import { AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED as RECORDS_MINIMUM_UNDECLARED } from "../../../../runtime/adaptation/flow-change/index.ts";
 
 /**
  * Either the node the run continues at, or the Core code naming why it may
@@ -101,14 +102,20 @@ function resumePointOfAttempt(attempt: JsonObject, subflowId: string | undefined
 }
 
 /**
- * A repair whose trial proved nothing either way and whose evidence is the
- * judged whole run (t267): the trial refused only for want of evidence
- * (`no_evidence` -- nothing failed or was unknown, and a resume point was
- * named), and the patch said it awaits that run. Not resuming would leave the
- * run nothing to be judged by. Every resume-point rule below still applies.
+ * A repair whose evidence is the judged whole run, whose trial refused to vouch
+ * only for what that run can answer, and whose patch said it awaits that run. Not
+ * resuming would leave the run nothing to be judged by. Every resume-point rule
+ * above still applies, and the two pairs stay pairs, so no receipt reads across:
+ *
+ * - `no_evidence` on an `unverifiable` trial (t267): nothing failed or was unknown,
+ *   a resume point was named, and nothing proved the change either way.
+ * - `records_minimum_undeclared` on a `verified` one: the rows it read are real,
+ *   and how many were owed is what the judged run says. Every other unknown is
+ *   `check_unknown`, which no patch awaits past.
  */
 function awaitsJudgedRun(attempt: JsonObject): boolean {
-  return attempt.notResumableCode === "no_evidence" && automationStudioVerificationAwaitsJudgedRun(attempt.verification);
+  if (attempt.notResumableCode === "no_evidence") return automationStudioVerificationAwaitsJudgedRun(attempt.verification);
+  return attempt.notResumableCode === RECORDS_MINIMUM_UNDECLARED && isJsonRecord(attempt.verification) && attempt.verification.status === "verified" && attempt.verification.awaitsJudgedRun === true;
 }
 
 function declined(notResumableCode: string): AutomationStudioAdaptiveRetryDecision {

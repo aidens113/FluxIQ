@@ -51,7 +51,7 @@ import {
 import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/llm/build-purse/index.ts";
 import { automationStudioLlmBuildTrace } from "../../../../runtime/llm/evidence-progress/index.ts";
 import { AutomationStudioLlmRunBudgetLedger } from "../../../../runtime/llm/index.ts";
-import { automationStudioReauthorBuild, type AutomationStudioReauthorBuildDependencies, type AutomationStudioReauthorBuilt } from "./reauthor-build.ts";
+import { automationStudioReauthorBuild, automationStudioRepairDeclinedBeforeBuild, type AutomationStudioReauthorBuildDependencies, type AutomationStudioReauthorBuilt } from "./reauthor-build.ts";
 
 type RepairRequest = Parameters<AutomationStudioRefutedResultRepairPort>[0];
 
@@ -82,6 +82,10 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
   // The repair, its re-author build and its patch ladder each say when they start and end in the build trace, so a
   // repair that goes quiet after its build says where (t688, run-mvblov2i-abb7d82e: 5 minutes with nothing logged).
   const repair: AutomationStudioRefutedResultRepairPort = async (refuted) => {
+    // A refuted run reaches a judged run only by running from its start, whatever repairs it: a build or the
+    // ladder's patch. Where that re-run would be declined, neither is paid for.
+    const declined = await automationStudioRepairDeclinedBeforeBuild(deps, { detail: refuted.detail, subflowId: refuted.subflowId });
+    if (declined) return declined;
     const flowId = deps.flowId();
     // Opened where an earlier pass of this run's repair left it, so a re-run
     // refuted again spends from the same total rather than a fresh one; in a

@@ -151,6 +151,39 @@ describe("a failed step the ladder could not repair", () => {
     expect(marker(result?.detail).applied).toBeUndefined();
     expect(marker(result?.detail).attempts.at(-1).brief.trigger).toBe("failed_step");
   });
+
+  it("is never built where its re-run from the start would be declined", async () => {
+    const port = deps({ rerunPreflight: async () => ({ declined: "repair_rerun.lasting_act_may_have_landed" }) });
+    const result = await repair(port, failedDetail(GOAL_GONE));
+    expect(port.generate).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ reauthored: false, detail: { metadata: { adaptiveRetry: { attempted: false, notResumableCode: "repair_rerun.lasting_act_may_have_landed" } } } });
+    expect(marker(result?.detail)).toEqual({});
+  });
+
+  it("is built where that re-run would go ahead", async () => {
+    const port = deps({ rerunPreflight: async () => ({ clear: true }) });
+    const result = await repair(port, failedDetail(GOAL_GONE));
+    expect(port.generate).toHaveBeenCalledTimes(1);
+    expect(result?.reauthored).toBe(true);
+  });
+
+  it("is never built for refused rows either where its re-run would be declined", async () => {
+    const refused = failedDetail(GOAL_GONE);
+    const rows = { ...refused, actionAttempts: refused.actionAttempts!.map((attempt) => (attempt.status === "failed" ? { ...attempt, failure: { category: "output_not_observed", code: "record_output.records_refused", retryable: false, stage: "dispatch" } } : attempt)) } as AutomationStudioFlowRunDetail;
+    const port = deps({ rerunPreflight: async () => ({ declined: "repair_rerun.lasting_act_may_have_landed" }) });
+    const result = await repair(port, rows);
+    expect(port.generate).not.toHaveBeenCalled();
+    expect(result?.reauthored).toBe(false);
+    const built = deps({ rerunPreflight: async () => ({ clear: true }) });
+    await expect(repair(built, rows)).resolves.toMatchObject({ reauthored: true });
+    expect(built.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks nothing about a run the route does not take", async () => {
+    const rerunPreflight = vi.fn(async () => ({ declined: "repair_rerun.lasting_act_may_have_landed" }));
+    expect(await repair(deps({ rerunPreflight }), failedDetail({}, { runtimePatchAttempts: [{ kind: "temporary_target_override", executed: true, traceStatus: "failed" }] }))).toBeUndefined();
+    expect(rerunPreflight).not.toHaveBeenCalled();
+  });
 });
 
 describe("a failed run that is never re-authored", () => {

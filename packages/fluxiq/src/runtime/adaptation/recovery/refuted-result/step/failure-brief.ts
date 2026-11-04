@@ -47,6 +47,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, Aut
 import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor/index.ts";
 import { automationStudioNodeRouteSignatures } from "../../../../../framework/automation-service/route-state/signatures/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../../context.ts";
+import { AUTOMATION_STUDIO_RECORDS_REFUSED_CODE } from "./failure-target.ts";
 
 /** The id every failed-step brief carries, so a reader can tell it from an instruction a person wrote. */
 const STEP_FAILURE_BRIEF_INSTRUCTION_ID = "core.step_failure_repair.brief";
@@ -83,8 +84,11 @@ export function automationStudioStepFailureReauthorBrief(input: {
   const definitionId = text(failure?.definitionId) ?? text(step?.definitionId) ?? "unknown";
   const label = text(step?.label);
   const control = text(failure?.control);
+  const rowsRefused = text(failed?.code) === AUTOMATION_STUDIO_RECORDS_REFUSED_CODE;
   const lines: string[] = [
-    `This build repairs a Flow that failed at a step. The Flow you start from (your draft) is the Flow that ran. The site it acts on has changed since the Flow was built: step ${input.nodeId} could not find what it acts on, and the run's own recovery could not re-point it (${ladderText(input.ladder)}).`,
+    rowsRefused
+      ? `This build repairs a Flow that failed at a step. The Flow you start from (your draft) is the Flow that ran. Step ${input.nodeId} ran, and every row it read was refused by the record schema it declares, so nothing was stored, and the run's own recovery could not fix that (${ladderText(input.ladder)}).`
+      : `This build repairs a Flow that failed at a step. The Flow you start from (your draft) is the Flow that ran. The site it acts on has changed since the Flow was built: step ${input.nodeId} could not find what it acts on, and the run's own recovery could not re-point it (${ladderText(input.ladder)}).`,
     "",
     "The failed step, as the run recorded it:",
     `- Step: ${input.nodeId} (${definitionId})${label ? `, labelled "${label}"` : ""}.`,
@@ -99,6 +103,7 @@ export function automationStudioStepFailureReauthorBrief(input: {
     ...concludedLines(input.detail, input.nodeId, input.flow),
     "",
     "What to do:",
+    ...(rowsRefused ? rowsRefusedSteps(input.nodeId) : [
     "1. First look at whether the page already shows the result this step was meant to bring about: what it leaves on the site, not the control it acts on. A site can keep an earlier choice, so a step that sets something may find it already set, and its control is then not offered for it.",
     "2. If the page already shows that result, do not look for another control to do it again. Keep the step, make it run only when its result is not already shown (a step that is passed over when its control is absent, or a route on the page's state), then go on with the later steps.",
     `3. Otherwise, re-find step ${input.nodeId} on the site as it is now. Look at it, find what now does what this step was meant to do, and rewrite the step to act on that. It may carry a different name than the one recorded, or sit behind something that has to be opened first; if so, add the step that opens it before this one.`,
@@ -106,6 +111,7 @@ export function automationStudioStepFailureReauthorBrief(input: {
     "5. Keep every other step exactly as it is. The steps before the failed one ran and succeeded.",
     "6. The re-found step must still do what the person's request asked of it. Do not swap it for a step that does something else; if nothing on the site does it any more, say so in your completion summary.",
     "7. Never change a lasting choice the site already holds that this build did not make: do not choose a different option where one is already chosen, and do not act on another record in place of the step's own. That undoes what the person already has, and is not a repair."
+    ])
   ];
   return {
     schemaVersion: "0.1",
@@ -121,6 +127,22 @@ export function automationStudioStepFailureReauthorBrief(input: {
     updatedAt: input.now,
     metadata: { source: "core.step_failure_repair", nodeId: input.nodeId }
   };
+}
+
+/**
+ * What a build does about rows the step's own schema refused. Rows are refused
+ * because the step brought back something other than what its fields say, so the
+ * fix is to what it reads or how its fields are read, on the site as it is now. It
+ * may not be possible, and the build is not to pass rows by asking less of them.
+ */
+function rowsRefusedSteps(nodeId: string): string[] {
+  return [
+    `1. Look at what step ${nodeId} reads on the site as it is now, and at each field its record schema declares, above all the required ones. Find why the rows it reads do not hold them: it may read the wrong list or the wrong part of each row, or a field may be read from the wrong place.`,
+    `2. Change step ${nodeId} so each row it reads holds what its fields are for, then run it and see rows stored.`,
+    "3. Never drop or loosen a field the request needs to make rows pass. A field nothing in the request needs, which the site does not hold, may go. Never fill a field with a value the site did not give.",
+    "4. Check every later step that depends on this one, and keep every other step exactly as it is. The steps before the failed one ran and succeeded.",
+    "5. If the site's rows really do not hold what the request needs, do not build around that: say so in your completion summary."
+  ];
 }
 
 /**

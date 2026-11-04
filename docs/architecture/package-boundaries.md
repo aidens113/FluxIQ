@@ -514,6 +514,19 @@ patch receipts or call the promotion gate yourself.
   refusal; a person's settings (manual mode, the first manual review, `mixed`
   for a high-risk change) still refuse. `decideAutomationStudioBootstrapApplyGate`
   is unchanged.
+- (t854) `awaitsJudgedRun?: true` on the `verified` member too, for the same two
+  patch kinds, whose trial was verified only by rows nobody said how many of were
+  owed. The trial's validation result is recorded as before, and
+  `automationStudioVerificationAwaitsJudgedRun` still answers true only for the
+  `unverifiable` member.
+- (t854) `"records_minimum_undeclared"`, a new value of `notResumableCode` and of the
+  resume decision's `code`, in place of `"check_unknown"` when how many rows were owed
+  is the only unknown. `resumable` stays false. A reader keying on `"check_unknown"`
+  for this case must read the new value; every other unknown keeps `"check_unknown"`.
+- (t854) `actedLastingly?: true` on `AutomationStudioRuntimePatchExecutionResult` and
+  its receipt: the trial did, or may have done, something lasting that carrying on
+  from it would do again. It is computed for every patch kind, not only inserted steps,
+  and `retryOriginalAction` is then false.
 
 **Changed.**
 - `retryOriginalAction` (on the execution result, its receipt and the

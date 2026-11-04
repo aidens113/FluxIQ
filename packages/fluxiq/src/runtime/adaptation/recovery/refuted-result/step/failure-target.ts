@@ -1,5 +1,6 @@
 // The step a failed run failed at, and whether it failed the way a re-author
-// answers: its target not found on the page, or not told apart from others.
+// answers: its target not found on the page, or not told apart from others, or a
+// read whose every row its own record schema refused.
 //
 // Read in two places, and one rule so the two cannot drift:
 //
@@ -48,16 +49,28 @@ const TARGET_LEVEL_FAILURE_CATEGORIES: ReadonlySet<AutomationStudioAdaptiveFailu
 ]);
 
 /**
+ * Core's code for a read whose every row its own record schema refused, stored
+ * nothing (`engine/automation/records/capture.ts`). Its category is
+ * `output_not_observed`, which says the control was found and which the ladder reads
+ * as a wait, but a wait reads the same rows and they are refused again. The read
+ * brought back something other than what its fields say, so what answers it is a
+ * different read or different fields: the loop that finds steps, like a target that
+ * moved. Read by its code, because no other `output_not_observed` says this; a test
+ * holds it to the code the capture writes.
+ */
+export const AUTOMATION_STUDIO_RECORDS_REFUSED_CODE = "record_output.records_refused";
+
+/**
  * The last attempt that failed (or ended unknown), its failure as parsed, and
- * whether that failure is target-level. Nothing when no attempt failed, or the
+ * whether a re-author answers that failure. Nothing when no attempt failed, or the
  * last one's failure record does not parse. Only the root frame's attempts are
  * read: a called part's (`parentAttemptId`) is a node of the part, not the Flow.
  */
 export function automationStudioStepFailureTarget<T extends { status: string; failure?: unknown; parentAttemptId?: string | undefined }>(
   attempts: readonly T[] | undefined
-): { attempt: T; failure: AutomationStudioFailureRecord; targetLevel: boolean } | undefined {
+): { attempt: T; failure: AutomationStudioFailureRecord; reauthorable: boolean } | undefined {
   const attempt = [...(attempts ?? [])].reverse().find((candidate) => candidate.parentAttemptId === undefined && (candidate.status === "failed" || candidate.status === "unknown"));
   const failure = attempt ? parseAutomationStudioFailureRecord(attempt.failure) : null;
   if (!attempt || !failure) return undefined;
-  return { attempt, failure, targetLevel: TARGET_LEVEL_FAILURE_CATEGORIES.has(failure.category) };
+  return { attempt, failure, reauthorable: TARGET_LEVEL_FAILURE_CATEGORIES.has(failure.category) || failure.code === AUTOMATION_STUDIO_RECORDS_REFUSED_CODE };
 }

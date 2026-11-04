@@ -10,6 +10,7 @@ export * from "./judged-reauthor.ts";
 export * from "./reauthor-build.ts";
 export * from "./repair-authority.ts";
 export * from "./repair-rerun.ts";
+export * from "./rerun/index.ts";
 export * from "./refuted-result-port.ts";
 export * from "./resolve-context.ts";
 export * from "./result-check.ts";

@@ -8,9 +8,10 @@
 // check's recorded outcome (`resultVerification`: its verdict, and the
 // observation whose first words are Core's own count, "13 records stored"),
 // the repair's marker (`resultRepair`: the rows each refuted answer had and how
-// the repair ended) and the re-author's code (`resultReauthor`). A run that did
-// not fail at its result check gets no sentence here, and its row still says
-// "Run failed".
+// the repair ended) and the re-author's code (`resultReauthor`). A run that failed
+// at a step, before any result check, gets a sentence only for a fix it was not
+// allowed to run, or a read whose rows its own fields refused; any other keeps
+// "Run failed", and its step's own row says why.
 //
 // One sentence, short enough to follow "Run failed: " within a status line's
 // 160 characters, and with no id in it.
@@ -27,10 +28,11 @@ import { automationStudioActivityReasonText } from "../../activity/text/index.ts
 
 type Fields = Readonly<Record<string, unknown>>;
 
-/** The sentence, in lower case after the "Run failed" it finishes, or undefined when the record says the run did not fail at its result check. */
+/** The sentence, in lower case after the "Run failed" it finishes, or undefined when the record has nothing to add to that. */
 export function automationStudioActivityRunEnding(record: Fields | null | undefined): string | undefined {
   const verification = fields(record?.resultVerification);
-  if (!verification || verification.performed !== true || verification.verdict === "answers" || verification.status === "confirmed") return undefined;
+  if (!verification) return failedStepEnding(record);
+  if (verification.performed !== true || verification.verdict === "answers" || verification.status === "confirmed") return undefined;
   const repair = fields(record?.resultRepair);
   const rows = rowCount(repair, verification);
   const refuted = verification.verdict === "does_not_answer";
@@ -41,14 +43,42 @@ export function automationStudioActivityRunEnding(record: Fields | null | undefi
   return `${judged(rows, refuted)}${repaired ? `, and ${repaired}` : ""}.`;
 }
 
-/** Why a fixed Flow was not run again (`service/runtime-adaptation/repair-rerun.ts`), and what that is to a person: the fix exists, and nothing about it failed. */
+/**
+ * Why no fix ran (`service/runtime-adaptation/repair-rerun.ts`), and what that is to a
+ * person: nothing about a fix failed. Usually no fix was built, because the same check
+ * runs before anything is paid for (`service/runtime-adaptation/rerun/preflight.ts`);
+ * one built anyway is declined at its re-run. The sentence claims only that none ran.
+ */
 const LASTING_ACT_DECLINED = "repair_rerun.lasting_act_may_have_landed";
 const LASTING_ACT_ENDING = "the fix wasn't run: that would repeat what this run already did";
 
 /** The code of a no Core reached from its own computed facts, with no judge asked (`result-verification/computed-facts/computed-no.ts`). */
 const COMPUTED_FACT_FAILED = "core.result.computed_fact_failed";
+/** The code of a read whose every row its own record schema refused (`recovery/refuted-result/step/failure-target.ts`). */
+const RECORDS_REFUSED = "record_output.records_refused";
 /** The most of Core's sentence the ending says, so "Run failed: " and it fit a status line. */
 const MAX_FOUND = 110;
+
+/**
+ * The ending of a run that failed at a step, where there is something to add: a fix
+ * it was not allowed to run, or a read whose rows its fields refused, and what the
+ * repair came to. Where the repair could find no read that fits, the person is told
+ * that plainly: the site's rows may really not hold what the Flow stores.
+ */
+function failedStepEnding(record: Fields | null | undefined): string | undefined {
+  if (fields(record?.adaptiveRetry)?.notResumableCode === LASTING_ACT_DECLINED) return `a step failed, and ${LASTING_ACT_ENDING}.`;
+  const reauthor = fields(record?.resultReauthor);
+  const last = fields(lastOf(reauthor?.attempts));
+  if (fields(last?.brief)?.failureCode !== RECORDS_REFUSED) return undefined;
+  return `every row it read was refused by the fields this Flow stores, and ${rowsRefusedRepair(reauthor, last)}.`;
+}
+
+/** What became of the repair of a read whose rows were refused. */
+function rowsRefusedRepair(reauthor: Fields | undefined, last: Fields | undefined): string {
+  if (reauthor?.held === true || reauthor?.applied === true) return "the fixed Flow didn't finish either";
+  if (fields(last?.ending)?.kind === "not_doable") return "the repair found no way to read them that fits";
+  return repairEnding({ attempted: true }, reauthor) ?? "the fix didn't finish";
+}
 
 /**
  * The ending for a no Core reached itself: what Core found, in its own sentence

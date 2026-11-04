@@ -46,7 +46,8 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
-import type { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../../result-verification/index.ts";
+import type { AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES, AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../../result-verification/index.ts";
+import { AUTOMATION_STUDIO_RESULT_REQUESTED_OUTPUT_MISSING_CODE } from "./attempt.ts";
 import { automationStudioRunHasUntriedPatch } from "../../durable-behavior/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "./history.ts";
 import { AUTOMATION_STUDIO_REAUTHOR_NOTHING_TO_CHANGE, type AutomationStudioReauthorNothingToChange } from "./nothing-to-change.ts";
@@ -71,13 +72,36 @@ export const AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE: (typeof AUTOMATION_STUD
  */
 export const AUTOMATION_STUDIO_RESULT_COMPUTED_NO_CODE = "core.result.computed_fact_failed";
 
+/**
+ * Core's own counts settling that the answer is wrong (`core-observation.ts`):
+ * every row the run found refused by the Flow's own schema, or stored rows with no
+ * value for a field it requires. Nothing a ladder patch does touches either: it
+ * can reroute, call a recovery Subflow or run steps before a node, and the read
+ * then runs as authored, under the same schema. The fix is a change to that step.
+ */
+export const AUTOMATION_STUDIO_RESULT_EVERY_RECORD_REFUSED_CODE: (typeof AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES)["everyRecordRefused"] = "core.result.every_record_refused";
+export const AUTOMATION_STUDIO_RESULT_REQUIRED_VALUES_MISSING_CODE: (typeof AUTOMATION_STUDIO_RESULT_OBSERVATION_CODES)["requiredValuesMissing"] = "core.result.required_values_missing";
+
+/**
+ * Every code that re-enters the build loop: each run that fails on one has a
+ * failed attempt and a repair, and the fix each asks for is a change to the Flow's
+ * steps. `./tests/refusing-codes.test.ts` holds this list to the codes Core writes,
+ * and to every other code's place, so a new code cannot go unrouted unseen.
+ */
+export const AUTOMATION_STUDIO_RESULT_REAUTHOR_CODES: readonly string[] = Object.freeze([
+  AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE,
+  AUTOMATION_STUDIO_RESULT_COMPUTED_NO_CODE,
+  AUTOMATION_STUDIO_RESULT_EVERY_RECORD_REFUSED_CODE,
+  AUTOMATION_STUDIO_RESULT_REQUIRED_VALUES_MISSING_CODE,
+  AUTOMATION_STUDIO_RESULT_REQUESTED_OUTPUT_MISSING_CODE
+]);
 
 /** Where a refuted run's metadata records what became of the route. */
 export const AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY = "resultReauthor";
 
 /** Why a refuted run was not re-authored, in codes a reader can key on. */
 export type AutomationStudioRefutedResultReauthorRefusal =
-  /** The run failed for something other than its answer: the ladder's business. */
+  /** A code `AUTOMATION_STUDIO_RESULT_REAUTHOR_CODES` does not list, or a marker with none. Nothing on it is the build's: no attempt is built for any such code, so this is the fail-closed answer. */
   | "not_a_wrong_answer"
   /** No Flow to extend was in hand, so there is no draft to start from. */
   | "flow_unavailable";
@@ -100,9 +124,7 @@ export function automationStudioRefutedResultReauthorDecision(input: {
   flowId?: string | undefined;
 }): AutomationStudioRefutedResultReauthorDecision {
   const code = automationStudioRefutedResultCode(input.detail);
-  if (code !== AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE && code !== AUTOMATION_STUDIO_RESULT_COMPUTED_NO_CODE) {
-    return { route: false, refusal: "not_a_wrong_answer" };
-  }
+  if (!AUTOMATION_STUDIO_RESULT_REAUTHOR_CODES.includes(code)) return { route: false, refusal: "not_a_wrong_answer" };
   if (!input.projectId || !input.flowId) return { route: false, refusal: "flow_unavailable" };
   return { route: true, projectId: input.projectId, flowId: input.flowId };
 }

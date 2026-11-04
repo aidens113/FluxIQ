@@ -427,8 +427,8 @@ describe("change verdict: resumable", () => {
     expect(verdict).toMatchObject({ outcome: "verified", basis: ["records"] });
     expect(checkOf(verdict, "records")).toMatchObject({ status: "passed", code: "records_minimum_undeclared" });
     // Read as unknown, not merely as "no evidence": what the check looked at
-    // cannot answer the question it was asked.
-    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "check_unknown" });
+    // cannot answer the question it was asked. Only a judged run can.
+    expect(verdict).toMatchObject({ resumable: false, notResumableCode: "records_minimum_undeclared" });
   });
 
   it("resumes on records once the node declares the minimum it met", () => {

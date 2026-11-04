@@ -99,9 +99,11 @@ describe("a patch that passed its trial", () => {
   });
 
   it("gets no re-run where a lasting act may have landed, and the act is not repeated", { timeout: 180_000 }, async () => {
-    refutedToTheLadder();
-    const { run, detail, rows, summary, presses, service, projectId, graphFlowId } = await start({ lastingStep: true });
+    refutedByCore();
+    const { run, detail, rows, summary, presses, taskKinds, service, projectId, graphFlowId } = await start({ lastingStep: true });
 
+    // Nor a patch: it could only be kept by the re-run that would be declined.
+    expect(taskKinds).not.toContain("runtime_patch");
     expect(presses.filter((control) => control === "order")).toHaveLength(1);
     expect(detail?.metadata?.repairedRerun).toBeUndefined();
     expect(detail?.metadata?.adaptiveRetry).toEqual({ attempted: false, notResumableCode: "repair_rerun.lasting_act_may_have_landed" });
@@ -126,12 +128,10 @@ describe("a re-authored Flow", () => {
     expect(summary).toMatchObject({ processing: { collected: 10, kept: 10 } });
   });
 
-  it("gets no re-run where a lasting act may have landed: the act is not repeated, the run says so, and the edit is not kept", { timeout: 180_000 }, async () => {
-    const { run, detail, rows, summary, presses, service, projectId, flowId, graphFlowId } = await start({ noOpen: true, lastingStep: "marked", reauthor: carryTheOrderThenNarrow });
+  // No edit is built at all now (`runtime-adaptation/tests/repair-followups.test.ts`). The edit a build made anyway is declined at its re-run, as `runtime-adaptation/tests/repair-rerun.test.ts` tests.
+  it("gets no re-run where a lasting act may have landed: the act is not repeated, and the run says so", { timeout: 180_000 }, async () => {
+    const { run, detail, rows, summary, presses, service, projectId, graphFlowId } = await start({ noOpen: true, lastingStep: "marked", reauthor: carryTheOrderThenNarrow });
 
-    const reauthor = detail?.metadata?.resultReauthor as { routed?: boolean; adaptationId?: string; applied?: boolean; notAppliedReason?: string };
-    expect(reauthor.routed).toBe(true);
-    expect(reauthor.adaptationId).toEqual(expect.any(String));
     expect(presses.filter((control) => control === "order")).toHaveLength(1);
     expect(detail?.metadata?.repairedRerun).toBeUndefined();
     expect(detail?.metadata?.adaptiveRetry).toEqual({ attempted: false, notResumableCode: "repair_rerun.lasting_act_may_have_landed" });
@@ -142,10 +142,6 @@ describe("a re-authored Flow", () => {
     expect(run.metadata?.resultVerification).toMatchObject({ verdict: "does_not_answer" });
     expect(rows).toEqual(FIRST_THREE);
     expect(summary).toMatchObject({ recordCount: 3, processing: { collected: 3, kept: 3 } });
-    // The edit no judged run ran is not kept, and does not stand in the way of a later build.
-    expect(reauthor.applied).not.toBe(true);
-    expect(reauthor.notAppliedReason).toBe("not_rerun");
-    await expect(service.getFlowBootstrapAdaptation(projectId, flowId, reauthor.adaptationId!)).resolves.toMatchObject({ status: "rejected" });
     const stored = await service.getFlow(projectId, graphFlowId);
     expect(stored.nodes.find((node) => node.id === "read")?.parameterValues?.narrowed).toBeUndefined();
   });

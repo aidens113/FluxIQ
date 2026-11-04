@@ -815,7 +815,38 @@ failed attempt and recovery context independently of the 1,024-character
 failure prose. Persisted result records keep Core's bounded facts; arbitrary
 provider prose is not persisted as repair authority.
 
-A no Core's own record reached (`core.result.computed_fact_failed`) carries the same directive and is the same verdict, so it enters the re-author route as a judge's no does (`automationStudioRefutedResultReauthorDecision`), under the same purse and attempt limits. Any other refutation goes to the patch ladder.
+**Which refusal goes where** (`AUTOMATION_STUDIO_RESULT_REAUTHOR_CODES`,
+`runtime/adaptation/recovery/refuted-result/reauthor.ts`; its test holds the list to
+the codes `result-verification` writes). A ladder patch can reroute, call a recovery
+Subflow, or run steps before a node, and the node then runs as authored. It cannot
+add a missing step or change what a step reads and stores, so every refusal that
+asks for one of those takes the re-author route, under the same purse and attempt
+limits. The ladder follows only a re-author that ended before its first decision.
+
+| Code | The run | Goes to |
+| --- | --- | --- |
+| `does_not_answer_request` | fails | Re-author |
+| `computed_fact_failed` | fails | Re-author |
+| `every_record_refused` | fails | Re-author. A read never reaches it: its capture fails at the step, `record_output.records_refused`, and the result check is not asked |
+| `required_values_missing` | fails | Re-author |
+| `requested_output_missing` | fails | Re-author: the one `unsure` that carries evidence, a run that stored none of the records its build declared it owes |
+| `verdict_absent`, `verdict_unavailable`, `unreadable` | fails | No repair: nobody judged the result, so a change would rest on nothing |
+| `verdicts_disagree`, `refutation_unconfirmed`, `refutation_contradicted`, `refutation_unsupported`, `exclusion_evidence_missing`, `change_not_proven`, `build_yes_disagrees`, `yes_citation_refuted` | keeps its status, recorded unverified | No repair |
+
+`verdict_unsure` is the first of a pair of calls and is never a run's last word.
+A run with no project or Flow in hand has nothing to re-author and goes to the ladder.
+
+**A read whose every row its own schema refused** fails at its step
+(`record_output.records_refused`), so no result check sees it, and the failed-step
+re-author takes it, under that route's limits and the same check before the build.
+Its category, `output_not_observed`, reads to the ladder as a wait, but a wait reads
+the same rows. An in-run repair may still replace the read where the run can hold,
+and it is asked first. Rows are refused because the step brought back something other
+than what its fields say, so the fix is a different read or fields read from the right
+place; the build is told never to drop or loosen a field the request needs. The site's
+rows may really not hold it. The build then ends `not_doable`, and the person is told
+plainly: "every row it read was refused by the fields this Flow stores, and the repair
+found no way to read them that fits."
 
 ### A repair is accepted only after a whole run judged success
 
@@ -2120,7 +2151,11 @@ order below is the detached path's, as built:
    A trial that failed leaves the patch discarded. One that passed with nothing
    declared to prove it (`no_evidence`) waits on the judged run
    (`awaitsJudgedRun`): a target override, or inserted steps that declared no
-   consequence and did nothing lasting in their trial.
+   consequence and did nothing lasting in their trial. So does one verified only by
+   rows nobody said how many of were owed (`records_minimum_undeclared`), as a
+   read's own target override is. The trial goes on past the change and a resume
+   goes over that ground again, so a trial that did something lasting past the
+   change, under any patch, is not carried on from (`actedLastingly`).
 3. **The promotion gate decides, and nothing is applied.**
    `promoteAutomationStudioRuntimeAdaptation`
    (`framework/automation-service/service/runtime-adaptation/runtime-promotion.ts`) records the
@@ -2162,6 +2197,15 @@ order below is the detached path's, as built:
      caught: its verb says only that the page decides what it does. No path runs a
      re-authored Flow from just after the last lasting act: a resume needs a trial's
      resume point in the graph that ran, which a re-authored graph does not have.
+   - **The same check runs before anything is paid for**
+     (`automationStudioRerunPreflight`). Both re-author routes ask it before their
+     build, and a refuted run asks it before the ladder too, since a patch on one can
+     only be kept by that same re-run. Where the re-run would be declined, no model is
+     asked, no edit is built, and the run records the declined re-run and says the
+     same. The re-run keeps its own check. Each pass's own steps are read against the
+     graph that pass ran and left as its word on the session
+     (`repairRerunPasses`), and a trial's lasting act on its receipt, since a later
+     read may not be able to get that graph back and a trial is on no pass's trace.
 5. **The result is judged, then the patch is settled.** Once
    `verifyAutomationStudioRuntimeSessionResult` returns, the service settles every
    pending patch of the run (`settleAutomationStudioRunJudgedPromotions`,
@@ -2331,7 +2375,7 @@ is the permission, and it is false unless all of the following hold:
   shown nothing, so success alone never makes a run resumable.
 
 `notResumableCode` names which of those refused: `no_checks`, `check_failed`,
-`check_unknown`, `no_resume_point` or `no_evidence`.
+`check_unknown`, `records_minimum_undeclared`, `no_resume_point` or `no_evidence`.
 
 Every node gets a first attempt and up to three automatic retries, and each
 retry is an attempt of its own, linked to the failed attempt it replaced by
@@ -2364,8 +2408,14 @@ A check that passed only because the seam feeding it is inert is read as
 `unknown` by the resume decision rather than as a pass. The `records` check is
 the one such seam today: nothing writes a declared minimum until extraction
 does, so rows captured against no minimum still prove the change — they are a
-real observation — but the check carries `records_minimum_undeclared` and the
-run does not continue on it.
+real observation — but the check carries `records_minimum_undeclared`, and the
+trial does not vouch for continuing on it. How many rows were owed is the one
+unknown something later can answer, so it keeps its own code: a target override or
+inserted steps held for the judged run carry on (`awaitsJudgedRun`), and only that
+run's yes keeps them. What stays `check_unknown`, and refused, is what nothing later
+can answer: a read that captured no rows, a count that cannot be read, an expected
+state nobody evaluated. Another patch kind verified the same way declines under
+`records_minimum_undeclared` itself.
 
 The same rule governs the host’s answer about expected state. A host reports
 `checkedConditionCount` beside `passed`, and `passed: true` over a short count

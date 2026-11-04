@@ -189,6 +189,10 @@ describe("a step that ran and whose effect did not show", () => {
     }
   });
 
+  it("says rows a read's own fields refused as that, never as something not allowed", () => {
+    expect(activityActionFailureReason("record_output.records_refused", undefined, "read")).toBe("the rows it read didn't fit the fields this Flow stores");
+  });
+
   it("says a control not found by what FluxIQ saved of it in a list's words for a read", () => {
     expect(activityActionFailureReason("web.target.not_found", undefined, "read")).toBe("FluxIQ couldn't find the list where it was saved");
     expect(activityActionFailureReason("web.target.not_found", undefined, "type")).toBe("FluxIQ couldn't find it where it was saved");

@@ -22,7 +22,8 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
  * - `records`: a changed node that saves records captured at least its minimum.
  *   With no minimum declared it passes on rows alone and carries the code
  *   `records_minimum_undeclared`, which the resume decision reads as unknown:
- *   nothing said how many rows the extraction owed.
+ *   nothing said how many rows the extraction owed. Rows that do not exist, or
+ *   whose count cannot be read, are `unknown` under codes of their own.
  * - `downstream_assertion`: a node whose definition declares
  *   `metadata.verifiesState`, run after the first changed attempt, succeeded.
  * - `continuation`: the route the last changed node took led to a node that
@@ -52,6 +53,9 @@ export const AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS: readonly Automatio
   "records",
   "downstream_assertion"
 ]);
+
+/** The `records` check's code, and the resume decision's, for rows nobody said how many of were owed. */
+export const AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED = "records_minimum_undeclared";
 
 /** `unknown` is never a pass: a check that could not be evaluated proves nothing. */
 export type AutomationStudioChangeVerdictCheckStatus = "passed" | "failed" | "not_applicable" | "unknown";
@@ -94,6 +98,11 @@ export type AutomationStudioChangeResumePoint = ({ nodeId: string; route: string
  * - `check_failed`: a check contradicted the change.
  * - `check_unknown`: a check the trial made could not be evaluated. Unknown is
  *   never a pass here either, so an unevaluated check ends the continuation.
+ * - `records_minimum_undeclared`: the only unknown is how many rows were owed
+ *   (`AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED`). The trial does not
+ *   vouch for them either, and the judged result of a run that carries on can
+ *   answer it, so a change held for that judgement may carry on
+ *   (`../live-patch.ts`); nothing else does.
  * - `no_resume_point`: the continuation is not well defined, so there is no
  *   node to resume at.
  * - `no_evidence`: nothing observed proves the change. Success alone is not
