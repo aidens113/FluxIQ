@@ -8,6 +8,33 @@ import { IdentitySessionRevocations } from "../session-revocations.ts";
 
 const OWNER = { userId: "user.one", administrator: false } as const;
 
+describe("telling what is keyed by digest, before a session is deleted", () => {
+  it("runs every listener, returning their failures rather than stopping at the first", async () => {
+    const told: string[] = [];
+    const revocations = new IdentitySessionRevocations([], [
+      async () => { throw new Error("dummy store refused the write"); },
+      async ({ digests }) => { told.push(...digests); }
+    ]);
+    const failures = await revocations.ending(["digest.one"], OWNER);
+    expect(told).toEqual(["digest.one"]);
+    expect(failures).toHaveLength(1);
+  });
+
+  it("the session ends whatever they said, and their failure is raised after", async () => {
+    const told: string[] = [];
+    const revocations = new IdentitySessionRevocations([(sessionId) => { told.push(sessionId); }]);
+    await expect(revocations.revoked([], OWNER, "session.one", [new Error("dummy store refused the write")])).rejects.toBeInstanceOf(AggregateError);
+    expect(told).toEqual(["session.one"]);
+  });
+
+  it("a revoke nobody vouches for tells no one", async () => {
+    let told = 0;
+    const revocations = new IdentitySessionRevocations([], [() => { told += 1; }]);
+    await expect(revocations.ending(["digest.one"], { userId: null, administrator: false })).resolves.toEqual([]);
+    expect(told).toBe(0);
+  });
+});
+
 describe("IdentitySessionRevocations", () => {
   it("announces the presented id and each remembered id once, then forgets them", async () => {
     const told: string[] = [];

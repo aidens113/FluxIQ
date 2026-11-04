@@ -1,6 +1,26 @@
 import type { PasswordKdfOptions } from "../_shared/password-kdf/index.ts";
 import type { Repository } from "../database-manager/index.ts";
 
+/** A password change by someone proving themselves on a session of theirs: the person, or an administrator. */
+export type IdentitySetPasswordAuthorized = {
+  userId: string;
+  password: string;
+  sessionId: string | undefined;
+  authorizationPassword: string | undefined;
+  authorizationPin: string | undefined;
+  authorizationTotp: string | undefined;
+};
+
+/** The fields of an account an administrator may change. */
+export type IdentityUserUpdate = {
+  id: string;
+  username?: string;
+  displayName?: string;
+  roleId?: string;
+  enabled?: boolean;
+  nowMs?: number;
+};
+
 export type Permission =
   | "programs.read"
   | "programs.write"
@@ -77,6 +97,8 @@ export type IdentityCredentialChange = {
   readonly changeId: string;
   readonly userId: string;
   readonly actorUserId: string | undefined;
+  /** The session making the change, when one is: a proved change keeps only what goes through it. */
+  readonly actorSessionId?: string | undefined;
   readonly currentPassword: string | undefined;
   readonly newPassword: string;
 };

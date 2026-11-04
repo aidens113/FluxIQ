@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
 import type { SecretKeyCredentialHolderKind } from "../types.ts";
 
 /** The longest delay `setTimeout` can count: anything longer fires at once. A 30-day credential is longer. */
@@ -46,6 +48,28 @@ export class HeldKeys {
   private readonly authorizations = new Map<string, HeldRevealAuthorization>();
   private readonly sessions = new Map<string, HeldSessionUnlock>();
   private readonly changeWaiters = new Map<string, Set<() => void>>();
+  private readonly pairedHandles = new Map<string, string>();
+  private readonly pairedHolders = new Map<string, string>();
+
+  /**
+   * The id a paired client's unlock is held under: random, per process, and kept here
+   * so it outlives an evicted service with the keys it names. A trusted client's id is
+   * public, and whoever can name a held unlock can ask to draw on it.
+   */
+  pairedHandle(holderId: string): string {
+    let handle = this.pairedHandles.get(holderId);
+    if (!handle) {
+      handle = `${PAIRED_CLIENT_UNLOCK_PREFIX}${randomUUID()}`;
+      this.pairedHandles.set(holderId, handle);
+      this.pairedHolders.set(handle, holderId);
+    }
+    return handle;
+  }
+
+  /** The stored holder a held handle stands for. */
+  pairedHolderOf(handle: string): string | undefined {
+    return this.pairedHolders.get(handle);
+  }
 
   /** An unreferenced timer that revokes `sessionId`'s unlock after `delayMs`. */
   sessionExpiryTimer(sessionId: string, delayMs: number): ReturnType<typeof setTimeout> {

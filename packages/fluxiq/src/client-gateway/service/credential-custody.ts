@@ -15,7 +15,7 @@ export type ClientGatewayCredentialHolder = {
  * `confirmed`, `rotating` or `presented`, and the gateway never logs one.
  */
 export type ClientGatewayCredentialCustody = {
-  /** A person approved this client, in `approvedBySessionId` when the caller knows it. */
+  /** A person approved this client, in `approvedBySessionId` when the caller knows it. It starts locked: a proof, not the approval, opens anything for it. */
   issued(input: { holder: ClientGatewayCredentialHolder; credential: string; approvedBySessionId?: string | undefined }): Promise<void>;
   /** A credential is confirmed in use, so what any other could open ends: `credential` names it, or, absent, the client said it stored the newest. */
   confirmed(input: { holder: ClientGatewayCredentialHolder; credential?: string | undefined }): Promise<void>;

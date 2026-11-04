@@ -41,13 +41,25 @@ export class IdentitySessionRevocations {
   }
 
   /**
+   * Tells what is keyed by digest that these sessions are ending, before they are
+   * deleted: a crash between the two then leaves a lock and a live session, never a
+   * dead session and no lock. Every listener runs. Returns their failures for
+   * `revoked` to raise, because the session is revoked whatever they say.
+   */
+  async ending(digests: readonly string[], revoker: IdentitySessionRevoker, wholeUserId?: string): Promise<unknown[]> {
+    if (revoker.userId === null && !revoker.administrator) return [];
+    const runs = [...this.endListeners].map(async (listener) => await listener({ digests, revoker, ...(wholeUserId === undefined ? {} : { wholeUserId }) }));
+    return (await Promise.allSettled(runs)).flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  }
+
+  /**
    * Forgets the revoked digests and tells every listener each raw id -- the
    * one the caller presented, and each one remembered for a digest -- with
    * `revoker`. A revoke nobody vouches for (no user, not an administrator) is
    * announced to no one. Every listener runs; a failure is thrown after, with
    * the session already revoked.
    */
-  async revoked(digests: readonly string[], revoker: IdentitySessionRevoker, presented?: string, wholeUserId?: string): Promise<void> {
+  async revoked(digests: readonly string[], revoker: IdentitySessionRevoker, presented?: string, endFailures: readonly unknown[] = []): Promise<void> {
     const sessionIds = new Set<string>(presented ? [presented] : []);
     for (const digest of digests) {
       const entry = this.rawIds.get(digest);
@@ -55,11 +67,8 @@ export class IdentitySessionRevocations {
       this.rawIds.delete(digest);
     }
     if (revoker.userId === null && !revoker.administrator) return;
-    const runs = [
-      ...[...sessionIds].flatMap((sessionId) => [...this.listeners].map(async (listener) => await listener(sessionId, revoker))),
-      ...[...this.endListeners].map(async (listener) => await listener({ digests, revoker, ...(wholeUserId === undefined ? {} : { wholeUserId }) }))
-    ];
-    const failures = (await Promise.allSettled(runs)).flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+    const runs = [...sessionIds].flatMap((sessionId) => [...this.listeners].map(async (listener) => await listener(sessionId, revoker)));
+    const failures = [...endFailures, ...(await Promise.allSettled(runs)).flatMap((result) => (result.status === "rejected" ? [result.reason] : []))];
     if (failures.length) throw new AggregateError(failures, "The session was revoked, but a session-revocation subscriber failed.");
   }
 }

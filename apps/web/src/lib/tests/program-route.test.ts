@@ -233,7 +233,7 @@ describe("a paired client on the program route", () => {
   });
 
   it("tells a paired client whether its person's key opens for it, and never which browsers are locked", () => {
-    const response = { ok: true, payload: { lockedClients: ["Chrome"], keys: [{ id: "secret:1", name: "Mine", kind: "llm", provider: "anthropic", enabled: true, unlocked: false, lockedBecause: "signed_out" }, { id: "secret:2", kind: "llm", enabled: true }] } };
+    const response = { ok: true, payload: { lockedClients: [{ holderId: "paired-client:one", label: "Chrome on Windows" }], keys: [{ id: "secret:1", name: "Mine", kind: "llm", provider: "anthropic", enabled: true, unlocked: false, lockedBecause: "signed_out" }, { id: "secret:2", kind: "llm", enabled: true }] } };
     expect(projectPairedClientResponse("secret-keys", "snapshot", response)).toEqual({ ok: true, payload: { keys: [{ kind: "llm", provider: "anthropic", enabled: true, unlocked: false, lockedBecause: "signed_out" }, { kind: "llm", provider: null, enabled: true }] } });
   });
 

@@ -4,6 +4,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { PasswordKdfOptions } from "../../_shared/password-kdf/index.ts";
 import type { Repository } from "../../database-manager/index.ts";
 import type {
+  SecretKeyLockedClient,
   SecretKeyKind,
   SecretKeyRecord,
   SecretKeyScope,
@@ -12,7 +13,7 @@ import type {
   SecretKeyUnlockRevoker
 } from "../types.ts";
 import { CredentialChanges, type OpenedRecordSeal, type SecretKeyCredentialChange, type SecretKeyCredentialChangeInput } from "./credential-changes.ts";
-import { CredentialUnlocks } from "./unlocks/index.ts";
+import { CredentialUnlocks, type SecretKeyHolderVouch } from "./unlocks/index.ts";
 import { HeldKeys, type HeldRevealAuthorization, type HeldSessionUnlock, type SecretRevealAuthorizationMetadata } from "./held-keys.ts";
 import { SecretKeyStore } from "./key-store.ts";
 import { SealUpgrades } from "./seal-upgrades.ts";
@@ -120,15 +121,15 @@ export class SecretKeysService {
    * manager's): the service uses it and does not own it. Without it the service
    * holds its keys itself, and they end with it.
    */
-  constructor(options: { repository?: Repository; credentialUnlockRepository?: Repository | undefined; now?: () => number; passwordKdf?: PasswordKdfOptions; heldKeys?: HeldKeys | undefined } = {}) {
+  constructor(options: { repository?: Repository; credentialUnlockRepository?: Repository | undefined; vouchForHolder?: SecretKeyHolderVouch | undefined; now?: () => number; passwordKdf?: PasswordKdfOptions; heldKeys?: HeldKeys | undefined } = {}) {
     this.heldKeys = options.heldKeys ?? new HeldKeys();
     this.ownsHeldKeys = options.heldKeys === undefined;
     this.now = options.now ?? Date.now;
     this.sealer = new SecretValueSealer(options.passwordKdf);
     this.store = new SecretKeyStore({ repository: options.repository, kind: SecretKeysService.storeKind, sealer: this.sealer });
-    this.credentialUnlocks = new CredentialUnlocks({ repository: options.credentialUnlockRepository, kind: SecretKeysService.credentialUnlockStoreKind, store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, now: this.now });
+    this.credentialUnlocks = new CredentialUnlocks({ repository: options.credentialUnlockRepository, kind: SecretKeysService.credentialUnlockStoreKind, store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, now: this.now, vouch: options.vouchForHolder });
     this.upgrades = new SealUpgrades({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, onResealed: (recordId, key) => this.quietly(this.credentialUnlocks.resealed(recordId, key)) });
-    this.credentialChanges = new CredentialChanges({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, upgrades: this.upgrades, onCommitted: (userId, keys) => this.quietly(this.credentialUnlocks.personProved(userId, keys, { explicit: false })) });
+    this.credentialChanges = new CredentialChanges({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, upgrades: this.upgrades, onCommitted: (userId, keys, actorSessionId) => this.quietly(this.credentialUnlocks.passwordChanged(userId, keys, actorSessionId)) });
   }
 
   async snapshot(): Promise<SecretKeysSnapshot> {
@@ -306,16 +307,25 @@ export class SecretKeysService {
   }
 
   /**
-   * `unlockClients` is the person's own explicit unlock: it also lifts the lock
-   * on their paired clients. An ordinary sign-in leaves a locked client locked,
+   * `unlockClients` names the paired clients the person chose: only those have a lock
+   * lifted. An ordinary sign-in names none and leaves a locked client locked,
    * so signing in elsewhere never undoes signing out here.
    */
-  async unlockSession(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number; nowMs?: number; unlockClients?: boolean | undefined }): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
+  async unlockSession(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number; nowMs?: number; unlockClients?: readonly string[] | undefined; passwordVerified?: boolean | undefined }): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
     await this.store.load();
     const nowMs = input.nowMs ?? this.now();
     if (!input.sessionId || !input.userId || !input.authorizationPassword || !Number.isFinite(input.expiresAtMs) || input.expiresAtMs <= nowMs) {
       throw new Error("Secret key session unlock is invalid");
     }
+    const proofEnded = this.credentialUnlocks.proofRunning(input.sessionId);
+    try {
+      return await this.fillSessionUnlock(input, nowMs);
+    } finally {
+      proofEnded();
+    }
+  }
+
+  private async fillSessionUnlock(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number; unlockClients?: readonly string[] | undefined; passwordVerified?: boolean | undefined }, nowMs: number): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
     this.heldKeys.revokeSession(input.sessionId);
     // The timer holds only the custody and the id: never this service, nor `input`, which carries the password.
     const expiryTimer = this.heldKeys.sessionExpiryTimer(input.sessionId, input.expiresAtMs - nowMs);
@@ -333,7 +343,7 @@ export class SecretKeysService {
     if (this.heldKeys.session(input.sessionId) !== unlock) throw new Error("Secret key session unlock is unavailable");
     // A failure here costs a later convenience, never this sign-in: the session is unlocked either way.
     await this.quietly(this.credentialUnlocks.enrolPanelSession(input));
-    await this.quietly(this.credentialUnlocks.personProved(input.userId, unlock.decryptionKeys, { explicit: input.unlockClients === true }));
+    await this.quietly(this.credentialUnlocks.personProved(input.userId, unlock.decryptionKeys, { lift: new Set(input.unlockClients ?? []), passwordVerified: input.passwordVerified }));
     this.heldKeys.notifyChanged(input.userId);
     return { sessionId: input.sessionId, expiresAtMs: input.expiresAtMs, unlockedKeyCount: unlock.decryptionKeys.size };
   }
@@ -469,7 +479,7 @@ export class SecretKeysService {
   }
 
   /** A snapshot for one caller: each of their own keys says whether their unlock opens it, and which of their paired clients are locked. Nobody else's key says anything. */
-  async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<{ keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason }>; lockedClients: string[] }> {
+  async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<{ keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason }>; lockedClients: SecretKeyLockedClient[] }> {
     const { keys } = await this.snapshot();
     await this.credentialUnlocks.load();
     const held = caller.sessionId === null ? undefined : this.heldKeys.session(caller.sessionId);
@@ -480,7 +490,7 @@ export class SecretKeysService {
         const unlocked = live?.decryptionKeys.get(key.id)?.keyUpdatedAtMs === key.updatedAtMs;
         return { ...key, unlocked, ...(unlocked ? {} : { lockedBecause: this.keyLockReason({ userId: caller.userId, holderId: caller.holderId }) }) };
       }),
-      lockedClients: await this.credentialUnlocks.lockedLabelsFor(caller.userId)
+      lockedClients: await this.credentialUnlocks.lockedClientsFor(caller.userId)
     };
   }
 
@@ -551,7 +561,7 @@ export class SecretKeysService {
     if (!userId) return;
     const copy = Buffer.from(key);
     try {
-      await this.quietly(this.credentialUnlocks.personProved(userId, new Map([[record.id, { keyUpdatedAtMs: record.updatedAtMs, decryptionKey: copy }]]), { explicit: false }));
+      await this.quietly(this.credentialUnlocks.personProved(userId, new Map([[record.id, { keyUpdatedAtMs: record.updatedAtMs, decryptionKey: copy }]])));
     } finally {
       copy.fill(0);
     }

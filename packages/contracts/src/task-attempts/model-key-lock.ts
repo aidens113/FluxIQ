@@ -10,11 +10,13 @@
  * - `administrator`: an administrator ended their session.
  * - `sessions_ended`: all their sessions ended together, such as a disabled account
  *   brought back.
+ * - `password_changed`: they changed their password somewhere else, which ends every
+ *   unlock but the session that changed it. A change often means they suspect someone.
  * - `password_reset`: their password was reset without the old one, so nothing they
  *   can type opens the key: they add it again.
  * - `unknown`: locked, with nothing more to say.
  */
-export const MODEL_KEY_LOCK_REASONS = Object.freeze(["first_unlock", "signed_out", "administrator", "sessions_ended", "password_reset", "unknown"] as const);
+export const MODEL_KEY_LOCK_REASONS = Object.freeze(["first_unlock", "signed_out", "administrator", "sessions_ended", "password_changed", "password_reset", "unknown"] as const);
 
 export type ModelKeyLockReason = (typeof MODEL_KEY_LOCK_REASONS)[number];
 
@@ -25,6 +27,7 @@ const WORDS: Readonly<Record<ModelKeyLockReason, string>> = Object.freeze({
   signed_out: `Your model key locked on this browser because you signed out of FluxIQ. ${UNLOCK}`,
   administrator: `Your model key locked on this browser because an administrator ended your session. ${UNLOCK}`,
   sessions_ended: `Your model key locked on this browser because all your FluxIQ sessions were ended. ${UNLOCK}`,
+  password_changed: `Your model key locked on this browser because your FluxIQ password changed. Open FluxIQ and enter your new password once to unlock it.`,
   password_reset: "Your password was reset, so FluxIQ can no longer open your model key. Open FluxIQ and add it again.",
   unknown: `Your model key is locked on this browser. ${UNLOCK}`
 });

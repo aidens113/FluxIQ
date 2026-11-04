@@ -2,7 +2,7 @@
 // service, so a key added on Secret Keys is usable by that sign-in at once
 // (install proof C5: the chat said "your model key is locked" until a re-login).
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createGlobalProgramRuntime } from "../../../index.ts";
 import { actorFor } from "../../../tests/login-actor.ts";
@@ -36,6 +36,47 @@ describe("secret-keys endpoints", () => {
     const authorization = await runtime.secretKeys.createSessionRevealAuthorization({ sessionId: login.session.id, userId: login.user.id, id });
     await expect(runtime.secretKeys.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id })).resolves.toMatchObject({ value: "sk-dummy" });
     runtime.secretKeys.close();
+  });
+
+  describe("unlock, which asks what sign-in asks", () => {
+    async function withPinAndKey() {
+      const runtime = createGlobalProgramRuntime();
+      const login = await signIn(runtime);
+      await runtime.identityAccess.setPin(login.user.id, "4321");
+      await runtime.secretKeys.createKey({ name: "Model", value: "dummy-value", authorizationPassword: "admin", createdBy: login.user.id });
+      const call = (payload: Record<string, unknown>) => runtime.api.call({ programId: "secret-keys", endpoint: "unlock", scope: {}, actor: actorFor(login), payload: { authSessionId: login.session.id, ...payload } }) as Promise<Created>;
+      return { runtime, login, call };
+    }
+
+    it("takes the password alone, with a PIN set: a PIN is for dangerous acts", async () => {
+      const { runtime, call } = await withPinAndKey();
+      const answer = await call({ authorizationPassword: "admin", clientIds: [] });
+      expect(answer.ok, answer.error).toBe(true);
+      runtime.secretKeys.close();
+    });
+
+    it("refuses a wrong password, and asks to recheck", async () => {
+      const { runtime, call } = await withPinAndKey();
+      await expect(call({ authorizationPassword: "dummy-wrong" })).resolves.toMatchObject({ ok: false, requiresRecheck: true });
+      runtime.secretKeys.close();
+    });
+
+    it("hands on only the holders named, and only as strings", async () => {
+      const { runtime, login, call } = await withPinAndKey();
+      const proved = vi.spyOn(runtime.secretKeys.credentialUnlocks, "personProved");
+      await call({ authorizationPassword: "admin", clientIds: ["paired-client:one", 7, null] });
+      expect(proved.mock.calls.at(-1)?.[0]).toBe(login.user.id);
+      expect([...(proved.mock.calls.at(-1)?.[2]?.lift ?? [])]).toEqual(["paired-client:one"]);
+      runtime.secretKeys.close();
+    });
+
+    it("names none unless asked", async () => {
+      const { runtime, call } = await withPinAndKey();
+      const proved = vi.spyOn(runtime.secretKeys.credentialUnlocks, "personProved");
+      await call({ authorizationPassword: "admin" });
+      expect([...(proved.mock.calls.at(-1)?.[2]?.lift ?? [])]).toEqual([]);
+      runtime.secretKeys.close();
+    });
   });
 
   it("holds the key in no session when the verified session is not the caller's", async () => {

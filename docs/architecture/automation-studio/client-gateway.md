@@ -634,7 +634,8 @@ same capabilities. The ids are:
   re-run with it was judged to answer, `not_applied` otherwise), since a
   re-author is no Flow adaptation.
 - **A paired client spends its person's key.** A `client-gateway:` caller is
-  mapped to that browser's own unlock, which lasts as long as its credential
+  mapped to that browser's own unlock, which starts locked until the person's
+  password names it and then lasts as long as its credential
   (`docs/architecture/platform.md`, Model keys; `credentialCustody`). That
   mapping applies to the chat model and to every registry call a command makes.
   Permissions stay the paired set. With no unlock, a command that needs the

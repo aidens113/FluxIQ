@@ -11,6 +11,13 @@
 export const SECRETS_LOCKED_ERROR_CODE = "secrets.locked";
 
 /**
+ * What a paired client's unlock is known by inside Core: its stored id, and the random
+ * handle it is held under. Never something a standing authorization may name, because
+ * a browser's unlock pays only for what that browser itself asks for.
+ */
+export const PAIRED_CLIENT_UNLOCK_PREFIX = "paired-client:";
+
+/**
  * The error as it travels (an API error body, a gateway `server.error`, a
  * chat message's failure): `message` is for the person; `signInUrl`, when set,
  * is the absolute URL that unlocks the key (the panel's sign-in or re-unlock).

@@ -591,6 +591,8 @@ export type ClientGatewayTrustedClient = {
   /** The credential before this one, until the new one is confirmed in use, within `previousValidUntil`: the reply carrying the new one can be lost. */
   previousTokenHash?: string;
   previousValidUntil?: number;
+  /** Digests of credentials this client has moved past, and when, for telling reuse from noise. Bounded. */
+  retiredTokens?: Array<{ hash: string; retiredAt: number }>;
   approvedByUserId: string;
   /**
    * The domain the client declared (`client.hello` `metadata.domainId`) when
@@ -608,7 +610,7 @@ export type ClientGatewayTrustedClient = {
   revocationReason?: string;
 };
 
-export type ClientGatewayTrustedClientView = Omit<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash"> & {
+export type ClientGatewayTrustedClientView = Omit<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "retiredTokens"> & {
   status: "active" | "expired" | "revoked";
 };
 

@@ -111,29 +111,36 @@ export type SecretKeyCredentialUnlockBox = {
   ciphertext: string;
 };
 
+/** One key pair of a holder: the private half under its credential, and what is boxed to the public half, by Secret Keys record id. */
+export type SecretKeyCredentialUnlockGeneration = {
+  publicKey: string;
+  wrap: SecretKeyCredentialUnlockWrap;
+  boxes: Record<string, SecretKeyCredentialUnlockBox>;
+};
+
 /**
  * What Core stores so a holder's unlock can come back with no password: nothing
  * in it opens a key without the holder's credential, which Core keeps only as a
- * digest. `wraps` holds one wrap, or two for the moment a credential rotation is
- * written ahead of the new digest. `boxes` is by Secret Keys record id; a box
- * whose record was re-sealed no longer opens it, and is dropped when found.
- * `lockedAtMs` is set by a lock (a sign-out, a revoke): nothing but the person's
- * own explicit unlock boxes a key for this holder again.
+ * digest. `pending` is a whole new key pair for the credential a rotation just sent,
+ * until it is confirmed in use. A box whose record was re-sealed no longer opens it,
+ * and is dropped when found. `lockedAtMs` is set when a holder is new (a paired client
+ * starts locked) and by a lock (a sign-out, a revoke): nothing but the person's own
+ * unlock naming this holder boxes a key for it again.
  */
-export type SecretKeyCredentialUnlockRecord = {
+export type SecretKeyCredentialUnlockRecord = SecretKeyCredentialUnlockGeneration & {
   recordType: "secret-key-credential-unlock";
   id: string;
   holderId: string;
   holderKind: SecretKeyCredentialHolderKind;
   userId: string;
   expiresAtMs: number;
-  publicKey: string;
-  wraps: SecretKeyCredentialUnlockWrap[];
-  boxes: Record<string, SecretKeyCredentialUnlockBox>;
+  pending?: SecretKeyCredentialUnlockGeneration | undefined;
   /** The digest of the panel session that approved this holder, so that session's sign-out locks it. */
   approvingSessionDigest?: string | undefined;
   /** A person-facing name for the holder, such as a browser's; never a secret. */
   label?: string | undefined;
+  /** When it last spoke, for the person choosing which browser to unlock. Not secret; at most a day out while it stays connected. */
+  lastUsedAtMs?: number | undefined;
   lockedAtMs?: number | undefined;
   /** Why it locked, in the words a person is told (`modelKeyLockedWords`). */
   lockReason?: ModelKeyLockReason | undefined;
@@ -151,15 +158,17 @@ export type SecretKeyUnlockPersonRecord = {
   passwordResetAtMs?: number | undefined;
 };
 
+/** A locked paired client as its person chooses among them. */
+export type SecretKeyLockedClient = { holderId: string; label: string; lastUsedAtMs?: number };
+
 /**
- * A holder as the caller verified it. `heldAs` is the id its unlock is held
- * under in memory: a paired client's holder id, or a panel session's own id,
- * which is never stored.
+ * A holder as the caller verified it. `heldAs` is a panel session's own id, which is
+ * never stored; a paired client's unlock is held under a random handle instead.
  */
 export type SecretKeyCredentialHolder = {
   holderKind: SecretKeyCredentialHolderKind;
   holderId: string;
-  heldAs: string;
+  heldAs?: string | undefined;
   userId: string;
   expiresAtMs: number;
   approvingSessionDigest?: string | undefined;

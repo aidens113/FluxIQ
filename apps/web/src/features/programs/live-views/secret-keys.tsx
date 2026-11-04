@@ -78,7 +78,7 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
   const rotateDialog = useSecretDialog<{ key: SecretKeySummary; value: string; auth: AuthForm }>(current, revision, canOpen);
   const revealDialog = useSecretDialog<{ key: SecretKeySummary; auth: AuthForm; value?: string; revealedAt?: number }>(current, revision, canOpen);
   const removeDialog = useSecretDialog<{ key: SecretKeySummary; auth: AuthForm }>(current, revision, canOpen);
-  const unlockDialog = useSecretDialog<AuthForm>(current, revision, canOpen);
+  const unlockDialog = useSecretDialog<AuthForm & { clientIds: string[] }>(current, revision, canOpen);
   const createAuthorization = createDialog.value;
   const exists = (draft: { key: SecretKeySummary } | null) => Boolean(draft && confirmedKeys.current.some(key => key.id === draft.key.id));
   const edit = exists(editDialog.value) ? editDialog.value : null;
@@ -152,10 +152,10 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
     });
   }
   async function unlockKeys() {
-    if (!unlock || !unlockDialog.sameDraft(unlock) || !canSubmitAuth(unlock, currentUser)) return;
+    if (!unlock || !unlockDialog.sameDraft(unlock) || !canSubmitAuth(unlock, unlockProofUser(currentUser))) return;
     const draft = unlock;
     await mutate("unlock", () => unlockDialog.current(draft), async () => {
-      const result = await api.post("unlock", authPayload(draft));
+      const result = await api.post("unlock", { ...authPayload(draft), clientIds: draft.clientIds });
       if (!current() || !unlockDialog.current(draft)) return;
       setStatus(result.ok ? "Your model keys are unlocked" : "That did not unlock your keys. Check your password and try again.");
       if (!result.ok) return;
@@ -222,8 +222,8 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
       <header className="program-inner-header"><div><strong>Secret Keys</strong><span>Encrypted credentials for LLM providers and custom integrations.</span></div><div className="inline-actions"><StatusText value={operation.activeOperation ? `Secret operation in progress: ${operation.activeOperation}` : status} /><button className="button" disabled={operation.busy || reading} onClick={() => void refresh()} type="button"><RefreshCcw size={14} aria-hidden />Refresh</button><button className="button button-primary" disabled={operation.busy} onClick={() => { if (current() && canOpen()) { wizard.current++; setCreateOpen(true); } }} type="button"><KeyRound size={14} aria-hidden />Add Key</button></div></header>
       {status ? <p role="status" aria-live="polite">{status}</p> : null}
       {readError ? <VisualAlert tone="warning" title="Metadata refresh failed" message={readError} /> : null}
-      {needsUnlock ? <div className="secret-modal-stack"><VisualAlert tone="warning" title="Your model key needs your password" message={lockedClients.length ? "Enter your password once and FluxIQ can use your key again in " + lockedClients.join(", ") + "." : "Enter your password once and FluxIQ can use your key again."} /><div className="modal-actions"><button className="button button-primary" onClick={() => unlockDialog.open({ ...emptyAuth })} type="button">Unlock</button></div></div> : null}
-      {unlock ? <Modal title="Unlock your model keys" description="FluxIQ keeps your keys sealed under your password. This opens them for you here and on your paired browsers." onClose={() => unlockDialog.close()}><div className="secret-modal-stack"><AuthorizationFields auth={unlock} currentUser={currentUser} onChange={(auth) => unlockDialog.change(auth)} /></div><div className="modal-actions"><button className="button" onClick={() => unlockDialog.close()} type="button">Cancel</button><button className="button button-primary" disabled={!canSubmitAuth(unlock, currentUser)} onClick={() => void unlockKeys()} type="button">Unlock</button></div></Modal> : null}
+      {needsUnlock ? <div className="secret-modal-stack"><VisualAlert tone="warning" title="Your model key needs your password" message={lockedClients.length === 1 ? "Enter your password once and FluxIQ can use your key again in " + lockedClients[0]!.label + "." : lockedClients.length > 1 ? "Choose which of your browsers to unlock. Enter your password once and FluxIQ can use your key again in those." : "Enter your password once and FluxIQ can use your key again."} /><div className="modal-actions"><button className="button button-primary" onClick={() => unlockDialog.open({ ...emptyAuth, clientIds: lockedClients.length === 1 ? [lockedClients[0]!.holderId] : [] })} type="button">{lockedClients.length === 1 ? "Unlock " + lockedClients[0]!.label : "Unlock"}</button></div></div> : null}
+      {unlock ? <Modal title="Unlock your model keys" description="FluxIQ keeps your keys sealed under your password. This opens them for you here and on your paired browsers." onClose={() => unlockDialog.close()}><div className="secret-modal-stack">{lockedClients.length > 1 ? <fieldset className="secret-unlock-clients"><legend>Which browsers?</legend>{lockedClients.map((client) => <label key={client.holderId}><input checked={unlock.clientIds.includes(client.holderId)} onChange={(event) => unlockDialog.change({ ...unlock, clientIds: event.target.checked ? [...unlock.clientIds, client.holderId] : unlock.clientIds.filter((id) => id !== client.holderId) })} type="checkbox" /> {client.label}{client.lastUsedAtMs ? " (last used " + formatTime(client.lastUsedAtMs) + ")" : ""}</label>)}</fieldset> : null}<AuthorizationFields auth={unlock} currentUser={unlockProofUser(currentUser)} onChange={(auth) => unlockDialog.change({ ...auth, clientIds: unlock.clientIds })} /></div><div className="modal-actions"><button className="button" onClick={() => unlockDialog.close()} type="button">Cancel</button><button className="button button-primary" disabled={!canSubmitAuth(unlock, unlockProofUser(currentUser))} onClick={() => void unlockKeys()} type="button">{lockedClients.length === 1 ? "Unlock " + lockedClients[0]!.label : "Unlock"}</button></div></Modal> : null}
       {readError ? <button className="button" disabled={reading || operation.busy} onClick={() => void refresh()} type="button">Retry metadata</button> : null}
       <div className="secret-keys-list-detail">
         <Panel title="Saved Keys">
@@ -354,6 +354,11 @@ function formPayload(form: SecretForm, includeValue = true): JsonObject {
     metadata,
     enabled: form.enabled
   };
+}
+
+/** Unlocking asks what sign-in asks: a password, and the 2FA code where one is set. A PIN is for dangerous acts. */
+function unlockProofUser(user: CurrentUser): CurrentUser {
+  return { ...user, pinConfigured: false };
 }
 
 function authPayload(auth: AuthForm): JsonObject {

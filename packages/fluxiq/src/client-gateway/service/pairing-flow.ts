@@ -212,6 +212,7 @@ export class ClientGatewayPairingFlow {
     this.trace.lifecycle({ sessionId, clientId: session.clientId }, "pairing.approved", { trustedClientId: trustedClient.trustedClientId, projectId: pairing.projectId ?? null });
     // Before the token leaves: this browser's first request finds what the person who approved it can open.
     await this.custody.issued({ holder: clientGatewayCredentialHolder(trustedClient), credential: token, approvedBySessionId });
+    session.sentCredentialHash = this.trustedClients.hashToken(token);
     await this.transport.send(sessionId, this.transport.message("server.session_ready", {
       sessionId,
       token,

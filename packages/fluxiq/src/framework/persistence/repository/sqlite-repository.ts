@@ -14,6 +14,8 @@ export type SQLiteRepositoryOptions = {
   layoutVersion?: 1 | 2;
   /** Keeps the connection open between operations (`./connection-pool.ts`); without one, each operation opens and closes its own. */
   connections?: SQLiteConnectionPool;
+  /** Overwrites deleted rows on disk: a store whose forgotten rows must not linger in file pages. */
+  secureDelete?: boolean;
 };
 
 export type SQLiteTransaction = {
@@ -31,9 +33,11 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   readonly tableName: string;
   readonly layoutVersion: 1 | 2;
   private readonly connections: SQLiteConnectionPool | undefined;
+  private readonly secureDelete: boolean;
 
   constructor(options: SQLiteRepositoryOptions) {
     this.connections = options.connections;
+    this.secureDelete = options.secureDelete === true;
     this.rootDir = path.resolve(options.rootDir);
     this.kind = safeKind(options.kind);
     this.layoutVersion = options.layoutVersion ?? 1;
@@ -218,6 +222,7 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     await exec(db, [
       "pragma foreign_keys = ON",
       "pragma journal_mode = WAL",
+      ...(this.secureDelete ? ["pragma secure_delete = ON"] : []),
       `create table if not exists ${this.tableName} (
         id text primary key,
         kind text not null,

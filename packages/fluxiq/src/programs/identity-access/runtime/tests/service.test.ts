@@ -540,6 +540,50 @@ describe("IdentityAccessService credential-change port", () => {
   });
 });
 
+describe("IdentityAccessService password attempts at a recheck", () => {
+  it("are limited per person, on the signed-in recheck, so a stolen session cannot guess for ever", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    const identity = createService(repository);
+    const login = await identity.authenticate({ username: "user-one", password: PASSWORD });
+    const attempt = (password: string) => identity.authorizeSessionCredentials({ sessionId: login.session.id, password, pin: undefined, totp: undefined, requirePin: false });
+    for (let guess = 0; guess < 8; guess += 1) await expect(attempt(WRONG_PASSWORD)).rejects.toThrow(INVALID);
+    await expect(attempt(PASSWORD)).rejects.toThrow("Too many password attempts");
+  });
+});
+
+describe("IdentityAccessService ending a session", () => {
+  it("tells what is keyed by digest while the session is still stored, so a crash between the two leaves a lock", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    let storedWhenTold: boolean | undefined;
+    const digests: string[] = [];
+    const identity = new IdentityAccessService({ repository, passwordKdf: countingKdf().passwordKdf, sessionEndSubscribers: [async (end) => {
+      digests.push(...end.digests);
+      storedWhenTold = [...repository.records.values()].some((record) => JSON.stringify(record).includes(end.digests[0] ?? "absent"));
+    }] });
+    const login = await identity.authenticate({ username: "user-one", password: PASSWORD });
+    await identity.revokeSession(login.session.id);
+    expect(digests).toEqual([digestSessionId(login.session.id)]);
+    expect(storedWhenTold).toBe(true);
+    await expect(identity.validateSession(login.session.id)).resolves.toBeNull();
+  });
+
+  it("disabling a person ends their sessions, which is what takes their keys with it", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    await createService(repository).upsertUser({ id: "user.two", username: "user-two", displayName: "User Two", roleId: "admin", password: PASSWORD });
+    const ended: string[] = [];
+    const identity = new IdentityAccessService({ repository, passwordKdf: countingKdf().passwordKdf, sessionEndSubscribers: [async (end) => { ended.push(end.wholeUserId ?? "none"); }] });
+    await identity.authenticate({ username: "user-one", password: PASSWORD });
+    await identity.updateUser({ id: "user.one", enabled: false });
+    expect(ended).toEqual(["user.one"]);
+    ended.length = 0;
+    await identity.updateUser({ id: "user.two", displayName: "Renamed" });
+    expect(ended).toEqual([]);
+  });
+});
+
 describe("IdentityAccessService resetPassword", () => {
   it("replaces a credential sealed before a restart without the old password, where setPassword still refuses", async () => {
     const repository = new MemoryIdentityRepository();

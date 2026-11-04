@@ -16,6 +16,7 @@ describe("what a person reads about a locked key", () => {
     expect(modelKeyLockedWords("signed_out")).toContain("because you signed out of FluxIQ");
     expect(modelKeyLockedWords("administrator")).toContain("because an administrator ended your session");
     expect(modelKeyLockedWords("sessions_ended")).toContain("because all your FluxIQ sessions were ended");
+    expect(modelKeyLockedWords("password_changed")).toContain("because your FluxIQ password changed");
   });
 
   it("does not ask for a password that cannot help after a reset", () => {

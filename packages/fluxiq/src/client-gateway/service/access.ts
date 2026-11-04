@@ -49,6 +49,14 @@ export class ClientGatewayAccess {
     this.custody = collaborators.custody;
   }
 
+  /** Ends the trust this credential speaks for: a browser forgetting its pairing while it had no socket. False when it speaks for none. */
+  async forgetByCredential(token: string): Promise<boolean> {
+    await this.lifecycle.refuseReuse(token);
+    const client = this.trustedClients.resolveByToken(token);
+    if (!client || !this.trustedClients.isActive(client)) return false;
+    return this.revokeTrustedClient(client.trustedClientId, "forgotten by its person");
+  }
+
   /**
    * The ready session a bearer token speaks for, or null if it speaks for none.
    * The session's declared domain is always the one its trust was approved
@@ -58,6 +66,7 @@ export class ClientGatewayAccess {
     await this.facade.ready();
     const normalizedToken = typeof token === "string" ? token.trim() : "";
     if (!normalizedToken) return null;
+    await this.lifecycle.refuseReuse(normalizedToken);
     const trustedClient = this.trustedClients.resolveByToken(normalizedToken);
     if (!trustedClient || !this.trustedClients.isActive(trustedClient)) return null;
     const session = this.sessions.findReadyByTrustedClient(trustedClient.trustedClientId);
@@ -67,6 +76,11 @@ export class ClientGatewayAccess {
     await this.notedCurrentUse(trustedClient, normalizedToken);
     // A message from this client brings back what its credential keeps, before anything it asks for looks.
     await this.custody.presented({ holder: clientGatewayCredentialHolder(trustedClient), credential: normalizedToken });
+    // Each of those took a moment, and a revoke in one of them must stand.
+    if (!this.trustedClients.isActive(trustedClient)) {
+      await this.custody.forgotten(trustedClient.trustedClientId);
+      return null;
+    }
     return this.sessions.toPublic(session);
   }
 

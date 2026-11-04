@@ -15,6 +15,7 @@ import {
 const DEFAULT_ADMIN_PASSWORD = "admin";
 const WRONG_PASSWORD = "not-the-admin-password";
 const SENSITIVE_STORES = ["identity.users", "secret.keys"] as const;
+const OWNER_WRITTEN_STORE = "secret.credential-unlocks";
 const ORDINARY_STORE = "widgets";
 const RECORD_ID = "record.one";
 
@@ -77,6 +78,24 @@ describe("database manager record writes", () => {
     });
   });
 
+  describe("the credential unlock store", () => {
+    it("is not read without a recheck", async () => {
+      const harness = await createHarness();
+      await expect(harness.read(OWNER_WRITTEN_STORE, {})).resolves.toEqual({ ok: false, requiresRecheck: true, error: "Authentication required" });
+      await expect(harness.read(OWNER_WRITTEN_STORE, { authSessionId: harness.sessionId })).resolves.toMatchObject({ ok: false, requiresRecheck: true });
+    });
+
+    it.each(["put", "delete"] as const)("is not written by a %s, whoever asks and whatever they prove", async (operation) => {
+      const harness = await createHarness();
+      await harness.write(operation, OWNER_WRITTEN_STORE, {});
+      await harness.write(operation, OWNER_WRITTEN_STORE, { authSessionId: harness.sessionId, authorizationPassword: DEFAULT_ADMIN_PASSWORD });
+      const grantId = await harness.issueGrant(OWNER_WRITTEN_STORE, {});
+      const granted = await harness.write(operation, OWNER_WRITTEN_STORE, { grantId }, { payloadScope: {} });
+      expect(granted.ok).toBe(false);
+      expect(harness.log).toEqual({ puts: [], deletes: [] });
+    });
+  });
+
   it("leaves put-record and delete-record on a non-sensitive store unchanged", async () => {
     const harness = await createHarness();
 
@@ -114,7 +133,7 @@ async function createHarness() {
   const login = await identityAccess.authenticate({ username: "admin", password: DEFAULT_ADMIN_PASSWORD });
   const log: WriteLog = { puts: [], deletes: [] };
   const service = new DatabaseManagerService();
-  for (const kind of [...SENSITIVE_STORES, ORDINARY_STORE]) {
+  for (const kind of [...SENSITIVE_STORES, OWNER_WRITTEN_STORE, ORDINARY_STORE]) {
     service.registerRepository(kind, memoryRepository(log));
     await service.putRecord(kind, RECORD_ID, { note: "seeded" });
   }

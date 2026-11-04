@@ -873,10 +873,29 @@ paired browser (its gateway credential) or a signed-in panel session (its cookie
   and bound to the holder and person, and one box per data key, sealed to the public
   key and bound to the holder, person and record. Core stores a credential only as a
   digest and a panel session only as a digest, so the store opens nothing alone.
-- A public key means anything the person proves themselves for reaches their browser
-  with no credential present: a sign-in, a key added or rotated with their password,
-  a password change. Pairing first and adding a key afterwards, the usual order, just
-  works. This is why it is not a plain symmetric wrap.
+- A public key means anything the person proves themselves for reaches a browser of
+  theirs that is already unlocked, with no credential present: a sign-in, a key added
+  or rotated with their password. Pairing first and adding a key afterwards, the usual
+  order, just works. This is why it is not a plain symmetric wrap.
+- **A holder gets a key only on a proof.** A new paired browser starts locked, with
+  nothing copied from a live session, because a stolen cookie must not be able to mint
+  a lasting holder. The person's password at its approval
+  (`/api/client-gateway/approve-pairing`, optional) lifts it at once; otherwise it pairs
+  fine and shows the one-time Unlock step. A browser paired before this existed gets
+  the same step.
+- **Only a holder the host vouches for is boxed to** (`SecretKeyHolderVouch`, bound in
+  `createGlobalProgramRuntime`): a paired row must be an active trusted client of that
+  person, a panel row a live session of theirs. A stored row alone proves nothing, and
+  with no answer bound nothing is boxed. The store is sensitive
+  (`programs/database-manager/sensitive-stores.ts`, the one list): read only after a
+  recheck, written only by its owner, recheck or not. Its deletes overwrite the row
+  (`secure_delete`).
+- A paired unlock is held in memory under a random per-process handle, never its public
+  id, so nothing can name another person's. A Flow's standing result-check authorization
+  cannot draw on one, and no client write can set that authorization.
+- A rotated credential gets a whole new key pair, written beside the old one as
+  `pending` until it is confirmed, so an old credential with an old copy of the row
+  opens nothing written since.
 - The gateway reports each moment it handles a credential it verified
   (`client-gateway/service/credential-custody.ts`, `credentialCustody`): `issued` at
   approval, `rotating` written ahead of a rotated credential's digest so a crash on
@@ -884,6 +903,17 @@ paired browser (its gateway credential) or a signed-in panel session (its cookie
   every hello and bearer request, `confirmed` when a credential is confirmed in use, `released` when the last socket goes (the unlock
   leaves memory; the credential brings it back), `forgotten` when trust ends. Custody
   never fails what the gateway was doing, and is audited by step and error name only.
+  A revoke landing during a reconnect stands: the gateway checks the trust again after
+  each wait, and a holder forgotten in this process cannot come back from a presentation
+  already in flight.
+- **A retired credential coming back ends the trust.** The trust record keeps a bounded
+  list of digests of credentials it has retired (32). Presenting one, on a hello or a
+  request, revokes that trusted client, forgets its unlock and audits
+  `credential.reuse_detected` with its id: whoever had it, thief or real browser, the
+  thief is out and the real browser pairs again. The credential before the current one
+  is not a reuse while it is in its lost-reply window (at most 14 days until confirmed),
+  and a request already in flight gets 2 minutes' grace. A credential's life slides with
+  use and has no upper bound, because reuse detection is what covers a stolen one.
 - Held keys keep their invariant: a box is opened, the key it holds is checked against
   the record's current seal, and a box that no longer opens it is dropped.
 
@@ -897,16 +927,29 @@ memory; `lockedAtMs` keeps it locked):
 | A session merely expiring | Nothing. It is not a sign-out. |
 | Forgetting the pairing (`client.forget_pairing`), an operator's `revokeTrustedClient` | The record is deleted and the credential speaks for nobody. |
 | An administrator's revoke of the approving session (by raw id or digest) | That browser locks, even if this process never saw the raw id. |
-| `revokeUserSessions`, a disabled or deleted account | Every browser of that person locks (`IdentitySessionEnd.wholeUserId`). |
+| `revokeUserSessions`, a disabled or deleted account, including `updateUser` with `enabled: false` | Every browser of that person locks, and every key of theirs leaves memory (`IdentitySessionEnd.wholeUserId`). |
 | Deleting a key | Its box goes from every holder. |
 | Rotating a key | Its boxes go. The old key cannot open the new seal. The new value reaches the rotator's own browsers because they proved their password for it; nobody else's. |
-| A password change with the current password | Re-boxed under the new seals. |
-| A password reset nobody proved the old password for | Every browser of that person locks. |
+| A password change with the current password | Re-boxed under the new seals, only for the session making the change and the browsers it approved. Everything else of theirs locks with `password_changed`, because a change often means they suspect someone; a Flow running elsewhere waits. |
+| A password reset nobody proved the old password for | Every browser of that person locks, and their live unlocks go. |
+| An administrator setting someone else's password | That person's sessions end, as provisioning's reset does. |
+| A retired credential presented | The trusted client is revoked and its record deleted. |
 
-Only the person's own explicit unlock lifts a lock: the `secret-keys` `unlock`
-endpoint, with their password, from the panel's Secret Keys page, which names the
-locked browsers. An ordinary sign-in boxes keys for their other browsers but leaves a
-locked one locked, so signing in elsewhere never undoes signing out here.
+A lock is attempted on every holder even when a write fails, keys leave memory first,
+and the failures are raised together. Identity tells these listeners before it deletes
+the session, so a crash between the two leaves a lock and a live session rather than a
+dead session and no lock. What remains: a write that failed, followed by a restart
+before anyone retried it.
+
+Only the person's own explicit unlock lifts a lock: the `secret-keys` `unlock` endpoint
+with `clientIds`, from the panel's Secret Keys page. It lifts the named holders and no
+others. With one locked browser the page names it ("Unlock Chrome on Windows"); with
+several it lists them with their label and last use, and the person picks. An ordinary
+sign-in boxes keys to their unlocked browsers but leaves a locked one locked, so signing
+in elsewhere, or unlocking a new laptop, never undoes signing out on a lost one. The proof
+is what sign-in asks, a password and the 2FA code where one is set, and never a PIN.
+Rechecks of a password against a session are limited per person
+(`identity-access/runtime/sessions/credential-attempts.ts`).
 
 **A locked key is found before a task starts.** `secret-keys` `snapshot` says of each
 of the caller's own keys whether their unlock opens it (`unlocked`), and the chat's

@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import type { SecretKeyKind, SecretKeyScope, SecretKeysSnapshot, SecretKeySummary } from "../types.ts";
+import type { SecretKeyKind, SecretKeyLockedClient, SecretKeyScope, SecretKeysSnapshot, SecretKeySummary } from "../types.ts";
 
 export const SECRET_KEYS_ENDPOINTS = {
   snapshot: "snapshot",
@@ -55,14 +55,14 @@ export type DeleteSecretKeyRequest = SecretKeyAuthorizationPayload & {
   id: string;
 };
 
-/** The person's own unlock, with their password: this session, and any paired client of theirs that is locked. */
-export type UnlockSecretKeysRequest = SecretKeyAuthorizationPayload;
+/** The person's own unlock, with their password: this session, and the locked paired clients they chose, by `holderId`. Named or not lifted: never one they did not choose. */
+export type UnlockSecretKeysRequest = SecretKeyAuthorizationPayload & { clientIds?: string[] };
 
 export type UnlockSecretKeysResponse = { unlockedKeyCount: number };
 
 export type SecretKeysSnapshotResponse = SecretKeysSnapshot & {
-  /** The names of the caller's paired clients that are locked. */
-  lockedClients?: string[];
+  /** The caller's paired clients that are locked, to choose among. */
+  lockedClients?: SecretKeyLockedClient[];
 };
 export type SecretKeyMutationResponse = SecretKeySummary;
 export type RevealSecretKeyResponse = {

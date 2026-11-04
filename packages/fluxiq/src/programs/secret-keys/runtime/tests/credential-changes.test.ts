@@ -21,7 +21,7 @@ import {
 const CURRENT = "dummy-current-password";
 const NEXT = "dummy-next-password";
 const weakKdf = { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS };
-const changeForUserOne = { userId: "user.one", currentPassword: CURRENT, nextPassword: NEXT };
+const changeForUserOne = { userId: "user.one", currentPassword: CURRENT, nextPassword: NEXT, actorSessionId: "session.one" };
 
 afterEach(() => vi.useRealTimers());
 

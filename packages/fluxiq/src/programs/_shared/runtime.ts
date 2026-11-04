@@ -1,5 +1,6 @@
 import path from "node:path";
 import { modelKeyLockedWords, type ModelKeyLockReason } from "@fluxiq/contracts/automation";
+import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
 import { ClientGatewayService, type ClientGatewayCredentialCustody, type ClientGatewayCredentialHolder, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore } from "../../client-gateway/index.ts";
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
@@ -20,7 +21,7 @@ import { DocsService, registerDocsApi } from "../docs/index.ts";
 import { IdentityAccessService, registerIdentityAccessApi, type IdentityCredentialChangeSubscriber, type IdentitySessionEnd } from "../identity-access/index.ts";
 import { ProductionRunnerService, registerProductionRunnerApi } from "../production-runner/index.ts";
 import { registerRuntimeApi } from "../runtime-control/index.ts";
-import { type HeldKeys, registerSecretKeysApi, secretKeySessionDigest, SecretKeysService, type SecretKeyCredentialHolder } from "../secret-keys/index.ts";
+import { type HeldKeys, registerSecretKeysApi, secretKeyPairedHolderId, secretKeyPanelHolderId, secretKeySessionDigest, SecretKeysService, type SecretKeyCredentialHolder } from "../secret-keys/index.ts";
 import { resolveFluxIQProfile } from "../../platform/profile/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
@@ -100,7 +101,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // Built before Automation Studio, which takes the standing result-check
   // provider at construction.
   // What brings a person's unlock back with no password: ciphertext only, opened by a paired browser's credential or a panel session's cookie.
-  const credentialUnlockRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.credentialUnlockStoreKind, layoutVersion: storageLayoutVersion }) : undefined;
+  const credentialUnlockRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.credentialUnlockStoreKind, layoutVersion: storageLayoutVersion, secureDelete: true }) : undefined;
   const secretKeys = new SecretKeysService({ ...(secretKeysRepository ? { repository: secretKeysRepository } : {}), ...(credentialUnlockRepository ? { credentialUnlockRepository } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}) });
   // What a Flow's standing authorization buys, for a run nobody is watching:
   // the model that judges its result, and -- since the repair clause -- the
@@ -205,7 +206,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     // a browser it approved. Told by digest, so a session this process never saw,
     // as after a restart, still locks what it should.
     sessionEndSubscribers: [async (end: IdentitySessionEnd) => {
-      const liveSessionDigests = new Set((await identityAccess.snapshot()).sessions.map((session) => session.id));
+      // Told before they are deleted, so what is ending does not count as live.
+      const liveSessionDigests = new Set((await identityAccess.snapshot()).sessions.map((session) => session.id).filter((digest) => !end.digests.includes(digest)));
       const shared = { revokerUserId: end.revoker.userId, administrator: end.revoker.administrator, liveSessionDigests };
       if (end.wholeUserId) await secretKeys.credentialUnlocks.sessionEnded({ digest: null, wholeUserId: end.wholeUserId, ...shared });
       for (const digest of end.digests) await secretKeys.credentialUnlocks.sessionEnded({ digest, ...shared });
@@ -231,21 +233,29 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // the resolver without the Flow's metadata, so the Flow is read here. The
   // locked sentence names the public host when `FLUXIQ_PUBLIC_ORIGIN` sets one.
   const instanceHost = publicInstanceHost(process.env.FLUXIQ_PUBLIC_ORIGIN);
+  // Only a holder the host stands behind is handed a person's key: an active trusted client of theirs, or a live session of theirs. A row in the store proves neither.
+  secretKeys.credentialUnlocks.bindVouch(async ({ holderId, holderKind, userId }) => {
+    if (holderKind === "paired-client") return holderId.startsWith(PAIRED_CLIENT_UNLOCK_PREFIX) && await clientGateway.vouchesForClient(holderId.slice(PAIRED_CLIENT_UNLOCK_PREFIX.length), userId);
+    return (await identityAccess.snapshot()).sessions.some((session) => session.userId === userId && secretKeyPanelHolderId(session.id) === holderId);
+  });
   // Which unlock a caller may use. A paired browser's is its own, and it falls back to nothing, so a lock on that browser holds while the person is signed in elsewhere; a panel session falls back to the person's other panel sessions.
   const pairedUnlockOf = (userId: string, actorSessionId: string): string | null => {
     const trustedClientId = clientGateway.trustedClientIdOf(actorSessionId.slice(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX.length));
-    return trustedClientId ? secretKeys.holdingSession(pairedClientHolderId(trustedClientId), userId) : null;
+    return trustedClientId ? secretKeys.holdingSession(secretKeys.credentialUnlocks.heldHandleFor(secretKeyPairedHolderId(trustedClientId)), userId) : null;
   };
   /** The paired client a session speaks for, when it is one, whose lock is the one to explain. */
   const holderOf = (callerSessionId: string | null | undefined): { holderId?: string } => {
-    if (callerSessionId?.startsWith(PAIRED_CLIENT_HOLDER_PREFIX)) return { holderId: callerSessionId };
+    if (callerSessionId?.startsWith(PAIRED_CLIENT_UNLOCK_PREFIX)) {
+      const holderId = secretKeys.credentialUnlocks.holderIdOfHandle(callerSessionId);
+      return holderId ? { holderId } : {};
+    }
     if (!callerSessionId?.startsWith(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX)) return {};
     const trustedClientId = clientGateway.trustedClientIdOf(callerSessionId.slice(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX.length));
-    return trustedClientId ? { holderId: pairedClientHolderId(trustedClientId) } : {};
+    return trustedClientId ? { holderId: secretKeyPairedHolderId(trustedClientId) } : {};
   };
   const callerUnlock = (userId: string, callerSessionId?: string): string | null => {
     if (callerSessionId?.startsWith(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX)) return pairedUnlockOf(userId, callerSessionId);
-    if (callerSessionId?.startsWith(PAIRED_CLIENT_HOLDER_PREFIX)) return null;
+    if (callerSessionId?.startsWith(PAIRED_CLIENT_UNLOCK_PREFIX)) return null;
     return secretKeys.unlockedSessionFor(userId);
   };
   const sessionKeyPorts: AutomationStudioSessionKeyPorts = {
@@ -411,7 +421,8 @@ function secretKeysCredentialChangeSubscriber(secretKeys: SecretKeysService): Id
       const { changeId } = await secretKeys.prepareCredentialChange({
         userId: change.userId,
         currentPassword: change.currentPassword,
-        nextPassword: change.newPassword
+        nextPassword: change.newPassword,
+        actorSessionId: change.actorSessionId
       });
       prepared.set(change.changeId, changeId);
     },
@@ -428,13 +439,6 @@ function secretKeysCredentialChangeSubscriber(secretKeys: SecretKeysService): Id
   };
 }
 
-/** Whose id a paired browser's unlock is stored and held under. */
-const PAIRED_CLIENT_HOLDER_PREFIX = "paired-client:";
-
-function pairedClientHolderId(trustedClientId: string): string {
-  return `${PAIRED_CLIENT_HOLDER_PREFIX}${trustedClientId}`;
-}
-
 /** What a task says while it waits for a person's key, and when it goes on. */
 function automationStudioModelKeyWaiting(reason: ModelKeyLockReason): string {
   return `I am waiting for you. ${modelKeyLockedWords(reason)} I will carry on from here, and nothing has been lost.`;
@@ -448,8 +452,7 @@ const AUTOMATION_STUDIO_MODEL_KEY_RESUMED = "Your model key is unlocked, so I am
 function secretKeysCredentialCustody(secretKeys: SecretKeysService): ClientGatewayCredentialCustody {
   const holder = (client: ClientGatewayCredentialHolder, approvingSessionDigest?: string): SecretKeyCredentialHolder => ({
     holderKind: "paired-client",
-    holderId: pairedClientHolderId(client.trustedClientId),
-    heldAs: pairedClientHolderId(client.trustedClientId),
+    holderId: secretKeyPairedHolderId(client.trustedClientId),
     userId: client.userId,
     expiresAtMs: client.expiresAtMs,
     label: client.name,
@@ -460,16 +463,16 @@ function secretKeysCredentialCustody(secretKeys: SecretKeysService): ClientGatew
       await secretKeys.credentialUnlocks.presentCredential(holder(client, approvedBySessionId ? secretKeySessionDigest(approvedBySessionId) : undefined), credential, { verified: true });
     },
     async confirmed({ holder: client, credential }) {
-      await secretKeys.credentialUnlocks.confirmCredential({ holderId: pairedClientHolderId(client.trustedClientId), userId: client.userId, credential });
+      await secretKeys.credentialUnlocks.confirmCredential({ holderId: secretKeyPairedHolderId(client.trustedClientId), userId: client.userId, credential });
     },
     async rotating({ holder: client, previousCredential, nextCredential }) {
-      await secretKeys.credentialUnlocks.rotateCredential({ holderId: pairedClientHolderId(client.trustedClientId), userId: client.userId, previousCredential, nextCredential });
+      await secretKeys.credentialUnlocks.rotateCredential({ holderId: secretKeyPairedHolderId(client.trustedClientId), userId: client.userId, previousCredential, nextCredential });
     },
     async presented({ holder: client, credential }) {
       await secretKeys.credentialUnlocks.presentCredential(holder(client), credential, { verified: true });
     },
-    released: (trustedClientId) => secretKeys.credentialUnlocks.release(pairedClientHolderId(trustedClientId)),
-    forgotten: (trustedClientId) => secretKeys.credentialUnlocks.forget(pairedClientHolderId(trustedClientId))
+    released: (trustedClientId) => secretKeys.credentialUnlocks.release(secretKeyPairedHolderId(trustedClientId)),
+    forgotten: (trustedClientId) => secretKeys.credentialUnlocks.forget(secretKeyPairedHolderId(trustedClientId))
   };
 }
 

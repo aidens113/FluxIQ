@@ -50,11 +50,12 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     handler: async (request) => {
       const payload = request.payload as UnlockSecretKeysRequest | undefined;
       if (!payload?.authorizationPassword) return { ok: false, error: "Your password is required." };
-      const authorization = await authorizeSecretMutation(identityAccess, payload);
+      // What sign-in asks, and no more: this is setup, once per browser, and a PIN is for dangerous acts.
+      const authorization = await authorizeSignInProof(identityAccess, payload);
       if (!authorization.ok) return authorization;
       const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
       if (!actorSession) return { ok: false, error: "Sign in to FluxIQ to unlock your model keys." };
-      const { unlockedKeyCount } = await service.unlockSession({ sessionId: actorSession.sessionId, userId: actorSession.userId, authorizationPassword: payload.authorizationPassword, expiresAtMs: actorSession.expiresAtMs, unlockClients: true });
+      const { unlockedKeyCount } = await service.unlockSession({ sessionId: actorSession.sessionId, userId: actorSession.userId, authorizationPassword: payload.authorizationPassword, expiresAtMs: actorSession.expiresAtMs, unlockClients: Array.isArray(payload.clientIds) ? payload.clientIds.filter((id) => typeof id === "string") : [], passwordVerified: true });
       return { ok: true, payload: { unlockedKeyCount } };
     }
   });
@@ -161,6 +162,16 @@ async function verifiedActorSession(identityAccess: IdentityAccessService | unde
   const context = await identityAccess.validateSession(payload.authSessionId);
   if (!context || context.user.id !== actor.userId) return undefined;
   return { sessionId: context.session.id, userId: context.user.id, expiresAtMs: context.session.expiresAtMs };
+}
+
+async function authorizeSignInProof(identityAccess: IdentityAccessService | undefined, payload: SecretKeyAuthorizationPayload): Promise<{ ok: true } | { ok: false; error: string; requiresRecheck: true }> {
+  if (!identityAccess) return { ok: false, requiresRecheck: true, error: "Secret key authorization is unavailable" };
+  try {
+    await identityAccess.authorizeSessionCredentials({ sessionId: payload.authSessionId, password: payload.authorizationPassword, pin: undefined, totp: payload.authorizationTotp, requirePin: false });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, requiresRecheck: true, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function authorizeSecretMutation(identityAccess: IdentityAccessService | undefined, payload: SecretKeyAuthorizationPayload, options: { requireTotp?: boolean } = {}): Promise<{ ok: true } | { ok: false; error: string; requiresRecheck: true }> {

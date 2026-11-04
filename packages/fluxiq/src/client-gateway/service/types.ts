@@ -122,6 +122,8 @@ export type InternalSession = ClientGatewaySession & {
   pendingPairingCode?: string;
   /** The channel scope this session was attached under (`./channel-scope/`); absent for a live session. */
   channelScope?: string;
+  /** The digest of the credential this session was last sent, so it can confirm that one and no other. */
+  sentCredentialHash?: string;
   /** Where the transport says the connection came from; never public, audited as its prefix only. */
   peer?: import("./security/index.ts").ClientGatewayPeer;
 };

@@ -67,6 +67,7 @@ function framework(method: "GET" | "POST", path: string, action: string, permiss
 
 export const APP_ROUTE_IAM_CONTRACTS: readonly AppRouteIamContract[] = Object.freeze([
   { path: "/api/client-gateway/approve-pairing", method: "POST", action: "gateway:ApprovePairing", callers: { panel: "runtime.control" }, resource: selfUser },
+  { path: "/api/client-gateway/forget-pairing", method: "POST", action: "gateway:ForgetPairing", callers: { "paired-client": "none" }, resource: workspace },
   { path: "/api/client-gateway/dismiss-pairing", method: "POST", action: "gateway:DismissPairing", callers: { panel: "runtime.control" }, resource: workspace },
   { path: "/api/client-gateway/automation-studio-context", method: "POST", action: "gateway:SetAutomationStudioContext", callers: { panel: "runtime.control" }, resource: studioContext },
   { path: "/api/client-gateway/snapshot", method: "GET", action: "gateway:Snapshot", callers: { panel: "none", "paired-client": "none" }, resource: workspace },

@@ -78,7 +78,7 @@ export class ClientGatewayService {
   private readonly transport: ClientGatewayTransport;
   private readonly events: ClientGatewayEventBus;
   private readonly views: ClientGatewayViews;
-  private readonly access: ClientGatewayAccess;
+  readonly access: ClientGatewayAccess;
   private readonly pairingFlow: ClientGatewayPairingFlow;
   private readonly lifecycle: ClientGatewayLifecycle;
   private readonly inbound: ClientGatewayInbound;
@@ -168,6 +168,13 @@ export class ClientGatewayService {
 
   async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator"): Promise<boolean> {
     return this.access.revokeTrustedClient(trustedClientId, reason);
+  }
+
+  /** Whether this is an active trusted client acting for this person: what a stored holder must be before anything is boxed to it. */
+  async vouchesForClient(trustedClientId: string, userId: string): Promise<boolean> {
+    await this.ready();
+    const client = this.trustedClients.get(trustedClientId);
+    return client !== undefined && client.approvedByUserId === userId && this.trustedClients.isActive(client);
   }
 
   /** The trusted client a gateway session is paired as, connected or not; undefined for an unpaired or unknown session. No credential. */
