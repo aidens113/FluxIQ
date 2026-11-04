@@ -27,6 +27,17 @@ function hidden(run: string): string {
 const HANDLE = /[`'"]?\b(?:[a-z]+\.\d+(?::[A-Za-z0-9_.:-]+)?|[tde]\d{1,6})\b[`'"]?/gu;
 /** A namespaced node or tool id (`web.output.dom-extract`, `core.run_node`, `builtin.control.merge`). */
 const NODE_ID = /\b(?:web|core|builtin|domain)\.[a-z0-9_.-]*[a-z0-9]/gu;
+/**
+ * A dotted code of three or more lower-case parts (`executor.fault.unclassified`, `llm.provider.timeout`): a failure code the
+ * person is never shown. An address (`www.example.co.uk`) ends in a two or three letter part and is not one.
+ */
+const DOTTED_CODE = /[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:.[a-z][a-z0-9]*(?:_[a-z0-9]+)*){2,}/gu;
+
+/** Whether `token` is a dotted failure code rather than an address. */
+function isDottedCode(token: string): boolean {
+  return /^[a-z][a-z0-9_]*(?:.[a-z][a-z0-9_]*){2,}$/u.test(token) && !/^[a-z]{2,3}$/u.test(token.split(".").at(-1)!);
+}
+
 /** A snake_case name (`extract_list`, `amend_draft`). */
 const SNAKE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gu;
 /** The draft's own step numbers in parentheses: "(step 7)", "(steps 3 and 4)". */
@@ -36,11 +47,17 @@ const EMPTY_PARENS = /\s*\(\s*[,;]?\s*\)/gu;
 /** One id, handle or snake_case name, whole: what an aside of ids is made of ("(web.output.dom-extract_list)"). */
 const ID_WORD = /^(?:(?:web|core|builtin|domain)\.[a-z0-9_.-]*[a-z0-9]|[a-z]+\.\d+(?::[A-Za-z0-9_.:-]+)?|[tde]\d{1,6}|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)$/u;
 
+/** Whether `word`, quotes aside, is an id, a handle, a snake_case name or a dotted failure code. */
+function isIdWord(word: string): boolean {
+  const bare = word.replace(/^[`'"]|[`'"]$/gu, "");
+  return ID_WORD.test(bare) || isDottedCode(bare);
+}
+
 /** `text` without each aside in parentheses that holds only ids: "Step 8 (web.output.dom-extract_list) kept". */
 function withoutIdAsides(text: string): string {
   return text.replace(/\s*\(([^()]*)\)/gu, (whole: string, inner: string) => {
     const words = inner.split(/[\s,;]+/u).filter((word) => word && !/^(?:and|or)$/u.test(word));
-    return words.length && words.every((word) => ID_WORD.test(word.replace(/^[`'"]|[`'"]$/gu, ""))) ? "" : whole;
+    return words.length && words.every(isIdWord) ? "" : whole;
   });
 }
 
@@ -57,6 +74,7 @@ function screened(text: string): string {
     ? word
     : word
       .replace(NODE_ID, (id) => (id.split(".").at(-1) ?? id).replace(/[-_]+/gu, " "))
+      .replace(DOTTED_CODE, (id) => (isDottedCode(id) ? (id.split(".").at(-1) ?? id).replace(/[-_]+/gu, " ") : id))
       .replace(HANDLE, "")
       .replace(SNAKE, (name) => name.replace(/_+/gu, " ")));
   return automationStudioActivityPersonWords(words.replace(STEP_REF, "").replace(EMPTY_PARENS, "").replace(/\s+([,.;:!?])/gu, "$1"));

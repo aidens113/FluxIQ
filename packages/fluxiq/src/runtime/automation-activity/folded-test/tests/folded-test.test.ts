@@ -40,7 +40,7 @@ describe("a test the submission carried", () => {
   it("is its own row after the submit's, with Core's line", async () => {
     await drive(observe(answer({ ok: true, revision: 2, digest: "a".repeat(64), tested, testedWith: { revision: 2, digest: "a".repeat(64) } })));
     const said = rows();
-    const line = "Core tested the saved version from its start because the submission asked for it.";
+    const line = "FluxIQ tested the saved version from its start because the submission asked for it.";
     const at = said.findIndex((row) => row.endsWith(line));
     expect(at).toBeGreaterThan(0);
     expect(said.filter((row) => row.includes("Saving the part so it can be tried."))).toHaveLength(1);
@@ -54,7 +54,7 @@ describe("a test the submission carried", () => {
 
   it("says a run from a step in its own words, and a failed test as failed", async () => {
     await drive(observe(answer({ ok: true, tested: { ok: true, verdict: "no", fromStep: 2, feedback: { steps: [] } }, testedWith: { revision: 2, digest: "a".repeat(64), from: "s2" } })));
-    expect(rows().some((row) => row.endsWith("Core ran the saved version from the named step because the submission asked for it."))).toBe(true);
+    expect(rows().some((row) => row.endsWith("FluxIQ ran the saved version from the named step because the submission asked for it."))).toBe(true);
     expect(seen.filter((event) => event.detail?.ref === "core.test_subflow").map((event) => event.detail?.status)).toEqual(["started", "failed"]);
   });
 
@@ -79,7 +79,7 @@ describe("a Core-made complete decision", () => {
       await wrapped.checkCompletion!({}, { steps: [] });
     });
     const said = rows();
-    expect(said[0]).toContain("Core finished the part because the saved version passed its test.");
+    expect(said[0]).toContain("FluxIQ finished the part because the saved version passed its test.");
     expect(said.some((row) => row.startsWith("note | Completion check"))).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
 // through the service.
 //
 // **Why (t244, user 2026-10-02).** A Flow is finished only once a run of the
-// whole Flow from its start was judged to do what was asked, on the Flow as it
+// whole Flow from its start did what was asked, on the Flow as it
 // finally stands. A build's test is that run (`../llm/node-tools/dry-run-gate.ts`),
 // and it can only run steps the domain said how to run again: what each ran
 // with (`ranWith`) and where it found the target (`replay.from`). A stand-in

@@ -19,5 +19,5 @@ export function automationStudioActivityFoldedReason(input: { did: string; becau
   if (!did || !because) return undefined;
   const lowered = because.charAt(0).toLowerCase() + because.slice(1);
   const done = did.charAt(0).toLowerCase() + did.slice(1);
-  return `Core ${done} because ${lowered}.`;
+  return `FluxIQ ${done} because ${lowered}.`;
 }

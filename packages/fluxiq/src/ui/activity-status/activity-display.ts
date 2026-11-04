@@ -52,6 +52,11 @@ export type ActivityDisplay = {
    * A run Core holds for the person (Take over) is `waiting` with `phase: "paused"`.
    */
   outcome: "done" | "failed" | "waiting" | null;
+  /**
+   * True on a run that finished while its result check could not confirm the result (or could not run):
+   * a host shows it as neither a success nor a failure, never with a tick. Absent otherwise.
+   */
+  unconfirmed?: true;
   /** The Core sequence of the newest event folded into this display; 0 for the starting status. */
   sequence: number;
   /** What the newest event folded in was; absent reads as `action`. */

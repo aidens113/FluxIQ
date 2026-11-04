@@ -17,7 +17,7 @@ describe("an ending grounded in Core's latest readings", () => {
     });
     expect(told.text).not.toMatch(/not placed|is empty/u);
     expect(told.text).toContain("I could not confirm where the change shows.");
-    expect(told.text).toContain("Core last read the page as it now shows “Hold placed until Friday”, “Saved searches (2)” and no longer shows “Place a hold”.");
+    expect(told.text).toContain("FluxIQ last read the page as it now shows “Hold placed until Friday”, “Saved searches (2)” and no longer shows “Place a hold”.");
     expect(told.text.endsWith(LEFT.told)).toBe(true);
   });
 
@@ -30,7 +30,7 @@ describe("an ending grounded in Core's latest readings", () => {
 
   it("names a few lines and counts the rest", () => {
     const told = automationStudioProjectBuildReadingsTold([{ added: ["a one", "b two", "c three", "d four", "e five", "f six"], gone: [] }]);
-    expect(told).toBe("Where the build acted, Core last read the page as it now shows “a one”, “b two”, “c three”, “d four” and 2 more.");
+    expect(told).toBe("Where the build acted, FluxIQ last read the page as it now shows “a one”, “b two”, “c three”, “d four” and 2 more.");
   });
 });
 
@@ -51,7 +51,7 @@ describe("an ending where every test was refused", () => {
 
   it("says plainly that none ran, and why", () => {
     const said = automationStudioProjectBuildRecordTold({ parts: new Map(), assembled: true, refused: { count: 2, why: [UNWITNESSED] } });
-    expect(said).toBe(`All 2 tests the build asked for were refused, so no test of the Flow ran: Core would not run them because ${UNWITNESSED}.`);
+    expect(said).toBe(`All 2 tests the build asked for were refused, so no test of the Flow ran: FluxIQ would not run them because ${UNWITNESSED}.`);
     expect(automationStudioProjectBuildRecordTold({ parts: new Map(), assembled: false, refused: { count: 1, why: [] } })).toBe("The one test the build asked for was refused, so no test of the Flow ran.");
     const told = automationStudioProjectBuildEndingTold({ reason: "The hold could not be confirmed.", left: LEFT, record: said });
     expect(told.text).toBe(`The hold could not be confirmed. ${said} ${LEFT.told}`);

@@ -58,6 +58,8 @@ const COMPUTED_FACT_FAILED = "core.result.computed_fact_failed";
 const RECORDS_REFUSED = "record_output.records_refused";
 /** The most of Core's sentence the ending says, so "Run failed: " and it fit a status line. */
 const MAX_FOUND = 110;
+/** The most it says when the first allowance would have cut the sentence: the row's own text holds more than the status line. */
+const MAX_FOUND_LONG = 260;
 
 /**
  * The ending of a run that failed at a step, where there is something to add: a fix
@@ -88,10 +90,12 @@ function rowsRefusedRepair(reauthor: Fields | undefined, last: Fields | undefine
  */
 function coreFound(verification: Fields, rows: number | undefined): string | undefined {
   if (verification.basis !== "core_observation" || verification.code !== COMPUTED_FACT_FAILED) return undefined;
-  const said = automationStudioActivityReasonText(verification.observation, MAX_FOUND)?.replace(/\.$/u, "");
-  if (!said) return undefined;
-  // A person knows the product as FluxIQ: Core's own sentence ("Core counted …") is said in its name.
-  const finding = /^Core\b/u.test(said) ? said.replace(/^Core\b/u, "FluxIQ")
+  // Never a sentence cut with "..." in it: a longer allowance first, then the plainer ending that follows.
+  const read = [MAX_FOUND, MAX_FOUND_LONG].map((max) => automationStudioActivityReasonText(verification.observation, max)).find((sentence) => sentence && !sentence.endsWith("…"));
+  if (!read) return undefined;
+  // A person knows the product as FluxIQ: Core's own sentence ("Core counted ...", "... Core's own reading") is said in its name.
+  const said = read.replace(/\.$/u, "").replace(/\bCore\b/gu, "FluxIQ");
+  const finding = /^FluxIQ\b/u.test(said) ? said
     : `FluxIQ found that ${/^[A-Z][a-z]/u.test(said) ? said[0]!.toLowerCase() + said.slice(1) : said}`;
   return rows === undefined ? `${finding}.` : `it saved ${rows} ${rows === 1 ? "row" : "rows"}, but ${finding}.`;
 }
@@ -181,8 +185,12 @@ const MAX_OBJECTION = 240;
 export function automationStudioActivityRunObjection(record: Fields | null | undefined): string | undefined {
   const verification = fields(record?.resultVerification);
   if (!verification || verification.performed !== true || verification.verdict === "answers" || verification.status === "confirmed") return undefined;
+  // A no FluxIQ reached from its own record has no check's reason to add: its ending already says what it found
+  // ("Core's own record ... so no judge was asked" was machine prose, B 34 of the answer-first study).
+  if (verification.basis === "core_observation") return undefined;
   const reason = automationStudioActivityReasonText(verification.reason, MAX_OBJECTION);
-  return reason ? `The check said: ${reason}` : undefined;
+  // A reason the screen had to cut mid-sentence is left out whole, never said with "..." in it.
+  return reason && !reason.endsWith("…") ? `The check said: ${reason}` : undefined;
 }
 
 /** The last entry of a recorded list, or nothing. */

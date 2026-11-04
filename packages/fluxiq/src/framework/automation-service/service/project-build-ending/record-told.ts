@@ -31,7 +31,7 @@ import type { AutomationStudioCandidateTrialResult, AutomationStudioCandidateTri
 /** A test's last verdict, in words that finish "whose last test ...". */
 const LAST_TEST: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
   yes: "passed",
-  no: "was judged not to do what was asked",
+  no: "did not do what was asked",
   unsure: "could not be confirmed",
   not_judged: "could not be confirmed",
   execution_failed: "did not run to its end"
@@ -39,8 +39,8 @@ const LAST_TEST: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>>
 
 /** A judged run's verdict, in words that finish "the judged test run ... ". */
 const JUDGED: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
-  yes: "was judged to do what was asked",
-  no: "was judged not to do what was asked",
+  yes: "did what was asked",
+  no: "did not do what was asked",
   unsure: "could not be confirmed to do what was asked",
   not_judged: "could not be confirmed to do what was asked",
   execution_failed: "did not run to its end"
@@ -85,7 +85,7 @@ function refusedSaid(refused: { count: number; why: readonly string[] }): string
   const opening = refused.count === 1 ? "The one test the build asked for was refused, so no test of the Flow ran" : `All ${refused.count} tests the build asked for were refused, so no test of the Flow ran`;
   const reasons = refused.why.slice(0, 2).map((reason) => reason.replace(/[.\s]+$/u, ""));
   if (!reasons.length) return `${opening}.`;
-  return `${opening}: Core would not run ${refused.count === 1 ? "it" : "them"} because ${reasons.join("; and because ")}.`;
+  return `${opening}: FluxIQ would not run ${refused.count === 1 ? "it" : "them"} because ${reasons.join("; and because ")}.`;
 }
 
 /** How the parts tested on their own came out (header). */
@@ -113,7 +113,7 @@ function wholeSaid(assembled: boolean, whole: Whole | undefined, runs: WholeRuns
   }
   if (!whole) return assembled ? "A whole Flow was assembled and never tested from its start." : "No whole Flow was assembled, so it was never tested as one.";
   const did = ran(whole.feedback);
-  return `The judged test run of the whole Flow from its start ${did ? `${did}, and ` : ""}${JUDGED[whole.verdict]}.`;
+  return `The test run of the whole Flow from its start ${did ? `${did}, and ` : ""}${JUDGED[whole.verdict]}.`;
 }
 
 /** What the judged run did, from its own feedback: how many of its steps ran, and how many rows it stored; empty when it says neither. */
